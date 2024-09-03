@@ -13,6 +13,7 @@
 
 #include "absl/types/span.h"
 #include "glog/logging.h"
+#include "oz3/core/memory_map.h"
 #include "oz3/core/types.h"
 
 namespace oz3 {
@@ -37,28 +38,6 @@ static_assert(kMemoryBankMaxSize - 1 == std::numeric_limits<uint16_t>::max());
 // Cycle timing constants for MemoryBank access
 inline constexpr Cycles kMemoryBankSetAddressCycles = 1;
 inline constexpr Cycles kMemoryBankAccessWordCycles = 1;
-
-//==============================================================================
-// MemoryMap
-//==============================================================================
-
-// The MemoryMap interface provides a way for an external class (usually a
-// Coprocessor or Device derived class) to map functionality to specific
-// memory addresses in a memory bank. Memory maps always overlay full pages of
-// physical memory (it is not possible to memory map less than a page).
-class MemoryMap {
- public:
-  MemoryMap() = default;
-  virtual ~MemoryMap() = default;
-
-  // Read from the specified address `size` words into `data`.
-  virtual void Read(int address, uint16_t* data, int size) {
-    std::memset(data, 0, size * sizeof(uint16_t));
-  }
-
-  // Write into the specified address `size` words from `data`.
-  virtual void Write(int address, const uint16_t* data, int size) {}
-};
 
 //==============================================================================
 // MemoryLock

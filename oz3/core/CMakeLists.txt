@@ -5,6 +5,7 @@
 
 set(oz3_core_SOURCE
   memory_bank.cc memory_bank.h
+  memory_map.h
   types.h
 )
 set(oz3_core_DEPS
