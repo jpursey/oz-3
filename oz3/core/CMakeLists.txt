@@ -7,11 +7,14 @@ set(oz3_core_SOURCE
   memory_bank.cc memory_bank.h
   memory_bank_config.cc memory_bank_config.h
   memory_map.h
+  processor.cc processor.h
+  processor_config.cc processor_config.h
   types.h
 )
 set(oz3_core_DEPS
   absl::memory
   absl::span
+  gb_container
 )
 set(oz3_core_LIBS
   glog
@@ -19,6 +22,7 @@ set(oz3_core_LIBS
 
 set(oz3_core_TEST_SOURCE
   memory_bank_test.cc
+  processor_test.cc
 )
 
 gb_add_library(oz3_core)
