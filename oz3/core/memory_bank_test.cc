@@ -24,7 +24,7 @@ uint16_t GetInitWord(int page, int i) {
 }
 
 // Fills memory with 1,2,3,4,5,...,65536 pattern.
-void InitMemory(absl::Span<uint16_t>& buffer) {
+void InitMemory(absl::Span<uint16_t> buffer) {
   for (int i = 0; i < buffer.size(); ++i) {
     buffer[i] = i;
   }
@@ -36,7 +36,7 @@ uint16_t GetAltInitWord(int page, int i) {
 }
 
 // Bitwise-inverted version of InitMemory.
-void AltInitMemory(absl::Span<uint16_t>& buffer) {
+void AltInitMemory(absl::Span<uint16_t> buffer) {
   for (int i = 0; i < buffer.size(); ++i) {
     buffer[i] =
         GetAltInitWord(i / kMemoryBankPageSize, i % kMemoryBankPageSize);
@@ -66,146 +66,146 @@ class FakeMemoryMap : public MemoryMap {
   std::vector<uint16_t> mem_;
 };
 
-TEST(MemoryBankTest, CreateWithDefaultOptions) {
-  auto bank = MemoryBank::Create(MemoryBank::Options());
-  EXPECT_EQ(bank->GetMemoryStart(), 0);
-  EXPECT_EQ(bank->GetMemorySize(), 0);
-  EXPECT_FALSE(bank->IsLocked());
-  EXPECT_EQ(bank->GetRemainingCycles(), 0);
-  EXPECT_EQ(bank->GetMem(0, 1).size(), 0);
+TEST(MemoryBankTest, CreateWithDefaultConfig) {
+  MemoryBank bank;  // Default options.
+  EXPECT_EQ(bank.GetMemoryStart(), 0);
+  EXPECT_EQ(bank.GetMemorySize(), 0);
+  EXPECT_FALSE(bank.IsLocked());
+  EXPECT_EQ(bank.GetRemainingCycles(), 0);
+  EXPECT_EQ(bank.GetMem(0, 1).size(), 0);
 }
 
 TEST(MemoryBankTest, CreateWithFullMemory) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  EXPECT_EQ(bank->GetMemoryStart(), 0);
-  EXPECT_EQ(bank->GetMemorySize(), kMemoryBankMaxSize);
-  EXPECT_EQ(bank->GetMem(0, kMemoryBankMaxSize).size(), kMemoryBankMaxSize);
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  EXPECT_EQ(bank.GetMemoryStart(), 0);
+  EXPECT_EQ(bank.GetMemorySize(), kMemoryBankMaxSize);
+  EXPECT_EQ(bank.GetMem(0, kMemoryBankMaxSize).size(), kMemoryBankMaxSize);
 }
 
 TEST(MemoryBankTest, ConstGetMemMatchesNonConst) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto mem = bank->GetMem(1000, 3000);
-  const auto& const_mem =
-      const_cast<MemoryBank*>(bank.get())->GetMem(1000, 3000);
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto mem = bank.GetMem(1000, 3000);
+  const auto& const_mem = const_cast<MemoryBank&>(bank).GetMem(1000, 3000);
   EXPECT_EQ(mem, const_mem);
 }
 
 TEST(MemoryBankTest, CreateWithPartialMemory) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(2, 6));
-  EXPECT_EQ(bank->GetMemoryStart(), 2 * kMemoryBankPageSize);
-  EXPECT_EQ(bank->GetMemorySize(), 6 * kMemoryBankPageSize);
-  EXPECT_EQ(bank->GetMem(0, 1).size(), 0);
+  MemoryBank bank(
+      MemoryBankConfig().SetMemPages({.start_page = 2, .page_count = 6}));
+  EXPECT_EQ(bank.GetMemoryStart(), 2 * kMemoryBankPageSize);
+  EXPECT_EQ(bank.GetMemorySize(), 6 * kMemoryBankPageSize);
+  EXPECT_EQ(bank.GetMem(0, 1).size(), 0);
   EXPECT_EQ(
-      bank->GetMem(2 * kMemoryBankPageSize, 6 * kMemoryBankPageSize).size(),
+      bank.GetMem(2 * kMemoryBankPageSize, 6 * kMemoryBankPageSize).size(),
       6 * kMemoryBankPageSize);
-  EXPECT_EQ(bank->GetMem(8 * kMemoryBankPageSize, 1).size(), 0);
+  EXPECT_EQ(bank.GetMem(8 * kMemoryBankPageSize, 1).size(), 0);
 }
 
 TEST(MemoryBankTest, UnintializedMemoryIsZero) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto mem = bank->GetMem(0, kMemoryBankMaxSize);
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto mem = bank.GetMem(0, kMemoryBankMaxSize);
   EXPECT_THAT(mem, Each(0));
 }
 
 TEST(MemoryBankTest, LockMemory) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  EXPECT_FALSE(bank->IsLocked());
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  EXPECT_FALSE(bank.IsLocked());
   {
-    auto lock = bank->Lock();
-    EXPECT_TRUE(bank->IsLocked());
-    EXPECT_EQ(lock.GetMemoryBank(), bank.get());
+    auto lock = bank.Lock();
+    EXPECT_TRUE(bank.IsLocked());
+    EXPECT_EQ(lock.GetMemoryBank(), &bank);
     EXPECT_EQ(lock.GetAddress(), 0);
   }
-  EXPECT_FALSE(bank->IsLocked());
+  EXPECT_FALSE(bank.IsLocked());
 }
 
 TEST(MemoryBankTest, SetAddress) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto lock = bank.Lock();
   EXPECT_EQ(lock.GetAddress(), 0);
-  EXPECT_EQ(bank->GetRemainingCycles(), 0);
+  EXPECT_EQ(bank.GetRemainingCycles(), 0);
   lock.SetAddress(1000);
   EXPECT_EQ(lock.GetAddress(), 1000);
-  EXPECT_EQ(bank->GetRemainingCycles(), kMemoryBankSetAddressCycles);
+  EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankSetAddressCycles);
 }
 
 TEST(MemoryBankTest, LoadWordAtAddress) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  bank->GetMem(1000, 1)[0] = 0x5678;
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  bank.GetMem(1000, 1)[0] = 0x5678;
+  auto lock = bank.Lock();
   lock.SetAddress(1000);
   EXPECT_EQ(lock.LoadWord(), 0x5678);
-  EXPECT_EQ(bank->GetRemainingCycles(),
+  EXPECT_EQ(bank.GetRemainingCycles(),
             kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles);
 }
 
 TEST(MemoryBankTest, StoreWordAtAddress) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto lock = bank.Lock();
   lock.SetAddress(1000);
   lock.StoreWord(0x5678);
   EXPECT_EQ(lock.GetAddress(), 1001);
-  EXPECT_EQ(bank->GetMem(1000, 1)[0], 0x5678);
-  EXPECT_EQ(bank->GetRemainingCycles(),
+  EXPECT_EQ(bank.GetMem(1000, 1)[0], 0x5678);
+  EXPECT_EQ(bank.GetRemainingCycles(),
             kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles);
 }
 
 TEST(MemoryBankTest, PushWordAtAddress) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto lock = bank.Lock();
   lock.SetAddress(1000);
   lock.PushWord(0x5678);
-  EXPECT_EQ(bank->GetMem(999, 1)[0], 0x5678);
-  EXPECT_EQ(bank->GetRemainingCycles(),
+  EXPECT_EQ(bank.GetMem(999, 1)[0], 0x5678);
+  EXPECT_EQ(bank.GetRemainingCycles(),
             kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles);
 }
 
 TEST(MemoryBankTest, ReadWordsAtAddress) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  bank->GetMem(1000, 1)[0] = 0x5678;
-  bank->GetMem(1001, 1)[0] = 0x1234;
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  bank.GetMem(1000, 1)[0] = 0x5678;
+  bank.GetMem(1001, 1)[0] = 0x1234;
+  auto lock = bank.Lock();
   lock.SetAddress(999);
   uint16_t words[4];
   lock.ReadWords(words, ABSL_ARRAYSIZE(words));
   EXPECT_THAT(words, ElementsAre(0, 0x5678, 0x1234, 0));
-  EXPECT_EQ(bank->GetRemainingCycles(),
+  EXPECT_EQ(bank.GetRemainingCycles(),
             kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 4);
 }
 
 TEST(MemoryBankTest, WriteWordsAtAddress) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto lock = bank.Lock();
   lock.SetAddress(1000);
   uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
   lock.WriteWords(words, ABSL_ARRAYSIZE(words));
-  EXPECT_EQ(bank->GetMem(1000, 1)[0], 0x5678);
-  EXPECT_EQ(bank->GetMem(1001, 1)[0], 0x1234);
-  EXPECT_EQ(bank->GetMem(1002, 1)[0], 0x9ABC);
-  EXPECT_EQ(bank->GetMem(1003, 1)[0], 0xDEF0);
-  EXPECT_EQ(bank->GetRemainingCycles(),
+  EXPECT_EQ(bank.GetMem(1000, 1)[0], 0x5678);
+  EXPECT_EQ(bank.GetMem(1001, 1)[0], 0x1234);
+  EXPECT_EQ(bank.GetMem(1002, 1)[0], 0x9ABC);
+  EXPECT_EQ(bank.GetMem(1003, 1)[0], 0xDEF0);
+  EXPECT_EQ(bank.GetRemainingCycles(),
             kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 4);
 }
 
 TEST(MemoryBankTest, AdvanceCycles) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto lock = bank.Lock();
   uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
   lock.WriteWords(words, ABSL_ARRAYSIZE(words));
-  EXPECT_EQ(bank->GetRemainingCycles(), kMemoryBankAccessWordCycles * 4);
-  bank->AdvanceCycles(1);
-  EXPECT_EQ(bank->GetRemainingCycles(), kMemoryBankAccessWordCycles * 4 - 1);
-  bank->AdvanceCycles(kMemoryBankAccessWordCycles * 4 - 1);
-  EXPECT_EQ(bank->GetRemainingCycles(), 0);
-  bank->AdvanceCycles(1);
-  EXPECT_EQ(bank->GetRemainingCycles(), 0);
+  EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankAccessWordCycles * 4);
+  bank.AdvanceCycles(1);
+  EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankAccessWordCycles * 4 - 1);
+  bank.AdvanceCycles(kMemoryBankAccessWordCycles * 4 - 1);
+  EXPECT_EQ(bank.GetRemainingCycles(), 0);
+  bank.AdvanceCycles(1);
+  EXPECT_EQ(bank.GetRemainingCycles(), 0);
 }
 
 TEST(MemoryBankTest, ReadWordFromWriteOnlyMemory) {
-  auto bank = MemoryBank::Create(
-      MemoryBank::Options().SetMemPages(0, 16).SetMemReadMask(0x0FF0));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max(),
+                                                 {.read_mask = 0x0FF0}));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   int page = 0;
   for (; page < 4; ++page) {
     lock.SetAddress(page * kMemoryBankPageSize);
@@ -229,10 +229,10 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMemory) {
 }
 
 TEST(MemoryBankTest, WriteWordFromReadOnlyMemory) {
-  auto bank = MemoryBank::Create(
-      MemoryBank::Options().SetMemPages(0, 16).SetMemWriteMask(0x0FF0));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(
+      MemoryPageRange::Max(), {.read_mask = 0xFFFF, .write_mask = 0x0FF0}));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   int page = 0;
   for (; page < 4; ++page) {
     lock.SetAddress(page * kMemoryBankPageSize);
@@ -269,10 +269,10 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMemory) {
 }
 
 TEST(MemoryBankTest, ReadWordsFromWriteOnlyMemory) {
-  auto bank = MemoryBank::Create(
-      MemoryBank::Options().SetMemPages(0, 16).SetMemReadMask(0x0002));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max(),
+                                                 {.read_mask = 0x0002}));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   uint16_t words[4];
 
   std::memset(words, 0xFF, sizeof(words));
@@ -289,10 +289,10 @@ TEST(MemoryBankTest, ReadWordsFromWriteOnlyMemory) {
 }
 
 TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
-  auto bank = MemoryBank::Create(
-      MemoryBank::Options().SetMemPages(0, 16).SetMemWriteMask(0x0002));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(
+      MemoryPageRange::Max(), {.read_mask = 0xFFFF, .write_mask = 0x0002}));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
 
   lock.SetAddress(kMemoryBankPageSize - 2);
@@ -313,9 +313,9 @@ TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
 }
 
 TEST(MemoryBankTest, ReadWordsOverEndOfMemory) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   uint16_t words[4];
 
   std::memset(words, 0xFF, sizeof(words));
@@ -327,8 +327,8 @@ TEST(MemoryBankTest, ReadWordsOverEndOfMemory) {
 }
 
 TEST(MemoryBankTest, WriteWordsOverEndOfMemory) {
-  auto bank = MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
+  auto lock = bank.Lock();
   uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
 
   lock.SetAddress(kMemoryBankMaxSize - 2);
@@ -344,9 +344,10 @@ TEST(MemoryBankTest, WriteWordsOverEndOfMemory) {
 TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
   FakeMemoryMap memory_map;
   InitMemory(memory_map.GetMem());
-  auto bank = MemoryBank::Create(
-      MemoryBank::Options().SetMemPages(0, 16).SetMemoryMap(&memory_map));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig()
+                      .SetMemPages(MemoryPageRange::Max())
+                      .SetMemoryMap(&memory_map));
+  auto lock = bank.Lock();
   std::vector<uint16_t> words(kMemoryBankMaxSize);
   absl::Span<uint16_t> mapped_mem = memory_map.GetMem();
 
@@ -368,11 +369,12 @@ TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
 TEST(MemoryBankTest, ReadWordFromWriteOnlyMappedMemory) {
   FakeMemoryMap memory_map;
   AltInitMemory(memory_map.GetMem());
-  auto bank =
-      MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16).SetMemoryMap(
-          &memory_map, /*read_mask=*/0x0FF0, /*write_mask=*/0xFFFF));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig()
+                      .SetMemPages(MemoryPageRange::Max())
+                      .SetMemoryMap(&memory_map, {.read_mask = 0x0FF0,
+                                                  .write_mask = 0xFFFF}));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   int page = 0;
   for (; page < 4; ++page) {
     lock.SetAddress(page * kMemoryBankPageSize);
@@ -400,25 +402,26 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMappedMemory) {
 TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
   FakeMemoryMap memory_map;
   AltInitMemory(memory_map.GetMem());
-  auto bank =
-      MemoryBank::Create(MemoryBank::Options().SetMemPages(0, 16).SetMemoryMap(
-          &memory_map, /*read_mask=*/0xFFFF, /*write_mask=*/0x0FF0));
-  InitMemory(bank->GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank->Lock();
+  MemoryBank bank(MemoryBankConfig()
+                      .SetMemPages(MemoryPageRange::Max())
+                      .SetMemoryMap(&memory_map, {.read_mask = 0xFFFF,
+                                                  .write_mask = 0x0FF0}));
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.Lock();
   int page = 0;
   for (; page < 4; ++page) {
     lock.SetAddress(page * kMemoryBankPageSize);
     lock.StoreWord(0x1234);
     lock.SetAddress(page * kMemoryBankPageSize);
     EXPECT_EQ(lock.LoadWord(), GetAltInitWord(page, 0)) << "Page: " << page;
-    EXPECT_EQ(bank->GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
+    EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
         << "Page: " << page;
     lock.SetAddress((page + 1) * kMemoryBankPageSize - 1);
     lock.StoreWord(0x5678);
     lock.SetAddress((page + 1) * kMemoryBankPageSize - 1);
     EXPECT_EQ(lock.LoadWord(), GetAltInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
-    EXPECT_EQ(bank->GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
+    EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
         << "Page: " << page;
   }
   for (; page < 12; ++page) {
@@ -426,14 +429,14 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
     lock.StoreWord(0x1234);
     lock.SetAddress(page * kMemoryBankPageSize);
     EXPECT_EQ(lock.LoadWord(), 0x1234) << "Page: " << page;
-    EXPECT_EQ(bank->GetMem(page * kMemoryBankPageSize, 1)[0],
+    EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0],
               GetInitWord(page, 0))
         << "Page: " << page;
     lock.SetAddress((page + 1) * kMemoryBankPageSize - 1);
     lock.StoreWord(0x5678);
     lock.SetAddress((page + 1) * kMemoryBankPageSize - 1);
     EXPECT_EQ(lock.LoadWord(), 0x5678) << "Page: " << page;
-    EXPECT_EQ(bank->GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0],
+    EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0],
               GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
@@ -442,14 +445,14 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
     lock.StoreWord(0x1234);
     lock.SetAddress(page * kMemoryBankPageSize);
     EXPECT_EQ(lock.LoadWord(), GetAltInitWord(page, 0)) << "Page: " << page;
-    EXPECT_EQ(bank->GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
+    EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
         << "Page: " << page;
     lock.SetAddress((page + 1) * kMemoryBankPageSize - 1);
     lock.StoreWord(0x5678);
     lock.SetAddress((page + 1) * kMemoryBankPageSize - 1);
     EXPECT_EQ(lock.LoadWord(), GetAltInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
-    EXPECT_EQ(bank->GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
+    EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
         << "Page: " << page;
   }
 }

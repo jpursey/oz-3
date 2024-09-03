@@ -10,6 +10,10 @@
 
 namespace oz3 {
 
+class MemoryMap;
+class MemoryBank;
+class MemoryBankConfig;
+
 // Defines a number of cycles over a period of time or since "boot".
 using Cycles = int64_t;
 

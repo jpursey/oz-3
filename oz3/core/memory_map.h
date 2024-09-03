@@ -6,6 +6,8 @@
 #ifndef OZ3_CORE_MEMORY_MAP_H_
 #define OZ3_CORE_MEMORY_MAP_H_
 
+#include <cstring>
+
 #include "oz3/core/types.h"
 
 namespace oz3 {

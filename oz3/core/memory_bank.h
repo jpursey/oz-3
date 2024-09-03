@@ -13,31 +13,13 @@
 
 #include "absl/types/span.h"
 #include "glog/logging.h"
+#include "oz3/core/memory_bank_config.h"
 #include "oz3/core/memory_map.h"
 #include "oz3/core/types.h"
 
 namespace oz3 {
 
 class MemoryBank;
-
-//==============================================================================
-// Constants
-//==============================================================================
-
-// Total number of MemoryBank pages.
-inline constexpr int kMemoryBankPageCount = 16;
-
-// Size in 16-bit words of a MemoryBank page.
-inline constexpr int kMemoryBankPageSize = 4096;
-
-// Max size in 16-bit words of a MemoryBank.
-inline constexpr int kMemoryBankMaxSize =
-    kMemoryBankPageCount * kMemoryBankPageSize;
-static_assert(kMemoryBankMaxSize - 1 == std::numeric_limits<uint16_t>::max());
-
-// Cycle timing constants for MemoryBank access
-inline constexpr Cycles kMemoryBankSetAddressCycles = 1;
-inline constexpr Cycles kMemoryBankAccessWordCycles = 1;
 
 //==============================================================================
 // MemoryLock
@@ -122,87 +104,11 @@ class MemoryLock final {
 class MemoryBank final {
  public:
   //----------------------------------------------------------------------------
-  // Types
-  //----------------------------------------------------------------------------
-
-  // Options for creating a MemoryBank.
-  struct Options {
-    Options() = default;
-
-    // Sets the page range for the physically allocated memory backing this
-    // MemoryBank. The start of the range is clamped to [0,15]. The page count
-    // is clamped to [0,16-mem_page_start]. Any accesses outside of this range
-    // not backed by a Device or Coprocessor will implicitly act as though those
-    // pages are not in the read/write masks.
-    Options& SetMemPages(int page_start, int page_count) {
-      mem_page_start = std::clamp(page_start, 0, 15);
-      mem_page_count = std::clamp(page_count, 1, 16 - mem_page_start);
-      return *this;
-    }
-
-    // Restricts reading of physical memory to the specified mask. Each set bit
-    // indicates the corresponding page is readable. Any attempt to read memory
-    // outside of this range will return zero.
-    Options& SetMemReadMask(uint16_t read_mask) {
-      mem_read_mask = read_mask;
-      return *this;
-    }
-
-    // Restricts writing of physical memory to the specified mask. Each set bit
-    // indicates the corresponding page is writable. Any attempt to write memory
-    // outside of this range will do nothing. Set to zero to create ROM.
-    Options& SetMemWriteMask(uint16_t write_mask) {
-      mem_write_mask = write_mask;
-      return *this;
-    }
-
-    // Sets an optional memory map interface. This will be executed for any
-    // read/write attempt that is within the memory map read/write mask. If set,
-    // this is called before access to physical memory occurs. The MemoryMap
-    // must outlive the MemoryBank.
-    Options& SetMemoryMap(MemoryMap* in_map, uint16_t read_mask = 0xFFFF,
-                          uint16_t write_mask = 0xFFFF) {
-      map = in_map;
-      map_read_mask = read_mask;
-      map_write_mask = write_mask;
-      return *this;
-    }
-
-    // Page index referring to the beginning of physical memory. This
-    // must be in the range [0,15]. Set using `SetMemPages`.
-    int mem_page_start = 0;
-
-    // Number of pages of physical memory in this memory bank. This must be in
-    // the range [1,16-mem_page_start]. Set using `SetMemPages`.
-    int mem_page_count = 0;
-
-    // Page read mask for physical memory. Each set bit indicates the
-    // corresponding page is readable. Set using `SetMemReadMask`.
-    uint16_t mem_read_mask = 0xFFFF;
-
-    // Page write mask for physical memory. Each set bit indicates the
-    // corresponding page is writable. Set using `SetMemWriteMask`.
-    uint16_t mem_write_mask = 0xFFFF;
-
-    // Optional memoryMap interface for the MemoryBank. This must outlive the
-    // MemoryBank it is assigned to. Set using `SetMemoryMap`.
-    MemoryMap* map = nullptr;
-
-    // Page read mask for memory map if it is specified. Each set bit
-    // indicates the corresponding page is readable. Set using `SetMemoryMap`.
-    uint16_t map_read_mask = 0;
-
-    // Page write mask for memory map. Each set bit indicates the corresponding
-    // page is writable. Set using `SetMemoryMap`.
-    uint16_t map_write_mask = 0;
-  };
-
-  //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
   // Constructs a memory bank with the specified options.
-  static std::unique_ptr<MemoryBank> Create(Options options);
+  explicit MemoryBank(const MemoryBankConfig& config = {});
 
   // MemoryBank is move-only.
   MemoryBank(const MemoryBank&) = delete;
@@ -214,10 +120,10 @@ class MemoryBank final {
   //----------------------------------------------------------------------------
 
   // Returns the start of the memory bank in 16-bit words.
-  int GetMemoryStart() const { return mem_start_; }
+  int GetMemoryStart() const { return mem_range_.start; }
 
   // Returns the size of the memory bank in 16-bit words.
-  int GetMemorySize() const { return static_cast<int>(mem_.size()); }
+  int GetMemorySize() const { return mem_range_.count; }
 
   // Returns true if the memory is locked.
   bool IsLocked() const { return locked_ || remaining_cycles_ > 0; }
@@ -254,7 +160,15 @@ class MemoryBank final {
   //----------------------------------------------------------------------------
   friend class MemoryLock;
 
-  explicit MemoryBank(const Options& options);
+  // Address range for the memory bank.
+  struct MemoryRange {
+    MemoryRange() = default;
+    MemoryRange(const MemoryPageRange& range)
+        : start(range.start_page * kMemoryBankPageSize),
+          count(range.page_count * kMemoryBankPageSize) {}
+    int start = 0;
+    int count = 0;
+  };
 
   // Reads/write `size` bytes from current address, wrapping around address
   // space as needed.
@@ -270,16 +184,14 @@ class MemoryBank final {
   uint16_t ReadWord();
   void WriteWord(uint16_t value);
 
+  // Configuration set at initialization.
+  const MemoryRange mem_range_;
+  const MemoryPageMasks mem_masks_;
+  MemoryMap* const map_ = nullptr;
+  const MemoryPageMasks map_masks_;
+
   // Physical memory backing the memory bank.
   std::vector<uint16_t> mem_;
-
-  // Configuration set at initialization.
-  const int mem_start_ = 0;            // Start of memory in 16-bit words.
-  const uint16_t mem_read_mask_ = 0;   // Read mask for physical memory.
-  const uint16_t mem_write_mask_ = 0;  // Write mask for physical memory.
-  MemoryMap* const map_ = nullptr;     // Memory map interface.
-  const uint16_t map_read_mask_ = 0;   // Read mask for memory map.
-  const uint16_t map_write_mask_ = 0;  // Write mask for memory map.
 
   // True if the memory bank is currently locked (an active MemoryLock object
   // exists). Only one active (non-moved-from) MemoryLock can exist at any given
@@ -295,7 +207,7 @@ class MemoryBank final {
 };
 
 //==============================================================================
-// Inline implementation
+// MemoryLock inline
 //==============================================================================
 
 inline MemoryLock::MemoryLock(MemoryBank* bank) : bank_(bank) {
