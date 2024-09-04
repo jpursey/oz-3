@@ -5,6 +5,9 @@
 
 set(oz3_core_SOURCE
   component.cc component.h
+  cpu_core.cc cpu_core.h
+  cpu_core_config.cc cpu_core_config.h
+  execution_component.h
   memory_bank.cc memory_bank.h
   memory_bank_config.cc memory_bank_config.h
   memory_map.h

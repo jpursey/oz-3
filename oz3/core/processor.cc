@@ -18,7 +18,7 @@ Processor::Processor(const ProcessorConfig& config) {
 
 Processor::~Processor() = default;
 
-void Processor::AdvanceCycles(Cycles cycles) {
+void Processor::Execute(Cycles cycles) {
   cycles_ += cycles;
 }
 

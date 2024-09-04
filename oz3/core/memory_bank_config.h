@@ -18,6 +18,9 @@ namespace oz3 {
 // Constants
 //==============================================================================
 
+// The maximum number of memory banks that can managed by a single Processor.
+inline constexpr int kMaxMemoryBanks = 16;
+
 // Total number of MemoryBank pages.
 inline constexpr int kMemoryBankPageCount = 16;
 

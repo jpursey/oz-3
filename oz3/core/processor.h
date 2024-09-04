@@ -54,10 +54,10 @@ class Processor final {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Advances the processor by the specified number of cycles.
+  // Executes the processor for the specified number of cycles.
   //
-  // This simulates all components of the processor in sync.
-  void AdvanceCycles(Cycles cycles);
+  // This simulates all executable components of the processor in sync.
+  void Execute(Cycles cycles);
 
  private:
   //----------------------------------------------------------------------------

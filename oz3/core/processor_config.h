@@ -10,14 +10,9 @@
 
 #include "absl/types/span.h"
 #include "oz3/core/memory_bank_config.h"
+#include "oz3/core/cpu_core_config.h"
 
 namespace oz3 {
-
-//==============================================================================
-// Constants
-//==============================================================================
-
-inline constexpr int kMaxMemoryBanks = 16;
 
 //==============================================================================
 // ProcessorConfig
@@ -37,6 +32,9 @@ class ProcessorConfig {
   ProcessorConfig& SetMemoryBankConfig(int bank_index,
                                        const MemoryBankConfig& config);
 
+  // Sets the number of cores in the processor.
+  ProcessorConfig& SetNumCores(int num_cores);
+
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
@@ -51,6 +49,7 @@ class ProcessorConfig {
   //----------------------------------------------------------------------------
 
   std::vector<MemoryBankConfig> banks_;
+  int num_cores_ = 0;
 };
 
 }  // namespace oz3
