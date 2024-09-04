@@ -22,12 +22,7 @@ MemoryBank::MemoryBank(const MemoryBankConfig& config)
   mem_.resize(mem_range_.count);
 }
 
-MemoryBank::~MemoryBank() { CHECK(!locked_); }
-
-MemoryLock MemoryBank::Lock() {
-  CHECK(!IsLocked());
-  return MemoryLock(this);
-}
+MemoryBank::~MemoryBank() = default;
 
 void MemoryBank::AdvanceCycles(Cycles cycles) {
   remaining_cycles_ = std::max<Cycles>(remaining_cycles_ - cycles, 0);

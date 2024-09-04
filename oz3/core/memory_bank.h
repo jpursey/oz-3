@@ -13,82 +13,12 @@
 
 #include "absl/types/span.h"
 #include "glog/logging.h"
+#include "oz3/core/component.h"
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/memory_map.h"
 #include "oz3/core/types.h"
 
 namespace oz3 {
-
-class MemoryBank;
-
-//==============================================================================
-// MemoryLock
-//==============================================================================
-
-// The MemoryLock class provides direct access to memory in the MemoryBank.
-class MemoryLock final {
- public:
-  //----------------------------------------------------------------------------
-  // Construction / Destruction
-  //----------------------------------------------------------------------------
-  MemoryLock(const MemoryLock&) = delete;
-  MemoryLock(MemoryLock&& other) noexcept
-      : bank_(std::exchange(other.bank_, nullptr)) {}
-  MemoryLock& operator=(const MemoryLock&) = delete;
-  MemoryLock& operator=(MemoryLock&& other) noexcept {
-    if (&other != this) {
-      bank_ = std::exchange(other.bank_, nullptr);
-    }
-    return *this;
-  }
-  ~MemoryLock();
-
-  //----------------------------------------------------------------------------
-  // Operations
-  // ----------------------------------------------------------------------------
-
-  // Returns the underlying memory bank for this lock. If this is null,
-  // MemoryLock does not reference a MemoryBank and cannot be accessed.
-  MemoryBank* GetMemoryBank() { return bank_; }
-
-  // The current address on the address bus for the MemoryBank. All regular
-  // reads and writes through a MemoryLock update based on this address.
-  uint16_t GetAddress() const;
-
-  // Sets a new read/write address for the MemoryBank. This takes
-  // kMemoryBankSetAddressCycles to execute.
-  void SetAddress(uint16_t address);
-
-  // Reads/Writes the specified buffer of words from/to the memory bank starting
-  // at current address. This will automatically "wrap" at the end of address
-  // space back to address zero. The address is automatically incremented (with
-  // wrapping) by `size`. This takes `size * kMemoryBankAccessWordCycles
-  // virtual cycles to execute.
-  void ReadWords(uint16_t* data, int size);
-  void WriteWords(const uint16_t* data, int size);
-
-  // Returns the word at the current address and increments the address. This
-  // takes kMemoryBankAccessWordCycles to execute.
-  uint16_t LoadWord();
-
-  // Writes the word to the current address and increments the address. This
-  // takes kMemoryBankAccessWordCycles to execute.
-  void StoreWord(uint16_t value);
-
-  // Decrements address and writes the word at the new address. This takes
-  // kMemoryBankAccessWordCycles to execute.
-  void PushWord(uint16_t value);
-
- private:
-  //----------------------------------------------------------------------------
-  // Implementation
-  //----------------------------------------------------------------------------
-  friend class MemoryBank;
-
-  MemoryLock(MemoryBank* bank);
-
-  MemoryBank* bank_;
-};
 
 //==============================================================================
 // MemoryBank
@@ -101,7 +31,7 @@ class MemoryLock final {
 // 16-bit words of storage. Each page has separate read/write permissions, and
 // may be backed by physical memory and/or a memory map callback (typical use is
 // for a Coprocessor or Device).
-class MemoryBank final {
+class MemoryBank final : public Component {
  public:
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -116,6 +46,38 @@ class MemoryBank final {
   ~MemoryBank();
 
   //----------------------------------------------------------------------------
+  // Lock-required Operations
+  //----------------------------------------------------------------------------
+
+  // The current address on the address bus for the MemoryBank. All regular
+  // reads and writes through a MemoryLock update based on this address.
+  uint16_t GetAddress(const ComponentLock& lock) const;
+
+  // Sets a new read/write address for the MemoryBank. This takes
+  // kMemoryBankSetAddressCycles to execute.
+  void SetAddress(const ComponentLock& lock, uint16_t address);
+
+  // Reads/Writes the specified buffer of words from/to the memory bank starting
+  // at current address. This will automatically "wrap" at the end of address
+  // space back to address zero. The address is automatically incremented (with
+  // wrapping) by `size`. This takes `size * kMemoryBankAccessWordCycles
+  // virtual cycles to execute.
+  void ReadWords(const ComponentLock& lock, uint16_t* data, int size);
+  void WriteWords(const ComponentLock& lock, const uint16_t* data, int size);
+
+  // Returns the word at the current address and increments the address. This
+  // takes kMemoryBankAccessWordCycles to execute.
+  uint16_t LoadWord(const ComponentLock& lock);
+
+  // Writes the word to the current address and increments the address. This
+  // takes kMemoryBankAccessWordCycles to execute.
+  void StoreWord(const ComponentLock& lock, uint16_t value);
+
+  // Decrements address and writes the word at the new address. This takes
+  // kMemoryBankAccessWordCycles to execute.
+  void PushWord(const ComponentLock& lock, uint16_t value);
+
+  //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
 
@@ -124,19 +86,6 @@ class MemoryBank final {
 
   // Returns the size of the memory bank in 16-bit words.
   int GetMemorySize() const { return mem_range_.count; }
-
-  // Returns true if the memory is locked.
-  bool IsLocked() const { return locked_ || remaining_cycles_ > 0; }
-
-  // Returns the size of the memory bank in 16-bit words.
-  // Locks memory, returning an exclusive lock object which provides regular
-  // simulated access to the memory.
-  //
-  // When the lock is destroyed, the MemoryBank may be accessed again. All
-  // actual memory access is done the lock object.
-  //
-  // It is invalid to call this if memory is already locked.
-  MemoryLock Lock();
 
   // Returns the number of remaining cycles before the memory bank is available.
   Cycles GetRemainingCycles() const { return remaining_cycles_; }
@@ -158,7 +107,6 @@ class MemoryBank final {
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
-  friend class MemoryLock;
 
   // Address range for the memory bank.
   struct MemoryRange {
@@ -193,11 +141,6 @@ class MemoryBank final {
   // Physical memory backing the memory bank.
   std::vector<uint16_t> mem_;
 
-  // True if the memory bank is currently locked (an active MemoryLock object
-  // exists). Only one active (non-moved-from) MemoryLock can exist at any given
-  // time.
-  bool locked_ = false;
-
   // Value of address bus for the MemoryBank.
   uint16_t address_ = 0;
 
@@ -207,59 +150,60 @@ class MemoryBank final {
 };
 
 //==============================================================================
-// MemoryLock inline
+// MemoryBank inlines
 //==============================================================================
 
-inline MemoryLock::MemoryLock(MemoryBank* bank) : bank_(bank) {
-  DCHECK(!bank_->locked_);
-  bank_->locked_ = true;
+inline uint16_t MemoryBank::GetAddress(const ComponentLock& lock) const {
+  DCHECK(lock.IsLocked(*this));
+  return address_;
 }
 
-inline MemoryLock::~MemoryLock() {
-  if (bank_ != nullptr) {
-    bank_->locked_ = false;
-  }
+inline void MemoryBank::SetAddress(const ComponentLock& lock,
+                                   uint16_t address) {
+  DCHECK(lock.IsLocked(*this));
+  address_ = address;
+  remaining_cycles_ += kMemoryBankSetAddressCycles;
 }
 
-inline uint16_t MemoryLock::GetAddress() const { return bank_->address_; }
-
-inline void MemoryLock::SetAddress(uint16_t address) {
-  bank_->address_ = address;
-  bank_->remaining_cycles_ += kMemoryBankSetAddressCycles;
-}
-
-inline uint16_t MemoryLock::LoadWord() {
-  const uint16_t value = bank_->ReadWord();
-  bank_->address_ += 1;
-  bank_->remaining_cycles_ += kMemoryBankAccessWordCycles;
+inline uint16_t MemoryBank::LoadWord(const ComponentLock& lock) {
+  DCHECK(lock.IsLocked(*this));
+  const uint16_t value = ReadWord();
+  address_ += 1;
+  remaining_cycles_ += kMemoryBankAccessWordCycles;
   return value;
 }
 
-inline void MemoryLock::StoreWord(uint16_t value) {
-  bank_->WriteWord(value);
-  bank_->address_ += 1;
-  bank_->remaining_cycles_ += kMemoryBankAccessWordCycles;
+inline void MemoryBank::StoreWord(const ComponentLock& lock, uint16_t value) {
+  DCHECK(lock.IsLocked(*this));
+  WriteWord(value);
+  address_ += 1;
+  remaining_cycles_ += kMemoryBankAccessWordCycles;
 }
 
-inline void MemoryLock::PushWord(uint16_t value) {
-  bank_->address_ -= 1;
-  bank_->WriteWord(value);
-  bank_->remaining_cycles_ += kMemoryBankAccessWordCycles;
+inline void MemoryBank::PushWord(const ComponentLock& lock, uint16_t value) {
+  DCHECK(lock.IsLocked(*this));
+  address_ -= 1;
+  WriteWord(value);
+  remaining_cycles_ += kMemoryBankAccessWordCycles;
 }
 
-inline void MemoryLock::ReadWords(uint16_t* data, int size) {
+inline void MemoryBank::ReadWords(const ComponentLock& lock, uint16_t* data,
+                                  int size) {
+  DCHECK(lock.IsLocked(*this));
   DCHECK(size >= 0 && size <= kMemoryBankMaxSize);
-  bank_->ReadWrap(data, size);
-  bank_->address_ += size;
-  bank_->remaining_cycles_ += size * kMemoryBankAccessWordCycles;
+  ReadWrap(data, size);
+  address_ += size;
+  remaining_cycles_ += size * kMemoryBankAccessWordCycles;
 }
 
-inline void MemoryLock::WriteWords(const uint16_t* data, int size) {
+inline void MemoryBank::WriteWords(const ComponentLock& lock,
+                                   const uint16_t* data, int size) {
+  DCHECK(lock.IsLocked(*this));
   DCHECK(size >= 0 && size <= kMemoryBankMaxSize);
   DCHECK(data != nullptr);
-  bank_->WriteWrap(data, size);
-  bank_->address_ += size;
-  bank_->remaining_cycles_ += size * kMemoryBankAccessWordCycles;
+  WriteWrap(data, size);
+  address_ += size;
+  remaining_cycles_ += size * kMemoryBankAccessWordCycles;
 }
 
 }  // namespace oz3
