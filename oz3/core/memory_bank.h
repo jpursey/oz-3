@@ -62,8 +62,8 @@ class MemoryBank final : public Component {
   // space back to address zero. The address is automatically incremented (with
   // wrapping) by `size`. This takes `size * kMemoryBankAccessWordCycles
   // virtual cycles to execute.
-  void ReadWords(const ComponentLock& lock, uint16_t* data, int size);
-  void WriteWords(const ComponentLock& lock, const uint16_t* data, int size);
+  void ReadWords(const ComponentLock& lock, absl::Span<uint16_t> data);
+  void WriteWords(const ComponentLock& lock, absl::Span<const uint16_t> data);
 
   // Returns the word at the current address and increments the address. This
   // takes kMemoryBankAccessWordCycles to execute.
@@ -187,21 +187,22 @@ inline void MemoryBank::PushWord(const ComponentLock& lock, uint16_t value) {
   remaining_cycles_ += kMemoryBankAccessWordCycles;
 }
 
-inline void MemoryBank::ReadWords(const ComponentLock& lock, uint16_t* data,
-                                  int size) {
+inline void MemoryBank::ReadWords(const ComponentLock& lock,
+                                  absl::Span<uint16_t> data) {
   DCHECK(lock.IsLocked(*this));
-  DCHECK(size >= 0 && size <= kMemoryBankMaxSize);
-  ReadWrap(data, size);
+  DCHECK(data.size() <= kMemoryBankMaxSize);
+  const int size = static_cast<int>(data.size());
+  ReadWrap(data.data(), size);
   address_ += size;
   remaining_cycles_ += size * kMemoryBankAccessWordCycles;
 }
 
 inline void MemoryBank::WriteWords(const ComponentLock& lock,
-                                   const uint16_t* data, int size) {
+                                   absl::Span<const uint16_t> data) {
   DCHECK(lock.IsLocked(*this));
-  DCHECK(size >= 0 && size <= kMemoryBankMaxSize);
-  DCHECK(data != nullptr);
-  WriteWrap(data, size);
+  DCHECK(data.size() <= kMemoryBankMaxSize);
+  const int size = static_cast<int>(data.size());
+  WriteWrap(data.data(), size);
   address_ += size;
   remaining_cycles_ += size * kMemoryBankAccessWordCycles;
 }

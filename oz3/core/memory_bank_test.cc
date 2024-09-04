@@ -166,7 +166,7 @@ TEST(MemoryBankTest, ReadWordsAtAddress) {
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 999);
   uint16_t words[4];
-  bank.ReadWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.ReadWords(*lock, words);
   EXPECT_THAT(words, ElementsAre(0, 0x5678, 0x1234, 0));
   EXPECT_EQ(bank.GetRemainingCycles(),
             kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 4);
@@ -177,7 +177,7 @@ TEST(MemoryBankTest, WriteWordsAtAddress) {
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 1000);
   uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
-  bank.WriteWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.WriteWords(*lock, words);
   EXPECT_EQ(bank.GetMem(1000, 1)[0], 0x5678);
   EXPECT_EQ(bank.GetMem(1001, 1)[0], 0x1234);
   EXPECT_EQ(bank.GetMem(1002, 1)[0], 0x9ABC);
@@ -190,7 +190,7 @@ TEST(MemoryBankTest, AdvanceCycles) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   auto lock = bank.Lock();
   uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
-  bank.WriteWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.WriteWords(*lock, words);
   EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankAccessWordCycles * 4);
   bank.AdvanceCycles(1);
   EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankAccessWordCycles * 4 - 1);
@@ -276,12 +276,12 @@ TEST(MemoryBankTest, ReadWordsFromWriteOnlyMemory) {
 
   std::memset(words, 0xFF, sizeof(words));
   bank.SetAddress(*lock, kMemoryBankPageSize - 2);
-  bank.ReadWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.ReadWords(*lock, words);
   EXPECT_THAT(words, ElementsAre(0, 0, GetInitWord(1, 0), GetInitWord(1, 1)));
 
   std::memset(words, 0xFF, sizeof(words));
   bank.SetAddress(*lock, kMemoryBankPageSize * 2 - 2);
-  bank.ReadWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.ReadWords(*lock, words);
   EXPECT_THAT(words,
               ElementsAre(GetInitWord(1, kMemoryBankPageSize - 2),
                           GetInitWord(1, kMemoryBankPageSize - 1), 0, 0));
@@ -295,7 +295,7 @@ TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
   uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
 
   bank.SetAddress(*lock, kMemoryBankPageSize - 2);
-  bank.WriteWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.WriteWords(*lock, words);
   bank.SetAddress(*lock, kMemoryBankPageSize - 2);
   EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(0, kMemoryBankPageSize - 2));
   EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(0, kMemoryBankPageSize - 1));
@@ -303,7 +303,7 @@ TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
   EXPECT_EQ(bank.LoadWord(*lock), 0xDEF0);
 
   bank.SetAddress(*lock, kMemoryBankPageSize * 2 - 2);
-  bank.WriteWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.WriteWords(*lock, words);
   bank.SetAddress(*lock, kMemoryBankPageSize * 2 - 2);
   EXPECT_EQ(bank.LoadWord(*lock), 0x1234);
   EXPECT_EQ(bank.LoadWord(*lock), 0x5678);
@@ -319,7 +319,7 @@ TEST(MemoryBankTest, ReadWordsOverEndOfMemory) {
 
   std::memset(words, 0xFF, sizeof(words));
   bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
-  bank.ReadWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.ReadWords(*lock, words);
   EXPECT_THAT(words, ElementsAre(GetInitWord(15, kMemoryBankPageSize - 2),
                                  GetInitWord(15, kMemoryBankPageSize - 1),
                                  GetInitWord(0, 0), GetInitWord(0, 1)));
@@ -331,7 +331,7 @@ TEST(MemoryBankTest, WriteWordsOverEndOfMemory) {
   uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
 
   bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
-  bank.WriteWords(*lock, words, ABSL_ARRAYSIZE(words));
+  bank.WriteWords(*lock, words);
   bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
   EXPECT_EQ(bank.LoadWord(*lock), 0x1234);
   EXPECT_EQ(bank.LoadWord(*lock), 0x5678);
@@ -353,7 +353,7 @@ TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
   int half_size = kMemoryBankMaxSize / 2;
   std::memset(words.data(), 0xFF, kMemoryBankMaxSize * sizeof(uint16_t));
   bank.SetAddress(*lock, half_size);
-  bank.ReadWords(*lock, words.data(), kMemoryBankMaxSize);
+  bank.ReadWords(*lock, absl::MakeSpan(words));
   EXPECT_THAT(absl::MakeSpan(words.data(), half_size),
               ElementsAreArray(
                   absl::MakeSpan(mapped_mem.data() + half_size, half_size)));
@@ -361,7 +361,7 @@ TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
               ElementsAreArray(absl::MakeSpan(mapped_mem.data(), half_size)));
 
   std::memset(words.data(), 0xFF, kMemoryBankMaxSize * sizeof(uint16_t));
-  bank.WriteWords(*lock, words.data(), kMemoryBankMaxSize);
+  bank.WriteWords(*lock, words);
   EXPECT_THAT(mapped_mem, Each(0xFFFF));
 }
 
