@@ -10,6 +10,8 @@
 
 namespace oz3 {
 
+class Component;
+class ComponentLock;
 class MemoryMap;
 class MemoryBank;
 class MemoryBankConfig;
