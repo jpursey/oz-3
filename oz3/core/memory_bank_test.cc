@@ -71,7 +71,6 @@ TEST(MemoryBankTest, CreateWithDefaultConfig) {
   EXPECT_EQ(bank.GetMemoryStart(), 0);
   EXPECT_EQ(bank.GetMemorySize(), 0);
   EXPECT_FALSE(bank.IsLocked());
-  EXPECT_EQ(bank.GetRemainingCycles(), 0);
   EXPECT_EQ(bank.GetMem(0, 1).size(), 0);
 }
 
@@ -122,10 +121,8 @@ TEST(MemoryBankTest, SetAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   auto lock = bank.Lock();
   EXPECT_EQ(bank.GetAddress(*lock), 0);
-  EXPECT_EQ(bank.GetRemainingCycles(), 0);
-  bank.SetAddress(*lock, 1000);
+  EXPECT_EQ(bank.SetAddress(*lock, 1000), kMemoryBankSetAddressCycles);
   EXPECT_EQ(bank.GetAddress(*lock), 1000);
-  EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankSetAddressCycles);
 }
 
 TEST(MemoryBankTest, LoadWordAtAddress) {
@@ -133,30 +130,26 @@ TEST(MemoryBankTest, LoadWordAtAddress) {
   bank.GetMem(1000, 1)[0] = 0x5678;
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 1000);
-  EXPECT_EQ(bank.LoadWord(*lock), 0x5678);
-  EXPECT_EQ(bank.GetRemainingCycles(),
-            kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles);
+  uint16_t value;
+  EXPECT_EQ(bank.LoadWord(*lock, value), kMemoryBankAccessWordCycles);
+  EXPECT_EQ(value, 0x5678);
 }
 
 TEST(MemoryBankTest, StoreWordAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 1000);
-  bank.StoreWord(*lock, 0x5678);
+  EXPECT_EQ(bank.StoreWord(*lock, 0x5678), kMemoryBankAccessWordCycles);
   EXPECT_EQ(bank.GetAddress(*lock), 1001);
   EXPECT_EQ(bank.GetMem(1000, 1)[0], 0x5678);
-  EXPECT_EQ(bank.GetRemainingCycles(),
-            kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles);
 }
 
 TEST(MemoryBankTest, PushWordAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 1000);
-  bank.PushWord(*lock, 0x5678);
+  EXPECT_EQ(bank.PushWord(*lock, 0x5678), kMemoryBankAccessWordCycles);
   EXPECT_EQ(bank.GetMem(999, 1)[0], 0x5678);
-  EXPECT_EQ(bank.GetRemainingCycles(),
-            kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles);
 }
 
 TEST(MemoryBankTest, ReadWordsAtAddress) {
@@ -166,10 +159,9 @@ TEST(MemoryBankTest, ReadWordsAtAddress) {
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 999);
   uint16_t words[4];
-  bank.ReadWords(*lock, words);
+  EXPECT_EQ(bank.ReadWords(*lock, words),
+            ABSL_ARRAYSIZE(words) * kMemoryBankAccessWordCycles);
   EXPECT_THAT(words, ElementsAre(0, 0x5678, 0x1234, 0));
-  EXPECT_EQ(bank.GetRemainingCycles(),
-            kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 4);
 }
 
 TEST(MemoryBankTest, WriteWordsAtAddress) {
@@ -177,27 +169,12 @@ TEST(MemoryBankTest, WriteWordsAtAddress) {
   auto lock = bank.Lock();
   bank.SetAddress(*lock, 1000);
   uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
-  bank.WriteWords(*lock, words);
+  EXPECT_EQ(bank.WriteWords(*lock, words),
+            ABSL_ARRAYSIZE(words) * kMemoryBankAccessWordCycles);
   EXPECT_EQ(bank.GetMem(1000, 1)[0], 0x5678);
   EXPECT_EQ(bank.GetMem(1001, 1)[0], 0x1234);
   EXPECT_EQ(bank.GetMem(1002, 1)[0], 0x9ABC);
   EXPECT_EQ(bank.GetMem(1003, 1)[0], 0xDEF0);
-  EXPECT_EQ(bank.GetRemainingCycles(),
-            kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 4);
-}
-
-TEST(MemoryBankTest, AdvanceCycles) {
-  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
-  auto lock = bank.Lock();
-  uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
-  bank.WriteWords(*lock, words);
-  EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankAccessWordCycles * 4);
-  bank.AdvanceCycles(1);
-  EXPECT_EQ(bank.GetRemainingCycles(), kMemoryBankAccessWordCycles * 4 - 1);
-  bank.AdvanceCycles(kMemoryBankAccessWordCycles * 4 - 1);
-  EXPECT_EQ(bank.GetRemainingCycles(), 0);
-  bank.AdvanceCycles(1);
-  EXPECT_EQ(bank.GetRemainingCycles(), 0);
 }
 
 TEST(MemoryBankTest, ReadWordFromWriteOnlyMemory) {
@@ -206,24 +183,31 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMemory) {
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
   auto lock = bank.Lock();
   int page = 0;
+  uint16_t value;
   for (; page < 4; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), 0) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), 0) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0) << "Page: " << page;
   }
   for (; page < 12; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
   for (; page < 16; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), 0) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), 0) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0) << "Page: " << page;
   }
 }
 
@@ -233,36 +217,43 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMemory) {
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
   auto lock = bank.Lock();
   int page = 0;
+  uint16_t value;
   for (; page < 4; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.StoreWord(*lock, 0x1234);
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.StoreWord(*lock, 0x5678);
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
   for (; page < 12; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.StoreWord(*lock, 0x1234);
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), 0x1234) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0x1234) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.StoreWord(*lock, 0x5678);
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), 0x5678) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0x5678) << "Page: " << page;
   }
   for (; page < 16; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.StoreWord(*lock, 0x1234);
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.StoreWord(*lock, 0x5678);
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
 }
@@ -297,18 +288,27 @@ TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
   bank.SetAddress(*lock, kMemoryBankPageSize - 2);
   bank.WriteWords(*lock, words);
   bank.SetAddress(*lock, kMemoryBankPageSize - 2);
-  EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(0, kMemoryBankPageSize - 2));
-  EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(0, kMemoryBankPageSize - 1));
-  EXPECT_EQ(bank.LoadWord(*lock), 0x9ABC);
-  EXPECT_EQ(bank.LoadWord(*lock), 0xDEF0);
+  uint16_t value;
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, GetInitWord(0, kMemoryBankPageSize - 2));
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, GetInitWord(0, kMemoryBankPageSize - 1));
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x9ABC);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0xDEF0);
 
   bank.SetAddress(*lock, kMemoryBankPageSize * 2 - 2);
   bank.WriteWords(*lock, words);
   bank.SetAddress(*lock, kMemoryBankPageSize * 2 - 2);
-  EXPECT_EQ(bank.LoadWord(*lock), 0x1234);
-  EXPECT_EQ(bank.LoadWord(*lock), 0x5678);
-  EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(2, 0));
-  EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(2, 1));
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x1234);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x5678);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, GetInitWord(2, 0));
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, GetInitWord(2, 1));
 }
 
 TEST(MemoryBankTest, ReadWordsOverEndOfMemory) {
@@ -333,11 +333,16 @@ TEST(MemoryBankTest, WriteWordsOverEndOfMemory) {
   bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
   bank.WriteWords(*lock, words);
   bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
-  EXPECT_EQ(bank.LoadWord(*lock), 0x1234);
-  EXPECT_EQ(bank.LoadWord(*lock), 0x5678);
+  uint16_t value;
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x1234);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x5678);
   EXPECT_EQ(bank.GetAddress(*lock), 0);  // Address should wrap around
-  EXPECT_EQ(bank.LoadWord(*lock), 0x9ABC);
-  EXPECT_EQ(bank.LoadWord(*lock), 0xDEF0);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x9ABC);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0xDEF0);
 }
 
 TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
@@ -375,25 +380,32 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMappedMemory) {
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
   auto lock = bank.Lock();
   int page = 0;
+  uint16_t value;
   for (; page < 4; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
   for (; page < 12; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetAltInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetAltInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetAltInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetAltInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
   for (; page < 16; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
 }
@@ -408,17 +420,20 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
   auto lock = bank.Lock();
   int page = 0;
+  uint16_t value;
   for (; page < 4; ++page) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.StoreWord(*lock, 0x1234);
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetAltInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetAltInitWord(page, 0)) << "Page: " << page;
     EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
         << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.StoreWord(*lock, 0x5678);
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetAltInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetAltInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
     EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
         << "Page: " << page;
@@ -427,14 +442,16 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.StoreWord(*lock, 0x1234);
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), 0x1234) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0x1234) << "Page: " << page;
     EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0],
               GetInitWord(page, 0))
         << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.StoreWord(*lock, 0x5678);
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), 0x5678) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, 0x5678) << "Page: " << page;
     EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0],
               GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
@@ -443,13 +460,15 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.StoreWord(*lock, 0x1234);
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    EXPECT_EQ(bank.LoadWord(*lock), GetAltInitWord(page, 0)) << "Page: " << page;
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetAltInitWord(page, 0)) << "Page: " << page;
     EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
         << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.StoreWord(*lock, 0x5678);
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    EXPECT_EQ(bank.LoadWord(*lock), GetAltInitWord(page, kMemoryBankPageSize - 1))
+    bank.LoadWord(*lock, value);
+    EXPECT_EQ(value, GetAltInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
     EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
         << "Page: " << page;

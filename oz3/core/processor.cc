@@ -19,9 +19,6 @@ Processor::Processor(const ProcessorConfig& config) {
 Processor::~Processor() = default;
 
 void Processor::AdvanceCycles(Cycles cycles) {
-  for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    banks_[i]->AdvanceCycles(cycles);
-  }
   cycles_ += cycles;
 }
 

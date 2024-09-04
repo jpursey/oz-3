@@ -24,10 +24,6 @@ MemoryBank::MemoryBank(const MemoryBankConfig& config)
 
 MemoryBank::~MemoryBank() = default;
 
-void MemoryBank::AdvanceCycles(Cycles cycles) {
-  remaining_cycles_ = std::max<Cycles>(remaining_cycles_ - cycles, 0);
-}
-
 absl::Span<uint16_t> MemoryBank::GetMem(int address, int size) {
   if (address < mem_range_.start ||
       address + size > mem_range_.start + mem_range_.count) {

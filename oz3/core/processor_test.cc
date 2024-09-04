@@ -37,19 +37,6 @@ TEST(ProcessorTest, AdvanceCycles) {
     bank.StoreWord(*lock, 0x1234);
     bank.StoreWord(*lock, 0x5678);
   }
-  const Cycles expected_cycles =
-      kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
-  for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    EXPECT_EQ(processor.GetMemory(i).GetRemainingCycles(), expected_cycles);
-  }
-  processor.AdvanceCycles(2);
-  for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    EXPECT_EQ(processor.GetMemory(i).GetRemainingCycles(), expected_cycles - 2);
-  }
-  processor.AdvanceCycles(expected_cycles);
-  for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    EXPECT_EQ(processor.GetMemory(i).GetRemainingCycles(), 0);
-  }
 }
 
 }  // namespace
