@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "absl/types/span.h"
-#include "oz3/core/memory_bank_config.h"
 #include "oz3/core/cpu_core_config.h"
+#include "oz3/core/memory_bank_config.h"
 
 namespace oz3 {
 
@@ -29,11 +29,10 @@ class ProcessorConfig {
   ProcessorConfig();
 
   // Sets a specific MemoryBank configuration for a given bank index.
-  ProcessorConfig& SetMemoryBankConfig(int bank_index,
-                                       const MemoryBankConfig& config);
+  ProcessorConfig& SetMemoryBank(int bank_index, MemoryBankConfig config);
 
   // Sets the number of cores in the processor.
-  ProcessorConfig& SetNumCores(int num_cores);
+  ProcessorConfig& AddCpuCore(CpuCoreConfig config);
 
   //----------------------------------------------------------------------------
   // Accessors
@@ -43,13 +42,15 @@ class ProcessorConfig {
     return banks_;
   }
 
+  absl::Span<const CpuCoreConfig> GetCpuCoreConfigs() const { return cores_; }
+
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
 
   std::vector<MemoryBankConfig> banks_;
-  int num_cores_ = 0;
+  std::vector<CpuCoreConfig> cores_;
 };
 
 }  // namespace oz3

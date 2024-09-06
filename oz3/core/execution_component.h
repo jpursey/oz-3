@@ -3,6 +3,9 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#ifndef OZ3_CORE_EXECUTION_COMPONENT_H_
+#define OZ3_CORE_EXECUTION_COMPONENT_H_
+
 #include "oz3/core/component.h"
 #include "oz3/core/types.h"
 
@@ -78,3 +81,5 @@ class ExecutionComponent : public Component {
 };
 
 }  // namespace oz3
+
+#endif  // OZ3_CORE_EXECUTION_COMPONENT_H_

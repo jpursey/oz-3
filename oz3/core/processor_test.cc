@@ -18,25 +18,26 @@ TEST(ProcessorTest, CreateDefaultProcessor) {
     MemoryBank& bank = processor.GetMemory(i);
     EXPECT_EQ(bank.GetMemorySize(), 0);
   }
+  EXPECT_EQ(processor.GetNumCores(), 0);
 }
 
 TEST(ProcessorTest, CreateProcessorWithMemoryBanks) {
-  Processor processor(ProcessorConfig().SetMemoryBankConfig(
+  Processor processor(ProcessorConfig().SetMemoryBank(
       0, MemoryBankConfig().SetMemPages(MemoryPageRange::Max())));
   MemoryBank& bank = processor.GetMemory(0);
   EXPECT_EQ(bank.GetMemorySize(), kMemoryBankMaxSize);
 }
 
-TEST(ProcessorTest, AdvanceCycles) {
+TEST(ProcessorTest, CreateProcessorWithCpuCores) {
+  Processor processor(ProcessorConfig().AddCpuCore(CpuCoreConfig()));
+  EXPECT_EQ(processor.GetNumCores(), 1);
+}
+
+TEST(ProcessorTest, Execute) {
   ProcessorConfig config;
   Processor processor(config);
-  for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    MemoryBank& bank = processor.GetMemory(i);
-    auto lock = bank.Lock();
-    bank.SetAddress(*lock, 1000);
-    bank.StoreWord(*lock, 0x1234);
-    bank.StoreWord(*lock, 0x5678);
-  }
+  processor.Execute(10);
+  EXPECT_EQ(processor.GetCycles(), 10);
 }
 
 }  // namespace

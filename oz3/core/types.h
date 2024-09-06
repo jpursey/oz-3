@@ -12,9 +12,13 @@ namespace oz3 {
 
 class Component;
 class ComponentLock;
+class CpuCore;
+class CpuCoreConfig;
 class MemoryMap;
 class MemoryBank;
 class MemoryBankConfig;
+class Processor;
+class ProcessorConfig;
 
 // Defines a number of cycles over a period of time or since "boot".
 using Cycles = int64_t;

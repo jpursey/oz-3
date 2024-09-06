@@ -3,6 +3,9 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#ifndef OZ3_CORE_CPU_CORE_CONFIG_H_
+#define OZ3_CORE_CPU_CORE_CONFIG_H_
+
 namespace oz3 {
 
 //==============================================================================
@@ -60,3 +63,5 @@ class CpuCoreConfig {
 };
 
 }  // namespace oz3
+
+#endif  // OZ3_CORE_CPU_CORE_CONFIG_H_

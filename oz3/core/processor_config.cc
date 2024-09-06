@@ -5,16 +5,24 @@
 
 #include "oz3/core/processor_config.h"
 
+#include <utility>
+
 #include "glog/logging.h"
 
 namespace oz3 {
 
 ProcessorConfig::ProcessorConfig() : banks_(kMaxMemoryBanks) {}
 
-ProcessorConfig& ProcessorConfig::SetMemoryBankConfig(
-    int bank_index, const MemoryBankConfig& config) {
+ProcessorConfig& ProcessorConfig::SetMemoryBank(int bank_index,
+                                                MemoryBankConfig config) {
   DCHECK(bank_index >= 0 && bank_index < kMaxMemoryBanks);
   banks_[bank_index] = std::move(config);
+  return *this;
+}
+
+ProcessorConfig& ProcessorConfig::AddCpuCore(CpuCoreConfig config) {
+  DCHECK(cores_.size() < kMaxCores);
+  cores_.push_back(std::move(config));
   return *this;
 }
 

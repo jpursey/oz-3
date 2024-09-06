@@ -47,6 +47,13 @@ class Processor final {
     return *banks_[bank_index];
   }
 
+  // Returns the number of cores in the processor.
+  int GetNumCores() const { return num_cores_; }
+
+  // Returns the core at the specified index.
+  CpuCore& GetCore(int core_index) { return *cores_[core_index]; }
+  const CpuCore& GetCore(int core_index) const { return *cores_[core_index]; }
+
   // Returns the number of cycles that have been executed.
   Cycles GetCycles() const { return cycles_; }
 
@@ -65,6 +72,8 @@ class Processor final {
   //----------------------------------------------------------------------------
 
   gb::Array<std::unique_ptr<MemoryBank>, kMaxMemoryBanks> banks_;
+  gb::Array<std::unique_ptr<CpuCore>, kMaxCores> cores_;
+  int num_cores_ = 0;
 
   Cycles cycles_ = 0;
 };
