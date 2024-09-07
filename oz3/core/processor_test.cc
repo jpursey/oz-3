@@ -6,6 +6,7 @@
 #include "oz3/core/processor.h"
 
 #include "gtest/gtest.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/memory_bank.h"
 
 namespace oz3 {
@@ -35,9 +36,13 @@ TEST(ProcessorTest, CreateProcessorWithCpuCores) {
 
 TEST(ProcessorTest, Execute) {
   ProcessorConfig config;
+  config.AddCpuCore(CpuCoreConfig());
+  config.AddCpuCore(CpuCoreConfig());
   Processor processor(config);
   processor.Execute(10);
   EXPECT_EQ(processor.GetCycles(), 10);
+  EXPECT_GE(processor.GetCore(0).GetCycles(), 10);
+  EXPECT_GE(processor.GetCore(1).GetCycles(), 10);
 }
 
 }  // namespace

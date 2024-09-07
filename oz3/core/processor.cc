@@ -22,6 +22,16 @@ Processor::Processor(const ProcessorConfig& config) {
 
 Processor::~Processor() = default;
 
-void Processor::Execute(Cycles cycles) { cycles_ += cycles; }
+void Processor::Execute(Cycles cycles) { 
+  while (cycles > 0) {
+    --cycles;
+    ++cycles_;
+    for (int i = 0; i < num_cores_; ++i) {
+      if (cores_[i]->GetCycles() < cycles_) {
+        cores_[i]->Execute();
+      }
+    }
+  }
+}
 
 }  // namespace oz3
