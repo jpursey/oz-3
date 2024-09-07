@@ -51,12 +51,12 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int DP = 11;  // Data pointer
   static constexpr int SD = SP;  // 32-bit Stack+data pointer (SP,DP)
   static constexpr int PC = 12;  // Program counter
-  static constexpr int FL = 13;  // Flags register
+  static constexpr int ST = 13;  // Status flags register
 
   // Number of 16-bit registers.
-  static constexpr int kRegisterCount = FL + 1;
+  static constexpr int kRegisterCount = ST + 1;
 
-  // Flags in the FL register
+  // Flags in the ST register
   static constexpr uint16_t Z = 1 << 0;            // Zero flag
   static constexpr uint16_t S = 1 << 1;            // Sign flag
   static constexpr uint16_t C = 1 << 2;            // Carry flag
@@ -64,6 +64,12 @@ class CpuCore final : public ExecutionComponent {
   static constexpr uint16_t ZSCO = Z | S | C | O;  // All ALU flags
   static constexpr uint16_t I = 1 << 4;            // Interrupt enable flag
   static constexpr uint16_t T = 1 << 8;            // Trace flag
+
+  // Banks reference in the CPU core
+  static constexpr int CODE = 0;   // Code bank
+  static constexpr int STACK = 1;  // Stack bank
+  static constexpr int DATA = 2;   // Data bank
+  static constexpr int EXTRA = 3;  // Extra bank
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
