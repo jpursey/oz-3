@@ -318,7 +318,7 @@ InstructionMicroCodes::InstructionMicroCodes(
 
 InstructionMicroCodes::~InstructionMicroCodes() = default;
 
-bool InstructionMicroCodes::CompileToMicroCode(
+bool InstructionMicroCodes::Compile(
     const InstructionDef& instruction, std::string* error_string) {
   int op_index = static_cast<int>(instruction.op);
   CompiledInstruction& compiled = compiled_[op_index];
@@ -333,10 +333,10 @@ bool InstructionMicroCodes::CompileToMicroCode(
   return true;
 }
 
-bool InstructionMicroCodes::CompileToMicroCode(
+bool InstructionMicroCodes::Compile(
     absl::Span<const InstructionDef> instructions, std::string* error_string) {
   for (const InstructionDef& instruction : instructions) {
-    if (!CompileToMicroCode(instruction, error_string)) {
+    if (!Compile(instruction, error_string)) {
       return false;
     }
   }
@@ -357,22 +357,22 @@ bool InstructionMicroCodes::Decode(uint16_t instruction_code,
     uint16_t value = instruction_code & ((1 << compiled.arg1.size) - 1);
     instruction_code >>= compiled.arg1.size;
     if (compiled.arg1.type == ArgType::kWordRegister) {
-      decoded.reg1 = CpuCore::R0 + value;
+      decoded.r[0] = CpuCore::R0 + value;
     } else if (compiled.arg1.type == ArgType::kDwordRegister) {
-      decoded.reg1 = CpuCore::D0 + value * 2;
+      decoded.r[0] = CpuCore::D0 + value * 2;
     } else if (compiled.arg1.type == ArgType::kImmediate) {
-      decoded.c0 = value;
+      decoded.c[0] = value;
     }
   }
   if (compiled.arg2.type != ArgType::kNone) {
     uint16_t value = instruction_code & ((1 << compiled.arg2.size) - 1);
     instruction_code >>= compiled.arg2.size;
     if (compiled.arg2.type == ArgType::kWordRegister) {
-      decoded.reg2 = CpuCore::R0 + value;
+      decoded.r[1] = CpuCore::R0 + value;
     } else if (compiled.arg2.type == ArgType::kDwordRegister) {
-      decoded.reg2 = CpuCore::D0 + value * 2;
+      decoded.r[1] = CpuCore::D0 + value * 2;
     } else if (compiled.arg2.type == ArgType::kImmediate) {
-      decoded.c1 = value;
+      decoded.c[1] = value;
     }
   }
 

@@ -8,9 +8,10 @@
 
 #include <cstdint>
 
+#include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/execution_component.h"
-#include "oz3/core/types.h"
+#include "oz3/core/micro_code.h"
 
 namespace oz3 {
 
@@ -22,7 +23,7 @@ namespace oz3 {
 class CpuCore final : public ExecutionComponent {
  public:
   //----------------------------------------------------------------------------
-  // Constants
+  // Constants and Types
   //----------------------------------------------------------------------------
 
   // General purpose 16-bit registers
@@ -71,6 +72,25 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int DATA = 2;   // Data bank
   static constexpr int EXTRA = 3;  // Extra bank
 
+  // Internal state of the processor.
+  enum class State {
+    // Initial state of a core, and whenever HALT instruction is executed.
+    kIdle,
+
+    // The core is currently executing a "wait" statement.
+    kWaiting,
+
+    // The core is ready to start a new instruction.
+    kStartInstruction,
+
+    // The core is going to fetchand decode the next instruction, when it is
+    // able (memory lock completes).
+    kFetchInstruction,
+
+    // The core is currently executing an instruction.
+    kRunInstruction,
+  };
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -81,9 +101,16 @@ class CpuCore final : public ExecutionComponent {
   ~CpuCore();
 
   //----------------------------------------------------------------------------
+  // Attributes
+  //----------------------------------------------------------------------------
+
+  State GetState() { return state_; }
+
+  //----------------------------------------------------------------------------
   // ExecutionComponent implementation
   //----------------------------------------------------------------------------
 
+  void AttachProcessor(CoreInternal, Processor* processor) override;
   void Execute() override;
 
  private:
@@ -91,8 +118,20 @@ class CpuCore final : public ExecutionComponent {
   // Implementation
   //----------------------------------------------------------------------------
 
+  void StartInstruction();
+  void FetchInstruction();
+  void RunInstruction();
+
+  // Owning processor.
+  Processor* processor_;
+
+  // Current execution state.
+  State state_ = State::kIdle;
+  Cycles exec_cycles_ = 0;  // Cycles accumulated during Execute.
+
   // Bank assignments.
-  CpuCoreBanks banks_;
+  CpuCoreBanks bank_assignment_;
+  MemoryBank* banks_[4] = {};
 
   // 16-bit registers.
   uint16_t r_[kRegisterCount] = {};
@@ -100,6 +139,14 @@ class CpuCore final : public ExecutionComponent {
   // Interrupt vector table and IT register.
   uint32_t it_ = 0;
   uint16_t ivec_[32] = {};
+
+  // Lock for a dependent component the CpuCore requires.
+  std::unique_ptr<ComponentLock> lock_;
+
+  // Microcode implementation
+  InstructionMicroCodes micro_codes_;
+  DecodedInstruction instruction_ = {};
+  int mc_index_ = 0;  // Micro code index into the current instruction.
 };
 
 }  // namespace oz3

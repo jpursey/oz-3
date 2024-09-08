@@ -6,6 +6,8 @@
 #ifndef OZ3_CORE_CPU_CORE_CONFIG_H_
 #define OZ3_CORE_CPU_CORE_CONFIG_H_
 
+#include "oz3/core/memory_bank_config.h"
+
 namespace oz3 {
 
 //==============================================================================
@@ -14,6 +16,12 @@ namespace oz3 {
 
 // The maximum number of cores that can managed by a single Processor.
 inline constexpr int kMaxCores = 8;
+
+// The number of cycles required to fetch and decode any instruction on an
+// CpuCore. This is the minimum number of cycles an instruction can take (the
+// NOP execution time).
+inline constexpr int kCpuCoreFetchAndDecodeCycles =
+    kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles + 1;
 
 //==============================================================================
 // CpuCoreBankAssignemt

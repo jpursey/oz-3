@@ -8,7 +8,7 @@
 
 #include <cstring>
 
-#include "oz3/core/types.h"
+#include "oz3/core/core_types.h"
 
 namespace oz3 {
 

@@ -9,7 +9,7 @@
 #include <memory>
 
 #include "gb/container/queue.h"
-#include "oz3/core/types.h"
+#include "oz3/core/core_types.h"
 
 namespace oz3 {
 
@@ -71,7 +71,8 @@ class ComponentLock final {
 // Component
 //==============================================================================
 
-// The Component class is a base class for all components in the system.
+// The Component class is a base class for all components that can be attached
+// to a Processor.
 //
 // Components support unique locks that can be used to access the component
 // exclusively. Derived classes can enforce this by taking a ComponentLock
@@ -89,6 +90,12 @@ class Component {
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
+
+  // Called by the processor when the component is attached.
+  //
+  // After the call the component is owned solely by this processor, and the
+  // Processor* pointer will remain valid for the life of the component.
+  virtual void AttachProcessor(CoreInternal, Processor* processor) {}
 
   // Returns true if this component is currently locked.
   bool IsLocked() const;

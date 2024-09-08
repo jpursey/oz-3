@@ -14,9 +14,12 @@ Processor::Processor(const ProcessorConfig& config) {
   auto bank_configs = config.GetMemoryBankConfigs();
   for (int i = 0; i < kMaxMemoryBanks; ++i) {
     banks_[i] = std::make_unique<MemoryBank>(bank_configs[i]);
+    banks_[i]->AttachProcessor({}, this);
   }
   for (const CpuCoreConfig& core_config : config.GetCpuCoreConfigs()) {
-    cores_[num_cores_++] = std::make_unique<CpuCore>(core_config);
+    cores_[num_cores_] = std::make_unique<CpuCore>(core_config);
+    cores_[num_cores_]->AttachProcessor({}, this);
+    ++num_cores_;
   }
 }
 

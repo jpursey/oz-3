@@ -26,7 +26,7 @@ using ::testing::ValuesIn;
 TEST(MicroCodeTest, InstructionSetCompiles) {
   InstructionMicroCodes codes;
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(GetInstructionSet(), &error));
+  EXPECT_TRUE(codes.Compile(GetInstructionSet(), &error));
   EXPECT_THAT(error, IsEmpty());
 }
 
@@ -147,7 +147,7 @@ TEST_P(CompileTest, Test) {
   const auto& test_case = GetParam();
   InstructionMicroCodes codes(test_case.GetMicros());
   std::string error;
-  EXPECT_EQ(codes.CompileToMicroCode(test_case.GetInstructions(), &error),
+  EXPECT_EQ(codes.Compile(test_case.GetInstructions(), &error),
             test_case.valid);
   if (test_case.valid) {
     EXPECT_THAT(error, IsEmpty());
@@ -751,14 +751,14 @@ TEST(MicroCodeTest, BankDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP), decoded));
-  EXPECT_EQ(decoded.c0, 0);
-  EXPECT_EQ(decoded.c1, 0);
-  EXPECT_EQ(decoded.reg1, 0);
-  EXPECT_EQ(decoded.reg2, 0);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(
       decoded.code,
       ElementsAre(MicroCode{.op = MicroOp::MICRO_OP, .bank = CpuCore::CODE},
@@ -778,14 +778,14 @@ TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP), decoded));
-  EXPECT_EQ(decoded.c0, 0);
-  EXPECT_EQ(decoded.c1, 0);
-  EXPECT_EQ(decoded.reg1, 0);
-  EXPECT_EQ(decoded.reg2, 0);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(
       decoded.code,
       ElementsAre(
@@ -807,35 +807,35 @@ TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP), decoded));
-  EXPECT_EQ(decoded.c0, 0);
-  EXPECT_EQ(decoded.c1, 0);
-  EXPECT_EQ(decoded.reg1, 0);
-  EXPECT_EQ(decoded.reg2, 0);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(decoded.code, ElementsAre(MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::R0,
-                                                  .arg2 = CpuCore::R1},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::R2,
-                                                  .arg2 = CpuCore::R3},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::R4,
-                                                  .arg2 = CpuCore::R5},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::R6,
-                                                  .arg2 = CpuCore::R7},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::C0,
-                                                  .arg2 = CpuCore::C1},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::SP,
-                                                  .arg2 = CpuCore::DP},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::PC,
-                                                  .arg2 = CpuCore::ST}));
+                                                     .arg1 = CpuCore::R0,
+                                                     .arg2 = CpuCore::R1},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::R2,
+                                                     .arg2 = CpuCore::R3},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::R4,
+                                                     .arg2 = CpuCore::R5},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::R6,
+                                                     .arg2 = CpuCore::R7},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::C0,
+                                                     .arg2 = CpuCore::C1},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::SP,
+                                                     .arg2 = CpuCore::DP},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::PC,
+                                                     .arg2 = CpuCore::ST}));
 }
 
 TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
@@ -849,23 +849,23 @@ TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP), decoded));
-  EXPECT_EQ(decoded.c0, 0);
-  EXPECT_EQ(decoded.c1, 0);
-  EXPECT_EQ(decoded.reg1, 0);
-  EXPECT_EQ(decoded.reg2, 0);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(decoded.code, ElementsAre(MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::D0,
-                                                  .arg2 = CpuCore::D1},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::D2,
-                                                  .arg2 = CpuCore::D3},
-                                        MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::CD,
-                                                  .arg2 = CpuCore::SD}));
+                                                     .arg1 = CpuCore::D0,
+                                                     .arg2 = CpuCore::D1},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::D2,
+                                                     .arg2 = CpuCore::D3},
+                                           MicroCode{.op = MicroOp::MICRO_OP,
+                                                     .arg1 = CpuCore::CD,
+                                                     .arg2 = CpuCore::SD}));
 }
 
 TEST(MicroCodeTest, ZscoDecodedCorrectly) {
@@ -880,14 +880,14 @@ TEST(MicroCodeTest, ZscoDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP), decoded));
-  EXPECT_EQ(decoded.c0, 0);
-  EXPECT_EQ(decoded.c1, 0);
-  EXPECT_EQ(decoded.reg1, 0);
-  EXPECT_EQ(decoded.reg2, 0);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(
       decoded.code,
       ElementsAre(MicroCode{.op = MicroOp::MICRO_OP, .st_clear = CpuCore::Z},
@@ -917,21 +917,21 @@ TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   for (uint16_t i = 0; i < 8; ++i) {
     uint16_t c0 = (i * i + 1) % 8;   // 3 bits
     uint16_t c1 = (i * i + 2) % 32;  // 5 bits
     EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP, c0 | (c1 << 3)), decoded));
-    EXPECT_EQ(decoded.c0, c0);
-    EXPECT_EQ(decoded.c1, c1);
-    EXPECT_EQ(decoded.reg1, 0);
-    EXPECT_EQ(decoded.reg2, 0);
+    EXPECT_EQ(decoded.c[0], c0);
+    EXPECT_EQ(decoded.c[1], c1);
+    EXPECT_EQ(decoded.r[0], 0);
+    EXPECT_EQ(decoded.r[1], 0);
   }
   EXPECT_THAT(decoded.code, ElementsAre(MicroCode{.op = MicroOp::MICRO_OP,
-                                                  .arg1 = CpuCore::C0,
-                                                  .arg2 = CpuCore::C1}));
+                                                     .arg1 = CpuCore::C0,
+                                                     .arg2 = CpuCore::C1}));
 }
 
 TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
@@ -945,17 +945,17 @@ TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   for (uint16_t i = 0; i < 8; ++i) {
     uint16_t a = i;
     uint16_t b = (i + 1) % 8;
     EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP, a | (b << 3)), decoded));
-    EXPECT_EQ(decoded.c0, 0);
-    EXPECT_EQ(decoded.c1, 0);
-    EXPECT_EQ(decoded.reg1, CpuCore::R0 + a);
-    EXPECT_EQ(decoded.reg2, CpuCore::R0 + b);
+    EXPECT_EQ(decoded.c[0], 0);
+    EXPECT_EQ(decoded.c[1], 0);
+    EXPECT_EQ(decoded.r[0], CpuCore::R0 + a);
+    EXPECT_EQ(decoded.r[1], CpuCore::R0 + b);
   }
   EXPECT_THAT(
       decoded.code,
@@ -974,17 +974,17 @@ TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
 
   InstructionMicroCodes codes(micro_defs);
   std::string error;
-  EXPECT_TRUE(codes.CompileToMicroCode(instruction_defs, &error));
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
   DecodedInstruction decoded;
   for (uint16_t i = 0; i < 4; ++i) {
     uint16_t a = i;
     uint16_t b = (i + 1) % 8;
     EXPECT_TRUE(codes.Decode(MakeCode(Op::ASM_OP, a | (b << 3)), decoded));
-    EXPECT_EQ(decoded.c0, 0);
-    EXPECT_EQ(decoded.c1, 0);
-    EXPECT_EQ(decoded.reg1, CpuCore::D0 + a * 2);
-    EXPECT_EQ(decoded.reg2, CpuCore::D0 + b * 2);
+    EXPECT_EQ(decoded.c[0], 0);
+    EXPECT_EQ(decoded.c[1], 0);
+    EXPECT_EQ(decoded.r[0], CpuCore::D0 + a * 2);
+    EXPECT_EQ(decoded.r[1], CpuCore::D0 + b * 2);
   }
   EXPECT_THAT(
       decoded.code,

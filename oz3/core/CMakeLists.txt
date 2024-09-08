@@ -5,6 +5,7 @@
 
 set(oz3_core_SOURCE
   component.cc component.h
+  core_types.h
   cpu_core.cc cpu_core.h
   cpu_core_config.cc cpu_core_config.h
   execution_component.h
@@ -15,7 +16,6 @@ set(oz3_core_SOURCE
   micro_code.cc micro_code.h
   processor.cc processor.h
   processor_config.cc processor_config.h
-  types.h
 )
 set(oz3_core_DEPS
   absl::memory

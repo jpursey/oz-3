@@ -14,9 +14,9 @@
 #include "absl/types/span.h"
 #include "glog/logging.h"
 #include "oz3/core/component.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/memory_map.h"
-#include "oz3/core/types.h"
 
 namespace oz3 {
 

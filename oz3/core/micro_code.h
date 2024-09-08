@@ -68,10 +68,8 @@ struct MicroCode {
 // This is used by the CpuCode to execute instructions via microcode.
 struct DecodedInstruction {
   absl::Span<const MicroCode> code;
-  uint16_t c0;  // Value of C0 register from instruction
-  uint16_t c1;  // Value of C1 register from instruction
-  int8_t reg1;  // Index into r_ in CpuCore from instruction
-  int8_t reg2;  // Index into r_ in CpuCore from instruction
+  uint16_t c[2];  // Value of C0 and C1 registers from instruction
+  int8_t r[2];    // Indexes into r_ in CpuCore from instruction
 
   auto operator<=>(const DecodedInstruction&) const = default;
 };
@@ -107,10 +105,10 @@ class InstructionMicroCodes final {
   // Returns true if the instructions were all successfully compiled, and false
   // if there is an error in at least one of the Instruction source definition.
   // The `error_string` is set to a description of the error if it is not null.
-  bool CompileToMicroCode(absl::Span<const InstructionDef> instructions,
-                          std::string* error_string);
-  bool CompileToMicroCode(const InstructionDef& instruction,
-                          std::string* error_string);
+  bool Compile(absl::Span<const InstructionDef> instructions,
+               std::string* error_string = nullptr);
+  bool Compile(const InstructionDef& instruction,
+               std::string* error_string = nullptr);
 
   // Decodes an instruction code into a set of microcode instructions and
   // parameters.

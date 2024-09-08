@@ -16,8 +16,7 @@ TEST(ProcessorTest, CreateDefaultProcessor) {
   ProcessorConfig config;
   Processor processor(config);
   for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    MemoryBank& bank = processor.GetMemory(i);
-    EXPECT_EQ(bank.GetMemorySize(), 0);
+    EXPECT_EQ(processor.GetMemory(i)->GetMemorySize(), 0);
   }
   EXPECT_EQ(processor.GetNumCores(), 0);
 }
@@ -25,8 +24,7 @@ TEST(ProcessorTest, CreateDefaultProcessor) {
 TEST(ProcessorTest, CreateProcessorWithMemoryBanks) {
   Processor processor(ProcessorConfig().SetMemoryBank(
       0, MemoryBankConfig().SetMemPages(MemoryPageRange::Max())));
-  MemoryBank& bank = processor.GetMemory(0);
-  EXPECT_EQ(bank.GetMemorySize(), kMemoryBankMaxSize);
+  EXPECT_EQ(processor.GetMemory(0)->GetMemorySize(), kMemoryBankMaxSize);
 }
 
 TEST(ProcessorTest, CreateProcessorWithCpuCores) {

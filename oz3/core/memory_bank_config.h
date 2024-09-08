@@ -9,8 +9,8 @@
 #include <cstdint>
 #include <limits>
 
+#include "oz3/core/core_types.h"
 #include "oz3/core/memory_map.h"
-#include "oz3/core/types.h"
 
 namespace oz3 {
 

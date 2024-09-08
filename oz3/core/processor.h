@@ -9,8 +9,8 @@
 #include <memory>
 
 #include "gb/container/array.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/processor_config.h"
-#include "oz3/core/types.h"
 
 namespace oz3 {
 
@@ -42,9 +42,9 @@ class Processor final {
   // The index must be in the range [0, kMaxMemoryBanks). There always is a
   // fully functional MemoryBank object, even if it does not have any physical
   // memory or external memory maps.
-  MemoryBank& GetMemory(int bank_index) { return *banks_[bank_index]; }
-  const MemoryBank& GetMemory(int bank_index) const {
-    return *banks_[bank_index];
+  MemoryBank* GetMemory(int bank_index) { return banks_[bank_index].get(); }
+  const MemoryBank* GetMemory(int bank_index) const {
+    return banks_[bank_index].get();
   }
 
   // Returns the number of cores in the processor.
@@ -64,6 +64,9 @@ class Processor final {
   // Executes the processor for the specified number of cycles.
   //
   // This simulates all executable components of the processor in sync.
+  //
+  // This is a public function for the game, and components must therefore *not*
+  // execute this function.
   void Execute(Cycles cycles);
 
  private:
