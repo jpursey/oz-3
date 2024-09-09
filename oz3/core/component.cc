@@ -17,9 +17,24 @@ Component::~Component() {
   }
 }
 
+bool Component::PreventLock() {
+  if (lock_.Exists()) {
+    return false;
+  }
+  allow_locks_ = false;
+  return true;
+}
+
+void Component::AllowLock() {
+  allow_locks_ = true;
+  if (!lock_.Exists()) {
+    Unlock();
+  }
+}
+
 std::unique_ptr<ComponentLock> Component::Lock() {
   auto new_lock = std::make_unique<ComponentLock>();
-  if (lock_.Exists()) {
+  if (lock_.Exists() || !allow_locks_) {
     pending_locks_.push(new_lock->self_ptr_);
   } else {
     new_lock->component_ = this;
@@ -32,10 +47,10 @@ void Component::Unlock() {
   while (!pending_locks_.empty()) {
     lock_ = std::move(pending_locks_.front());
     pending_locks_.pop();
-    if (!lock_.Exists()) {
-      continue;
+    if (lock_.Exists()) {
+      lock_->component_ = this;
+      break;
     }
-    lock_->component_ = this;
   }
 }
 

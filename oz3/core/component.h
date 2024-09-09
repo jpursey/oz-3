@@ -109,6 +109,19 @@ class Component {
   // order they are requested.
   std::unique_ptr<ComponentLock> Lock();
 
+ protected:
+  //----------------------------------------------------------------------------
+  // Derived class interface
+  //----------------------------------------------------------------------------
+
+  // Prevents the component from being locked. All calls to Lock will return an
+  // unlocked lock. Returns false if the component is already locked.
+  bool PreventLock();
+
+  // Allows the component to be locked again. If there are pending locks, the
+  // oldest pending lock will be granted.
+  void AllowLock();
+
  private:
   //----------------------------------------------------------------------------
   // Implementation
@@ -119,6 +132,7 @@ class Component {
   // Called by ComponentLock to unlock the component.
   void Unlock();
 
+  bool allow_locks_ = true;
   LockPtr lock_;
   gb::Queue<LockPtr> pending_locks_;
 };

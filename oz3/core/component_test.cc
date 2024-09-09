@@ -26,15 +26,23 @@ TEST(ComponentTest, LockWhenLocked) {
 
   auto lock1 = component.Lock();
   auto lock2 = component.Lock();
+  auto lock3 = component.Lock();
   EXPECT_TRUE(component.IsLocked());
   ASSERT_NE(lock2, nullptr);
   EXPECT_FALSE(lock2->IsLocked());
+  ASSERT_NE(lock3, nullptr);
+  EXPECT_FALSE(lock3->IsLocked());
 
   lock1.reset();
   EXPECT_TRUE(component.IsLocked());
   EXPECT_TRUE(lock2->IsLocked());
+  EXPECT_FALSE(lock3->IsLocked());
 
   lock2.reset();
+  EXPECT_TRUE(component.IsLocked());
+  EXPECT_TRUE(lock3->IsLocked());
+  
+  lock3.reset();
   EXPECT_FALSE(component.IsLocked());
 }
 
@@ -64,6 +72,40 @@ TEST(ComponentTest, LockDestroyedBeforeBeingLocked) {
 
   lock1.reset();
   EXPECT_TRUE(lock3->IsLocked());
+}
+
+class DerivedComponent : public Component {
+ public:
+  DerivedComponent() = default;
+
+  // Make protected methods public for testing.
+  using Component::AllowLock;
+  using Component::PreventLock;
+};
+
+TEST(ComponentTest, PreventLock) {
+  DerivedComponent component;
+  EXPECT_TRUE(component.PreventLock());
+  auto lock = component.Lock();
+  EXPECT_FALSE(lock->IsLocked());
+}
+
+TEST(ComponentTest, PreventLockFailsIfLockExists) {
+  DerivedComponent component;
+  auto lock = component.Lock();
+  EXPECT_FALSE(component.PreventLock());
+}
+
+TEST(ComponentTest, AllowLockLocksPendingLock) {
+  DerivedComponent component;
+  EXPECT_TRUE(component.PreventLock());
+  auto lock1 = component.Lock();
+  auto lock2 = component.Lock();
+  EXPECT_FALSE(lock1->IsLocked());
+  EXPECT_FALSE(lock2->IsLocked());
+  component.AllowLock();
+  EXPECT_TRUE(lock1->IsLocked());
+  EXPECT_FALSE(lock2->IsLocked());
 }
 
 }  // namespace
