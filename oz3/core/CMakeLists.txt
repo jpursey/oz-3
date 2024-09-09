@@ -28,6 +28,7 @@ set(oz3_core_LIBS
 
 set(oz3_core_TEST_SOURCE
   component_test.cc
+  cpu_core_test.cc
   memory_bank_test.cc
   micro_code_test.cc
   processor_test.cc

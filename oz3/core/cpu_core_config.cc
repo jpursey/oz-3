@@ -7,15 +7,11 @@
 
 #include <algorithm>
 
-#include "oz3/core/memory_bank_config.h"
-
 namespace oz3 {
 
-inline CpuCoreConfig& CpuCoreConfig::SetBanks(const CpuCoreBanks& banks) {
-  banks_.code = std::clamp(banks.code, 0, kMaxMemoryBanks - 1);
-  banks_.stack = std::clamp(banks.stack, 0, kMaxMemoryBanks - 1);
-  banks_.data = std::clamp(banks.data, 0, kMaxMemoryBanks - 1);
-  banks_.extra = std::clamp(banks.extra, 0, kMaxMemoryBanks - 1);
+CpuCoreConfig& CpuCoreConfig::SetInstructionSet(
+    absl::Span<const InstructionDef> instructions) {
+  instructions_ = instructions;
   return *this;
 }
 

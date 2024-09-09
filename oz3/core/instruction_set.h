@@ -14,13 +14,10 @@
 namespace oz3 {
 
 // The Upper 8 bits of the instruction is the operation code.
-enum class Op : uint8_t {
-  NOP,
-  HALT,
-  WAIT,
-
-  // These opcodes are used for testing, they are not part of the OZ-3 CPU.
-  ASM_OP = 200,
+enum Op : uint8_t {
+  kOp_NOP,
+  kOp_HALT,
+  kOp_WAIT,
 };
 
 // Source argument definitions for instructions.
@@ -31,6 +28,9 @@ inline constexpr std::string_view kArgDwordRegA = "A";
 inline constexpr std::string_view kArgDwordRegB = "B";
 inline constexpr std::string_view kArgWordValue = "v";
 inline constexpr std::string_view kArgDwordValue = "V";
+inline constexpr std::string_view kArgImmValue3 = "#3";
+inline constexpr std::string_view kArgImmValue4 = "#4";
+inline constexpr std::string_view kArgImmValue5 = "#5";
 
 enum class ArgType {
   kNone,           // No argument.
@@ -72,7 +72,7 @@ struct InstructionDecl {
 struct InstructionDef {
   // The numeric operation code for the instruction (upper 8 bits of the 16-bit
   // instruction).
-  Op op;
+  uint8_t op;
 
   // The textual definition of the source operands for the instruction.
   InstructionDecl decl;

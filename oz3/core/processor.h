@@ -51,8 +51,10 @@ class Processor final {
   int GetNumCores() const { return num_cores_; }
 
   // Returns the core at the specified index.
-  CpuCore& GetCore(int core_index) { return *cores_[core_index]; }
-  const CpuCore& GetCore(int core_index) const { return *cores_[core_index]; }
+  CpuCore* GetCore(int core_index) { return cores_[core_index].get(); }
+  const CpuCore* GetCore(int core_index) const {
+    return cores_[core_index].get();
+  }
 
   // Returns the number of cycles that have been executed.
   Cycles GetCycles() const { return cycles_; }

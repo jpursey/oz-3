@@ -39,8 +39,8 @@ TEST(ProcessorTest, Execute) {
   Processor processor(config);
   processor.Execute(10);
   EXPECT_EQ(processor.GetCycles(), 10);
-  EXPECT_GE(processor.GetCore(0).GetCycles(), 10);
-  EXPECT_GE(processor.GetCore(1).GetCycles(), 10);
+  EXPECT_GE(processor.GetCore(0)->GetCycles(), 10);
+  EXPECT_GE(processor.GetCore(1)->GetCycles(), 10);
 }
 
 }  // namespace

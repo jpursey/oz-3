@@ -25,6 +25,17 @@ class ProcessorConfig {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  // Creates an empty ProcessorConfig with no resources.
+  static ProcessorConfig Empty() { return {}; }
+
+  // Creates a ProcessorConfig with a single core and a single memory bank with
+  // max RAM.
+  static ProcessorConfig OneCore();
+
+  // Creates a ProcessorConfig with the specified number of cores and a single
+  // memory bank with max RAM (can be overridden).
+  static ProcessorConfig MultiCore(int num_cores);
+
   // Creates a new ProcessorConfig with no resources.
   ProcessorConfig();
 

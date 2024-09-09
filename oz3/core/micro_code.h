@@ -14,19 +14,20 @@
 
 namespace oz3 {
 
-enum class MicroOp : uint8_t {
-  LK,    // Lock memory bank.
-  UL,    // Unlock memory bank.
-  WAIT,  // Decrements register, if not zero, rewinds the PC back to the WAIT.
-  HALT,  // Rewinds the PC back to the HALT instruction.
-
-  // These opcodes are used for testing, they are not part of the OZ-3 CPU.
-  MICRO_OP = 150,
+enum MicroOp : uint8_t {
+  kMicro_WAIT,  // Puts core into kWaiting state for specified cycles in reg.
+  kMicro_HALT,  // Puts the core into kIdle state.
+  kMicro_LK,    // Lock memory bank.
+  kMicro_UL,    // Unlock memory bank.
+  kMicro_ADR,   // Sets the memory bank address bus to the register value.
+  kMicro_LD,    // Loads the value from memory into the register.
+  kMicro_ST,    // Stores the value from the register into memory.
+  kMicro_MOV,   // Moves a value from one register to another.
 };
 
 // Definition of a microcode operation.
 struct MicroCodeDef {
-  MicroOp op;                // The microcode operation code.
+  uint8_t op;                // The microcode operation code.
   std::string_view op_name;  // The name of the operation.
   bool has_bank;             // True if the operation requires a bank extension.
   ArgType arg1;              // The type of the first argument.
@@ -36,7 +37,7 @@ struct MicroCodeDef {
 // Microcode instruction for the OZ-3 CPU.
 struct MicroCode {
   // The operation code for the microcode.
-  MicroOp op;
+  uint8_t op;
 
   // The memory bank to operate on in the range [0,3]. Ignored if the operation
   // does not need a bank specification or it is implied from arguments.

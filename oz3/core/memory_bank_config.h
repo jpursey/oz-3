@@ -55,11 +55,11 @@ struct MemoryPageMasks {
 
   // Restricts reading the memory page to the specified mask. Each set bit
   // indicates the corresponding page is readable.
-  uint16_t read_mask;
+  uint16_t read_mask = 0xFFFF;
 
   // Restricts writing the memory page to the specified mask. Each set bit
   // indicates the corresponding page is writable.
-  uint16_t write_mask;
+  uint16_t write_mask = 0xFFFF;
 };
 
 //==============================================================================
@@ -74,12 +74,12 @@ struct MemoryPageRange {
   // Page index of the first page of memory.
   //
   // Should be in the range [0, kMemoryBankPageCount)
-  int start_page;
+  int start_page = 0;
 
   // Number of pages in the range.
   //
   // Should be in the range [0, kMemoryBankPageCount - start]
-  int page_count;
+  int page_count = kMemoryBankPageCount;
 };
 
 //==============================================================================
@@ -93,6 +93,19 @@ class MemoryBankConfig {
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
+
+  // Creates an empty memory bank configuration with no RAM and no memory
+  // mapping.
+  static MemoryBankConfig Empty() { return MemoryBankConfig{}; }
+
+  // Creates a memory bank configuration with the maximum possible RAM memory.
+  static MemoryBankConfig MaxRam();
+
+  // Creates a memory bank configuration with the specified number of ROM and
+  // RAM pages. The ROM pages clamped to a valid range, and RAM pages are
+  // clamped to whatever is left.
+  static MemoryBankConfig RomRam(int rom_pages,
+                                 int ram_pages = kMemoryBankPageCount);
 
   // Creates a default memory bank configuration which represents an empty
   // memory bank (no physical RAM or memory map).

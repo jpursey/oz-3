@@ -13,23 +13,15 @@ namespace oz3 {
 namespace {
 
 const InstructionDef kInstructionSet[] = {
-    {
-        Op::NOP,
-        {"NOP", kArgNone, kArgNone, "____"},
-        "UL.C;",
-    },
-    {
-        Op::HALT,
-        {"HALT", kArgNone, kArgNone, "____"},
-        "UL.C;"
-        "HALT;",
-    },
-    {
-        Op::WAIT,
-        {"WAIT", kArgWordRegA, kArgNone, "____"},
-        "UL.C;"
-        "WAIT(a);",
-    },
+    {kOp_NOP, {"NOP", kArgNone, kArgNone, "____"}, "UL.C;"},
+    {kOp_HALT,
+     {"HALT", kArgNone, kArgNone, "____"},
+     "UL.C;"
+     "HALT;"},
+    {kOp_WAIT,
+     {"WAIT", kArgWordRegA, kArgNone, "____"},
+     "UL.C;"
+     "WAIT(a);"},
 };
 
 }  // namespace

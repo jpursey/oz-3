@@ -6,25 +6,58 @@
 #include "oz3/core/cpu_core.h"
 
 #include "absl/cleanup/cleanup.h"
+#include "glog/logging.h"
 #include "oz3/core/instruction_set.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor.h"
 
 namespace oz3 {
 
-CpuCore::CpuCore(const CpuCoreConfig& config)
-    : bank_assignment_(config.GetBanks()) {
-  micro_codes_.Compile(GetInstructionSet());
+CpuCore::CpuCore(const CpuCoreConfig& config) {
+  micro_codes_.Compile(config.GetInstructions());
 }
 
 CpuCore::~CpuCore() = default;
 
 void CpuCore::AttachProcessor(CoreInternal, Processor* processor) {
   processor_ = processor;
-  banks_[CODE] = processor_->GetMemory(bank_assignment_.code);
-  banks_[STACK] = processor_->GetMemory(bank_assignment_.stack);
-  banks_[DATA] = processor_->GetMemory(bank_assignment_.data);
-  banks_[EXTRA] = processor_->GetMemory(bank_assignment_.extra);
+  InitBanks();
+}
+
+void CpuCore::Reset(const ComponentLock& lock, const ResetParams& params) {
+  DCHECK(lock.IsLocked(*this));
+  DCHECK(processor_ != nullptr);
+
+  std::memset(&r_[R0], 0, sizeof(uint16_t) * 8);
+  const uint16_t bank_mask = ((params.mask & ResetParams::BC) ? 0xF : 0) |
+                             ((params.mask & ResetParams::BS) ? 0xF0 : 0) |
+                             ((params.mask & ResetParams::BD) ? 0xF00 : 0) |
+                             ((params.mask & ResetParams::BE) ? 0xF000 : 0);
+  r_[BM] = (r_[BM] & ~bank_mask) | (params.bm & bank_mask);
+  InitBanks();
+  if (params.mask & ResetParams::PC) {
+    r_[PC] = params.pc;
+  }
+  if (params.mask & ResetParams::SP) {
+    r_[SP] = params.sp;
+  }
+  if (params.mask & ResetParams::DP) {
+    r_[DP] = params.dp;
+  }
+  state_ = State::kStartInstruction;
+}
+
+void CpuCore::InitBanks() {
+  const Banks banks = Banks::FromWord(r_[BM]);
+  banks_[CODE] = processor_->GetMemory(banks.code);
+  banks_[STACK] = processor_->GetMemory(banks.stack);
+  banks_[DATA] = processor_->GetMemory(banks.data);
+  banks_[EXTRA] = processor_->GetMemory(banks.extra);
+}
+
+void CpuCore::GetRegisters(
+    gb::Array<uint16_t, kRegisterCount>& registers) const {
+  std::memcpy(registers.data(), r_, sizeof(r_));
 }
 
 void CpuCore::Execute() {
@@ -59,13 +92,15 @@ void CpuCore::Execute() {
 }
 
 void CpuCore::StartInstruction() {
+  if (!PreventLock()) {
+    exec_cycles_ += 1;
+    return;
+  }
   state_ = State::kFetchInstruction;
   DCHECK(lock_ == nullptr);
   lock_ = banks_[CODE]->Lock();
   if (!lock_->IsLocked()) {
     exec_cycles_ += 1;
-  } else {
-    state_ = State::kFetchInstruction;
   }
 }
 
@@ -74,6 +109,7 @@ void CpuCore::FetchInstruction() {
   banks_[CODE]->SetAddress(*lock_, r_[PC]);
   uint16_t code;
   banks_[CODE]->LoadWord(*lock_, code);
+  r_[PC] += 1;
   micro_codes_.Decode(code, instruction_);
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
@@ -90,9 +126,21 @@ void CpuCore::RunInstruction() {
       (code.arg2 < 0 ? instruction_.r[-code.arg2 - 1] : code.arg2)
 
   while (mc_index_ < instruction_.code.size()) {
-    MicroCode code = instruction_.code[mc_index_++];
+    const MicroCode code = instruction_.code[mc_index_++];
     switch (code.op) {
-      case MicroOp::LK: {
+      case kMicro_WAIT: {
+        OZ3_INIT_REG1;
+        r_[C0] = r_[reg1] - kCpuCoreFetchAndDecodeCycles;
+        state_ = State::kWaiting;
+        AllowLock();
+        return;
+      } break;
+      case kMicro_HALT: {
+        state_ = State::kIdle;
+        AllowLock();
+        return;
+      } break;
+      case kMicro_LK: {
         DCHECK(lock_ == nullptr);
         if (exec_cycles_ > 0) {
           --mc_index_;
@@ -103,31 +151,46 @@ void CpuCore::RunInstruction() {
           return;
         }
       } break;
-      case MicroOp::UL: {
-        DCHECK(lock_ != nullptr && lock_->IsLocked());
+      case kMicro_UL: {
+        DCHECK(lock_ != nullptr && lock_->IsLocked(*banks_[code.bank]));
         if (exec_cycles_ > 0) {
           --mc_index_;
           return;
         }
         lock_ = nullptr;
       } break;
-      case MicroOp::WAIT: {
+      case kMicro_ADR: {
+        DCHECK(lock_ != nullptr && lock_->IsLocked(*banks_[code.bank]));
         OZ3_INIT_REG1;
-        r_[C0] = r_[reg1] - kCpuCoreFetchAndDecodeCycles;
-        state_ = State::kWaiting;
-        return;
+        banks_[code.bank]->SetAddress(*lock_, r_[reg1]);
+        exec_cycles_ += kMemoryBankSetAddressCycles;
       } break;
-      case MicroOp::HALT: {
-        state_ = State::kIdle;
-        return;
+      case kMicro_LD: {
+        DCHECK(lock_ != nullptr && lock_->IsLocked(*banks_[code.bank]));
+        OZ3_INIT_REG1;
+        banks_[code.bank]->LoadWord(*lock_, r_[reg1]);
+        exec_cycles_ += kMemoryBankAccessWordCycles;
+      } break;
+      case kMicro_ST: {
+        DCHECK(lock_ != nullptr && lock_->IsLocked(*banks_[code.bank]));
+        OZ3_INIT_REG1;
+        banks_[code.bank]->StoreWord(*lock_, r_[reg1]);
+        exec_cycles_ += kMemoryBankAccessWordCycles;
+      } break;
+      case kMicro_MOV: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        r_[reg1] = r_[reg2];
+        exec_cycles_ += kCpuCoreCycles_MOV;
       } break;
     }
   }
 
+  state_ = State::kStartInstruction;
+  AllowLock();
+
 #undef OZ3_INIT_REG1
 #undef OZ3_INIT_REG2
-
-  state_ = State::kStartInstruction;
 }
 
 }  // namespace oz3

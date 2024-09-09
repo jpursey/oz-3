@@ -19,14 +19,18 @@ namespace oz3 {
 
 namespace {
 
-const MicroCode kNopMicroCode[] = {{.op = MicroOp::UL, .bank = CpuCore::CODE}};
+const MicroCode kNopMicroCode[] = {{.op = kMicro_UL, .bank = CpuCore::CODE}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode};
 
 const MicroCodeDef kMicroCodeDefs[] = {
-    {MicroOp::LK, "LK", true, ArgType::kNone, ArgType::kNone},
-    {MicroOp::UL, "UL", true, ArgType::kNone, ArgType::kNone},
-    {MicroOp::WAIT, "WAIT", false, ArgType::kWordRegister, ArgType::kNone},
-    {MicroOp::HALT, "HALT", false, ArgType::kNone, ArgType::kNone},
+    {kMicro_WAIT, "WAIT", false, ArgType::kWordRegister, ArgType::kNone},
+    {kMicro_HALT, "HALT", false, ArgType::kNone, ArgType::kNone},
+    {kMicro_LK, "LK", true, ArgType::kNone, ArgType::kNone},
+    {kMicro_UL, "UL", true, ArgType::kNone, ArgType::kNone},
+    {kMicro_ADR, "ADR", true, ArgType::kWordRegister, ArgType::kNone},
+    {kMicro_LD, "LD", true, ArgType::kWordRegister, ArgType::kNone},
+    {kMicro_ST, "ST", true, ArgType::kWordRegister, ArgType::kNone},
+    {kMicro_MOV, "MOV", false, ArgType::kWordRegister, ArgType::kWordRegister},
 };
 
 class InstructionCompiler {
@@ -318,8 +322,8 @@ InstructionMicroCodes::InstructionMicroCodes(
 
 InstructionMicroCodes::~InstructionMicroCodes() = default;
 
-bool InstructionMicroCodes::Compile(
-    const InstructionDef& instruction, std::string* error_string) {
+bool InstructionMicroCodes::Compile(const InstructionDef& instruction,
+                                    std::string* error_string) {
   int op_index = static_cast<int>(instruction.op);
   CompiledInstruction& compiled = compiled_[op_index];
   compiled.arg1 = ArgTypeBits(instruction.decl.arg1);

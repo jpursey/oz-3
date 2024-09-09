@@ -11,6 +11,22 @@
 
 namespace oz3 {
 
+ProcessorConfig ProcessorConfig::OneCore() {
+  return ProcessorConfig()
+      .AddCpuCore(CpuCoreConfig::Default())
+      .SetMemoryBank(0, MemoryBankConfig::MaxRam());
+}
+
+ProcessorConfig ProcessorConfig::MultiCore(int num_cores) {
+  ProcessorConfig config;
+  num_cores = std::clamp(num_cores, 1, kMaxCores);
+  for (int i = 0; i < num_cores; ++i) {
+    config.AddCpuCore(CpuCoreConfig::Default());
+  }
+  config.SetMemoryBank(0, MemoryBankConfig::MaxRam());
+  return config;
+}
+
 ProcessorConfig::ProcessorConfig() : banks_(kMaxMemoryBanks) {}
 
 ProcessorConfig& ProcessorConfig::SetMemoryBank(int bank_index,

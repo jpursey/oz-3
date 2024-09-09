@@ -8,6 +8,7 @@
 
 #include <cstdint>
 
+#include "gb/container/array.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/execution_component.h"
@@ -48,14 +49,15 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int CD = C0;  // 32-bit cache register (C0,C1)
 
   // Special purpose registers
-  static constexpr int SP = 10;  // Stack pointer
-  static constexpr int DP = 11;  // Data pointer
+  static constexpr int PC = 10;  // Program counter
+  static constexpr int SP = 11;  // Stack pointer
+  static constexpr int DP = 12;  // Data pointer
   static constexpr int SD = SP;  // 32-bit Stack+data pointer (SP,DP)
-  static constexpr int PC = 12;  // Program counter
   static constexpr int ST = 13;  // Status flags register
+  static constexpr int BM = 14;  // Bank mapping register
 
   // Number of 16-bit registers.
-  static constexpr int kRegisterCount = ST + 1;
+  static constexpr int kRegisterCount = BM + 1;
 
   // Flags in the ST register
   static constexpr uint16_t Z = 1 << 0;            // Zero flag
@@ -71,6 +73,9 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int STACK = 1;  // Stack bank
   static constexpr int DATA = 2;   // Data bank
   static constexpr int EXTRA = 3;  // Extra bank
+
+  // Registers of the CPU core.
+  using Registers = gb::Array<uint16_t, kRegisterCount>;
 
   // Internal state of the processor.
   enum class State {
@@ -91,6 +96,68 @@ class CpuCore final : public ExecutionComponent {
     kRunInstruction,
   };
 
+  // This specifies which banks are mapped to which core purposes. These can be
+  // changed during execution only by calling the Reset function.
+  struct Banks {
+    static Banks Default() { return {0, 0, 0, 0}; }
+    static Banks FromWord(uint16_t value) {
+      return {.code = static_cast<int>(value & 0xF),
+              .stack = static_cast<int>((value >> 4) & 0xF),
+              .data = static_cast<int>((value >> 8) & 0xF),
+              .extra = static_cast<int>((value >> 12) & 0xF)};
+    }
+    uint16_t ToWord() const {
+      return static_cast<uint16_t>(code & 0xF) |
+             (static_cast<uint16_t>(stack & 0xF) << 4) |
+             (static_cast<uint16_t>(data & 0xF) << 8) |
+             (static_cast<uint16_t>(extra & 0xF) << 12);
+    }
+
+    Banks& SetCode(int in_code) {
+      code = in_code;
+      return *this;
+    }
+    Banks& SetStack(int in_stack) {
+      stack = in_stack;
+      return *this;
+    }
+    Banks& SetData(int in_data) {
+      data = in_data;
+      return *this;
+    }
+    Banks& SetExtra(int in_extra) {
+      extra = in_extra;
+      return *this;
+    }
+
+    int code = 0;   // Index of bank where code is executed.
+    int stack = 0;  // Index of bank where stack is located.
+    int data = 0;   // Index of general purpose data bank.
+    int extra = 0;  // Index of second general purpose data bank.
+  };
+
+  // Reset() parameters for the CPU core.
+  struct ResetParams {
+    // Bit flags for `reset_mask`.
+    static constexpr uint16_t BC = 1 << 0;  // Set code bank.
+    static constexpr uint16_t BS = 1 << 1;  // Set stack bank.
+    static constexpr uint16_t BD = 1 << 2;  // Set data bank.
+    static constexpr uint16_t BE = 1 << 3;  // Set extra bank.
+    static constexpr uint16_t PC = 1 << 4;  // Set program counter.
+    static constexpr uint16_t SP = 1 << 5;  // Set stack pointer.
+    static constexpr uint16_t DP = 1 << 6;  // Set data pointer.
+    static constexpr uint16_t ALL = BC | BS | BD | BE | PC | SP | DP;
+
+    // Specifies which registers (and parts of registers) to reset.
+    uint16_t mask = ALL;
+
+    // Register values to set.
+    uint16_t bm = 0;  // BM register. Requires reset_mask & (BC | BS | BD | BE).
+    uint16_t pc = 0;  // PC register. Requires reset_mask & PC.
+    uint16_t sp = 0;  // SP register. Requires reset_mask & SP.
+    uint16_t dp = 0;  // DP register. Requires reset_mask & DP.
+  };
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -106,6 +173,28 @@ class CpuCore final : public ExecutionComponent {
 
   State GetState() { return state_; }
 
+  // Returns the registers of the CPU core.
+  //
+  // If the core is ahead of the Processor, this may not be simulation accurate.
+  // If that is needed, then the caller should call Lock() and wait for it to
+  // be locked to ensure the CpuCore is not mid-instruction.
+  void GetRegisters(gb::Array<uint16_t, kRegisterCount>& registers) const;
+
+  // Returns the current MemoryBank for the specified bank index.
+  //
+  // This will be null until the core is attached to a processor.
+  MemoryBank* GetMemoryBank(int bank_index) const { return banks_[bank_index]; }
+
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
+
+  // Resets the CPU core, starting execution with the specified parameters.
+  //
+  // This function is only valid after the core has been attached to a
+  // processor.
+  void Reset(const ComponentLock& lock, const ResetParams& params);
+
   //----------------------------------------------------------------------------
   // ExecutionComponent implementation
   //----------------------------------------------------------------------------
@@ -118,23 +207,24 @@ class CpuCore final : public ExecutionComponent {
   // Implementation
   //----------------------------------------------------------------------------
 
+  void InitBanks();
   void StartInstruction();
   void FetchInstruction();
   void RunInstruction();
 
   // Owning processor.
-  Processor* processor_;
+  Processor* processor_ = nullptr;
 
   // Current execution state.
   State state_ = State::kIdle;
   Cycles exec_cycles_ = 0;  // Cycles accumulated during Execute.
 
   // Bank assignments.
-  CpuCoreBanks bank_assignment_;
   MemoryBank* banks_[4] = {};
 
   // 16-bit registers.
   uint16_t r_[kRegisterCount] = {};
+  static_assert(sizeof(r_) == sizeof(Registers));
 
   // Interrupt vector table and IT register.
   uint32_t it_ = 0;

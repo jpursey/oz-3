@@ -6,6 +6,8 @@
 #ifndef OZ3_CORE_CPU_CORE_CONFIG_H_
 #define OZ3_CORE_CPU_CORE_CONFIG_H_
 
+#include "absl/types/span.h"
+#include "oz3/core/instruction_set.h"
 #include "oz3/core/memory_bank_config.h"
 
 namespace oz3 {
@@ -23,18 +25,8 @@ inline constexpr int kMaxCores = 8;
 inline constexpr int kCpuCoreFetchAndDecodeCycles =
     kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles + 1;
 
-//==============================================================================
-// CpuCoreBankAssignemt
-//==============================================================================
-
-// This specifies which banks are mapped to which core purposes. These can be
-// changed during execution only by core 0 executing the RST instruction.
-struct CpuCoreBanks {
-  int code;   // Index of bank where code is executed.
-  int stack;  // Index of bank where stack is located.
-  int data;   // Index of general purpose data bank.
-  int extra;  // Index of second general purpose data bank.
-};
+// The number of cycles required to execute each micro code operation.
+inline constexpr int kCpuCoreCycles_MOV = 1;
 
 //==============================================================================
 // CpuCoreConfig
@@ -47,27 +39,36 @@ class CpuCoreConfig {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Constructs a core with all banks mapped to memory bank 0.
-  CpuCoreConfig() = default;
+  // Constructs a default core configuration using the base OZ-3 instruction
+  // set.
+  static CpuCoreConfig Default() { return CpuCoreConfig(); }
 
-  // Sets the bank assignments for this core.
+  // Constructs a core with all banks mapped to memory bank 0.
+  CpuCoreConfig() : instructions_(GetInstructionSet()) {}
+
+  // Sets the instruction set for this core.
   //
-  // Bank indexes must be in the range [0, kMaxMemoryBanks).
-  CpuCoreConfig& SetBanks(const CpuCoreBanks& banks);
+  // By default, this is the full instruction set defined by the OZ-3
+  // specifications. Custom implementations may choose to override this with a
+  // custom instruction set.
+  CpuCoreConfig& SetInstructionSet(
+      absl::Span<const InstructionDef> instructions);
 
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
 
-  // Returns the bank assignments for this core.
-  const CpuCoreBanks& GetBanks() const { return banks_; }
+  // Returns the instruction set for this core.
+  absl::Span<const InstructionDef> GetInstructions() const {
+    return instructions_;
+  }
 
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
 
-  CpuCoreBanks banks_ = {0, 0, 0, 0};
+  absl::Span<const InstructionDef> instructions_;
 };
 
 }  // namespace oz3
