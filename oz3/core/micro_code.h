@@ -29,7 +29,6 @@ enum MicroOp : uint8_t {
 struct MicroCodeDef {
   uint8_t op;                // The microcode operation code.
   std::string_view op_name;  // The name of the operation.
-  bool has_bank;             // True if the operation requires a bank extension.
   ArgType arg1;              // The type of the first argument.
   ArgType arg2;              // The type of the second argument.
 };
@@ -38,10 +37,6 @@ struct MicroCodeDef {
 struct MicroCode {
   // The operation code for the microcode.
   uint8_t op;
-
-  // The memory bank to operate on in the range [0,3]. Ignored if the operation
-  // does not need a bank specification or it is implied from arguments.
-  int8_t bank;
 
   // Arguments to the microcode. The micro code op specifies how many arguments
   // there are, and what type of argument value it is. There are two types of
@@ -69,6 +64,7 @@ struct MicroCode {
 // This is used by the CpuCode to execute instructions via microcode.
 struct DecodedInstruction {
   absl::Span<const MicroCode> code;
+  uint16_t size;  // Size of the full instruction (including inline values).
   uint16_t c[2];  // Value of C0 and C1 registers from instruction
   int8_t r[2];    // Indexes into r_ in CpuCore from instruction
 
@@ -78,8 +74,9 @@ struct DecodedInstruction {
 // The compiled microcode for an instruction.
 struct CompiledInstruction {
   std::vector<MicroCode> code;
-  ArgTypeBits arg1;
-  ArgTypeBits arg2;
+  uint16_t size;     // Size of the full instruction (including inline values).
+  ArgTypeBits arg1;  // First argument encoding.
+  ArgTypeBits arg2;  // Second argument encoding.
 
   auto operator<=>(const CompiledInstruction&) const = default;
 };
@@ -94,7 +91,9 @@ class InstructionMicroCodes final {
   // Construct with default OZ-3 microcode definitions.
   InstructionMicroCodes();
 
-  // Construct with specific microcode definitions (for testing).
+  // Construct with specific microcode definitions (for testing). This is
+  // non-functional outside of tests, as the CpuCore expects the OZ-3 defined
+  // micro code definitions.
   explicit InstructionMicroCodes(
       absl::Span<const MicroCodeDef> micro_code_defs);
   InstructionMicroCodes(const InstructionMicroCodes&) = delete;

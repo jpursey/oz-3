@@ -46,6 +46,20 @@ ArgTypeBits::ArgTypeBits(std::string_view arg_def) {
   }
 }
 
+uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
+  uint16_t code = static_cast<uint16_t>(op) << 8;
+  uint16_t args = 0;
+  ArgTypeBits arg1bits(decl.arg1);
+  if (arg1bits.size > 0) {
+    args = a & ((1 << arg1bits.size) - 1);
+  }
+  ArgTypeBits arg2bits(decl.arg2);
+  if (arg2bits.size > 0) {
+    args |= (b & ((1 << arg2bits.size) - 1)) << arg1bits.size;
+  }
+  return code | args;
+}
+
 absl::Span<const InstructionDef> GetInstructionSet() { return kInstructionSet; }
 
 }  // namespace oz3

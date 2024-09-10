@@ -195,6 +195,16 @@ class CpuCore final : public ExecutionComponent {
   // processor.
   void Reset(const ComponentLock& lock, const ResetParams& params);
 
+  // Sets the specified 16-bit register value.
+  // 
+  // It must be a valid register index: [0, kRegisterCount).
+  void SetWordRegister(const ComponentLock& lock, int reg, uint16_t value);
+
+  // Sets the specified 32-bit register value.
+  //
+  // It must be a valid 32-bit register index (D0, D1, D2, D3, CD, or SD).
+  void SetDwordRegister(const ComponentLock& lock, int reg, uint32_t value);
+
   //----------------------------------------------------------------------------
   // ExecutionComponent implementation
   //----------------------------------------------------------------------------
@@ -232,6 +242,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Lock for a dependent component the CpuCore requires.
   std::unique_ptr<ComponentLock> lock_;
+  int locked_bank_ = -1;  // Current locked bank index.
 
   // Microcode implementation
   InstructionMicroCodes micro_codes_;
