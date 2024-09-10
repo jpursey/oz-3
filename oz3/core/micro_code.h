@@ -70,7 +70,7 @@ struct DecodedInstruction {
   absl::Span<const MicroCode> code;
   uint16_t size;  // Size of the full instruction (including inline values).
   uint16_t c[2];  // Value of C0 and C1 registers from instruction
-  int8_t r[2];    // Indexes into r_ in CpuCore from instruction
+  int8_t r[4];    // Indexes into r_ in CpuCore from instruction
 
   auto operator<=>(const DecodedInstruction&) const = default;
 };

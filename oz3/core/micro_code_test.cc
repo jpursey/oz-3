@@ -53,9 +53,6 @@ void PrintArg(ArgType arg_type, std::ostream* os) {
     case ArgType::kDwordRegister:
       *os << "D";
       break;
-    case ArgType::kValue:
-      *os << "v";
-      break;
   }
 }
 

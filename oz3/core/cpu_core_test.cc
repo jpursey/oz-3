@@ -22,7 +22,8 @@ enum MicroTestOp : uint8_t {
   kTestOp_NOP = 0,
   kTestOp_WAIT,
   kTestOp_HALT,
-  kTestOp_LVALUE,
+  kTestOp_LWORD,
+  kTestOp_LDWORD,
   kTestOp_LCODE,
   kTestOp_LSTACK,
   kTestOp_LDATA,
@@ -45,9 +46,14 @@ const InstructionDef kMicroTestInstructions[] = {
      {"HALT"},
      "UL;"
      "HALT;"},
-    {kTestOp_LVALUE,
+    {kTestOp_LWORD,
      {"LCODE", kArgWordRegA},
      "LD(a);"
+     "UL;"},
+    {kTestOp_LDWORD,
+     {"LCODE", kArgDwordRegA},
+     "LD(a0);"
+     "LD(a1);"
      "UL;"},
     {kTestOp_LCODE,
      {"LCODE", kArgWordRegA, kArgImmValue5},
@@ -604,7 +610,7 @@ TEST(CpuCoreTest, MicroTestInstructionsCompile) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(CpuCoreTest, DelayedUnlockExecutesLongerAfterFetch) {
+TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
   Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
@@ -612,11 +618,14 @@ TEST(CpuCoreTest, DelayedUnlockExecutesLongerAfterFetch) {
   state.ResetCore();
 
   MemWriter mem(memory_bank);
-  mem.AddCode(kTestOp_LVALUE, CpuCore::R0);
+  mem.AddCode(kTestOp_LWORD, CpuCore::R0);
   mem.AddValue(42);
+  mem.AddCode(kTestOp_LDWORD, CpuCore::D0);
+  mem.AddValue(0);
+  mem.AddValue(1);
   mem.AddCode(kTestOp_HALT);
 
-  // Run the processor for one fetch and decode cycle. Since the LVALUE OP does
+  // Run the processor for one fetch and decode cycle. Since the LWORD OP does
   // an LD microcode before unlocking the CODE memory bank, it will execute as
   // well.
   processor.Execute(1);
@@ -626,8 +635,18 @@ TEST(CpuCoreTest, DelayedUnlockExecutesLongerAfterFetch) {
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
 
+  // Run the processor for one fetch and decode cycle. Since the LWORD OP does
+  // an LD microcode before unlocking the CODE memory bank, it will execute as
+  // well.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);  // Advances 3 due to two LDs
+  EXPECT_EQ(state.d0(), 0x10000);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 3);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
+
   // Complete this instruction and run the HALT instruction.
-  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 3);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 }
 

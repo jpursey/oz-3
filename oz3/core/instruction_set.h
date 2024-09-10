@@ -37,13 +37,13 @@ inline constexpr std::string_view kArgImmValue6 = "#6";
 inline constexpr std::string_view kArgImmValue7 = "#7";
 inline constexpr std::string_view kArgImmValue8 = "#8";
 
+// The type of an argument stored in instruction code low byte.
 enum class ArgType {
   kNone,           // No argument.
-  kBank,           // Memory bank, internal type for micro code only.
-  kImmediate,      // Immediate value, stored in instruction code.
-  kWordRegister,   // Word register, index stored in instruction code.
-  kDwordRegister,  // Dword register, index stored in instruction code.
-  kValue,          // Word value, stored after the instruction in memory.
+  kBank,           // Memory bank index.
+  kImmediate,      // Immediate value.
+  kWordRegister,   // Word register.
+  kDwordRegister,  // Dword register.
 };
 
 // Represents how an argument is encoded in the instruction's lower byte.

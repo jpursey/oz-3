@@ -255,21 +255,35 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
   }
   if (arg_type == ArgType::kWordRegister) {
     if (arg_name == "a") {
-      if (instruction_.decl.arg1 != arg_name) {
-        return Error(absl::StrCat("Argument not declared: ", arg_name));
-      }
-      if (compiled_.arg1.type != ArgType::kWordRegister) {
-        return Error(absl::StrCat("Invalid argument type: ", arg_name));
+      if (instruction_.decl.arg1 != "a") {
+        return Error("First argument not: a");
       }
       arg = -1;
-    } else if (arg_name == "b") {
-      if (instruction_.decl.arg2 != arg_name) {
-        return Error(absl::StrCat("Argument not declared: ", arg_name));
+    } else if (arg_name == "a0") {
+      if (instruction_.decl.arg1 != "A") {
+        return Error("First argument not: A");
       }
-      if (compiled_.arg2.type != ArgType::kWordRegister) {
-        return Error(absl::StrCat("Invalid argument type: ", arg_name));
+      arg = -1;
+    } else if (arg_name == "a1") {
+      if (instruction_.decl.arg1 != "A") {
+        return Error("First argument not: A");
+      }
+      arg = -3;
+    } else if (arg_name == "b") {
+      if (instruction_.decl.arg2 != "b") {
+        return Error("Second argument not: b");
       }
       arg = -2;
+    } else if (arg_name == "b0") {
+      if (instruction_.decl.arg2 != "B") {
+        return Error("Second argument not: B");
+      }
+      arg = -2;
+    } else if (arg_name == "b1") {
+      if (instruction_.decl.arg2 != "B") {
+        return Error("Second argument not: B");
+      }
+      arg = -4;
     } else if (arg_name[0] == 'R' && arg_name.size() == 2) {
       arg = arg_name[1] - '0';
       if (arg < 0 || arg > 7) {
@@ -296,18 +310,12 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
   if (arg_type == ArgType::kDwordRegister) {
     if (arg_name == "A") {
       if (instruction_.decl.arg1 != arg_name) {
-        return Error(absl::StrCat("Argument not declared: ", arg_name));
-      }
-      if (compiled_.arg1.type != ArgType::kDwordRegister) {
-        return Error(absl::StrCat("Invalid argument type: ", arg_name));
+        return Error("First argument not: A");
       }
       arg = -1;
     } else if (arg_name == "B") {
       if (instruction_.decl.arg2 != arg_name) {
-        return Error(absl::StrCat("Argument not declared: ", arg_name));
-      }
-      if (compiled_.arg2.type != ArgType::kDwordRegister) {
-        return Error(absl::StrCat("Invalid argument type: ", arg_name));
+        return Error("Second argument not: B");
       }
       arg = -2;
     } else if (arg_name[0] == 'D' && arg_name.size() == 2) {
@@ -431,6 +439,7 @@ bool InstructionMicroCodes::Decode(uint16_t instruction_code,
       decoded.r[0] = CpuCore::R0 + value;
     } else if (compiled.arg1.type == ArgType::kDwordRegister) {
       decoded.r[0] = CpuCore::D0 + value * 2;
+      decoded.r[2] = decoded.r[0] + 1;
     } else if (compiled.arg1.type == ArgType::kImmediate) {
       decoded.c[0] = value;
     }
@@ -441,6 +450,7 @@ bool InstructionMicroCodes::Decode(uint16_t instruction_code,
       decoded.r[1] = CpuCore::R0 + value;
     } else if (compiled.arg2.type == ArgType::kDwordRegister) {
       decoded.r[1] = CpuCore::D0 + value * 2;
+      decoded.r[2] = decoded.r[0] + 1;
     } else if (compiled.arg2.type == ArgType::kImmediate) {
       decoded.c[1] = value;
     }
