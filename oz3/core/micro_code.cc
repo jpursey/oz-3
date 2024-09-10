@@ -31,6 +31,10 @@ const MicroCodeDef kMicroCodeDefs[] = {
     {kMicro_LD, "LD", ArgType::kWordRegister, ArgType::kNone},
     {kMicro_ST, "ST", ArgType::kWordRegister, ArgType::kNone},
     {kMicro_MOV, "MOV", ArgType::kWordRegister, ArgType::kWordRegister},
+    {kMicro_MOVI, "MOVI", ArgType::kWordRegister, ArgType::kImmediate},
+    {kMicro_ADD, "ADD", ArgType::kWordRegister, ArgType::kWordRegister},
+    {kMicro_ADDI, "ADDI", ArgType::kWordRegister, ArgType::kImmediate},
+    {kMicro_SUB, "SUB", ArgType::kWordRegister, ArgType::kWordRegister},
 };
 
 class InstructionCompiler {

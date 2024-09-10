@@ -23,6 +23,10 @@ enum MicroOp : uint8_t {
   kMicro_LD,    // Loads the value from memory into the register.
   kMicro_ST,    // Stores the value from the register into memory.
   kMicro_MOV,   // Moves a value from one register to another.
+  kMicro_MOVI,  // Moves an immediate value into a register.
+  kMicro_ADD,   // Adds a register value to another register.
+  kMicro_ADDI,  // Adds an immediate value (can be negative) to a register.
+  kMicro_SUB,   // Subtracks one register value from another register.
 };
 
 // Definition of a microcode operation.

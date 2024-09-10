@@ -27,6 +27,10 @@ inline constexpr int kCpuCoreFetchAndDecodeCycles =
 
 // The number of cycles required to execute each micro code operation.
 inline constexpr int kCpuCoreCycles_MOV = 1;
+inline constexpr int kCpuCoreCycles_MOVI = kCpuCoreCycles_MOV;
+inline constexpr int kCpuCoreCycles_ADD = 1;
+inline constexpr int kCpuCoreCycles_ADDI = kCpuCoreCycles_ADD;
+inline constexpr int kCpuCoreCycles_SUB = 1;
 
 //==============================================================================
 // CpuCoreConfig

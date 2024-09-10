@@ -211,6 +211,28 @@ void CpuCore::RunInstruction() {
         r_[reg1] = r_[reg2];
         exec_cycles_ += kCpuCoreCycles_MOV;
       } break;
+      case kMicro_MOVI: {
+        OZ3_INIT_REG1;
+        r_[reg1] = code.arg2;
+        exec_cycles_ += kCpuCoreCycles_MOVI;
+      } break;
+      case kMicro_ADD: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        r_[reg1] += r_[reg2];
+        exec_cycles_ += kCpuCoreCycles_ADD;
+      } break;
+      case kMicro_ADDI: {
+        OZ3_INIT_REG1;
+        r_[reg1] += code.arg2;
+        exec_cycles_ += kCpuCoreCycles_ADDI;
+      } break;
+      case kMicro_SUB: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        r_[reg1] -= r_[reg2];
+        exec_cycles_ += kCpuCoreCycles_SUB;
+      } break;
     }
   }
 
