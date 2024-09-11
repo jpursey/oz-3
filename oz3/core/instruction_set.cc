@@ -27,16 +27,10 @@ const InstructionDef kInstructionSet[] = {
 }  // namespace
 
 ArgTypeBits::ArgTypeBits(std::string_view arg_def) {
-  if (arg_def == kArgWordRegA) {
+  if (arg_def == kArgWordRegA || arg_def == kArgWordRegB) {
     type = ArgType::kWordRegister;
     size = 3;
-  } else if (arg_def == kArgWordRegB) {
-    type = ArgType::kWordRegister;
-    size = 3;
-  } else if (arg_def == kArgDwordRegA) {
-    type = ArgType::kDwordRegister;
-    size = 3;
-  } else if (arg_def == kArgDwordRegB) {
+  } else if (arg_def == kArgDwordRegA || arg_def == kArgDwordRegB) {
     type = ArgType::kDwordRegister;
     size = 3;
   } else if (arg_def.size() == 2 && arg_def[0] == '#') {

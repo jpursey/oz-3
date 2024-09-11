@@ -196,7 +196,7 @@ class CpuCore final : public ExecutionComponent {
   void Reset(const ComponentLock& lock, const ResetParams& params);
 
   // Sets the specified 16-bit register value.
-  // 
+  //
   // It must be a valid register index: [0, kRegisterCount).
   void SetWordRegister(const ComponentLock& lock, int reg, uint16_t value);
 

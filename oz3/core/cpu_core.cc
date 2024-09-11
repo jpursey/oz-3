@@ -176,13 +176,13 @@ void CpuCore::RunInstruction() {
       } break;
       case kMicro_UL: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
-               lock_->IsLocked(*banks_[locked_bank_]) &&
-               code.arg1 == locked_bank_);
+               lock_->IsLocked(*banks_[locked_bank_]));
         if (exec_cycles_ > 0) {
           --mc_index_;
           return;
         }
         lock_ = nullptr;
+        locked_bank_ = -1;
       } break;
       case kMicro_ADR: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
