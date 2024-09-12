@@ -12,7 +12,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
-#include "oz3/core/instruction_set.h"
+#include "oz3/core/instruction.h"
 
 namespace oz3 {
 namespace {
@@ -25,13 +25,6 @@ using ::testing::ValuesIn;
 
 constexpr uint8_t kOp_TEST = 200;
 constexpr uint8_t kMicro_TEST = 255;
-
-TEST(MicroCodeTest, InstructionSetCompiles) {
-  InstructionMicrocodes codes;
-  std::string error;
-  EXPECT_TRUE(codes.Compile(GetInstructionSet(), &error));
-  EXPECT_THAT(error, IsEmpty());
-}
 
 struct CompileTestCase {
   MicrocodeDef micro;

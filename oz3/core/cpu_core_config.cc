@@ -7,7 +7,11 @@
 
 #include <algorithm>
 
+#include "oz3/core/instruction_set.h"
+
 namespace oz3 {
+
+CpuCoreConfig::CpuCoreConfig() : instructions_(GetInstructionSet()) {}
 
 CpuCoreConfig& CpuCoreConfig::SetInstructionSet(
     absl::Span<const InstructionDef> instructions) {

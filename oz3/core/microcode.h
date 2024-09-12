@@ -10,7 +10,7 @@
 #include <string>
 
 #include "absl/types/span.h"
-#include "oz3/core/instruction_set.h"
+#include "oz3/core/instruction.h"
 
 namespace oz3 {
 

@@ -7,7 +7,7 @@
 #define OZ3_CORE_CPU_CORE_CONFIG_H_
 
 #include "absl/types/span.h"
-#include "oz3/core/instruction_set.h"
+#include "oz3/core/instruction.h"
 #include "oz3/core/memory_bank_config.h"
 
 namespace oz3 {
@@ -48,7 +48,7 @@ class CpuCoreConfig {
   static CpuCoreConfig Default() { return CpuCoreConfig(); }
 
   // Constructs a core with all banks mapped to memory bank 0.
-  CpuCoreConfig() : instructions_(GetInstructionSet()) {}
+  CpuCoreConfig();
 
   // Sets the instruction set for this core.
   //

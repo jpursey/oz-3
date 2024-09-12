@@ -10,6 +10,7 @@
 
 #include "absl/types/span.h"
 #include "oz3/core/cpu_core_config.h"
+#include "oz3/core/instruction_set.h"
 #include "oz3/core/memory_bank_config.h"
 
 namespace oz3 {
