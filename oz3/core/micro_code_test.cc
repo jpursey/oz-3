@@ -27,14 +27,14 @@ constexpr uint8_t kOp_TEST = 200;
 constexpr uint8_t kMicro_TEST = 255;
 
 TEST(MicroCodeTest, InstructionSetCompiles) {
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(GetInstructionSet(), &error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 struct CompileTestCase {
-  MicroCodeDef micro;
+  MicrocodeDef micro;
   InstructionDef instruction;
   bool valid;
 };
@@ -56,7 +56,7 @@ void PrintArg(ArgType arg_type, std::ostream* os) {
   }
 }
 
-void PrintDef(const MicroCodeDef& def, std::ostream* os) {
+void PrintDef(const MicrocodeDef& def, std::ostream* os) {
   *os << def.op_name;
   if (def.arg1 != ArgType::kNone) {
     *os << "(";
@@ -88,23 +88,23 @@ void PrintTo(const CompileTestCase& test_case, std::ostream* os) {
   *os << ",valid=" << (test_case.valid ? "true" : "false") << "}";
 }
 
-constexpr MicroCodeDef kMicroNoArgs = {kMicro_TEST, "TEST", ArgType::kNone,
+constexpr MicrocodeDef kMicroNoArgs = {kMicro_TEST, "TEST", ArgType::kNone,
                                        ArgType::kNone};
-constexpr MicroCodeDef kMicroBankArg1 = {kMicro_TEST, "TEST", ArgType::kBank,
+constexpr MicrocodeDef kMicroBankArg1 = {kMicro_TEST, "TEST", ArgType::kBank,
                                          ArgType::kNone};
-constexpr MicroCodeDef kMicroImmArg1 = {kMicro_TEST, "TEST",
+constexpr MicrocodeDef kMicroImmArg1 = {kMicro_TEST, "TEST",
                                         ArgType::kImmediate, ArgType::kNone};
-constexpr MicroCodeDef kMicroWordArg1 = {
+constexpr MicrocodeDef kMicroWordArg1 = {
     kMicro_TEST, "TEST", ArgType::kWordRegister, ArgType::kNone};
-constexpr MicroCodeDef kMicroDwordArg1 = {
+constexpr MicrocodeDef kMicroDwordArg1 = {
     kMicro_TEST, "TEST", ArgType::kDwordRegister, ArgType::kNone};
-constexpr MicroCodeDef kMicroImmArg2 = {
+constexpr MicrocodeDef kMicroImmArg2 = {
     kMicro_TEST, "TEST", ArgType::kImmediate, ArgType::kImmediate};
-constexpr MicroCodeDef kMicroWordArg2 = {
+constexpr MicrocodeDef kMicroWordArg2 = {
     kMicro_TEST, "TEST", ArgType::kImmediate, ArgType::kWordRegister};
-constexpr MicroCodeDef kMicroDwordArg2 = {
+constexpr MicrocodeDef kMicroDwordArg2 = {
     kMicro_TEST, "TEST", ArgType::kImmediate, ArgType::kDwordRegister};
-constexpr MicroCodeDef kMicroZscoArgs = {kMicro_TEST, "TEST", ArgType::kZsco,
+constexpr MicrocodeDef kMicroZscoArgs = {kMicro_TEST, "TEST", ArgType::kZsco,
                                          ArgType::kZsco};
 
 using CompileTest = TestWithParam<CompileTestCase>;
@@ -112,9 +112,9 @@ using CompileTest = TestWithParam<CompileTestCase>;
 TEST_P(CompileTest, Test) {
   const auto& test_case = GetParam();
 
-  MicroCodeDef micros[] = {{kMicro_UL, "UL", ArgType::kNone, ArgType::kNone},
+  MicrocodeDef micros[] = {{kMicro_UL, "UL", ArgType::kNone, ArgType::kNone},
                            test_case.micro};
-  InstructionMicroCodes codes(micros);
+  InstructionMicrocodes codes(micros);
   std::string new_code = absl::StrCat("UL;", test_case.instruction.code);
   InstructionDef instruction = test_case.instruction;
   instruction.code = new_code;
@@ -355,10 +355,10 @@ INSTANTIATE_TEST_SUITE_P(MicroCodeMiscTest, CompileTest,
                          ValuesIn(kMiscCompileTestCases));
 
 TEST(MicroCodeTest, DecodeInstructionNotFound) {
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   DecodedInstruction decoded;
   EXPECT_FALSE(codes.Decode(0, decoded));
-  MicroCode ul_c = {kMicro_UL};
+  Microcode ul_c = {kMicro_UL};
   DecodedInstruction expected = {};
   expected.size = 1;
   expected.code = absl::MakeConstSpan(&ul_c, 1);
@@ -370,7 +370,7 @@ uint16_t MakeCode(uint16_t op, uint16_t args = 0) {
 }
 
 TEST(MicroCodeTest, BankDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kBank, ArgType::kNone},
   };
@@ -378,7 +378,7 @@ TEST(MicroCodeTest, BankDecodedCorrectly) {
       {kOp_TEST, {}, "UL;OP(CODE);OP(STACK);OP(DATA);OP(EXTRA)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -391,15 +391,15 @@ TEST(MicroCodeTest, BankDecodedCorrectly) {
   EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(
       decoded.code,
-      ElementsAre(MicroCode{.op = kMicro_UL},
-                  MicroCode{.op = kMicro_TEST, .arg1 = CpuCore::CODE},
-                  MicroCode{.op = kMicro_TEST, .arg1 = CpuCore::STACK},
-                  MicroCode{.op = kMicro_TEST, .arg1 = CpuCore::DATA},
-                  MicroCode{.op = kMicro_TEST, .arg1 = CpuCore::EXTRA}));
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::CODE},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::STACK},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::DATA},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::EXTRA}));
 }
 
 TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kImmediate, ArgType::kImmediate},
   };
@@ -407,7 +407,7 @@ TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
       {kOp_TEST, {}, "UL;OP(0,1);OP(127,-42);OP(-128,97)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -420,14 +420,14 @@ TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
   EXPECT_EQ(decoded.r[1], 0);
   EXPECT_THAT(
       decoded.code,
-      ElementsAre(MicroCode{.op = kMicro_UL},
-                  MicroCode{.op = kMicro_TEST, .arg1 = 0, .arg2 = 1},
-                  MicroCode{.op = kMicro_TEST, .arg1 = 127, .arg2 = -42},
-                  MicroCode{.op = kMicro_TEST, .arg1 = -128, .arg2 = 97}));
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = 0, .arg2 = 1},
+                  Microcode{.op = kMicro_TEST, .arg1 = 127, .arg2 = -42},
+                  Microcode{.op = kMicro_TEST, .arg1 = -128, .arg2 = 97}));
 }
 
 TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kWordRegister, ArgType::kWordRegister},
   };
@@ -439,7 +439,7 @@ TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
        "OP(C0,C1);OP(SP,DP);OP(PC,ST)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -453,25 +453,25 @@ TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
   EXPECT_THAT(
       decoded.code,
       ElementsAre(
-          MicroCode{.op = kMicro_UL},
-          MicroCode{
+          Microcode{.op = kMicro_UL},
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::R2, .arg2 = CpuCore::R3},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::R4, .arg2 = CpuCore::R5},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::R6, .arg2 = CpuCore::R7},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::C0, .arg2 = CpuCore::C1},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::SP, .arg2 = CpuCore::DP},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::PC, .arg2 = CpuCore::ST}));
 }
 
 TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kDwordRegister, ArgType::kDwordRegister},
   };
@@ -479,7 +479,7 @@ TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
       {kOp_TEST, {}, "UL;OP(D0,D1);OP(D2,D3);OP(CD,SD)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -493,17 +493,17 @@ TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
   EXPECT_THAT(
       decoded.code,
       ElementsAre(
-          MicroCode{.op = kMicro_UL},
-          MicroCode{
+          Microcode{.op = kMicro_UL},
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::D2, .arg2 = CpuCore::D3},
-          MicroCode{
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::CD, .arg2 = CpuCore::SD}));
 }
 
 TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kWordRegister, ArgType::kWordRegister},
   };
@@ -511,7 +511,7 @@ TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
       {kOp_TEST, {.arg1 = "#3", .arg2 = "#5"}, "UL;OP(C0,C1)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -525,14 +525,14 @@ TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
     EXPECT_EQ(decoded.r[0], 0);
     EXPECT_EQ(decoded.r[1], 0);
   }
-  EXPECT_THAT(decoded.code, ElementsAre(MicroCode{.op = kMicro_UL},
-                                        MicroCode{.op = kMicro_TEST,
+  EXPECT_THAT(decoded.code, ElementsAre(Microcode{.op = kMicro_UL},
+                                        Microcode{.op = kMicro_TEST,
                                                   .arg1 = CpuCore::C0,
                                                   .arg2 = CpuCore::C1}));
 }
 
 TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kWordRegister, ArgType::kWordRegister},
   };
@@ -540,7 +540,7 @@ TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
       {kOp_TEST, {.arg1 = "a", .arg2 = "b"}, "UL;OP(a,b);OP(b,a)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -556,13 +556,13 @@ TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
   }
   EXPECT_THAT(
       decoded.code,
-      ElementsAre(MicroCode{.op = kMicro_UL},
-                  MicroCode{.op = kMicro_TEST, .arg1 = -1, .arg2 = -2},
-                  MicroCode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = -2},
+                  Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
 }
 
 TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
+  const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", ArgType::kDwordRegister, ArgType::kDwordRegister},
   };
@@ -570,7 +570,7 @@ TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
       {kOp_TEST, {.arg1 = "A", .arg2 = "B"}, "UL;OP(A,B);OP(B,A)"},
   };
 
-  InstructionMicroCodes codes(micro_defs);
+  InstructionMicrocodes codes(micro_defs);
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_defs, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -586,14 +586,14 @@ TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
   }
   EXPECT_THAT(
       decoded.code,
-      ElementsAre(MicroCode{.op = kMicro_UL},
-                  MicroCode{.op = kMicro_TEST, .arg1 = -1, .arg2 = -2},
-                  MicroCode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = -2},
+                  Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
 }
 
 TEST(MicroCodeTest, LockDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LK(STACK);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -602,7 +602,7 @@ TEST(MicroCodeTest, LockDuringFetch) {
 TEST(MicroCodeTest, LockAfterPriorLock) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);LK(STACK);UL;UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -610,7 +610,7 @@ TEST(MicroCodeTest, LockAfterPriorLock) {
 
 TEST(MicroCodeTest, UnlockWhenNotLocked) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -618,7 +618,7 @@ TEST(MicroCodeTest, UnlockWhenNotLocked) {
 
 TEST(MicroCodeTest, AddressWhenNotLocked) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;ADR(C0);"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -626,7 +626,7 @@ TEST(MicroCodeTest, AddressWhenNotLocked) {
 
 TEST(MicroCodeTest, AddressDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -635,7 +635,7 @@ TEST(MicroCodeTest, AddressDuringFetch) {
 TEST(MicroCodeTest, AddressAfterLock) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -643,7 +643,7 @@ TEST(MicroCodeTest, AddressAfterLock) {
 
 TEST(MicroCodeTest, LoadDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LD(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -652,7 +652,7 @@ TEST(MicroCodeTest, LoadDuringFetch) {
 TEST(MicroCodeTest, LoadBeforeAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);LD(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -661,7 +661,7 @@ TEST(MicroCodeTest, LoadBeforeAddress) {
 TEST(MicroCodeTest, LoadAfterAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -669,7 +669,7 @@ TEST(MicroCodeTest, LoadAfterAddress) {
 
 TEST(MicroCodeTest, StoreDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ST(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -677,7 +677,7 @@ TEST(MicroCodeTest, StoreDuringFetch) {
 
 TEST(MicroCodeTest, StoreAfterAddressDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);ST(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -686,7 +686,7 @@ TEST(MicroCodeTest, StoreAfterAddressDuringFetch) {
 TEST(MicroCodeTest, StoreBeforeAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ST(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -695,7 +695,7 @@ TEST(MicroCodeTest, StoreBeforeAddress) {
 TEST(MicroCodeTest, StoreAfterAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);ST(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -703,7 +703,7 @@ TEST(MicroCodeTest, StoreAfterAddress) {
 
 TEST(MicroCodeTest, DefaultCodeSizeIsOne) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -714,7 +714,7 @@ TEST(MicroCodeTest, DefaultCodeSizeIsOne) {
 
 TEST(MicroCodeTest, LoadDuringFetchIncreasesCodeSize) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LD(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -725,7 +725,7 @@ TEST(MicroCodeTest, LoadDuringFetchIncreasesCodeSize) {
 
 TEST(MicroCodeTest, TwoLoadsDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LD(C0);LD(C1);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -737,7 +737,7 @@ TEST(MicroCodeTest, TwoLoadsDuringFetch) {
 TEST(MicroCodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
@@ -748,7 +748,7 @@ TEST(MicroCodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
 
 TEST(MicroCodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);LD(C0);UL;"};
-  InstructionMicroCodes codes;
+  InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());

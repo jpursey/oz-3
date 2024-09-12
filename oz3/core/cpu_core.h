@@ -245,10 +245,10 @@ class CpuCore final : public ExecutionComponent {
   int locked_bank_ = -1;  // Current locked bank index.
 
   // Microcode implementation
-  InstructionMicroCodes micro_codes_;
+  InstructionMicrocodes micro_codes_;
   DecodedInstruction instruction_ = {};
-  int mc_index_ = 0;  // Micro code index into the current instruction.
-  uint16_t mst_ = 0;  // Status flags from micro code (same ST register flags).
+  int mc_index_ = 0;  // Microcode index into the current instruction.
+  uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).
 };
 
 }  // namespace oz3

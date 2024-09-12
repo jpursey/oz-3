@@ -145,7 +145,7 @@ void CpuCore::RunInstruction() {
       (code.arg2 < 0 ? instruction_.r[-code.arg2 - 1] : code.arg2)
 
   while (mc_index_ < instruction_.code.size()) {
-    const MicroCode code = instruction_.code[mc_index_++];
+    const Microcode code = instruction_.code[mc_index_++];
     switch (code.op) {
       case kMicro_MSTS: {
         mst_ &= ~static_cast<uint16_t>(code.arg1);

@@ -679,7 +679,7 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
 }
 
 TEST(CpuCoreTest, MicroTestInstructionsCompile) {
-  InstructionMicroCodes micro_codes;
+  InstructionMicrocodes micro_codes;
   std::string error;
   EXPECT_TRUE(micro_codes.Compile(kMicroTestInstructions, &error));
   EXPECT_THAT(error, IsEmpty());

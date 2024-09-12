@@ -15,25 +15,25 @@
 namespace oz3 {
 
 // The folowing lists all the microcode operations that can be executed by the
-// OZ-3 CpuCore, and the micro code assembly semantics. Each operation has a
+// OZ-3 CpuCore, and the microcode assembly semantics. Each operation has a
 // opcode with a name that matches the enumeration and up to two argumnents.
 //
 // Arguments are of the following types:
-//   r: Word register. In micro code assembly, this may be any explicitly named
+//   r: Word register. In microcode assembly, this may be any explicitly named
 //      word register (e.g. R0, PC, ST, etc.) or a register provided from
 //      the instruction code (a or b for word args; a0, a1, b0, or b1 for
 //      low/high word parts of dword args A and B).
-//   d: Dword register. In micro code assembly, this may be any explicitly named
+//   d: Dword register. In microcode assembly, this may be any explicitly named
 //      dword register (e.g. D0, CD, etc.) or provided by the instruction arg
 //      code byte (A or B).
-//   v: Immediate value. This is an 8-bit signed value. In micro code assembly,
+//   v: Immediate value. This is an 8-bit signed value. In microcode assembly,
 //      this is an explicit integer in the range [-128,127].
-//   b: Memory bank. In micro code assembly this must be one of CODE, STACK,
+//   b: Memory bank. In microcode assembly this must be one of CODE, STACK,
 //      DATA, or EXTRA.
-//   z: ZSCO flag mask. In micro code assembly, this is any combination of Z, S,
+//   z: ZSCO flag mask. In microcode assembly, this is any combination of Z, S,
 //      C, O, and _ characters (e.g. ZC or Z_C_ or just _ to indicate no flags).
 //
-// The following operations are documented first by their micro code assembly
+// The following operations are documented first by their microcode assembly
 // opcode and required arguments and types. For instance "OP(z,r);" means that
 // the operation requires two arguments, the first of which is a ZSCO flag mask
 // and the second is a word register.
@@ -46,7 +46,7 @@ enum MicroOp : uint8_t {
   // MSTS(z,z);
   //
   // Clears any flags specified in arg1 and sets any flags specified in arg2
-  // inside micro code ZSCO status flags (MST).
+  // inside microcode ZSCO status flags (MST).
   //
   // Explicitly:
   //   MST = (MST & ~arg1) | arg2;
@@ -54,7 +54,7 @@ enum MicroOp : uint8_t {
 
   // MSTR(z,z);
   //
-  // Returns micro code status flags (MST) to the ST register, by clearing any
+  // Returns microcode status flags (MST) to the ST register, by clearing any
   // unset bits from MST specified by arg1 and setting any set bits from MST
   // specified by arg2.
   //
@@ -72,14 +72,14 @@ enum MicroOp : uint8_t {
   // WAIT(r);
   //
   // Puts core into kWaiting state for the arg1 cycles in reg (specified in
-  // arg1). Further execution of micro code in the instruction is terminated. If
+  // arg1). Further execution of microcode in the instruction is terminated. If
   // the wait time is less than the amount of time taken so far, then it does
   // nothing.
   kMicro_WAIT,
 
   // HALT;
   //
-  // Puts the core into kIdle state. Further execution of micro code in the
+  // Puts the core into kIdle state. Further execution of microcode in the
   // instruction is terminated. Execution will not continue until the core is
   // reset.
   kMicro_HALT,
@@ -88,7 +88,7 @@ enum MicroOp : uint8_t {
   //
   // Lock memory bank arg1 and sets it as the active memory bank. This is used
   // to lock a memory bank for exclusive
-  // access. If the bank is already locked, the micro code execution is paused
+  // access. If the bank is already locked, the microcode execution is paused
   // for the instruction until the bank is unlocked. Only one bank can be locked
   // at a time.
   kMicro_LK,
@@ -96,7 +96,7 @@ enum MicroOp : uint8_t {
   // UL;
   //
   // Unlock memory bank previously locked by LK. All locked banks must be
-  // unlocked before micro code execution in the instruction.
+  // unlocked before microcode execution in the instruction.
   kMicro_UL,
 
   // ADR(r);
@@ -152,7 +152,7 @@ enum MicroOp : uint8_t {
 };
 
 // Definition of a microcode operation.
-struct MicroCodeDef {
+struct MicrocodeDef {
   uint8_t op;                // The microcode operation code.
   std::string_view op_name;  // The name of the operation.
   ArgType arg1;              // The type of the first argument.
@@ -160,11 +160,11 @@ struct MicroCodeDef {
 };
 
 // Microcode instruction for the OZ-3 CPU.
-struct MicroCode {
+struct Microcode {
   // The operation code for the microcode.
   uint8_t op;
 
-  // Arguments to the microcode. The micro code op specifies how many arguments
+  // Arguments to the microcode. The microcode op specifies how many arguments
   // there are, and what type of argument value it is. There are two types of
   // arguments:
   // - Register: If the argument is a register (word or dword), then the value
@@ -177,14 +177,14 @@ struct MicroCode {
   int8_t arg1;
   int8_t arg2;
 
-  auto operator<=>(const MicroCode&) const = default;
+  auto operator<=>(const Microcode&) const = default;
 };
 
 // Decoded instruction from the OZ-3 CPU.
 //
 // This is used by the CpuCode to execute instructions via microcode.
 struct DecodedInstruction {
-  absl::Span<const MicroCode> code;
+  absl::Span<const Microcode> code;
   uint16_t size;  // Size of the full instruction (including inline values).
   uint16_t c[2];  // Value of C0 and C1 registers from instruction
   int8_t r[4];    // Indexes into r_ in CpuCore from instruction
@@ -194,7 +194,7 @@ struct DecodedInstruction {
 
 // The compiled microcode for an instruction.
 struct CompiledInstruction {
-  std::vector<MicroCode> code;
+  std::vector<Microcode> code;
   uint16_t size;     // Size of the full instruction (including inline values).
   ArgTypeBits arg1;  // First argument encoding.
   ArgTypeBits arg2;  // Second argument encoding.
@@ -207,19 +207,19 @@ struct CompiledInstruction {
 // The CpuCore uses this to compile all instructions from the provided
 // instruction set into microcode, and then use Decode on to get the decoded
 // instruction and microcode to execute.
-class InstructionMicroCodes final {
+class InstructionMicrocodes final {
  public:
   // Construct with default OZ-3 microcode definitions.
-  InstructionMicroCodes();
+  InstructionMicrocodes();
 
   // Construct with specific microcode definitions (for testing). This is
   // non-functional outside of tests, as the CpuCore expects the OZ-3 defined
-  // micro code definitions.
-  explicit InstructionMicroCodes(
-      absl::Span<const MicroCodeDef> micro_code_defs);
-  InstructionMicroCodes(const InstructionMicroCodes&) = delete;
-  InstructionMicroCodes& operator=(const InstructionMicroCodes&) = delete;
-  ~InstructionMicroCodes();
+  // microcode definitions.
+  explicit InstructionMicrocodes(
+      absl::Span<const MicrocodeDef> micro_code_defs);
+  InstructionMicrocodes(const InstructionMicrocodes&) = delete;
+  InstructionMicrocodes& operator=(const InstructionMicrocodes&) = delete;
+  ~InstructionMicrocodes();
 
   // Compiles the provided instructions into microcode.
   //
@@ -241,7 +241,7 @@ class InstructionMicroCodes final {
   bool Decode(uint16_t instruction_code, DecodedInstruction& decoded);
 
  private:
-  absl::Span<const MicroCodeDef> micro_code_defs_;
+  absl::Span<const MicrocodeDef> microcode_defs_;
   std::vector<CompiledInstruction> compiled_;
 };
 

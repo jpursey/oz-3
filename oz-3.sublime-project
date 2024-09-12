@@ -1,0 +1,33 @@
+{
+	"folders":
+	[
+		{
+			"name": "oz3",
+			"path": "oz3",
+		},
+		{
+			"name": "game-bits",
+			"path": "..\\game-bits\\src\\gb",
+		},
+		{
+			"name": "SDL2",
+			"path": "..\\game-bits\\third_party\\SDL2-2.0.10\\include",
+		},
+		{
+			"name": "SDL2_image",
+			"path": "..\\game-bits\\third_party\\SDL2_image-2.0.5\\include",
+		},
+		{
+			"path": "..\\game-bits\\third_party\\abseil-cpp\\absl", 
+		},
+		{
+			"path": "..\\game-bits\\third_party\\stb",
+		},
+		{
+			"path": "..\\game-bits\\third_party\\imgui",
+		},
+		{
+			"path": "..\\game-bits\\third_party\\flatbuffers\\include\\flatbuffers",
+		},
+	],
+}

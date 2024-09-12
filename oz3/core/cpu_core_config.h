@@ -25,7 +25,7 @@ inline constexpr int kMaxCores = 8;
 inline constexpr int kCpuCoreFetchAndDecodeCycles =
     kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles + 1;
 
-// The number of cycles required to execute each micro code operation.
+// The number of cycles required to execute each microcode operation.
 inline constexpr int kCpuCoreCycles_MOV = 1;
 inline constexpr int kCpuCoreCycles_MOVI = kCpuCoreCycles_MOV;
 inline constexpr int kCpuCoreCycles_ADD = 1;

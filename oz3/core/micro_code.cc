@@ -19,10 +19,10 @@ namespace oz3 {
 
 namespace {
 
-const MicroCode kNopMicroCode[] = {{.op = kMicro_UL}};
+const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
-const MicroCodeDef kMicroCodeDefs[] = {
+const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_MSTS, "MSTS", ArgType::kZsco, ArgType::kZsco},
     {kMicro_MSTR, "MSTR", ArgType::kZsco, ArgType::kZsco},
     {kMicro_WAIT, "WAIT", ArgType::kWordRegister, ArgType::kNone},
@@ -42,7 +42,7 @@ const MicroCodeDef kMicroCodeDefs[] = {
 class InstructionCompiler {
  public:
   InstructionCompiler(const InstructionDef& instruction,
-                      absl::Span<const MicroCodeDef> micro_code_defs,
+                      absl::Span<const MicrocodeDef> micro_code_defs,
                       CompiledInstruction& compiled, std::string* error_string)
       : instruction_(instruction),
         micro_code_defs_(micro_code_defs),
@@ -76,15 +76,15 @@ class InstructionCompiler {
 
   bool CompileMicroCode(absl::string_view micro_src_code);
   void ParseMicroCode(std::string_view code);
-  const MicroCodeDef* FindMicroCodeDef(std::string_view op_name);
+  const MicrocodeDef* FindMicroCodeDef(std::string_view op_name);
   bool DecodeArg(std::string_view arg_name, ArgType arg_type, int8_t& arg);
 
   const InstructionDef& instruction_;
-  absl::Span<const MicroCodeDef> micro_code_defs_;
+  absl::Span<const MicrocodeDef> micro_code_defs_;
   CompiledInstruction& compiled_;
   std::string* const error_string_;
   ParsedMicroCode parsed_ = {};
-  MicroCode* micro_code_ = nullptr;
+  Microcode* micro_code_ = nullptr;
 
   // Set to the bank of the last LK operation. Cleared by UL for that bank.
   int lk_bank_ = CpuCore::CODE;
@@ -123,9 +123,9 @@ bool InstructionCompiler::Compile() {
 
 bool InstructionCompiler::CompileMicroCode(absl::string_view micro_src_code) {
   ParseMicroCode(micro_src_code);
-  const MicroCodeDef* def = FindMicroCodeDef(parsed_.op_name);
+  const MicrocodeDef* def = FindMicroCodeDef(parsed_.op_name);
   if (def == nullptr) {
-    return Error("MicroCode OpCode not found");
+    return Error("Microcode OpCode not found");
   }
   if (!DecodeArg(parsed_.arg1_name, def->arg1, micro_code_->arg1)) {
     return false;
@@ -215,9 +215,9 @@ void InstructionCompiler::ParseMicroCode(std::string_view code) {
   }
 }
 
-const MicroCodeDef* InstructionCompiler::FindMicroCodeDef(
+const MicrocodeDef* InstructionCompiler::FindMicroCodeDef(
     std::string_view op_name) {
-  for (const MicroCodeDef& def : micro_code_defs_) {
+  for (const MicrocodeDef& def : micro_code_defs_) {
     if (def.op_name == op_name) {
       micro_code_->op = def.op;
       return &def;
@@ -363,23 +363,23 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
 
 }  // namespace
 
-InstructionMicroCodes::InstructionMicroCodes()
-    : InstructionMicroCodes(kMicroCodeDefs) {}
+InstructionMicrocodes::InstructionMicrocodes()
+    : InstructionMicrocodes(kMicroCodeDefs) {}
 
-InstructionMicroCodes::InstructionMicroCodes(
-    absl::Span<const MicroCodeDef> micro_code_defs)
-    : micro_code_defs_(micro_code_defs), compiled_(256) {}
+InstructionMicrocodes::InstructionMicrocodes(
+    absl::Span<const MicrocodeDef> micro_code_defs)
+    : microcode_defs_(micro_code_defs), compiled_(256) {}
 
-InstructionMicroCodes::~InstructionMicroCodes() = default;
+InstructionMicrocodes::~InstructionMicrocodes() = default;
 
-bool InstructionMicroCodes::Compile(const InstructionDef& instruction,
+bool InstructionMicrocodes::Compile(const InstructionDef& instruction,
                                     std::string* error_string) {
   int op_index = static_cast<int>(instruction.op);
   CompiledInstruction& compiled = compiled_[op_index];
   compiled.arg1 = ArgTypeBits(instruction.decl.arg1);
   compiled.arg2 = ArgTypeBits(instruction.decl.arg2);
 
-  InstructionCompiler compiler(instruction, micro_code_defs_, compiled,
+  InstructionCompiler compiler(instruction, microcode_defs_, compiled,
                                error_string);
   if (!compiler.Compile()) {
     return false;
@@ -387,7 +387,7 @@ bool InstructionMicroCodes::Compile(const InstructionDef& instruction,
   return true;
 }
 
-bool InstructionMicroCodes::Compile(
+bool InstructionMicrocodes::Compile(
     absl::Span<const InstructionDef> instructions, std::string* error_string) {
   for (const InstructionDef& instruction : instructions) {
     if (!Compile(instruction, error_string)) {
@@ -397,7 +397,7 @@ bool InstructionMicroCodes::Compile(
   return true;
 }
 
-bool InstructionMicroCodes::Decode(uint16_t instruction_code,
+bool InstructionMicrocodes::Decode(uint16_t instruction_code,
                                    DecodedInstruction& decoded) {
   int index = (instruction_code >> 8);
   CompiledInstruction& compiled = compiled_[index];
