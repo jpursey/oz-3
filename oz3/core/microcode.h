@@ -151,12 +151,22 @@ enum MicroOp : uint8_t {
   kMicro_SUB,
 };
 
+// The type of an argument for microcode instructions.
+enum class MicroArgType {
+  kNone,           // No argument.
+  kBank,           // Memory bank (CODE, STACK, DATA, or EXTRA).
+  kZsco,           // ZSCO flags (any combo of Z, S, C, O, and _ characters).
+  kValue,          // Signed 8-bit value: [-128,127].
+  kWordRegister,   // Word register.
+  kDwordRegister,  // Dword register.
+};
+
 // Definition of a microcode operation.
 struct MicrocodeDef {
   uint8_t op;                // The microcode operation code.
   std::string_view op_name;  // The name of the operation.
-  ArgType arg1;              // The type of the first argument.
-  ArgType arg2;              // The type of the second argument.
+  MicroArgType arg1;         // The type of the first argument.
+  MicroArgType arg2;         // The type of the second argument.
 };
 
 // Microcode instruction for the OZ-3 CPU.

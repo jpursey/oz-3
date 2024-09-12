@@ -23,20 +23,25 @@ const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
 const MicrocodeDef kMicroCodeDefs[] = {
-    {kMicro_MSTS, "MSTS", ArgType::kZsco, ArgType::kZsco},
-    {kMicro_MSTR, "MSTR", ArgType::kZsco, ArgType::kZsco},
-    {kMicro_WAIT, "WAIT", ArgType::kWordRegister, ArgType::kNone},
-    {kMicro_HALT, "HALT", ArgType::kNone, ArgType::kNone},
-    {kMicro_LK, "LK", ArgType::kBank, ArgType::kNone},
-    {kMicro_UL, "UL", ArgType::kNone, ArgType::kNone},
-    {kMicro_ADR, "ADR", ArgType::kWordRegister, ArgType::kNone},
-    {kMicro_LD, "LD", ArgType::kWordRegister, ArgType::kNone},
-    {kMicro_ST, "ST", ArgType::kWordRegister, ArgType::kNone},
-    {kMicro_MOV, "MOV", ArgType::kWordRegister, ArgType::kWordRegister},
-    {kMicro_MOVI, "MOVI", ArgType::kWordRegister, ArgType::kImmediate},
-    {kMicro_ADD, "ADD", ArgType::kWordRegister, ArgType::kWordRegister},
-    {kMicro_ADDI, "ADDI", ArgType::kWordRegister, ArgType::kImmediate},
-    {kMicro_SUB, "SUB", ArgType::kWordRegister, ArgType::kWordRegister},
+    {kMicro_MSTS, "MSTS", MicroArgType::kZsco, MicroArgType::kZsco},
+    {kMicro_MSTR, "MSTR", MicroArgType::kZsco, MicroArgType::kZsco},
+    {kMicro_WAIT, "WAIT", MicroArgType::kWordRegister, MicroArgType::kNone},
+    {kMicro_HALT, "HALT", MicroArgType::kNone, MicroArgType::kNone},
+    {kMicro_LK, "LK", MicroArgType::kBank, MicroArgType::kNone},
+    {kMicro_UL, "UL", MicroArgType::kNone, MicroArgType::kNone},
+    {kMicro_ADR, "ADR", MicroArgType::kWordRegister, MicroArgType::kNone},
+    {kMicro_LD, "LD", MicroArgType::kWordRegister, MicroArgType::kNone},
+    {kMicro_ST, "ST", MicroArgType::kWordRegister, MicroArgType::kNone},
+    {kMicro_MOV, "MOV", MicroArgType::kWordRegister,
+     MicroArgType::kWordRegister},
+    {kMicro_MOVI, "MOVI", MicroArgType::kWordRegister,
+     MicroArgType::kValue},
+    {kMicro_ADD, "ADD", MicroArgType::kWordRegister,
+     MicroArgType::kWordRegister},
+    {kMicro_ADDI, "ADDI", MicroArgType::kWordRegister,
+     MicroArgType::kValue},
+    {kMicro_SUB, "SUB", MicroArgType::kWordRegister,
+     MicroArgType::kWordRegister},
 };
 
 class InstructionCompiler {
@@ -77,7 +82,7 @@ class InstructionCompiler {
   bool CompileMicroCode(absl::string_view micro_src_code);
   void ParseMicroCode(std::string_view code);
   const MicrocodeDef* FindMicroCodeDef(std::string_view op_name);
-  bool DecodeArg(std::string_view arg_name, ArgType arg_type, int8_t& arg);
+  bool DecodeArg(std::string_view arg_name, MicroArgType arg_type, int8_t& arg);
 
   const InstructionDef& instruction_;
   absl::Span<const MicrocodeDef> micro_code_defs_;
@@ -226,18 +231,18 @@ const MicrocodeDef* InstructionCompiler::FindMicroCodeDef(
   return nullptr;
 }
 
-bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
-                                    int8_t& arg) {
-  if (arg_name.empty() && arg_type == ArgType::kNone) {
+bool InstructionCompiler::DecodeArg(std::string_view arg_name,
+                                    MicroArgType arg_type, int8_t& arg) {
+  if (arg_name.empty() && arg_type == MicroArgType::kNone) {
     return true;
   }
   if (arg_name.empty()) {
     return Error("Argument missing");
   }
-  if (arg_type == ArgType::kNone) {
+  if (arg_type == MicroArgType::kNone) {
     return Error("Argument not allowed");
   }
-  if (arg_type == ArgType::kBank) {
+  if (arg_type == MicroArgType::kBank) {
     if (arg_name == "CODE") {
       arg = CpuCore::CODE;
     } else if (arg_name == "STACK") {
@@ -251,7 +256,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
     }
     return true;
   }
-  if (arg_type == ArgType::kZsco) {
+  if (arg_type == MicroArgType::kZsco) {
     for (char c : arg_name) {
       if (c == 'Z') {
         arg |= CpuCore::Z;
@@ -267,7 +272,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
     }
     return true;
   }
-  if (arg_type == ArgType::kWordRegister) {
+  if (arg_type == MicroArgType::kWordRegister) {
     if (arg_name == "a") {
       if (instruction_.decl.arg1 != "a") {
         return Error("First argument not: a");
@@ -321,7 +326,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
     }
     return true;
   }
-  if (arg_type == ArgType::kDwordRegister) {
+  if (arg_type == MicroArgType::kDwordRegister) {
     if (arg_name == "A") {
       if (instruction_.decl.arg1 != arg_name) {
         return Error("First argument not: A");
@@ -347,7 +352,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
     }
     return true;
   }
-  if (arg_type == ArgType::kImmediate) {
+  if (arg_type == MicroArgType::kValue) {
     int value;
     if (!absl::SimpleAtoi(arg_name, &value)) {
       return Error(absl::StrCat("Invalid argument: ", arg_name));
