@@ -41,6 +41,7 @@ inline constexpr std::string_view kArgImmValue8 = "#8";
 enum class ArgType {
   kNone,           // No argument.
   kBank,           // Memory bank index (2 bits).
+  kZsco,           // ZSCO flags (4 bits).
   kImmediate,      // Immediate value (1-8 bits).
   kWordRegister,   // Word register (3 bits).
   kDwordRegister,  // Dword register (3 bits).

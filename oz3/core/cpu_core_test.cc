@@ -19,7 +19,7 @@ namespace {
 using ::testing::IsEmpty;
 
 enum MicroTestOp : uint8_t {
-  kTestOp_NOP = 0,
+  kTestOp_NOP,
   kTestOp_WAIT,
   kTestOp_HALT,
   kTestOp_LWORD,
@@ -32,8 +32,11 @@ enum MicroTestOp : uint8_t {
   kTestOp_SSTACK,
   kTestOp_SDATA,
   kTestOp_SEXTRA,
-  kTestOp_MOVST,
+  kTestOp_MOV_ST,
   kTestOp_MOVI,
+  kTestOp_MSTS,
+  kTestOp_MSTR1,
+  kTestOp_MSTR2,
   kTestOp_ADD,
   kTestOp_SUB,
   kTestOp_ADDI,
@@ -111,8 +114,8 @@ const InstructionDef kMicroTestInstructions[] = {
      "ADR(C0);"
      "ST(b);"
      "UL;"},
-    {kTestOp_MOVST,
-     {"MOVST", kArgImmValue5, kArgWordRegB},
+    {kTestOp_MOV_ST,
+     {"MOV_ST", kArgImmValue5, kArgWordRegB},
      "UL;"
      "MOV(C1,b);"
      "LK(DATA);"
@@ -123,22 +126,63 @@ const InstructionDef kMicroTestInstructions[] = {
      {"MOVI", kArgWordRegA},
      "UL;"
      "MOVI(a,42);"},
+    {kTestOp_MSTS,
+     {"MSTS"},
+     "UL;"
+     "MSTS(_,Z);MSTR(ZSCO,ZSCO);MOV(R0,ST);"
+     "MSTS(_,S);MSTR(ZSCO,ZSCO);MOV(R1,ST);"
+     "MSTS(_,C);MSTR(ZSCO,ZSCO);MOV(R2,ST);"
+     "MSTS(_,O);MSTR(ZSCO,ZSCO);MOV(R3,ST);"
+     "MSTS(Z,_);MSTR(ZSCO,ZSCO);MOV(R4,ST);"
+     "MSTS(S,_);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
+     "MSTS(C,_);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
+     "MSTS(O,_);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {kTestOp_MSTR1,
+     {"MSTR1"},
+     "UL;"
+     "MSTR(ZSCO,_);MSTS(_,ZSCO);"
+     "MSTR(_,Z);MOV(R0,ST);"
+     "MSTR(_,S);MOV(R1,ST);"
+     "MSTR(_,C);MOV(R2,ST);"
+     "MSTR(_,O);MOV(R3,ST);"
+     "MSTS(ZSCO,_);"
+     "MSTR(Z,_);MOV(R4,ST);"
+     "MSTR(S,_);MOV(R5,ST);"
+     "MSTR(C,_);MOV(R6,ST);"
+     "MSTR(O,_);MOV(R7,ST);"},
+    {kTestOp_MSTR2,
+     {"MSTR2"},
+     "UL;"
+     "MSTR(ZSCO,_);"
+     "MSTR(_,Z);MOV(R0,ST);"
+     "MSTR(_,S);MOV(R1,ST);"
+     "MSTR(_,C);MOV(R2,ST);"
+     "MSTR(_,O);MOV(R3,ST);"
+     "MSTS(_,ZSCO);MSTR(_,ZSCO);"
+     "MSTR(Z,_);MOV(R4,ST);"
+     "MSTR(S,_);MOV(R5,ST);"
+     "MSTR(C,_);MOV(R6,ST);"
+     "MSTR(O,_);MOV(R7,ST);"},
     {kTestOp_ADD,
      {"ADD", kArgWordRegA, kArgWordRegB},
      "UL;"
-     "ADD(a,b);"},
+     "ADD(a,b);"
+     "MSTR(ZSCO,ZSCO);"},
     {kTestOp_SUB,
      {"SUB", kArgWordRegA, kArgWordRegB},
      "UL;"
-     "SUB(a,b);"},
+     "SUB(a,b);"
+     "MSTR(ZSCO,ZSCO);"},
     {kTestOp_ADDI,
      {"ADDI", kArgWordRegA},
      "UL;"
-     "ADDI(a,10);"},
+     "ADDI(a,10);"
+     "MSTR(ZSCO,ZSCO);"},
     {kTestOp_SUBI,
      {"SUBI", kArgWordRegA},
      "UL;"
-     "ADDI(a,-10);"},
+     "ADDI(a,-10);"
+     "MSTR(ZSCO,ZSCO);"},
 };
 
 // Helper class to fetch and update the state of a CpuCore.
@@ -922,7 +966,7 @@ TEST(CpuCoreTest, MovStOp) {
   lock.reset();
 
   MemAccessor code_mem(code_bank);
-  code_mem.AddCode(kTestOp_MOVST, 10, CpuCore::R0);
+  code_mem.AddCode(kTestOp_MOV_ST, 10, CpuCore::R0);
   code_mem.AddCode(kTestOp_HALT);
 
   MemAccessor data_mem(data_bank, 10);
@@ -970,6 +1014,79 @@ TEST(CpuCoreTest, MoviOp) {
   state.Update();
   EXPECT_EQ(state.pc, 1);
   EXPECT_EQ(state.r3, 42);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, MstsOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MSTS);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the MSTS instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.r1, 3);
+  EXPECT_EQ(state.r2, 7);
+  EXPECT_EQ(state.r3, 15);
+  EXPECT_EQ(state.r4, 14);
+  EXPECT_EQ(state.r5, 12);
+  EXPECT_EQ(state.r6, 8);
+  EXPECT_EQ(state.r7, 0);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, MstrOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MSTR1);
+  mem.AddCode(kTestOp_MSTR2);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the MSTR1 instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.r1, 3);
+  EXPECT_EQ(state.r2, 7);
+  EXPECT_EQ(state.r3, 15);
+  EXPECT_EQ(state.r4, 14);
+  EXPECT_EQ(state.r5, 12);
+  EXPECT_EQ(state.r6, 8);
+  EXPECT_EQ(state.r7, 0);
+
+  // Execute the MSTR2 instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 16);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.r1, 0);
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.r3, 0);
+  EXPECT_EQ(state.r4, 15);
+  EXPECT_EQ(state.r5, 15);
+  EXPECT_EQ(state.r6, 15);
+  EXPECT_EQ(state.r7, 15);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

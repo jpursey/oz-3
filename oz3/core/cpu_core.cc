@@ -131,6 +131,7 @@ void CpuCore::FetchInstruction() {
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
   mc_index_ = 0;
+  mst_ = 0;
   state_ = State::kRunInstruction;
   RunInstruction();
 }
@@ -146,6 +147,14 @@ void CpuCore::RunInstruction() {
   while (mc_index_ < instruction_.code.size()) {
     const MicroCode code = instruction_.code[mc_index_++];
     switch (code.op) {
+      case kMicro_MSTS: {
+        mst_ &= ~static_cast<uint16_t>(code.arg1);
+        mst_ |= static_cast<uint16_t>(code.arg2);
+      } break;
+      case kMicro_MSTR: {
+        r_[ST] &= mst_ | ~static_cast<uint16_t>(code.arg1);
+        r_[ST] |= mst_ & static_cast<uint16_t>(code.arg2);
+      } break;
       case kMicro_WAIT: {
         OZ3_INIT_REG1;
         if (r_[reg1] <= kCpuCoreFetchAndDecodeCycles) {
@@ -205,27 +214,27 @@ void CpuCore::RunInstruction() {
         banks_[locked_bank_]->StoreWord(*lock_, r_[reg1]);
         exec_cycles_ += kMemoryBankAccessWordCycles;
       } break;
+      case kMicro_MOVI: {
+        OZ3_INIT_REG1;
+        r_[reg1] = code.arg2;
+        exec_cycles_ += kCpuCoreCycles_MOVI;
+      } break;
       case kMicro_MOV: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         r_[reg1] = r_[reg2];
         exec_cycles_ += kCpuCoreCycles_MOV;
       } break;
-      case kMicro_MOVI: {
+      case kMicro_ADDI: {
         OZ3_INIT_REG1;
-        r_[reg1] = code.arg2;
-        exec_cycles_ += kCpuCoreCycles_MOVI;
+        r_[reg1] += code.arg2;
+        exec_cycles_ += kCpuCoreCycles_ADDI;
       } break;
       case kMicro_ADD: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         r_[reg1] += r_[reg2];
         exec_cycles_ += kCpuCoreCycles_ADD;
-      } break;
-      case kMicro_ADDI: {
-        OZ3_INIT_REG1;
-        r_[reg1] += code.arg2;
-        exec_cycles_ += kCpuCoreCycles_ADDI;
       } break;
       case kMicro_SUB: {
         OZ3_INIT_REG1;

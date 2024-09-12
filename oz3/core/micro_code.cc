@@ -23,6 +23,8 @@ const MicroCode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
 const MicroCodeDef kMicroCodeDefs[] = {
+    {kMicro_MSTS, "MSTS", ArgType::kZsco, ArgType::kZsco},
+    {kMicro_MSTR, "MSTR", ArgType::kZsco, ArgType::kZsco},
     {kMicro_WAIT, "WAIT", ArgType::kWordRegister, ArgType::kNone},
     {kMicro_HALT, "HALT", ArgType::kNone, ArgType::kNone},
     {kMicro_LK, "LK", ArgType::kBank, ArgType::kNone},
@@ -76,7 +78,6 @@ class InstructionCompiler {
   void ParseMicroCode(std::string_view code);
   const MicroCodeDef* FindMicroCodeDef(std::string_view op_name);
   bool DecodeArg(std::string_view arg_name, ArgType arg_type, int8_t& arg);
-  bool DecodeZsco(std::string_view zsco);
 
   const InstructionDef& instruction_;
   absl::Span<const MicroCodeDef> micro_code_defs_;
@@ -130,9 +131,6 @@ bool InstructionCompiler::CompileMicroCode(absl::string_view micro_src_code) {
     return false;
   }
   if (!DecodeArg(parsed_.arg2_name, def->arg2, micro_code_->arg2)) {
-    return false;
-  }
-  if (!DecodeZsco(parsed_.zsco)) {
     return false;
   }
 
@@ -253,6 +251,22 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
     }
     return true;
   }
+  if (arg_type == ArgType::kZsco) {
+    for (char c : arg_name) {
+      if (c == 'Z') {
+        arg |= CpuCore::Z;
+      } else if (c == 'S') {
+        arg |= CpuCore::S;
+      } else if (c == 'C') {
+        arg |= CpuCore::C;
+      } else if (c == 'O') {
+        arg |= CpuCore::O;
+      } else if (c != '_') {
+        return Error(absl::StrCat("Invalid ZSCO flags: ", arg_name));
+      }
+    }
+    return true;
+  }
   if (arg_type == ArgType::kWordRegister) {
     if (arg_name == "a") {
       if (instruction_.decl.arg1 != "a") {
@@ -345,45 +359,6 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name, ArgType arg_type,
     return true;
   }
   return Error("Unhandled argument type!");
-}
-
-bool InstructionCompiler::DecodeZsco(std::string_view zsco) {
-  if (zsco.starts_with("z")) {
-    micro_code_->st_clear |= CpuCore::Z;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("s")) {
-    micro_code_->st_clear |= CpuCore::S;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("c")) {
-    micro_code_->st_clear |= CpuCore::C;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("o")) {
-    micro_code_->st_clear |= CpuCore::O;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("Z")) {
-    micro_code_->st_set |= CpuCore::Z;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("S")) {
-    micro_code_->st_set |= CpuCore::S;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("C")) {
-    micro_code_->st_set |= CpuCore::C;
-    zsco.remove_prefix(1);
-  }
-  if (zsco.starts_with("O")) {
-    micro_code_->st_set |= CpuCore::O;
-    zsco.remove_prefix(1);
-  }
-  if (!zsco.empty()) {
-    return Error(absl::StrCat("Invalid ZSCO flags: ", zsco));
-  }
-  return true;
 }
 
 }  // namespace

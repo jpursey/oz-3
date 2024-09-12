@@ -14,19 +14,141 @@
 
 namespace oz3 {
 
+// The folowing lists all the microcode operations that can be executed by the
+// OZ-3 CpuCore, and the micro code assembly semantics. Each operation has a
+// opcode with a name that matches the enumeration and up to two argumnents.
+//
+// Arguments are of the following types:
+//   r: Word register. In micro code assembly, this may be any explicitly named
+//      word register (e.g. R0, PC, ST, etc.) or a register provided from
+//      the instruction code (a or b for word args; a0, a1, b0, or b1 for
+//      low/high word parts of dword args A and B).
+//   d: Dword register. In micro code assembly, this may be any explicitly named
+//      dword register (e.g. D0, CD, etc.) or provided by the instruction arg
+//      code byte (A or B).
+//   v: Immediate value. This is an 8-bit signed value. In micro code assembly,
+//      this is an explicit integer in the range [-128,127].
+//   b: Memory bank. In micro code assembly this must be one of CODE, STACK,
+//      DATA, or EXTRA.
+//   z: ZSCO flag mask. In micro code assembly, this is any combination of Z, S,
+//      C, O, and _ characters (e.g. ZC or Z_C_ or just _ to indicate no flags).
+//
+// The following operations are documented first by their micro code assembly
+// opcode and required arguments and types. For instance "OP(z,r);" means that
+// the operation requires two arguments, the first of which is a ZSCO flag mask
+// and the second is a word register.
+//
+// In the description, the arguments are referred to as follows:
+//   arg1, arg2: The literal argument value provided (value or index).
+//   reg1, reg2: The register value provided to the argument index (r or d).
 enum MicroOp : uint8_t {
-  kMicro_WAIT,  // Puts core into kWaiting state for specified cycles in reg.
-  kMicro_HALT,  // Puts the core into kIdle state.
-  kMicro_LK,    // Lock memory bank.
-  kMicro_UL,    // Unlock memory bank.
-  kMicro_ADR,   // Sets the memory bank address bus to the register value.
-  kMicro_LD,    // Loads the value from memory into the register.
-  kMicro_ST,    // Stores the value from the register into memory.
-  kMicro_MOV,   // Moves a value from one register to another.
-  kMicro_MOVI,  // Moves an immediate value into a register.
-  kMicro_ADD,   // Adds a register value to another register.
-  kMicro_ADDI,  // Adds an immediate value (can be negative) to a register.
-  kMicro_SUB,   // Subtracks one register value from another register.
+
+  // MSTS(z,z);
+  //
+  // Clears any flags specified in arg1 and sets any flags specified in arg2
+  // inside micro code ZSCO status flags (MST).
+  //
+  // Explicitly:
+  //   MST = (MST & ~arg1) | arg2;
+  kMicro_MSTS,
+
+  // MSTR(z,z);
+  //
+  // Returns micro code status flags (MST) to the ST register, by clearing any
+  // unset bits from MST specified by arg1 and setting any set bits from MST
+  // specified by arg2.
+  //
+  // Explicitly:
+  //   ST = (ST & (MST | ~arg1)) | (MST & arg2);
+  //
+  // Examples:
+  //   ST Before   MST    arg1 (clr)   arg2 (set)   ST After
+  //     ____      ZSCO      ZS__        __CO         __CO
+  //     ZS__      ____      ZS__        __CO         ____
+  //     Z___      _S_O      ZS__        ZSCO         _S_O
+  //     ZS_O      Z_C_      ZS__        __CO         Z_C_
+  kMicro_MSTR,
+
+  // WAIT(r);
+  //
+  // Puts core into kWaiting state for the arg1 cycles in reg (specified in
+  // arg1). Further execution of micro code in the instruction is terminated. If
+  // the wait time is less than the amount of time taken so far, then it does
+  // nothing.
+  kMicro_WAIT,
+
+  // HALT;
+  //
+  // Puts the core into kIdle state. Further execution of micro code in the
+  // instruction is terminated. Execution will not continue until the core is
+  // reset.
+  kMicro_HALT,
+
+  // LK(b);
+  //
+  // Lock memory bank arg1 and sets it as the active memory bank. This is used
+  // to lock a memory bank for exclusive
+  // access. If the bank is already locked, the micro code execution is paused
+  // for the instruction until the bank is unlocked. Only one bank can be locked
+  // at a time.
+  kMicro_LK,
+
+  // UL;
+  //
+  // Unlock memory bank previously locked by LK. All locked banks must be
+  // unlocked before micro code execution in the instruction.
+  kMicro_UL,
+
+  // ADR(r);
+  //
+  // Sets the memory bank address bus to reg1. The memory bank must be locked
+  // from LK.
+  kMicro_ADR,
+
+  // LD(r);
+  //
+  // Loads the value from memory into reg1, and advances the address bus. The
+  // memory bank must be locked from LK, and the address set previously by ADR.
+  kMicro_LD,
+
+  // ST(r);
+  //
+  // Stores the value from reg1 into memory, and advances the address bus. The
+  // memory bank must be locked from LK, and the address set previously by ADR.
+  kMicro_ST,
+
+  // MOVI(r,v);
+  //
+  // Copies the value arg2 into reg1:
+  //   reg1 = arg2
+  kMicro_MOVI,
+
+  // MOV(r,r);
+  //
+  // Copies the value from reg2 into reg1:
+  //   reg1 = reg2
+  kMicro_MOV,
+
+  // ADDI(r,v);
+  //
+  // Adds the value arg2 to reg1:
+  //   reg1 = reg1 + arg2
+  // Sets or clears all MST flags.
+  kMicro_ADDI,
+
+  // ADD(r,r);
+  //
+  // Adds the value from reg2 to reg1:
+  //   reg1 = reg1 + reg2
+  // Sets or clears all MST flags.
+  kMicro_ADD,
+
+  // SUB(r,r);
+  //
+  // Subtracts the value from reg2 from reg1:
+  //   reg1 = reg1 - reg2
+  // Sets or clears all MST flags.
+  kMicro_SUB,
 };
 
 // Definition of a microcode operation.
@@ -50,15 +172,10 @@ struct MicroCode {
   //   than zero, it is just the register index. If it is less than zero, then
   //   it refers to the decoded arguments from the instruction code: -1 is reg1,
   //   and -2 is reg2.
-  // - Immediate: If the argument is an immediate value, then the value is the
-  //   immediate value itself.
+  // - Immediate, bank, or ZSCO: If the argument is an immediate value, bank, or
+  //   ZSCO flags, then the value is the arg itself.
   int8_t arg1;
   int8_t arg2;
-
-  // These determine which of the ZSCO flags are allowed to be set or cleared in
-  // the ST register by the micro code.
-  uint8_t st_clear;  // Flags to clear in the ST register.
-  uint8_t st_set;    // Flags to set in the ST register.
 
   auto operator<=>(const MicroCode&) const = default;
 };
@@ -87,9 +204,9 @@ struct CompiledInstruction {
 
 // Compiled database of microcode instructions for the OZ-3 CPU.
 //
-// Typical usage is to compile all instructions into microcode, and then use
-// Decode on a OZ-3 machine code to get the decoded instruction and microcode to
-// execute within the CpuCore.
+// The CpuCore uses this to compile all instructions from the provided
+// instruction set into microcode, and then use Decode on to get the decoded
+// instruction and microcode to execute.
 class InstructionMicroCodes final {
  public:
   // Construct with default OZ-3 microcode definitions.

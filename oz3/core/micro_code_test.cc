@@ -104,6 +104,8 @@ constexpr MicroCodeDef kMicroWordArg2 = {
     kMicro_TEST, "TEST", ArgType::kImmediate, ArgType::kWordRegister};
 constexpr MicroCodeDef kMicroDwordArg2 = {
     kMicro_TEST, "TEST", ArgType::kImmediate, ArgType::kDwordRegister};
+constexpr MicroCodeDef kMicroZscoArgs = {kMicro_TEST, "TEST", ArgType::kZsco,
+                                         ArgType::kZsco};
 
 using CompileTest = TestWithParam<CompileTestCase>;
 
@@ -326,27 +328,21 @@ INSTANTIATE_TEST_SUITE_P(MicroCodeDwordArg2Test, CompileTest,
                          ValuesIn(kDwordArg2CompileTestCases));
 
 constexpr CompileTestCase kZscoCompileTestCases[] = {
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zscoZSCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:scoZSCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zcoZSCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zcoZSCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zscZSCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zscoSCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zscoZCO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zscoZSO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zscoZSC"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zZ"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:Zz"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:zZz"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:sS"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:Ss"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:sSs"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:cC"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:Cc"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:cCc"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:oO"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:Oo"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST:oOo"}, false},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(Z,S)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(C,O))"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZS,CO)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZC,SO)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZSC,SCO)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZCO,ZSC)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZZZ,SSS)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(CCC,OOO)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(_,_)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(S,_)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(_,C)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(Z___,_S__)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(__C_,___O)"}, true},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(X,Z)"}, false},
+    {kMicroZscoArgs, InstructionDef{.code = "TEST(Z,X)"}, false},
 };
 INSTANTIATE_TEST_SUITE_P(MicroCodeZscoTest, CompileTest,
                          ValuesIn(kZscoCompileTestCases));
@@ -504,46 +500,6 @@ TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::D2, .arg2 = CpuCore::D3},
           MicroCode{
               .op = kMicro_TEST, .arg1 = CpuCore::CD, .arg2 = CpuCore::SD}));
-}
-
-TEST(MicroCodeTest, ZscoDecodedCorrectly) {
-  const MicroCodeDef micro_defs[] = {
-      {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", ArgType::kNone, ArgType::kNone},
-  };
-  const InstructionDef instruction_defs[] = {
-      {kOp_TEST,
-       {},
-       "UL;OP:z;OP:s;OP:c;OP:o;OP:Z;OP:S;OP:C;OP:O;OP:zcSO;OP:soZC"},
-  };
-
-  InstructionMicroCodes codes(micro_defs);
-  std::string error;
-  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
-  EXPECT_THAT(error, IsEmpty());
-  DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
-  EXPECT_EQ(decoded.size, 1);
-  EXPECT_EQ(decoded.c[0], 0);
-  EXPECT_EQ(decoded.c[1], 0);
-  EXPECT_EQ(decoded.r[0], 0);
-  EXPECT_EQ(decoded.r[1], 0);
-  EXPECT_THAT(decoded.code,
-              ElementsAre(MicroCode{.op = kMicro_UL},
-                          MicroCode{.op = kMicro_TEST, .st_clear = CpuCore::Z},
-                          MicroCode{.op = kMicro_TEST, .st_clear = CpuCore::S},
-                          MicroCode{.op = kMicro_TEST, .st_clear = CpuCore::C},
-                          MicroCode{.op = kMicro_TEST, .st_clear = CpuCore::O},
-                          MicroCode{.op = kMicro_TEST, .st_set = CpuCore::Z},
-                          MicroCode{.op = kMicro_TEST, .st_set = CpuCore::S},
-                          MicroCode{.op = kMicro_TEST, .st_set = CpuCore::C},
-                          MicroCode{.op = kMicro_TEST, .st_set = CpuCore::O},
-                          MicroCode{.op = kMicro_TEST,
-                                    .st_clear = CpuCore::Z | CpuCore::C,
-                                    .st_set = CpuCore::S | CpuCore::O},
-                          MicroCode{.op = kMicro_TEST,
-                                    .st_clear = CpuCore::S | CpuCore::O,
-                                    .st_set = CpuCore::Z | CpuCore::C}));
 }
 
 TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {

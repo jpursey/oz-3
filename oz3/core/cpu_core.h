@@ -248,6 +248,7 @@ class CpuCore final : public ExecutionComponent {
   InstructionMicroCodes micro_codes_;
   DecodedInstruction instruction_ = {};
   int mc_index_ = 0;  // Micro code index into the current instruction.
+  uint16_t mst_ = 0;  // Status flags from micro code (same ST register flags).
 };
 
 }  // namespace oz3
