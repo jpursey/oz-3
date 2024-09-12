@@ -13,7 +13,7 @@ set(oz3_core_SOURCE
   memory_bank.cc memory_bank.h
   memory_bank_config.cc memory_bank_config.h
   memory_map.h
-  micro_code.cc micro_code.h
+  microcode.cc microcode.h
   processor.cc processor.h
   processor_config.cc processor_config.h
 )
@@ -30,7 +30,7 @@ set(oz3_core_TEST_SOURCE
   component_test.cc
   cpu_core_test.cc
   memory_bank_test.cc
-  micro_code_test.cc
+  microcode_test.cc
   processor_test.cc
 )
 

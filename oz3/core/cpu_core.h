@@ -12,7 +12,7 @@
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/execution_component.h"
-#include "oz3/core/micro_code.h"
+#include "oz3/core/microcode.h"
 
 namespace oz3 {
 
