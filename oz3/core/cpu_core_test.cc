@@ -37,10 +37,10 @@ enum MicroTestOp : uint8_t {
   kTestOp_MSTS,
   kTestOp_MSTR1,
   kTestOp_MSTR2,
-  kTestOp_ADD,
-  kTestOp_SUB,
   kTestOp_ADDI,
   kTestOp_SUBI,
+  kTestOp_ADD,
+  kTestOp_SUB,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -163,6 +163,16 @@ const InstructionDef kMicroTestInstructions[] = {
      "MSTR(S,_);MOV(R5,ST);"
      "MSTR(C,_);MOV(R6,ST);"
      "MSTR(O,_);MOV(R7,ST);"},
+    {kTestOp_ADDI,
+     {"ADDI", kArgWordRegA},
+     "UL;"
+     "ADDI(a,1);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_SUBI,
+     {"SUBI", kArgWordRegA},
+     "UL;"
+     "ADDI(a,-1);"
+     "MSTR(ZSCO,ZSCO);"},
     {kTestOp_ADD,
      {"ADD", kArgWordRegA, kArgWordRegB},
      "UL;"
@@ -172,16 +182,6 @@ const InstructionDef kMicroTestInstructions[] = {
      {"SUB", kArgWordRegA, kArgWordRegB},
      "UL;"
      "SUB(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
-    {kTestOp_ADDI,
-     {"ADDI", kArgWordRegA},
-     "UL;"
-     "ADDI(a,10);"
-     "MSTR(ZSCO,ZSCO);"},
-    {kTestOp_SUBI,
-     {"SUBI", kArgWordRegA},
-     "UL;"
-     "ADDI(a,-10);"
      "MSTR(ZSCO,ZSCO);"},
 };
 
@@ -1087,6 +1087,276 @@ TEST(CpuCoreTest, MstrOp) {
   EXPECT_EQ(state.r5, 15);
   EXPECT_EQ(state.r6, 15);
   EXPECT_EQ(state.r7, 15);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, AddiOp1) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0xFFFE);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x7FFF);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ADDI, CpuCore::R0);
+  mem.AddCode(kTestOp_ADDI, CpuCore::R1);
+  mem.AddCode(kTestOp_ADDI, CpuCore::R2);
+  mem.AddCode(kTestOp_ADDI, CpuCore::R3);
+  mem.AddCode(kTestOp_ADDI, CpuCore::R4);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the ADDI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the ADDI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r1, 0x0002);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the ADDI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r2, 0xFFFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the ADDI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r3, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the ADDI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r4, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, AddiOp2) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x8000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_SUBI, CpuCore::R0);
+  mem.AddCode(kTestOp_SUBI, CpuCore::R1);
+  mem.AddCode(kTestOp_SUBI, CpuCore::R2);
+  mem.AddCode(kTestOp_SUBI, CpuCore::R3);
+  mem.AddCode(kTestOp_SUBI, CpuCore::R4);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the SUBI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 0xFFFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the SUBI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r1, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the SUBI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r2, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+
+  // Execute the SUBI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r3, 0xFFFE);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the SUBI instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r4, 0x7FFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, AddOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0xFFFE);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x7FFF);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x0001);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ADD, CpuCore::R0, CpuCore::R7);
+  mem.AddCode(kTestOp_ADD, CpuCore::R1, CpuCore::R7);
+  mem.AddCode(kTestOp_ADD, CpuCore::R2, CpuCore::R7);
+  mem.AddCode(kTestOp_ADD, CpuCore::R3, CpuCore::R7);
+  mem.AddCode(kTestOp_ADD, CpuCore::R4, CpuCore::R7);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the ADD instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the ADD instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r1, 0x0002);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the ADD instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r2, 0xFFFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the ADD instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r3, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the ADD instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r4, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, SubOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x0001);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_SUB, CpuCore::R0, CpuCore::R7);
+  mem.AddCode(kTestOp_SUB, CpuCore::R1, CpuCore::R7);
+  mem.AddCode(kTestOp_SUB, CpuCore::R2, CpuCore::R7);
+  mem.AddCode(kTestOp_SUB, CpuCore::R3, CpuCore::R7);
+  mem.AddCode(kTestOp_SUB, CpuCore::R4, CpuCore::R7);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the SUB instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 0xFFFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the SUB instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r1, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the SUB instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r2, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+
+  // Execute the SUB instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r3, 0xFFFE);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the SUB instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r4, 0x7FFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

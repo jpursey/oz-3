@@ -143,6 +143,17 @@ void CpuCore::RunInstruction() {
 #define OZ3_INIT_REG2   \
   const uint16_t reg2 = \
       (code.arg2 < 0 ? instruction_.r[-code.arg2 - 1] : code.arg2)
+#define OZ3_MATH_OP(dst, src, func) \
+  const uint16_t a1 = (dst);        \
+  const uint16_t a2 = (src);        \
+  const uint16_t r = dst = (func);  \
+  const uint16_t a1s = (a1 >> 15);  \
+  const uint16_t a2s = (a2 >> 15);  \
+  const uint16_t rs = (r >> 15);
+#define OZ3_Z (r == 0)
+#define OZ3_S (rs << 1)
+#define OZ3_C ((r < a1) << 2)
+#define OZ3_O ((~(a1s ^ a2s) & (a1s ^ rs)) << 3)
 
   while (mc_index_ < instruction_.code.size()) {
     const Microcode code = instruction_.code[mc_index_++];
@@ -227,19 +238,22 @@ void CpuCore::RunInstruction() {
       } break;
       case kMicro_ADDI: {
         OZ3_INIT_REG1;
-        r_[reg1] += code.arg2;
+        OZ3_MATH_OP(r_[reg1], code.arg2, a1 + a2);
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADDI;
       } break;
       case kMicro_ADD: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        r_[reg1] += r_[reg2];
+        OZ3_MATH_OP(r_[reg1], r_[reg2], a1 + a2);
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADD;
       } break;
       case kMicro_SUB: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        r_[reg1] -= r_[reg2];
+        OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_SUB;
       } break;
     }
@@ -250,6 +264,11 @@ void CpuCore::RunInstruction() {
 
 #undef OZ3_INIT_REG1
 #undef OZ3_INIT_REG2
+#undef OZ3_MATH_OP
+#undef OZ3_Z
+#undef OZ3_S
+#undef OZ3_C
+#undef OZ3_O
 }
 
 }  // namespace oz3
