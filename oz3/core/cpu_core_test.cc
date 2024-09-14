@@ -44,6 +44,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_SUB,
   kTestOp_ADC,
   kTestOp_SBC,
+  kTestOp_NEG,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -201,6 +202,11 @@ const InstructionDef kMicroTestInstructions[] = {
      "UL;"
      "MSTR(ZSCO,_);"
      "SBC(a,b);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_NEG,
+     {"NEG", kArgWordRegA, kArgWordRegB},
+     "UL;"
+     "NEG(a,b);"
      "MSTR(ZSCO,ZSCO);"},
 };
 
@@ -1734,6 +1740,73 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   EXPECT_EQ(state.pc, 12);
   EXPECT_EQ(state.r5, 0);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, NegOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x8000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_NEG, CpuCore::R7, CpuCore::R0);
+  mem.AddCode(kTestOp_NEG, CpuCore::R7, CpuCore::R1);
+  mem.AddCode(kTestOp_NEG, CpuCore::R7, CpuCore::R2);
+  mem.AddCode(kTestOp_NEG, CpuCore::R7, CpuCore::R3);
+  mem.AddCode(kTestOp_NEG, CpuCore::R7, CpuCore::R4);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the NEG instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r7, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
+
+  // Execute the NEG instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r7, 0xFFFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the NEG instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r7, 0xFFFE);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the NEG instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r7, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the NEG instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r7, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

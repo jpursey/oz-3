@@ -147,13 +147,11 @@ void CpuCore::RunInstruction() {
   const uint16_t a1 = (dst);        \
   const uint16_t a2 = (src);        \
   const uint16_t r = dst = (func);  \
-  const uint16_t a1s = (a1 >> 15);  \
-  const uint16_t a2s = (a2 >> 15);  \
   const uint16_t rs = (r >> 15);
 #define OZ3_Z ((r >> ZShift) == 0)
 #define OZ3_S (rs << SShift)
 #define OZ3_C ((r < a1) << CShift)
-#define OZ3_O ((~(a1s ^ a2s) & (a1s ^ rs)) << OShift)
+#define OZ3_O ((~((a1 >> 15) ^ (a2 >> 15)) & ((a1 >> 15) ^ rs)) << OShift)
 
   while (mc_index_ < instruction_.code.size()) {
     const Microcode code = instruction_.code[mc_index_++];
@@ -269,6 +267,13 @@ void CpuCore::RunInstruction() {
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2 - ((mst_ >> CShift) & 1));
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
         exec_cycles_ += kCpuCoreCycles_SBC;
+      } break;
+      case kMicro_NEG: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], r_[reg2], -a2);
+        mst_ = OZ3_Z | OZ3_S | ((r == 0x8000) << OShift);
+        exec_cycles_ += kCpuCoreCycles_NEG;
       } break;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;

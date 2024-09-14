@@ -33,6 +33,7 @@ inline constexpr int kCpuCoreCycles_ADC = kCpuCoreCycles_ADD;
 inline constexpr int kCpuCoreCycles_ADDI = kCpuCoreCycles_ADD;
 inline constexpr int kCpuCoreCycles_SUB = 1;
 inline constexpr int kCpuCoreCycles_SBC = kCpuCoreCycles_SUB;
+inline constexpr int kCpuCoreCycles_NEG = 1;
 
 //==============================================================================
 // CpuCoreConfig

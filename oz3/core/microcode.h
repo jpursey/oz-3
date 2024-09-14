@@ -119,7 +119,7 @@ enum MicroOp : uint8_t {
 
   // MOVI(r,v);
   //
-  // Copies the value arg2 into reg1:
+  // Copies the signed value arg2 into reg1:
   //   reg1 = arg2
   kMicro_MOVI,
 
@@ -131,7 +131,7 @@ enum MicroOp : uint8_t {
 
   // ADDI(r,v);
   //
-  // Adds the value arg2 to reg1:
+  // Adds the signed value arg2 to reg1:
   //   reg1 = reg1 + arg2
   // Sets or clears all MST flags.
   kMicro_ADDI,
@@ -163,6 +163,17 @@ enum MicroOp : uint8_t {
   //   reg1 = reg1 - reg2 - C
   // Sets or clears all MST flags.
   kMicro_SBC,
+
+  // NEG(r,r);
+  //
+  // Negates the value in reg2 and stores it in reg1:
+  //   reg1 = -reg2
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: cleared
+  //   O: reg1 is -32768 (error detection of negating -32768)
+  kMicro_NEG,
 };
 
 // The type of an argument for microcode instructions.
@@ -195,7 +206,7 @@ struct Microcode {
   //   represents an index into the CpuCore register array. If it is greater
   //   than zero, it is just the register index. If it is less than zero, then
   //   it refers to the decoded arguments from the instruction code: -1 is reg1,
-  //   and -2 is reg2.
+  //   and -2 is reg2, -3 is reg1 second word, and -4 is reg2 second word.
   // - Immediate, bank, or ZSCO: If the argument is an immediate value, bank, or
   //   ZSCO flags, then the value is the arg itself.
   int8_t arg1;
