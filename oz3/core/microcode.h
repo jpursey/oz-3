@@ -272,6 +272,39 @@ enum MicroOp : uint8_t {
   //   C: cleared
   //   O: cleared
   kMicro_XOR,
+
+  // SL(r);
+  //
+  // Shifts the value in reg1 left:
+  //   reg1 = reg1 << 1
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit pushed out of reg1
+  //   O: cleared
+  kMicro_SL,
+
+  // SR(r);
+  //
+  // Shifts the value in reg1 right:
+  //   reg1 = reg1 >> 1
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit pushed out of reg1
+  //   O: cleared
+  kMicro_SR,
+
+  // SRA(r);
+  //
+  // Shifts the value in reg1 right with sign extension:
+  //   reg1 = reg1 >> 1
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit pushed out of reg1
+  //   O: cleared
+  kMicro_SRA,
 };
 
 // The type of an argument for microcode instructions.
