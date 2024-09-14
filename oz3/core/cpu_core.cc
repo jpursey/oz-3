@@ -288,6 +288,38 @@ void CpuCore::RunInstruction() {
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_CMP;
       } break;
+      case kMicro_NOT: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(0, r_[reg2], ~a2);
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_NOT;
+      } break;
+      case kMicro_AND: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], r_[reg2], a1 & a2);
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_AND;
+      } break;
+      case kMicro_OR: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], r_[reg2], a1 | a2);
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_OR;
+      } break;
+      case kMicro_XOR: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], r_[reg2], a1 ^ a2);
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_XOR;
+      } break;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;
     }

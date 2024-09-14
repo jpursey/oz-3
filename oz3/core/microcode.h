@@ -133,35 +133,55 @@ enum MicroOp : uint8_t {
   //
   // Adds the signed value arg2 to reg1:
   //   reg1 = reg1 + arg2
-  // Sets or clears all MST flags.
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: Unsigned overflow occurred
+  //   O: Signed overflow occurred
   kMicro_ADDI,
 
   // ADD(r,r);
   //
   // Adds the value from reg2 to reg1:
   //   reg1 = reg1 + reg2
-  // Sets or clears all MST flags.
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: Unsigned overflow occurred
+  //   O: Signed overflow occurred
   kMicro_ADD,
 
   // ADC(r,r)
   //
   // Adds the value from reg2 to reg1 with carry:
   //   reg1 = reg1 + reg2 + C
-  // Sets or clears all MST flags.
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: Unsigned overflow occurred
+  //   O: Signed overflow occurred
   kMicro_ADC,
 
   // SUB(r,r);
   //
   // Subtracts the value from reg2 from reg1:
   //   reg1 = reg1 - reg2
-  // Sets or clears all MST flags.
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: Unsigned overflow occurred
+  //   O: Signed overflow occurred
   kMicro_SUB,
 
   // SBC(r,r);
   //
   // Subtracts the value from reg2 from reg1 with borrow:
   //   reg1 = reg1 - reg2 - C
-  // Sets or clears all MST flags.
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: Unsigned overflow occurred
+  //   O: Signed overflow occurred
   kMicro_SBC,
 
   // NEG(r,r);
@@ -179,8 +199,56 @@ enum MicroOp : uint8_t {
   //
   // Compares the value in reg1 with reg2:
   //   reg1 - reg2
-  // Sets or clears all MST flags in the same way as SUB:
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: Unsigned overflow occurred
+  //   O: Signed overflow occurred
   kMicro_CMP,
+
+  // NOT(r,r);
+  //
+  // Bitwise NOT of the value in reg2 and stores it in reg1:
+  //   reg1 = ~reg2
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: cleared
+  //   O: cleared
+  kMicro_NOT,
+
+  // AND(r,r);
+  //
+  // Bitwise AND of the values in reg1 and reg2 and stores it in reg1:
+  //   reg1 = reg1 & reg2
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: cleared
+  //   O: cleared
+  kMicro_AND,
+
+  // OR(r,r);
+  //
+  // Bitwise OR of the values in reg1 and reg2 and stores it in reg1:
+  //   reg1 = reg1 | reg2
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: cleared
+  //   O: cleared
+  kMicro_OR,
+
+  // XOR(r,r);
+  //
+  // Bitwise XOR of the values in reg1 and reg2 and stores it in reg1:
+  //   reg1 = reg1 ^ reg2
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: cleared
+  //   O: cleared
+  kMicro_XOR,
 };
 
 // The type of an argument for microcode instructions.
