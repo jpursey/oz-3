@@ -143,12 +143,26 @@ enum MicroOp : uint8_t {
   // Sets or clears all MST flags.
   kMicro_ADD,
 
+  // ADC(r,r)
+  //
+  // Adds the value from reg2 to reg1 with carry:
+  //   reg1 = reg1 + reg2 + C
+  // Sets or clears all MST flags.
+  kMicro_ADC,
+
   // SUB(r,r);
   //
   // Subtracts the value from reg2 from reg1:
   //   reg1 = reg1 - reg2
   // Sets or clears all MST flags.
   kMicro_SUB,
+
+  // SBC(r,r);
+  //
+  // Subtracts the value from reg2 from reg1 with borrow:
+  //   reg1 = reg1 - reg2 - C
+  // Sets or clears all MST flags.
+  kMicro_SBC,
 };
 
 // The type of an argument for microcode instructions.

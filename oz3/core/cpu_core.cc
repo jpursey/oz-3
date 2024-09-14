@@ -131,7 +131,7 @@ void CpuCore::FetchInstruction() {
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
   mc_index_ = 0;
-  mst_ = 0;
+  mst_ = (r_[ST] & CpuCore::ZSCO);
   state_ = State::kRunInstruction;
   RunInstruction();
 }
@@ -150,10 +150,10 @@ void CpuCore::RunInstruction() {
   const uint16_t a1s = (a1 >> 15);  \
   const uint16_t a2s = (a2 >> 15);  \
   const uint16_t rs = (r >> 15);
-#define OZ3_Z (r == 0)
-#define OZ3_S (rs << 1)
-#define OZ3_C ((r < a1) << 2)
-#define OZ3_O ((~(a1s ^ a2s) & (a1s ^ rs)) << 3)
+#define OZ3_Z ((r >> ZShift) == 0)
+#define OZ3_S (rs << SShift)
+#define OZ3_C ((r < a1) << CShift)
+#define OZ3_O ((~(a1s ^ a2s) & (a1s ^ rs)) << OShift)
 
   while (mc_index_ < instruction_.code.size()) {
     const Microcode code = instruction_.code[mc_index_++];
@@ -249,6 +249,13 @@ void CpuCore::RunInstruction() {
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADD;
       } break;
+      case kMicro_ADC: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], r_[reg2], a1 + a2 + ((mst_ >> CShift) & 1));
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
+        exec_cycles_ += kCpuCoreCycles_ADC;
+      } break;
       case kMicro_SUB: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
@@ -256,6 +263,15 @@ void CpuCore::RunInstruction() {
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_SUB;
       } break;
+      case kMicro_SBC: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2 - ((mst_ >> CShift) & 1));
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 > 1) << CShift);
+        exec_cycles_ += kCpuCoreCycles_SBC;
+      } break;
+      default:
+        LOG(DFATAL) << "Invalid microcode operation: " << code.op;
     }
   }
 

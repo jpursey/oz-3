@@ -60,13 +60,19 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int kRegisterCount = BM + 1;
 
   // Flags in the ST register
-  static constexpr uint16_t Z = 1 << 0;            // Zero flag
-  static constexpr uint16_t S = 1 << 1;            // Sign flag
-  static constexpr uint16_t C = 1 << 2;            // Carry flag
-  static constexpr uint16_t O = 1 << 3;            // Overflow flag
+  static constexpr uint16_t ZShift = 0;       // Zero flag shift
+  static constexpr uint16_t SShift = 1;       // Sign flag shift
+  static constexpr uint16_t CShift = 2;       // Carry flag shift
+  static constexpr uint16_t OShift = 3;       // Overflow flag shift
+  static constexpr uint16_t IShift = 4;       // Interrupt enable flag shift
+  static constexpr uint16_t TShift = 8;       // Trace flag shift
+  static constexpr uint16_t Z = 1 << ZShift;  // Zero flag
+  static constexpr uint16_t S = 1 << SShift;  // Sign flag
+  static constexpr uint16_t C = 1 << CShift;  // Carry flag
+  static constexpr uint16_t O = 1 << OShift;  // Overflow flag
   static constexpr uint16_t ZSCO = Z | S | C | O;  // All ALU flags
-  static constexpr uint16_t I = 1 << 4;            // Interrupt enable flag
-  static constexpr uint16_t T = 1 << 8;            // Trace flag
+  static constexpr uint16_t I = 1 << IShift;       // Interrupt enable flag
+  static constexpr uint16_t T = 1 << TShift;       // Trace flag
 
   // Banks reference in the CPU core
   static constexpr int CODE = 0;   // Code bank
