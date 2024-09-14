@@ -1733,7 +1733,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   state.Update();
   EXPECT_EQ(state.pc, 12);
   EXPECT_EQ(state.r5, 0);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

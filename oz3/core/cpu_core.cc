@@ -267,7 +267,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2 - ((mst_ >> CShift) & 1));
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 > 1) << CShift);
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
         exec_cycles_ += kCpuCoreCycles_SBC;
       } break;
       default:
