@@ -35,7 +35,8 @@ enum MicroTestOp : uint8_t {
   kTestOp_SEXTRA,
   kTestOp_MOV_ST,
   kTestOp_MOVI,
-  kTestOp_MSTS,
+  kTestOp_MSTSC,
+  kTestOp_MSTX,
   kTestOp_MSTR1,
   kTestOp_MSTR2,
   kTestOp_ADDI,
@@ -139,26 +140,37 @@ const InstructionDef kMicroTestInstructions[] = {
      {"MOVI", kArgWordRegA},
      "UL;"
      "MOVI(a,42);"},
-    {kTestOp_MSTS,
-     {"MSTS"},
+    {kTestOp_MSTSC,
+     {"MSTSC"},
      "UL;"
-     "MSTS(_,Z);MSTR(ZSCO,ZSCO);MOV(R0,ST);"
-     "MSTS(_,S);MSTR(ZSCO,ZSCO);MOV(R1,ST);"
-     "MSTS(_,C);MSTR(ZSCO,ZSCO);MOV(R2,ST);"
-     "MSTS(_,O);MSTR(ZSCO,ZSCO);MOV(R3,ST);"
-     "MSTS(Z,_);MSTR(ZSCO,ZSCO);MOV(R4,ST);"
-     "MSTS(S,_);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
-     "MSTS(C,_);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
-     "MSTS(O,_);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
+     "MSTS(Z);MSTR(ZSCO,ZSCO);MOV(R0,ST);"
+     "MSTS(S);MSTR(ZSCO,ZSCO);MOV(R1,ST);"
+     "MSTS(C);MSTR(ZSCO,ZSCO);MOV(R2,ST);"
+     "MSTS(O);MSTR(ZSCO,ZSCO);MOV(R3,ST);"
+     "MSTC(Z);MSTR(ZSCO,ZSCO);MOV(R4,ST);"
+     "MSTC(S);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
+     "MSTC(C);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
+     "MSTC(O);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {kTestOp_MSTX,
+     {"MSTX"},
+     "UL;"
+     "MSTX(Z);MSTR(ZSCO,ZSCO);MOV(R0,ST);"
+     "MSTX(S);MSTR(ZSCO,ZSCO);MOV(R1,ST);"
+     "MSTX(C);MSTR(ZSCO,ZSCO);MOV(R2,ST);"
+     "MSTX(O);MSTR(ZSCO,ZSCO);MOV(R3,ST);"
+     "MSTX(Z);MSTR(ZSCO,ZSCO);MOV(R4,ST);"
+     "MSTX(S);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
+     "MSTX(C);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
+     "MSTX(O);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
     {kTestOp_MSTR1,
      {"MSTR1"},
      "UL;"
-     "MSTR(ZSCO,_);MSTS(_,ZSCO);"
+     "MSTR(ZSCO,_);MSTS(ZSCO);"
      "MSTR(_,Z);MOV(R0,ST);"
      "MSTR(_,S);MOV(R1,ST);"
      "MSTR(_,C);MOV(R2,ST);"
      "MSTR(_,O);MOV(R3,ST);"
-     "MSTS(ZSCO,_);"
+     "MSTC(ZSCO);"
      "MSTR(Z,_);MOV(R4,ST);"
      "MSTR(S,_);MOV(R5,ST);"
      "MSTR(C,_);MOV(R6,ST);"
@@ -171,7 +183,7 @@ const InstructionDef kMicroTestInstructions[] = {
      "MSTR(_,S);MOV(R1,ST);"
      "MSTR(_,C);MOV(R2,ST);"
      "MSTR(_,O);MOV(R3,ST);"
-     "MSTS(_,ZSCO);MSTR(_,ZSCO);"
+     "MSTS(ZSCO);MSTR(_,ZSCO);"
      "MSTR(Z,_);MOV(R4,ST);"
      "MSTR(S,_);MOV(R5,ST);"
      "MSTR(C,_);MOV(R6,ST);"
@@ -1075,14 +1087,14 @@ TEST(CpuCoreTest, MoviOp) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 }
 
-TEST(CpuCoreTest, MstsOp) {
+TEST(CpuCoreTest, MstsMstcOps) {
   Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_MSTS);
+  mem.AddCode(kTestOp_MSTSC);
   mem.AddCode(kTestOp_HALT);
 
   // Execute the MSTS instruction.
@@ -1090,13 +1102,42 @@ TEST(CpuCoreTest, MstsOp) {
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
   EXPECT_EQ(state.pc, 1);
-  EXPECT_EQ(state.r0, 1);
-  EXPECT_EQ(state.r1, 3);
-  EXPECT_EQ(state.r2, 7);
-  EXPECT_EQ(state.r3, 15);
-  EXPECT_EQ(state.r4, 14);
-  EXPECT_EQ(state.r5, 12);
-  EXPECT_EQ(state.r6, 8);
+  EXPECT_EQ(state.r0, CpuCore::Z);
+  EXPECT_EQ(state.r1, CpuCore::Z | CpuCore::S);
+  EXPECT_EQ(state.r2, CpuCore::Z | CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.r3, CpuCore::Z | CpuCore::S | CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.r4, CpuCore::S | CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.r5, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.r6, CpuCore::O);
+  EXPECT_EQ(state.r7, 0);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, MstxOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MSTX);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the MSTX instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, CpuCore::Z);
+  EXPECT_EQ(state.r1, CpuCore::Z | CpuCore::S);
+  EXPECT_EQ(state.r2, CpuCore::Z | CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.r3, CpuCore::Z | CpuCore::S | CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.r4, CpuCore::S | CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.r5, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.r6, CpuCore::O);
   EXPECT_EQ(state.r7, 0);
 
   // Execute the HALT instruction.

@@ -43,14 +43,30 @@ namespace oz3 {
 //   reg1, reg2: The register value provided to the argument index (r or d).
 enum MicroOp : uint8_t {
 
-  // MSTS(z,z);
+  // MSTC(z);
   //
-  // Clears any flags specified in arg1 and sets any flags specified in arg2
-  // inside microcode ZSCO status flags (MST).
+  // Clears any flags specified in arg1 inside microcode ZSCO status flags
+  // (MST).
   //
   // Explicitly:
-  //   MST = (MST & ~arg1) | arg2;
+  //   MST = MST & ~arg1;
+  kMicro_MSTC,
+
+  // MSTS(z);
+  //
+  // Sets any flags specified in arg1 inside microcode ZSCO status flags (MST).
+  //
+  // Explicitly:
+  //   MST = MST | arg1;
   kMicro_MSTS,
+
+  // MSTX(z);
+  //
+  // Exclusively ors arg1 with microcode ZSCO status (MST).
+  //
+  // Explicitly:
+  //   MST = MST ^ arg1;
+  kMicro_MSTX,
 
   // MSTR(z,z);
   //
