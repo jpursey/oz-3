@@ -33,6 +33,10 @@ enum MicroTestOp : uint8_t {
   kTestOp_SSTACK,
   kTestOp_SDATA,
   kTestOp_SEXTRA,
+  kTestOp_PCODE,
+  kTestOp_PSTACK,
+  kTestOp_PDATA,
+  kTestOp_PEXTRA,
   kTestOp_MOV_ST,
   kTestOp_MOVI,
   kTestOp_MSTSC,
@@ -127,6 +131,32 @@ const InstructionDef kMicroTestInstructions[] = {
      "LK(EXTRA);"
      "ADR(C0);"
      "ST(b);"
+     "UL;"},
+    {kTestOp_PCODE,
+     {"PCODE", kArgImmValue5, kArgWordRegB},
+     "ADR(C0);"
+     "STP(b);"
+     "UL;"},
+    {kTestOp_PSTACK,
+     {"PSTACK", kArgImmValue5, kArgWordRegB},
+     "UL;"
+     "LK(STACK);"
+     "ADR(C0);"
+     "STP(b);"
+     "UL;"},
+    {kTestOp_PDATA,
+     {"PDATA", kArgImmValue5, kArgWordRegB},
+     "UL;"
+     "LK(DATA);"
+     "ADR(C0);"
+     "STP(b);"
+     "UL;"},
+    {kTestOp_PEXTRA,
+     {"PEXTRA", kArgImmValue5, kArgWordRegB},
+     "UL;"
+     "LK(EXTRA);"
+     "ADR(C0);"
+     "STP(b);"
      "UL;"},
     {kTestOp_MOV_ST,
      {"MOV_ST", kArgImmValue5, kArgWordRegB},
@@ -902,6 +932,10 @@ TEST(CpuCoreTest, AdrLdStOps) {
   code_mem.AddCode(kTestOp_SSTACK, 20, CpuCore::R2);
   code_mem.AddCode(kTestOp_SDATA, 20, CpuCore::R3);
   code_mem.AddCode(kTestOp_SEXTRA, 20, CpuCore::R0);
+  code_mem.AddCode(kTestOp_PCODE, 25, CpuCore::R1);
+  code_mem.AddCode(kTestOp_PSTACK, 25, CpuCore::R2);
+  code_mem.AddCode(kTestOp_PDATA, 25, CpuCore::R3);
+  code_mem.AddCode(kTestOp_PEXTRA, 25, CpuCore::R0);
   code_mem.AddCode(kTestOp_HALT);
 
   code_mem.SetAddress(15).AddValue(0x1234);
@@ -970,6 +1004,34 @@ TEST(CpuCoreTest, AdrLdStOps) {
   state.Update();
   EXPECT_EQ(state.pc, 8);
   EXPECT_EQ(extra_mem.SetAddress(20).GetValue(), 0x1234);
+
+  // Execute the PCODE instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 9 + 18);
+  state.Update();
+  EXPECT_EQ(state.pc, 9);
+  EXPECT_EQ(code_mem.SetAddress(24).GetValue(), 0x5678);
+
+  // Execute the PSTACK instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 20);
+  state.Update();
+  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(stack_mem.SetAddress(24).GetValue(), 0x9abc);
+
+  // Execute the PDATA instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 11 + 22);
+  state.Update();
+  EXPECT_EQ(state.pc, 11);
+  EXPECT_EQ(data_mem.SetAddress(24).GetValue(), 0xdef0);
+
+  // Execute the PEXTRA instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 24);
+  state.Update();
+  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(extra_mem.SetAddress(24).GetValue(), 0x1234);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

@@ -34,6 +34,7 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_ADR, "ADR", MicroArgType::kWordReg},
     {kMicro_LD, "LD", MicroArgType::kWordReg},
     {kMicro_ST, "ST", MicroArgType::kWordReg},
+    {kMicro_STP, "STP", MicroArgType::kWordReg},
     {kMicro_MOVI, "MOVI", MicroArgType::kWordReg, MicroArgType::kValue},
     {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_ADDI, "ADDI", MicroArgType::kWordReg, MicroArgType::kValue},
@@ -182,6 +183,14 @@ bool InstructionCompiler::CompileMicroCode(absl::string_view micro_src_code) {
       }
       if (in_fetch_) {
         return Error("ST invalid in fetch phase, call ADR first");
+      }
+      break;
+    case kMicro_STP:
+      if (!has_adr_) {
+        return Error("STP without a prior ADR");
+      }
+      if (in_fetch_) {
+        return Error("STP invalid in fetch phase, call ADR first");
       }
       break;
     default:

@@ -133,6 +133,13 @@ enum MicroOp : uint8_t {
   // memory bank must be locked from LK, and the address set previously by ADR.
   kMicro_ST,
 
+  // STP(r);
+  //
+  // Decrements the address bus, then stores the value from reg1 into memory.
+  // The memory bank must be locked from LK, and the address set previously by
+  // ADR.
+  kMicro_STP,
+
   // MOVI(r,v);
   //
   // Copies the signed value arg2 into reg1:

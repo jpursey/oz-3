@@ -228,6 +228,13 @@ void CpuCore::RunInstruction() {
         banks_[locked_bank_]->StoreWord(*lock_, r_[reg1]);
         exec_cycles_ += kMemoryBankAccessWordCycles;
       } break;
+      case kMicro_STP: {
+        DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
+               lock_->IsLocked(*banks_[locked_bank_]));
+        OZ3_INIT_REG1;
+        banks_[locked_bank_]->PushWord(*lock_, r_[reg1]);
+        exec_cycles_ += kMemoryBankAccessWordCycles;
+      } break;
       case kMicro_MOVI: {
         OZ3_INIT_REG1;
         r_[reg1] = code.arg2;
