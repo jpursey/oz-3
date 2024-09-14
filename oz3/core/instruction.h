@@ -32,10 +32,10 @@ inline constexpr std::string_view kArgImmValue8 = "#8";
 
 // The type of an argument stored in instruction code low byte.
 enum class ArgType {
-  kNone,           // No argument.
-  kImmediate,      // Immediate value (1-8 bits).
-  kWordRegister,   // Word register (3 bits).
-  kDwordRegister,  // Dword register (3 bits).
+  kNone,       // No argument.
+  kImmediate,  // Immediate value (1-8 bits).
+  kWordReg,    // Word register (3 bits).
+  kDwordReg,   // Dword register (3 bits).
 };
 
 // Represents how an argument is encoded in the instruction's lower byte.

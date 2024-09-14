@@ -46,10 +46,10 @@ void PrintArg(MicroArgType arg_type, std::ostream* os) {
     case MicroArgType::kValue:
       *os << "v";
       break;
-    case MicroArgType::kWordRegister:
+    case MicroArgType::kWordReg:
       *os << "r";
       break;
-    case MicroArgType::kDwordRegister:
+    case MicroArgType::kDwordReg:
       *os << "d";
       break;
   }
@@ -94,15 +94,15 @@ constexpr MicrocodeDef kMicroBankArg1 = {
 constexpr MicrocodeDef kMicroImmArg1 = {
     kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kNone};
 constexpr MicrocodeDef kMicroWordArg1 = {
-    kMicro_TEST, "TEST", MicroArgType::kWordRegister, MicroArgType::kNone};
+    kMicro_TEST, "TEST", MicroArgType::kWordReg, MicroArgType::kNone};
 constexpr MicrocodeDef kMicroDwordArg1 = {
-    kMicro_TEST, "TEST", MicroArgType::kDwordRegister, MicroArgType::kNone};
+    kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kNone};
 constexpr MicrocodeDef kMicroImmArg2 = {
     kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kValue};
 constexpr MicrocodeDef kMicroWordArg2 = {
-    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kWordRegister};
+    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kWordReg};
 constexpr MicrocodeDef kMicroDwordArg2 = {
-    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kDwordRegister};
+    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kDwordReg};
 constexpr MicrocodeDef kMicroZscoArgs = {
     kMicro_TEST, "TEST", MicroArgType::kZsco, MicroArgType::kZsco};
 
@@ -429,8 +429,7 @@ TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
 TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kWordRegister,
-       MicroArgType::kWordRegister},
+      {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST,
@@ -474,8 +473,7 @@ TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
 TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kDwordRegister,
-       MicroArgType::kDwordRegister},
+      {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST, {}, "UL;OP(D0,D1);OP(D2,D3);OP(CD,SD)"},
@@ -507,8 +505,7 @@ TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
 TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kWordRegister,
-       MicroArgType::kWordRegister},
+      {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST, {.arg1 = "#3", .arg2 = "#5"}, "UL;OP(C0,C1)"},
@@ -537,8 +534,7 @@ TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
 TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kWordRegister,
-       MicroArgType::kWordRegister},
+      {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST, {.arg1 = "a", .arg2 = "b"}, "UL;OP(a,b);OP(b,a)"},
@@ -568,8 +564,7 @@ TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
 TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kDwordRegister,
-       MicroArgType::kDwordRegister},
+      {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST, {.arg1 = "A", .arg2 = "B"}, "UL;OP(A,B);OP(B,A)"},

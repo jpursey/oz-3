@@ -25,36 +25,26 @@ const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_MSTS, "MSTS", MicroArgType::kZsco, MicroArgType::kZsco},
     {kMicro_MSTR, "MSTR", MicroArgType::kZsco, MicroArgType::kZsco},
-    {kMicro_WAIT, "WAIT", MicroArgType::kWordRegister, MicroArgType::kNone},
+    {kMicro_WAIT, "WAIT", MicroArgType::kWordReg, MicroArgType::kNone},
     {kMicro_HALT, "HALT", MicroArgType::kNone, MicroArgType::kNone},
     {kMicro_LK, "LK", MicroArgType::kBank, MicroArgType::kNone},
     {kMicro_UL, "UL", MicroArgType::kNone, MicroArgType::kNone},
-    {kMicro_ADR, "ADR", MicroArgType::kWordRegister, MicroArgType::kNone},
-    {kMicro_LD, "LD", MicroArgType::kWordRegister, MicroArgType::kNone},
-    {kMicro_ST, "ST", MicroArgType::kWordRegister, MicroArgType::kNone},
-    {kMicro_MOVI, "MOVI", MicroArgType::kWordRegister, MicroArgType::kValue},
-    {kMicro_MOV, "MOV", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_ADDI, "ADDI", MicroArgType::kWordRegister, MicroArgType::kValue},
-    {kMicro_ADD, "ADD", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_ADC, "ADC", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_SUB, "SUB", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_SBC, "SBC", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_NEG, "NEG", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_CMP, "CMP", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_NOT, "NOT", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_AND, "AND", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
-    {kMicro_OR, "OR", MicroArgType::kWordRegister, MicroArgType::kWordRegister},
-    {kMicro_XOR, "XOR", MicroArgType::kWordRegister,
-     MicroArgType::kWordRegister},
+    {kMicro_ADR, "ADR", MicroArgType::kWordReg, MicroArgType::kNone},
+    {kMicro_LD, "LD", MicroArgType::kWordReg, MicroArgType::kNone},
+    {kMicro_ST, "ST", MicroArgType::kWordReg, MicroArgType::kNone},
+    {kMicro_MOVI, "MOVI", MicroArgType::kWordReg, MicroArgType::kValue},
+    {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_ADDI, "ADDI", MicroArgType::kWordReg, MicroArgType::kValue},
+    {kMicro_ADD, "ADD", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_ADC, "ADC", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_SUB, "SUB", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_SBC, "SBC", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_NEG, "NEG", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_CMP, "CMP", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_NOT, "NOT", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_AND, "AND", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_OR, "OR", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_XOR, "XOR", MicroArgType::kWordReg, MicroArgType::kWordReg},
 };
 
 class InstructionCompiler {
@@ -285,7 +275,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name,
     }
     return true;
   }
-  if (arg_type == MicroArgType::kWordRegister) {
+  if (arg_type == MicroArgType::kWordReg) {
     if (arg_name == "a") {
       if (instruction_.decl.arg1 != "a") {
         return Error("First argument not: a");
@@ -339,7 +329,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name,
     }
     return true;
   }
-  if (arg_type == MicroArgType::kDwordRegister) {
+  if (arg_type == MicroArgType::kDwordReg) {
     if (arg_name == "A") {
       if (instruction_.decl.arg1 != arg_name) {
         return Error("First argument not: A");
@@ -428,9 +418,9 @@ bool InstructionMicrocodes::Decode(uint16_t instruction_code,
   if (compiled.arg1.type != ArgType::kNone) {
     uint16_t value = instruction_code & ((1 << compiled.arg1.size) - 1);
     instruction_code >>= compiled.arg1.size;
-    if (compiled.arg1.type == ArgType::kWordRegister) {
+    if (compiled.arg1.type == ArgType::kWordReg) {
       decoded.r[0] = CpuCore::R0 + value;
-    } else if (compiled.arg1.type == ArgType::kDwordRegister) {
+    } else if (compiled.arg1.type == ArgType::kDwordReg) {
       decoded.r[0] = CpuCore::D0 + value * 2;
       decoded.r[2] = decoded.r[0] + 1;
     } else if (compiled.arg1.type == ArgType::kImmediate) {
@@ -439,9 +429,9 @@ bool InstructionMicrocodes::Decode(uint16_t instruction_code,
   }
   if (compiled.arg2.type != ArgType::kNone) {
     uint16_t value = instruction_code & ((1 << compiled.arg2.size) - 1);
-    if (compiled.arg2.type == ArgType::kWordRegister) {
+    if (compiled.arg2.type == ArgType::kWordReg) {
       decoded.r[1] = CpuCore::R0 + value;
-    } else if (compiled.arg2.type == ArgType::kDwordRegister) {
+    } else if (compiled.arg2.type == ArgType::kDwordReg) {
       decoded.r[1] = CpuCore::D0 + value * 2;
       decoded.r[2] = decoded.r[0] + 1;
     } else if (compiled.arg2.type == ArgType::kImmediate) {

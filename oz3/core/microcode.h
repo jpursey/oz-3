@@ -253,12 +253,12 @@ enum MicroOp : uint8_t {
 
 // The type of an argument for microcode instructions.
 enum class MicroArgType {
-  kNone,           // No argument.
-  kBank,           // Memory bank (CODE, STACK, DATA, or EXTRA).
-  kZsco,           // ZSCO flags (any combo of Z, S, C, O, and _ characters).
-  kValue,          // Signed 8-bit value: [-128,127].
-  kWordRegister,   // Word register.
-  kDwordRegister,  // Dword register.
+  kNone,      // No argument.
+  kBank,      // Memory bank (CODE, STACK, DATA, or EXTRA).
+  kZsco,      // ZSCO flags (any combo of Z, S, C, O, and _ characters).
+  kValue,     // Signed 8-bit value: [-128,127].
+  kWordReg,   // Word register.
+  kDwordReg,  // Dword register.
 };
 
 // Definition of a microcode operation.

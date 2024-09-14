@@ -3,18 +3,19 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include "oz3/core/instruction.h"
+
 #include "absl/types/span.h"
 #include "glog/logging.h"
-#include "oz3/core/instruction.h"
 
 namespace oz3 {
 
 ArgTypeBits::ArgTypeBits(std::string_view arg_def) {
   if (arg_def == kArgWordRegA || arg_def == kArgWordRegB) {
-    type = ArgType::kWordRegister;
+    type = ArgType::kWordReg;
     size = 3;
   } else if (arg_def == kArgDwordRegA || arg_def == kArgDwordRegB) {
-    type = ArgType::kDwordRegister;
+    type = ArgType::kDwordReg;
     size = 3;
   } else if (arg_def.size() == 2 && arg_def[0] == '#') {
     type = ArgType::kImmediate;
