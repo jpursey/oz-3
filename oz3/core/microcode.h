@@ -82,7 +82,7 @@ enum MicroOp : uint8_t {
   //     ____      ZSCO      ZS__        __CO         __CO
   //     ZS__      ____      ZS__        __CO         ____
   //     Z___      _S_O      ZS__        ZSCO         _S_O
-  //     ZS_O      Z_C_      ZS__        __CO         Z_C_
+  //     ZS_O      Z_C_      ZS__        __CO         Z_CO
   kMicro_MSTR,
 
   // WAIT(r);
