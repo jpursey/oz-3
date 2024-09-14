@@ -146,7 +146,7 @@ void CpuCore::RunInstruction() {
 #define OZ3_MATH_OP(dst, src, func) \
   const uint16_t a1 = (dst);        \
   const uint16_t a2 = (src);        \
-  const uint16_t r = dst = (func);  \
+  const uint16_t r = (func);        \
   const uint16_t rs = (r >> 15);
 #define OZ3_Z ((r >> ZShift) == 0)
 #define OZ3_S (rs << SShift)
@@ -237,6 +237,7 @@ void CpuCore::RunInstruction() {
       case kMicro_ADDI: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], code.arg2, a1 + a2);
+        r_[reg1] = r;
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADDI;
       } break;
@@ -244,6 +245,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 + a2);
+        r_[reg1] = r;
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADD;
       } break;
@@ -251,6 +253,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 + a2 + ((mst_ >> CShift) & 1));
+        r_[reg1] = r;
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
         exec_cycles_ += kCpuCoreCycles_ADC;
       } break;
@@ -258,6 +261,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
+        r_[reg1] = r;
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_SUB;
       } break;
@@ -265,15 +269,24 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2 - ((mst_ >> CShift) & 1));
+        r_[reg1] = r;
         mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
         exec_cycles_ += kCpuCoreCycles_SBC;
       } break;
       case kMicro_NEG: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        OZ3_MATH_OP(r_[reg1], r_[reg2], -a2);
+        OZ3_MATH_OP(0, r_[reg2], -a2);
+        r_[reg1] = r;
         mst_ = OZ3_Z | OZ3_S | ((r == 0x8000) << OShift);
         exec_cycles_ += kCpuCoreCycles_NEG;
+      } break;
+      case kMicro_CMP: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
+        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        exec_cycles_ += kCpuCoreCycles_CMP;
       } break;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;

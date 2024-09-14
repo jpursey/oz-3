@@ -174,6 +174,13 @@ enum MicroOp : uint8_t {
   //   C: cleared
   //   O: reg1 is -32768 (error detection of negating -32768)
   kMicro_NEG,
+
+  // CMP(r,r);
+  //
+  // Compares the value in reg1 with reg2:
+  //   reg1 - reg2
+  // Sets or clears all MST flags in the same way as SUB:
+  kMicro_CMP,
 };
 
 // The type of an argument for microcode instructions.

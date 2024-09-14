@@ -45,6 +45,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_ADC,
   kTestOp_SBC,
   kTestOp_NEG,
+  kTestOp_CMP,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -207,6 +208,11 @@ const InstructionDef kMicroTestInstructions[] = {
      {"NEG", kArgWordRegA, kArgWordRegB},
      "UL;"
      "NEG(a,b);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_CMP,
+     {"CMP", kArgWordRegA, kArgWordRegB},
+     "UL;"
+     "CMP(a,b);"
      "MSTR(ZSCO,ZSCO);"},
 };
 
@@ -1807,6 +1813,74 @@ TEST(CpuCoreTest, NegOp) {
   EXPECT_EQ(state.pc, 5);
   EXPECT_EQ(state.r7, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, CmpOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x0001);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_CMP, CpuCore::R0, CpuCore::R7);
+  mem.AddCode(kTestOp_CMP, CpuCore::R1, CpuCore::R7);
+  mem.AddCode(kTestOp_CMP, CpuCore::R2, CpuCore::R7);
+  mem.AddCode(kTestOp_CMP, CpuCore::R3, CpuCore::R7);
+  mem.AddCode(kTestOp_CMP, CpuCore::R4, CpuCore::R7);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the CMP instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the CMP instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r1, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the CMP instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r2, 0x0002);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+
+  // Execute the CMP instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r3, 0xFFFF);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the CMP instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r4, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

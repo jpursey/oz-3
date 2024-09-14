@@ -46,6 +46,8 @@ const MicrocodeDef kMicroCodeDefs[] = {
      MicroArgType::kWordRegister},
     {kMicro_NEG, "NEG", MicroArgType::kWordRegister,
      MicroArgType::kWordRegister},
+    {kMicro_CMP, "CMP", MicroArgType::kWordRegister,
+     MicroArgType::kWordRegister},
 };
 
 class InstructionCompiler {
