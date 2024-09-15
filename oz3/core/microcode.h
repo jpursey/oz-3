@@ -30,8 +30,9 @@ namespace oz3 {
 //      this is an explicit integer in the range [-128,127].
 //   b: Memory bank. In microcode assembly this must be one of CODE, STACK,
 //      DATA, or EXTRA.
-//   z: ZSCO flag mask. In microcode assembly, this is any combination of Z, S,
-//      C, O, and _ characters (e.g. ZC or Z_C_ or just _ to indicate no flags).
+//   s: Status ZSCOI flag mask. In microcode assembly, this is any combination
+//      of Z, S, C, O, I, and _ characters (e.g. ZC or Z_C_ or just _ to
+//      indicate no flags).
 //   c: ZSCO flag condition. In microcode assembly, this is one of the
 //      following: Z, NZ, S, NS, C, NC, O, or NO.
 //   a: Relative microcode address. In microcode assembly, this is an integer
@@ -49,38 +50,38 @@ namespace oz3 {
 //   reg1, reg2: The register value provided to the argument index (r or d).
 enum MicroOp : uint8_t {
 
-  // MSTC(z);
+  // MSTC(s);
   //
   // Cycles: 0
   //
-  // Clears any flags specified in arg1 inside microcode ZSCO status flags
+  // Clears any flags specified in arg1 inside microcode ZSCOI status flags
   // (MST).
   //
   // Explicitly:
   //   MST = MST & ~arg1;
   kMicro_MSTC,
 
-  // MSTS(z);
+  // MSTS(s);
   //
   // Cycles: 0
   //
-  // Sets any flags specified in arg1 inside microcode ZSCO status flags (MST).
+  // Sets any flags specified in arg1 inside microcode ZSCOI status flags (MST).
   //
   // Explicitly:
   //   MST = MST | arg1;
   kMicro_MSTS,
 
-  // MSTX(z);
+  // MSTX(s);
   //
   // Cycles: 0
   //
-  // Exclusively ors arg1 with microcode ZSCO status (MST).
+  // Exclusively ors arg1 with microcode ZSCOI status (MST).
   //
   // Explicitly:
   //   MST = MST ^ arg1;
   kMicro_MSTX,
 
-  // MSTR(z,z);
+  // MSTR(s,s);
   //
   // Cycles: 0
   //
@@ -93,10 +94,12 @@ enum MicroOp : uint8_t {
   //
   // Examples:
   //   ST Before   MST    arg1 (clr)   arg2 (set)   ST After
-  //     ____      ZSCO      ZS__        __CO         __CO
-  //     ZS__      ____      ZS__        __CO         ____
-  //     Z___      _S_O      ZS__        ZSCO         _S_O
-  //     ZS_O      Z_C_      ZS__        __CO         Z_CO
+  //     ____I    ZSCO_      ZS___       __CO_        __COI
+  //     ZS___    _____      ZS___       __CO_        _____
+  //     Z___I    _S_O_      ZS___       ZSCO_        _S_OI
+  //     ZS_O_    Z_C__      ZS___       __CO_        Z_CO_
+  //     Z_C_I    _S_O_      ____I       ____I        Z_C__
+  //     _S_O_    C_Z_I      ____I       ____I        _S_OI
   kMicro_MSTR,
 
   // WAIT(r);
@@ -466,7 +469,7 @@ enum MicroOp : uint8_t {
 enum class MicroArgType {
   kNone,       // No argument.
   kBank,       // Memory bank (CODE, STACK, DATA, or EXTRA).
-  kZsco,       // ZSCO flags (any combo of Z, S, C, O, and _ characters).
+  kStatus,     // ZSCOI flags (any combo of Z, S, C, O, I, and _ characters).
   kCondition,  // ZSCO condition (Z, NZ, S, NS, C, NC, O, or NO).
   kAddress,    // Relative microcode address.
   kValue,      // Signed 8-bit value: [-128,127].

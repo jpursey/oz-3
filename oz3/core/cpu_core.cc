@@ -130,7 +130,7 @@ void CpuCore::FetchInstruction() {
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
   mpc_ = 0;
-  mst_ = (r_[ST] & CpuCore::ZSCO);
+  mst_ = r_[ST];
   state_ = State::kRunInstruction;
   RunInstruction();
 }
@@ -248,7 +248,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], code.arg2, a1 + a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADDI;
       } break;
       case kMicro_ADD: {
@@ -256,7 +256,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 + a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_ADD;
       } break;
       case kMicro_ADC: {
@@ -264,7 +264,8 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 + a2 + ((mst_ >> CShift) & 1));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O |
+               ((r == a1 && a2 != 0) << CShift);
         exec_cycles_ += kCpuCoreCycles_ADC;
       } break;
       case kMicro_SUB: {
@@ -272,7 +273,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_SUB;
       } break;
       case kMicro_SBC: {
@@ -280,7 +281,8 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2 - ((mst_ >> CShift) & 1));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O | ((r == a1 && a2 != 0) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O |
+               ((r == a1 && a2 != 0) << CShift);
         exec_cycles_ += kCpuCoreCycles_SBC;
       } break;
       case kMicro_NEG: {
@@ -288,14 +290,14 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(0, r_[reg2], -a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((r == 0x8000) << OShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((r == 0x8000) << OShift);
         exec_cycles_ += kCpuCoreCycles_NEG;
       } break;
       case kMicro_CMP: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
-        mst_ = OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_CMP;
       } break;
       case kMicro_NOT: {
@@ -303,7 +305,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(0, r_[reg2], ~a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
         exec_cycles_ += kCpuCoreCycles_NOT;
       } break;
       case kMicro_AND: {
@@ -311,7 +313,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 & a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
         exec_cycles_ += kCpuCoreCycles_AND;
       } break;
       case kMicro_OR: {
@@ -319,7 +321,7 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 | a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
         exec_cycles_ += kCpuCoreCycles_OR;
       } break;
       case kMicro_XOR: {
@@ -327,56 +329,56 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], r_[reg2], a1 ^ a2);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
         exec_cycles_ += kCpuCoreCycles_XOR;
       } break;
       case kMicro_SL: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, a1 << 1);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
         exec_cycles_ += kCpuCoreCycles_SL;
       } break;
       case kMicro_SR: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, a1 >> 1);
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
         exec_cycles_ += kCpuCoreCycles_SR;
       } break;
       case kMicro_SRA: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, (a1 >> 1) | (a1 & 0x8000));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
         exec_cycles_ += kCpuCoreCycles_SRA;
       } break;
       case kMicro_RL: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, (a1 << 1) | (a1 >> 15));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
         exec_cycles_ += kCpuCoreCycles_RL;
       } break;
       case kMicro_RR: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, (a1 >> 1) | (a1 << 15));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
         exec_cycles_ += kCpuCoreCycles_RR;
       } break;
       case kMicro_RLC: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, (a1 << 1) | ((mst_ >> CShift) & 1));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
         exec_cycles_ += kCpuCoreCycles_RLC;
       } break;
       case kMicro_RRC: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], 0, (a1 >> 1) | ((mst_ >> CShift) << 15));
         r_[reg1] = r;
-        mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
         exec_cycles_ += kCpuCoreCycles_RRC;
       } break;
       case kMicro_JP: {

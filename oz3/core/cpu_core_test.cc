@@ -41,6 +41,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_MOVI,
   kTestOp_MSTSC,
   kTestOp_MSTX,
+  kTestOp_MSTI,
   kTestOp_MSTR1,
   kTestOp_MSTR2,
   kTestOp_ADDI,
@@ -62,6 +63,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_RR,
   kTestOp_RLC,
   kTestOp_RRC,
+  kTestOp_MATHI,
   kTestOp_JC,
   kTestOp_JD,
 };
@@ -201,10 +203,17 @@ const InstructionDef kMicroTestInstructions[] = {
      "MSTX(S);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
      "MSTX(C);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
      "MSTX(O);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {kTestOp_MSTI,
+     {"MSTSC"},
+     "UL;"
+     "MSTS(I);MSTR(I,I);MOV(R0,ST);"
+     "MSTC(I);MSTR(I,I);MOV(R1,ST);"
+     "MSTX(I);MSTR(I,I);MOV(R2,ST);"
+     "MSTX(I);MSTR(I,I);MOV(R3,ST);"},
     {kTestOp_MSTR1,
      {"MSTR1"},
      "UL;"
-     "MSTR(ZSCO,_);MSTS(ZSCO);"
+     "MSTS(I);MSTR(ZSCOI,ZSCOI);MSTS(ZSCOI);"
      "MSTR(_,Z);MOV(R0,ST);"
      "MSTR(_,S);MOV(R1,ST);"
      "MSTR(_,C);MOV(R2,ST);"
@@ -217,7 +226,7 @@ const InstructionDef kMicroTestInstructions[] = {
     {kTestOp_MSTR2,
      {"MSTR2"},
      "UL;"
-     "MSTR(ZSCO,_);"
+     "MSTC(ZSCOI);MSTR(ZSCOI,_);"
      "MSTR(_,Z);MOV(R0,ST);"
      "MSTR(_,S);MOV(R1,ST);"
      "MSTR(_,C);MOV(R2,ST);"
@@ -328,6 +337,27 @@ const InstructionDef kMicroTestInstructions[] = {
      "UL;"
      "RRC(a);"
      "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_MATHI,
+     {"MATHI"},
+     "UL;"
+     "ADDI(C0,1);"
+     "ADD(C0,C1);"
+     "ADC(C0,C1);"
+     "SUB(C0,C1);"
+     "SBC(C0,C1);"
+     "NEG(C0,C1);"
+     "CMP(C0,C1);"
+     "NOT(C0,C1);"
+     "AND(C0,C1);"
+     "OR(C0,C1);"
+     "XOR(C0,C1);"
+     "SL(C0);"
+     "SR(C0);"
+     "SRA(C0);"
+     "RL(C0);"
+     "RR(C0);"
+     "RLC(C0);"
+     "RRC(C0);"},
     {kTestOp_JC,
      {"JC", kArgImmValue7},
      "UL;"
@@ -1281,6 +1311,31 @@ TEST(CpuCoreTest, MstxOp) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 }
 
+TEST(CpuCoreTest, MstiOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MSTI);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the MSTI instructions.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 4);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, CpuCore::I);
+  EXPECT_EQ(state.r1, 0);
+  EXPECT_EQ(state.r2, CpuCore::I);
+  EXPECT_EQ(state.r3, 0);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
 TEST(CpuCoreTest, MstrOp) {
   Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
   CpuCore& core = *processor.GetCore(0);
@@ -1297,14 +1352,14 @@ TEST(CpuCoreTest, MstrOp) {
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
   EXPECT_EQ(state.pc, 1);
-  EXPECT_EQ(state.r0, 1);
-  EXPECT_EQ(state.r1, 3);
-  EXPECT_EQ(state.r2, 7);
-  EXPECT_EQ(state.r3, 15);
-  EXPECT_EQ(state.r4, 14);
-  EXPECT_EQ(state.r5, 12);
-  EXPECT_EQ(state.r6, 8);
-  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.r0, 1 | CpuCore::I);
+  EXPECT_EQ(state.r1, 3 | CpuCore::I);
+  EXPECT_EQ(state.r2, 7 | CpuCore::I);
+  EXPECT_EQ(state.r3, 15 | CpuCore::I);
+  EXPECT_EQ(state.r4, 14 | CpuCore::I);
+  EXPECT_EQ(state.r5, 12 | CpuCore::I);
+  EXPECT_EQ(state.r6, 8 | CpuCore::I);
+  EXPECT_EQ(state.r7, 0 | CpuCore::I);
 
   // Execute the MSTR2 instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
@@ -2859,6 +2914,32 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 }
 
+TEST(CpuCoreTest, MathOpsLeaveInterruptFlagAlone) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::I);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MATHI);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute MATHI instruction. ST = I
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 18);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.st & CpuCore::I, CpuCore::I);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
 TEST(CpuCoreTest, JcJpEndOps) {
   Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
   CpuCore& core = *processor.GetCore(0);
@@ -3014,21 +3095,21 @@ TEST(CpuCoreTest, JdOp) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute the JD instruction, loop once
-  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2*1);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 1);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
   EXPECT_EQ(state.pc, 1);
   EXPECT_EQ(state.r7, 1);
 
   // Execute the JD instruction, loop 10 times
-  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2*10);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 10);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
   EXPECT_EQ(state.pc, 2);
   EXPECT_EQ(state.r7, 10);
 
   // Execute the JD instruction, loop 65536 times
-  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2*65536);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 65536);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
   EXPECT_EQ(state.pc, 3);

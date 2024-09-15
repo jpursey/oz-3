@@ -41,8 +41,8 @@ void PrintArg(MicroArgType arg_type, std::ostream* os) {
     case MicroArgType::kBank:
       *os << "b";
       break;
-    case MicroArgType::kZsco:
-      *os << "z";
+    case MicroArgType::kStatus:
+      *os << "s";
       break;
     case MicroArgType::kCondition:
       *os << "c";
@@ -312,9 +312,9 @@ TEST(MicrocodeTest, DwordRegArg) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicrocodeTest, ZscoArg) {
-  const MicrocodeDef kMicroZscoArgs = {kMicro_TEST, "TEST", MicroArgType::kZsco,
-                                       MicroArgType::kZsco};
+TEST(MicrocodeTest, ZscoiArg) {
+  const MicrocodeDef kMicroZscoArgs = {
+      kMicro_TEST, "TEST", MicroArgType::kStatus, MicroArgType::kStatus};
   std::string error;
   EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z,S)"), error));
   EXPECT_THAT(error, IsEmpty());
@@ -341,6 +341,8 @@ TEST(MicrocodeTest, ZscoArg) {
   EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z___,_S__)"), error));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(__C_,___O)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(I,I)"), error));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile(kMicroZscoArgs, MakeDef("TEST(X,Z)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -501,10 +503,10 @@ TEST(MicrocodeTest, BankDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::EXTRA}));
 }
 
-TEST(MicrocodeTest, ZscoDecodedCorrectly) {
+TEST(MicrocodeTest, StatusDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kZsco},
+      {kMicro_TEST, "OP", MicroArgType::kStatus},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST,
@@ -514,7 +516,7 @@ TEST(MicrocodeTest, ZscoDecodedCorrectly) {
        "OP(Z___);OP(_S__);OP(__C_);OP(___O);"
        "OP(ZS);OP(ZC);OP(ZO);OP(SC);OP(SO);OP(CO);"
        "OP(ZSC);OP(ZSO);OP(ZCO);OP(SCO);"
-       "OP(ZSCO);OP(CCC_SSS_OZ_OZ_OZ);"},
+       "OP(ZSCO);OP(CCC_SSS_OZ_OZ_OZ);OP(I);"},
   };
 
   InstructionMicrocodes codes(micro_defs);
@@ -555,7 +557,8 @@ TEST(MicrocodeTest, ZscoDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST,
                             .arg1 = CpuCore::S | CpuCore::C | CpuCore::O},
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO},
-                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO}));
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::I}));
 }
 
 TEST(MicrocodeTest, ConditionDecodedCorrectly) {

@@ -26,10 +26,10 @@ const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
 const MicrocodeDef kMicroCodeDefs[] = {
-    {kMicro_MSTC, "MSTC", MicroArgType::kZsco},
-    {kMicro_MSTS, "MSTS", MicroArgType::kZsco},
-    {kMicro_MSTX, "MSTX", MicroArgType::kZsco},
-    {kMicro_MSTR, "MSTR", MicroArgType::kZsco, MicroArgType::kZsco},
+    {kMicro_MSTC, "MSTC", MicroArgType::kStatus},
+    {kMicro_MSTS, "MSTS", MicroArgType::kStatus},
+    {kMicro_MSTX, "MSTX", MicroArgType::kStatus},
+    {kMicro_MSTR, "MSTR", MicroArgType::kStatus, MicroArgType::kStatus},
     {kMicro_WAIT, "WAIT", MicroArgType::kWordReg},
     {kMicro_HALT, "HALT"},
     {kMicro_LK, "LK", MicroArgType::kBank},
@@ -367,7 +367,7 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
     }
     return true;
   }
-  if (arg_type == MicroArgType::kZsco) {
+  if (arg_type == MicroArgType::kStatus) {
     for (char c : arg_name) {
       if (c == 'Z') {
         arg |= CpuCore::Z;
@@ -377,8 +377,10 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
         arg |= CpuCore::C;
       } else if (c == 'O') {
         arg |= CpuCore::O;
+      } else if (c == 'I') {
+        arg |= CpuCore::I;
       } else if (c != '_') {
-        return Error(parsed, absl::StrCat("Invalid ZSCO flags: ", arg_name));
+        return Error(parsed, absl::StrCat("Invalid status flags: ", arg_name));
       }
     }
     return true;
