@@ -329,7 +329,7 @@ const InstructionDef kMicroTestInstructions[] = {
      "RRC(a);"
      "MSTR(ZSCO,ZSCO);"},
     {kTestOp_JC,
-     {"JC"},
+     {"JC", kArgImmValue7},
      "UL;"
      "JC(Z,@Z);"
      "@1:JC(NZ,@NZ);"
@@ -340,20 +340,20 @@ const InstructionDef kMicroTestInstructions[] = {
      "@6:JC(O,@O);"
      "@7:JC(NO,@NO);"
      "END;"
-     "@Z:MOVI(R0,1);JP(@1);"
-     "@NZ:MOVI(R1,1);JP(@2);"
-     "@S:MOVI(R2,1);JP(@3);"
-     "@NS:MOVI(R3,1);JP(@4);"
-     "@C:MOVI(R4,1);JP(@5);"
-     "@NC:MOVI(R5,1);JP(@6);"
-     "@O:MOVI(R6,1);JP(@7);"
-     "@NO:MOVI(R7,1);END;"},
+     "@Z:MOV(R0,C0);JP(@1);"
+     "@NZ:MOV(R1,C0);JP(@2);"
+     "@S:MOV(R2,C0);JP(@3);"
+     "@NS:MOV(R3,C0);JP(@4);"
+     "@C:MOV(R4,C0);JP(@5);"
+     "@NC:MOV(R5,C0);JP(@6);"
+     "@O:MOV(R6,C0);JP(@7);"
+     "@NO:MOV(R7,C0);"},
     {kTestOp_JD,
-     {"JD", kArgWordRegA},
+     {"JD", kArgImmValue8},
      "UL;"
      "MOVI(R7,0);"
      "@LOOP:ADDI(R7,1);"
-     "JD(a,@LOOP);"},
+     "JD(C0,@LOOP);"},
 };
 
 // Helper class to fetch and update the state of a CpuCore.
@@ -2853,6 +2853,186 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   EXPECT_EQ(state.pc, 16);
   EXPECT_EQ(state.r7, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, JcJpEndOps) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, 0);
+  mem.AddCode(kTestOp_JC, 1);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::Z);
+  mem.AddCode(kTestOp_JC, 2);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::S);
+  mem.AddCode(kTestOp_JC, 3);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_JC, 4);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::O);
+  mem.AddCode(kTestOp_JC, 5);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::Z | CpuCore::C);
+  mem.AddCode(kTestOp_JC, 6);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::S | CpuCore::O);
+  mem.AddCode(kTestOp_JC, 7);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_JC, 8);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the JC instruction. ST = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.r1, 1);
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.r3, 1);
+  EXPECT_EQ(state.r4, 0);
+  EXPECT_EQ(state.r5, 1);
+  EXPECT_EQ(state.r6, 0);
+  EXPECT_EQ(state.r7, 1);
+
+  // Execute the JC instruction. ST = Z
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r0, 2);
+  EXPECT_EQ(state.r1, 1);
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.r3, 2);
+  EXPECT_EQ(state.r4, 0);
+  EXPECT_EQ(state.r5, 2);
+  EXPECT_EQ(state.r6, 0);
+  EXPECT_EQ(state.r7, 2);
+
+  // Execute the JC instruction. ST = S
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.r0, 2);
+  EXPECT_EQ(state.r1, 3);
+  EXPECT_EQ(state.r2, 3);
+  EXPECT_EQ(state.r3, 2);
+  EXPECT_EQ(state.r4, 0);
+  EXPECT_EQ(state.r5, 3);
+  EXPECT_EQ(state.r6, 0);
+  EXPECT_EQ(state.r7, 3);
+
+  // Execute the JC instruction. ST = C
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.r0, 2);
+  EXPECT_EQ(state.r1, 4);
+  EXPECT_EQ(state.r2, 3);
+  EXPECT_EQ(state.r3, 4);
+  EXPECT_EQ(state.r4, 4);
+  EXPECT_EQ(state.r5, 3);
+  EXPECT_EQ(state.r6, 0);
+  EXPECT_EQ(state.r7, 4);
+
+  // Execute the JC instruction. ST = O
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.r0, 2);
+  EXPECT_EQ(state.r1, 5);
+  EXPECT_EQ(state.r2, 3);
+  EXPECT_EQ(state.r3, 5);
+  EXPECT_EQ(state.r4, 4);
+  EXPECT_EQ(state.r5, 5);
+  EXPECT_EQ(state.r6, 5);
+  EXPECT_EQ(state.r7, 4);
+
+  // Execute the JC instruction. ST = ZC
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.r0, 6);
+  EXPECT_EQ(state.r1, 5);
+  EXPECT_EQ(state.r2, 3);
+  EXPECT_EQ(state.r3, 6);
+  EXPECT_EQ(state.r4, 6);
+  EXPECT_EQ(state.r5, 5);
+  EXPECT_EQ(state.r6, 5);
+  EXPECT_EQ(state.r7, 6);
+
+  // Execute the JC instruction. ST = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.r0, 6);
+  EXPECT_EQ(state.r1, 7);
+  EXPECT_EQ(state.r2, 7);
+  EXPECT_EQ(state.r3, 6);
+  EXPECT_EQ(state.r4, 6);
+  EXPECT_EQ(state.r5, 7);
+  EXPECT_EQ(state.r6, 7);
+  EXPECT_EQ(state.r7, 6);
+
+  // Execute the JC instruction. ST = ZCSO
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 16);
+  EXPECT_EQ(state.r0, 8);
+  EXPECT_EQ(state.r1, 7);
+  EXPECT_EQ(state.r2, 8);
+  EXPECT_EQ(state.r3, 6);
+  EXPECT_EQ(state.r4, 8);
+  EXPECT_EQ(state.r5, 7);
+  EXPECT_EQ(state.r6, 8);
+  EXPECT_EQ(state.r7, 6);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, JdOp) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_JD, 1);
+  mem.AddCode(kTestOp_JD, 10);
+  mem.AddCode(kTestOp_JD, 0);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the JD instruction, loop once
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2*1);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r7, 1);
+
+  // Execute the JD instruction, loop 10 times
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2*10);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r7, 10);
+
+  // Execute the JD instruction, loop 65536 times
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2*65536);
+  EXPECT_EQ(core.GetCycles(), processor.GetCycles());
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r7, 0);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

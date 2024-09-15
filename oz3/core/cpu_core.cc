@@ -120,7 +120,6 @@ void CpuCore::StartInstruction() {
     exec_cycles_ += 1;
   }
 }
-
 void CpuCore::FetchInstruction() {
   DCHECK(lock_ != nullptr);
   banks_[CODE]->SetAddress(*lock_, r_[PC]);
@@ -402,7 +401,9 @@ void CpuCore::RunInstruction() {
         }
       } break;
       case kMicro_END:
-        break;
+        state_ = State::kStartInstruction;
+        AllowLock();
+        return;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;
     }

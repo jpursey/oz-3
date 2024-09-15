@@ -44,6 +44,12 @@ void PrintArg(MicroArgType arg_type, std::ostream* os) {
     case MicroArgType::kZsco:
       *os << "z";
       break;
+    case MicroArgType::kCondition:
+      *os << "c";
+      break;
+    case MicroArgType::kAddress:
+      *os << "a";
+      break;
     case MicroArgType::kValue:
       *os << "v";
       break;
@@ -493,6 +499,137 @@ TEST(MicrocodeTest, BankDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::STACK},
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::DATA},
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::EXTRA}));
+}
+
+TEST(MicrocodeTest, ZscoDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kZsco},
+  };
+  const InstructionDef instruction_defs[] = {
+      {kOp_TEST,
+       {},
+       "UL;OP(_);"
+       "OP(Z);OP(S);OP(C);OP(O);"
+       "OP(Z___);OP(_S__);OP(__C_);OP(___O);"
+       "OP(ZS);OP(ZC);OP(ZO);OP(SC);OP(SO);OP(CO);"
+       "OP(ZSC);OP(ZSO);OP(ZCO);OP(SCO);"
+       "OP(ZSCO);OP(CCC_SSS_OZ_OZ_OZ);"},
+  };
+
+  InstructionMicrocodes codes(micro_defs);
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
+  EXPECT_THAT(error, IsEmpty());
+  DecodedInstruction decoded;
+  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = 0},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::Z},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::S},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::C},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::O},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::Z},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::S},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::C},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::O},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::Z | CpuCore::S},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::Z | CpuCore::C},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::Z | CpuCore::O},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::S | CpuCore::C},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::S | CpuCore::O},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::C | CpuCore::O},
+                  Microcode{.op = kMicro_TEST,
+                            .arg1 = CpuCore::Z | CpuCore::S | CpuCore::C},
+                  Microcode{.op = kMicro_TEST,
+                            .arg1 = CpuCore::Z | CpuCore::S | CpuCore::O},
+                  Microcode{.op = kMicro_TEST,
+                            .arg1 = CpuCore::Z | CpuCore::C | CpuCore::O},
+                  Microcode{.op = kMicro_TEST,
+                            .arg1 = CpuCore::S | CpuCore::C | CpuCore::O},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO},
+                  Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO}));
+}
+
+TEST(MicrocodeTest, ConditionDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kCondition, MicroArgType::kCondition},
+  };
+  const InstructionDef instruction_defs[] = {
+      {kOp_TEST, {}, "UL;OP(Z,NZ);OP(S,NS);OP(C,NC);OP(O,NO);"},
+  };
+
+  InstructionMicrocodes codes(micro_defs);
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
+  EXPECT_THAT(error, IsEmpty());
+  DecodedInstruction decoded;
+  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  static_assert(CpuCore::ZShift == 0, "ZShift != 0");
+  static_assert(CpuCore::SShift == 1, "SShift != 1");
+  static_assert(CpuCore::CShift == 2, "CShift != 2");
+  static_assert(CpuCore::OShift == 3, "OShift != 3");
+  EXPECT_THAT(decoded.code,
+              ElementsAre(Microcode{.op = kMicro_UL},
+                          Microcode{.op = kMicro_TEST, .arg1 = 4, .arg2 = 0},
+                          Microcode{.op = kMicro_TEST, .arg1 = 5, .arg2 = 1},
+                          Microcode{.op = kMicro_TEST, .arg1 = 6, .arg2 = 2},
+                          Microcode{.op = kMicro_TEST, .arg1 = 7, .arg2 = 3}));
+}
+
+TEST(MicrocodeTest, AddressDecodedCorrecty) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST_NOP, "NOP"},
+      {kMicro_TEST, "OP", MicroArgType::kAddress, MicroArgType::kAddress},
+  };
+  const InstructionDef instruction_defs[] = {
+      {
+          kOp_TEST,
+          {},
+          "UL;"                    // 0
+          "@start:OP(0,1);"        // 1
+          "OP(-1,@end);"           // 2
+          "OP(@start,@mid);"       // 3
+          "@mid:NOP;"              // 4
+          "NOP;"                   // 5
+          "@end:OP(@start,@end);"  // 6
+      },
+  };
+
+  InstructionMicrocodes codes(micro_defs);
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
+  EXPECT_THAT(error, IsEmpty());
+  DecodedInstruction decoded;
+  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = 0, .arg2 = 1},
+                  Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = 3},
+                  Microcode{.op = kMicro_TEST, .arg1 = -3, .arg2 = 0},
+                  Microcode{.op = kMicro_TEST_NOP},
+                  Microcode{.op = kMicro_TEST_NOP},
+                  Microcode{.op = kMicro_TEST, .arg1 = -6, .arg2 = -1}));
 }
 
 TEST(MicrocodeTest, ImmArgsDecodedCorrectly) {
