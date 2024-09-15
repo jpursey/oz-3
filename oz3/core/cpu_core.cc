@@ -130,13 +130,12 @@ void CpuCore::FetchInstruction() {
   r_[PC] += instruction_.size;
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
-  mc_index_ = 0;
+  mpc_ = 0;
   mst_ = (r_[ST] & CpuCore::ZSCO);
   state_ = State::kRunInstruction;
   RunInstruction();
 }
 
-void CpuCore::RunInstruction() {
 #define OZ3_INIT_REG1   \
   const uint16_t reg1 = \
       (code.arg1 < 0 ? instruction_.r[-code.arg1 - 1] : code.arg1)
@@ -152,9 +151,9 @@ void CpuCore::RunInstruction() {
 #define OZ3_S (rs << SShift)
 #define OZ3_C ((r < a1) << CShift)
 #define OZ3_O ((~((a1 >> 15) ^ (a2 >> 15)) & ((a1 >> 15) ^ rs)) << OShift)
-
-  while (mc_index_ < instruction_.code.size()) {
-    const Microcode code = instruction_.code[mc_index_++];
+void CpuCore::RunInstruction() {
+  while (mpc_ < instruction_.code.size()) {
+    const Microcode code = instruction_.code[mpc_++];
     switch (code.op) {
       case kMicro_MSTC: {
         mst_ &= ~static_cast<uint16_t>(code.arg1);
@@ -188,7 +187,7 @@ void CpuCore::RunInstruction() {
       case kMicro_LK: {
         DCHECK(lock_ == nullptr && locked_bank_ == -1);
         if (exec_cycles_ > 0) {
-          --mc_index_;
+          --mpc_;
           return;
         }
         locked_bank_ = code.arg1;
@@ -201,7 +200,7 @@ void CpuCore::RunInstruction() {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         if (exec_cycles_ > 0) {
-          --mc_index_;
+          --mpc_;
           return;
         }
         lock_ = nullptr;
@@ -212,28 +211,28 @@ void CpuCore::RunInstruction() {
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
         banks_[locked_bank_]->SetAddress(*lock_, r_[reg1]);
-        exec_cycles_ += kMemoryBankSetAddressCycles;
+        exec_cycles_ += kCpuCoreCycles_ADR;
       } break;
       case kMicro_LD: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
         banks_[locked_bank_]->LoadWord(*lock_, r_[reg1]);
-        exec_cycles_ += kMemoryBankAccessWordCycles;
+        exec_cycles_ += kCpuCoreCycles_LD;
       } break;
       case kMicro_ST: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
         banks_[locked_bank_]->StoreWord(*lock_, r_[reg1]);
-        exec_cycles_ += kMemoryBankAccessWordCycles;
+        exec_cycles_ += kCpuCoreCycles_ST;
       } break;
       case kMicro_STP: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
         banks_[locked_bank_]->PushWord(*lock_, r_[reg1]);
-        exec_cycles_ += kMemoryBankAccessWordCycles;
+        exec_cycles_ += kCpuCoreCycles_STP;
       } break;
       case kMicro_MOVI: {
         OZ3_INIT_REG1;
@@ -381,6 +380,29 @@ void CpuCore::RunInstruction() {
         mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
         exec_cycles_ += kCpuCoreCycles_RRC;
       } break;
+      case kMicro_JP: {
+        mpc_ = std::max(0, mpc_ + code.arg1);
+        exec_cycles_ += kCpuCoreCycles_JP;
+      } break;
+      case kMicro_JC: {
+        if (((mst_ >> (code.arg1 & 3)) & 1) == (code.arg1 >> 2)) {
+          mpc_ = std::max(0, mpc_ + code.arg2);
+          exec_cycles_ += kCpuCoreCycles_JC_True;
+        } else {
+          exec_cycles_ += kCpuCoreCycles_JC_False;
+        }
+      } break;
+      case kMicro_JD: {
+        OZ3_INIT_REG1;
+        if (--r_[reg1] != 0) {
+          mpc_ = std::max(0, mpc_ + code.arg2);
+          exec_cycles_ += kCpuCoreCycles_JD_NonZero;
+        } else {
+          exec_cycles_ += kCpuCoreCycles_JD_Zero;
+        }
+      } break;
+      case kMicro_END:
+        break;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;
     }
@@ -388,7 +410,7 @@ void CpuCore::RunInstruction() {
 
   state_ = State::kStartInstruction;
   AllowLock();
-
+}
 #undef OZ3_INIT_REG1
 #undef OZ3_INIT_REG2
 #undef OZ3_MATH_OP
@@ -396,6 +418,5 @@ void CpuCore::RunInstruction() {
 #undef OZ3_S
 #undef OZ3_C
 #undef OZ3_O
-}
 
 }  // namespace oz3

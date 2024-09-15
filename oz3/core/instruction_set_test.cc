@@ -16,7 +16,7 @@ namespace {
 
 using ::testing::IsEmpty;
 
-TEST(MicroCodeTest, InstructionSetCompiles) {
+TEST(InstructionSetTest, InstructionSetCompiles) {
   InstructionMicrocodes codes;
   std::string error;
   EXPECT_TRUE(codes.Compile(GetInstructionSet(), &error));

@@ -62,6 +62,8 @@ enum MicroTestOp : uint8_t {
   kTestOp_RR,
   kTestOp_RLC,
   kTestOp_RRC,
+  kTestOp_JC,
+  kTestOp_JD,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -326,6 +328,32 @@ const InstructionDef kMicroTestInstructions[] = {
      "UL;"
      "RRC(a);"
      "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_JC,
+     {"JC"},
+     "UL;"
+     "JC(Z,@Z);"
+     "@1:JC(NZ,@NZ);"
+     "@2:JC(S,@S);"
+     "@3:JC(NS,@NS);"
+     "@4:JC(C,@C);"
+     "@5:JC(NC,@NC);"
+     "@6:JC(O,@O);"
+     "@7:JC(NO,@NO);"
+     "END;"
+     "@Z:MOVI(R0,1);JP(@1);"
+     "@NZ:MOVI(R1,1);JP(@2);"
+     "@S:MOVI(R2,1);JP(@3);"
+     "@NS:MOVI(R3,1);JP(@4);"
+     "@C:MOVI(R4,1);JP(@5);"
+     "@NC:MOVI(R5,1);JP(@6);"
+     "@O:MOVI(R6,1);JP(@7);"
+     "@NO:MOVI(R7,1);END;"},
+    {kTestOp_JD,
+     {"JD", kArgWordRegA},
+     "UL;"
+     "MOVI(R7,0);"
+     "@LOOP:ADDI(R7,1);"
+     "JD(a,@LOOP);"},
 };
 
 // Helper class to fetch and update the state of a CpuCore.

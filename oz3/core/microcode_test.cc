@@ -24,6 +24,7 @@ using ::testing::TestWithParam;
 using ::testing::ValuesIn;
 
 constexpr uint8_t kOp_TEST = 200;
+constexpr uint8_t kMicro_TEST_NOP = 254;
 constexpr uint8_t kMicro_TEST = 255;
 
 struct CompileTestCase {
@@ -87,274 +88,370 @@ void PrintTo(const CompileTestCase& test_case, std::ostream* os) {
   *os << ",valid=" << (test_case.valid ? "true" : "false") << "}";
 }
 
-constexpr MicrocodeDef kMicroNoArgs = {kMicro_TEST, "TEST", MicroArgType::kNone,
-                                       MicroArgType::kNone};
-constexpr MicrocodeDef kMicroBankArg1 = {
-    kMicro_TEST, "TEST", MicroArgType::kBank, MicroArgType::kNone};
-constexpr MicrocodeDef kMicroImmArg1 = {
-    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kNone};
-constexpr MicrocodeDef kMicroWordArg1 = {
-    kMicro_TEST, "TEST", MicroArgType::kWordReg, MicroArgType::kNone};
-constexpr MicrocodeDef kMicroDwordArg1 = {
-    kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kNone};
-constexpr MicrocodeDef kMicroImmArg2 = {
-    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kValue};
-constexpr MicrocodeDef kMicroWordArg2 = {
-    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kWordReg};
-constexpr MicrocodeDef kMicroDwordArg2 = {
-    kMicro_TEST, "TEST", MicroArgType::kValue, MicroArgType::kDwordReg};
-constexpr MicrocodeDef kMicroZscoArgs = {
-    kMicro_TEST, "TEST", MicroArgType::kZsco, MicroArgType::kZsco};
+constexpr MicrocodeDef kMicroNoArgs = {kMicro_TEST, "TEST"};
 
-using CompileTest = TestWithParam<CompileTestCase>;
-
-TEST_P(CompileTest, Test) {
-  const auto& test_case = GetParam();
-
+bool TestCompile(const MicrocodeDef& microcode_def,
+                 const InstructionDef& instruction_def, std::string& error) {
   MicrocodeDef micros[] = {
-      {kMicro_UL, "UL", MicroArgType::kNone, MicroArgType::kNone},
-      test_case.micro};
+      {kMicro_UL, "UL"}, {kMicro_LK, "LK", MicroArgType::kBank}, microcode_def};
   InstructionMicrocodes codes(micros);
-  std::string new_code = absl::StrCat("UL;", test_case.instruction.code);
-  InstructionDef instruction = test_case.instruction;
+  std::string new_code = absl::StrCat("UL;", instruction_def.code);
+  InstructionDef instruction = instruction_def;
   instruction.code = new_code;
   instruction.decl.op_name = "TEST";
-  std::string error;
-  EXPECT_EQ(codes.Compile(instruction, &error), test_case.valid);
-  if (test_case.valid) {
-    EXPECT_THAT(error, IsEmpty());
-  } else {
-    EXPECT_THAT(error, Not(IsEmpty()));
-  }
+  return codes.Compile(instruction, &error);
+}
+InstructionDef MakeDef(std::string_view code) {
+  return InstructionDef{.code = code};
 }
 
-constexpr CompileTestCase kBankCompileTestCases[] = {
-    {kMicroBankArg1, InstructionDef{.decl = {}, .code = "TEST"}, false},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(X)"}, false},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(1)"}, false},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(CODEX)"}, false},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(CODE)"}, true},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(STACK)"}, true},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(DATA)"}, true},
-    {kMicroBankArg1, InstructionDef{.code = "TEST(EXTRA)"}, true},
-    {kMicroNoArgs, InstructionDef{.code = "TEST(CODE)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeBankTest, CompileTest,
-                         ValuesIn(kBankCompileTestCases));
+InstructionDef MakeDef(std::pair<std::string_view, std::string_view> args,
+                       std::string_view code) {
+  return InstructionDef{.decl = {.arg1 = args.first, .arg2 = args.second},
+                        .code = code};
+}
 
-constexpr CompileTestCase kImmArg1CompileTestCases[] = {
-    {kMicroImmArg1, InstructionDef{.code = "TEST"}, false},
-    {kMicroImmArg1, InstructionDef{.decl = {.arg1 = "a"}, .code = "TEST(a)"},
-     false},
-    {kMicroImmArg1, InstructionDef{.decl = {.arg1 = "A"}, .code = "TEST(A)"},
-     false},
-    {kMicroImmArg1, InstructionDef{.code = "TEST(-129)"}, false},
-    {kMicroImmArg1, InstructionDef{.code = "TEST(-128)"}, true},
-    {kMicroImmArg1, InstructionDef{.code = "TEST(0)"}, true},
-    {kMicroImmArg1, InstructionDef{.code = "TEST(127)"}, true},
-    {kMicroImmArg1, InstructionDef{.code = "TEST(128)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeImmArg1Test, CompileTest,
-                         ValuesIn(kImmArg1CompileTestCases));
+TEST(MicrocodeTest, BankArg) {
+  const MicrocodeDef kMicroBankArg1 = {kMicro_TEST, "TEST",
+                                       MicroArgType::kBank};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroBankArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroBankArg1, MakeDef("TEST(X)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroBankArg1, MakeDef("TEST(1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroBankArg1, MakeDef("TEST(CODEX)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroBankArg1, MakeDef("TEST(CODE)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroBankArg1, MakeDef("TEST(STACK)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroBankArg1, MakeDef("TEST(DATA)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroBankArg1, MakeDef("TEST(EXTRA)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroNoArgs, MakeDef("TEST(CODE)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-constexpr CompileTestCase kWordArg1CompileTestCases[] = {
-    {kMicroWordArg1, InstructionDef{.code = "TEST"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(a)"}, false},
-    {kMicroWordArg1, InstructionDef{.decl = {.arg2 = "a"}, .code = "TEST(a)"},
-     false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(b)"}, false},
-    {kMicroWordArg1, InstructionDef{.decl = {.arg1 = "b"}, .code = "TEST(b)"},
-     false},
-    {kMicroWordArg1, InstructionDef{.decl = {.arg1 = "A"}, .code = "TEST(A)"},
-     false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(0)"}, false},
-    {kMicroWordArg1, InstructionDef{.decl = {.arg1 = "a"}, .code = "TEST(a)"},
-     true},
-    {kMicroWordArg1,
-     InstructionDef{.decl = {.arg1 = "v", .arg2 = "b"}, .code = "TEST(b)"},
-     true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R0)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R1)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R2)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R3)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R4)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R5)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R6)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R7)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(R8)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(D0)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(D1)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(D2)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(D3)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(D4)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(C0)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(C1)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(C2)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(CD)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(SP)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(DP)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(SD)"}, false},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(PC)"}, true},
-    {kMicroWordArg1, InstructionDef{.code = "TEST(ST)"}, true},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeWordArg1Test, CompileTest,
-                         ValuesIn(kWordArg1CompileTestCases));
+TEST(MicrocodeTest, ImmArg) {
+  const MicrocodeDef kMicroImmArg1 = {kMicro_TEST, "TEST",
+                                      MicroArgType::kValue};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroImmArg1, MakeDef({"a", ""}, "TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroImmArg1, MakeDef({"A", ""}, "TEST(A)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(-129)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(-128)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(0)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(127)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(128)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-constexpr CompileTestCase kDwordArg1CompileTestCases[] = {
-    {kMicroDwordArg1, InstructionDef{.code = "TEST"}, false},
-    {kMicroDwordArg1, InstructionDef{.decl = {.arg1 = "a"}, .code = "TEST(a)"},
-     false},
-    {kMicroDwordArg1,
-     InstructionDef{.decl = {.arg1 = "v", .arg2 = "b"}, .code = "TEST(b)"},
-     false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(A)"}, false},
-    {kMicroDwordArg1, InstructionDef{.decl = {.arg1 = "A"}, .code = "TEST(A)"},
-     true},
-    {kMicroDwordArg1, InstructionDef{.decl = {.arg2 = "A"}, .code = "TEST(A)"},
-     false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(B)"}, false},
-    {kMicroDwordArg1, InstructionDef{.decl = {.arg1 = "B"}, .code = "TEST(B)"},
-     false},
-    {kMicroDwordArg1,
-     InstructionDef{.decl = {.arg1 = "v", .arg2 = "B"}, .code = "TEST(B)"},
-     true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(0)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R0)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R1)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R2)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R3)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R4)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R5)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R6)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R7)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(R8)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(D0)"}, true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(D1)"}, true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(D2)"}, true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(D3)"}, true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(D4)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(C0)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(C1)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(C2)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(CD)"}, true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(SP)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(DP)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(SD)"}, true},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(PC)"}, false},
-    {kMicroDwordArg1, InstructionDef{.code = "TEST(ST)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeDwordArg1Test, CompileTest,
-                         ValuesIn(kDwordArg1CompileTestCases));
+TEST(MicrocodeTest, WordRegArg) {
+  constexpr MicrocodeDef kMicroWordArg1 = {kMicro_TEST, "TEST",
+                                           MicroArgType::kWordReg};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"", "a"}, "TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(b)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"b", ""}, "TEST(b)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"A", ""}, "TEST(A)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R0)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R1)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R2)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R3)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R4)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R5)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R6)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R7)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(R8)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D2)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D3)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D4)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C0)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C1)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(C2)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(CD)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(SP)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(DP)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(SD)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(PC)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(ST)"), error));
+  EXPECT_THAT(error, IsEmpty());
+}
 
-constexpr CompileTestCase kImmArg2CompileTestCases[] = {
-    {kMicroImmArg2, InstructionDef{.code = "TEST"}, false},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1)"}, false},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1,C1)"}, false},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1,-129)"}, false},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1,-128)"}, true},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1,0)"}, true},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1,127)"}, true},
-    {kMicroImmArg2, InstructionDef{.code = "TEST(1,128)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeImmArg2Test, CompileTest,
-                         ValuesIn(kImmArg2CompileTestCases));
+TEST(MicrocodeTest, DwordRegArg) {
+  const MicrocodeDef kMicroDwordArg1 = {kMicro_TEST, "TEST",
+                                        MicroArgType::kDwordReg};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroDwordArg1, MakeDef({"a", ""}, "TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroDwordArg1, MakeDef({"v", "b"}, "TEST(b)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(A)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(
+      TestCompile(kMicroDwordArg1, MakeDef({"A", ""}, "TEST(A)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(
+      TestCompile(kMicroDwordArg1, MakeDef({"", "A"}, "TEST(A)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(B)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroDwordArg1, MakeDef({"B", ""}, "TEST(B)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(
+      TestCompile(kMicroDwordArg1, MakeDef({"v", "B"}, "TEST(B)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R2)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R3)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R4)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R5)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R6)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R7)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R8)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D0)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D1)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D2)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D3)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D4)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C2)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(CD)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(SP)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(DP)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(SD)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(PC)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(ST)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-constexpr CompileTestCase kWordArg2CompileTestCases[] = {
-    {kMicroWordArg2, InstructionDef{.code = "TEST"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,a)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,b)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,A)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,0)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R0)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R1)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R2)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R3)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R4)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R5)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R6)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R7)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,R8)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,D0)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,D1)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,D2)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,D3)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,D4)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,C0)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,C1)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,C2)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,CD)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,SP)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,DP)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,SD)"}, false},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,PC)"}, true},
-    {kMicroWordArg2, InstructionDef{.code = "TEST(1,ST)"}, true},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeWordArg2Test, CompileTest,
-                         ValuesIn(kWordArg2CompileTestCases));
+TEST(MicrocodeTest, ZscoArg) {
+  const MicrocodeDef kMicroZscoArgs = {kMicro_TEST, "TEST", MicroArgType::kZsco,
+                                       MicroArgType::kZsco};
+  std::string error;
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z,S)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(C,O)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZS,CO)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZC,SO)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZSC,SCO)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZCO,ZSC)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZZZ,SSS)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(CCC,OOO)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(_,_)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(S,_)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(_,C)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z___,_S__)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(__C_,___O)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroZscoArgs, MakeDef("TEST(X,Z)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z,X)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-constexpr CompileTestCase kDwordArg2CompileTestCases[] = {
-    {kMicroDwordArg2, InstructionDef{.code = "TEST"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,a)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,b)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,A)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,0)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R0)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R1)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R2)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R3)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R4)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R5)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R6)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R7)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,R8)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,D0)"}, true},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,D1)"}, true},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,D2)"}, true},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,D3)"}, true},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,D4)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,C0)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,C1)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,C2)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,CD)"}, true},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,SP)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,DP)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,SD)"}, true},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,PC)"}, false},
-    {kMicroDwordArg2, InstructionDef{.code = "TEST(1,ST)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeDwordArg2Test, CompileTest,
-                         ValuesIn(kDwordArg2CompileTestCases));
+TEST(MicrocodeTest, ConditionArg) {
+  const MicrocodeDef kMicroConditionArgs = {
+      kMicro_TEST, "TEST", MicroArgType::kCondition, MicroArgType::kCondition};
+  std::string error;
+  EXPECT_TRUE(TestCompile(kMicroConditionArgs, MakeDef("TEST(Z,NZ)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroConditionArgs, MakeDef("TEST(S,NS)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroConditionArgs, MakeDef("TEST(C,NC)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroConditionArgs, MakeDef("TEST(O,NO)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroConditionArgs, MakeDef("TEST(Z,X)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroConditionArgs, MakeDef("TEST(X,Z)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-constexpr CompileTestCase kZscoCompileTestCases[] = {
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(Z,S)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(C,O))"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZS,CO)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZC,SO)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZSC,SCO)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZCO,ZSC)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(ZZZ,SSS)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(CCC,OOO)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(_,_)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(S,_)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(_,C)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(Z___,_S__)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(__C_,___O)"}, true},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(X,Z)"}, false},
-    {kMicroZscoArgs, InstructionDef{.code = "TEST(Z,X)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeZscoTest, CompileTest,
-                         ValuesIn(kZscoCompileTestCases));
+TEST(MicrocodeTest, InvalidMicrocodeName) {
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroNoArgs, MakeDef("INVALID"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-constexpr CompileTestCase kMiscCompileTestCases[] = {
-    {kMicroNoArgs, InstructionDef{.code = "INVALID"}, false},
-    {kMicroNoArgs, InstructionDef{.code = "TEST(1)"}, false},
-};
-INSTANTIATE_TEST_SUITE_P(MicroCodeMiscTest, CompileTest,
-                         ValuesIn(kMiscCompileTestCases));
+TEST(MicrocodeTest, ProvideExtraArg) {
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroNoArgs, MakeDef("TEST(1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
 
-TEST(MicroCodeTest, DecodeInstructionNotFound) {
+TEST(MicrocodeTest, Address) {
+  MicrocodeDef micros[] = {{kMicro_UL, "UL"},
+                           {kMicro_LK, "LK", MicroArgType::kBank},
+                           {kMicro_TEST_NOP, "NOP"},
+                           {kMicro_TEST, "TEST", MicroArgType::kAddress}};
+  InstructionMicrocodes codes(micros);
+  std::string error;
+  EXPECT_TRUE(codes.Compile(InstructionDef{.code = "UL;TEST(-1);"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(InstructionDef{.code = "UL;TEST(-2);"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(InstructionDef{.code = "UL;TEST(-3);"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(InstructionDef{.code = "UL;TEST(0);"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(InstructionDef{.code = "UL;TEST(1);"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(InstructionDef{.code = "TEST(0);UL;"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(
+      codes.Compile(InstructionDef{.code = "NOP;TEST(-2);UL;"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(InstructionDef{.code = "TEST(1);UL;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "TEST(2);UL;NOP;LK(CODE);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "TEST(3);UL;NOP;LK(CODE);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "TEST(4);UL;NOP;LK(CODE);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "TEST(5);UL;NOP;LK(CODE);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "UL;TEST(4);NOP;LK(CODE);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "TEST(3);UL;NOP;LK(STACK);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "TEST(3);UL;NOP;LK(DATA);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "TEST(3);UL;NOP;LK(EXTRA);NOP;UL;NOP;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code =
+                         "@label:NOP;TEST(@label);UL;NOP;LK(DATA);NOP;UL;NOP;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code =
+                         "NOP;TEST(@label);@label:UL;NOP;LK(DATA);NOP;UL;NOP;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code =
+                         "NOP;TEST(@label);UL;@label:NOP;LK(DATA);NOP;UL;NOP;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code =
+                         "NOP;UL;TEST(@label);NOP;@label:LK(DATA);NOP;UL;NOP;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code =
+                         "NOP;UL;TEST(@label);NOP;LK(DATA);@label:NOP;UL;NOP;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code =
+                         "NOP;UL;TEST(@label);NOP;LK(DATA);NOP;UL;@label:NOP;"},
+      &error));
+}
+
+TEST(MicrocodeTest, DecodeInstructionNotFound) {
   InstructionMicrocodes codes;
   DecodedInstruction decoded;
   EXPECT_FALSE(codes.Decode(0, decoded));
@@ -369,10 +466,10 @@ uint16_t MakeCode(uint16_t op, uint16_t args = 0) {
   return (op << 8) | (args & 0xFF);
 }
 
-TEST(MicroCodeTest, BankDecodedCorrectly) {
+TEST(MicrocodeTest, BankDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
-      {kMicro_TEST, "OP", MicroArgType::kBank, MicroArgType::kNone},
+      {kMicro_TEST, "OP", MicroArgType::kBank},
   };
   const InstructionDef instruction_defs[] = {
       {kOp_TEST, {}, "UL;OP(CODE);OP(STACK);OP(DATA);OP(EXTRA)"},
@@ -398,7 +495,7 @@ TEST(MicroCodeTest, BankDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::EXTRA}));
 }
 
-TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
+TEST(MicrocodeTest, ImmArgsDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kValue, MicroArgType::kValue},
@@ -426,7 +523,7 @@ TEST(MicroCodeTest, ImmArgsDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = -128, .arg2 = 97}));
 }
 
-TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
+TEST(MicrocodeTest, WordRegArgsDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
@@ -470,7 +567,7 @@ TEST(MicroCodeTest, WordRegArgsDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::PC, .arg2 = CpuCore::ST}));
 }
 
-TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
+TEST(MicrocodeTest, DwordRegArgsDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
@@ -502,7 +599,7 @@ TEST(MicroCodeTest, DwordRegArgsDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::CD, .arg2 = CpuCore::SD}));
 }
 
-TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
+TEST(MicrocodeTest, ImmOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
@@ -531,7 +628,7 @@ TEST(MicroCodeTest, ImmOpArgDecodedCorrectly) {
                                                   .arg2 = CpuCore::C1}));
 }
 
-TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
+TEST(MicrocodeTest, WordOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
@@ -561,7 +658,7 @@ TEST(MicroCodeTest, WordOpArgDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
 }
 
-TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
+TEST(MicrocodeTest, DwordOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
@@ -591,7 +688,7 @@ TEST(MicroCodeTest, DwordOpArgDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
 }
 
-TEST(MicroCodeTest, LockDuringFetch) {
+TEST(MicrocodeTest, LockDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LK(STACK);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -599,7 +696,7 @@ TEST(MicroCodeTest, LockDuringFetch) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, LockAfterPriorLock) {
+TEST(MicrocodeTest, LockAfterPriorLock) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);LK(STACK);UL;UL;"};
   InstructionMicrocodes codes;
@@ -608,7 +705,7 @@ TEST(MicroCodeTest, LockAfterPriorLock) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, UnlockWhenNotLocked) {
+TEST(MicrocodeTest, UnlockWhenNotLocked) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -616,7 +713,7 @@ TEST(MicroCodeTest, UnlockWhenNotLocked) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, AddressWhenNotLocked) {
+TEST(MicrocodeTest, AddressWhenNotLocked) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;ADR(C0);"};
   InstructionMicrocodes codes;
   std::string error;
@@ -624,7 +721,7 @@ TEST(MicroCodeTest, AddressWhenNotLocked) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, AddressDuringFetch) {
+TEST(MicrocodeTest, AddressDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -632,7 +729,7 @@ TEST(MicroCodeTest, AddressDuringFetch) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicroCodeTest, AddressAfterLock) {
+TEST(MicrocodeTest, AddressAfterLock) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);UL;"};
   InstructionMicrocodes codes;
@@ -641,7 +738,7 @@ TEST(MicroCodeTest, AddressAfterLock) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicroCodeTest, LoadDuringFetch) {
+TEST(MicrocodeTest, LoadDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LD(C0);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -649,7 +746,7 @@ TEST(MicroCodeTest, LoadDuringFetch) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicroCodeTest, LoadBeforeAddress) {
+TEST(MicrocodeTest, LoadBeforeAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);LD(C0);UL;"};
   InstructionMicrocodes codes;
@@ -658,7 +755,7 @@ TEST(MicroCodeTest, LoadBeforeAddress) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, LoadAfterAddress) {
+TEST(MicrocodeTest, LoadAfterAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
   InstructionMicrocodes codes;
@@ -667,7 +764,7 @@ TEST(MicroCodeTest, LoadAfterAddress) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicroCodeTest, StoreDuringFetch) {
+TEST(MicrocodeTest, StoreDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ST(C0);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -675,7 +772,7 @@ TEST(MicroCodeTest, StoreDuringFetch) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, StoreAfterAddressDuringFetch) {
+TEST(MicrocodeTest, StoreAfterAddressDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);ST(C0);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -683,7 +780,7 @@ TEST(MicroCodeTest, StoreAfterAddressDuringFetch) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicroCodeTest, StoreBeforeAddress) {
+TEST(MicrocodeTest, StoreBeforeAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ST(C0);UL;"};
   InstructionMicrocodes codes;
@@ -692,7 +789,7 @@ TEST(MicroCodeTest, StoreBeforeAddress) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicroCodeTest, StoreAfterAddress) {
+TEST(MicrocodeTest, StoreAfterAddress) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);ST(C0);UL;"};
   InstructionMicrocodes codes;
@@ -701,7 +798,7 @@ TEST(MicroCodeTest, StoreAfterAddress) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicroCodeTest, DefaultCodeSizeIsOne) {
+TEST(MicrocodeTest, DefaultCodeSizeIsOne) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -712,7 +809,7 @@ TEST(MicroCodeTest, DefaultCodeSizeIsOne) {
   EXPECT_EQ(decoded.size, 1);
 }
 
-TEST(MicroCodeTest, LoadDuringFetchIncreasesCodeSize) {
+TEST(MicrocodeTest, LoadDuringFetchIncreasesCodeSize) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LD(C0);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -723,7 +820,7 @@ TEST(MicroCodeTest, LoadDuringFetchIncreasesCodeSize) {
   EXPECT_EQ(decoded.size, 2);
 }
 
-TEST(MicroCodeTest, TwoLoadsDuringFetch) {
+TEST(MicrocodeTest, TwoLoadsDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LD(C0);LD(C1);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -734,7 +831,7 @@ TEST(MicroCodeTest, TwoLoadsDuringFetch) {
   EXPECT_EQ(decoded.size, 3);
 }
 
-TEST(MicroCodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
+TEST(MicrocodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
   InstructionMicrocodes codes;
@@ -746,7 +843,7 @@ TEST(MicroCodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
   EXPECT_EQ(decoded.size, 1);
 }
 
-TEST(MicroCodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
+TEST(MicrocodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);LD(C0);UL;"};
   InstructionMicrocodes codes;
   std::string error;

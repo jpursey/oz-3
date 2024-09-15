@@ -9,10 +9,13 @@
 #include <optional>
 #include <string>
 
+#include "absl/container/flat_hash_map.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
+#include "glog/logging.h"
 #include "oz3/core/cpu_core.h"
 
 namespace oz3 {
@@ -55,17 +58,25 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_RR, "RR", MicroArgType::kWordReg},
     {kMicro_RLC, "RLC", MicroArgType::kWordReg},
     {kMicro_RRC, "RRC", MicroArgType::kWordReg},
+    {kMicro_JP, "JP", MicroArgType::kAddress},
+    {kMicro_JC, "JC", MicroArgType::kCondition, MicroArgType::kAddress},
+    {kMicro_JD, "JD", MicroArgType::kWordReg, MicroArgType::kAddress},
+    {kMicro_END, "END"},
 };
 
 class InstructionCompiler {
  public:
   InstructionCompiler(const InstructionDef& instruction,
-                      absl::Span<const MicrocodeDef> micro_code_defs,
+                      absl::Span<const MicrocodeDef> microcode_defs,
                       CompiledInstruction& compiled, std::string* error_string)
       : instruction_(instruction),
-        micro_code_defs_(micro_code_defs),
+        microcode_defs_(microcode_defs),
         compiled_(compiled),
-        error_string_(error_string) {}
+        error_string_(error_string) {
+    if (error_string_ != nullptr) {
+      error_string_->clear();
+    }
+  }
 
   bool Compile();
 
@@ -73,17 +84,15 @@ class InstructionCompiler {
   struct ParsedMicroCode {
     std::string_view code;       // Full code that was parsed.
     std::string_view op_name;    // Operation name.
-    std::string_view bank;       // Bank specification.
     std::string_view arg1_name;  // First argument name.
     std::string_view arg2_name;  // Second argument name.
-    std::string_view zsco;       // ZSCO flags.
   };
 
-  bool Error(absl::string_view message, bool include_micro = true) {
+  bool Error(const ParsedMicroCode* parsed, absl::string_view message) {
     if (error_string_ != nullptr) {
-      if (include_micro) {
+      if (parsed != nullptr) {
         *error_string_ = absl::StrCat("Error in ", instruction_.decl.op_name,
-                                      " for \"", parsed_.code, "\": ", message);
+                                      " for \"", parsed->code, "\": ", message);
       } else {
         *error_string_ =
             absl::StrCat("Error in ", instruction_.decl.op_name, ": ", message);
@@ -91,20 +100,28 @@ class InstructionCompiler {
     }
     return false;
   }
+  bool Error(absl::string_view message) { return Error(nullptr, message); }
 
-  bool CompileMicroCode(absl::string_view micro_src_code);
-  void ParseMicroCode(std::string_view code);
+  bool CompileMicroCode(int index);
+  bool ExtractLabels();
+  ParsedMicroCode ParseMicroCode(std::string_view src_code);
+  bool InitLocks();
   const MicrocodeDef* FindMicroCodeDef(std::string_view op_name);
-  bool DecodeArg(std::string_view arg_name, MicroArgType arg_type, int8_t& arg);
+  bool DecodeArg(ParsedMicroCode* parsed, int index, std::string_view arg_name,
+                 MicroArgType arg_type, int8_t& arg);
 
   const InstructionDef& instruction_;
-  absl::Span<const MicrocodeDef> micro_code_defs_;
+  absl::Span<const MicrocodeDef> microcode_defs_;
+
+  std::vector<std::string_view> src_code_;
+  absl::flat_hash_map<std::string, int> labels_;
+  std::vector<ParsedMicroCode> parsed_code_;
+  std::vector<int> locks_;
   CompiledInstruction& compiled_;
   std::string* const error_string_;
-  ParsedMicroCode parsed_ = {};
-  Microcode* micro_code_ = nullptr;
+  Microcode* microcode_ = nullptr;
 
-  // Set to the bank of the last LK operation. Cleared by UL for that bank.
+  // Set to the bank of the last LK operation. Cleared by UL.
   int lk_bank_ = CpuCore::CODE;
 
   // True if an ADR operation has been seen. Cleared by UL.
@@ -120,65 +137,72 @@ class InstructionCompiler {
 bool InstructionCompiler::Compile() {
   compiled_.code.clear();
   compiled_.size = 1;
-  std::vector<std::string_view> src_code =
-      absl::StrSplit(instruction_.code, ';', absl::SkipWhitespace());
-  for (auto& micro_src_code : src_code) {
-    micro_code_ = &compiled_.code.emplace_back();
-    if (!CompileMicroCode(micro_src_code)) {
+  src_code_ = absl::StrSplit(instruction_.code, ';', absl::SkipWhitespace());
+  if (!ExtractLabels()) {
+    return false;
+  }
+  parsed_code_.reserve(src_code_.size());
+  for (std::string_view& src_code : src_code_) {
+    parsed_code_.push_back(ParseMicroCode(src_code));
+  }
+  if (!InitLocks()) {
+    return false;
+  }
+  for (int index = 0; index < parsed_code_.size(); ++index) {
+    microcode_ = &compiled_.code.emplace_back();
+    if (!CompileMicroCode(index)) {
       compiled_.code.clear();
       return false;
     }
   }
   if (lk_bank_ >= 0) {
     if (had_lk_) {
-      return Error("LK not cleared by UL", false);
+      return Error("LK not cleared by UL");
     } else {
-      return Error("No UL for instruction fetch", false);
+      return Error("No UL for instruction fetch");
     }
   }
   return true;
 }
 
-bool InstructionCompiler::CompileMicroCode(absl::string_view micro_src_code) {
-  ParseMicroCode(micro_src_code);
-  const MicrocodeDef* def = FindMicroCodeDef(parsed_.op_name);
+bool InstructionCompiler::CompileMicroCode(int index) {
+  auto parsed = parsed_code_[index];
+  const MicrocodeDef* def = FindMicroCodeDef(parsed.op_name);
   if (def == nullptr) {
-    return Error("Microcode OpCode not found");
+    return Error(&parsed, "Microcode OpCode not found");
   }
-  if (!DecodeArg(parsed_.arg1_name, def->arg1, micro_code_->arg1)) {
+  if (!DecodeArg(&parsed, index, parsed.arg1_name, def->arg1,
+                 microcode_->arg1)) {
     return false;
   }
-  if (!DecodeArg(parsed_.arg2_name, def->arg2, micro_code_->arg2)) {
+  if (!DecodeArg(&parsed, index, parsed.arg2_name, def->arg2,
+                 microcode_->arg2)) {
     return false;
   }
 
   // Microcode specific handling.
   switch (def->op) {
     case kMicro_LK:
-      if (lk_bank_ >= 0) {
-        return Error("LK already active");
-      }
+      CHECK(lk_bank_ < 0);  // Handled by InitLocks.
       had_lk_ = true;
-      lk_bank_ = micro_code_->arg1;
+      lk_bank_ = microcode_->arg1;
       break;
     case kMicro_UL:
-      if (lk_bank_ < 0) {
-        return Error("UL bank without a prior LK");
-      }
+      CHECK(lk_bank_ >= 0);  // Handled by InitLocks.
       lk_bank_ = -1;
       has_adr_ = false;
       in_fetch_ = false;
       break;
     case kMicro_ADR:
       if (lk_bank_ < 0) {
-        return Error("ADR without a prior LK");
+        return Error(&parsed, "ADR without a prior LK");
       }
       has_adr_ = true;
       in_fetch_ = false;
       break;
     case kMicro_LD:
       if (!has_adr_) {
-        return Error("LD without a prior ADR");
+        return Error(&parsed, "LD without a prior ADR");
       }
       if (in_fetch_) {
         compiled_.size += 1;
@@ -186,18 +210,18 @@ bool InstructionCompiler::CompileMicroCode(absl::string_view micro_src_code) {
       break;
     case kMicro_ST:
       if (!has_adr_) {
-        return Error("ST without a prior ADR");
+        return Error(&parsed, "ST without a prior ADR");
       }
       if (in_fetch_) {
-        return Error("ST invalid in fetch phase, call ADR first");
+        return Error(&parsed, "ST invalid in fetch phase, call ADR first");
       }
       break;
     case kMicro_STP:
       if (!has_adr_) {
-        return Error("STP without a prior ADR");
+        return Error(&parsed, "STP without a prior ADR");
       }
       if (in_fetch_) {
-        return Error("STP invalid in fetch phase, call ADR first");
+        return Error(&parsed, "STP invalid in fetch phase, call ADR first");
       }
       break;
     default:
@@ -207,61 +231,127 @@ bool InstructionCompiler::CompileMicroCode(absl::string_view micro_src_code) {
   return true;
 }
 
-void InstructionCompiler::ParseMicroCode(std::string_view code) {
+bool InstructionCompiler::ExtractLabels() {
+  int index = 0;
+  for (std::string_view& code : src_code_) {
+    if (code.starts_with('@')) {
+      auto label_end = code.find(':', 1);
+      if (label_end == std::string_view::npos) {
+        return Error(absl::StrCat("Expected ':' after @ label: ", code));
+      }
+      std::string_view label = code.substr(1, label_end - 1);
+      code.remove_prefix(label_end + 1);
+      for (char c : label) {
+        if (!absl::ascii_isalnum(c) && c != '_') {
+          return Error(absl::StrCat("Invalid label: ", label));
+        }
+      }
+      std::string label_key = absl::AsciiStrToUpper(label);
+      if (labels_.contains(label_key)) {
+        return Error(absl::StrCat("Duplicate label: ", label));
+      }
+      labels_[label_key] = index;
+    }
+    ++index;
+  }
+  return true;
+}
+
+bool InstructionCompiler::InitLocks() {
+  locks_.reserve(parsed_code_.size());
+  int lock = CpuCore::CODE;
+  int index = 0;
+  for (ParsedMicroCode& parsed : parsed_code_) {
+    ++index;
+    locks_.push_back(lock);
+    if (parsed.op_name == "LK") {
+      if (lock >= 0) {
+        return Error(absl::StrCat("LK already active. Code number: ", index));
+      }
+      int8_t arg;
+      if (!DecodeArg(&parsed, index, parsed.arg1_name, MicroArgType::kBank,
+                     arg)) {
+        return false;
+      }
+      lock = arg;
+    } else if (parsed.op_name == "UL") {
+      if (lock < 0) {
+        return Error(
+            nullptr,
+            absl::StrCat("UL without a prior LK. Code number: ", index));
+      }
+      lock = -1;
+    }
+  }
+  // We need a value for one past the end, since it is a valid jump address.
+  locks_.push_back(lock);
+  return true;
+}
+
+InstructionCompiler::ParsedMicroCode InstructionCompiler::ParseMicroCode(
+    std::string_view code) {
   auto RemovePrefix = [&code](std::string_view::size_type amount) {
     code.remove_prefix(std::min(code.size(), amount));
   };
 
-  parsed_ = {};
-  parsed_.code = code;
+  ParsedMicroCode parsed = {};
+  parsed.code = code;
   auto next_token = code.find_first_of(".(:");
-  parsed_.op_name = code.substr(0, next_token);
+  parsed.op_name = code.substr(0, next_token);
   RemovePrefix(next_token);
-  if (!code.empty() && code[0] == '.') {
-    RemovePrefix(1);
-    next_token = code.find_first_of("(:");
-    parsed_.bank = code.substr(0, next_token);
-    RemovePrefix(next_token);
-  }
   if (!code.empty() && code[0] == '(') {
     RemovePrefix(1);
     next_token = code.find_first_of(",)");
-    parsed_.arg1_name = code.substr(0, next_token);
+    parsed.arg1_name = code.substr(0, next_token);
     RemovePrefix(next_token);
     if (!code.empty() && code[0] == ',') {
       RemovePrefix(1);
       next_token = code.find(")");
-      parsed_.arg2_name = code.substr(0, next_token);
+      parsed.arg2_name = code.substr(0, next_token);
       RemovePrefix(next_token);
     }
   }
-  if (!code.empty() && code[0] == ':') {
-    RemovePrefix(1);
-    parsed_.zsco = code.substr(0);
-  }
+  return parsed;
 }
 
 const MicrocodeDef* InstructionCompiler::FindMicroCodeDef(
     std::string_view op_name) {
-  for (const MicrocodeDef& def : micro_code_defs_) {
+  for (const MicrocodeDef& def : microcode_defs_) {
     if (def.op_name == op_name) {
-      micro_code_->op = def.op;
+      microcode_->op = def.op;
       return &def;
     }
   }
   return nullptr;
 }
 
-bool InstructionCompiler::DecodeArg(std::string_view arg_name,
+std::string_view LockName(int lock) {
+  switch (lock) {
+    case -1:
+      return "NONE";
+    case CpuCore::CODE:
+      return "CODE";
+    case CpuCore::STACK:
+      return "STACK";
+    case CpuCore::DATA:
+      return "DATA";
+    case CpuCore::EXTRA:
+      return "EXTRA";
+  }
+  return "UNKNOWN";
+}
+
+bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
+                                    std::string_view arg_name,
                                     MicroArgType arg_type, int8_t& arg) {
   if (arg_name.empty() && arg_type == MicroArgType::kNone) {
     return true;
   }
   if (arg_name.empty()) {
-    return Error("Argument missing");
+    return Error(parsed, "Argument missing");
   }
   if (arg_type == MicroArgType::kNone) {
-    return Error("Argument not allowed");
+    return Error(parsed, "Argument not allowed");
   }
   if (arg_type == MicroArgType::kBank) {
     if (arg_name == "CODE") {
@@ -273,7 +363,7 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name,
     } else if (arg_name == "EXTRA") {
       arg = CpuCore::EXTRA;
     } else {
-      return Error(absl::StrCat("Invalid bank: ", arg_name));
+      return Error(parsed, absl::StrCat("Invalid bank: ", arg_name));
     }
     return true;
   }
@@ -288,46 +378,111 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name,
       } else if (c == 'O') {
         arg |= CpuCore::O;
       } else if (c != '_') {
-        return Error(absl::StrCat("Invalid ZSCO flags: ", arg_name));
+        return Error(parsed, absl::StrCat("Invalid ZSCO flags: ", arg_name));
       }
     }
+    return true;
+  }
+  if (arg_type == MicroArgType::kCondition) {
+    if (arg_name == "Z") {
+      arg = CpuCore::ZShift | 4;
+    } else if (arg_name == "NZ") {
+      arg = CpuCore::ZShift;
+    } else if (arg_name == "S") {
+      arg = CpuCore::SShift | 4;
+    } else if (arg_name == "NS") {
+      arg = CpuCore::SShift;
+    } else if (arg_name == "C") {
+      arg = CpuCore::CShift | 4;
+    } else if (arg_name == "NC") {
+      arg = CpuCore::CShift;
+    } else if (arg_name == "O") {
+      arg = CpuCore::OShift | 4;
+    } else if (arg_name == "NO") {
+      arg = CpuCore::OShift;
+    } else {
+      return Error(parsed, absl::StrCat("Invalid condition: ", arg_name));
+    }
+    return true;
+  }
+  if (arg_type == MicroArgType::kAddress) {
+    int jump;
+    const int jump_from = index + 1;
+    if (arg_name[0] != '@') {
+      if (!absl::SimpleAtoi(arg_name, &jump)) {
+        return Error(parsed, absl::StrCat("Invalid argument: ", arg_name));
+      }
+    } else {
+      std::string_view label = arg_name.substr(1);
+      std::string label_key = absl::AsciiStrToUpper(label);
+      if (!labels_.contains(label_key)) {
+        return Error(parsed, absl::StrCat("Unknown label: ", label));
+      }
+      jump = labels_[label_key] - jump_from;
+    }
+    const int min_jump = std::max<int>(-128, -jump_from);
+    const int max_jump =
+        std::min<int>(127, static_cast<int>(parsed_code_.size()) - jump_from);
+    if (jump < min_jump || jump > max_jump) {
+      return Error(parsed, absl::StrCat("Value out of range [", min_jump, ",",
+                                        max_jump, "]: ", arg_name));
+    }
+    if (locks_[index] != locks_[jump_from + jump]) {
+      return Error(parsed, absl::StrCat("Jump between locks from ",
+                                        LockName(locks_[index]), " to ",
+                                        LockName(locks_[jump_from + jump])));
+    }
+    arg = jump;
+    return true;
+  }
+  if (arg_type == MicroArgType::kValue) {
+    int value;
+    if (!absl::SimpleAtoi(arg_name, &value)) {
+      return Error(parsed, absl::StrCat("Invalid argument: ", arg_name));
+    }
+    if (value < -128 || value > 127) {
+      return Error(parsed,
+                   absl::StrCat("Value out of range [-128,127]: ", arg_name));
+    }
+    arg = value;
     return true;
   }
   if (arg_type == MicroArgType::kWordReg) {
     if (arg_name == "a") {
       if (instruction_.decl.arg1 != "a") {
-        return Error("First argument not: a");
+        return Error(parsed, "First argument not: a");
       }
       arg = -1;
     } else if (arg_name == "a0") {
       if (instruction_.decl.arg1 != "A") {
-        return Error("First argument not: A");
+        return Error(parsed, "First argument not: A");
       }
       arg = -1;
     } else if (arg_name == "a1") {
       if (instruction_.decl.arg1 != "A") {
-        return Error("First argument not: A");
+        return Error(parsed, "First argument not: A");
       }
       arg = -3;
     } else if (arg_name == "b") {
       if (instruction_.decl.arg2 != "b") {
-        return Error("Second argument not: b");
+        return Error(parsed, "Second argument not: b");
       }
       arg = -2;
     } else if (arg_name == "b0") {
       if (instruction_.decl.arg2 != "B") {
-        return Error("Second argument not: B");
+        return Error(parsed, "Second argument not: B");
       }
       arg = -2;
     } else if (arg_name == "b1") {
       if (instruction_.decl.arg2 != "B") {
-        return Error("Second argument not: B");
+        return Error(parsed, "Second argument not: B");
       }
       arg = -4;
     } else if (arg_name[0] == 'R' && arg_name.size() == 2) {
       arg = arg_name[1] - '0';
       if (arg < 0 || arg > 7) {
-        return Error(absl::StrCat("Invalid register index: ", arg_name));
+        return Error(parsed,
+                     absl::StrCat("Invalid register index: ", arg_name));
       }
       arg += CpuCore::R0;
     } else if (arg_name == "C0") {
@@ -343,25 +498,26 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name,
     } else if (arg_name == "ST") {
       arg = CpuCore::ST;
     } else {
-      return Error(absl::StrCat("Invalid word argument: ", arg_name));
+      return Error(parsed, absl::StrCat("Invalid word argument: ", arg_name));
     }
     return true;
   }
   if (arg_type == MicroArgType::kDwordReg) {
     if (arg_name == "A") {
       if (instruction_.decl.arg1 != arg_name) {
-        return Error("First argument not: A");
+        return Error(parsed, "First argument not: A");
       }
       arg = -1;
     } else if (arg_name == "B") {
       if (instruction_.decl.arg2 != arg_name) {
-        return Error("Second argument not: B");
+        return Error(parsed, "Second argument not: B");
       }
       arg = -2;
     } else if (arg_name[0] == 'D' && arg_name.size() == 2) {
       arg = arg_name[1] - '0';
       if (arg < 0 || arg > 3) {
-        return Error(absl::StrCat("Invalid register index: ", arg_name));
+        return Error(parsed,
+                     absl::StrCat("Invalid register index: ", arg_name));
       }
       arg = CpuCore::D0 + arg * 2;
     } else if (arg_name == "CD") {
@@ -369,22 +525,11 @@ bool InstructionCompiler::DecodeArg(std::string_view arg_name,
     } else if (arg_name == "SD") {
       arg = CpuCore::SD;
     } else {
-      return Error(absl::StrCat("Invalid dword argument: ", arg_name));
+      return Error(parsed, absl::StrCat("Invalid dword argument: ", arg_name));
     }
     return true;
   }
-  if (arg_type == MicroArgType::kValue) {
-    int value;
-    if (!absl::SimpleAtoi(arg_name, &value)) {
-      return Error(absl::StrCat("Invalid argument: ", arg_name));
-    }
-    if (value < -128 || value > 127) {
-      return Error(absl::StrCat("Value out of range [-128,127]: ", arg_name));
-    }
-    arg = value;
-    return true;
-  }
-  return Error("Unhandled argument type!");
+  return Error(parsed, "Unhandled argument type!");
 }
 
 }  // namespace
@@ -393,8 +538,8 @@ InstructionMicrocodes::InstructionMicrocodes()
     : InstructionMicrocodes(kMicroCodeDefs) {}
 
 InstructionMicrocodes::InstructionMicrocodes(
-    absl::Span<const MicrocodeDef> micro_code_defs)
-    : microcode_defs_(micro_code_defs), compiled_(256) {}
+    absl::Span<const MicrocodeDef> microcode_defs)
+    : microcode_defs_(microcode_defs), compiled_(256) {}
 
 InstructionMicrocodes::~InstructionMicrocodes() = default;
 

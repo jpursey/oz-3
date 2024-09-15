@@ -32,6 +32,12 @@ namespace oz3 {
 //      DATA, or EXTRA.
 //   z: ZSCO flag mask. In microcode assembly, this is any combination of Z, S,
 //      C, O, and _ characters (e.g. ZC or Z_C_ or just _ to indicate no flags).
+//   c: ZSCO flag condition. In microcode assembly, this is one of the
+//      following: Z, NZ, S, NS, C, NC, O, or NO.
+//   a: Relative microcode address. In microcode assembly, this is an integer
+//      value that is added to the microcode program counter (MPC) to jump to a
+//      new location in the microcode program. It can also be an @ label to jump
+//      to the specified instruction with the same label.
 //
 // The following operations are documented first by their microcode assembly
 // opcode and required arguments and types. For instance "OP(z,r);" means that
@@ -45,6 +51,8 @@ enum MicroOp : uint8_t {
 
   // MSTC(z);
   //
+  // Cycles: 0
+  //
   // Clears any flags specified in arg1 inside microcode ZSCO status flags
   // (MST).
   //
@@ -54,6 +62,8 @@ enum MicroOp : uint8_t {
 
   // MSTS(z);
   //
+  // Cycles: 0
+  //
   // Sets any flags specified in arg1 inside microcode ZSCO status flags (MST).
   //
   // Explicitly:
@@ -62,6 +72,8 @@ enum MicroOp : uint8_t {
 
   // MSTX(z);
   //
+  // Cycles: 0
+  //
   // Exclusively ors arg1 with microcode ZSCO status (MST).
   //
   // Explicitly:
@@ -69,6 +81,8 @@ enum MicroOp : uint8_t {
   kMicro_MSTX,
 
   // MSTR(z,z);
+  //
+  // Cycles: 0
   //
   // Returns microcode status flags (MST) to the ST register, by clearing any
   // unset bits from MST specified by arg1 and setting any set bits from MST
@@ -87,13 +101,18 @@ enum MicroOp : uint8_t {
 
   // WAIT(r);
   //
+  // Cycles: 0 (see description)
+  //
   // Puts core into kWaiting state for the arg1 cycles in reg (specified in
   // arg1). Further execution of microcode in the instruction is terminated. If
-  // the wait time is less than the amount of time taken so far, then it does
-  // nothing.
+  // the wait time is less than the amount of time taken so far executing the
+  // instruction (including the time when microcode execution is paused), then
+  // it does nothing.
   kMicro_WAIT,
 
   // HALT;
+  //
+  // Cycles: 0 (see description)
   //
   // Puts the core into kIdle state. Further execution of microcode in the
   // instruction is terminated. Execution will not continue until the core is
@@ -102,14 +121,17 @@ enum MicroOp : uint8_t {
 
   // LK(b);
   //
+  // Cycles: 0 (see description)
+  //
   // Lock memory bank arg1 and sets it as the active memory bank. This is used
-  // to lock a memory bank for exclusive
-  // access. If the bank is already locked, the microcode execution is paused
-  // for the instruction until the bank is unlocked. Only one bank can be locked
-  // at a time.
+  // to lock a memory bank for exclusive access. If the bank is already locked,
+  // the microcode execution is paused for the instruction until the bank is
+  // unlocked. Only one bank can be locked at a time.
   kMicro_LK,
 
   // UL;
+  //
+  // Cycles: 0
   //
   // Unlock memory bank previously locked by LK. All locked banks must be
   // unlocked before microcode execution in the instruction.
@@ -117,11 +139,15 @@ enum MicroOp : uint8_t {
 
   // ADR(r);
   //
+  // Cycles: 1
+  //
   // Sets the memory bank address bus to reg1. The memory bank must be locked
   // from LK.
   kMicro_ADR,
 
   // LD(r);
+  //
+  // Cycles: 1
   //
   // Loads the value from memory into reg1, and advances the address bus. The
   // memory bank must be locked from LK, and the address set previously by ADR.
@@ -129,11 +155,15 @@ enum MicroOp : uint8_t {
 
   // ST(r);
   //
+  // Cycles: 1
+  //
   // Stores the value from reg1 into memory, and advances the address bus. The
   // memory bank must be locked from LK, and the address set previously by ADR.
   kMicro_ST,
 
   // STP(r);
+  //
+  // Cycles: 1
   //
   // Decrements the address bus, then stores the value from reg1 into memory.
   // The memory bank must be locked from LK, and the address set previously by
@@ -142,17 +172,23 @@ enum MicroOp : uint8_t {
 
   // MOVI(r,v);
   //
+  // Cycles: 1
+  //
   // Copies the signed value arg2 into reg1:
   //   reg1 = arg2
   kMicro_MOVI,
 
   // MOV(r,r);
   //
+  // Cycles: 1
+  //
   // Copies the value from reg2 into reg1:
   //   reg1 = reg2
   kMicro_MOV,
 
   // ADDI(r,v);
+  //
+  // Cycles: 1
   //
   // Adds the signed value arg2 to reg1:
   //   reg1 = reg1 + arg2
@@ -165,6 +201,8 @@ enum MicroOp : uint8_t {
 
   // ADD(r,r);
   //
+  // Cycles: 1
+  //
   // Adds the value from reg2 to reg1:
   //   reg1 = reg1 + reg2
   // Sets or clears all MST flags as follows:
@@ -174,7 +212,9 @@ enum MicroOp : uint8_t {
   //   O: Signed overflow occurred
   kMicro_ADD,
 
-  // ADC(r,r)
+  // ADC(r,r);
+  //
+  // Cycles: 1
   //
   // Adds the value from reg2 to reg1 with carry:
   //   reg1 = reg1 + reg2 + C
@@ -187,6 +227,8 @@ enum MicroOp : uint8_t {
 
   // SUB(r,r);
   //
+  // Cycles: 1
+  //
   // Subtracts the value from reg2 from reg1:
   //   reg1 = reg1 - reg2
   // Sets or clears all MST flags as follows:
@@ -197,6 +239,8 @@ enum MicroOp : uint8_t {
   kMicro_SUB,
 
   // SBC(r,r);
+  //
+  // Cycles: 1
   //
   // Subtracts the value from reg2 from reg1 with borrow:
   //   reg1 = reg1 - reg2 - C
@@ -209,6 +253,8 @@ enum MicroOp : uint8_t {
 
   // NEG(r,r);
   //
+  // Cycles: 1
+  //
   // Negates the value in reg2 and stores it in reg1:
   //   reg1 = -reg2
   // Sets or clears all MST flags as follows:
@@ -219,6 +265,8 @@ enum MicroOp : uint8_t {
   kMicro_NEG,
 
   // CMP(r,r);
+  //
+  // Cycles: 1
   //
   // Compares the value in reg1 with reg2:
   //   reg1 - reg2
@@ -231,6 +279,8 @@ enum MicroOp : uint8_t {
 
   // NOT(r,r);
   //
+  // Cycles: 1
+  //
   // Bitwise NOT of the value in reg2 and stores it in reg1:
   //   reg1 = ~reg2
   // Sets or clears all MST flags as follows:
@@ -241,6 +291,8 @@ enum MicroOp : uint8_t {
   kMicro_NOT,
 
   // AND(r,r);
+  //
+  // Cycles: 1
   //
   // Bitwise AND of the values in reg1 and reg2 and stores it in reg1:
   //   reg1 = reg1 & reg2
@@ -253,6 +305,8 @@ enum MicroOp : uint8_t {
 
   // OR(r,r);
   //
+  // Cycles: 1
+  //
   // Bitwise OR of the values in reg1 and reg2 and stores it in reg1:
   //   reg1 = reg1 | reg2
   // Sets or clears all MST flags as follows:
@@ -263,6 +317,8 @@ enum MicroOp : uint8_t {
   kMicro_OR,
 
   // XOR(r,r);
+  //
+  // Cycles: 1
   //
   // Bitwise XOR of the values in reg1 and reg2 and stores it in reg1:
   //   reg1 = reg1 ^ reg2
@@ -275,6 +331,8 @@ enum MicroOp : uint8_t {
 
   // SL(r);
   //
+  // Cycles: 1
+  //
   // Shifts the value in reg1 left:
   //   reg1 = reg1 << 1
   // Sets or clears all MST flags as follows:
@@ -285,6 +343,8 @@ enum MicroOp : uint8_t {
   kMicro_SL,
 
   // SR(r);
+  //
+  // Cycles: 1
   //
   // Shifts the value in reg1 right:
   //   reg1 = reg1 >> 1
@@ -297,6 +357,8 @@ enum MicroOp : uint8_t {
 
   // SRA(r);
   //
+  // Cycles: 1
+  //
   // Shifts the value in reg1 right with sign extension:
   //   reg1 = reg1 >> 1
   // Sets or clears all MST flags as follows:
@@ -307,6 +369,8 @@ enum MicroOp : uint8_t {
   kMicro_SRA,
 
   // RL(r);
+  //
+  // Cycles: 1
   //
   // Rotates the value in reg1 left:
   //   reg1 = (reg1 << 1) | (reg1 >> 15)
@@ -319,6 +383,8 @@ enum MicroOp : uint8_t {
 
   // RR(r);
   //
+  // Cycles: 1
+  //
   // Rotates the value in reg1 right:
   //   reg1 = (reg1 >> 1) | (reg1 << 15)
   // Sets or clears all MST flags as follows:
@@ -329,6 +395,8 @@ enum MicroOp : uint8_t {
   kMicro_RR,
 
   // RLC(r);
+  //
+  // Cycles: 1
   //
   // Rotates the value in reg1 left with carry:
   //   reg1 = (reg1 << 1) | C
@@ -341,6 +409,8 @@ enum MicroOp : uint8_t {
 
   // RRC(r);
   //
+  // Cycles: 1
+  //
   // Rotates the value in reg1 right with carry:
   //   reg1 = (reg1 >> 1) | (C << 15)
   // Sets or clears all MST flags as follows:
@@ -349,16 +419,59 @@ enum MicroOp : uint8_t {
   //   C: bit rotated out of reg1
   //   O: cleared
   kMicro_RRC,
+
+  // JP(a);
+  //
+  // Cycles: 0
+  //
+  // Sets the microcode program counter (MPC) to the relative address specified
+  // in arg1:
+  //   MPC = MPC + arg1
+  // It is invalid to jump to an address outside the microcode program, or
+  // from/to an address where a lock is active (between LK and UL).
+  kMicro_JP,
+
+  // JC(c,a);
+  //
+  // Cycles: 0 if condition is false, 1 if condition is true
+  //
+  // Set the microcode program counter (MPC) to the relative address specified
+  // in arg2 if the condition specified by arg1 is true:
+  //   if (arg1) MPC = MPC + arg2
+  // It is invalid to jump to an address outside the microcode program, or
+  // from/to an address where a lock is active (between LK and UL).
+  kMicro_JC,
+
+  // JD(r,a);
+  //
+  // Cycles: 1
+  //
+  // Decrements register reg1, and then sets the microcode program counter (MPC)
+  // to the relative address specified in arg2 if reg1 is not zero:
+  //   reg1 = reg1 - 1
+  //   if (reg1 != 0) MPC = MPC + arg2
+  // It is invalid to jump to an address outside the microcode program, or
+  // from/to an address where the lock state differs (set/cleared by LK/UL).
+  kMicro_JD,
+
+  // END;
+  //
+  // Cycles: 0
+  //
+  // Terminates the microcode execution for the instruction.
+  kMicro_END,
 };
 
 // The type of an argument for microcode instructions.
 enum class MicroArgType {
-  kNone,      // No argument.
-  kBank,      // Memory bank (CODE, STACK, DATA, or EXTRA).
-  kZsco,      // ZSCO flags (any combo of Z, S, C, O, and _ characters).
-  kValue,     // Signed 8-bit value: [-128,127].
-  kWordReg,   // Word register.
-  kDwordReg,  // Dword register.
+  kNone,       // No argument.
+  kBank,       // Memory bank (CODE, STACK, DATA, or EXTRA).
+  kZsco,       // ZSCO flags (any combo of Z, S, C, O, and _ characters).
+  kCondition,  // ZSCO condition (Z, NZ, S, NS, C, NC, O, or NO).
+  kAddress,    // Relative microcode address.
+  kValue,      // Signed 8-bit value: [-128,127].
+  kWordReg,    // Word register.
+  kDwordReg,   // Dword register.
 };
 
 // Definition of a microcode operation.

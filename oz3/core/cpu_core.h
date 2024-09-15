@@ -253,7 +253,7 @@ class CpuCore final : public ExecutionComponent {
   // Microcode implementation
   InstructionMicrocodes micro_codes_;
   DecodedInstruction instruction_ = {};
-  int mc_index_ = 0;  // Microcode index into the current instruction.
+  int mpc_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).
 };
 

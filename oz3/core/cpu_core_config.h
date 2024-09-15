@@ -26,27 +26,36 @@ inline constexpr int kCpuCoreFetchAndDecodeCycles =
     kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles + 1;
 
 // The number of cycles required to execute each microcode operation.
+inline constexpr int kCpuCoreCycles_ADR = kMemoryBankSetAddressCycles;
+inline constexpr int kCpuCoreCycles_LD = kMemoryBankAccessWordCycles;
+inline constexpr int kCpuCoreCycles_ST = kMemoryBankAccessWordCycles;
+inline constexpr int kCpuCoreCycles_STP = kMemoryBankAccessWordCycles;
 inline constexpr int kCpuCoreCycles_MOV = 1;
-inline constexpr int kCpuCoreCycles_MOVI = kCpuCoreCycles_MOV;
+inline constexpr int kCpuCoreCycles_MOVI = 1;
 inline constexpr int kCpuCoreCycles_ADD = 1;
-inline constexpr int kCpuCoreCycles_ADC = kCpuCoreCycles_ADD;
-inline constexpr int kCpuCoreCycles_ADDI = kCpuCoreCycles_ADD;
+inline constexpr int kCpuCoreCycles_ADC = 1;
+inline constexpr int kCpuCoreCycles_ADDI = 1;
 inline constexpr int kCpuCoreCycles_SUB = 1;
-inline constexpr int kCpuCoreCycles_SBC = kCpuCoreCycles_SUB;
+inline constexpr int kCpuCoreCycles_SBC = 1;
 inline constexpr int kCpuCoreCycles_NEG = 1;
-inline constexpr int kCpuCoreCycles_CMP = kCpuCoreCycles_SUB;
+inline constexpr int kCpuCoreCycles_CMP = 1;
 inline constexpr int kCpuCoreCycles_TST = 1;
 inline constexpr int kCpuCoreCycles_NOT = 1;
 inline constexpr int kCpuCoreCycles_AND = 1;
 inline constexpr int kCpuCoreCycles_OR = 1;
 inline constexpr int kCpuCoreCycles_XOR = 1;
 inline constexpr int kCpuCoreCycles_SL = 1;
-inline constexpr int kCpuCoreCycles_SR = kCpuCoreCycles_SL;
-inline constexpr int kCpuCoreCycles_SRA = kCpuCoreCycles_SL;
+inline constexpr int kCpuCoreCycles_SR = 1;
+inline constexpr int kCpuCoreCycles_SRA = 1;
 inline constexpr int kCpuCoreCycles_RL = 1;
-inline constexpr int kCpuCoreCycles_RR = kCpuCoreCycles_SR;
-inline constexpr int kCpuCoreCycles_RLC = kCpuCoreCycles_SR;
-inline constexpr int kCpuCoreCycles_RRC = kCpuCoreCycles_SR;
+inline constexpr int kCpuCoreCycles_RR = 1;
+inline constexpr int kCpuCoreCycles_RLC = 1;
+inline constexpr int kCpuCoreCycles_RRC = 1;
+inline constexpr int kCpuCoreCycles_JP = 0;
+inline constexpr int kCpuCoreCycles_JC_False = 0;
+inline constexpr int kCpuCoreCycles_JC_True = 1;
+inline constexpr int kCpuCoreCycles_JD_NonZero = 1;
+inline constexpr int kCpuCoreCycles_JD_Zero = 1;
 
 //==============================================================================
 // CpuCoreConfig
