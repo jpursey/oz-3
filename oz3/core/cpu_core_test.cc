@@ -58,6 +58,10 @@ enum MicroTestOp : uint8_t {
   kTestOp_SL,
   kTestOp_SR,
   kTestOp_SRA,
+  kTestOp_RL,
+  kTestOp_RR,
+  kTestOp_RLC,
+  kTestOp_RRC,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -297,6 +301,30 @@ const InstructionDef kMicroTestInstructions[] = {
      {"SRA", kArgWordRegA},
      "UL;"
      "SRA(a);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_RL,
+     {"RL", kArgWordRegA},
+     "UL;"
+     "MSTS(ZSCO);"
+     "MSTR(_,ZSCO);"
+     "RL(a);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_RR,
+     {"RR", kArgWordRegA},
+     "UL;"
+     "MSTS(ZSCO);"
+     "MSTR(_,ZSCO);"
+     "RR(a);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_RLC,
+     {"RLC", kArgWordRegA, kArgImmValue3},
+     "UL;"
+     "RLC(a);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_RRC,
+     {"RRC", kArgWordRegA, kArgImmValue3},
+     "UL;"
+     "RRC(a);"
      "MSTR(ZSCO,ZSCO);"},
 };
 
@@ -1284,11 +1312,11 @@ TEST(CpuCoreTest, AddiOp1) {
   lock.reset();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_ADDI, CpuCore::R0); // R0: 0x0000, IMM: 1
-  mem.AddCode(kTestOp_ADDI, CpuCore::R1); // R1: 0x0001, IMM: 1
-  mem.AddCode(kTestOp_ADDI, CpuCore::R2); // R2: 0xFFFE, IMM: 1
-  mem.AddCode(kTestOp_ADDI, CpuCore::R3); // R3: 0xFFFF, IMM: 1
-  mem.AddCode(kTestOp_ADDI, CpuCore::R4); // R4: 0x7FFF, IMM: 1
+  mem.AddCode(kTestOp_ADDI, CpuCore::R0);  // R0: 0x0000, IMM: 1
+  mem.AddCode(kTestOp_ADDI, CpuCore::R1);  // R1: 0x0001, IMM: 1
+  mem.AddCode(kTestOp_ADDI, CpuCore::R2);  // R2: 0xFFFE, IMM: 1
+  mem.AddCode(kTestOp_ADDI, CpuCore::R3);  // R3: 0xFFFF, IMM: 1
+  mem.AddCode(kTestOp_ADDI, CpuCore::R4);  // R4: 0x7FFF, IMM: 1
   mem.AddCode(kTestOp_HALT);
 
   // Execute the ADDI(R0,1) instruction. R0 = 0x0000
@@ -1351,11 +1379,11 @@ TEST(CpuCoreTest, AddiOp2) {
   lock.reset();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_SUBI, CpuCore::R0); // R0: 0x0000, IMM: -1
-  mem.AddCode(kTestOp_SUBI, CpuCore::R1); // R1: 0x0001, IMM: -1
-  mem.AddCode(kTestOp_SUBI, CpuCore::R2); // R2: 0x0002, IMM: -1
-  mem.AddCode(kTestOp_SUBI, CpuCore::R3); // R3: 0xFFFF, IMM: -1
-  mem.AddCode(kTestOp_SUBI, CpuCore::R4); // R4: 0x8000, IMM: -1
+  mem.AddCode(kTestOp_SUBI, CpuCore::R0);  // R0: 0x0000, IMM: -1
+  mem.AddCode(kTestOp_SUBI, CpuCore::R1);  // R1: 0x0001, IMM: -1
+  mem.AddCode(kTestOp_SUBI, CpuCore::R2);  // R2: 0x0002, IMM: -1
+  mem.AddCode(kTestOp_SUBI, CpuCore::R3);  // R3: 0xFFFF, IMM: -1
+  mem.AddCode(kTestOp_SUBI, CpuCore::R4);  // R4: 0x8000, IMM: -1
   mem.AddCode(kTestOp_HALT);
 
   // Execute the ADDI(R0,-1) instruction. R0 = 0x0000
@@ -2491,6 +2519,312 @@ TEST(CpuCoreTest, SlSrSraOps) {
   EXPECT_EQ(state.pc, 8);
   EXPECT_EQ(state.r7, 0xC000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, RlRrOps) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R5, 0x8001);
+  core.SetWordRegister(*lock, CpuCore::R6, 0x0000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_RL, CpuCore::R0);  // R0: 0x0001
+  mem.AddCode(kTestOp_RL, CpuCore::R1);  // R1: 0x8000
+  mem.AddCode(kTestOp_RL, CpuCore::R2);  // R2: 0xC000
+  mem.AddCode(kTestOp_RR, CpuCore::R3);  // R3: 0x8000
+  mem.AddCode(kTestOp_RR, CpuCore::R4);  // R4: 0x0001
+  mem.AddCode(kTestOp_RR, CpuCore::R5);  // R5: 0x8001
+  mem.AddCode(kTestOp_RL, CpuCore::R6);  // R6: 0x0000
+  mem.AddCode(kTestOp_RR, CpuCore::R6);  // R6: 0x0000
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the RL(R0) instruction. R0 = 0x0001
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
+  state.Update();
+  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.r0, 0x0002);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the RL(R1) instruction. R1 = 0x8000
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r1, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+
+  // Execute the RL(R2) instruction. R2 = 0xC000
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
+  state.Update();
+  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.r2, 0x8001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RR(R3) instruction. R3 = 0x8000
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r3, 0x4000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the RR(R4) instruction. R4 = 0x0001
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
+  state.Update();
+  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.r4, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RR(R5) instruction. R5 = 0x8001
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
+  state.Update();
+  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.r5, 0xC000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RL(R6) instruction. R6 = 0x0000
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 7);
+  state.Update();
+  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.r6, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
+
+  // Execute the RR(R6) instruction. R6 = 0x0000
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
+  state.Update();
+  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.r6, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R5, 0x8001);
+  core.SetWordRegister(*lock, CpuCore::R6, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x0000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R0);  // R0: 0x0001
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R1);  // R1: 0x8000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R2);  // R2: 0xC000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R3);  // R3: 0x8000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R4);  // R4: 0x0001
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R5);  // R5: 0x8001
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R6);  // R6: 0x0000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R7);  // R7: 0x0000
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the RLC(R0) instruction. R0 = 0x0001, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r0, 0x0002);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the RLC(R1) instruction. R1 = 0x8000, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r1, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the RLC(R2) instruction. R2 = 0xC000, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
+  state.Update();
+  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.r2, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RRC(R3) instruction. R3 = 0x8000, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
+  state.Update();
+  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.r3, 0x4000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the RRC(R4) instruction. R4 = 0x0001, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
+  state.Update();
+  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.r4, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+
+  // Execute the RRC(R5) instruction. R5 = 0x8001, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
+  state.Update();
+  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.r5, 0x4000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+
+  // Execute the RLC(R6) instruction. R6 = 0x0000, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 14 + 14);
+  state.Update();
+  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.r6, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
+
+  // Execute the RRC(R7) instruction. R7 = 0x0000, C = 0
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 16 + 16);
+  state.Update();
+  EXPECT_EQ(state.pc, 16);
+  EXPECT_EQ(state.r7, 0x0000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
+
+  // Execute the HALT instruction.
+  processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.Lock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R5, 0x8001);
+  core.SetWordRegister(*lock, CpuCore::R6, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x0000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R0);  // R0: 0x0001
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R1);  // R1: 0x8000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R2);  // R2: 0xC000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R3);  // R3: 0x8000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R4);  // R4: 0x0001
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R5);  // R5: 0x8001
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RLC, CpuCore::R6);  // R6: 0x0000
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_RRC, CpuCore::R7);  // R7: 0x0000
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the RLC(R0) instruction. R0 = 0x0001, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  state.Update();
+  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.r0, 0x0003);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the RLC(R1) instruction. R1 = 0x8000, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
+  state.Update();
+  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r1, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+
+  // Execute the RLC(R2) instruction. R2 = 0xC000, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
+  state.Update();
+  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.r2, 0x8001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RRC(R3) instruction. R3 = 0x8000, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
+  state.Update();
+  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.r3, 0xC000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+
+  // Execute the RRC(R4) instruction. R4 = 0x0001, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
+  state.Update();
+  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.r4, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RRC(R5) instruction. R5 = 0x8001, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
+  state.Update();
+  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.r5, 0xC000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+
+  // Execute the RLC(R6) instruction. R6 = 0x0000, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 14 + 14);
+  state.Update();
+  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.r6, 0x0001);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
+
+  // Execute the RRC(R7) instruction. R7 = 0x0000, C = 1
+  processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
+  EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 16 + 16);
+  state.Update();
+  EXPECT_EQ(state.pc, 16);
+  EXPECT_EQ(state.r7, 0x8000);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);

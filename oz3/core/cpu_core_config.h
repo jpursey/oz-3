@@ -43,6 +43,10 @@ inline constexpr int kCpuCoreCycles_XOR = 1;
 inline constexpr int kCpuCoreCycles_SL = 1;
 inline constexpr int kCpuCoreCycles_SR = kCpuCoreCycles_SL;
 inline constexpr int kCpuCoreCycles_SRA = kCpuCoreCycles_SL;
+inline constexpr int kCpuCoreCycles_RL = 1;
+inline constexpr int kCpuCoreCycles_RR = kCpuCoreCycles_SR;
+inline constexpr int kCpuCoreCycles_RLC = kCpuCoreCycles_SR;
+inline constexpr int kCpuCoreCycles_RRC = kCpuCoreCycles_SR;
 
 //==============================================================================
 // CpuCoreConfig

@@ -305,6 +305,50 @@ enum MicroOp : uint8_t {
   //   C: bit pushed out of reg1
   //   O: cleared
   kMicro_SRA,
+
+  // RL(r);
+  //
+  // Rotates the value in reg1 left:
+  //   reg1 = (reg1 << 1) | (reg1 >> 15)
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit rotated out of reg1
+  //   O: cleared
+  kMicro_RL,
+
+  // RR(r);
+  //
+  // Rotates the value in reg1 right:
+  //   reg1 = (reg1 >> 1) | (reg1 << 15)
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit rotated out of reg1
+  //   O: cleared
+  kMicro_RR,
+
+  // RLC(r);
+  //
+  // Rotates the value in reg1 left with carry:
+  //   reg1 = (reg1 << 1) | C
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit rotated out of reg1
+  //   O: cleared
+  kMicro_RLC,
+
+  // RRC(r);
+  //
+  // Rotates the value in reg1 right with carry:
+  //   reg1 = (reg1 >> 1) | (C << 15)
+  // Sets or clears all MST flags as follows:
+  //   Z: reg1 is zero
+  //   S: reg1 high bit is set
+  //   C: bit rotated out of reg1
+  //   O: cleared
+  kMicro_RRC,
 };
 
 // The type of an argument for microcode instructions.

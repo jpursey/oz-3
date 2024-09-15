@@ -353,6 +353,34 @@ void CpuCore::RunInstruction() {
         mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
         exec_cycles_ += kCpuCoreCycles_SRA;
       } break;
+      case kMicro_RL: {
+        OZ3_INIT_REG1;
+        OZ3_MATH_OP(r_[reg1], 0, (a1 << 1) | (a1 >> 15));
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
+        exec_cycles_ += kCpuCoreCycles_RL;
+      } break;
+      case kMicro_RR: {
+        OZ3_INIT_REG1;
+        OZ3_MATH_OP(r_[reg1], 0, (a1 >> 1) | (a1 << 15));
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
+        exec_cycles_ += kCpuCoreCycles_RR;
+      } break;
+      case kMicro_RLC: {
+        OZ3_INIT_REG1;
+        OZ3_MATH_OP(r_[reg1], 0, (a1 << 1) | ((mst_ >> CShift) & 1));
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S | ((a1 >> 15) << CShift);
+        exec_cycles_ += kCpuCoreCycles_RLC;
+      } break;
+      case kMicro_RRC: {
+        OZ3_INIT_REG1;
+        OZ3_MATH_OP(r_[reg1], 0, (a1 >> 1) | ((mst_ >> CShift) << 15));
+        r_[reg1] = r;
+        mst_ = OZ3_Z | OZ3_S | ((a1 & 1) << CShift);
+        exec_cycles_ += kCpuCoreCycles_RRC;
+      } break;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;
     }

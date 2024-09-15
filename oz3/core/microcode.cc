@@ -51,6 +51,10 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_SL, "SL", MicroArgType::kWordReg},
     {kMicro_SR, "SR", MicroArgType::kWordReg},
     {kMicro_SRA, "SRA", MicroArgType::kWordReg},
+    {kMicro_RL, "RL", MicroArgType::kWordReg},
+    {kMicro_RR, "RR", MicroArgType::kWordReg},
+    {kMicro_RLC, "RLC", MicroArgType::kWordReg},
+    {kMicro_RRC, "RRC", MicroArgType::kWordReg},
 };
 
 class InstructionCompiler {
