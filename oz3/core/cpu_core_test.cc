@@ -21,6 +21,8 @@ using ::testing::IsEmpty;
 enum MicroTestOp : uint8_t {
   kTestOp_NOP,
   kTestOp_ZSCO,
+  kTestOp_EI,
+  kTestOp_DI,
   kTestOp_WAIT,
   kTestOp_HALT,
   kTestOp_LWORD,
@@ -39,6 +41,8 @@ enum MicroTestOp : uint8_t {
   kTestOp_PEXTRA,
   kTestOp_MOV_ST,
   kTestOp_MOVI,
+  kTestOp_MOV,
+  kTestOp_LV,
   kTestOp_MSTSC,
   kTestOp_MSTX,
   kTestOp_MSTI,
@@ -66,6 +70,11 @@ enum MicroTestOp : uint8_t {
   kTestOp_MATHI,
   kTestOp_JC,
   kTestOp_JD,
+  kTestOp_JMP,
+  kTestOp_INT,
+  kTestOp_LIV,
+  kTestOp_SIV,
+  kTestOp_IRET,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -73,7 +82,18 @@ const InstructionDef kMicroTestInstructions[] = {
     {kTestOp_ZSCO,
      {"ZSCO", kArgImmValue4},
      "UL;"
-     "MOV(ST,C0);"},
+     "MSTM(ZSCO,C0);"
+     "MSTR(ZSCO,ZSCO);"},
+    {kTestOp_EI,
+     {"EI"},
+     "UL;"
+     "MSTS(I);"
+     "MSTR(I,I);"},
+    {kTestOp_DI,
+     {"DI"},
+     "UL;"
+     "MSTC(I);"
+     "MSTR(I,I);"},
     {kTestOp_WAIT,
      {"WAIT", kArgWordRegA},
      "UL;"
@@ -181,6 +201,15 @@ const InstructionDef kMicroTestInstructions[] = {
      {"MOVI", kArgWordRegA},
      "UL;"
      "MOVI(a,42);"},
+    {kTestOp_MOV,
+     {"MOV", kArgWordRegA, kArgWordRegB},
+     "UL;"
+     "MOV(a,b);"},
+    {kTestOp_LV,
+     {"LV", kArgWordRegA},
+     "LD(C0);"
+     "UL;"
+     "MOV(a,C0);"},
     {kTestOp_MSTSC,
      {"MSTSC"},
      "UL;"
@@ -384,6 +413,32 @@ const InstructionDef kMicroTestInstructions[] = {
      "MOVI(R7,0);"
      "@LOOP:ADDI(R7,1);"
      "JD(C0,@LOOP);"},
+    {kTestOp_JMP,
+     {"JMP"},
+     "LD(C0);"
+     "UL;"
+     "ADD(PC,C0);"},
+    {kTestOp_INT,
+     {"INT", kArgImmValue5},
+     "UL;"
+     "INT(C0);"},
+    {kTestOp_LIV,
+     {"LIV", kArgWordRegA, kArgWordRegB},
+     "UL;"
+     "LIV(a,b);"},
+    {kTestOp_SIV,
+     {"SIV", kArgWordRegA, kArgWordRegB},
+     "UL;"
+     "SIV(a,b);"},
+    {kTestOp_IRET,
+     {"IRET"},
+     "UL;"
+     "LK(STACK);"
+     "ADR(SP);"
+     "LD(ST);"
+     "LD(PC);"
+     "LADR(SP);"
+     "UL;"},
 };
 
 // Helper class to fetch and update the state of a CpuCore.
@@ -460,20 +515,26 @@ class MemAccessor {
   MemAccessor(MemoryBank& memory_bank, uint16_t address = 0)
       : mem_(memory_bank.GetMem(0, kMemoryBankMaxSize)), address_(address) {}
 
+  uint16_t GetAddress() const { return address_; }
+
   MemAccessor& SetAddress(uint16_t address) {
     address_ = address;
     return *this;
   }
 
-  void AddValue(uint16_t value) { mem_[address_++] = value; }
+  MemAccessor& AddValue(uint16_t value) {
+    mem_[address_++] = value;
+    return *this;
+  }
 
-  void AddCode(uint8_t op, uint16_t a = 0, uint16_t b = 0) {
+  MemAccessor& AddCode(uint8_t op, uint16_t a = 0, uint16_t b = 0) {
     absl::Span<const InstructionDef> instructions(kMicroTestInstructions);
     auto it =
         std::find_if(instructions.begin(), instructions.end(),
                      [op](const InstructionDef& def) { return def.op == op; });
     CHECK(it != instructions.end()) << "Unknown op: " << static_cast<int>(op);
     mem_[address_++] = it->Encode(a, b);
+    return *this;
   }
 
   uint16_t GetValue() { return mem_[address_++]; }
@@ -3118,6 +3179,129 @@ TEST(CpuCoreTest, JdOp) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, InterruptDuringExecution) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_ZSCO, CpuCore::Z | CpuCore::O);
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(2);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until R2 is being set to 2 and before it is set to 3
+  do {
+    processor.Execute(1);
+    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
+    state.Update();
+  } while (state.pc != pc1);
+
+  // Trigger interrupt 1
+  core.RaiseInterrupt(1);
+  do {
+    processor.Execute(1);
+    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
+    state.Update();
+  } while (state.pc != 100);
+  EXPECT_EQ(state.r2, 2);
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(state.sp, 0xFFFE);
+  mem.SetAddress(state.sp);
+  EXPECT_EQ(mem.GetValue(), CpuCore::I | CpuCore::Z | CpuCore::O);
+  EXPECT_EQ(mem.GetValue(), pc1);
+
+  // Execute the interrupt through the IRET instruction
+  do {
+    processor.Execute(1);
+    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
+    state.Update();
+  } while (state.pc != pc1);
+  EXPECT_EQ(state.r3, 42);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::O);
+
+  // Execute through the HALT instruction
+  do {
+    processor.Execute(1);
+    state.Update();
+  } while (core.GetState() != CpuCore::State::kIdle);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCore, TestDuringWait) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_ZSCO, CpuCore::Z | CpuCore::O);
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(1000);
+  mem.AddCode(kTestOp_WAIT, CpuCore::R3);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until waiting
+  do {
+    processor.Execute(1);
+    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
+  } while (core.GetState() != CpuCore::State::kWaiting);
+  state.Update();
+  EXPECT_EQ(state.pc, pc1);
+
+  // Trigger interrupt 1
+  core.RaiseInterrupt(1);
+  do {
+    processor.Execute(1);
+    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
+    state.Update();
+  } while (state.pc != 100);
+
+  // Execute the interrupt through the IRET instruction
+  do {
+    processor.Execute(1);
+    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
+    state.Update();
+  } while (state.pc != pc1);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::O);
+  EXPECT_EQ(state.pc, pc1);
+
+  // Execute through the HALT instruction
+  do {
+    processor.Execute(1);
+    state.Update();
+  } while (core.GetState() != CpuCore::State::kIdle);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r2, 3);
 }
 
 }  // namespace

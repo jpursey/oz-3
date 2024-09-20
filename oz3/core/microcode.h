@@ -54,32 +54,34 @@ enum MicroOp : uint8_t {
   //
   // Cycles: 0
   //
-  // Clears any flags specified in arg1 inside microcode ZSCOI status flags
-  // (MST).
-  //
-  // Explicitly:
-  //   MST = MST & ~arg1;
+  // Clears any flags specified in arg1 from microcode ZSCOI status flags (MST):
+  //   MST = MST & ~arg1
   kMicro_MSTC,
 
   // MSTS(s);
   //
   // Cycles: 0
   //
-  // Sets any flags specified in arg1 inside microcode ZSCOI status flags (MST).
-  //
-  // Explicitly:
-  //   MST = MST | arg1;
+  // Sets any flags specified in arg1 inside microcode ZSCOI status flags (MST):
+  //   MST = MST | arg1
   kMicro_MSTS,
 
   // MSTX(s);
   //
   // Cycles: 0
   //
-  // Exclusively ors arg1 with microcode ZSCOI status (MST).
-  //
-  // Explicitly:
-  //   MST = MST ^ arg1;
+  // Exclusively ors arg1 with microcode ZSCOI status (MST):
+  //   MST = MST ^ arg1
   kMicro_MSTX,
+
+  // MSTM(s,r);
+  //
+  // Cycles: 1
+  //
+  // Moves (copies) the flags specified by arg1 in reg2 to the microcode status
+  // flags (MST):
+  //   MST = (MST & ~arg1) | (reg2 & arg1)
+  kMicro_MSTM,
 
   // MSTR(s,s);
   //
@@ -90,7 +92,7 @@ enum MicroOp : uint8_t {
   // specified by arg2.
   //
   // Explicitly:
-  //   ST = (ST & (MST | ~arg1)) | (MST & arg2);
+  //   ST = (ST & (MST | ~arg1)) | (MST & arg2)
   //
   // Examples:
   //   ST Before   MST    arg1 (clr)   arg2 (set)   ST After
@@ -147,6 +149,14 @@ enum MicroOp : uint8_t {
   // Sets the memory bank address bus to reg1. The memory bank must be locked
   // from LK.
   kMicro_ADR,
+
+  // LADR(r);
+  //
+  // Cycles: 0
+  //
+  // Loads the current address from the memory into reg1. The memory bank must
+  // be locked from LK.
+  kMicro_LADR,
 
   // LD(r);
   //
@@ -456,6 +466,29 @@ enum MicroOp : uint8_t {
   // It is invalid to jump to an address outside the microcode program, or
   // from/to an address where the lock state differs (set/cleared by LK/UL).
   kMicro_JD,
+
+  // INT(r);
+  //
+  // Cycles: 0
+  //
+  // Initiates an interrupt with the interrupt number specified in reg1. This
+  // does not end microcode execution, and the interrupt is not processed until
+  // the next instruction is executed.
+  kMicro_INT,
+
+  // LIV(r,r);
+  //
+  // Cycles: 1
+  //
+  // Loads interrupt vector address at reg1 and stores in reg2.
+  kMicro_LIV,
+
+  // SIV(r,r);
+  //
+  // Cycles: 1
+  //
+  // Sets interrupt vector address at reg1 to the value in reg2.
+  kMicro_SIV,
 
   // END;
   //

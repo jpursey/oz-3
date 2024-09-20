@@ -19,14 +19,24 @@ namespace oz3 {
 // The maximum number of cores that can managed by a single Processor.
 inline constexpr int kMaxCores = 8;
 
-// The number of cycles required to fetch and decode any instruction on an
+// The number of cycles required to fetch and decode any instruction on a
 // CpuCore. This is the minimum number of cycles an instruction can take (the
 // NOP execution time).
 inline constexpr int kCpuCoreFetchAndDecodeCycles =
     kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles + 1;
 
+// The number of cycles required to start an interrupt on a CpuCore.
+inline constexpr int kCpuCoreStartInterruptCycles =
+    kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
+
 // The number of cycles required to execute each microcode operation.
+inline constexpr int kCpuCoreCycles_MSTC = 0;
+inline constexpr int kCpuCoreCycles_MSTS = 0;
+inline constexpr int kCpuCoreCycles_MSTX = 0;
+inline constexpr int kCpuCoreCycles_MSTM = 1;
+inline constexpr int kCpuCoreCycles_MSTR = 0;
 inline constexpr int kCpuCoreCycles_ADR = kMemoryBankSetAddressCycles;
+inline constexpr int kCpuCoreCycles_LADR = 0;
 inline constexpr int kCpuCoreCycles_LD = kMemoryBankAccessWordCycles;
 inline constexpr int kCpuCoreCycles_ST = kMemoryBankAccessWordCycles;
 inline constexpr int kCpuCoreCycles_STP = kMemoryBankAccessWordCycles;
@@ -56,6 +66,9 @@ inline constexpr int kCpuCoreCycles_JC_False = 0;
 inline constexpr int kCpuCoreCycles_JC_True = 1;
 inline constexpr int kCpuCoreCycles_JD_NonZero = 1;
 inline constexpr int kCpuCoreCycles_JD_Zero = 1;
+inline constexpr int kCpuCoreCycles_INT = 0;
+inline constexpr int kCpuCoreCycles_LIV = 1;
+inline constexpr int kCpuCoreCycles_SIV = 1;
 
 //==============================================================================
 // CpuCoreConfig

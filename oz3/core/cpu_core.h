@@ -27,6 +27,9 @@ class CpuCore final : public ExecutionComponent {
   // Constants and Types
   //----------------------------------------------------------------------------
 
+  // Number of interrupts.
+  static constexpr int kInterruptCount = 32;
+
   // General purpose 16-bit registers
   static constexpr int R0 = 0;  // 16-bit register, DATA bank addressing
   static constexpr int R1 = 1;  // 16-bit register, DATA bank addressing
@@ -86,19 +89,49 @@ class CpuCore final : public ExecutionComponent {
   // Internal state of the processor.
   enum class State {
     // Initial state of a core, and whenever HALT instruction is executed.
+    // Transitions to:
+    //   - kHandleInterrupt if an interrupt is raised and interrupts are enabled
+    //   - kStartInstruction when Reset is called
     kIdle,
 
     // The core is currently executing a "wait" statement.
+    // Transitions to:
+    //   - kHandleInterrupt if an interrupt is raised and interrupts are enabled
+    //   - kStartInstruction when Reset is called or wait is completed
     kWaiting,
 
+    // The core is starting to handle an interrupt request.
+    // Transitions to:
+    //   - kPushInterruptState after locking STACK memory
+    kHandleInterrupt,
+
+    // The core is pushing the current state onto the stack.
+    // Transitions to:
+    //   - kStartInterrupt after pushing the state and updating registers.
+    kPushInterruptState,
+
+    // The core is starting execution of the interrupt.
+    // Transitions to:
+    //   - kFetchInstruction after locking CODE memory.
+    kStartInterrupt,
+
     // The core is ready to start a new instruction.
+    // Transitions to:
+    //   - kHandleInterrupt if an interrupt is raised and interrupts are enabled
+    //   - kFetchInstruction after locking CODE memory.
     kStartInstruction,
 
     // The core is going to fetchand decode the next instruction, when it is
     // able (memory lock completes).
+    // Transitions to:
+    //   - kRunInstruction after fetching and decoding the instruction.
     kFetchInstruction,
 
     // The core is currently executing an instruction.
+    // Transitions to:
+    //   - kStartInstruction after the instruction completes.
+    //   - kWaiting if WAIT microcode is executed and did not complete.
+    //   - kIdle if HALT instruction is executed.
     kRunInstruction,
   };
 
@@ -211,6 +244,14 @@ class CpuCore final : public ExecutionComponent {
   // It must be a valid 32-bit register index (D0, D1, D2, D3, CD, or SD).
   void SetDwordRegister(const ComponentLock& lock, int reg, uint32_t value);
 
+  // Sets the interrupt vector for the specified interrupt.
+  //
+  // It must be a valid interrupt index: [0, kInterruptCount).
+  void RaiseInterrupt(int interrupt);
+
+  // Returns true if an interrupt is pending (will be handled next).
+  bool IsInterruptPending() const;
+
   //----------------------------------------------------------------------------
   // ExecutionComponent implementation
   //----------------------------------------------------------------------------
@@ -224,6 +265,11 @@ class CpuCore final : public ExecutionComponent {
   //----------------------------------------------------------------------------
 
   void InitBanks();
+
+  // State handlers
+  void HandleInterrupt();
+  void PushInterruptState();
+  void StartInterrupt();
   void StartInstruction();
   void FetchInstruction();
   void RunInstruction();
@@ -242,9 +288,11 @@ class CpuCore final : public ExecutionComponent {
   uint16_t r_[kRegisterCount] = {};
   static_assert(sizeof(r_) == sizeof(Registers));
 
-  // Interrupt vector table and IT register.
-  uint32_t it_ = 0;
-  uint16_t ivec_[32] = {};
+  // Interrupt state.
+  int interrupt_ = -1;                   // Current interrupt being started.
+  uint32_t it_ = 0;                      // IT register
+  uint16_t ivec_[kInterruptCount] = {};  // Interrupt vector table.
+  static_assert(sizeof(it_) >= kInterruptCount / 8);
 
   // Lock for a dependent component the CpuCore requires.
   std::unique_ptr<ComponentLock> lock_;
@@ -256,6 +304,10 @@ class CpuCore final : public ExecutionComponent {
   int mpc_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).
 };
+
+inline bool CpuCore::IsInterruptPending() const {
+  return it_ != 0 && (r_[ST] & I) != 0;
+}
 
 }  // namespace oz3
 

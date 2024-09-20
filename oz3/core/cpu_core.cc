@@ -63,6 +63,11 @@ void CpuCore::SetDwordRegister(const ComponentLock& lock, int reg,
   r_[reg + 1] = static_cast<uint16_t>(value >> 16);
 }
 
+void CpuCore::RaiseInterrupt(int interrupt) {
+  DCHECK(interrupt >= 0 && interrupt < kInterruptCount);
+  it_ |= 1 << interrupt;
+}
+
 void CpuCore::InitBanks() {
   const Banks banks = Banks::FromWord(r_[BM]);
   banks_[CODE] = processor_->GetMemory(banks.code);
@@ -85,13 +90,30 @@ void CpuCore::Execute() {
     }
     switch (state_) {
       case State::kIdle:
+        if (IsInterruptPending()) {
+          state_ = State::kHandleInterrupt;
+          break;
+        }
         exec_cycles_ += 1;
         break;
       case State::kWaiting:
+        if (IsInterruptPending()) {
+          state_ = State::kHandleInterrupt;
+          break;
+        }
         exec_cycles_ += 1;
         if (--r_[C0] == 0) {
           state_ = State::kStartInstruction;
         }
+        break;
+      case State::kHandleInterrupt:
+        HandleInterrupt();
+        break;
+      case State::kPushInterruptState:
+        PushInterruptState();
+        break;
+      case State::kStartInterrupt:
+        StartInterrupt();
         break;
       case State::kStartInstruction:
         StartInstruction();
@@ -107,21 +129,77 @@ void CpuCore::Execute() {
   AdvanceCycles(exec_cycles_);
 }
 
-void CpuCore::StartInstruction() {
+void CpuCore::HandleInterrupt() {
   if (!PreventLock()) {
     exec_cycles_ += 1;
     return;
   }
+  uint32_t mask = 1;
+  for (interrupt_ = 0; interrupt_ < kInterruptCount; ++interrupt_, mask <<= 1) {
+    if (it_ & mask) {
+      it_ -= mask;
+      if (ivec_[interrupt_] != 0) {
+        break;
+      }
+    }
+  }
+  if (interrupt_ == kInterruptCount) {
+    interrupt_ = -1;
+    return;
+  }
+  DCHECK(lock_ == nullptr);
+  lock_ = banks_[STACK]->Lock();
+  locked_bank_ = STACK;
+  if (!lock_->IsLocked()) {
+    exec_cycles_ += 1;
+  }
+  state_ = State::kPushInterruptState;
+}
+
+void CpuCore::PushInterruptState() {
+  DCHECK(lock_ != nullptr && locked_bank_ == STACK);
+  DCHECK(interrupt_ >= 0 && interrupt_ < kInterruptCount &&
+         ivec_[interrupt_] != 0);
+  banks_[STACK]->SetAddress(*lock_, r_[SP]);
+  banks_[STACK]->PushWord(*lock_, r_[PC]);
+  banks_[STACK]->PushWord(*lock_, r_[ST]);
+  r_[SP] -= 2;
+  r_[PC] = ivec_[interrupt_];
+  r_[ST] &= 0xFF00;  // Clear status flags including I, but not control flags.
+  exec_cycles_ += kCpuCoreStartInterruptCycles;
+  state_ = State::kStartInterrupt;
+}
+
+void CpuCore::StartInterrupt() {
+  DCHECK(lock_ != nullptr && locked_bank_ == STACK);
+  lock_ = banks_[CODE]->Lock();
+  locked_bank_ = CODE;
+  if (!lock_->IsLocked()) {
+    exec_cycles_ += 1;
+  }
   state_ = State::kFetchInstruction;
+}
+
+void CpuCore::StartInstruction() {
+  if (IsInterruptPending()) {
+    state_ = State::kHandleInterrupt;
+    return;
+  }
+  if (!PreventLock()) {
+    exec_cycles_ += 1;
+    return;
+  }
   DCHECK(lock_ == nullptr);
   lock_ = banks_[CODE]->Lock();
   locked_bank_ = CODE;
   if (!lock_->IsLocked()) {
     exec_cycles_ += 1;
   }
+  state_ = State::kFetchInstruction;
 }
+
 void CpuCore::FetchInstruction() {
-  DCHECK(lock_ != nullptr);
+  DCHECK(lock_ != nullptr && locked_bank_ == CODE);
   banks_[CODE]->SetAddress(*lock_, r_[PC]);
   uint16_t code;
   banks_[CODE]->LoadWord(*lock_, code);
@@ -156,16 +234,26 @@ void CpuCore::RunInstruction() {
     switch (code.op) {
       case kMicro_MSTC: {
         mst_ &= ~static_cast<uint16_t>(code.arg1);
+        exec_cycles_ += kCpuCoreCycles_MSTC;
       } break;
       case kMicro_MSTS: {
         mst_ |= static_cast<uint16_t>(code.arg1);
+        exec_cycles_ += kCpuCoreCycles_MSTS;
       } break;
       case kMicro_MSTX: {
         mst_ ^= static_cast<uint16_t>(code.arg1);
+        exec_cycles_ += kCpuCoreCycles_MSTX;
+      } break;
+      case kMicro_MSTM: {
+        OZ3_INIT_REG2;
+        const uint16_t mask = static_cast<uint16_t>(code.arg1);
+        mst_ = (mst_ & ~mask) | r_[reg2] & mask;
+        exec_cycles_ += kCpuCoreCycles_MSTM;
       } break;
       case kMicro_MSTR: {
         r_[ST] &= mst_ | ~static_cast<uint16_t>(code.arg1);
         r_[ST] |= mst_ & static_cast<uint16_t>(code.arg2);
+        exec_cycles_ += kCpuCoreCycles_MSTR;
       } break;
       case kMicro_WAIT: {
         OZ3_INIT_REG1;
@@ -211,6 +299,13 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG1;
         banks_[locked_bank_]->SetAddress(*lock_, r_[reg1]);
         exec_cycles_ += kCpuCoreCycles_ADR;
+      } break;
+      case kMicro_LADR: {
+        DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
+               lock_->IsLocked(*banks_[locked_bank_]));
+        OZ3_INIT_REG1;
+        r_[reg1] = banks_[locked_bank_]->GetAddress(*lock_);
+        exec_cycles_ += kCpuCoreCycles_LADR;
       } break;
       case kMicro_LD: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
@@ -401,6 +496,25 @@ void CpuCore::RunInstruction() {
         } else {
           exec_cycles_ += kCpuCoreCycles_JD_Zero;
         }
+      } break;
+      case kMicro_INT: {
+        OZ3_INIT_REG1;
+        static_assert((kInterruptCount & (kInterruptCount - 1)) == 0,
+                      "kInterruptCount is not a power of two");
+        RaiseInterrupt(r_[reg1] & (kInterruptCount - 1));
+        exec_cycles_ += kCpuCoreCycles_INT;
+      } break;
+      case kMicro_LIV: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        r_[reg2] = ivec_[r_[reg1]];
+        exec_cycles_ += kCpuCoreCycles_LIV;
+      } break;
+      case kMicro_SIV: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        ivec_[r_[reg1]] = r_[reg2];
+        exec_cycles_ += kCpuCoreCycles_SIV;
       } break;
       case kMicro_END:
         state_ = State::kStartInstruction;
