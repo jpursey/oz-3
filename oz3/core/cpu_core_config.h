@@ -19,6 +19,9 @@ namespace oz3 {
 // The maximum number of cores that can managed by a single Processor.
 inline constexpr int kMaxCores = 8;
 
+// The maximum number of ports that can be managed by a single Processor.
+inline constexpr int kMaxPorts = 256;
+
 // The number of cycles required to fetch and decode any instruction on a
 // CpuCore. This is the minimum number of cycles an instruction can take (the
 // NOP execution time).

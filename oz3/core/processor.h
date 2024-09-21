@@ -10,6 +10,7 @@
 
 #include "gb/container/array.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/port.h"
 #include "oz3/core/processor_config.h"
 
 namespace oz3 {
@@ -79,6 +80,7 @@ class Processor final {
   gb::Array<std::unique_ptr<MemoryBank>, kMaxMemoryBanks> banks_;
   gb::Array<std::unique_ptr<CpuCore>, kMaxCores> cores_;
   int num_cores_ = 0;
+  PortBank ports_;
 
   Cycles cycles_ = 0;
 };

@@ -45,4 +45,10 @@ ProcessorConfig& ProcessorConfig::AddCpuCore(CpuCoreConfig config) {
   return *this;
 }
 
+ProcessorConfig& ProcessorConfig::SetPortCount(int count) {
+  DCHECK(count >= 0 && count <= kMaxPorts);
+  port_count_ = count;
+  return *this;
+}
+
 }  // namespace oz3

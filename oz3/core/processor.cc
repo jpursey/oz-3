@@ -10,7 +10,8 @@
 
 namespace oz3 {
 
-Processor::Processor(const ProcessorConfig& config) {
+Processor::Processor(const ProcessorConfig& config)
+    : ports_(config.GetPortCount()) {
   auto bank_configs = config.GetMemoryBankConfigs();
   for (int i = 0; i < kMaxMemoryBanks; ++i) {
     banks_[i] = std::make_unique<MemoryBank>(bank_configs[i]);
@@ -25,7 +26,7 @@ Processor::Processor(const ProcessorConfig& config) {
 
 Processor::~Processor() = default;
 
-void Processor::Execute(Cycles cycles) { 
+void Processor::Execute(Cycles cycles) {
   while (cycles > 0) {
     --cycles;
     ++cycles_;

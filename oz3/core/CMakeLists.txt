@@ -15,6 +15,7 @@ set(oz3_core_SOURCE
   memory_bank_config.cc memory_bank_config.h
   memory_map.h
   microcode.cc microcode.h
+  port.h
   processor.cc processor.h
   processor_config.cc processor_config.h
 )

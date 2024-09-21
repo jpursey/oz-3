@@ -49,6 +49,11 @@ class ProcessorConfig {
   // Sets the number of cores in the processor.
   ProcessorConfig& AddCpuCore(CpuCoreConfig config);
 
+  // Sets the number of ports in the processor.
+  //
+  // The port count must be in the range [0, kMaxPorts].
+  ProcessorConfig& SetPortCount(int count);
+
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
@@ -59,6 +64,8 @@ class ProcessorConfig {
 
   absl::Span<const CpuCoreConfig> GetCpuCoreConfigs() const { return cores_; }
 
+  int GetPortCount() const { return port_count_; }
+
  private:
   //----------------------------------------------------------------------------
   // Implementation
@@ -66,6 +73,7 @@ class ProcessorConfig {
 
   std::vector<MemoryBankConfig> banks_;
   std::vector<CpuCoreConfig> cores_;
+  int port_count_ = 0;
 };
 
 }  // namespace oz3
