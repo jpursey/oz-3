@@ -145,6 +145,7 @@ void CpuCore::HandleInterrupt() {
   }
   if (interrupt_ == kInterruptCount) {
     interrupt_ = -1;
+    state_ = State::kStartInstruction;
     return;
   }
   DCHECK(lock_ == nullptr);

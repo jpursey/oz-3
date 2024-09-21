@@ -5,6 +5,7 @@
 
 #include "oz3/core/cpu_core.h"
 
+#include "gb/base/callback.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core_config.h"
@@ -543,6 +544,22 @@ class MemAccessor {
   absl::Span<uint16_t> mem_;
   uint16_t address_;
 };
+
+bool ExecuteUntil(Processor& processor, CoreState& state,
+                  gb::Callback<bool()> condition) {
+  do {
+    processor.Execute(1);
+    if (state.core.GetState() == CpuCore::State::kIdle) {
+      return false;
+    }
+    state.Update();
+  } while (!condition());
+  return true;
+}
+
+void ExecuteUntilHalt(Processor& processor, CoreState& state) {
+  ExecuteUntil(processor, state, [] { return false; });
+}
 
 TEST(CpuCoreTest, CpuCoreInitialState) {
   CpuCore core(CpuCoreConfig::Default());
@@ -3207,19 +3224,11 @@ TEST(CpuCoreTest, InterruptDuringExecution) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until R2 is being set to 2 and before it is set to 3
-  do {
-    processor.Execute(1);
-    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
-    state.Update();
-  } while (state.pc != pc1);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
 
   // Trigger interrupt 1
   core.RaiseInterrupt(1);
-  do {
-    processor.Execute(1);
-    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
-    state.Update();
-  } while (state.pc != 100);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
   EXPECT_EQ(state.r2, 2);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(state.sp, 0xFFFE);
@@ -3228,24 +3237,17 @@ TEST(CpuCoreTest, InterruptDuringExecution) {
   EXPECT_EQ(mem.GetValue(), pc1);
 
   // Execute the interrupt through the IRET instruction
-  do {
-    processor.Execute(1);
-    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
-    state.Update();
-  } while (state.pc != pc1);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
   EXPECT_EQ(state.r3, 42);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::O);
 
   // Execute through the HALT instruction
-  do {
-    processor.Execute(1);
-    state.Update();
-  } while (core.GetState() != CpuCore::State::kIdle);
+  ExecuteUntilHalt(processor, state);
   EXPECT_EQ(state.pc, pc2);
   EXPECT_EQ(state.r2, 3);
 }
 
-TEST(CpuCore, TestDuringWait) {
+TEST(CpuCoreTest, InterruptDuringWait) {
   Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
@@ -3271,37 +3273,369 @@ TEST(CpuCore, TestDuringWait) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until waiting
-  do {
-    processor.Execute(1);
-    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
-  } while (core.GetState() != CpuCore::State::kWaiting);
-  state.Update();
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
+    return core.GetState() == CpuCore::State::kWaiting;
+  }));
   EXPECT_EQ(state.pc, pc1);
 
-  // Trigger interrupt 1
+  // Execute interrupt 1
   core.RaiseInterrupt(1);
-  do {
-    processor.Execute(1);
-    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
-    state.Update();
-  } while (state.pc != 100);
-
-  // Execute the interrupt through the IRET instruction
-  do {
-    processor.Execute(1);
-    ASSERT_NE(core.GetState(), CpuCore::State::kIdle);
-    state.Update();
-  } while (state.pc != pc1);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::O);
   EXPECT_EQ(state.pc, pc1);
 
   // Execute through the HALT instruction
-  do {
-    processor.Execute(1);
-    state.Update();
-  } while (core.GetState() != CpuCore::State::kIdle);
+  ExecuteUntilHalt(processor, state);
   EXPECT_EQ(state.pc, pc2);
   EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCoreTest, InterruptDuringHalt) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until halting the first time
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc1);
+  EXPECT_EQ(state.r2, 0);
+
+  // Execute interrupt 1
+  core.RaiseInterrupt(1);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+
+  // Execute through the HALT instruction
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until halting the first time
+  ExecuteUntil(processor, state, [&] { return state.pc == pc1; });
+  EXPECT_EQ(state.r2, 1);
+
+  // Execute interrupt 1
+  core.RaiseInterrupt(1);
+
+  // Execute through the HALT instruction
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r3, 0);
+  EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCoreTest, EnableInterruptAfterRaise) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(2);
+  mem.AddCode(kTestOp_EI);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  core.RaiseInterrupt(1);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  EXPECT_EQ(state.r2, 2);
+  mem.SetAddress(state.sp);
+  EXPECT_EQ(mem.GetValue(), CpuCore::I);
+  EXPECT_EQ(mem.GetValue(), pc1);
+
+  // Execute through the HALT instruction
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCoreTest, InterruptInInterrupt) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(2);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(200);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 2 to 200
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(3);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(300);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 3 to 300
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_INT, 1);
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc1 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_INT, 2);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Interrupt 2
+  mem.SetAddress(200);
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_INT, 3);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(24);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Interrupt 3
+  mem.SetAddress(300);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R4).AddValue(321);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  EXPECT_EQ(state.r3, 0);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 200; }));
+  EXPECT_EQ(state.r3, 42);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 300; }));
+  EXPECT_EQ(state.r3, 42);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc < 300; }));
+  EXPECT_EQ(state.r3, 100);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc1);
+  EXPECT_EQ(state.r2, 3);
+  EXPECT_EQ(state.r3, 24);
+  EXPECT_EQ(state.r4, 321);
+}
+
+TEST(CpuCoreTest, LockCoreDuringInterrupt) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until after interrupts are enabled.
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.st, CpuCore::I);
+
+  // Lock the core, but it will not *yet* be locked, as the core is in the
+  // middle of an instruction (the NOP).
+  auto lock = core.Lock();
+  EXPECT_FALSE(lock->IsLocked());
+  EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
+
+  // Start the interrupt execution, but it will be stuck at kHandleInterrupt.
+  core.RaiseInterrupt(1);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kHandleInterrupt);
+  processor.Execute(1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kHandleInterrupt);
+
+  // Release the lock and finish execution
+  lock = nullptr;
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r3, 42);
+  EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+                          .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore({.bm = CpuCore::Banks().SetStack(1).ToWord()});
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc2 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until after interrupts are enabled.
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.st, CpuCore::I);
+
+  // Lock the stack, which is not yet in use.
+  auto lock = processor.GetMemory(1)->Lock();
+  EXPECT_TRUE(lock->IsLocked());
+  EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
+
+  // Start the interrupt execution, but it will be stuck at kPushInterruptState.
+  core.RaiseInterrupt(1);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kPushInterruptState);
+  processor.Execute(1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kPushInterruptState);
+
+  // Release the lock on the stack and lock code
+  lock = processor.GetMemory(0)->Lock();
+  EXPECT_TRUE(lock->IsLocked());
+  processor.Execute(kCpuCoreStartInterruptCycles);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kStartInterrupt);
+  processor.Execute(1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kFetchInstruction);
+  processor.Execute(kCpuCoreFetchAndDecodeCycles);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kFetchInstruction);
+  processor.Execute(1);
+  EXPECT_EQ(core.GetState(), CpuCore::State::kFetchInstruction);
+
+  // Release the code memory lock and complete the program.
+  lock = nullptr;
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.r3, 42);
+  EXPECT_EQ(state.r2, 3);
+}
+
+TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_EI);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
+  mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
+  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc3 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t pc4 = mem.GetAddress();
+
+  // Interrupt 1
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(42);
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute until after interrupts are enabled.
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.r3, 0);
+  EXPECT_EQ(state.st, CpuCore::I);
+
+  // Raise all the interrupts, but none are mapped yet.
+  for (int i = 0; i < CpuCore::kInterruptCount; ++i) {
+    core.RaiseInterrupt(i);
+  }
+
+  // Run to the next instruction, and verify that no interrupt fired.
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.r3, 0);
+
+  // Raise all the interrupts again, now 1 is mapped
+  for (int i = 0; i < CpuCore::kInterruptCount; ++i) {
+    core.RaiseInterrupt(i);
+  }
+
+  // Run to the next instruction, and this time the interrupt fired.
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  EXPECT_EQ(state.r2, 0);
+  EXPECT_EQ(state.r3, 42);
+
+  // Finish execution, and no interrupt is fired
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, pc4);
+  EXPECT_EQ(state.r2, 3);
+  EXPECT_EQ(state.r3, 42);
 }
 
 }  // namespace
