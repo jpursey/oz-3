@@ -43,22 +43,20 @@ class Processor final {
   // The index must be in the range [0, kMaxMemoryBanks). There always is a
   // fully functional MemoryBank object, even if it does not have any physical
   // memory or external memory maps.
-  MemoryBank* GetMemory(int bank_index) { return banks_[bank_index].get(); }
-  const MemoryBank* GetMemory(int bank_index) const {
-    return banks_[bank_index].get();
-  }
+  MemoryBank* GetMemory(int bank_index);
+  const MemoryBank* GetMemory(int bank_index) const;
 
   // Returns the number of cores in the processor.
-  int GetNumCores() const { return num_cores_; }
+  int GetNumCores() const;
 
   // Returns the core at the specified index.
-  CpuCore* GetCore(int core_index) { return cores_[core_index].get(); }
-  const CpuCore* GetCore(int core_index) const {
-    return cores_[core_index].get();
-  }
+  //
+  // The index must be in the range [0, GetNumCores()-1].
+  CpuCore* GetCore(int core_index);
+  const CpuCore* GetCore(int core_index) const;
 
   // Returns the number of cycles that have been executed.
-  Cycles GetCycles() const { return cycles_; }
+  Cycles GetCycles() const;
 
   //----------------------------------------------------------------------------
   // Operations
@@ -80,10 +78,36 @@ class Processor final {
   gb::Array<std::unique_ptr<MemoryBank>, kMaxMemoryBanks> banks_;
   gb::Array<std::unique_ptr<CpuCore>, kMaxCores> cores_;
   int num_cores_ = 0;
-  PortBank ports_;
 
   Cycles cycles_ = 0;
 };
+static_assert(sizeof(Processor) <= 100000, "Processor is too large");
+
+//==============================================================================
+// Processor inlines
+//==============================================================================
+
+inline MemoryBank* Processor::GetMemory(int bank_index) {
+  return banks_[bank_index].get();
+}
+
+inline const MemoryBank* Processor::GetMemory(int bank_index) const {
+  DCHECK(bank_index >= 0 && bank_index < kMaxMemoryBanks);
+  return banks_[bank_index].get();
+}
+
+inline int Processor::GetNumCores() const { return num_cores_; }
+
+inline CpuCore* Processor::GetCore(int core_index) {
+  return cores_[core_index].get();
+}
+
+inline const CpuCore* Processor::GetCore(int core_index) const {
+  DCHECK(core_index >= 0 && core_index < num_cores_);
+  return cores_[core_index].get();
+}
+
+inline Cycles Processor::GetCycles() const { return cycles_; }
 
 }  // namespace oz3
 
