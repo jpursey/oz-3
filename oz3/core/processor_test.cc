@@ -19,6 +19,7 @@ TEST(ProcessorTest, CreateDefaultProcessor) {
     EXPECT_EQ(processor.GetMemory(i)->GetMemorySize(), 0);
   }
   EXPECT_EQ(processor.GetNumCores(), 0);
+  EXPECT_EQ(processor.GetNumPorts(), 0);
 }
 
 TEST(ProcessorTest, CreateProcessorWithMemoryBanks) {
@@ -30,6 +31,11 @@ TEST(ProcessorTest, CreateProcessorWithMemoryBanks) {
 TEST(ProcessorTest, CreateProcessorWithCpuCores) {
   Processor processor(ProcessorConfig().AddCpuCore(CpuCoreConfig()));
   EXPECT_EQ(processor.GetNumCores(), 1);
+}
+
+TEST(ProcessorTest, CreateProcessorWithPorts) {
+  Processor processor(ProcessorConfig().SetPortCount(1));
+  EXPECT_EQ(processor.GetNumPorts(), 1);
 }
 
 TEST(ProcessorTest, Execute) {
