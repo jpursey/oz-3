@@ -55,6 +55,19 @@ class Processor final {
   CpuCore* GetCore(int core_index);
   const CpuCore* GetCore(int core_index) const;
 
+  // Returns the number of ports in the processor.
+  int GetNumPorts() const { return ports_.GetCount(); }
+
+  // Returns the port at the specified index.
+  //
+  // The index must be in the range [0, GetNumPorts()-1].
+  Port& GetPort(int port_index);
+
+  // Locks the port at the specified index.
+  //
+  // The index must be in the range [0, GetNumPorts()-1].
+  std::unique_ptr<Lock> LockPort(int port_index);
+
   // Returns the number of cycles that have been executed.
   Cycles GetCycles() const;
 
@@ -78,6 +91,7 @@ class Processor final {
   gb::Array<std::unique_ptr<MemoryBank>, kMaxMemoryBanks> banks_;
   gb::Array<std::unique_ptr<CpuCore>, kMaxCores> cores_;
   int num_cores_ = 0;
+  PortBank ports_;
 
   Cycles cycles_ = 0;
 };
@@ -99,12 +113,23 @@ inline const MemoryBank* Processor::GetMemory(int bank_index) const {
 inline int Processor::GetNumCores() const { return num_cores_; }
 
 inline CpuCore* Processor::GetCore(int core_index) {
+  DCHECK(core_index >= 0 && core_index < num_cores_);
   return cores_[core_index].get();
 }
 
 inline const CpuCore* Processor::GetCore(int core_index) const {
   DCHECK(core_index >= 0 && core_index < num_cores_);
   return cores_[core_index].get();
+}
+
+inline Port& Processor::GetPort(int port_index) {
+  DCHECK(port_index >= 0 && port_index < ports_.GetCount());
+  return ports_.GetPort(port_index);
+}
+
+inline std::unique_ptr<Lock> Processor::LockPort(int port_index) {
+  DCHECK(port_index >= 0 && port_index < ports_.GetCount());
+  return ports_.LockPort(port_index);
 }
 
 inline Cycles Processor::GetCycles() const { return cycles_; }

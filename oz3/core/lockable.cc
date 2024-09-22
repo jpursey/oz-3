@@ -6,6 +6,7 @@
 #include "oz3/core/lockable.h"
 
 #include <memory>
+#include "glog/logging.h"
 
 namespace oz3 {
 
@@ -51,6 +52,10 @@ void Lockable::Unlock() {
       lock_->lockable_ = this;
       break;
     }
+  }
+  if (!lock_.Exists()) {
+    DCHECK(pending_locks_.empty());
+    OnUnlocked();
   }
 }
 

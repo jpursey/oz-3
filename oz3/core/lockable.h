@@ -115,6 +115,10 @@ class Lockable {
   // oldest pending lock will be granted.
   void AllowLock();
 
+  // Called when the lockable becomes unlocked with no pending lockables after
+  // being locked.
+  virtual void OnUnlocked() {}
+
  private:
   //----------------------------------------------------------------------------
   // Implementation

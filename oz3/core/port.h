@@ -1,4 +1,4 @@
-// Copyright 2024 John Pursey
+// Copyright (c) 2024 John Pursey
 //
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
@@ -7,61 +7,101 @@
 #include <optional>
 #include <vector>
 
-#include "absl/types/span.h"
 #include "glog/logging.h"
-#include "oz3/core/component.h"
+#include "oz3/core/core_types.h"
+#include "oz3/core/lockable.h"
 
 namespace oz3 {
+
+namespace internal {
+// Internal class to support caching of lockables in a PortBank
+class PortLockable : public Lockable {
+ public:
+  ~PortLockable() override = default;
+
+ protected:
+  void OnUnlocked() override;
+
+ private:
+  friend class PortBank;
+
+  PortLockable(PortBank* bank, int port_index)
+      : bank_(bank), port_index_(port_index) {}
+
+  PortBank* bank_;
+  int port_index_;
+};
+}  // namespace internal
 
 //==============================================================================
 // Port
 //==============================================================================
 
 // This class represents a bidirectional port of an OZ-3 Processor.
-class Port final : public Component {
+class Port final {
  public:
+  //----------------------------------------------------------------------------
+  // Constants
+  //----------------------------------------------------------------------------
+
+  // Mode flags for Load and Store operations.
+  static constexpr uint16_t T = 1;  // Load if status set; Store if status clear
+  static constexpr uint16_t S = 2;  // Load clears status; Store sets status
+  static constexpr uint16_t A = 4;  // Advance port address
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
+
   Port() = default;
-  ~Port() override = default;
+  Port(const Port&) = delete;
+  Port& operator=(const Port&) = delete;
+  ~Port() = default;
 
   //----------------------------------------------------------------------------
-  // Input/Output interface
+  // Accessors
+  //----------------------------------------------------------------------------
+
+  // Returns true if the port is locked.
+  bool IsLocked() const {
+    return lockable_ != nullptr && lockable_->IsLocked();
+  }
+
+  // Direct access to the port address, status, and values. This does not honor
+  // the lock, so if the caller does not own a locked Lock for this port, these
+  // methods can return results that are not yet ready (by whoever has the
+  // lock).
+  uint16_t GetAddress() const { return address_; }
+  uint16_t GetStatus() const { return status_; }
+  uint16_t GetValue(int address) const {
+    DCHECK(address == 0 || address == 1);
+    return value_[address];
+  }
+
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
+
+  // Loads thhe port value honoring the specified mode.
   //
-  // Input and output are terms relative to the CpuCore and Coprocessor. Input
-  // data is read from the port by the CpuCore/Coprocessor, and output data is
-  // data that is written to the port by the CpuCore/Coprocessor. Devices are
-  // the reverse, where they read from output and set the input.
-  //----------------------------------------------------------------------------
+  // Returns the port status (zero or 1) prior to the load.
+  uint16_t LoadWord(const Lock& lock, uint16_t mode, uint16_t& value);
 
-  // Returns true if the port has input data.
-  bool HasInput(const Lock& lock);
-
-  // Reads the input word if it exist (otherwise it reads zero). This clears the
-  // input word, resetting it to zero.
-  uint16_t ReadInput(const Lock& lock);
-
-  // Sets the input word to the specified.
-  void SetInput(const Lock& lock, uint16_t value);
-
-  // Returns true if the port has output data.
-  bool HasOutput(const Lock& lock);
-
-  // Reads the output word if it exist (otherwise it reads zero). This clears
-  // the output word, resetting it to zero.
-  uint16_t ReadOutput(const Lock& lock);
-
-  // Sets the output word to the specified.
-  void SetOutput(const Lock& lock, uint16_t value);
+  // Stores the port value honoring the specified mode.
+  //
+  // Returns the port status (zero or 1) prior to the store.
+  uint16_t StoreWord(const Lock& lock, uint16_t mode, uint16_t value);
 
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
+  friend class PortBank;
 
-  std::optional<uint16_t> input_;
-  std::optional<uint16_t> output_;
+  uint16_t address_ = 0;        // Address of the port value (0 or 1).
+  uint16_t status_ = 0;         // Status of the port (0 or 1).
+  uint16_t value_[2] = {0, 0};  // Value of the port.
+  std::unique_ptr<internal::PortLockable> lockable_;
 };
 
 //==============================================================================
@@ -78,7 +118,11 @@ class PortBank final {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  PortBank(int num_ports) : ports_(num_ports) {}
+  // Constructs a PortBank with the specified number of ports.
+  //
+  // The number of ports must be in the range [0, kMaxPorts).
+  explicit PortBank(int num_ports);
+
   PortBank(const PortBank&) = delete;
   PortBank& operator=(const PortBank&) = delete;
   ~PortBank() = default;
@@ -86,9 +130,6 @@ class PortBank final {
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
-
-  // Returns all ports as a span.
-  absl::Span<Port> GetPorts() { return absl::MakeSpan(ports_); }
 
   // Returns the number of ports in the bank
   int GetCount() const { return static_cast<int>(ports_.size()); }
@@ -101,50 +142,25 @@ class PortBank final {
     return ports_[index];
   }
 
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
+
+  // Locks the port at the specified index, and resets the port address.
+  //
+  // The index must be in the range [0, GetCount()-1].
+  std::unique_ptr<Lock> LockPort(int index);
+
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
+  friend class internal::PortLockable;
+
+  void OnPortUnlocked(int index);
 
   std::vector<Port> ports_;
+  std::vector<std::unique_ptr<internal::PortLockable>> free_lockables_;
 };
-
-//==============================================================================
-// Port inlines
-//==============================================================================
-
-inline bool Port::HasInput(const Lock& lock) {
-  DCHECK(lock.IsLocked(*this));
-  return input_.has_value();
-}
-
-inline uint16_t Port::ReadInput(const Lock& lock) {
-  DCHECK(lock.IsLocked(*this));
-  uint16_t value = input_.value_or(0);
-  input_.reset();
-  return value;
-}
-
-inline void Port::SetInput(const Lock& lock, uint16_t value) {
-  DCHECK(lock.IsLocked(*this));
-  input_ = value;
-}
-
-inline bool Port::HasOutput(const Lock& lock) {
-  DCHECK(lock.IsLocked(*this));
-  return output_.has_value();
-}
-
-inline uint16_t Port::ReadOutput(const Lock& lock) {
-  DCHECK(lock.IsLocked(*this));
-  uint16_t value = output_.value_or(0);
-  output_.reset();
-  return value;
-}
-
-inline void Port::SetOutput(const Lock& lock, uint16_t value) {
-  DCHECK(lock.IsLocked(*this));
-  output_ = value;
-}
 
 }  // namespace oz3

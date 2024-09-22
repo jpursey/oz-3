@@ -21,6 +21,8 @@ class Lockable;
 class MemoryMap;
 class MemoryBank;
 class MemoryBankConfig;
+class Port;
+class PortBank;
 class Processor;
 class ProcessorConfig;
 
@@ -33,6 +35,5 @@ friend class CpuCore;
 GB_END_ACCESS_TOKEN()
 
 }  // namespace oz3
-
 
 #endif  // OZ3_CORE_CORE_TYPES_H_
