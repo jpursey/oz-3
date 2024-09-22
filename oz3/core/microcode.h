@@ -39,6 +39,8 @@ namespace oz3 {
 //      value that is added to the microcode program counter (MPC) to jump to a
 //      new location in the microcode program. It can also be an @ label to jump
 //      to the specified instruction with the same label.
+//   p: Port mode. In microcode assembly, this is any combination of T, S, A,
+//      and _ characters (e.g. TA or T_A or just _ to indicate no flags).
 //
 // The following operations are documented first by their microcode assembly
 // opcode and required arguments and types. For instance "OP(z,r);" means that
@@ -131,7 +133,7 @@ enum MicroOp : uint8_t {
   // Lock memory bank arg1 and sets it as the active memory bank. This is used
   // to lock a memory bank for exclusive access. If the bank is already locked,
   // the microcode execution is paused for the instruction until the bank is
-  // unlocked. Only one bank can be locked at a time.
+  // unlocked. Only one lock can be active at a time (bank or port).
   kMicro_LK,
 
   // UL;
@@ -139,7 +141,7 @@ enum MicroOp : uint8_t {
   // Cycles: 0
   //
   // Unlock memory bank previously locked by LK. All locked banks must be
-  // unlocked before microcode execution in the instruction.
+  // unlocked before microcode execution completes in the instruction.
   kMicro_UL,
 
   // ADR(r);
@@ -490,6 +492,57 @@ enum MicroOp : uint8_t {
   // Stores address in reg2 to interrupt reg1.
   kMicro_IST,
 
+  // PLK(r);
+  //
+  // Cycles: 0
+  //
+  // Locks the port specified by reg1 and sets it as the active port. This is
+  // used to lock a port for exclusive access. If the port is already locked,
+  // the microcode execution is paused for the instruction until the port is
+  // unlocked. Only one lock can be active at a time (memory bank or port). If
+  // the port does not exist on the processor, all port operations are no-ops.
+  kMicro_PLK,
+
+  // PUL(r);
+  //
+  // Cycles: 0
+  //
+  // Unlocks the port previously locked by PLK. All locked ports must be
+  // unlocked before microcode execution completes in the instruction.
+  kMicro_PUL,
+
+  // PLD(p,r);
+  //
+  // Cycles: 1
+  //
+  // Loads the value from the port into reg2, respecting specified mode flags in
+  // arg1 as follows:
+  //   T: Load only if the port status is set. If the port status is cleared,
+  //      then the value in reg2 is not updated.
+  //   S: The port status is cleared after the load operation.
+  //   A: The port address is updated after the load operation. Ports have two
+  //      words of memory, and this toggles between the two words.
+  // Sets or clears the MST flags as follows:
+  //   S: Port status was set (before the load operation).
+  // The port must be locked from PLK
+  kMicro_PLD,
+
+  // PST(p,r);
+  // 
+  // Cycles: 1
+  //
+  // Stores the value from reg2 into the port, respecting specified mode flags
+  // in arg1 as follows:
+  //   T: Store only if the port status is cleared. If the port status is set,
+  //      then value on the port is not updated.
+  //   S: The port status is set after the store operation.
+  //   A: The port address is updated after the store operation. Ports have two
+  //      words of memory, and this toggles between the two words.
+  // Sets or clears the MST flags as follows:
+  //   S: Port status was set (before the store operation).
+  // The port must be locked from PLK.
+  kMicro_PST,
+
   // END;
   //
   // Cycles: 0
@@ -503,6 +556,7 @@ enum class MicroArgType {
   kNone,       // No argument.
   kBank,       // Memory bank (CODE, STACK, DATA, or EXTRA).
   kStatus,     // ZSCOI flags (any combo of Z, S, C, O, I, and _ characters).
+  kPortMode,   // Port mode (T, S, A, and _ characters).
   kCondition,  // ZSCO condition (Z, NZ, S, NS, C, NC, O, or NO).
   kAddress,    // Relative microcode address.
   kValue,      // Signed 8-bit value: [-128,127].

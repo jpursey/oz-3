@@ -9,6 +9,7 @@
 #include "glog/logging.h"
 #include "oz3/core/instruction.h"
 #include "oz3/core/memory_bank.h"
+#include "oz3/core/port.h"
 #include "oz3/core/processor.h"
 
 namespace oz3 {
@@ -47,15 +48,13 @@ void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
   state_ = State::kStartInstruction;
 }
 
-void CpuCore::SetWordRegister(const Lock& lock, int reg,
-                              uint16_t value) {
+void CpuCore::SetWordRegister(const Lock& lock, int reg, uint16_t value) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(reg >= 0 && reg < kRegisterCount);
   r_[reg] = value;
 }
 
-void CpuCore::SetDwordRegister(const Lock& lock, int reg,
-                               uint32_t value) {
+void CpuCore::SetDwordRegister(const Lock& lock, int reg, uint32_t value) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == CD ||
          reg == SD);
@@ -516,6 +515,57 @@ void CpuCore::RunInstruction() {
         OZ3_INIT_REG2;
         ivec_[r_[reg1]] = r_[reg2];
         exec_cycles_ += kCpuCoreCycles_IST;
+      } break;
+      case kMicro_PLK: {
+        if (exec_cycles_ > 0) {
+          --mpc_;
+          return;
+        }
+        DCHECK(lock_ == nullptr && locked_port_ == -1);
+        OZ3_INIT_REG1;
+        locked_port_ = r_[reg1];
+        if (locked_port_ >= processor_->GetNumPorts()) {
+          locked_port_ = -1;
+          break;
+        }
+        lock_ = processor_->LockPort(locked_port_);
+        if (!lock_->IsLocked()) {
+          return;
+        }
+      } break;
+      case kMicro_PUL: {
+        if (exec_cycles_ > 0) {
+          --mpc_;
+          return;
+        }
+        if (locked_port_ == -1) {
+          break;
+        }
+        DCHECK(lock_ != nullptr);
+        lock_ = nullptr;
+        locked_port_ = -1;
+      } break;
+      case kMicro_PLD: {
+        if (locked_port_ == -1) {
+          break;
+        }
+        DCHECK(lock_ != nullptr && locked_port_ >= 0 &&
+               locked_port_ < processor_->GetNumPorts());
+        OZ3_INIT_REG2;
+        Port& port = processor_->GetPort(locked_port_);
+        mst_ = (mst_ & ~S) |
+               (port.LoadWord(*lock_, code.arg1, r_[reg2]) << SShift);
+      } break;
+      case kMicro_PST: {
+        if (locked_port_ == -1) {
+          break;
+        }
+        DCHECK(lock_ != nullptr && locked_port_ >= 0 &&
+               locked_port_ < processor_->GetNumPorts());
+        OZ3_INIT_REG2;
+        Port& port = processor_->GetPort(locked_port_);
+        mst_ = (mst_ & ~S) |
+               (port.StoreWord(*lock_, code.arg1, r_[reg2]) << SShift);
       } break;
       case kMicro_END:
         state_ = State::kStartInstruction;

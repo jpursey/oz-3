@@ -294,9 +294,10 @@ class CpuCore final : public ExecutionComponent {
   uint16_t ivec_[kInterruptCount] = {};  // Interrupt vector table.
   static_assert(sizeof(it_) >= kInterruptCount / 8);
 
-  // Lock for a dependent component the CpuCore requires.
+  // Lock for a dependent resource the CpuCore requires.
   std::unique_ptr<Lock> lock_;
   int locked_bank_ = -1;  // Current locked bank index.
+  int locked_port_ = -1;  // Current locked port index.
 
   // Microcode implementation
   InstructionMicrocodes micro_codes_;

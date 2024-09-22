@@ -13,6 +13,7 @@
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction.h"
+#include "oz3/core/port.h"
 
 namespace oz3 {
 namespace {
@@ -312,41 +313,63 @@ TEST(MicrocodeTest, DwordRegArg) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicrocodeTest, ZscoiArg) {
-  const MicrocodeDef kMicroZscoArgs = {
+TEST(MicrocodeTest, StatusArg) {
+  const MicrocodeDef kMicroStatusArgs = {
       kMicro_TEST, "TEST", MicroArgType::kStatus, MicroArgType::kStatus};
   std::string error;
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z,S)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(Z,S)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(C,O)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(C,O)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZS,CO)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(ZS,CO)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZC,SO)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(ZC,SO)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZSC,SCO)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(ZSC,SCO)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZCO,ZSC)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(ZCO,ZSC)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(ZZZ,SSS)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(ZZZ,SSS)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(CCC,OOO)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(CCC,OOO)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(_,_)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(_,_)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(S,_)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(S,_)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(_,C)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(_,C)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z___,_S__)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(Z___,_S__)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(__C_,___O)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(__C_,___O)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroZscoArgs, MakeDef("TEST(I,I)"), error));
+  EXPECT_TRUE(TestCompile(kMicroStatusArgs, MakeDef("TEST(I,I)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroZscoArgs, MakeDef("TEST(X,Z)"), error));
+  EXPECT_FALSE(TestCompile(kMicroStatusArgs, MakeDef("TEST(X,Z)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroZscoArgs, MakeDef("TEST(Z,X)"), error));
+  EXPECT_FALSE(TestCompile(kMicroStatusArgs, MakeDef("TEST(Z,X)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortModeArg) {
+  const MicrocodeDef kMicroPortModeArgs = {
+      kMicro_TEST, "TEST", MicroArgType::kPortMode, MicroArgType::kPortMode};
+  std::string error;
+  EXPECT_TRUE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(T,S)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(T,_)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(TS,TA)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(SA,TSA)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(STA,AST)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(T_A,_S_)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(X,T)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroPortModeArgs, MakeDef("TEST(T,X)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
@@ -559,6 +582,46 @@ TEST(MicrocodeTest, StatusDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO},
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::ZSCO},
                   Microcode{.op = kMicro_TEST, .arg1 = CpuCore::I}));
+}
+
+TEST(MicrocodeTest, PortModeDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kPortMode},
+  };
+  const InstructionDef instruction_defs[] = {
+      {kOp_TEST,
+       {},
+       "UL;OP(_);"
+       "OP(T);OP(S);OP(A);"
+       "OP(TS);OP(TA);OP(SA);"
+       "OP(TSA);OP(STA);OP(T_A);"},
+  };
+
+  InstructionMicrocodes codes(micro_defs);
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_defs, &error));
+  EXPECT_THAT(error, IsEmpty());
+  DecodedInstruction decoded;
+  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL}, Microcode{.op = kMicro_TEST, .arg1 = 0},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::T},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::S},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::A},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::T | Port::S},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::T | Port::A},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::S | Port::A},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::T | Port::S | Port::A},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::S | Port::T | Port::A},
+          Microcode{.op = kMicro_TEST, .arg1 = Port::T | Port::A}));
 }
 
 TEST(MicrocodeTest, ConditionDecodedCorrectly) {
@@ -828,7 +891,7 @@ TEST(MicrocodeTest, DwordOpArgDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
 }
 
-TEST(MicrocodeTest, LockDuringFetch) {
+TEST(MicrocodeTest, MemoryLockDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LK(STACK);UL;"};
   InstructionMicrocodes codes;
   std::string error;
@@ -836,7 +899,15 @@ TEST(MicrocodeTest, LockDuringFetch) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicrocodeTest, LockAfterPriorLock) {
+TEST(MicrocodeTest, PortLockDuringFetch) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "PLK(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, MemoryLockAfterPriorMemoryLock) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);LK(STACK);UL;UL;"};
   InstructionMicrocodes codes;
@@ -845,8 +916,66 @@ TEST(MicrocodeTest, LockAfterPriorLock) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
-TEST(MicrocodeTest, UnlockWhenNotLocked) {
+TEST(MicrocodeTest, MemoryLockAfterPriorPortLock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;PLK(C0);LK(STACK);UL;PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortLockAfterPriorMemoryLock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);PLK(C0);PUL;UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, MemoryUnlockWhenMemoryLocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;LK(DATA);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(MicrocodeTest, MemoryUnlockWhenNotLocked) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, MemoryUnlockWhenPortLocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PLK(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortUnlockWhenPortLocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PLK(C0);PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(MicrocodeTest, PortUnlockWhenNotLocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortUnlockWhenMemoryLocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;LK(DATA);PUL;"};
   InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));
@@ -861,6 +990,14 @@ TEST(MicrocodeTest, AddressWhenNotLocked) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
+TEST(MicrocodeTest, AddressWhenPortLocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PLK(C0);ADR(C0);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
 TEST(MicrocodeTest, AddressDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);UL;"};
   InstructionMicrocodes codes;
@@ -869,7 +1006,7 @@ TEST(MicrocodeTest, AddressDuringFetch) {
   EXPECT_THAT(error, IsEmpty());
 }
 
-TEST(MicrocodeTest, AddressAfterLock) {
+TEST(MicrocodeTest, AddressWhenMemoryLocked) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);UL;"};
   InstructionMicrocodes codes;
@@ -936,6 +1073,84 @@ TEST(MicrocodeTest, StoreAfterAddress) {
   std::string error;
   EXPECT_TRUE(codes.Compile(instruction_def, &error));
   EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(MicrocodeTest, PortLoadWhenUnlocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PLD(_,C1);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortLoadWhenMemoryLocked) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);PLD(_,C1);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortLoadWhenPortLocked) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;PLK(C0);PLD(_,C1);PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(MicrocodeTest, PortStoreWhenUnlocked) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PST(_,C1);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortStoreWhenMemoryLocked) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);PST(_,C1);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, PortStoreWhenPortLocked) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;PLK(C0);PST(_,C1);PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(MicrocodeTest, NoFetchUnlock) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "MOV(R0,R1);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, NoMemoryUnlock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);MOV(R0,R1);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, NoPortUnlock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;PLK(C0);MOV(R0,R1);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(MicrocodeTest, DefaultCodeSizeIsOne) {

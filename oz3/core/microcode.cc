@@ -17,6 +17,7 @@
 #include "absl/types/span.h"
 #include "glog/logging.h"
 #include "oz3/core/cpu_core.h"
+#include "oz3/core/port.h"
 
 namespace oz3 {
 
@@ -66,6 +67,10 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_INT, "INT", MicroArgType::kWordReg},
     {kMicro_ILD, "ILD", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_IST, "IST", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_PLK, "PLK", MicroArgType::kWordReg},
+    {kMicro_PUL, "PUL"},
+    {kMicro_PLD, "PLD", MicroArgType::kPortMode, MicroArgType::kWordReg},
+    {kMicro_PST, "PST", MicroArgType::kPortMode, MicroArgType::kWordReg},
     {kMicro_END, "END"},
 };
 
@@ -92,6 +97,8 @@ class InstructionCompiler {
     std::string_view arg1_name;  // First argument name.
     std::string_view arg2_name;  // Second argument name.
   };
+
+  enum class LockType { kNone, kMemory, kPort };
 
   bool Error(const ParsedMicroCode* parsed, absl::string_view message) {
     if (error_string_ != nullptr) {
@@ -126,8 +133,8 @@ class InstructionCompiler {
   std::string* const error_string_;
   Microcode* microcode_ = nullptr;
 
-  // Set to the bank of the last LK operation. Cleared by UL.
-  int lk_bank_ = CpuCore::CODE;
+  // Set by last LK or PLK operation. Cleared by UL and PUL.
+  LockType lock_type_ = LockType::kMemory;
 
   // True if an ADR operation has been seen. Cleared by UL.
   bool has_adr_ = true;
@@ -160,12 +167,14 @@ bool InstructionCompiler::Compile() {
       return false;
     }
   }
-  if (lk_bank_ >= 0) {
+  if (lock_type_ == LockType::kMemory) {
     if (had_lk_) {
       return Error("LK not cleared by UL");
     } else {
       return Error("No UL for instruction fetch");
     }
+  } else if (lock_type_ == LockType::kPort) {
+    return Error("PLK not cleared by PUL");
   }
   return true;
 }
@@ -188,18 +197,18 @@ bool InstructionCompiler::CompileMicroCode(int index) {
   // Microcode specific handling.
   switch (def->op) {
     case kMicro_LK:
-      CHECK(lk_bank_ < 0);  // Handled by InitLocks.
+      CHECK(lock_type_ == LockType::kNone);  // Handled by InitLocks.
+      lock_type_ = LockType::kMemory;
       had_lk_ = true;
-      lk_bank_ = microcode_->arg1;
       break;
     case kMicro_UL:
-      CHECK(lk_bank_ >= 0);  // Handled by InitLocks.
-      lk_bank_ = -1;
+      CHECK(lock_type_ == LockType::kMemory);  // Handled by InitLocks.
+      lock_type_ = LockType::kNone;
       has_adr_ = false;
       in_fetch_ = false;
       break;
     case kMicro_ADR:
-      if (lk_bank_ < 0) {
+      if (lock_type_ != LockType::kMemory) {
         return Error(&parsed, "ADR without a prior LK");
       }
       has_adr_ = true;
@@ -218,7 +227,8 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "ST without a prior ADR");
       }
       if (in_fetch_) {
-        return Error(&parsed, "ST invalid in fetch phase, call ADR first");
+        return Error(&parsed,
+                     "ST invalid in fetch phase, call UL and LK again first");
       }
       break;
     case kMicro_STP:
@@ -226,7 +236,26 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "STP without a prior ADR");
       }
       if (in_fetch_) {
-        return Error(&parsed, "STP invalid in fetch phase, call ADR first");
+        return Error(&parsed,
+                     "STP invalid in fetch phase, call UL and LK again first");
+      }
+      break;
+    case kMicro_PLK:
+      CHECK(lock_type_ == LockType::kNone);  // Handled by InitLocks.
+      lock_type_ = LockType::kPort;
+      break;
+    case kMicro_PUL:
+      CHECK(lock_type_ == LockType::kPort);  // Handled by InitLocks.
+      lock_type_ = LockType::kNone;
+      break;
+    case kMicro_PLD:
+      if (lock_type_ != LockType::kPort) {
+        return Error(&parsed, "PLD without a prior PLK");
+      }
+      break;
+    case kMicro_PST:
+      if (lock_type_ != LockType::kPort) {
+        return Error(&parsed, "PST without a prior PLK");
       }
       break;
     default:
@@ -264,6 +293,12 @@ bool InstructionCompiler::ExtractLabels() {
 
 bool InstructionCompiler::InitLocks() {
   locks_.reserve(parsed_code_.size());
+  static constexpr int kFirstPortLock = 10;
+  static_assert(
+      CpuCore::CODE < kFirstPortLock && CpuCore::STACK < kFirstPortLock &&
+          CpuCore::DATA < kFirstPortLock && CpuCore::EXTRA < kFirstPortLock,
+      "Memory locks must be lower that first port lock");
+  int port_lock = kFirstPortLock;
   int lock = CpuCore::CODE;
   int index = 0;
   for (ParsedMicroCode& parsed : parsed_code_) {
@@ -271,7 +306,9 @@ bool InstructionCompiler::InitLocks() {
     locks_.push_back(lock);
     if (parsed.op_name == "LK") {
       if (lock >= 0) {
-        return Error(absl::StrCat("LK already active. Code number: ", index));
+        return Error(absl::StrCat("LK when prior ",
+                                  (lock < kFirstPortLock ? "LK" : "PLK"),
+                                  " is still locked. Code number: ", index));
       }
       int8_t arg;
       if (!DecodeArg(&parsed, index, parsed.arg1_name, MicroArgType::kBank,
@@ -280,10 +317,22 @@ bool InstructionCompiler::InitLocks() {
       }
       lock = arg;
     } else if (parsed.op_name == "UL") {
-      if (lock < 0) {
+      if (lock < 0 || lock >= kFirstPortLock) {
         return Error(
-            nullptr,
             absl::StrCat("UL without a prior LK. Code number: ", index));
+      }
+      lock = -1;
+    } else if (parsed.op_name == "PLK") {
+      if (lock >= 0) {
+        return Error(absl::StrCat("PLK when prior ",
+                                  (lock < kFirstPortLock ? "LK" : "PLK"),
+                                  " is still locked. Code number: ", index));
+      }
+      lock = port_lock++;
+    } else if (parsed.op_name == "PUL") {
+      if (lock < kFirstPortLock) {
+        return Error(
+            absl::StrCat("PUL without a prior PLK. Code number: ", index));
       }
       lock = -1;
     }
@@ -386,6 +435,20 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
         arg |= CpuCore::I;
       } else if (c != '_') {
         return Error(parsed, absl::StrCat("Invalid status flags: ", arg_name));
+      }
+    }
+    return true;
+  }
+  if (arg_type == MicroArgType::kPortMode) {
+    for (char c : arg_name) {
+      if (c == 'T') {
+        arg |= Port::T;
+      } else if (c == 'S') {
+        arg |= Port::S;
+      } else if (c == 'A') {
+        arg |= Port::A;
+      } else if (c != '_') {
+        return Error(parsed, absl::StrCat("Invalid port mode: ", arg_name));
       }
     }
     return true;

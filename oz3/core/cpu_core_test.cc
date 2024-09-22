@@ -11,6 +11,7 @@
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
+#include "oz3/core/port.h"
 #include "oz3/core/processor.h"
 #include "oz3/core/processor_config.h"
 
@@ -76,6 +77,10 @@ enum MicroTestOp : uint8_t {
   kTestOp_ILD,
   kTestOp_IST,
   kTestOp_IRET,
+  kTestOp_PLD,
+  kTestOp_PST,
+  kTestOp_PLDS,
+  kTestOp_PSTS,
 };
 
 const InstructionDef kMicroTestInstructions[] = {
@@ -440,6 +445,68 @@ const InstructionDef kMicroTestInstructions[] = {
      "LD(PC);"
      "LADR(SP);"
      "UL;"},
+    {kTestOp_PLD,
+     {"PLD", kArgImmValue3, kArgWordRegB},
+     "UL;"
+     "PLK(R7);"
+     "MOVI(C1,1);AND(C1,C0);JC(NZ,@TXX);"
+     "MOVI(C1,2);AND(C1,C0);JC(NZ,@_SX);"
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@__A);"
+     "@___:PLD(___,b);JP(@END);"  // ___
+     "@TXX:"                      // TXX
+     "MOVI(C1,2);AND(C1,C0);JC(NZ,@TSX);"
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@T_A);"
+     "@T__:PLD(T__,b);JP(@END);"  // T__
+     "@TSX:"                      // TSX
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@TSA);"
+     "@TS_:PLD(TS_,b);JP(@END);"  // TS_
+     "@T_A:PLD(T_A,b);JP(@END);"  // T_A
+     "@_SX:"                      // _SX
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@_SA);"
+     "@_S_:PLD(_S_,b);JP(@END);"  // _S_
+     "@_SA:PLD(_SA,b);JP(@END);"  // _SA
+     "@__A:PLD(__A,b);JP(@END);"  // __A
+     "@TSA:PLD(TSA,b);"           // TSA
+     "@END:MSTR(S,S);PUL;"},
+    {kTestOp_PST,
+     {"PST", kArgImmValue3, kArgWordRegB},
+     "UL;"
+     "PLK(R7);"
+     "MOVI(C1,1);AND(C1,C0);JC(NZ,@TXX);"
+     "MOVI(C1,2);AND(C1,C0);JC(NZ,@_SX);"
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@__A);"
+     "@___:PST(___,b);JP(@END);"  // ___
+     "@TXX:"                      // TXX
+     "MOVI(C1,2);AND(C1,C0);JC(NZ,@TSX);"
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@T_A);"
+     "@T__:PST(T__,b);JP(@END);"  // T__
+     "@TSX:"                      // TSX
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@TSA);"
+     "@TS_:PST(TS_,b);JP(@END);"  // TS_
+     "@T_A:PST(T_A,b);JP(@END);"  // T_A
+     "@_SX:"                      // _SX
+     "MOVI(C1,4);AND(C1,C0);JC(NZ,@_SA);"
+     "@_S_:PST(_S_,b);JP(@END);"  // _S_
+     "@_SA:PST(_SA,b);JP(@END);"  // _SA
+     "@__A:PST(__A,b);JP(@END);"  // __A
+     "@TSA:PST(TSA,b);"           // TSA
+     "@END:MSTR(S,S);PUL;"},
+    {kTestOp_PLDS,
+     {"PLDS", kArgImmValue5, kArgWordRegB},
+     "UL;"
+     "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
+     "PLK(C0);"
+     "PLD(SA,b);"
+     "MSTR(IZSCO,IZSCO);"
+     "PUL;"},
+    {kTestOp_PSTS,
+     {"PSTS", kArgImmValue5, kArgWordRegB},
+     "UL;"
+     "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
+     "PLK(C0);"
+     "PST(SA,b);"
+     "MSTR(IZSCO,IZSCO);"
+     "PUL;"},
 };
 
 // Helper class to fetch and update the state of a CpuCore.
@@ -553,6 +620,9 @@ bool ExecuteUntil(Processor& processor, CoreState& state,
       return false;
     }
     state.Update();
+    if (state.pc > 1000) {
+      return false;
+    }
   } while (!condition());
   return true;
 }
@@ -957,11 +1027,10 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
 }
 
-TEST(CpuCoreTest, MicroTestInstructionsCompile) {
+TEST(CpuCoreTest, MicrocodeTestInstructionsCompile) {
   InstructionMicrocodes micro_codes;
   std::string error;
-  EXPECT_TRUE(micro_codes.Compile(kMicroTestInstructions, &error));
-  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(micro_codes.Compile(kMicroTestInstructions, &error)) << error;
 }
 
 TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
@@ -3636,6 +3705,748 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   EXPECT_EQ(state.pc, pc4);
   EXPECT_EQ(state.r2, 3);
   EXPECT_EQ(state.r3, 42);
+}
+
+TEST(CpuCoreTest, LoadFromInvalidPort) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(10));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 42);
+  core.SetWordRegister(*lock, CpuCore::R1, 24);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_PLDS, 10, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_PLDS, 11, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 42);
+  EXPECT_EQ(state.st, 0);
+
+  lock = core.RequestLock();
+  while (!lock->IsLocked()) {
+    processor.Execute(1);
+  }
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
+  lock.reset();
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 24);
+  EXPECT_EQ(state.st, CpuCore::ZSCO);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LoadFromPortOnlyChangesFlagS) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initlaize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO | CpuCore::I);
+  core.SetWordRegister(*lock, CpuCore::R0, 100);
+  core.SetWordRegister(*lock, CpuCore::R1, 100);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 42);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 24);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_PLDS, 0, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_PLDS, 1, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 42);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::C | CpuCore::O);
+
+  lock = core.RequestLock();
+  while (!lock->IsLocked()) {
+    processor.Execute(1);
+  }
+  core.SetWordRegister(*lock, CpuCore::ST, 0);
+  lock.reset();
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 24);
+  EXPECT_EQ(state.st, CpuCore::S);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LoadWordFromPortMode0) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 0xFFFF);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PLD, 0, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PLD, 0, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LoadWordFromPortModeS) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 0xFFFF);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PLD, Port::S, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PLD, Port::S, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 0);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LoadWordFromPortModeA) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 0xFFFF);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PLD, Port::A, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PLD, Port::A, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LoadWordFromPortModeT) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 0xFFFF);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PLD, Port::T, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PLD, Port::T, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LoadWordFromPortModeTSA) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(3));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 0xFFFF);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock = processor.LockPort(2);
+  processor.GetPort(2).StoreWord(*lock, Port::S, 42);
+  EXPECT_EQ(processor.GetPort(2).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PLD, Port::T | Port::S | Port::A, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PLD, Port::T | Port::S | Port::A, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(2);
+  mem.AddCode(kTestOp_PLD, Port::T | Port::S | Port::A, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc3 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.r1, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 0);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  EXPECT_EQ(state.r1, 42);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 0);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreToInvalidPort) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(10));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_PSTS, 10, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_PSTS, 11, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+
+  auto lock = core.RequestLock();
+  while (!lock->IsLocked()) {
+    processor.Execute(1);
+  }
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
+  lock.reset();
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::ZSCO);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreToPortOnlyChangesFlagS) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initlaize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO | CpuCore::I);
+  core.SetWordRegister(*lock, CpuCore::R0, 42);
+  core.SetWordRegister(*lock, CpuCore::R1, 24);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 100);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_PSTS, 0, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_PSTS, 1, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::C | CpuCore::O);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 42);
+
+  lock = core.RequestLock();
+  while (!lock->IsLocked()) {
+    processor.Execute(1);
+  }
+  core.SetWordRegister(*lock, CpuCore::ST, 0);
+  lock.reset();
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 24);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreWordToPortMode0) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1);
+  core.SetWordRegister(*lock, CpuCore::R1, 0xFFFF);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 100);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PST, 0, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PST, 0, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 0xFFFF);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreWordToPortModeA) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1);
+  core.SetWordRegister(*lock, CpuCore::R1, 0xFFFF);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 100);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PST, Port::A, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PST, Port::A, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 0xFFFF);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreWordToPortModeS) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1);
+  core.SetWordRegister(*lock, CpuCore::R1, 0xFFFF);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 100);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PST, Port::S, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PST, Port::S, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 0xFFFF);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreWordToPortModeT) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1);
+  core.SetWordRegister(*lock, CpuCore::R1, 0xFFFF);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 100);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PST, Port::T, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PST, Port::T, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, StoreWordToPortModeTSA) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(3));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initialize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1);
+  core.SetWordRegister(*lock, CpuCore::R1, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R2, 42);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, Port::S, 100);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  lock = processor.LockPort(2);
+  processor.GetPort(2).StoreWord(*lock, 0, 100);
+  EXPECT_EQ(processor.GetPort(2).GetStatus(), 0);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
+  mem.AddCode(kTestOp_PST, Port::T | Port::S | Port::A, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
+  mem.AddCode(kTestOp_PST, Port::T | Port::S | Port::A, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(2);
+  mem.AddCode(kTestOp_PST, Port::T | Port::S | Port::A, CpuCore::R2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc3 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(0).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(0).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
+  EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(processor.GetPort(2).GetAddress(), 1);
+  EXPECT_EQ(processor.GetPort(2).GetStatus(), 1);
+  EXPECT_EQ(processor.GetPort(2).GetValue(0), 42);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+}
+
+TEST(CpuCoreTest, LockPortBlocksCpuCore) {
+  Processor processor(
+      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initlaize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 42);
+  core.SetWordRegister(*lock, CpuCore::R1, 24);
+  lock = processor.LockPort(0);
+  processor.GetPort(0).StoreWord(*lock, 0, 100);
+  lock = processor.LockPort(1);
+  processor.GetPort(1).StoreWord(*lock, 0, 100);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_PSTS, 0, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_PSTS, 1, CpuCore::R1);
+  const uint16_t blocked_pc = mem.GetAddress();
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc2 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Lock port 1, which should not effect writing to port 0
+  lock = processor.LockPort(1);
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(processor.GetPort(0).GetValue(0), 42);
+
+  ASSERT_TRUE(
+      ExecuteUntil(processor, state, [&] { return state.pc == blocked_pc; }));
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
+  for (int i = 0; i < 10; ++i) {
+    processor.Execute(1);
+  }
+  state.Update();
+  EXPECT_EQ(state.pc, blocked_pc);
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
+
+  // Reset port 1 lock, which allows the CpuCore to continue
+  lock.reset();
+
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  EXPECT_EQ(processor.GetPort(1).GetValue(0), 24);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
 }
 
 }  // namespace
