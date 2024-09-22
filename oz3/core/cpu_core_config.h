@@ -70,8 +70,8 @@ inline constexpr int kCpuCoreCycles_JC_True = 1;
 inline constexpr int kCpuCoreCycles_JD_NonZero = 1;
 inline constexpr int kCpuCoreCycles_JD_Zero = 1;
 inline constexpr int kCpuCoreCycles_INT = 0;
-inline constexpr int kCpuCoreCycles_LIV = 1;
-inline constexpr int kCpuCoreCycles_SIV = 1;
+inline constexpr int kCpuCoreCycles_ILD = 1;
+inline constexpr int kCpuCoreCycles_IST = 1;
 
 //==============================================================================
 // CpuCoreConfig

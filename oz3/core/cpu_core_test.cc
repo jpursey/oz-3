@@ -73,8 +73,8 @@ enum MicroTestOp : uint8_t {
   kTestOp_JD,
   kTestOp_JMP,
   kTestOp_INT,
-  kTestOp_LIV,
-  kTestOp_SIV,
+  kTestOp_ILD,
+  kTestOp_IST,
   kTestOp_IRET,
 };
 
@@ -423,14 +423,14 @@ const InstructionDef kMicroTestInstructions[] = {
      {"INT", kArgImmValue5},
      "UL;"
      "INT(C0);"},
-    {kTestOp_LIV,
-     {"LIV", kArgWordRegA, kArgWordRegB},
+    {kTestOp_ILD,
+     {"ILD", kArgWordRegA, kArgWordRegB},
      "UL;"
-     "LIV(a,b);"},
-    {kTestOp_SIV,
-     {"SIV", kArgWordRegA, kArgWordRegB},
+     "ILD(a,b);"},
+    {kTestOp_IST,
+     {"IST", kArgWordRegA, kArgWordRegB},
      "UL;"
-     "SIV(a,b);"},
+     "IST(a,b);"},
     {kTestOp_IRET,
      {"IRET"},
      "UL;"
@@ -3208,7 +3208,7 @@ TEST(CpuCoreTest, InterruptDuringExecution) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_ZSCO, CpuCore::Z | CpuCore::O);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(2);
@@ -3257,7 +3257,7 @@ TEST(CpuCoreTest, InterruptDuringWait) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_ZSCO, CpuCore::Z | CpuCore::O);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(1000);
@@ -3301,7 +3301,7 @@ TEST(CpuCoreTest, InterruptDuringHalt) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_HALT);
   const uint16_t pc1 = mem.GetAddress();
@@ -3340,7 +3340,7 @@ TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(1);
   mem.AddCode(kTestOp_NOP);
   const uint16_t pc1 = mem.GetAddress();
@@ -3378,7 +3378,7 @@ TEST(CpuCoreTest, EnableInterruptAfterRaise) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(2);
   mem.AddCode(kTestOp_EI);
   const uint16_t pc1 = mem.GetAddress();
@@ -3415,13 +3415,13 @@ TEST(CpuCoreTest, InterruptInInterrupt) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(2);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(200);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 2 to 200
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 2 to 200
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(3);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(300);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);  // Interrupt 3 to 300
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 3 to 300
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_INT, 1);
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
@@ -3475,7 +3475,7 @@ TEST(CpuCoreTest, LockCoreDuringInterrupt) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_NOP);
   const uint16_t pc1 = mem.GetAddress();
@@ -3526,7 +3526,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
   // Main program
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_NOP);
   const uint16_t pc1 = mem.GetAddress();
@@ -3590,7 +3590,7 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   const uint16_t pc1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
-  mem.AddCode(kTestOp_SIV, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
   const uint16_t pc2 = mem.GetAddress();
   mem.AddCode(kTestOp_NOP);

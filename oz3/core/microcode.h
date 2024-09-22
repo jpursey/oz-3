@@ -476,19 +476,19 @@ enum MicroOp : uint8_t {
   // the next instruction is executed.
   kMicro_INT,
 
-  // LIV(r,r);
+  // ILD(r,r);
   //
   // Cycles: 1
   //
-  // Loads interrupt vector address at reg1 and stores in reg2.
-  kMicro_LIV,
+  // Loads address of interrupt reg1 into reg2.
+  kMicro_ILD,
 
-  // SIV(r,r);
+  // IST(r,r);
   //
   // Cycles: 1
   //
-  // Sets interrupt vector address at reg1 to the value in reg2.
-  kMicro_SIV,
+  // Stores address in reg2 to interrupt reg1.
+  kMicro_IST,
 
   // END;
   //

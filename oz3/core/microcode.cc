@@ -64,8 +64,8 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_JC, "JC", MicroArgType::kCondition, MicroArgType::kAddress},
     {kMicro_JD, "JD", MicroArgType::kWordReg, MicroArgType::kAddress},
     {kMicro_INT, "INT", MicroArgType::kWordReg},
-    {kMicro_LIV, "LIV", MicroArgType::kWordReg, MicroArgType::kWordReg},
-    {kMicro_SIV, "SIV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_ILD, "ILD", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_IST, "IST", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_END, "END"},
 };
 

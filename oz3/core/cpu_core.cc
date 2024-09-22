@@ -505,17 +505,17 @@ void CpuCore::RunInstruction() {
         RaiseInterrupt(r_[reg1] & (kInterruptCount - 1));
         exec_cycles_ += kCpuCoreCycles_INT;
       } break;
-      case kMicro_LIV: {
+      case kMicro_ILD: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         r_[reg2] = ivec_[r_[reg1]];
-        exec_cycles_ += kCpuCoreCycles_LIV;
+        exec_cycles_ += kCpuCoreCycles_ILD;
       } break;
-      case kMicro_SIV: {
+      case kMicro_IST: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         ivec_[r_[reg1]] = r_[reg2];
-        exec_cycles_ += kCpuCoreCycles_SIV;
+        exec_cycles_ += kCpuCoreCycles_IST;
       } break;
       case kMicro_END:
         state_ = State::kStartInstruction;
