@@ -110,7 +110,7 @@ TEST(MemoryBankTest, LockMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   EXPECT_FALSE(bank.IsLocked());
   {
-    auto lock = bank.Lock();
+    auto lock = bank.RequestLock();
     EXPECT_TRUE(bank.IsLocked());
     EXPECT_EQ(bank.GetAddress(*lock), 0);
   }
@@ -119,7 +119,7 @@ TEST(MemoryBankTest, LockMemory) {
 
 TEST(MemoryBankTest, SetAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   EXPECT_EQ(bank.GetAddress(*lock), 0);
   EXPECT_EQ(bank.SetAddress(*lock, 1000), kMemoryBankSetAddressCycles);
   EXPECT_EQ(bank.GetAddress(*lock), 1000);
@@ -128,7 +128,7 @@ TEST(MemoryBankTest, SetAddress) {
 TEST(MemoryBankTest, LoadWordAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   bank.GetMem(1000, 1)[0] = 0x5678;
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   bank.SetAddress(*lock, 1000);
   uint16_t value;
   EXPECT_EQ(bank.LoadWord(*lock, value), kMemoryBankAccessWordCycles);
@@ -137,7 +137,7 @@ TEST(MemoryBankTest, LoadWordAtAddress) {
 
 TEST(MemoryBankTest, StoreWordAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   bank.SetAddress(*lock, 1000);
   EXPECT_EQ(bank.StoreWord(*lock, 0x5678), kMemoryBankAccessWordCycles);
   EXPECT_EQ(bank.GetAddress(*lock), 1001);
@@ -146,7 +146,7 @@ TEST(MemoryBankTest, StoreWordAtAddress) {
 
 TEST(MemoryBankTest, PushWordAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   bank.SetAddress(*lock, 1000);
   EXPECT_EQ(bank.PushWord(*lock, 0x5678), kMemoryBankAccessWordCycles);
   EXPECT_EQ(bank.GetMem(999, 1)[0], 0x5678);
@@ -156,7 +156,7 @@ TEST(MemoryBankTest, ReadWordsAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   bank.GetMem(1000, 1)[0] = 0x5678;
   bank.GetMem(1001, 1)[0] = 0x1234;
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   bank.SetAddress(*lock, 999);
   uint16_t words[4];
   EXPECT_EQ(bank.ReadWords(*lock, words),
@@ -166,7 +166,7 @@ TEST(MemoryBankTest, ReadWordsAtAddress) {
 
 TEST(MemoryBankTest, WriteWordsAtAddress) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   bank.SetAddress(*lock, 1000);
   uint16_t words[4] = {0x5678, 0x1234, 0x9ABC, 0xDEF0};
   EXPECT_EQ(bank.WriteWords(*lock, words),
@@ -181,7 +181,7 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max(),
                                                  {.read_mask = 0x0FF0}));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   int page = 0;
   uint16_t value;
   for (; page < 4; ++page) {
@@ -215,7 +215,7 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(
       MemoryPageRange::Max(), {.read_mask = 0xFFFF, .write_mask = 0x0FF0}));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   int page = 0;
   uint16_t value;
   for (; page < 4; ++page) {
@@ -262,7 +262,7 @@ TEST(MemoryBankTest, ReadWordsFromWriteOnlyMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max(),
                                                  {.read_mask = 0x0002}));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   uint16_t words[4];
 
   std::memset(words, 0xFF, sizeof(words));
@@ -282,7 +282,7 @@ TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(
       MemoryPageRange::Max(), {.read_mask = 0xFFFF, .write_mask = 0x0002}));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
 
   bank.SetAddress(*lock, kMemoryBankPageSize - 2);
@@ -314,7 +314,7 @@ TEST(MemoryBankTest, WriteWordsOverReadOnlyMemory) {
 TEST(MemoryBankTest, ReadWordsOverEndOfMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   uint16_t words[4];
 
   std::memset(words, 0xFF, sizeof(words));
@@ -327,7 +327,7 @@ TEST(MemoryBankTest, ReadWordsOverEndOfMemory) {
 
 TEST(MemoryBankTest, WriteWordsOverEndOfMemory) {
   MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max()));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
 
   bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
@@ -351,7 +351,7 @@ TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
   MemoryBank bank(MemoryBankConfig()
                       .SetMemPages(MemoryPageRange::Max())
                       .SetMemoryMap(&memory_map));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   std::vector<uint16_t> words(kMemoryBankMaxSize);
   absl::Span<uint16_t> mapped_mem = memory_map.GetMem();
 
@@ -378,7 +378,7 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMappedMemory) {
                       .SetMemoryMap(&memory_map, {.read_mask = 0x0FF0,
                                                   .write_mask = 0xFFFF}));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   int page = 0;
   uint16_t value;
   for (; page < 4; ++page) {
@@ -418,7 +418,7 @@ TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
                       .SetMemoryMap(&memory_map, {.read_mask = 0xFFFF,
                                                   .write_mask = 0x0FF0}));
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
-  auto lock = bank.Lock();
+  auto lock = bank.RequestLock();
   int page = 0;
   uint16_t value;
   for (; page < 4; ++page) {

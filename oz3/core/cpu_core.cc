@@ -24,7 +24,7 @@ void CpuCore::AttachProcessor(CoreInternal, Processor* processor) {
   InitBanks();
 }
 
-void CpuCore::Reset(const ComponentLock& lock, const ResetParams& params) {
+void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(processor_ != nullptr);
 
@@ -47,14 +47,14 @@ void CpuCore::Reset(const ComponentLock& lock, const ResetParams& params) {
   state_ = State::kStartInstruction;
 }
 
-void CpuCore::SetWordRegister(const ComponentLock& lock, int reg,
+void CpuCore::SetWordRegister(const Lock& lock, int reg,
                               uint16_t value) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(reg >= 0 && reg < kRegisterCount);
   r_[reg] = value;
 }
 
-void CpuCore::SetDwordRegister(const ComponentLock& lock, int reg,
+void CpuCore::SetDwordRegister(const Lock& lock, int reg,
                                uint32_t value) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == CD ||
@@ -149,7 +149,7 @@ void CpuCore::HandleInterrupt() {
     return;
   }
   DCHECK(lock_ == nullptr);
-  lock_ = banks_[STACK]->Lock();
+  lock_ = banks_[STACK]->RequestLock();
   locked_bank_ = STACK;
   if (!lock_->IsLocked()) {
     exec_cycles_ += 1;
@@ -173,7 +173,7 @@ void CpuCore::PushInterruptState() {
 
 void CpuCore::StartInterrupt() {
   DCHECK(lock_ != nullptr && locked_bank_ == STACK);
-  lock_ = banks_[CODE]->Lock();
+  lock_ = banks_[CODE]->RequestLock();
   locked_bank_ = CODE;
   if (!lock_->IsLocked()) {
     exec_cycles_ += 1;
@@ -191,7 +191,7 @@ void CpuCore::StartInstruction() {
     return;
   }
   DCHECK(lock_ == nullptr);
-  lock_ = banks_[CODE]->Lock();
+  lock_ = banks_[CODE]->RequestLock();
   locked_bank_ = CODE;
   if (!lock_->IsLocked()) {
     exec_cycles_ += 1;
@@ -279,7 +279,7 @@ void CpuCore::RunInstruction() {
           return;
         }
         locked_bank_ = code.arg1;
-        lock_ = banks_[locked_bank_]->Lock();
+        lock_ = banks_[locked_bank_]->RequestLock();
         if (!lock_->IsLocked()) {
           return;
         }

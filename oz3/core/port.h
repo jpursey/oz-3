@@ -36,24 +36,24 @@ class Port final : public Component {
   //----------------------------------------------------------------------------
 
   // Returns true if the port has input data.
-  bool HasInput(const ComponentLock& lock);
+  bool HasInput(const Lock& lock);
 
   // Reads the input word if it exist (otherwise it reads zero). This clears the
   // input word, resetting it to zero.
-  uint16_t ReadInput(const ComponentLock& lock);
+  uint16_t ReadInput(const Lock& lock);
 
   // Sets the input word to the specified.
-  void SetInput(const ComponentLock& lock, uint16_t value);
+  void SetInput(const Lock& lock, uint16_t value);
 
   // Returns true if the port has output data.
-  bool HasOutput(const ComponentLock& lock);
+  bool HasOutput(const Lock& lock);
 
   // Reads the output word if it exist (otherwise it reads zero). This clears
   // the output word, resetting it to zero.
-  uint16_t ReadOutput(const ComponentLock& lock);
+  uint16_t ReadOutput(const Lock& lock);
 
   // Sets the output word to the specified.
-  void SetOutput(const ComponentLock& lock, uint16_t value);
+  void SetOutput(const Lock& lock, uint16_t value);
 
  private:
   //----------------------------------------------------------------------------
@@ -113,36 +113,36 @@ class PortBank final {
 // Port inlines
 //==============================================================================
 
-inline bool Port::HasInput(const ComponentLock& lock) {
+inline bool Port::HasInput(const Lock& lock) {
   DCHECK(lock.IsLocked(*this));
   return input_.has_value();
 }
 
-inline uint16_t Port::ReadInput(const ComponentLock& lock) {
+inline uint16_t Port::ReadInput(const Lock& lock) {
   DCHECK(lock.IsLocked(*this));
   uint16_t value = input_.value_or(0);
   input_.reset();
   return value;
 }
 
-inline void Port::SetInput(const ComponentLock& lock, uint16_t value) {
+inline void Port::SetInput(const Lock& lock, uint16_t value) {
   DCHECK(lock.IsLocked(*this));
   input_ = value;
 }
 
-inline bool Port::HasOutput(const ComponentLock& lock) {
+inline bool Port::HasOutput(const Lock& lock) {
   DCHECK(lock.IsLocked(*this));
   return output_.has_value();
 }
 
-inline uint16_t Port::ReadOutput(const ComponentLock& lock) {
+inline uint16_t Port::ReadOutput(const Lock& lock) {
   DCHECK(lock.IsLocked(*this));
   uint16_t value = output_.value_or(0);
   output_.reset();
   return value;
 }
 
-inline void Port::SetOutput(const ComponentLock& lock, uint16_t value) {
+inline void Port::SetOutput(const Lock& lock, uint16_t value) {
   DCHECK(lock.IsLocked(*this));
   output_ = value;
 }

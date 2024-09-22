@@ -3,21 +3,21 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/core/component.h"
+#include "oz3/core/lockable.h"
 
 #include <memory>
 
 namespace oz3 {
 
-Component::Component() : pending_locks_(32) {}
+Lockable::Lockable() : pending_locks_(32) {}
 
-Component::~Component() {
+Lockable::~Lockable() {
   if (lock_.Exists()) {
-    lock_->component_ = nullptr;
+    lock_->lockable_ = nullptr;
   }
 }
 
-bool Component::PreventLock() {
+bool Lockable::PreventLock() {
   if (lock_.Exists()) {
     return false;
   }
@@ -25,30 +25,30 @@ bool Component::PreventLock() {
   return true;
 }
 
-void Component::AllowLock() {
+void Lockable::AllowLock() {
   allow_locks_ = true;
   if (!lock_.Exists()) {
     Unlock();
   }
 }
 
-std::unique_ptr<ComponentLock> Component::Lock() {
-  auto new_lock = std::make_unique<ComponentLock>();
+std::unique_ptr<Lock> Lockable::RequestLock() {
+  auto new_lock = std::make_unique<Lock>();
   if (lock_.Exists() || !allow_locks_) {
     pending_locks_.push(new_lock->self_ptr_);
   } else {
-    new_lock->component_ = this;
+    new_lock->lockable_ = this;
     lock_ = new_lock->self_ptr_;
   }
   return new_lock;
 }
 
-void Component::Unlock() {
+void Lockable::Unlock() {
   while (!pending_locks_.empty()) {
     lock_ = std::move(pending_locks_.front());
     pending_locks_.pop();
     if (lock_.Exists()) {
-      lock_->component_ = this;
+      lock_->lockable_ = this;
       break;
     }
   }

@@ -51,31 +51,31 @@ class MemoryBank final : public Component {
 
   // The current address on the address bus for the MemoryBank. All regular
   // reads and writes through a MemoryLock update based on this address.
-  uint16_t GetAddress(const ComponentLock& lock) const;
+  uint16_t GetAddress(const Lock& lock) const;
 
   // Sets a new read/write address for the MemoryBank. This takes
   // kMemoryBankSetAddressCycles to execute.
-  Cycles SetAddress(const ComponentLock& lock, uint16_t address);
+  Cycles SetAddress(const Lock& lock, uint16_t address);
 
   // Reads/Writes the specified buffer of words from/to the memory bank starting
   // at current address. This will automatically "wrap" at the end of address
   // space back to address zero. The address is automatically incremented (with
   // wrapping) by `size`. This takes `size * kMemoryBankAccessWordCycles
   // virtual cycles to execute.
-  Cycles ReadWords(const ComponentLock& lock, absl::Span<uint16_t> data);
-  Cycles WriteWords(const ComponentLock& lock, absl::Span<const uint16_t> data);
+  Cycles ReadWords(const Lock& lock, absl::Span<uint16_t> data);
+  Cycles WriteWords(const Lock& lock, absl::Span<const uint16_t> data);
 
   // Returns the word at the current address and increments the address. This
   // takes kMemoryBankAccessWordCycles to execute.
-  Cycles LoadWord(const ComponentLock& lock, uint16_t& value);
+  Cycles LoadWord(const Lock& lock, uint16_t& value);
 
   // Writes the word to the current address and increments the address. This
   // takes kMemoryBankAccessWordCycles to execute.
-  Cycles StoreWord(const ComponentLock& lock, uint16_t value);
+  Cycles StoreWord(const Lock& lock, uint16_t value);
 
   // Decrements address and writes the word at the new address. This takes
   // kMemoryBankAccessWordCycles to execute.
-  Cycles PushWord(const ComponentLock& lock, uint16_t value);
+  Cycles PushWord(const Lock& lock, uint16_t value);
 
   //----------------------------------------------------------------------------
   // Operations
@@ -143,40 +143,40 @@ class MemoryBank final : public Component {
 // MemoryBank inlines
 //==============================================================================
 
-inline uint16_t MemoryBank::GetAddress(const ComponentLock& lock) const {
+inline uint16_t MemoryBank::GetAddress(const Lock& lock) const {
   DCHECK(lock.IsLocked(*this));
   return address_;
 }
 
-inline Cycles MemoryBank::SetAddress(const ComponentLock& lock,
+inline Cycles MemoryBank::SetAddress(const Lock& lock,
                                      uint16_t address) {
   DCHECK(lock.IsLocked(*this));
   address_ = address;
   return kMemoryBankSetAddressCycles;
 }
 
-inline Cycles MemoryBank::LoadWord(const ComponentLock& lock, uint16_t& value) {
+inline Cycles MemoryBank::LoadWord(const Lock& lock, uint16_t& value) {
   DCHECK(lock.IsLocked(*this));
   value = ReadWord();
   address_ += 1;
   return kMemoryBankAccessWordCycles;
 }
 
-inline Cycles MemoryBank::StoreWord(const ComponentLock& lock, uint16_t value) {
+inline Cycles MemoryBank::StoreWord(const Lock& lock, uint16_t value) {
   DCHECK(lock.IsLocked(*this));
   WriteWord(value);
   address_ += 1;
   return kMemoryBankAccessWordCycles;
 }
 
-inline Cycles MemoryBank::PushWord(const ComponentLock& lock, uint16_t value) {
+inline Cycles MemoryBank::PushWord(const Lock& lock, uint16_t value) {
   DCHECK(lock.IsLocked(*this));
   address_ -= 1;
   WriteWord(value);
   return kMemoryBankAccessWordCycles;
 }
 
-inline Cycles MemoryBank::ReadWords(const ComponentLock& lock,
+inline Cycles MemoryBank::ReadWords(const Lock& lock,
                                     absl::Span<uint16_t> data) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(data.size() <= kMemoryBankMaxSize);
@@ -186,7 +186,7 @@ inline Cycles MemoryBank::ReadWords(const ComponentLock& lock,
   return size * kMemoryBankAccessWordCycles;
 }
 
-inline Cycles MemoryBank::WriteWords(const ComponentLock& lock,
+inline Cycles MemoryBank::WriteWords(const Lock& lock,
                                      absl::Span<const uint16_t> data) {
   DCHECK(lock.IsLocked(*this));
   DCHECK(data.size() <= kMemoryBankMaxSize);

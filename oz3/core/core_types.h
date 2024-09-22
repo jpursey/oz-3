@@ -13,10 +13,11 @@
 namespace oz3 {
 
 class Component;
-class ComponentLock;
 class CpuCore;
 class CpuCoreConfig;
 class ExecutionComponent;
+class Lock;
+class Lockable;
 class MemoryMap;
 class MemoryBank;
 class MemoryBankConfig;

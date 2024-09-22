@@ -447,7 +447,7 @@ struct CoreState {
   explicit CoreState(CpuCore& core) : core(core) { Update(); }
 
   void ResetCore(CpuCore::ResetParams reset_params = {}) {
-    auto lock = core.Lock();
+    auto lock = core.RequestLock();
     EXPECT_TRUE(lock->IsLocked());
     core.Reset(*lock, reset_params);
     lock.reset();
@@ -766,7 +766,7 @@ TEST(CpuCoreTest, CoreLockPreventsExecution) {
   MemoryBank& memory_bank = *processor.GetMemory(0);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   EXPECT_TRUE(lock->IsLocked());
   core.Reset(*lock, CpuCore::ResetParams{});
 
@@ -797,7 +797,7 @@ TEST(CpuCoreTest, CoreLockDeferredUntilEndOfInstruction) {
 
   // We are now running an instruction, so the core cannot be locked until it
   // completes.
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   EXPECT_FALSE(lock->IsLocked());
 
   // Run enough cycles to start the next instruction.
@@ -818,7 +818,7 @@ TEST(CpuCoreTest, MemoryLockBlocksFetch) {
 
   // Lock the memory bank, which will prevent the core from fetching the next
   // instruction.
-  auto memory_lock = memory_bank.Lock();
+  auto memory_lock = memory_bank.RequestLock();
   EXPECT_TRUE(memory_lock->IsLocked());
 
   processor.Execute(1);
@@ -1035,7 +1035,7 @@ TEST(CpuCoreTest, WaitOp) {
   MemoryBank& memory_bank = *processor.GetMemory(0);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0);
   core.SetWordRegister(*lock, CpuCore::R1, 1);
   core.SetWordRegister(*lock, CpuCore::R2, kCpuCoreFetchAndDecodeCycles);
@@ -1239,7 +1239,7 @@ TEST(CpuCoreTest, LkWhenLocked) {
 
   // Lock the memory bank, which will prevent the core from fetching the next
   // instruction.
-  auto data_lock = data_bank.Lock();
+  auto data_lock = data_bank.RequestLock();
   EXPECT_TRUE(data_lock->IsLocked());
 
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 10);
@@ -1271,7 +1271,7 @@ TEST(CpuCoreTest, MovStOp) {
   MemoryBank& data_bank = *processor.GetMemory(banks.data);
   state.ResetCore({.bm = banks.ToWord()});
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   EXPECT_TRUE(lock->IsLocked());
   core.SetWordRegister(*lock, CpuCore::R0, 42);
   lock.reset();
@@ -1464,7 +1464,7 @@ TEST(CpuCoreTest, AddiOp1) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0xFFFE);
@@ -1531,7 +1531,7 @@ TEST(CpuCoreTest, AddiOp2) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
@@ -1598,7 +1598,7 @@ TEST(CpuCoreTest, AddOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0xFFFE);
@@ -1666,7 +1666,7 @@ TEST(CpuCoreTest, SubOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
@@ -1734,7 +1734,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0xFFFE);
@@ -1829,7 +1829,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0xFFFF);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R2, 0xFFFD);
@@ -1924,7 +1924,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
@@ -2007,7 +2007,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
@@ -2092,7 +2092,7 @@ TEST(CpuCoreTest, NegOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
@@ -2159,7 +2159,7 @@ TEST(CpuCoreTest, CmpOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R2, 0x0002);
@@ -2227,7 +2227,7 @@ TEST(CpuCoreTest, NotOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x1234);
   core.SetWordRegister(*lock, CpuCore::R2, 0x5678);
@@ -2304,7 +2304,7 @@ TEST(CpuCoreTest, AndOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x1234);
   core.SetWordRegister(*lock, CpuCore::R2, 0x5678);
@@ -2401,7 +2401,7 @@ TEST(CpuCoreTest, OrOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x1234);
   core.SetWordRegister(*lock, CpuCore::R2, 0x5678);
@@ -2498,7 +2498,7 @@ TEST(CpuCoreTest, XorOp) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
   core.SetWordRegister(*lock, CpuCore::R1, 0x1234);
   core.SetWordRegister(*lock, CpuCore::R2, 0x5678);
@@ -2595,7 +2595,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
   core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
@@ -2692,7 +2692,7 @@ TEST(CpuCoreTest, RlRrOps) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
   core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
@@ -2788,7 +2788,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
   core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
@@ -2893,7 +2893,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 0x0001);
   core.SetWordRegister(*lock, CpuCore::R1, 0x8000);
   core.SetWordRegister(*lock, CpuCore::R2, 0xC000);
@@ -2998,7 +2998,7 @@ TEST(CpuCoreTest, MathOpsLeaveInterruptFlagAlone) {
   CoreState state(core);
   state.ResetCore();
 
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::ST, CpuCore::I);
   lock.reset();
 
@@ -3496,7 +3496,7 @@ TEST(CpuCoreTest, LockCoreDuringInterrupt) {
 
   // Lock the core, but it will not *yet* be locked, as the core is in the
   // middle of an instruction (the NOP).
-  auto lock = core.Lock();
+  auto lock = core.RequestLock();
   EXPECT_FALSE(lock->IsLocked());
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
 
@@ -3546,7 +3546,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
   EXPECT_EQ(state.st, CpuCore::I);
 
   // Lock the stack, which is not yet in use.
-  auto lock = processor.GetMemory(1)->Lock();
+  auto lock = processor.GetMemory(1)->RequestLock();
   EXPECT_TRUE(lock->IsLocked());
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
 
@@ -3558,7 +3558,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kPushInterruptState);
 
   // Release the lock on the stack and lock code
-  lock = processor.GetMemory(0)->Lock();
+  lock = processor.GetMemory(0)->RequestLock();
   EXPECT_TRUE(lock->IsLocked());
   processor.Execute(kCpuCoreStartInterruptCycles);
   EXPECT_EQ(core.GetState(), CpuCore::State::kStartInterrupt);
