@@ -23,6 +23,8 @@ namespace oz3 {
 
 namespace {
 
+static constexpr int kFirstPortLock = 10;
+
 const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
@@ -293,7 +295,6 @@ bool InstructionCompiler::ExtractLabels() {
 
 bool InstructionCompiler::InitLocks() {
   locks_.reserve(parsed_code_.size());
-  static constexpr int kFirstPortLock = 10;
   static_assert(
       CpuCore::CODE < kFirstPortLock && CpuCore::STACK < kFirstPortLock &&
           CpuCore::DATA < kFirstPortLock && CpuCore::EXTRA < kFirstPortLock,
@@ -379,7 +380,7 @@ const MicrocodeDef* InstructionCompiler::FindMicroCodeDef(
   return nullptr;
 }
 
-std::string_view LockName(int lock) {
+std::string LockName(int lock) {
   switch (lock) {
     case -1:
       return "NONE";
@@ -391,6 +392,9 @@ std::string_view LockName(int lock) {
       return "DATA";
     case CpuCore::EXTRA:
       return "EXTRA";
+  }
+  if (lock >= kFirstPortLock) {
+    return absl::StrCat("Port section ", lock - kFirstPortLock + 1);
   }
   return "UNKNOWN";
 }
@@ -520,32 +524,38 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
   if (arg_type == MicroArgType::kWordReg) {
     if (arg_name == "a") {
       if (instruction_.decl.arg1 != "a") {
-        return Error(parsed, "First argument not: a");
+        return Error(parsed, absl::StrCat("First argument not: a (it is \"",
+                                          instruction_.decl.arg1, "\")"));
       }
       arg = -1;
     } else if (arg_name == "a0") {
       if (instruction_.decl.arg1 != "A") {
-        return Error(parsed, "First argument not: A");
+        return Error(parsed, absl::StrCat("First argument not: A (it is \"",
+                                          instruction_.decl.arg1, "\")"));
       }
       arg = -1;
     } else if (arg_name == "a1") {
       if (instruction_.decl.arg1 != "A") {
-        return Error(parsed, "First argument not: A");
+        return Error(parsed, absl::StrCat("First argument not: A (it is \"",
+                                          instruction_.decl.arg1, "\")"));
       }
       arg = -3;
     } else if (arg_name == "b") {
       if (instruction_.decl.arg2 != "b") {
-        return Error(parsed, "Second argument not: b");
+        return Error(parsed, absl::StrCat("Second argument not: b (it is \"",
+                                          instruction_.decl.arg2, "\")"));
       }
       arg = -2;
     } else if (arg_name == "b0") {
       if (instruction_.decl.arg2 != "B") {
-        return Error(parsed, "Second argument not: B");
+        return Error(parsed, absl::StrCat("Second argument not: B (it is \"",
+                                          instruction_.decl.arg2, "\")"));
       }
       arg = -2;
     } else if (arg_name == "b1") {
       if (instruction_.decl.arg2 != "B") {
-        return Error(parsed, "Second argument not: B");
+        return Error(parsed, absl::StrCat("Second argument not: B (it is \"",
+                                          instruction_.decl.arg2, "\")"));
       }
       arg = -4;
     } else if (arg_name[0] == 'R' && arg_name.size() == 2) {
@@ -575,12 +585,14 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
   if (arg_type == MicroArgType::kDwordReg) {
     if (arg_name == "A") {
       if (instruction_.decl.arg1 != arg_name) {
-        return Error(parsed, "First argument not: A");
+        return Error(parsed, absl::StrCat("First argument not: A (it is \"",
+                                          instruction_.decl.arg1, "\")"));
       }
       arg = -1;
     } else if (arg_name == "B") {
       if (instruction_.decl.arg2 != arg_name) {
-        return Error(parsed, "Second argument not: B");
+        return Error(parsed, absl::StrCat("Second argument not: B (it is \"",
+                                          instruction_.decl.arg2, "\")"));
       }
       arg = -2;
     } else if (arg_name[0] == 'D' && arg_name.size() == 2) {

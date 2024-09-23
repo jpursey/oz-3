@@ -8,6 +8,7 @@
 #include <ostream>
 #include <string>
 
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -177,10 +178,22 @@ TEST(MicrocodeTest, WordRegArg) {
   EXPECT_FALSE(
       TestCompile(kMicroWordArg1, MakeDef({"", "a"}, "TEST(a)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"", "A"}, "TEST(a0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"", "A"}, "TEST(a1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(b)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(
       TestCompile(kMicroWordArg1, MakeDef({"b", ""}, "TEST(b)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"B", ""}, "TEST(b0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroWordArg1, MakeDef({"B", ""}, "TEST(b1)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(
       TestCompile(kMicroWordArg1, MakeDef({"A", ""}, "TEST(A)"), error));
@@ -404,10 +417,11 @@ TEST(MicrocodeTest, ProvideExtraArg) {
 }
 
 TEST(MicrocodeTest, Address) {
-  MicrocodeDef micros[] = {{kMicro_UL, "UL"},
-                           {kMicro_LK, "LK", MicroArgType::kBank},
-                           {kMicro_TEST_NOP, "NOP"},
-                           {kMicro_TEST, "TEST", MicroArgType::kAddress}};
+  MicrocodeDef micros[] = {
+      {kMicro_UL, "UL"},        {kMicro_LK, "LK", MicroArgType::kBank},
+      {kMicro_PUL, "PUL"},      {kMicro_PLK, "PLK", MicroArgType::kWordReg},
+      {kMicro_TEST_NOP, "NOP"}, {kMicro_TEST, "TEST", MicroArgType::kAddress},
+  };
   InstructionMicrocodes codes(micros);
   std::string error;
   EXPECT_TRUE(codes.Compile(InstructionDef{.code = "UL;TEST(-1);"}, &error));
@@ -480,6 +494,37 @@ TEST(MicrocodeTest, Address) {
       InstructionDef{.code =
                          "NOP;UL;TEST(@label);NOP;LK(DATA);NOP;UL;@label:NOP;"},
       &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(
+      codes.Compile(InstructionDef{.code = "UL;TEST(@missing);"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "UL;TEST(invalid);@invalid:NOP;"}, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "UL;TEST(@label);PLK(C0);@label:NOP;PUL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "UL;PLK(C0);NOP;TEST(@label);PUL;@label:NOP;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{
+          .code =
+              "UL;PLK(C0);NOP;TEST(@label);PUL;NOP;PLK(C0);@label:NOP;PUL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "UL;PLK(C0);NOP;TEST(@label);NOP;@label:NOP;PUL;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{
+          .code =
+              "UL;LK(DATA);NOP;TEST(@label);UL;NOP;PLK(C0);@label:NOP;PUL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(MicrocodeTest, DecodeInstructionNotFound) {
@@ -1075,6 +1120,40 @@ TEST(MicrocodeTest, StoreAfterAddress) {
   EXPECT_THAT(error, IsEmpty());
 }
 
+TEST(MicrocodeTest, StorePushDuringFetch) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "STP(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, StorePushAfterAddressDuringFetch) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "ADR(C0);STP(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(MicrocodeTest, StorePushBeforeAddress) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);STP(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, StorePushAfterAddress) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);ADR(C0);STP(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_TRUE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, IsEmpty());
+}
+
 TEST(MicrocodeTest, PortLoadWhenUnlocked) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PLD(_,C1);"};
   InstructionMicrocodes codes;
@@ -1207,6 +1286,41 @@ TEST(MicrocodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   DecodedInstruction decoded;
   EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
+}
+
+TEST(MicrocodeTest, LabelMissingColon) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;@start;MOV(C0,C1);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, InvalidLabelCharacter) {
+  // Just test the printable ASCII characters.
+  for (char ch = 33; absl::ascii_isgraph(ch); ++ch) {
+    std::string code = absl::StrCat("UL;@", std::string(1, ch), ":MOV(C0,C1);");
+    InstructionDef instruction_def = {kOp_TEST, {"TEST"}, code};
+    InstructionMicrocodes codes;
+    std::string error;
+    if (!absl::ascii_isalnum(ch) && ch != '_') {
+      EXPECT_FALSE(codes.Compile(instruction_def, &error));
+      EXPECT_THAT(error, Not(IsEmpty()));
+    } else {
+      EXPECT_TRUE(codes.Compile(instruction_def, &error));
+      EXPECT_THAT(error, IsEmpty());
+    }
+  }
+}
+
+TEST(MicrocodeTest, DuplicateLabel) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;@start:MOV(C0,C1);@start:MOV(C1,C0);"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 }  // namespace
