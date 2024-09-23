@@ -546,6 +546,7 @@ void CpuCore::RunInstruction() {
         locked_port_ = -1;
       } break;
       case kMicro_PLD: {
+        exec_cycles_ += kCpuCoreCycles_PLD;
         if (locked_port_ == -1) {
           break;
         }
@@ -557,6 +558,7 @@ void CpuCore::RunInstruction() {
                (port.LoadWord(*lock_, code.arg1, r_[reg2]) << SShift);
       } break;
       case kMicro_PST: {
+        exec_cycles_ += kCpuCoreCycles_PST;
         if (locked_port_ == -1) {
           break;
         }
