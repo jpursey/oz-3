@@ -309,12 +309,12 @@ void CpuCore::RunInstructionLoop() {
         banks_[locked_bank_]->SetAddress(*lock_, r_[reg1]);
         exec_cycles_ += kCpuCoreCycles_ADR;
       } break;
-      case kMicro_LADR: {
+      case kMicro_LAD: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
         r_[reg1] = banks_[locked_bank_]->GetAddress(*lock_);
-        exec_cycles_ += kCpuCoreCycles_LADR;
+        exec_cycles_ += kCpuCoreCycles_LAD;
       } break;
       case kMicro_LD: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&

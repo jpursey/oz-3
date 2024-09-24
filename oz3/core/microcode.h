@@ -162,13 +162,13 @@ enum MicroOp : uint8_t {
   // from LK.
   kMicro_ADR,
 
-  // LADR(r);
+  // LAD(r);
   //
   // Cycles: 0
   //
   // Loads the current address from the memory into reg1. The memory bank must
   // be locked from LK.
-  kMicro_LADR,
+  kMicro_LAD,
 
   // LD(r);
   //

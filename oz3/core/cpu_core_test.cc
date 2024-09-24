@@ -450,7 +450,7 @@ const InstructionDef kMicroTestInstructions[] = {
      "MSM(ZSCOI,ST);"
      "MSR(ZSCOI,ZSCOI);"
      "LD(PC);"
-     "LADR(SP);"
+     "LAD(SP);"
      "UL;"},
     {kTestOp_PLD,
      {"PLD", kArgImmValue3, kArgWordRegB},

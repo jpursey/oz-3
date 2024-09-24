@@ -40,7 +40,7 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_LK, "LK", MicroArgType::kBank},
     {kMicro_UL, "UL"},
     {kMicro_ADR, "ADR", MicroArgType::kWordReg},
-    {kMicro_LADR, "LADR", MicroArgType::kWordReg},
+    {kMicro_LAD, "LAD", MicroArgType::kWordReg},
     {kMicro_LD, "LD", MicroArgType::kWordReg},
     {kMicro_ST, "ST", MicroArgType::kWordReg},
     {kMicro_STP, "STP", MicroArgType::kWordReg},
