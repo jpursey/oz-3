@@ -216,8 +216,11 @@ void CpuCore::FetchInstruction() {
 
 void CpuCore::RunInstruction() {
   RunInstructionLoop();
-  r_[ST] = (mst_ & 0xFF00) | (r_[ST] & 0x00FF);
-  r_[BM] = mbm_;
+  if (state_ != State::kRunInstruction) {
+    r_[ST] = (mst_ & 0xFF00) | (r_[ST] & 0x00FF);
+    r_[BM] = mbm_;
+    AllowLock();
+  }
 }
 
 #define OZ3_INIT_REG1   \
@@ -270,12 +273,10 @@ void CpuCore::RunInstructionLoop() {
           r_[C0] = r_[reg1] - kCpuCoreFetchAndDecodeCycles;
           state_ = State::kWaiting;
         }
-        AllowLock();
         return;
       } break;
       case kMicro_HALT: {
         state_ = State::kIdle;
-        AllowLock();
         return;
       } break;
       case kMicro_LK: {
@@ -648,7 +649,6 @@ void CpuCore::RunInstructionLoop() {
       } break;
       case kMicro_END:
         state_ = State::kStartInstruction;
-        AllowLock();
         return;
       default:
         LOG(DFATAL) << "Invalid microcode operation: " << code.op;
@@ -656,7 +656,6 @@ void CpuCore::RunInstructionLoop() {
   }
 
   state_ = State::kStartInstruction;
-  AllowLock();
 }
 #undef OZ3_INIT_REG1
 #undef OZ3_INIT_REG2
