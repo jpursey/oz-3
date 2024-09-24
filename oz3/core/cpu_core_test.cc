@@ -447,6 +447,8 @@ const InstructionDef kMicroTestInstructions[] = {
      "LK(STACK);"
      "ADR(SP);"
      "LD(ST);"
+     "MSTM(ZSCOI,ST);"
+     "MSTR(ZSCOI,ZSCOI);"
      "LD(PC);"
      "LADR(SP);"
      "UL;"},
@@ -515,16 +517,14 @@ const InstructionDef kMicroTestInstructions[] = {
     {kTestOp_CBK,
      {"CBK", kArgImmValue2, kArgImmValue6},
      "UL;"
-     "MOVI(R7,1);"
-     "CLK(R7);"
-     "MOV(R7,C1);"
-     "MOVI(C1,0);CMP(C0,C1);JC(Z,@code);"
-     "MOVI(C1,1);CMP(C0,C1);JC(Z,@stack);"
-     "MOVI(C1,2);CMP(C0,C1);JC(Z,@data);"
-     "@extra:CBK(EXTRA,R7);JP(@end);"
-     "@code:CBK(CODE,R7);JP(@end);"
-     "@stack:CBK(STACK,R7);JP(@end);"
-     "@data:CBK(DATA,R7);"
+     "CLK(C2);"
+     "MOVI(C2,0);CMP(C0,C2);JC(Z,@code);"
+     "MOVI(C2,1);CMP(C0,C2);JC(Z,@stack);"
+     "MOVI(C2,2);CMP(C0,C2);JC(Z,@data);"
+     "@extra:CBK(EXTRA,C1);JP(@end);"
+     "@code:CBK(CODE,C1);JP(@end);"
+     "@stack:CBK(STACK,C1);JP(@end);"
+     "@data:CBK(DATA,C1);"
      "@end:CUL;"},
     {kTestOp_CLD,
      {"CLD", kArgWordRegA, kArgWordRegB},
@@ -611,10 +611,7 @@ struct CoreState {
   }
   const uint16_t& c0 = r[CpuCore::C0];
   const uint16_t& c1 = r[CpuCore::C1];
-  uint32_t cd0() const {
-    return static_cast<uint32_t>(r[CpuCore::CD]) |
-           (static_cast<uint32_t>(r[CpuCore::CD + 1]) << 16);
-  }
+  const uint16_t& c2 = r[CpuCore::C2];
   const uint16_t& pc = r[CpuCore::PC];
   const uint16_t& sp = r[CpuCore::SP];
   const uint16_t& dp = r[CpuCore::DP];
@@ -4666,7 +4663,7 @@ TEST(CpuCoreTest, ReadOnlyRegisters) {
 
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
-  EXPECT_EQ(state.st, 0x00FF);
+  EXPECT_EQ(state.st, 0x0000);
   EXPECT_EQ(state.bm, 0x0000);
 }
 

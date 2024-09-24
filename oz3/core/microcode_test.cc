@@ -232,9 +232,9 @@ TEST(MicrocodeTest, WordRegArg) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C1)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(C2)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(CD)"), error));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C2)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(C3)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(SP)"), error));
   EXPECT_THAT(error, IsEmpty());
@@ -314,8 +314,8 @@ TEST(MicrocodeTest, DwordRegArg) {
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C2)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(CD)"), error));
-  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C3)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(SP)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(DP)"), error));
@@ -810,7 +810,7 @@ TEST(MicrocodeTest, WordRegArgsDecodedCorrectly) {
        {},
        "UL;"
        "OP(R0,R1);OP(R2,R3);OP(R4,R5);OP(R6,R7);"
-       "OP(C0,C1);OP(SP,DP);OP(PC,ST);OP(BM,BM);"},
+       "OP(C0,C1);OP(C2,PC);OP(SP,DP);OP(ST,BM);"},
   };
 
   InstructionMicrocodes codes(micro_defs);
@@ -839,11 +839,11 @@ TEST(MicrocodeTest, WordRegArgsDecodedCorrectly) {
           Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::C0, .arg2 = CpuCore::C1},
           Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::C2, .arg2 = CpuCore::PC},
+          Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::SP, .arg2 = CpuCore::DP},
           Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::PC, .arg2 = CpuCore::ST},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::BM, .arg2 = CpuCore::BM}));
+              .op = kMicro_TEST, .arg1 = CpuCore::ST, .arg2 = CpuCore::BM}));
 }
 
 TEST(MicrocodeTest, DwordRegArgsDecodedCorrectly) {
@@ -852,7 +852,7 @@ TEST(MicrocodeTest, DwordRegArgsDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
   };
   const InstructionDef instruction_defs[] = {
-      {kOp_TEST, {}, "UL;OP(D0,D1);OP(D2,D3);OP(CD,SD)"},
+      {kOp_TEST, {}, "UL;OP(D0,D1);OP(D2,D3);OP(SD,SD)"},
   };
 
   InstructionMicrocodes codes(micro_defs);
@@ -875,7 +875,7 @@ TEST(MicrocodeTest, DwordRegArgsDecodedCorrectly) {
           Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::D2, .arg2 = CpuCore::D3},
           Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::CD, .arg2 = CpuCore::SD}));
+              .op = kMicro_TEST, .arg1 = CpuCore::SD, .arg2 = CpuCore::SD}));
 }
 
 TEST(MicrocodeTest, ImmOpArgDecodedCorrectly) {

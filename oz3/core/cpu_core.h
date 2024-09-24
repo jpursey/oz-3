@@ -46,18 +46,18 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int D2 = R4;  // 32-bit register (R4,R5)
   static constexpr int D3 = R6;  // 32-bit register (R6,R7)
 
-  // Cache registers
-  static constexpr int C0 = 8;   // Cache register 0
-  static constexpr int C1 = 9;   // Cache register 1
-  static constexpr int CD = C0;  // 32-bit cache register (C0,C1)
+  // Cache registers (set as noted at the beginning of each instruction)
+  static constexpr int C0 = 8;   // Cache register 0 (first arg or zero)
+  static constexpr int C1 = 9;   // Cache register 1 (second arg or zero)
+  static constexpr int C2 = 10;  // Cache register 2 (set to one)
 
   // Special purpose registers
-  static constexpr int PC = 10;  // Program counter
-  static constexpr int SP = 11;  // Stack pointer
-  static constexpr int DP = 12;  // Data pointer
-  static constexpr int SD = SP;  // 32-bit Stack+data pointer (SP,DP)
-  static constexpr int ST = 13;  // Status flags register
-  static constexpr int BM = 14;  // Bank map register (read-only outside of CBK)
+  static constexpr int PC = 11;  // Program counter
+  static constexpr int SP = 12;  // Stack pointer
+  static constexpr int DP = 13;  // Data pointer
+  static constexpr int SD = SP;  // 32-bit stack+data pointer (SP,DP)
+  static constexpr int ST = 14;  // Status register (ready-only outside of MSTR)
+  static constexpr int BM = 15;  // Bank map register (read-only outside of CBK)
 
   // Number of 16-bit registers.
   static constexpr int kRegisterCount = BM + 1;
@@ -76,6 +76,7 @@ class CpuCore final : public ExecutionComponent {
   static constexpr uint16_t O = 1 << OShift;  // Overflow flag
   static constexpr uint16_t ZSCO = Z | S | C | O;  // All ALU flags
   static constexpr uint16_t I = 1 << IShift;       // Interrupt enable flag
+  static constexpr uint16_t ZSCOI = ZSCO | I;      // All core-settable flags
   static constexpr uint16_t T = 1 << TShift;       // Trace flag
 
   // Banks reference in the CPU core
@@ -307,6 +308,7 @@ class CpuCore final : public ExecutionComponent {
   DecodedInstruction instruction_ = {};
   int mpc_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).
+  uint16_t msr_ = 0;  // Status flags that are the result of the instruction.
   uint16_t mbm_ = 0;  // Bank mapping from microcode (same BM register).
 };
 

@@ -24,15 +24,16 @@ namespace oz3 {
 //      the instruction code (a or b for word args; a0, a1, b0, or b1 for
 //      low/high word parts of dword args A and B). There are some registers
 //      that can't be permanently changed via standard microcode (this does mean
-//      the "read-only" parts can be used as temporary storage within an
-//      instruction's microcode):
-//      - The ST register's upper byte contains control bits and is reset at the
-//        end of the instruction. It can only be changed persistently from
-//        outside the core.
+//      they can be used as temporary storage within an instruction's microcode,
+//      as they will be restored automatically):
+//      - The ST register is set to the intern MSR register at the end of the
+//        instruction (which starts as equal to ST). To change the persistent
+//        value of ST, use the MSTC/MSTS/MSTX/MSTM operations to set MST and
+//        return with the MSTR operation.
 //      - The BM register specifies the memory bank mapping and is reset to the
 //        actual memory bank binding at the end of the instruction. To change
 //        the persistent value of BM (and the associated bank mapping), use the
-//        CBK.
+//        CBK operation.
 //   v: Immediate value. This is an 8-bit signed value. In microcode assembly,
 //      this is an explicit integer in the range [-128,127].
 //   b: Memory bank. In microcode assembly this must be one of CODE, STACK,
@@ -96,21 +97,22 @@ enum MicroOp : uint8_t {
   //
   // Cycles: 0
   //
-  // Returns microcode status flags (MST) to the ST register, by clearing any
-  // unset bits from MST specified by arg1 and setting any set bits from MST
-  // specified by arg2.
+  // Returns microcode status flags (MST) to the return status register (MSR)
+  // and the ST register, by clearing any unset bits from MST specified by arg1
+  // and setting any set bits from MST specified by arg2.
   //
   // Explicitly:
-  //   ST = (ST & (MST | ~arg1)) | (MST & arg2)
+  //   MSR = (MSR & (MST | ~arg1)) | (MST & arg2)
+  //   ST = MSR
   //
   // Examples:
-  //   ST Before   MST    arg1 (clr)   arg2 (set)   ST After
-  //     ____I    ZSCO_      ZS___       __CO_        __COI
-  //     ZS___    _____      ZS___       __CO_        _____
-  //     Z___I    _S_O_      ZS___       ZSCO_        _S_OI
-  //     ZS_O_    Z_C__      ZS___       __CO_        Z_CO_
-  //     Z_C_I    _S_O_      ____I       ____I        Z_C__
-  //     _S_O_    C_Z_I      ____I       ____I        _S_OI
+  //   MSR/ST Before   MST    arg1 (clr)   arg2 (set)   MSR/ST After
+  //       ____I      ZSCO_      ZS___       __CO_         __COI
+  //       ZS___      _____      ZS___       __CO_         _____
+  //       Z___I      _S_O_      ZS___       ZSCO_         _S_OI
+  //       ZS_O_      Z_C__      ZS___       __CO_         Z_CO_
+  //       Z_C_I      _S_O_      ____I       ____I         Z_C__
+  //       _S_O_      C_Z_I      ____I       ____I         _S_OI
   kMicro_MSTR,
 
   // WAIT(r);

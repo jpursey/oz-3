@@ -56,8 +56,7 @@ void CpuCore::SetWordRegister(const Lock& lock, int reg, uint16_t value) {
 
 void CpuCore::SetDwordRegister(const Lock& lock, int reg, uint32_t value) {
   DCHECK(lock.IsLocked(*this));
-  DCHECK(reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == CD ||
-         reg == SD);
+  DCHECK(reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == SD);
   r_[reg] = static_cast<uint16_t>(value & 0xFFFF);
   r_[reg + 1] = static_cast<uint16_t>(value >> 16);
 }
@@ -206,10 +205,11 @@ void CpuCore::FetchInstruction() {
   micro_codes_.Decode(code, instruction_);
   r_[PC] += instruction_.size;
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
-  std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
+  std::memcpy(&r_[C0], instruction_.c, sizeof(instruction_.c));
   mpc_ = 0;
-  mst_ = r_[ST];
+  mst_ = msr_ = r_[ST];
   mbm_ = r_[BM];
+  r_[C2] = 1;
   state_ = State::kRunInstruction;
   RunInstruction();
 }
@@ -217,7 +217,7 @@ void CpuCore::FetchInstruction() {
 void CpuCore::RunInstruction() {
   RunInstructionLoop();
   if (state_ != State::kRunInstruction) {
-    r_[ST] = (mst_ & 0xFF00) | (r_[ST] & 0x00FF);
+    r_[ST] = msr_;
     r_[BM] = mbm_;
     AllowLock();
   }
@@ -261,8 +261,9 @@ void CpuCore::RunInstructionLoop() {
         exec_cycles_ += kCpuCoreCycles_MSTM;
       } break;
       case kMicro_MSTR: {
-        r_[ST] &= mst_ | ~static_cast<uint16_t>(code.arg1);
-        r_[ST] |= mst_ & static_cast<uint16_t>(code.arg2);
+        msr_ &= mst_ | ~static_cast<uint16_t>(code.arg1);
+        msr_ |= mst_ & static_cast<uint16_t>(code.arg2);
+        r_[ST] = msr_;
         exec_cycles_ += kCpuCoreCycles_MSTR;
       } break;
       case kMicro_WAIT: {

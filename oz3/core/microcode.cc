@@ -641,6 +641,8 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
       arg = CpuCore::C0;
     } else if (arg_name == "C1") {
       arg = CpuCore::C1;
+    } else if (arg_name == "C2") {
+      arg = CpuCore::C2;
     } else if (arg_name == "PC") {
       arg = CpuCore::PC;
     } else if (arg_name == "SP") {
@@ -676,8 +678,6 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
                      absl::StrCat("Invalid register index: ", arg_name));
       }
       arg = CpuCore::D0 + arg * 2;
-    } else if (arg_name == "CD") {
-      arg = CpuCore::CD;
     } else if (arg_name == "SD") {
       arg = CpuCore::SD;
     } else {
