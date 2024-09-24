@@ -300,6 +300,18 @@ bool InstructionCompiler::CompileMicroCode(int index) {
       }
       CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
       break;
+    case kMicro_END:
+      if (in_fetch_) {
+        return Error(&parsed, "END in fetch phase");
+      } else if (lock_type_ == LockType::kMemory) {
+        return Error(&parsed, "END between LK and UL");
+      } else if (lock_type_ == LockType::kPort) {
+        return Error(&parsed, "END between PLK and PUL");
+      } else if (lock_type_ == LockType::kCore) {
+        return Error(&parsed, "END between CLK and CUL");
+      }
+      CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
+      break;
     default:
       break;
   }
