@@ -599,8 +599,8 @@ enum MicroOp : uint8_t {
   // Cycles: 1
   //
   // Stores the value from this core's reg2 to the controlled core register
-  // reg1. If this is the controlled core, then this is equivalent to
-  // MOV(reg1,reg2).
+  // reg1. The BM and ST registers cannot be modified by this op. Otherwise, if
+  // this is the controlled core, then this is equivalent to MOV(reg1,reg2).
   kMicro_CST,
 
   // END;

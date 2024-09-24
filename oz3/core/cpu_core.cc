@@ -642,7 +642,9 @@ void CpuCore::RunInstructionLoop() {
         DCHECK(lock_ != nullptr || locked_core_ == this);
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        locked_core_->r_[reg1] = r_[reg2];
+        if (reg1 != BM && reg1 != ST) {
+          locked_core_->r_[reg1] = r_[reg2];
+        }
       } break;
       case kMicro_END:
         state_ = State::kStartInstruction;
