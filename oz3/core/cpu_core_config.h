@@ -33,11 +33,11 @@ inline constexpr int kCpuCoreStartInterruptCycles =
     kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
 
 // The number of cycles required to execute each microcode operation.
-inline constexpr int kCpuCoreCycles_MSTC = 0;
-inline constexpr int kCpuCoreCycles_MSTS = 0;
-inline constexpr int kCpuCoreCycles_MSTX = 0;
-inline constexpr int kCpuCoreCycles_MSTM = 1;
-inline constexpr int kCpuCoreCycles_MSTR = 0;
+inline constexpr int kCpuCoreCycles_MSC = 0;
+inline constexpr int kCpuCoreCycles_MSS = 0;
+inline constexpr int kCpuCoreCycles_MSX = 0;
+inline constexpr int kCpuCoreCycles_MSM = 1;
+inline constexpr int kCpuCoreCycles_MSR = 0;
 inline constexpr int kCpuCoreCycles_ADR = kMemoryBankSetAddressCycles;
 inline constexpr int kCpuCoreCycles_LADR = 0;
 inline constexpr int kCpuCoreCycles_LD = kMemoryBankAccessWordCycles;

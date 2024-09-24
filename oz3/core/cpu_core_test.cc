@@ -45,11 +45,11 @@ enum MicroTestOp : uint8_t {
   kTestOp_MOVI,
   kTestOp_MOV,
   kTestOp_LV,
-  kTestOp_MSTSC,
-  kTestOp_MSTX,
-  kTestOp_MSTI,
-  kTestOp_MSTR1,
-  kTestOp_MSTR2,
+  kTestOp_MSSC,
+  kTestOp_MSX,
+  kTestOp_MSI,
+  kTestOp_MSR1,
+  kTestOp_MSR2,
   kTestOp_ADDI,
   kTestOp_SUBI,
   kTestOp_ADD,
@@ -93,18 +93,18 @@ const InstructionDef kMicroTestInstructions[] = {
     {kTestOp_ZSCO,
      {"ZSCO", kArgImmValue4},
      "UL;"
-     "MSTM(ZSCO,C0);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSM(ZSCO,C0);"
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_EI,
      {"EI"},
      "UL;"
-     "MSTS(I);"
-     "MSTR(I,I);"},
+     "MSS(I);"
+     "MSR(I,I);"},
     {kTestOp_DI,
      {"DI"},
      "UL;"
-     "MSTC(I);"
-     "MSTR(I,I);"},
+     "MSC(I);"
+     "MSR(I,I);"},
     {kTestOp_WAIT,
      {"WAIT", kArgWordRegA},
      "UL;"
@@ -221,162 +221,162 @@ const InstructionDef kMicroTestInstructions[] = {
      "LD(C0);"
      "UL;"
      "MOV(a,C0);"},
-    {kTestOp_MSTSC,
-     {"MSTSC"},
+    {kTestOp_MSSC,
+     {"MSSC"},
      "UL;"
-     "MSTS(Z);MSTR(ZSCO,ZSCO);MOV(R0,ST);"
-     "MSTS(S);MSTR(ZSCO,ZSCO);MOV(R1,ST);"
-     "MSTS(C);MSTR(ZSCO,ZSCO);MOV(R2,ST);"
-     "MSTS(O);MSTR(ZSCO,ZSCO);MOV(R3,ST);"
-     "MSTC(Z);MSTR(ZSCO,ZSCO);MOV(R4,ST);"
-     "MSTC(S);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
-     "MSTC(C);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
-     "MSTC(O);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
-    {kTestOp_MSTX,
-     {"MSTX"},
+     "MSS(Z);MSR(ZSCO,ZSCO);MOV(R0,ST);"
+     "MSS(S);MSR(ZSCO,ZSCO);MOV(R1,ST);"
+     "MSS(C);MSR(ZSCO,ZSCO);MOV(R2,ST);"
+     "MSS(O);MSR(ZSCO,ZSCO);MOV(R3,ST);"
+     "MSC(Z);MSR(ZSCO,ZSCO);MOV(R4,ST);"
+     "MSC(S);MSR(ZSCO,ZSCO);MOV(R5,ST);"
+     "MSC(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
+     "MSC(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {kTestOp_MSX,
+     {"MSX"},
      "UL;"
-     "MSTX(Z);MSTR(ZSCO,ZSCO);MOV(R0,ST);"
-     "MSTX(S);MSTR(ZSCO,ZSCO);MOV(R1,ST);"
-     "MSTX(C);MSTR(ZSCO,ZSCO);MOV(R2,ST);"
-     "MSTX(O);MSTR(ZSCO,ZSCO);MOV(R3,ST);"
-     "MSTX(Z);MSTR(ZSCO,ZSCO);MOV(R4,ST);"
-     "MSTX(S);MSTR(ZSCO,ZSCO);MOV(R5,ST);"
-     "MSTX(C);MSTR(ZSCO,ZSCO);MOV(R6,ST);"
-     "MSTX(O);MSTR(ZSCO,ZSCO);MOV(R7,ST);"},
-    {kTestOp_MSTI,
-     {"MSTSC"},
+     "MSX(Z);MSR(ZSCO,ZSCO);MOV(R0,ST);"
+     "MSX(S);MSR(ZSCO,ZSCO);MOV(R1,ST);"
+     "MSX(C);MSR(ZSCO,ZSCO);MOV(R2,ST);"
+     "MSX(O);MSR(ZSCO,ZSCO);MOV(R3,ST);"
+     "MSX(Z);MSR(ZSCO,ZSCO);MOV(R4,ST);"
+     "MSX(S);MSR(ZSCO,ZSCO);MOV(R5,ST);"
+     "MSX(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
+     "MSX(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {kTestOp_MSI,
+     {"MSSC"},
      "UL;"
-     "MSTS(I);MSTR(I,I);MOV(R0,ST);"
-     "MSTC(I);MSTR(I,I);MOV(R1,ST);"
-     "MSTX(I);MSTR(I,I);MOV(R2,ST);"
-     "MSTX(I);MSTR(I,I);MOV(R3,ST);"},
-    {kTestOp_MSTR1,
-     {"MSTR1"},
+     "MSS(I);MSR(I,I);MOV(R0,ST);"
+     "MSC(I);MSR(I,I);MOV(R1,ST);"
+     "MSX(I);MSR(I,I);MOV(R2,ST);"
+     "MSX(I);MSR(I,I);MOV(R3,ST);"},
+    {kTestOp_MSR1,
+     {"MSR1"},
      "UL;"
-     "MSTS(I);MSTR(ZSCOI,ZSCOI);MSTS(ZSCOI);"
-     "MSTR(_,Z);MOV(R0,ST);"
-     "MSTR(_,S);MOV(R1,ST);"
-     "MSTR(_,C);MOV(R2,ST);"
-     "MSTR(_,O);MOV(R3,ST);"
-     "MSTC(ZSCO);"
-     "MSTR(Z,_);MOV(R4,ST);"
-     "MSTR(S,_);MOV(R5,ST);"
-     "MSTR(C,_);MOV(R6,ST);"
-     "MSTR(O,_);MOV(R7,ST);"},
-    {kTestOp_MSTR2,
-     {"MSTR2"},
+     "MSS(I);MSR(ZSCOI,ZSCOI);MSS(ZSCOI);"
+     "MSR(_,Z);MOV(R0,ST);"
+     "MSR(_,S);MOV(R1,ST);"
+     "MSR(_,C);MOV(R2,ST);"
+     "MSR(_,O);MOV(R3,ST);"
+     "MSC(ZSCO);"
+     "MSR(Z,_);MOV(R4,ST);"
+     "MSR(S,_);MOV(R5,ST);"
+     "MSR(C,_);MOV(R6,ST);"
+     "MSR(O,_);MOV(R7,ST);"},
+    {kTestOp_MSR2,
+     {"MSR2"},
      "UL;"
-     "MSTC(ZSCOI);MSTR(ZSCOI,_);"
-     "MSTR(_,Z);MOV(R0,ST);"
-     "MSTR(_,S);MOV(R1,ST);"
-     "MSTR(_,C);MOV(R2,ST);"
-     "MSTR(_,O);MOV(R3,ST);"
-     "MSTS(ZSCO);MSTR(_,ZSCO);"
-     "MSTR(Z,_);MOV(R4,ST);"
-     "MSTR(S,_);MOV(R5,ST);"
-     "MSTR(C,_);MOV(R6,ST);"
-     "MSTR(O,_);MOV(R7,ST);"},
+     "MSC(ZSCOI);MSR(ZSCOI,_);"
+     "MSR(_,Z);MOV(R0,ST);"
+     "MSR(_,S);MOV(R1,ST);"
+     "MSR(_,C);MOV(R2,ST);"
+     "MSR(_,O);MOV(R3,ST);"
+     "MSS(ZSCO);MSR(_,ZSCO);"
+     "MSR(Z,_);MOV(R4,ST);"
+     "MSR(S,_);MOV(R5,ST);"
+     "MSR(C,_);MOV(R6,ST);"
+     "MSR(O,_);MOV(R7,ST);"},
     {kTestOp_ADDI,
      {"ADDI", kArgWordRegA},
      "UL;"
      "ADDI(a,1);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_SUBI,
      {"SUBI", kArgWordRegA},
      "UL;"
      "ADDI(a,-1);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_ADD,
      {"ADD", kArgWordRegA, kArgWordRegB},
      "UL;"
      "ADD(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_SUB,
      {"SUB", kArgWordRegA, kArgWordRegB},
      "UL;"
      "SUB(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_ADC,
      {"ADC", kArgWordRegA, kArgWordRegB},
      "UL;"
-     "MSTR(ZSCO,_);"
+     "MSR(ZSCO,_);"
      "ADC(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_SBC,
      {"SBC", kArgWordRegA, kArgWordRegB},
      "UL;"
-     "MSTR(ZSCO,_);"
+     "MSR(ZSCO,_);"
      "SBC(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_NEG,
      {"NEG", kArgWordRegA, kArgWordRegB},
      "UL;"
      "NEG(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_CMP,
      {"CMP", kArgWordRegA, kArgWordRegB},
      "UL;"
      "CMP(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_NOT,
      {"NOT", kArgWordRegA, kArgWordRegB},
      "UL;"
      "NOT(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_AND,
      {"AND", kArgWordRegA, kArgWordRegB},
      "UL;"
      "AND(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_OR,
      {"OR", kArgWordRegA, kArgWordRegB},
      "UL;"
      "OR(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_XOR,
      {"XOR", kArgWordRegA, kArgWordRegB},
      "UL;"
      "XOR(a,b);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_SL,
      {"SL", kArgWordRegA},
      "UL;"
      "SL(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_SR,
      {"SR", kArgWordRegA},
      "UL;"
      "SR(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_SRA,
      {"SRA", kArgWordRegA},
      "UL;"
      "SRA(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_RL,
      {"RL", kArgWordRegA},
      "UL;"
-     "MSTS(ZSCO);"
-     "MSTR(_,ZSCO);"
+     "MSS(ZSCO);"
+     "MSR(_,ZSCO);"
      "RL(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_RR,
      {"RR", kArgWordRegA},
      "UL;"
-     "MSTS(ZSCO);"
-     "MSTR(_,ZSCO);"
+     "MSS(ZSCO);"
+     "MSR(_,ZSCO);"
      "RR(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_RLC,
      {"RLC", kArgWordRegA, kArgImmValue3},
      "UL;"
      "RLC(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_RRC,
      {"RRC", kArgWordRegA, kArgImmValue3},
      "UL;"
      "RRC(a);"
-     "MSTR(ZSCO,ZSCO);"},
+     "MSR(ZSCO,ZSCO);"},
     {kTestOp_MATHI,
      {"MATHI"},
      "UL;"
@@ -447,8 +447,8 @@ const InstructionDef kMicroTestInstructions[] = {
      "LK(STACK);"
      "ADR(SP);"
      "LD(ST);"
-     "MSTM(ZSCOI,ST);"
-     "MSTR(ZSCOI,ZSCOI);"
+     "MSM(ZSCOI,ST);"
+     "MSR(ZSCOI,ZSCOI);"
      "LD(PC);"
      "LADR(SP);"
      "UL;"},
@@ -474,7 +474,7 @@ const InstructionDef kMicroTestInstructions[] = {
      "@_SA:PLD(_SA,b);JP(@END);"  // _SA
      "@__A:PLD(__A,b);JP(@END);"  // __A
      "@TSA:PLD(TSA,b);"           // TSA
-     "@END:MSTR(S,S);PUL;"},
+     "@END:MSR(S,S);PUL;"},
     {kTestOp_PST,
      {"PST", kArgImmValue3, kArgWordRegB},
      "UL;"
@@ -497,14 +497,14 @@ const InstructionDef kMicroTestInstructions[] = {
      "@_SA:PST(_SA,b);JP(@END);"  // _SA
      "@__A:PST(__A,b);JP(@END);"  // __A
      "@TSA:PST(TSA,b);"           // TSA
-     "@END:MSTR(S,S);PUL;"},
+     "@END:MSR(S,S);PUL;"},
     {kTestOp_PLDS,
      {"PLDS", kArgImmValue5, kArgWordRegB},
      "UL;"
      "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
      "PLK(C0);"
      "PLD(SA,b);"
-     "MSTR(IZSCO,IZSCO);"
+     "MSR(IZSCO,IZSCO);"
      "PUL;"},
     {kTestOp_PSTS,
      {"PSTS", kArgImmValue5, kArgWordRegB},
@@ -512,7 +512,7 @@ const InstructionDef kMicroTestInstructions[] = {
      "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
      "PLK(C0);"
      "PST(SA,b);"
-     "MSTR(IZSCO,IZSCO);"
+     "MSR(IZSCO,IZSCO);"
      "PUL;"},
     {kTestOp_CBK,
      {"CBK", kArgImmValue2, kArgImmValue6},
@@ -1458,10 +1458,10 @@ TEST(CpuCoreTest, MstsMstcOps) {
   state.ResetCore();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_MSTSC);
+  mem.AddCode(kTestOp_MSSC);
   mem.AddCode(kTestOp_HALT);
 
-  // Execute the MSTS / MSTC instructions.
+  // Execute the MSS / MSC instructions.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
@@ -1487,10 +1487,10 @@ TEST(CpuCoreTest, MstxOp) {
   state.ResetCore();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_MSTX);
+  mem.AddCode(kTestOp_MSX);
   mem.AddCode(kTestOp_HALT);
 
-  // Execute the MSTX instructions.
+  // Execute the MSX instructions.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
@@ -1516,10 +1516,10 @@ TEST(CpuCoreTest, MstiOp) {
   state.ResetCore();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_MSTI);
+  mem.AddCode(kTestOp_MSI);
   mem.AddCode(kTestOp_HALT);
 
-  // Execute the MSTI instructions.
+  // Execute the MSI instructions.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 4);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
@@ -1541,11 +1541,11 @@ TEST(CpuCoreTest, MstrOp) {
   state.ResetCore();
 
   MemAccessor mem(*processor.GetMemory(0));
-  mem.AddCode(kTestOp_MSTR1);
-  mem.AddCode(kTestOp_MSTR2);
+  mem.AddCode(kTestOp_MSR1);
+  mem.AddCode(kTestOp_MSR2);
   mem.AddCode(kTestOp_HALT);
 
-  // Execute the MSTR1 instruction.
+  // Execute the MSR1 instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
@@ -1559,7 +1559,7 @@ TEST(CpuCoreTest, MstrOp) {
   EXPECT_EQ(state.r6, 8 | CpuCore::I);
   EXPECT_EQ(state.r7, 0 | CpuCore::I);
 
-  // Execute the MSTR2 instruction.
+  // Execute the MSR2 instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 16);
   state.Update();

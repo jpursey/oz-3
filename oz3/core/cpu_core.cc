@@ -242,29 +242,29 @@ void CpuCore::RunInstructionLoop() {
   while (mpc_ < instruction_.code.size()) {
     const Microcode code = instruction_.code[mpc_++];
     switch (code.op) {
-      case kMicro_MSTC: {
+      case kMicro_MSC: {
         mst_ &= ~static_cast<uint16_t>(code.arg1);
-        exec_cycles_ += kCpuCoreCycles_MSTC;
+        exec_cycles_ += kCpuCoreCycles_MSC;
       } break;
-      case kMicro_MSTS: {
+      case kMicro_MSS: {
         mst_ |= static_cast<uint16_t>(code.arg1);
-        exec_cycles_ += kCpuCoreCycles_MSTS;
+        exec_cycles_ += kCpuCoreCycles_MSS;
       } break;
-      case kMicro_MSTX: {
+      case kMicro_MSX: {
         mst_ ^= static_cast<uint16_t>(code.arg1);
-        exec_cycles_ += kCpuCoreCycles_MSTX;
+        exec_cycles_ += kCpuCoreCycles_MSX;
       } break;
-      case kMicro_MSTM: {
+      case kMicro_MSM: {
         OZ3_INIT_REG2;
         const uint16_t mask = static_cast<uint16_t>(code.arg1);
         mst_ = (mst_ & ~mask) | r_[reg2] & mask;
-        exec_cycles_ += kCpuCoreCycles_MSTM;
+        exec_cycles_ += kCpuCoreCycles_MSM;
       } break;
-      case kMicro_MSTR: {
+      case kMicro_MSR: {
         msr_ &= mst_ | ~static_cast<uint16_t>(code.arg1);
         msr_ |= mst_ & static_cast<uint16_t>(code.arg2);
         r_[ST] = msr_;
-        exec_cycles_ += kCpuCoreCycles_MSTR;
+        exec_cycles_ += kCpuCoreCycles_MSR;
       } break;
       case kMicro_WAIT: {
         OZ3_INIT_REG1;

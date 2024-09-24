@@ -56,7 +56,7 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int SP = 12;  // Stack pointer
   static constexpr int DP = 13;  // Data pointer
   static constexpr int SD = SP;  // 32-bit stack+data pointer (SP,DP)
-  static constexpr int ST = 14;  // Status register (ready-only outside of MSTR)
+  static constexpr int ST = 14;  // Status register (ready-only outside of MSR)
   static constexpr int BM = 15;  // Bank map register (read-only outside of CBK)
 
   // Number of 16-bit registers.

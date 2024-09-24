@@ -30,11 +30,11 @@ const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
 const MicrocodeDef kMicroCodeDefs[] = {
-    {kMicro_MSTC, "MSTC", MicroArgType::kStatus},
-    {kMicro_MSTS, "MSTS", MicroArgType::kStatus},
-    {kMicro_MSTX, "MSTX", MicroArgType::kStatus},
-    {kMicro_MSTM, "MSTM", MicroArgType::kStatus, MicroArgType::kWordReg},
-    {kMicro_MSTR, "MSTR", MicroArgType::kStatus, MicroArgType::kStatus},
+    {kMicro_MSC, "MSC", MicroArgType::kStatus},
+    {kMicro_MSS, "MSS", MicroArgType::kStatus},
+    {kMicro_MSX, "MSX", MicroArgType::kStatus},
+    {kMicro_MSM, "MSM", MicroArgType::kStatus, MicroArgType::kWordReg},
+    {kMicro_MSR, "MSR", MicroArgType::kStatus, MicroArgType::kStatus},
     {kMicro_WAIT, "WAIT", MicroArgType::kWordReg},
     {kMicro_HALT, "HALT"},
     {kMicro_LK, "LK", MicroArgType::kBank},

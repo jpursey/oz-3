@@ -28,8 +28,8 @@ namespace oz3 {
 //      as they will be restored automatically):
 //      - The ST register is set to the intern MSR register at the end of the
 //        instruction (which starts as equal to ST). To change the persistent
-//        value of ST, use the MSTC/MSTS/MSTX/MSTM operations to set MST and
-//        return with the MSTR operation.
+//        value of ST, use the MSC/MSS/MSX/MSM operations to set MST and
+//        return with the MSR operation.
 //      - The BM register specifies the memory bank mapping and is reset to the
 //        actual memory bank binding at the end of the instruction. To change
 //        the persistent value of BM (and the associated bank mapping), use the
@@ -60,40 +60,40 @@ namespace oz3 {
 //   reg1, reg2: The register value provided to the argument index (r or d).
 enum MicroOp : uint8_t {
 
-  // MSTC(s);
+  // MSC(s);
   //
   // Cycles: 0
   //
   // Clears any flags specified in arg1 from microcode ZSCOI status flags (MST):
   //   MST = MST & ~arg1
-  kMicro_MSTC,
+  kMicro_MSC,
 
-  // MSTS(s);
+  // MSS(s);
   //
   // Cycles: 0
   //
   // Sets any flags specified in arg1 inside microcode ZSCOI status flags (MST):
   //   MST = MST | arg1
-  kMicro_MSTS,
+  kMicro_MSS,
 
-  // MSTX(s);
+  // MSX(s);
   //
   // Cycles: 0
   //
   // Exclusively ors arg1 with microcode ZSCOI status (MST):
   //   MST = MST ^ arg1
-  kMicro_MSTX,
+  kMicro_MSX,
 
-  // MSTM(s,r);
+  // MSM(s,r);
   //
   // Cycles: 1
   //
   // Moves (copies) the flags specified by arg1 in reg2 to the microcode status
   // flags (MST):
   //   MST = (MST & ~arg1) | (reg2 & arg1)
-  kMicro_MSTM,
+  kMicro_MSM,
 
-  // MSTR(s,s);
+  // MSR(s,s);
   //
   // Cycles: 0
   //
@@ -113,7 +113,7 @@ enum MicroOp : uint8_t {
   //       ZS_O_      Z_C__      ZS___       __CO_         Z_CO_
   //       Z_C_I      _S_O_      ____I       ____I         Z_C__
   //       _S_O_      C_Z_I      ____I       ____I         _S_OI
-  kMicro_MSTR,
+  kMicro_MSR,
 
   // WAIT(r);
   //
