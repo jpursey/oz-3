@@ -24,6 +24,7 @@ namespace oz3 {
 namespace {
 
 static constexpr int kFirstPortLock = 10;
+static constexpr int kFirstCoreLock = 100;
 
 const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
@@ -73,6 +74,11 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_PUL, "PUL"},
     {kMicro_PLD, "PLD", MicroArgType::kPortMode, MicroArgType::kWordReg},
     {kMicro_PST, "PST", MicroArgType::kPortMode, MicroArgType::kWordReg},
+    {kMicro_CLK, "CLK", MicroArgType::kWordReg},
+    {kMicro_CUL, "CUL"},
+    {kMicro_CBK, "CBK", MicroArgType::kBank, MicroArgType::kWordReg},
+    {kMicro_CLD, "CLD", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_CST, "CST", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_END, "END"},
 };
 
@@ -100,7 +106,7 @@ class InstructionCompiler {
     std::string_view arg2_name;  // Second argument name.
   };
 
-  enum class LockType { kNone, kMemory, kPort };
+  enum class LockType { kNone, kMemory, kPort, kCore };
 
   bool Error(const ParsedMicroCode* parsed, absl::string_view message) {
     if (error_string_ != nullptr) {
@@ -135,7 +141,7 @@ class InstructionCompiler {
   std::string* const error_string_;
   Microcode* microcode_ = nullptr;
 
-  // Set by last LK or PLK operation. Cleared by UL and PUL.
+  // Set by last LK, PLK, or CLK operation. Cleared by UL, PUL, and CUL.
   LockType lock_type_ = LockType::kMemory;
 
   // True if an ADR operation has been seen. Cleared by UL.
@@ -177,6 +183,8 @@ bool InstructionCompiler::Compile() {
     }
   } else if (lock_type_ == LockType::kPort) {
     return Error("PLK not cleared by PUL");
+  } else if (lock_type_ == LockType::kCore) {
+    return Error("CLK not cleared by CUL");
   }
   return true;
 }
@@ -260,6 +268,14 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "PST without a prior PLK");
       }
       break;
+    case kMicro_CLK:
+      CHECK(lock_type_ == LockType::kNone);  // Handled by InitLocks.
+      lock_type_ = LockType::kCore;
+      break;
+    case kMicro_CUL:
+      CHECK(lock_type_ == LockType::kCore);  // Handled by InitLocks.
+      lock_type_ = LockType::kNone;
+      break;
     case kMicro_WAIT:
       if (in_fetch_) {
         return Error(&parsed, "WAIT in fetch phase");
@@ -267,6 +283,8 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "WAIT between LK and UL");
       } else if (lock_type_ == LockType::kPort) {
         return Error(&parsed, "WAIT between PLK and PUL");
+      } else if (lock_type_ == LockType::kCore) {
+        return Error(&parsed, "WAIT between CLK and CUL");
       }
       CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
       break;
@@ -277,6 +295,8 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "HALT between LK and UL");
       } else if (lock_type_ == LockType::kPort) {
         return Error(&parsed, "HALT between PLK and PUL");
+      } else if (lock_type_ == LockType::kCore) {
+        return Error(&parsed, "HALT between CLK and CUL");
       }
       CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
       break;
@@ -313,6 +333,16 @@ bool InstructionCompiler::ExtractLabels() {
   return true;
 }
 
+absl::string_view LockOpNameFromIndex(int lock) {
+  if (lock < kFirstPortLock) {
+    return "LK";
+  }
+  if (lock < kFirstCoreLock) {
+    return "PLK";
+  }
+  return "CLK";
+}
+
 bool InstructionCompiler::InitLocks() {
   locks_.reserve(parsed_code_.size());
   static_assert(
@@ -320,15 +350,16 @@ bool InstructionCompiler::InitLocks() {
           CpuCore::DATA < kFirstPortLock && CpuCore::EXTRA < kFirstPortLock,
       "Memory locks must be lower that first port lock");
   int port_lock = kFirstPortLock;
+  int core_lock = kFirstCoreLock;
   int lock = CpuCore::CODE;
   int index = 0;
+  int lock_count = 0;
   for (ParsedMicroCode& parsed : parsed_code_) {
     ++index;
     locks_.push_back(lock);
     if (parsed.op_name == "LK") {
       if (lock >= 0) {
-        return Error(absl::StrCat("LK when prior ",
-                                  (lock < kFirstPortLock ? "LK" : "PLK"),
+        return Error(absl::StrCat("LK when prior ", LockOpNameFromIndex(lock),
                                   " is still locked. Code number: ", index));
       }
       int8_t arg;
@@ -337,6 +368,7 @@ bool InstructionCompiler::InitLocks() {
         return false;
       }
       lock = arg;
+      ++lock_count;
     } else if (parsed.op_name == "UL") {
       if (lock < 0 || lock >= kFirstPortLock) {
         return Error(
@@ -345,17 +377,34 @@ bool InstructionCompiler::InitLocks() {
       lock = -1;
     } else if (parsed.op_name == "PLK") {
       if (lock >= 0) {
-        return Error(absl::StrCat("PLK when prior ",
-                                  (lock < kFirstPortLock ? "LK" : "PLK"),
+        return Error(absl::StrCat("PLK when prior ", LockOpNameFromIndex(lock),
                                   " is still locked. Code number: ", index));
       }
       lock = port_lock++;
+      ++lock_count;
     } else if (parsed.op_name == "PUL") {
       if (lock < kFirstPortLock) {
         return Error(
             absl::StrCat("PUL without a prior PLK. Code number: ", index));
       }
       lock = -1;
+    } else if (parsed.op_name == "CLK") {
+      if (lock >= 0) {
+        return Error(absl::StrCat("CLK when prior ", LockOpNameFromIndex(lock),
+                                  " is still locked. Code number: ", index));
+      }
+      lock = core_lock++;
+      ++lock_count;
+    } else if (parsed.op_name == "CUL") {
+      if (lock < kFirstCoreLock) {
+        return Error(
+            absl::StrCat("CUL without a prior CLK. Code number: ", index));
+      }
+      lock = -1;
+    }
+    if (lock_count > kMaxLocksPerInstruction) {
+      return Error(absl::StrCat("Too many LK/UL, PLK/PUL, CLK/CUL pairs (max ",
+                                kMaxLocksPerInstruction, ")"));
     }
   }
   // We need a value for one past the end, since it is a valid jump address.
@@ -412,6 +461,9 @@ std::string LockName(int lock) {
       return "DATA";
     case CpuCore::EXTRA:
       return "EXTRA";
+  }
+  if (lock >= kFirstCoreLock) {
+    return absl::StrCat("Core section ", lock - kFirstCoreLock + 1);
   }
   if (lock >= kFirstPortLock) {
     return absl::StrCat("Port section ", lock - kFirstPortLock + 1);
@@ -597,6 +649,8 @@ bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
       arg = CpuCore::DP;
     } else if (arg_name == "ST") {
       arg = CpuCore::ST;
+    } else if (arg_name == "BM") {
+      arg = CpuCore::BM;
     } else {
       return Error(parsed, absl::StrCat("Invalid word argument: ", arg_name));
     }

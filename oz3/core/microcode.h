@@ -22,10 +22,17 @@ namespace oz3 {
 //   r: Word register. In microcode assembly, this may be any explicitly named
 //      word register (e.g. R0, PC, ST, etc.) or a register provided from
 //      the instruction code (a or b for word args; a0, a1, b0, or b1 for
-//      low/high word parts of dword args A and B).
-//   d: Dword register. In microcode assembly, this may be any explicitly named
-//      dword register (e.g. D0, CD, etc.) or provided by the instruction arg
-//      code byte (A or B).
+//      low/high word parts of dword args A and B). There are some registers
+//      that can't be permanently changed via standard microcode (this does mean
+//      the "read-only" parts can be used as temporary storage within an
+//      instruction's microcode):
+//      - The ST register's upper byte contains control bits and is reset at the
+//        end of the instruction. It can only be changed persistently from
+//        outside the core.
+//      - The BM register specifies the memory bank mapping and is reset to the
+//        actual memory bank binding at the end of the instruction. To change
+//        the persistent value of BM (and the associated bank mapping), use the
+//        CBK.
 //   v: Immediate value. This is an 8-bit signed value. In microcode assembly,
 //      this is an explicit integer in the range [-128,127].
 //   b: Memory bank. In microcode assembly this must be one of CODE, STACK,
@@ -133,7 +140,8 @@ enum MicroOp : uint8_t {
   // Lock memory bank arg1 and sets it as the active memory bank. This is used
   // to lock a memory bank for exclusive access. If the bank is already locked,
   // the microcode execution is paused for the instruction until the bank is
-  // unlocked. Only one lock can be active at a time (bank or port).
+  // unlocked. Only one lock can be active at a time (memory bank, port, or
+  // core).
   kMicro_LK,
 
   // UL;
@@ -499,8 +507,9 @@ enum MicroOp : uint8_t {
   // Locks the port specified by reg1 and sets it as the active port. This is
   // used to lock a port for exclusive access. If the port is already locked,
   // the microcode execution is paused for the instruction until the port is
-  // unlocked. Only one lock can be active at a time (memory bank or port). If
-  // the port does not exist on the processor, all port operations are no-ops.
+  // unlocked. Only one lock can be active at a time (memory bank, port, or
+  // core). If the port does not exist on the processor, all port operations are
+  // no-ops.
   kMicro_PLK,
 
   // PUL(r);
@@ -528,7 +537,7 @@ enum MicroOp : uint8_t {
   kMicro_PLD,
 
   // PST(p,r);
-  // 
+  //
   // Cycles: 1
   //
   // Stores the value from reg2 into the port, respecting specified mode flags
@@ -543,6 +552,57 @@ enum MicroOp : uint8_t {
   // The port must be locked from PLK.
   kMicro_PST,
 
+  // CLK(r);
+  //
+  // Cycles: 0
+  //
+  // Locks the CPU core specified by reg1 and sets it as controlled core for
+  // core control operations. This is used to lock a core for exclusive access.
+  // If the core is already locked, the microcode execution is paused for the
+  // instruction until the core is unlocked. Only one lock can be active at a
+  // time (memory bank, port, or core).
+  //
+  // If the specified core does not exist on the processor, all core control
+  // operations are no-ops until CUL is called. Before CLK, the controlled core
+  // is this core (the one running the microcode).
+  kMicro_CLK,
+
+  // CUL(r);
+  //
+  // Cycles: 0
+  //
+  // Unlocks the CPU core previously locked by CLK. All locked cores must be
+  // unlocked before microcode execution completes in the instruction. The
+  // controlled core is reset to this core (the one running the microcode).
+  kMicro_CUL,
+
+  // CBK(b,r);
+  //
+  // Cycles: 1
+  //
+  // Sets the memory bank of the controlled core (from CLK) to the bank
+  // specified by reg2. If no core is locked, then this affects this core.
+  // This is the only way to set the BM register.
+  kMicro_CBK,
+
+  // CLD(r,r);
+  //
+  // Cycles: 1
+  //
+  // Loads the value from the controlled core register reg1 into this core's
+  // reg2. If this is the controlled core, then this is equivalent to
+  // MOV(reg2,reg1).
+  kMicro_CLD,
+
+  // CST(r,r);
+  //
+  // Cycles: 1
+  //
+  // Stores the value from this core's reg2 to the controlled core register
+  // reg1. If this is the controlled core, then this is equivalent to
+  // MOV(reg1,reg2).
+  kMicro_CST,
+
   // END;
   //
   // Cycles: 0
@@ -550,6 +610,10 @@ enum MicroOp : uint8_t {
   // Terminates the microcode execution for the instruction.
   kMicro_END,
 };
+
+// The maximum number of lock/unlock pairs of any time (LK/UL, PLK/PUL, CLK/CUL)
+// that can exist in a single instruction.
+inline constexpr int kMaxLocksPerInstruction = 10;
 
 // The type of an argument for microcode instructions.
 enum class MicroArgType {

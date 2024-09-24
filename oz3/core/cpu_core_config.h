@@ -74,6 +74,9 @@ inline constexpr int kCpuCoreCycles_ILD = 1;
 inline constexpr int kCpuCoreCycles_IST = 1;
 inline constexpr int kCpuCoreCycles_PLD = 1;
 inline constexpr int kCpuCoreCycles_PST = 1;
+inline constexpr int kCpuCoreCycles_CBK = 1;
+inline constexpr int kCpuCoreCycles_CLD = 1;
+inline constexpr int kCpuCoreCycles_CST = 1;
 
 //==============================================================================
 // CpuCoreConfig

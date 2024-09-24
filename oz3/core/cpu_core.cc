@@ -209,8 +209,15 @@ void CpuCore::FetchInstruction() {
   std::memcpy(&r_[CD], instruction_.c, sizeof(instruction_.c));
   mpc_ = 0;
   mst_ = r_[ST];
+  mbm_ = r_[BM];
   state_ = State::kRunInstruction;
   RunInstruction();
+}
+
+void CpuCore::RunInstruction() {
+  RunInstructionLoop();
+  r_[ST] = (mst_ & 0xFF00) | (r_[ST] & 0x00FF);
+  r_[BM] = mbm_;
 }
 
 #define OZ3_INIT_REG1   \
@@ -228,7 +235,7 @@ void CpuCore::FetchInstruction() {
 #define OZ3_S (rs << SShift)
 #define OZ3_C ((r < a1) << CShift)
 #define OZ3_O ((~((a1 >> 15) ^ (a2 >> 15)) & ((a1 >> 15) ^ rs)) << OShift)
-void CpuCore::RunInstruction() {
+void CpuCore::RunInstructionLoop() {
   while (mpc_ < instruction_.code.size()) {
     const Microcode code = instruction_.code[mpc_++];
     switch (code.op) {
@@ -568,6 +575,74 @@ void CpuCore::RunInstruction() {
         Port& port = processor_->GetPort(locked_port_);
         mst_ = (mst_ & ~S) |
                (port.StoreWord(*lock_, code.arg1, r_[reg2]) << SShift);
+      } break;
+      case kMicro_CLK: {
+        if (exec_cycles_ > 0) {
+          --mpc_;
+          return;
+        }
+        DCHECK(lock_ == nullptr && locked_core_ == this);
+        OZ3_INIT_REG1;
+        const int core_index = r_[reg1];
+        if (core_index >= processor_->GetNumCores()) {
+          locked_core_ = nullptr;
+          break;
+        }
+        locked_core_ = processor_->GetCore(core_index);
+        if (locked_core_ != this) {
+          lock_ = locked_core_->RequestLock();
+          if (!lock_->IsLocked()) {
+            return;
+          }
+        }
+      } break;
+      case kMicro_CUL: {
+        if (exec_cycles_ > 0) {
+          --mpc_;
+          return;
+        }
+        DCHECK(lock_ != nullptr || locked_core_ == this ||
+               locked_core_ == nullptr);
+        DCHECK(locked_bank_ == -1 && locked_port_ == -1);
+        lock_ = nullptr;
+        locked_core_ = this;
+      } break;
+      case kMicro_CBK: {
+        exec_cycles_ += kCpuCoreCycles_CBK;
+        if (locked_core_ == nullptr) {
+          break;
+        }
+        DCHECK(lock_ != nullptr || locked_core_ == this);
+        OZ3_INIT_REG2;
+        const uint16_t bank_index = r_[reg2];
+        if (bank_index >= kMaxMemoryBanks) {
+          break;
+        }
+        locked_core_->banks_[code.arg1] = processor_->GetMemory(bank_index);
+        const uint16_t bank_mask = uint16_t(0xF) << (code.arg1 * 4);
+        locked_core_->r_[BM] = locked_core_->mbm_ =
+            (locked_core_->r_[BM] & ~bank_mask) |
+            (bank_index << (code.arg1 * 4));
+      } break;
+      case kMicro_CLD: {
+        exec_cycles_ += kCpuCoreCycles_CLD;
+        if (locked_core_ == nullptr) {
+          break;
+        }
+        DCHECK(lock_ != nullptr || locked_core_ == this);
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        r_[reg2] = locked_core_->r_[reg1];
+      } break;
+      case kMicro_CST: {
+        exec_cycles_ += kCpuCoreCycles_CST;
+        if (locked_core_ == nullptr) {
+          break;
+        }
+        DCHECK(lock_ != nullptr || locked_core_ == this);
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        locked_core_->r_[reg1] = r_[reg2];
       } break;
       case kMicro_END:
         state_ = State::kStartInstruction;

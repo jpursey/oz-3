@@ -95,7 +95,7 @@ class Processor final {
 
   Cycles cycles_ = 0;
 };
-static_assert(sizeof(Processor) <= 100000, "Processor is too large");
+static_assert(sizeof(Processor) <= 1024, "Processor is too large");
 
 //==============================================================================
 // Processor inlines

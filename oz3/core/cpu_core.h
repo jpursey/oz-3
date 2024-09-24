@@ -57,12 +57,13 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int DP = 12;  // Data pointer
   static constexpr int SD = SP;  // 32-bit Stack+data pointer (SP,DP)
   static constexpr int ST = 13;  // Status flags register
-  static constexpr int BM = 14;  // Bank mapping register
+  static constexpr int BM = 14;  // Bank map register (read-only outside of CBK)
 
   // Number of 16-bit registers.
   static constexpr int kRegisterCount = BM + 1;
 
-  // Flags in the ST register
+  // Status flags in the ST register. The upper byte of the ST register is for
+  // external control flags and cannot be changed by a CpuCore.
   static constexpr uint16_t ZShift = 0;       // Zero flag shift
   static constexpr uint16_t SShift = 1;       // Sign flag shift
   static constexpr uint16_t CShift = 2;       // Carry flag shift
@@ -273,6 +274,7 @@ class CpuCore final : public ExecutionComponent {
   void StartInstruction();
   void FetchInstruction();
   void RunInstruction();
+  void RunInstructionLoop();
 
   // Owning processor.
   Processor* processor_ = nullptr;
@@ -296,14 +298,16 @@ class CpuCore final : public ExecutionComponent {
 
   // Lock for a dependent resource the CpuCore requires.
   std::unique_ptr<Lock> lock_;
-  int locked_bank_ = -1;  // Current locked bank index.
-  int locked_port_ = -1;  // Current locked port index.
+  int locked_bank_ = -1;         // Current locked bank index.
+  int locked_port_ = -1;         // Current locked port index.
+  CpuCore* locked_core_ = this;  // Current locked core.
 
   // Microcode implementation
   InstructionMicrocodes micro_codes_;
   DecodedInstruction instruction_ = {};
   int mpc_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).
+  uint16_t mbm_ = 0;  // Bank mapping from microcode (same BM register).
 };
 
 inline bool CpuCore::IsInterruptPending() const {
