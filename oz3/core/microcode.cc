@@ -260,6 +260,26 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "PST without a prior PLK");
       }
       break;
+    case kMicro_WAIT:
+      if (in_fetch_) {
+        return Error(&parsed, "WAIT in fetch phase");
+      } else if (lock_type_ == LockType::kMemory) {
+        return Error(&parsed, "WAIT between LK and UL");
+      } else if (lock_type_ == LockType::kPort) {
+        return Error(&parsed, "WAIT between PLK and PUL");
+      }
+      CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
+      break;
+    case kMicro_HALT:
+      if (in_fetch_) {
+        return Error(&parsed, "HALT in fetch phase");
+      } else if (lock_type_ == LockType::kMemory) {
+        return Error(&parsed, "HALT between LK and UL");
+      } else if (lock_type_ == LockType::kPort) {
+        return Error(&parsed, "HALT between PLK and PUL");
+      }
+      CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
+      break;
     default:
       break;
   }

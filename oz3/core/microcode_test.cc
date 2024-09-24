@@ -1232,6 +1232,56 @@ TEST(MicrocodeTest, NoPortUnlock) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
+TEST(MicrocodeTest, WaitDuringFetch) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "WAIT(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, WaitWithinMemoryLock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);WAIT(C0);UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, WaitWithinPortLock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;PLK(C0);WAIT(C0);PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, HaltDuringFetch) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "HALT;UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, HaltWithinMemoryLock) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;LK(DATA);HALT;UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, HaltWithinPortLock) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;PLK(C0);HALT;PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
 TEST(MicrocodeTest, DefaultCodeSizeIsOne) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "UL;"};
   InstructionMicrocodes codes;
