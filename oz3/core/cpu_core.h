@@ -63,13 +63,12 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int kRegisterCount = BM + 1;
 
   // Status flags in the ST register. The upper byte of the ST register is for
-  // external control flags and cannot be changed by a CpuCore.
+  // external control flags and cannot be changed by microcode.
   static constexpr uint16_t ZShift = 0;       // Zero flag shift
   static constexpr uint16_t SShift = 1;       // Sign flag shift
   static constexpr uint16_t CShift = 2;       // Carry flag shift
   static constexpr uint16_t OShift = 3;       // Overflow flag shift
   static constexpr uint16_t IShift = 4;       // Interrupt enable flag shift
-  static constexpr uint16_t TShift = 8;       // Trace flag shift
   static constexpr uint16_t Z = 1 << ZShift;  // Zero flag
   static constexpr uint16_t S = 1 << SShift;  // Sign flag
   static constexpr uint16_t C = 1 << CShift;  // Carry flag
@@ -77,7 +76,11 @@ class CpuCore final : public ExecutionComponent {
   static constexpr uint16_t ZSCO = Z | S | C | O;  // All ALU flags
   static constexpr uint16_t I = 1 << IShift;       // Interrupt enable flag
   static constexpr uint16_t ZSCOI = ZSCO | I;      // All core-settable flags
-  static constexpr uint16_t T = 1 << TShift;       // Trace flag
+
+  static constexpr uint16_t TShift = 8;       // Trace flag shift
+  static constexpr uint16_t WShift = 9;       // Wait flag shift
+  static constexpr uint16_t T = 1 << TShift;  // Trace flag
+  static constexpr uint16_t W = 1 << WShift;  // Wait flag
 
   // Banks reference in the CPU core
   static constexpr int CODE = 0;   // Code bank
@@ -275,6 +278,8 @@ class CpuCore final : public ExecutionComponent {
   void InitBanks();
 
   // State handlers
+  void Idle();
+  void Waiting();
   void HandleInterrupt();
   void PushInterruptState();
   void StartInterrupt();
@@ -290,6 +295,12 @@ class CpuCore final : public ExecutionComponent {
   // Current execution state.
   State state_ = State::kIdle;
   Cycles exec_cycles_ = 0;  // Cycles accumulated during Execute.
+  Cycles fetch_start_ = 0;  // Cycle count when fetch started
+
+  // Wait state
+  Cycles wait_end_ = 0;    // Cycle count when wait should end
+  uint16_t wait_pc_ = 0;   // PC value to return to after wait completes.
+  uint16_t wait_reg_ = 0;  // Register that will receive completion info.
 
   // Bank assignments.
   MemoryBank* banks_[4] = {};
@@ -318,6 +329,7 @@ class CpuCore final : public ExecutionComponent {
   uint16_t msr_ = 0;  // Status flags that are the result of the instruction.
   uint16_t mbm_ = 0;  // Bank mapping from microcode (same BM register).
 };
+static_assert(sizeof(CpuCore) < 512, "CpuCore too big");
 
 inline bool CpuCore::IsInterruptPending() const {
   return it_ != 0 && (r_[ST] & I) != 0;

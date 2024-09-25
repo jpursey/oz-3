@@ -45,6 +45,7 @@ void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
   if (params.mask & ResetParams::DP) {
     r_[DP] = params.dp;
   }
+  r_[ST] &= ~W;
   state_ = State::kStartInstruction;
 }
 
@@ -88,21 +89,10 @@ void CpuCore::Execute() {
     }
     switch (state_) {
       case State::kIdle:
-        if (IsInterruptPending()) {
-          state_ = State::kHandleInterrupt;
-          break;
-        }
-        exec_cycles_ += 1;
+        Idle();
         break;
       case State::kWaiting:
-        if (IsInterruptPending()) {
-          state_ = State::kHandleInterrupt;
-          break;
-        }
-        exec_cycles_ += 1;
-        if (--r_[C0] == 0) {
-          state_ = State::kStartInstruction;
-        }
+        Waiting();
         break;
       case State::kHandleInterrupt:
         HandleInterrupt();
@@ -128,6 +118,30 @@ void CpuCore::Execute() {
     }
   } while (exec_cycles_ == 0);
   AdvanceCycles(exec_cycles_);
+}
+
+void CpuCore::Idle() {
+  if (IsInterruptPending()) {
+    state_ = State::kHandleInterrupt;
+    return;
+  }
+  exec_cycles_ += 1;
+}
+
+void CpuCore::Waiting() {
+  DCHECK(r_[ST] & W);
+  if (IsInterruptPending()) {
+    state_ = State::kHandleInterrupt;
+    return;
+  }
+  exec_cycles_ += 1;
+  const Cycles current_cycles = GetCycles() + exec_cycles_;
+  if (current_cycles >= wait_end_) {
+    r_[ST] &= ~W;
+    r_[wait_reg_] =
+        static_cast<uint16_t>((current_cycles - wait_end_) & 0xFFFF);
+    state_ = State::kStartInstruction;
+  }
 }
 
 void CpuCore::HandleInterrupt() {
@@ -192,7 +206,11 @@ void CpuCore::ReturnFromInterrupt() {
   r_[SP] += 2;
   AllowLock();
   exec_cycles_ += kCpuCoreReturnFromInterruptCycles;
-  state_ = State::kStartInstruction;
+  if ((r_[ST] & W) != 0 && r_[PC] == wait_pc_) {
+    state_ = State::kWaiting;
+  } else {
+    state_ = State::kStartInstruction;
+  }
 }
 
 void CpuCore::StartInstruction() {
@@ -220,6 +238,7 @@ void CpuCore::FetchInstruction() {
   banks_[CODE]->LoadWord(*lock_, code);
   micro_codes_.Decode(code, instruction_);
   r_[PC] += instruction_.size;
+  fetch_start_ = GetCycles();
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[C0], instruction_.c, sizeof(instruction_.c));
   mpc_ = 0;
@@ -285,12 +304,25 @@ void CpuCore::RunInstructionLoop() {
         exec_cycles_ += kCpuCoreCycles_MSR;
       } break;
       case kMicro_WAIT: {
+        // There can only be one WAIT instruction in progress at a time.
+        if (mst_ & W) {
+          msr_ |= O;
+          state_ = State::kStartInstruction;
+          return;
+        }
+        msr_ &= ~O;
         OZ3_INIT_REG1;
-        if (r_[reg1] <= kCpuCoreFetchAndDecodeCycles) {
+        wait_end_ = fetch_start_ + r_[reg1];
+        wait_reg_ = reg1;
+        const Cycles current_cycles = GetCycles();
+        if (wait_end_ <= current_cycles) {
+          r_[wait_reg_] =
+              static_cast<uint16_t>((current_cycles - wait_end_) & 0xFFFF);
           state_ = State::kStartInstruction;
         } else {
-          r_[C0] = r_[reg1] - kCpuCoreFetchAndDecodeCycles;
+          msr_ |= W;
           state_ = State::kWaiting;
+          wait_pc_ = r_[PC];
         }
         return;
       } break;
@@ -654,6 +686,9 @@ void CpuCore::RunInstructionLoop() {
         locked_core_->r_[BM] = locked_core_->mbm_ =
             (locked_core_->r_[BM] & ~bank_mask) |
             (bank_index << (code.arg1 * 4));
+        if (code.arg1 == CODE && (msr_ & W) != 0) {
+          msr_ &= ~W;
+        }
       } break;
       case kMicro_CLD: {
         exec_cycles_ += kCpuCoreCycles_CLD;

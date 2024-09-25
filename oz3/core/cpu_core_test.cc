@@ -1164,12 +1164,15 @@ TEST(CpuCoreTest, WaitOp) {
   mem.AddCode(kTestOp_WAIT, CpuCore::R4);
   mem.AddCode(kTestOp_HALT);
 
-  // Execute through the first three WAITs which should actually put the CPU
+  // Execute through the first three WAITs which shouldn't actually put the CPU
   // into a wait state, as the wait times are too small.
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 4);
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
   state.Update();
   EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.r0, 3);  // Ran 3 cycles longer than requested
+  EXPECT_EQ(state.r1, 2);  // Ran 2 cycles longer than requested
+  EXPECT_EQ(state.r2, 0);  // Ran exactly the requested number of cycles
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4);
 
   // The next wait (which is already fetched and decoded) should take exactly
@@ -1179,6 +1182,7 @@ TEST(CpuCoreTest, WaitOp) {
   state.Update();
   EXPECT_EQ(state.pc, 4);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 1);
+  EXPECT_EQ(state.r3, 0);
 
   // The final wait takes two cycles, so we wait 1 extra cycle to get through
   // the fetch+decode and the first cycle of waiting.
@@ -1195,6 +1199,7 @@ TEST(CpuCoreTest, WaitOp) {
   state.Update();
   EXPECT_EQ(state.pc, 5);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 3);
+  EXPECT_EQ(state.r4, 0);
 
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
@@ -3382,6 +3387,10 @@ TEST(CpuCoreTest, InterruptDuringWait) {
 
   // Interrupt 1
   mem.SetAddress(100);
+  mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(5000);
+  mem.AddCode(kTestOp_WAIT, CpuCore::R3);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc3 = mem.GetAddress();
   mem.AddCode(kTestOp_IRET);
   mem.AddCode(kTestOp_HALT);
 
@@ -3390,13 +3399,32 @@ TEST(CpuCoreTest, InterruptDuringWait) {
     return core.GetState() == CpuCore::State::kWaiting;
   }));
   EXPECT_EQ(state.pc, pc1);
+  const Cycles wait_start =
+      core.GetCycles() - (kCpuCoreFetchAndDecodeCycles + 1);
+
+  // Wait a little longer
+  processor.Execute(100);
 
   // Execute interrupt 1
   core.RaiseInterrupt(1);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  EXPECT_EQ(state.st, CpuCore::W | CpuCore::O);
+  EXPECT_EQ(state.r3, 5000);
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
-  EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::O);
+  EXPECT_EQ(state.st, CpuCore::W | CpuCore::I | CpuCore::Z);
   EXPECT_EQ(state.pc, pc1);
+
+  // Execute until waiting again
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
+    return core.GetState() == CpuCore::State::kWaiting;
+  }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
+    return core.GetState() != CpuCore::State::kWaiting;
+  }));
+  EXPECT_EQ(core.GetState(), CpuCore::State::kStartInstruction);
+  const Cycles wait_end = core.GetCycles();
+  EXPECT_EQ(wait_end - wait_start, 1000);
+  EXPECT_EQ(state.r3, 0);
 
   // Execute through the HALT instruction
   ExecuteUntilHalt(processor, state);
