@@ -70,6 +70,7 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_INT, "INT", MicroArgType::kWordReg},
     {kMicro_ILD, "ILD", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_IST, "IST", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_IRT, "IRT"},
     {kMicro_PLK, "PLK", MicroArgType::kWordReg},
     {kMicro_PUL, "PUL"},
     {kMicro_PLD, "PLD", MicroArgType::kPortMode, MicroArgType::kWordReg},
@@ -297,6 +298,18 @@ bool InstructionCompiler::CompileMicroCode(int index) {
         return Error(&parsed, "HALT between PLK and PUL");
       } else if (lock_type_ == LockType::kCore) {
         return Error(&parsed, "HALT between CLK and CUL");
+      }
+      CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
+      break;
+    case kMicro_IRT:
+      if (in_fetch_) {
+        return Error(&parsed, "IRT in fetch phase");
+      } else if (lock_type_ == LockType::kMemory) {
+        return Error(&parsed, "IRT between LK and UL");
+      } else if (lock_type_ == LockType::kPort) {
+        return Error(&parsed, "IRT between PLK and PUL");
+      } else if (lock_type_ == LockType::kCore) {
+        return Error(&parsed, "IRT between CLK and CUL");
       }
       CHECK(lock_type_ == LockType::kNone) << "Unhandled lock type";
       break;

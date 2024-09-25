@@ -32,6 +32,10 @@ inline constexpr int kCpuCoreFetchAndDecodeCycles =
 inline constexpr int kCpuCoreStartInterruptCycles =
     kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
 
+// The number of cycles required to return from an interrupt on a CpuCore.
+inline constexpr int kCpuCoreReturnFromInterruptCycles =
+    kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
+
 // The number of cycles required to execute each microcode operation.
 inline constexpr int kCpuCoreCycles_MSC = 0;
 inline constexpr int kCpuCoreCycles_MSS = 0;

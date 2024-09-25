@@ -117,6 +117,11 @@ class CpuCore final : public ExecutionComponent {
     //   - kFetchInstruction after locking CODE memory.
     kStartInterrupt,
 
+    // The core is returning from an interrupt (reversing PushInterruptState).
+    // Transitions to:
+    //   - kStartInstruction after popping the state from the stack.
+    kReturnFromInterrupt,
+
     // The core is ready to start a new instruction.
     // Transitions to:
     //   - kHandleInterrupt if an interrupt is raised and interrupts are enabled
@@ -133,7 +138,8 @@ class CpuCore final : public ExecutionComponent {
     // Transitions to:
     //   - kStartInstruction after the instruction completes.
     //   - kWaiting if WAIT microcode is executed and did not complete.
-    //   - kIdle if HALT instruction is executed.
+    //   - kIdle if HALT microcode is executed.
+    //   - kReturnFromInterrupt if IRT microcode is executed.
     kRunInstruction,
   };
 
@@ -272,6 +278,7 @@ class CpuCore final : public ExecutionComponent {
   void HandleInterrupt();
   void PushInterruptState();
   void StartInterrupt();
+  void ReturnFromInterrupt();
   void StartInstruction();
   void FetchInstruction();
   void RunInstruction();

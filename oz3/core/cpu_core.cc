@@ -113,6 +113,9 @@ void CpuCore::Execute() {
       case State::kStartInterrupt:
         StartInterrupt();
         break;
+      case State::kReturnFromInterrupt:
+        ReturnFromInterrupt();
+        break;
       case State::kStartInstruction:
         StartInstruction();
         break;
@@ -179,6 +182,19 @@ void CpuCore::StartInterrupt() {
   state_ = State::kFetchInstruction;
 }
 
+void CpuCore::ReturnFromInterrupt() {
+  DCHECK(lock_ != nullptr && locked_bank_ == STACK);
+  banks_[STACK]->SetAddress(*lock_, r_[SP]);
+  banks_[STACK]->LoadWord(*lock_, r_[ST]);
+  banks_[STACK]->LoadWord(*lock_, r_[PC]);
+  lock_ = nullptr;
+  locked_bank_ = -1;
+  r_[SP] += 2;
+  AllowLock();
+  exec_cycles_ += kCpuCoreReturnFromInterruptCycles;
+  state_ = State::kStartInstruction;
+}
+
 void CpuCore::StartInstruction() {
   if (IsInterruptPending()) {
     state_ = State::kHandleInterrupt;
@@ -219,7 +235,9 @@ void CpuCore::RunInstruction() {
   if (state_ != State::kRunInstruction) {
     r_[ST] = msr_;
     r_[BM] = mbm_;
-    AllowLock();
+    if (state_ != State::kReturnFromInterrupt) {
+      AllowLock();
+    }
   }
 }
 
@@ -524,6 +542,17 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG2;
         ivec_[r_[reg1]] = r_[reg2];
         exec_cycles_ += kCpuCoreCycles_IST;
+      } break;
+      case kMicro_IRT: {
+        DCHECK(lock_ == nullptr && locked_bank_ == -1);
+        if (exec_cycles_ > 0) {
+          --mpc_;
+          return;
+        }
+        locked_bank_ = STACK;
+        lock_ = banks_[locked_bank_]->RequestLock();
+        state_ = State::kReturnFromInterrupt;
+        return;
       } break;
       case kMicro_PLK: {
         if (exec_cycles_ > 0) {
