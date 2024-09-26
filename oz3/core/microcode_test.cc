@@ -422,10 +422,15 @@ TEST(MicrocodeTest, ProvideExtraArg) {
 
 TEST(MicrocodeTest, Address) {
   MicrocodeDef micros[] = {
-      {kMicro_UL, "UL"},        {kMicro_LK, "LK", MicroArgType::kBank},
-      {kMicro_PUL, "PUL"},      {kMicro_PLK, "PLK", MicroArgType::kWordReg},
-      {kMicro_CUL, "CUL"},      {kMicro_CLK, "CLK", MicroArgType::kWordReg},
-      {kMicro_TEST_NOP, "NOP"}, {kMicro_TEST, "TEST", MicroArgType::kAddress},
+      {kMicro_UL, "UL"},
+      {kMicro_LK, "LK", MicroArgType::kBank},
+      {kMicro_LKR, "LKR", MicroArgType::kWordReg},
+      {kMicro_PUL, "PUL"},
+      {kMicro_PLK, "PLK", MicroArgType::kWordReg},
+      {kMicro_CUL, "CUL"},
+      {kMicro_CLK, "CLK", MicroArgType::kWordReg},
+      {kMicro_TEST_NOP, "NOP"},
+      {kMicro_TEST, "TEST", MicroArgType::kAddress},
   };
   InstructionMicrocodes codes(micros);
   std::string error;
@@ -552,6 +557,70 @@ TEST(MicrocodeTest, Address) {
       InstructionDef{
           .code =
               "UL;LK(DATA);NOP;TEST(@label);UL;NOP;CLK(C0);@label:NOP;CUL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "UL;"
+                             "LKR(R0);TEST(2);UL;LKR(R0);TEST(-4);UL;"
+                             "LKR(R1);TEST(2);UL;LKR(R1);TEST(-4);UL;"
+                             "LKR(R2);TEST(2);UL;LKR(R2);TEST(-4);UL;"
+                             "LKR(R3);TEST(2);UL;LKR(R3);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "UL;"
+                             "LKR(R4);TEST(2);UL;LKR(R4);TEST(-4);UL;"
+                             "LKR(R5);TEST(2);UL;LKR(R5);TEST(-4);UL;"
+                             "LKR(R6);TEST(2);UL;LKR(R6);TEST(-4);UL;"
+                             "LKR(R7);TEST(2);UL;LKR(R7);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "UL;"
+                             "LKR(C0);TEST(2);UL;LKR(C0);TEST(-4);UL;"
+                             "LKR(C1);TEST(2);UL;LKR(C1);TEST(-4);UL;"
+                             "LKR(C2);TEST(2);UL;LKR(C2);TEST(-4);UL;"
+                             "LKR(PC);TEST(2);UL;LKR(PC);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes.Compile(
+      InstructionDef{.code = "UL;"
+                             "LKR(SP);TEST(2);UL;LKR(SP);TEST(-4);UL;"
+                             "LKR(DP);TEST(2);UL;LKR(DP);TEST(-4);UL;"
+                             "LKR(ST);TEST(2);UL;LKR(ST);TEST(-4);UL;"
+                             "LKR(BM);TEST(2);UL;LKR(BM);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(R0);TEST(2);UL;LKR(R1);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(R2);TEST(2);UL;LKR(R3);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(R4);TEST(2);UL;LKR(R5);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(R6);TEST(2);UL;LKR(R7);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(C0);TEST(2);UL;LKR(C1);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(C2);TEST(2);UL;LKR(PC);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(SP);TEST(2);UL;LKR(DP);TEST(-4);UL;"},
+      &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(codes.Compile(
+      InstructionDef{.code = "LKR(ST);TEST(2);UL;LKR(BM);TEST(-4);UL;"},
       &error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
@@ -975,6 +1044,14 @@ TEST(MicrocodeTest, MemoryLockDuringFetch) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
+TEST(MicrocodeTest, RegisterMemoryLockDuringFetch) {
+  InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "LKR(R7);UL;UL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
 TEST(MicrocodeTest, PortLockDuringFetch) {
   InstructionDef instruction_def = {kOp_TEST, {"TEST"}, "PLK(C0);PUL;UL;"};
   InstructionMicrocodes codes;
@@ -1003,6 +1080,24 @@ TEST(MicrocodeTest, MemoryLockAfterPriorMemoryLock) {
 TEST(MicrocodeTest, MemoryLockAfterPriorPortLock) {
   InstructionDef instruction_def = {
       kOp_TEST, {"TEST"}, "UL;PLK(C0);LK(STACK);UL;PUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, MemoryLockAfterPriorCoreLock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;CLK(C0);LK(STACK);UL;CUL;"};
+  InstructionMicrocodes codes;
+  std::string error;
+  EXPECT_FALSE(codes.Compile(instruction_def, &error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(MicrocodeTest, RegisterMemoryLockAfterPriorMemoryLock) {
+  InstructionDef instruction_def = {
+      kOp_TEST, {"TEST"}, "UL;LK(DATA);LKR(R7);UL;UL;"};
   InstructionMicrocodes codes;
   std::string error;
   EXPECT_FALSE(codes.Compile(instruction_def, &error));

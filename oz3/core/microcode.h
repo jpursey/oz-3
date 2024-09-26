@@ -26,6 +26,7 @@ enum MicroOp : uint8_t {
   kMicro_WAIT,  // WAIT(r);
   kMicro_HALT,  // HALT;
   kMicro_LK,    // LK(b);
+  kMicro_LKR,   // LKR(r);
   kMicro_UL,    // UL;
   kMicro_ADR,   // ADR(r);
   kMicro_LAD,   // LAD(r);

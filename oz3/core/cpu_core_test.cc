@@ -41,6 +41,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_PSTACK,
   kTestOp_PDATA,
   kTestOp_PEXTRA,
+  kTestOp_SREG,
   kTestOp_MOV_ST,
   kTestOp_MOVI,
   kTestOp_MOV,
@@ -201,6 +202,14 @@ const InstructionDef kMicroTestInstructions[] = {
      "ADR(C0);"
      "STP(b);"
      "UL;"},
+    {kTestOp_SREG,
+     {"SREG", kArgWordRegA, kArgWordRegB},
+     "UL;"
+     "LKR(a);"
+     "ADR(b);"
+     "ST(b);"
+     "UL;"
+     "ADDI(b,1);"},
     {kTestOp_MOV_ST,
      {"MOV_ST", kArgImmValue5, kArgWordRegB},
      "UL;"
@@ -1343,6 +1352,52 @@ TEST(CpuCoreTest, AdrLdStOps) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, RegisterMemoryStore) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+                          .SetMemoryBank(1, MemoryBankConfig::MaxRam())
+                          .SetMemoryBank(2, MemoryBankConfig::MaxRam())
+                          .SetMemoryBank(3, MemoryBankConfig::MaxRam()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  CpuCore::Banks banks = {.code = 0, .stack = 1, .data = 2, .extra = 3};
+  MemoryBank& code_bank = *processor.GetMemory(banks.code);
+  MemoryBank& stack_bank = *processor.GetMemory(banks.stack);
+  MemoryBank& data_bank = *processor.GetMemory(banks.data);
+  MemoryBank& extra_bank = *processor.GetMemory(banks.extra);
+  state.ResetCore({.bm = banks.ToWord()});
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1000);
+  lock.reset();
+
+  MemAccessor code_mem(code_bank);
+  MemAccessor stack_mem(stack_bank);
+  MemAccessor data_mem(data_bank);
+  MemAccessor extra_mem(extra_bank);
+
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R0, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R1, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R2, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R3, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R4, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R5, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R6, CpuCore::R0);
+  code_mem.AddCode(kTestOp_SREG, CpuCore::R7, CpuCore::R0);
+  code_mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = code_mem.GetAddress();
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(data_mem.SetAddress(1000).GetValue(), 1000);
+  EXPECT_EQ(data_mem.SetAddress(1001).GetValue(), 1001);
+  EXPECT_EQ(data_mem.SetAddress(1002).GetValue(), 1002);
+  EXPECT_EQ(data_mem.SetAddress(1003).GetValue(), 1003);
+  EXPECT_EQ(extra_mem.SetAddress(1004).GetValue(), 1004);
+  EXPECT_EQ(extra_mem.SetAddress(1005).GetValue(), 1005);
+  EXPECT_EQ(stack_mem.SetAddress(1006).GetValue(), 1006);
+  EXPECT_EQ(stack_mem.SetAddress(1007).GetValue(), 1007);
 }
 
 TEST(CpuCoreTest, LkWhenLocked) {
@@ -4768,7 +4823,7 @@ TEST(CpuCoreTest, ResetDuringWait) {
   ASSERT_TRUE(lock->IsLocked());
   core.Reset(*lock, {.mask = CpuCore::ResetParams::BC, .bm = 0});
   lock.reset();
-  
+
   ExecuteUntilHalt(processor, state);
   EXPECT_EQ(state.pc, end_pc);
   EXPECT_EQ(state.st, CpuCore::S);

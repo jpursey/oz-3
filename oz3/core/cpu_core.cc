@@ -343,6 +343,19 @@ void CpuCore::RunInstructionLoop() {
           return;
         }
       } break;
+      case kMicro_LKR: {
+        DCHECK(lock_ == nullptr && locked_bank_ == -1);
+        if (exec_cycles_ > 0) {
+          --mpc_;
+          return;
+        }
+        OZ3_INIT_REG1;
+        locked_bank_ = kRegisterBankMap[reg1];
+        lock_ = banks_[locked_bank_]->RequestLock();
+        if (!lock_->IsLocked()) {
+          return;
+        }
+      } break;
       case kMicro_UL: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));

@@ -23,8 +23,9 @@ namespace oz3 {
 
 namespace {
 
-static constexpr int kFirstPortLock = 10;
-static constexpr int kFirstCoreLock = 100;
+static constexpr int kFirstRegisterLock = 10;
+static constexpr int kFirstPortLock = 100;
+static constexpr int kFirstCoreLock = 200;
 
 const Microcode kNopMicroCode[] = {{.op = kMicro_UL}};
 const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
@@ -38,6 +39,7 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_WAIT, "WAIT", MicroArgType::kWordReg},
     {kMicro_HALT, "HALT"},
     {kMicro_LK, "LK", MicroArgType::kBank},
+    {kMicro_LKR, "LKR", MicroArgType::kWordReg},
     {kMicro_UL, "UL"},
     {kMicro_ADR, "ADR", MicroArgType::kWordReg},
     {kMicro_LAD, "LAD", MicroArgType::kWordReg},
@@ -208,6 +210,7 @@ bool InstructionCompiler::CompileMicroCode(int index) {
   // Microcode specific handling.
   switch (def->op) {
     case kMicro_LK:
+    case kMicro_LKR:
       CHECK(lock_type_ == LockType::kNone);  // Handled by InitLocks.
       lock_type_ = LockType::kMemory;
       had_lk_ = true;
@@ -359,8 +362,11 @@ bool InstructionCompiler::ExtractLabels() {
 }
 
 absl::string_view LockOpNameFromIndex(int lock) {
-  if (lock < kFirstPortLock) {
+  if (lock < kFirstRegisterLock) {
     return "LK";
+  }
+  if (lock < kFirstPortLock) {
+    return "LKR";
   }
   if (lock < kFirstCoreLock) {
     return "PLK";
@@ -394,10 +400,23 @@ bool InstructionCompiler::InitLocks() {
       }
       lock = arg;
       ++lock_count;
+    } else if (parsed.op_name == "LKR") {
+      if (lock >= 0) {
+        return Error(absl::StrCat("LKR when prior ", LockOpNameFromIndex(lock),
+                                  " is still locked. Code number: ", index));
+      }
+      int8_t arg;
+      if (!DecodeArg(&parsed, index, parsed.arg1_name, MicroArgType::kWordReg,
+                     arg)) {
+        return false;
+      }
+      lock = kFirstRegisterLock + arg + 10;
+      DCHECK(lock >= kFirstRegisterLock);
+      ++lock_count;
     } else if (parsed.op_name == "UL") {
       if (lock < 0 || lock >= kFirstPortLock) {
         return Error(
-            absl::StrCat("UL without a prior LK. Code number: ", index));
+            absl::StrCat("UL without a prior LK or LKR. Code number: ", index));
       }
       lock = -1;
     } else if (parsed.op_name == "PLK") {

@@ -88,6 +88,12 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int DATA = 2;   // Data bank
   static constexpr int EXTRA = 3;  // Extra bank
 
+  // Register / memory bank association.
+  static constexpr int kRegisterBankMap[kRegisterCount] = {
+      DATA, DATA, DATA, DATA, EXTRA, EXTRA, STACK, STACK,
+      CODE, CODE, CODE, CODE, STACK, DATA,  CODE,  CODE,
+  };
+
   // Registers of the CPU core.
   using Registers = gb::Array<uint16_t, kRegisterCount>;
 
