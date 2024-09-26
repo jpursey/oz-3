@@ -82,6 +82,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_PLDS,
   kTestOp_PSTS,
   kTestOp_CBK,
+  kTestOp_CBKS,
   kTestOp_CLD,
   kTestOp_CST,
   kTestOp_CSELF,
@@ -519,6 +520,12 @@ const InstructionDef kMicroTestInstructions[] = {
      "@stack:CBK(STACK,C1);JP(@end);"
      "@data:CBK(DATA,C1);"
      "@end:CUL;"},
+    {kTestOp_CBKS,
+     {"CBKS", kArgImmValue4},
+     "UL;"
+     "CLK(C1);"
+     "@code:CBK(CODE,C0);"
+     "CUL;"},
     {kTestOp_CLD,
      {"CLD", kArgWordRegA, kArgWordRegB},
      "UL;"
@@ -4618,6 +4625,154 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   EXPECT_EQ(state1.r1, 1003);
   EXPECT_EQ(state1.r2, 2002);
   EXPECT_EQ(state1.r3, 2003);
+}
+
+TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {
+  Processor processor(ProcessorConfig::MultiCore(2, kMicroTestInstructions)
+                          .SetMemoryBank(1, MemoryBankConfig::MaxRam())
+                          .SetMemoryBank(2, MemoryBankConfig::MaxRam()));
+  CpuCore& core0 = *processor.GetCore(0);
+  CpuCore& core1 = *processor.GetCore(1);
+  CoreState state0(core0);
+  CoreState state1(core1);
+  state0.ResetCore();
+  state1.ResetCore({.bm = CpuCore::Banks().SetCode(1).ToWord()});
+  MemAccessor mem0(*processor.GetMemory(0));
+  MemAccessor mem1(*processor.GetMemory(1));
+  MemAccessor mem2(*processor.GetMemory(2));
+
+  // Initlaize processor
+  auto lock = core1.RequestLock();
+  core1.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
+  core1.SetWordRegister(*lock, CpuCore::R0, 2000);
+  lock.reset();
+
+  // Main program
+  mem0.AddCode(kTestOp_NOP);
+  mem0.AddCode(kTestOp_NOP);
+  mem0.AddCode(kTestOp_NOP);
+  const uint16_t blocked_pc0 = mem0.GetAddress();
+  mem0.AddCode(kTestOp_CBK, CpuCore::CODE, 2);
+  mem0.AddCode(kTestOp_NOP);
+  const uint16_t nop_pc0 = mem0.GetAddress();
+  mem0.AddCode(kTestOp_NOP);
+  mem0.AddCode(kTestOp_HALT);
+  const uint16_t end_pc0 = mem0.GetAddress();
+
+  mem1.AddCode(kTestOp_WAIT, CpuCore::R0);
+  mem1.AddCode(kTestOp_HALT);
+  const uint16_t end_pc1 = mem1.GetAddress();
+
+  mem2.AddCode(kTestOp_WAIT, CpuCore::R0);
+  mem2.AddCode(kTestOp_NOP);
+  mem2.AddCode(kTestOp_HALT);
+  const uint16_t end_pc2 = mem2.GetAddress();
+  ASSERT_NE(end_pc1, end_pc2);
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state0,
+                           [&] { return state0.pc == blocked_pc0; }));
+  state1.Update();
+  EXPECT_NE(core0.GetState(), CpuCore::State::kWaiting);
+  EXPECT_EQ(state0.pc, blocked_pc0);
+  EXPECT_EQ(core1.GetState(), CpuCore::State::kWaiting);
+  EXPECT_EQ(state1.st, CpuCore::W | CpuCore::Z | CpuCore::S | CpuCore::C);
+
+  ASSERT_TRUE(
+      ExecuteUntil(processor, state0, [&] { return state0.pc == nop_pc0; }));
+  state1.Update();
+  EXPECT_EQ(state0.pc, nop_pc0);
+  EXPECT_NE(core1.GetState(), CpuCore::State::kWaiting);
+  EXPECT_EQ(state1.st, CpuCore::Z | CpuCore::S | CpuCore::C);
+
+  ExecuteUntilHalt(processor, state0);
+  state1.Update();
+  EXPECT_EQ(state0.pc, end_pc0);
+  EXPECT_EQ(state1.pc, end_pc2);
+}
+
+TEST(CpuCoreTest, CbkResetsWaitOnSelf) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initlaize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1000);
+  core.SetWordRegister(*lock, CpuCore::R2, 100);
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::I | CpuCore::S);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_IST, CpuCore::R7, CpuCore::R2);
+  mem.AddCode(kTestOp_WAIT, CpuCore::R0);
+  const uint16_t pc0 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_CBKS, 0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_IRET);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
+    return core.GetState() == CpuCore::State::kWaiting;
+  }));
+  EXPECT_EQ(state.pc, pc0);
+  EXPECT_EQ(state.st, CpuCore::W | CpuCore::I | CpuCore::S);
+  core.RaiseInterrupt(0);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc0; }));
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+  EXPECT_LT(core.GetCycles(), 1000);
+}
+
+TEST(CpuCoreTest, ResetDuringWait) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initlaize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1000);
+  core.SetWordRegister(*lock, CpuCore::ST, CpuCore::S);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_WAIT, CpuCore::R0);
+  const uint16_t pc0 = mem.GetAddress();
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t pc1 = mem.GetAddress();
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
+    return core.GetState() == CpuCore::State::kWaiting;
+  }));
+  EXPECT_EQ(state.pc, pc0);
+  EXPECT_EQ(state.st, CpuCore::W | CpuCore::S);
+
+  lock = core.RequestLock();
+  ASSERT_TRUE(lock->IsLocked());
+  core.Reset(*lock, {.mask = CpuCore::ResetParams::BC, .bm = 0});
+  lock.reset();
+  
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_LT(core.GetCycles(), 1000);
 }
 
 TEST(CpuCoreTest, CoreLockBlocks) {

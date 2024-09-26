@@ -199,7 +199,8 @@ void CpuCore::StartInterrupt() {
 void CpuCore::ReturnFromInterrupt() {
   DCHECK(lock_ != nullptr && locked_bank_ == STACK);
   banks_[STACK]->SetAddress(*lock_, r_[SP]);
-  banks_[STACK]->LoadWord(*lock_, r_[ST]);
+  banks_[STACK]->LoadWord(*lock_, msr_);
+  r_[ST] = r_[ST] & 0xFF00 | (msr_ & 0x00FF);
   banks_[STACK]->LoadWord(*lock_, r_[PC]);
   lock_ = nullptr;
   locked_bank_ = -1;
@@ -686,8 +687,14 @@ void CpuCore::RunInstructionLoop() {
         locked_core_->r_[BM] = locked_core_->mbm_ =
             (locked_core_->r_[BM] & ~bank_mask) |
             (bank_index << (code.arg1 * 4));
-        if (code.arg1 == CODE && (msr_ & W) != 0) {
-          msr_ &= ~W;
+        if (code.arg1 == CODE) {
+          locked_core_->r_[ST] &= ~W;
+          if (locked_core_ == this) {
+            msr_ &= ~W;
+          }
+          if (locked_core_->state_ == State::kWaiting) {
+            locked_core_->state_ = State::kStartInstruction;
+          }
         }
       } break;
       case kMicro_CLD: {
