@@ -83,6 +83,9 @@ class Processor final {
   // execute this function.
   void Execute(Cycles cycles);
 
+  // Raise interrupt on all cores.
+  void RaiseInterrupt(int interrupt_index);
+
  private:
   //----------------------------------------------------------------------------
   // Implementation

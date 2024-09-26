@@ -574,19 +574,25 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG1;
         static_assert((kInterruptCount & (kInterruptCount - 1)) == 0,
                       "kInterruptCount is not a power of two");
-        RaiseInterrupt(r_[reg1] & (kInterruptCount - 1));
+        if (locked_core_ != nullptr) {
+          locked_core_->RaiseInterrupt(r_[reg1] & (kInterruptCount - 1));
+        }
         exec_cycles_ += kCpuCoreCycles_INT;
       } break;
       case kMicro_ILD: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        r_[reg2] = ivec_[r_[reg1]];
+        if (locked_core_ != nullptr) {
+          r_[reg2] = locked_core_->ivec_[r_[reg1]];
+        }
         exec_cycles_ += kCpuCoreCycles_ILD;
       } break;
       case kMicro_IST: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        ivec_[r_[reg1]] = r_[reg2];
+        if (locked_core_ != nullptr) {
+          locked_core_->ivec_[r_[reg1]] = r_[reg2];
+        }
         exec_cycles_ += kCpuCoreCycles_IST;
       } break;
       case kMicro_IRT: {

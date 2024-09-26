@@ -49,5 +49,22 @@ TEST(ProcessorTest, Execute) {
   EXPECT_GE(processor.GetCore(1)->GetCycles(), 10);
 }
 
+TEST(ProcessorTest, RaiseInterrupt) {
+  ProcessorConfig config;
+  config.AddCpuCore(CpuCoreConfig());
+  config.AddCpuCore(CpuCoreConfig());
+  Processor processor(config);
+
+  processor.RaiseInterrupt(1);
+  uint32_t interrupts = (1 << 1);
+  EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), interrupts);
+  EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), interrupts);
+
+  processor.RaiseInterrupt(20);
+  interrupts |= (1 << 20);
+  EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), interrupts);
+  EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), interrupts);
+}
+
 }  // namespace
 }  // namespace oz3

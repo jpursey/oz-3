@@ -86,6 +86,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_CBKS,
   kTestOp_CLD,
   kTestOp_CST,
+  kTestOp_CINT,
   kTestOp_CSELF,
   kTestOp_ROREG,
 };
@@ -548,6 +549,16 @@ const InstructionDef kMicroTestInstructions[] = {
      "MOVI(C0,1);"
      "CLK(C0);"
      "CST(a,b);"
+     "CUL;"},
+    {kTestOp_CINT,
+     {"CINT", kArgWordRegA, kArgWordRegB},
+     "LD(C0);"
+     "LD(C1);"
+     "UL;"
+     "CLK(C0);"
+     "IST(C1,a);"
+     "ILD(C1,b);"
+     "INT(C1);"
      "CUL;"},
     {kTestOp_CSELF,
      {"CSELF"},
@@ -4680,6 +4691,61 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   EXPECT_EQ(state1.r1, 1003);
   EXPECT_EQ(state1.r2, 2002);
   EXPECT_EQ(state1.r3, 2003);
+}
+
+TEST(CpuCoreTest, SelfCoreInterrupt) {
+  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Main program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(100);
+  mem.AddCode(kTestOp_CINT, CpuCore::R0, CpuCore::R1).AddValue(0).AddValue(7);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc = mem.GetAddress();
+
+  // Execute code
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(core.GetInterrupts(), 1 << 7);
+  EXPECT_EQ(core.GetInterruptAddress(7), 100);
+  EXPECT_EQ(state.r1, 100);
+}
+
+TEST(CpuCoreTest, OtherCoreInterrupt) {
+  Processor processor(ProcessorConfig::MultiCore(2, kMicroTestInstructions));
+  CpuCore& core0 = *processor.GetCore(0);
+  CpuCore& core1 = *processor.GetCore(1);
+  CoreState state0(core0);
+  CoreState state1(core1);
+  state0.ResetCore();
+  state1.ResetCore({.pc = 100});
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Core 0 program
+  mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(100);
+  mem.AddCode(kTestOp_CINT, CpuCore::R0, CpuCore::R1).AddValue(1).AddValue(7);
+  mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(200);
+  mem.AddCode(kTestOp_CINT, CpuCore::R2, CpuCore::R3).AddValue(2).AddValue(8);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc0 = mem.GetAddress();
+
+  // Core 1 program
+  mem.SetAddress(100);
+  mem.AddCode(kTestOp_HALT);
+  const uint16_t end_pc1 = mem.GetAddress();
+
+  // Execute code
+  ExecuteUntilHalt(processor, state0);
+  state1.Update();
+  EXPECT_EQ(state1.pc, end_pc1);
+  EXPECT_EQ(state0.pc, end_pc0);
+  EXPECT_EQ(core1.GetInterrupts(), 1 << 7);
+  EXPECT_EQ(core1.GetInterruptAddress(7), 100);
+  EXPECT_EQ(state0.r1, 100);
+  EXPECT_EQ(state0.r3, 0);
 }
 
 TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {

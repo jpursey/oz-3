@@ -38,4 +38,10 @@ void Processor::Execute(Cycles cycles) {
   }
 }
 
+void Processor::RaiseInterrupt(int interrupt_index) {
+  for (int i = 0; i < num_cores_; ++i) {
+    cores_[i]->RaiseInterrupt(interrupt_index);
+  }
+}
+
 }  // namespace oz3

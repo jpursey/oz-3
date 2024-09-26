@@ -9,6 +9,7 @@
 #include <cstdint>
 
 #include "gb/container/array.h"
+#include "glog/logging.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/execution_component.h"
@@ -239,7 +240,19 @@ class CpuCore final : public ExecutionComponent {
   // Returns the current MemoryBank for the specified bank index.
   //
   // This will be null until the core is attached to a processor.
-  MemoryBank* GetMemoryBank(int bank_index) const { return banks_[bank_index]; }
+  MemoryBank* GetMemoryBank(int bank_index) const {
+    DCHECK(bank_index >= 0 && bank_index < 4);
+    return banks_[bank_index];
+  }
+
+  // Returns the current interrupt state.
+  uint32_t GetInterrupts() const { return it_; }
+
+  // Returns the current interrupt vector address for the specified interrupt.
+  uint16_t GetInterruptAddress(int interrupt) const {
+    DCHECK(interrupt >= 0 && interrupt < kInterruptCount);
+    return ivec_[interrupt];
+  }
 
   //----------------------------------------------------------------------------
   // Operations
