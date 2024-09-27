@@ -9,21 +9,75 @@
 #include <cstdint>
 
 #include "absl/types/span.h"
-#include "oz3/core/instruction.h"
+#include "oz3/core/microcode.h"
 
 namespace oz3 {
 
-// The list of opcodes for the default OZ-3 instruction set.
-enum Op : uint8_t {
-  kOp_NOP,
-  kOp_HALT,
-  kOp_WAIT,
+// Decoded instruction from the OZ-3 CPU.
+//
+// This is used by the CpuCode to execute instructions via microcode.
+struct DecodedInstruction {
+  absl::Span<const Microcode> code;
+  uint16_t size;  // Size of the full instruction (including inline values).
+  uint16_t c[2];  // Value of C0 and C1 registers from instruction
+  int8_t r[4];    // Indexes into r_ in CpuCore from instruction
+
+  auto operator<=>(const DecodedInstruction&) const = default;
 };
 
-// Returns the entire default instruction set for the OZ-3 CPU.
-absl::Span<const InstructionDef> GetInstructionSet();
+// This class represents a compiled instruction set for the OZ-3 CPU.
+//
+// To create an instruction set, use the InstructionCompiler class to compile a
+// set of instructions into microcode, and then use this class to decode
+// instruction codes into microcode instructions.
+class InstructionSet {
+ public:
+  InstructionSet() = default;
+  InstructionSet(const InstructionSet&) = default;
+  InstructionSet& operator=(const InstructionSet&) = default;
+  InstructionSet(InstructionSet&&) = default;
+  InstructionSet& operator=(InstructionSet&&) = default;
+  ~InstructionSet() = default;
 
-// Converts an argument
+  // Decodes an instruction code into a set of microcode instructions and
+  // parameters.
+  //
+  // This requires that all instructions have been compiled to microcode first
+  //
+  // Returns false if the instruction is invalid. The `decoded` parameter is set
+  // to the NOP instruction.
+  bool Decode(uint16_t code_word, DecodedInstruction& decoded) const;
+
+ private:
+  friend class InstructionCompiler;
+
+  using Instruction = microcode_internal::Instruction;
+  using SubInstruction = microcode_internal::SubInstruction;
+  using InstructionCode = microcode_internal::InstructionCode;
+
+  struct DecodeState {
+    DecodedInstruction& decoded;
+    const Instruction& instruction;
+    const InstructionCode* code;
+    uint16_t code_word;
+  };
+
+  InstructionSet(std::vector<Instruction> instructions,
+                 std::vector<SubInstruction> sub_intructions,
+                 std::vector<Microcode> microcodes)
+      : instructions_(instructions),
+        sub_instructions_(sub_intructions),
+        microcodes_(microcodes) {}
+
+  const Instruction* GetInstruction(int op) const;
+  absl::Span<const Microcode> GetCode(const InstructionCode& code) const;
+  bool DecodeArgument(DecodeState& state, const Argument& arg,
+                      int arg_index) const;
+
+  std::vector<Instruction> instructions_;
+  std::vector<SubInstruction> sub_instructions_;
+  std::vector<Microcode> microcodes_;
+};
 
 }  // namespace oz3
 

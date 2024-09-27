@@ -10,30 +10,46 @@
 
 namespace oz3 {
 
-ArgTypeBits::ArgTypeBits(std::string_view arg_def) {
-  if (arg_def == kArgWordRegA || arg_def == kArgWordRegB) {
-    type = ArgType::kWordReg;
-    size = 3;
-  } else if (arg_def == kArgDwordRegA || arg_def == kArgDwordRegB) {
-    type = ArgType::kDwordReg;
-    size = 3;
-  } else if (arg_def.size() == 2 && arg_def[0] == '#') {
-    type = ArgType::kImmediate;
-    size = arg_def[1] - '0';
-    DCHECK(size > 0 && size < 9);
+std::string_view ArgTypeToString(ArgType type) {
+  switch (type) {
+    case ArgType::kNone:
+      return "kNone";
+    case ArgType::kImmediate:
+      return "kImmediate";
+    case ArgType::kWordReg:
+      return "kWordReg";
+    case ArgType::kDwordReg:
+      return "kDwordReg";
+    default:
+      LOG(FATAL) << "Unknown argument type: " << static_cast<int>(type);
+      return "Unknown";
+  }
+}
+
+uint8_t GetDefaultArgTypeSize(ArgType type) {
+  switch (type) {
+    case ArgType::kNone:
+      return 0;
+    case ArgType::kWordReg:
+      return 3;
+    case ArgType::kDwordReg:
+      return 2;
+    default:
+      LOG(FATAL) << "Cannot derive default size for argument type "
+                 << static_cast<int>(type);
+      // The rest do not have a default size.
+      return 0;
   }
 }
 
 uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
   uint16_t code = static_cast<uint16_t>(op) << 8;
   uint16_t args = 0;
-  ArgTypeBits arg1bits(decl.arg1);
-  if (arg1bits.size > 0) {
-    args = a & ((1 << arg1bits.size) - 1);
+  if (arg1.size > 0) {
+    args = a & ((1 << arg1.size) - 1);
   }
-  ArgTypeBits arg2bits(decl.arg2);
-  if (arg2bits.size > 0) {
-    args |= (b & ((1 << arg2bits.size) - 1)) << arg1bits.size;
+  if (arg2.size > 0) {
+    args |= (b & ((1 << arg2.size) - 1)) << arg1.size;
   }
   return code | args;
 }

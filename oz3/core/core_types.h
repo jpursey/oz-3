@@ -16,6 +16,8 @@ class Component;
 class CpuCore;
 class CpuCoreConfig;
 class ExecutionComponent;
+class InstructionCompiler;
+class InstructionSet;
 class Lock;
 class Lockable;
 class MemoryMap;

@@ -9,14 +9,25 @@
 #include <cstdint>
 #include <string>
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/types/span.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/instruction.h"
 
 namespace oz3 {
 
+// The maximum number of microcode operations that can be defined for a single
+// instruction in the OZ-3.
+inline constexpr int kMaxInstructionMicrocodes = 255;
+
+// The maximum number of microcode operations that can be defined for a single
+// instruction set in the OZ-3.
+inline constexpr int kMaxInstructionSetMicrocodes =
+    kMaxInstructionMicrocodes * 256;
+
 // The folowing lists all the microcode operations that can be executed by the
 // OZ-3 CpuCore. For details see the OZ-3 Wiki:
-// https://github.com/jpursey/oz-3/wiki/2.1.-Microcode
+// https://github.com/jpursey/oz-3/wiki/2.1-Microcode
 enum MicroOp : uint8_t {
   kMicro_MSC,   // MSC(s);
   kMicro_MSS,   // MSS(s);
@@ -118,70 +129,41 @@ struct Microcode {
   auto operator<=>(const Microcode&) const = default;
 };
 
-// Decoded instruction from the OZ-3 CPU.
-//
-// This is used by the CpuCode to execute instructions via microcode.
-struct DecodedInstruction {
-  absl::Span<const Microcode> code;
-  uint16_t size;  // Size of the full instruction (including inline values).
-  uint16_t c[2];  // Value of C0 and C1 registers from instruction
-  int8_t r[4];    // Indexes into r_ in CpuCore from instruction
+// Returns the microcode definitions for the OZ-3 CPU.
+absl::Span<const MicrocodeDef> GetMicrocodeDefs();
 
-  auto operator<=>(const DecodedInstruction&) const = default;
+// Internal structures used for compiling and decoding microcode.
+namespace microcode_internal {
+
+struct InstructionCode {
+  uint16_t code_start = 0;  // Start index in microcode
+  uint8_t code_size = 0;    // Number of microcodes
+  uint8_t pc_size = 0;      // Size of the instruction for the program counter
 };
+static_assert(sizeof(InstructionCode) == 4);
+static_assert(
+    kMaxInstructionSetMicrocodes <=
+    std::numeric_limits<decltype(InstructionCode::code_start)>::max());
+static_assert(kMaxInstructionMicrocodes <=
+              std::numeric_limits<decltype(InstructionCode::code_size)>::max());
 
-// The compiled microcode for an instruction.
-struct CompiledInstruction {
-  std::vector<Microcode> code;
-  uint16_t size;     // Size of the full instruction (including inline values).
-  ArgTypeBits arg1;  // First argument encoding.
-  ArgTypeBits arg2;  // Second argument encoding.
-
-  auto operator<=>(const CompiledInstruction&) const = default;
+struct SubInstruction {
+  InstructionCode code;
+  Argument arg;  // Argument (if any for the sub instruction)
 };
+static_assert(sizeof(SubInstruction) == 6);
 
-// Compiled database of microcode instructions for the OZ-3 CPU.
-//
-// The CpuCore uses this to compile all instructions from the provided
-// instruction set into microcode, and then use Decode on to get the decoded
-// instruction and microcode to execute.
-class InstructionMicrocodes final {
- public:
-  // Construct with default OZ-3 microcode definitions.
-  InstructionMicrocodes();
-
-  // Construct with specific microcode definitions (for testing). This is
-  // non-functional outside of tests, as the CpuCore expects the OZ-3 defined
-  // microcode definitions.
-  explicit InstructionMicrocodes(
-      absl::Span<const MicrocodeDef> micro_code_defs);
-  InstructionMicrocodes(const InstructionMicrocodes&) = delete;
-  InstructionMicrocodes& operator=(const InstructionMicrocodes&) = delete;
-  ~InstructionMicrocodes();
-
-  // Compiles the provided instructions into microcode.
-  //
-  // Returns true if the instructions were all successfully compiled, and false
-  // if there is an error in at least one of the Instruction source definition.
-  // The `error_string` is set to a description of the error if it is not null.
-  bool Compile(absl::Span<const InstructionDef> instructions,
-               std::string* error_string = nullptr);
-  bool Compile(const InstructionDef& instruction,
-               std::string* error_string = nullptr);
-
-  // Decodes an instruction code into a set of microcode instructions and
-  // parameters.
-  //
-  // This requires that all instructions have been compiled to microcode first
-  //
-  // Returns false if the instruction is invalid. The `decoded` parameter is set
-  // to the NOP instruction.
-  bool Decode(uint16_t instruction_code, DecodedInstruction& decoded);
-
- private:
-  absl::Span<const MicrocodeDef> microcode_defs_;
-  std::vector<CompiledInstruction> compiled_;
+struct Instruction {
+  InstructionCode code;    // Simple arguments (no sub argument)
+  uint16_t sub_index = 0;  // Index where sub instructions start.
+  Argument arg1;
+  Argument arg2;
 };
+static_assert(sizeof(Instruction) == 10);
+static constexpr size_t kMaxSubInstructions =
+    std::numeric_limits<decltype(Instruction::sub_index)>::max();
+
+}  // namespace microcode_internal
 
 }  // namespace oz3
 

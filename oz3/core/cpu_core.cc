@@ -11,11 +11,14 @@
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/port.h"
 #include "oz3/core/processor.h"
+#include "oz3/core/instruction_compiler.h"
 
 namespace oz3 {
 
 CpuCore::CpuCore(const CpuCoreConfig& config) {
-  micro_codes_.Compile(config.GetInstructions());
+  InstructionCompiler compiler;
+  CHECK(compiler.Compile(config.GetInstructions()));
+  micro_codes_ = std::move(compiler).ToInstructionSet();
 }
 
 CpuCore::~CpuCore() = default;

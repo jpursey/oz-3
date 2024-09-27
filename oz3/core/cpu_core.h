@@ -13,6 +13,7 @@
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/execution_component.h"
+#include "oz3/core/instruction_set.h"
 #include "oz3/core/microcode.h"
 
 namespace oz3 {
@@ -341,7 +342,7 @@ class CpuCore final : public ExecutionComponent {
   CpuCore* locked_core_ = this;  // Current locked core.
 
   // Microcode implementation
-  InstructionMicrocodes micro_codes_;
+  InstructionSet micro_codes_;
   DecodedInstruction instruction_ = {};
   int mpc_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).

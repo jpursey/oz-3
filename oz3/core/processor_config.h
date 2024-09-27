@@ -10,7 +10,7 @@
 
 #include "absl/types/span.h"
 #include "oz3/core/cpu_core_config.h"
-#include "oz3/core/instruction_set.h"
+#include "oz3/core/default_instruction_set.h"
 #include "oz3/core/memory_bank_config.h"
 
 namespace oz3 {
@@ -31,14 +31,14 @@ class ProcessorConfig {
 
   // Creates a ProcessorConfig with a single core and a single memory bank with
   // max RAM.
-  static ProcessorConfig OneCore(
-      absl::Span<const InstructionDef> instructions = GetInstructionSet());
+  static ProcessorConfig OneCore(absl::Span<const InstructionDef> instructions =
+                                     GetDefaultInstructionSet());
 
   // Creates a ProcessorConfig with the specified number of cores and a single
   // memory bank with max RAM (can be overridden).
   static ProcessorConfig MultiCore(
-      int num_cores,
-      absl::Span<const InstructionDef> instructions = GetInstructionSet());
+      int num_cores, absl::Span<const InstructionDef> instructions =
+                         GetDefaultInstructionSet());
 
   // Creates a new ProcessorConfig with no resources.
   ProcessorConfig();

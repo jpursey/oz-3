@@ -9,6 +9,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core_config.h"
+#include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/port.h"
@@ -92,495 +93,587 @@ enum MicroTestOp : uint8_t {
 };
 
 const InstructionDef kMicroTestInstructions[] = {
-    {kTestOp_NOP, {"NOP"}, "UL;"},
-    {kTestOp_ZSCO,
-     {"ZSCO", kArgImmValue4},
-     "UL;"
-     "MSM(ZSCO,C0);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_EI,
-     {"EI"},
-     "UL;"
-     "MSS(I);"
-     "MSR(I,I);"},
-    {kTestOp_DI,
-     {"DI"},
-     "UL;"
-     "MSC(I);"
-     "MSR(I,I);"},
-    {kTestOp_WAIT,
-     {"WAIT", kArgWordRegA},
-     "UL;"
-     "WAIT(a);"},
-    {kTestOp_HALT,
-     {"HALT"},
-     "UL;"
-     "HALT;"},
-    {kTestOp_LWORD,
-     {"LCODE", kArgWordRegA},
-     "LD(a);"
-     "UL;"},
-    {kTestOp_LDWORD,
-     {"LCODE", kArgDwordRegA},
-     "LD(a0);"
-     "LD(a1);"
-     "UL;"},
-    {kTestOp_LCODE,
-     {"LCODE", kArgWordRegA, kArgImmValue5},
-     "ADR(C1);"
-     "LD(a);"
-     "UL;"},
-    {kTestOp_LSTACK,
-     {"LSTACK", kArgWordRegA, kArgImmValue5},
-     "UL;"
-     "LK(STACK);"
-     "ADR(C1);"
-     "LD(a);"
-     "UL;"},
-    {kTestOp_LDATA,
-     {"LDATA", kArgWordRegA, kArgImmValue5},
-     "UL;"
-     "LK(DATA);"
-     "ADR(C1);"
-     "LD(a);"
-     "UL;"},
-    {kTestOp_LEXTRA,
-     {"LEXTRA", kArgWordRegA, kArgImmValue5},
-     "UL;"
-     "LK(EXTRA);"
-     "ADR(C1);"
-     "LD(a);"
-     "UL;"},
-    {kTestOp_SCODE,
-     {"SCODE", kArgImmValue5, kArgWordRegB},
-     "ADR(C0);"
-     "ST(b);"
-     "UL;"},
-    {kTestOp_SSTACK,
-     {"SSTACK", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "LK(STACK);"
-     "ADR(C0);"
-     "ST(b);"
-     "UL;"},
-    {kTestOp_SDATA,
-     {"SDATA", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "LK(DATA);"
-     "ADR(C0);"
-     "ST(b);"
-     "UL;"},
-    {kTestOp_SEXTRA,
-     {"SEXTRA", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "LK(EXTRA);"
-     "ADR(C0);"
-     "ST(b);"
-     "UL;"},
-    {kTestOp_PCODE,
-     {"PCODE", kArgImmValue5, kArgWordRegB},
-     "ADR(C0);"
-     "STP(b);"
-     "UL;"},
-    {kTestOp_PSTACK,
-     {"PSTACK", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "LK(STACK);"
-     "ADR(C0);"
-     "STP(b);"
-     "UL;"},
-    {kTestOp_PDATA,
-     {"PDATA", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "LK(DATA);"
-     "ADR(C0);"
-     "STP(b);"
-     "UL;"},
-    {kTestOp_PEXTRA,
-     {"PEXTRA", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "LK(EXTRA);"
-     "ADR(C0);"
-     "STP(b);"
-     "UL;"},
-    {kTestOp_SREG,
-     {"SREG", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "LKR(a);"
-     "ADR(b);"
-     "ST(b);"
-     "UL;"
-     "ADDI(b,1);"},
-    {kTestOp_MOV_ST,
-     {"MOV_ST", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "MOV(C1,b);"
-     "LK(DATA);"
-     "ADR(C0);"
-     "ST(C1);"
-     "UL;"},
-    {kTestOp_MOVI,
-     {"MOVI", kArgWordRegA},
-     "UL;"
-     "MOVI(a,42);"},
-    {kTestOp_MOV,
-     {"MOV", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "MOV(a,b);"},
-    {kTestOp_LV,
-     {"LV", kArgWordRegA},
-     "LD(C0);"
-     "UL;"
-     "MOV(a,C0);"},
-    {kTestOp_MSSC,
-     {"MSSC"},
-     "UL;"
-     "MSS(Z);MSR(ZSCO,ZSCO);MOV(R0,ST);"
-     "MSS(S);MSR(ZSCO,ZSCO);MOV(R1,ST);"
-     "MSS(C);MSR(ZSCO,ZSCO);MOV(R2,ST);"
-     "MSS(O);MSR(ZSCO,ZSCO);MOV(R3,ST);"
-     "MSC(Z);MSR(ZSCO,ZSCO);MOV(R4,ST);"
-     "MSC(S);MSR(ZSCO,ZSCO);MOV(R5,ST);"
-     "MSC(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
-     "MSC(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
-    {kTestOp_MSX,
-     {"MSX"},
-     "UL;"
-     "MSX(Z);MSR(ZSCO,ZSCO);MOV(R0,ST);"
-     "MSX(S);MSR(ZSCO,ZSCO);MOV(R1,ST);"
-     "MSX(C);MSR(ZSCO,ZSCO);MOV(R2,ST);"
-     "MSX(O);MSR(ZSCO,ZSCO);MOV(R3,ST);"
-     "MSX(Z);MSR(ZSCO,ZSCO);MOV(R4,ST);"
-     "MSX(S);MSR(ZSCO,ZSCO);MOV(R5,ST);"
-     "MSX(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
-     "MSX(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
-    {kTestOp_MSI,
-     {"MSSC"},
-     "UL;"
-     "MSS(I);MSR(I,I);MOV(R0,ST);"
-     "MSC(I);MSR(I,I);MOV(R1,ST);"
-     "MSX(I);MSR(I,I);MOV(R2,ST);"
-     "MSX(I);MSR(I,I);MOV(R3,ST);"},
-    {kTestOp_MSR1,
-     {"MSR1"},
-     "UL;"
-     "MSS(I);MSR(ZSCOI,ZSCOI);MSS(ZSCOI);"
-     "MSR(_,Z);MOV(R0,ST);"
-     "MSR(_,S);MOV(R1,ST);"
-     "MSR(_,C);MOV(R2,ST);"
-     "MSR(_,O);MOV(R3,ST);"
-     "MSC(ZSCO);"
-     "MSR(Z,_);MOV(R4,ST);"
-     "MSR(S,_);MOV(R5,ST);"
-     "MSR(C,_);MOV(R6,ST);"
-     "MSR(O,_);MOV(R7,ST);"},
-    {kTestOp_MSR2,
-     {"MSR2"},
-     "UL;"
-     "MSC(ZSCOI);MSR(ZSCOI,_);"
-     "MSR(_,Z);MOV(R0,ST);"
-     "MSR(_,S);MOV(R1,ST);"
-     "MSR(_,C);MOV(R2,ST);"
-     "MSR(_,O);MOV(R3,ST);"
-     "MSS(ZSCO);MSR(_,ZSCO);"
-     "MSR(Z,_);MOV(R4,ST);"
-     "MSR(S,_);MOV(R5,ST);"
-     "MSR(C,_);MOV(R6,ST);"
-     "MSR(O,_);MOV(R7,ST);"},
-    {kTestOp_ADDI,
-     {"ADDI", kArgWordRegA},
-     "UL;"
-     "ADDI(a,1);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_SUBI,
-     {"SUBI", kArgWordRegA},
-     "UL;"
-     "ADDI(a,-1);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_ADD,
-     {"ADD", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "ADD(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_SUB,
-     {"SUB", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "SUB(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_ADC,
-     {"ADC", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "MSR(ZSCO,_);"
-     "ADC(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_SBC,
-     {"SBC", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "MSR(ZSCO,_);"
-     "SBC(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_NEG,
-     {"NEG", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "NEG(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_CMP,
-     {"CMP", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "CMP(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_NOT,
-     {"NOT", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "NOT(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_AND,
-     {"AND", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "AND(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_OR,
-     {"OR", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "OR(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_XOR,
-     {"XOR", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "XOR(a,b);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_SL,
-     {"SL", kArgWordRegA},
-     "UL;"
-     "SL(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_SR,
-     {"SR", kArgWordRegA},
-     "UL;"
-     "SR(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_SRA,
-     {"SRA", kArgWordRegA},
-     "UL;"
-     "SRA(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_RL,
-     {"RL", kArgWordRegA},
-     "UL;"
-     "MSS(ZSCO);"
-     "MSR(_,ZSCO);"
-     "RL(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_RR,
-     {"RR", kArgWordRegA},
-     "UL;"
-     "MSS(ZSCO);"
-     "MSR(_,ZSCO);"
-     "RR(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_RLC,
-     {"RLC", kArgWordRegA, kArgImmValue3},
-     "UL;"
-     "RLC(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_RRC,
-     {"RRC", kArgWordRegA, kArgImmValue3},
-     "UL;"
-     "RRC(a);"
-     "MSR(ZSCO,ZSCO);"},
-    {kTestOp_MATHI,
-     {"MATHI"},
-     "UL;"
-     "ADDI(C0,1);"
-     "ADD(C0,C1);"
-     "ADC(C0,C1);"
-     "SUB(C0,C1);"
-     "SBC(C0,C1);"
-     "NEG(C0,C1);"
-     "CMP(C0,C1);"
-     "NOT(C0,C1);"
-     "AND(C0,C1);"
-     "OR(C0,C1);"
-     "XOR(C0,C1);"
-     "SL(C0);"
-     "SR(C0);"
-     "SRA(C0);"
-     "RL(C0);"
-     "RR(C0);"
-     "RLC(C0);"
-     "RRC(C0);"},
-    {kTestOp_JC,
-     {"JC", kArgImmValue7},
-     "UL;"
-     "JC(Z,@Z);"
-     "@1:JC(NZ,@NZ);"
-     "@2:JC(S,@S);"
-     "@3:JC(NS,@NS);"
-     "@4:JC(C,@C);"
-     "@5:JC(NC,@NC);"
-     "@6:JC(O,@O);"
-     "@7:JC(NO,@NO);"
-     "END;"
-     "@Z:MOV(R0,C0);JP(@1);"
-     "@NZ:MOV(R1,C0);JP(@2);"
-     "@S:MOV(R2,C0);JP(@3);"
-     "@NS:MOV(R3,C0);JP(@4);"
-     "@C:MOV(R4,C0);JP(@5);"
-     "@NC:MOV(R5,C0);JP(@6);"
-     "@O:MOV(R6,C0);JP(@7);"
-     "@NO:MOV(R7,C0);"},
-    {kTestOp_JD,
-     {"JD", kArgImmValue8},
-     "UL;"
-     "MOVI(R7,0);"
-     "@LOOP:ADDI(R7,1);"
-     "JD(C0,@LOOP);"},
-    {kTestOp_JMP,
-     {"JMP"},
-     "LD(C0);"
-     "UL;"
-     "ADD(PC,C0);"},
-    {kTestOp_INT,
-     {"INT", kArgImmValue5},
-     "UL;"
-     "INT(C0);"},
-    {kTestOp_ILD,
-     {"ILD", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "ILD(a,b);"},
-    {kTestOp_IST,
-     {"IST", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "IST(a,b);"},
-    {kTestOp_IRET,
-     {"IRET"},
-     "UL;"
-     "IRT;"},
-    {kTestOp_PLD,
-     {"PLD", kArgImmValue3, kArgWordRegB},
-     "UL;"
-     "PLK(R7);"
-     "MOVI(C1,1);AND(C1,C0);JC(NZ,@TXX);"
-     "MOVI(C1,2);AND(C1,C0);JC(NZ,@_SX);"
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@__A);"
-     "@___:PLD(___,b);JP(@END);"  // ___
-     "@TXX:"                      // TXX
-     "MOVI(C1,2);AND(C1,C0);JC(NZ,@TSX);"
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@T_A);"
-     "@T__:PLD(T__,b);JP(@END);"  // T__
-     "@TSX:"                      // TSX
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@TSA);"
-     "@TS_:PLD(TS_,b);JP(@END);"  // TS_
-     "@T_A:PLD(T_A,b);JP(@END);"  // T_A
-     "@_SX:"                      // _SX
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@_SA);"
-     "@_S_:PLD(_S_,b);JP(@END);"  // _S_
-     "@_SA:PLD(_SA,b);JP(@END);"  // _SA
-     "@__A:PLD(__A,b);JP(@END);"  // __A
-     "@TSA:PLD(TSA,b);"           // TSA
-     "@END:MSR(S,S);PUL;"},
-    {kTestOp_PST,
-     {"PST", kArgImmValue3, kArgWordRegB},
-     "UL;"
-     "PLK(R7);"
-     "MOVI(C1,1);AND(C1,C0);JC(NZ,@TXX);"
-     "MOVI(C1,2);AND(C1,C0);JC(NZ,@_SX);"
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@__A);"
-     "@___:PST(___,b);JP(@END);"  // ___
-     "@TXX:"                      // TXX
-     "MOVI(C1,2);AND(C1,C0);JC(NZ,@TSX);"
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@T_A);"
-     "@T__:PST(T__,b);JP(@END);"  // T__
-     "@TSX:"                      // TSX
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@TSA);"
-     "@TS_:PST(TS_,b);JP(@END);"  // TS_
-     "@T_A:PST(T_A,b);JP(@END);"  // T_A
-     "@_SX:"                      // _SX
-     "MOVI(C1,4);AND(C1,C0);JC(NZ,@_SA);"
-     "@_S_:PST(_S_,b);JP(@END);"  // _S_
-     "@_SA:PST(_SA,b);JP(@END);"  // _SA
-     "@__A:PST(__A,b);JP(@END);"  // __A
-     "@TSA:PST(TSA,b);"           // TSA
-     "@END:MSR(S,S);PUL;"},
-    {kTestOp_PLDS,
-     {"PLDS", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
-     "PLK(C0);"
-     "PLD(SA,b);"
-     "MSR(IZSCO,IZSCO);"
-     "PUL;"},
-    {kTestOp_PSTS,
-     {"PSTS", kArgImmValue5, kArgWordRegB},
-     "UL;"
-     "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
-     "PLK(C0);"
-     "PST(SA,b);"
-     "MSR(IZSCO,IZSCO);"
-     "PUL;"},
-    {kTestOp_CBK,
-     {"CBK", kArgImmValue2, kArgImmValue6},
-     "UL;"
-     "CLK(C2);"
-     "MOVI(C2,0);CMP(C0,C2);JC(Z,@code);"
-     "MOVI(C2,1);CMP(C0,C2);JC(Z,@stack);"
-     "MOVI(C2,2);CMP(C0,C2);JC(Z,@data);"
-     "@extra:CBK(EXTRA,C1);JP(@end);"
-     "@code:CBK(CODE,C1);JP(@end);"
-     "@stack:CBK(STACK,C1);JP(@end);"
-     "@data:CBK(DATA,C1);"
-     "@end:CUL;"},
-    {kTestOp_CBKS,
-     {"CBKS", kArgImmValue4},
-     "UL;"
-     "CLK(C1);"
-     "@code:CBK(CODE,C0);"
-     "CUL;"},
-    {kTestOp_CLD,
-     {"CLD", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "MOVI(C0,1);"
-     "CLK(C0);"
-     "CLD(a,b);"
-     "CUL;"},
-    {kTestOp_CST,
-     {"CST", kArgWordRegA, kArgWordRegB},
-     "UL;"
-     "MOVI(C0,1);"
-     "CLK(C0);"
-     "CST(a,b);"
-     "CUL;"},
-    {kTestOp_CINT,
-     {"CINT", kArgWordRegA, kArgWordRegB},
-     "LD(C0);"
-     "LD(C1);"
-     "UL;"
-     "CLK(C0);"
-     "IST(C1,a);"
-     "ILD(C1,b);"
-     "INT(C1);"
-     "CUL;"},
-    {kTestOp_CSELF,
-     {"CSELF"},
-     "UL;"
-     "MOVI(C0,1);"
-     "CBK(DATA,C0);"
-     "CLD(R0,R4);"
-     "CST(R1,R5);"
-     "CLK(C0);"
-     "CBK(STACK,C0);"
-     "CLD(R1,R0);"
-     "CST(R1,R2);"
-     "CUL;"
-     "MOVI(C0,2);"
-     "CBK(EXTRA,C0);"
-     "CLD(R2,R6);"
-     "CST(R3,R7);"},
-    {kTestOp_ROREG,
-     {"ROREG", kArgWordRegA},
-     "UL;"
-     "MOV(ST,a);"
-     "MOV(BM,a);"},
+    {.op = kTestOp_NOP, .op_name = "NOP", .code = "UL;"},
+    {.op = kTestOp_ZSCO,
+     .op_name = "ZSCO",
+     .arg1 = {ArgType::kImmediate, 4},
+     .code = "UL;"
+             "MSM(ZSCO,C0);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_EI,
+     .op_name = "EI",
+     .code = "UL;"
+             "MSS(I);"
+             "MSR(I,I);"},
+    {.op = kTestOp_DI,
+     .op_name = "DI",
+     .code = "UL;"
+             "MSC(I);"
+             "MSR(I,I);"},
+    {.op = kTestOp_WAIT,
+     .op_name = "WAIT",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "WAIT(a);"},
+    {.op = kTestOp_HALT,
+     .op_name = "HALT",
+     .code = "UL;"
+             "HALT;"},
+    {.op = kTestOp_LWORD,
+     .op_name = "LCODE",
+     .arg1 = ArgType::kWordReg,
+     .code = "LD(a);"
+             "UL;"},
+    {.op = kTestOp_LDWORD,
+     .op_name = "LCODE",
+     .arg1 = ArgType::kDwordReg,
+     .code = "LD(a0);"
+             "LD(a1);"
+             "UL;"},
+    {.op = kTestOp_LCODE,
+     .op_name = "LCODE",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = {ArgType::kImmediate, 5},
+     .code = "ADR(C1);"
+             "LD(a);"
+             "UL;"},
+    {.op = kTestOp_LSTACK,
+     .op_name = "LSTACK",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = {ArgType::kImmediate, 5},
+     .code = "UL;"
+             "LK(STACK);"
+             "ADR(C1);"
+             "LD(a);"
+             "UL;"},
+    {.op = kTestOp_LDATA,
+     .op_name = "LDATA",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = {ArgType::kImmediate, 5},
+     .code = "UL;"
+             "LK(DATA);"
+             "ADR(C1);"
+             "LD(a);"
+             "UL;"},
+    {.op = kTestOp_LEXTRA,
+     .op_name = "LEXTRA",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = {ArgType::kImmediate, 5},
+     .code = "UL;"
+             "LK(EXTRA);"
+             "ADR(C1);"
+             "LD(a);"
+             "UL;"},
+    {.op = kTestOp_SCODE,
+     .op_name = "SCODE",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "ADR(C0);"
+             "ST(b);"
+             "UL;"},
+    {.op = kTestOp_SSTACK,
+     .op_name = "SSTACK",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LK(STACK);"
+             "ADR(C0);"
+             "ST(b);"
+             "UL;"},
+    {.op = kTestOp_SDATA,
+     .op_name = "SDATA",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LK(DATA);"
+             "ADR(C0);"
+             "ST(b);"
+             "UL;"},
+    {.op = kTestOp_SEXTRA,
+     .op_name = "SEXTRA",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LK(EXTRA);"
+             "ADR(C0);"
+             "ST(b);"
+             "UL;"},
+    {.op = kTestOp_PCODE,
+     .op_name = "PCODE",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "ADR(C0);"
+             "STP(b);"
+             "UL;"},
+    {.op = kTestOp_PSTACK,
+     .op_name = "PSTACK",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LK(STACK);"
+             "ADR(C0);"
+             "STP(b);"
+             "UL;"},
+    {.op = kTestOp_PDATA,
+     .op_name = "PDATA",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LK(DATA);"
+             "ADR(C0);"
+             "STP(b);"
+             "UL;"},
+    {.op = kTestOp_PEXTRA,
+     .op_name = "PEXTRA",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LK(EXTRA);"
+             "ADR(C0);"
+             "STP(b);"
+             "UL;"},
+    {.op = kTestOp_SREG,
+     .op_name = "SREG",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "LKR(a);"
+             "ADR(b);"
+             "ST(b);"
+             "UL;"
+             "ADDI(b,1);"},
+    {.op = kTestOp_MOV_ST,
+     .op_name = "MOV_ST",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOV(C1,b);"
+             "LK(DATA);"
+             "ADR(C0);"
+             "ST(C1);"
+             "UL;"},
+    {.op = kTestOp_MOVI,
+     .op_name = "MOVI",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOVI(a,42);"},
+    {.op = kTestOp_MOV,
+     .op_name = "MOV",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOV(a,b);"},
+    {.op = kTestOp_LV,
+     .op_name = "LV",
+     .arg1 = ArgType::kWordReg,
+     .code = "LD(C0);"
+             "UL;"
+             "MOV(a,C0);"},
+    {.op = kTestOp_MSSC,
+     .op_name = "MSSC",
+     .code = "UL;"
+             "MSS(Z);MSR(ZSCO,ZSCO);MOV(R0,ST);"
+             "MSS(S);MSR(ZSCO,ZSCO);MOV(R1,ST);"
+             "MSS(C);MSR(ZSCO,ZSCO);MOV(R2,ST);"
+             "MSS(O);MSR(ZSCO,ZSCO);MOV(R3,ST);"
+             "MSC(Z);MSR(ZSCO,ZSCO);MOV(R4,ST);"
+             "MSC(S);MSR(ZSCO,ZSCO);MOV(R5,ST);"
+             "MSC(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
+             "MSC(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {.op = kTestOp_MSX,
+     .op_name = "MSX",
+     .code = "UL;"
+             "MSX(Z);MSR(ZSCO,ZSCO);MOV(R0,ST);"
+             "MSX(S);MSR(ZSCO,ZSCO);MOV(R1,ST);"
+             "MSX(C);MSR(ZSCO,ZSCO);MOV(R2,ST);"
+             "MSX(O);MSR(ZSCO,ZSCO);MOV(R3,ST);"
+             "MSX(Z);MSR(ZSCO,ZSCO);MOV(R4,ST);"
+             "MSX(S);MSR(ZSCO,ZSCO);MOV(R5,ST);"
+             "MSX(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
+             "MSX(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
+    {.op = kTestOp_MSI,
+     .op_name = "MSSC",
+     .code = "UL;"
+             "MSS(I);MSR(I,I);MOV(R0,ST);"
+             "MSC(I);MSR(I,I);MOV(R1,ST);"
+             "MSX(I);MSR(I,I);MOV(R2,ST);"
+             "MSX(I);MSR(I,I);MOV(R3,ST);"},
+    {.op = kTestOp_MSR1,
+     .op_name = "MSR1",
+     .code = "UL;"
+             "MSS(I);MSR(ZSCOI,ZSCOI);MSS(ZSCOI);"
+             "MSR(_,Z);MOV(R0,ST);"
+             "MSR(_,S);MOV(R1,ST);"
+             "MSR(_,C);MOV(R2,ST);"
+             "MSR(_,O);MOV(R3,ST);"
+             "MSC(ZSCO);"
+             "MSR(Z,_);MOV(R4,ST);"
+             "MSR(S,_);MOV(R5,ST);"
+             "MSR(C,_);MOV(R6,ST);"
+             "MSR(O,_);MOV(R7,ST);"},
+    {.op = kTestOp_MSR2,
+     .op_name = "MSR2",
+     .code = "UL;"
+             "MSC(ZSCOI);MSR(ZSCOI,_);"
+             "MSR(_,Z);MOV(R0,ST);"
+             "MSR(_,S);MOV(R1,ST);"
+             "MSR(_,C);MOV(R2,ST);"
+             "MSR(_,O);MOV(R3,ST);"
+             "MSS(ZSCO);MSR(_,ZSCO);"
+             "MSR(Z,_);MOV(R4,ST);"
+             "MSR(S,_);MOV(R5,ST);"
+             "MSR(C,_);MOV(R6,ST);"
+             "MSR(O,_);MOV(R7,ST);"},
+    {.op = kTestOp_ADDI,
+     .op_name = "ADDI",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "ADDI(a,1);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SUBI,
+     .op_name = "SUBI",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "ADDI(a,-1);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_ADD,
+     .op_name = "ADD",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "ADD(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SUB,
+     .op_name = "SUB",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "SUB(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_ADC,
+     .op_name = "ADC",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSR(ZSCO,_);"
+             "ADC(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SBC,
+     .op_name = "SBC",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSR(ZSCO,_);"
+             "SBC(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_NEG,
+     .op_name = "NEG",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "NEG(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_CMP,
+     .op_name = "CMP",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "CMP(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_NOT,
+     .op_name = "NOT",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "NOT(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_AND,
+     .op_name = "AND",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "AND(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_OR,
+     .op_name = "OR",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "OR(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_XOR,
+     .op_name = "XOR",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "XOR(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SL,
+     .op_name = "SL",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "SL(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SR,
+     .op_name = "SR",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "SR(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SRA,
+     .op_name = "SRA",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "SRA(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_RL,
+     .op_name = "RL",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSS(ZSCO);"
+             "MSR(_,ZSCO);"
+             "RL(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_RR,
+     .op_name = "RR",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSS(ZSCO);"
+             "MSR(_,ZSCO);"
+             "RR(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_RLC,
+     .op_name = "RLC",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = {ArgType::kImmediate, 3},
+     .code = "UL;"
+             "RLC(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_RRC,
+     .op_name = "RRC",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = {ArgType::kImmediate, 3},
+     .code = "UL;"
+             "RRC(a);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_MATHI,
+     .op_name = "MATHI",
+     .code = "UL;"
+             "ADDI(C0,1);"
+             "ADD(C0,C1);"
+             "ADC(C0,C1);"
+             "SUB(C0,C1);"
+             "SBC(C0,C1);"
+             "NEG(C0,C1);"
+             "CMP(C0,C1);"
+             "NOT(C0,C1);"
+             "AND(C0,C1);"
+             "OR(C0,C1);"
+             "XOR(C0,C1);"
+             "SL(C0);"
+             "SR(C0);"
+             "SRA(C0);"
+             "RL(C0);"
+             "RR(C0);"
+             "RLC(C0);"
+             "RRC(C0);"},
+    {.op = kTestOp_JC,
+     .op_name = "JC",
+     .arg1 = {ArgType::kImmediate, 7},
+     .code = "UL;"
+             "JC(Z,@Z);"
+             "@1:JC(NZ,@NZ);"
+             "@2:JC(S,@S);"
+             "@3:JC(NS,@NS);"
+             "@4:JC(C,@C);"
+             "@5:JC(NC,@NC);"
+             "@6:JC(O,@O);"
+             "@7:JC(NO,@NO);"
+             "END;"
+             "@Z:MOV(R0,C0);JP(@1);"
+             "@NZ:MOV(R1,C0);JP(@2);"
+             "@S:MOV(R2,C0);JP(@3);"
+             "@NS:MOV(R3,C0);JP(@4);"
+             "@C:MOV(R4,C0);JP(@5);"
+             "@NC:MOV(R5,C0);JP(@6);"
+             "@O:MOV(R6,C0);JP(@7);"
+             "@NO:MOV(R7,C0);"},
+    {.op = kTestOp_JD,
+     .op_name = "JD",
+     .arg1 = {ArgType::kImmediate, 8},
+     .code = "UL;"
+             "MOVI(R7,0);"
+             "@LOOP:ADDI(R7,1);"
+             "JD(C0,@LOOP);"},
+    {.op = kTestOp_JMP,
+     .op_name = "JMP",
+     .code = "LD(C0);"
+             "UL;"
+             "ADD(PC,C0);"},
+    {.op = kTestOp_INT,
+     .op_name = "INT",
+     .arg1 = {ArgType::kImmediate, 5},
+     .code = "UL;"
+             "INT(C0);"},
+    {.op = kTestOp_ILD,
+     .op_name = "ILD",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "ILD(a,b);"},
+    {.op = kTestOp_IST,
+     .op_name = "IST",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "IST(a,b);"},
+    {.op = kTestOp_IRET,
+     .op_name = "IRET",
+     .code = "UL;"
+             "IRT;"},
+    {.op = kTestOp_PLD,
+     .op_name = "PLD",
+     .arg1 = {ArgType::kImmediate, 3},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "PLK(R7);"
+             "MOVI(C1,1);AND(C1,C0);JC(NZ,@TXX);"
+             "MOVI(C1,2);AND(C1,C0);JC(NZ,@_SX);"
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@__A);"
+             "@___:PLD(___,b);JP(@END);"  // ___
+             "@TXX:"                      // TXX
+             "MOVI(C1,2);AND(C1,C0);JC(NZ,@TSX);"
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@T_A);"
+             "@T__:PLD(T__,b);JP(@END);"  // T__
+             "@TSX:"                      // TSX
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@TSA);"
+             "@TS_:PLD(TS_,b);JP(@END);"  // TS_
+             "@T_A:PLD(T_A,b);JP(@END);"  // T_A
+             "@_SX:"                      // _SX
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@_SA);"
+             "@_S_:PLD(_S_,b);JP(@END);"  // _S_
+             "@_SA:PLD(_SA,b);JP(@END);"  // _SA
+             "@__A:PLD(__A,b);JP(@END);"  // __A
+             "@TSA:PLD(TSA,b);"           // TSA
+             "@END:MSR(S,S);PUL;"},
+    {.op = kTestOp_PST,
+     .op_name = "PST",
+     .arg1 = {ArgType::kImmediate, 3},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "PLK(R7);"
+             "MOVI(C1,1);AND(C1,C0);JC(NZ,@TXX);"
+             "MOVI(C1,2);AND(C1,C0);JC(NZ,@_SX);"
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@__A);"
+             "@___:PST(___,b);JP(@END);"  // ___
+             "@TXX:"                      // TXX
+             "MOVI(C1,2);AND(C1,C0);JC(NZ,@TSX);"
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@T_A);"
+             "@T__:PST(T__,b);JP(@END);"  // T__
+             "@TSX:"                      // TSX
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@TSA);"
+             "@TS_:PST(TS_,b);JP(@END);"  // TS_
+             "@T_A:PST(T_A,b);JP(@END);"  // T_A
+             "@_SX:"                      // _SX
+             "MOVI(C1,4);AND(C1,C0);JC(NZ,@_SA);"
+             "@_S_:PST(_S_,b);JP(@END);"  // _S_
+             "@_SA:PST(_SA,b);JP(@END);"  // _SA
+             "@__A:PST(__A,b);JP(@END);"  // __A
+             "@TSA:PST(TSA,b);"           // TSA
+             "@END:MSR(S,S);PUL;"},
+    {.op = kTestOp_PLDS,
+     .op_name = "PLDS",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
+             "PLK(C0);"
+             "PLD(SA,b);"
+             "MSR(IZSCO,IZSCO);"
+             "PUL;"},
+    {.op = kTestOp_PSTS,
+     .op_name = "PSTS",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOV(C1,C1);"  // Forces an early return in CpuCore from PLK
+             "PLK(C0);"
+             "PST(SA,b);"
+             "MSR(IZSCO,IZSCO);"
+             "PUL;"},
+    {.op = kTestOp_CBK,
+     .op_name = "CBK",
+     .arg1 = {ArgType::kImmediate, 2},
+     .arg2 = {ArgType::kImmediate, 6},
+     .code = "UL;"
+             "CLK(C2);"
+             "MOVI(C2,0);CMP(C0,C2);JC(Z,@code);"
+             "MOVI(C2,1);CMP(C0,C2);JC(Z,@stack);"
+             "MOVI(C2,2);CMP(C0,C2);JC(Z,@data);"
+             "@extra:CBK(EXTRA,C1);JP(@end);"
+             "@code:CBK(CODE,C1);JP(@end);"
+             "@stack:CBK(STACK,C1);JP(@end);"
+             "@data:CBK(DATA,C1);"
+             "@end:CUL;"},
+    {.op = kTestOp_CBKS,
+     .op_name = "CBKS",
+     .arg1 = {ArgType::kImmediate, 4},
+     .code = "UL;"
+             "CLK(C1);"
+             "@code:CBK(CODE,C0);"
+             "CUL;"},
+    {.op = kTestOp_CLD,
+     .op_name = "CLD",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOVI(C0,1);"
+             "CLK(C0);"
+             "CLD(a,b);"
+             "CUL;"},
+    {.op = kTestOp_CST,
+     .op_name = "CST",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOVI(C0,1);"
+             "CLK(C0);"
+             "CST(a,b);"
+             "CUL;"},
+    {.op = kTestOp_CINT,
+     .op_name = "CINT",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "LD(C0);"
+             "LD(C1);"
+             "UL;"
+             "CLK(C0);"
+             "IST(C1,a);"
+             "ILD(C1,b);"
+             "INT(C1);"
+             "CUL;"},
+    {.op = kTestOp_CSELF,
+     .op_name = "CSELF",
+     .code = "UL;"
+             "MOVI(C0,1);"
+             "CBK(DATA,C0);"
+             "CLD(R0,R4);"
+             "CST(R1,R5);"
+             "CLK(C0);"
+             "CBK(STACK,C0);"
+             "CLD(R1,R0);"
+             "CST(R1,R2);"
+             "CUL;"
+             "MOVI(C0,2);"
+             "CBK(EXTRA,C0);"
+             "CLD(R2,R6);"
+             "CST(R3,R7);"},
+    {.op = kTestOp_ROREG,
+     .op_name = "ROREG",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "MOV(ST,a);"
+             "MOV(BM,a);"},
 };
 
 // Helper class to fetch and update the state of a CpuCore.
@@ -1099,9 +1192,9 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
 }
 
 TEST(CpuCoreTest, MicrocodeTestInstructionsCompile) {
-  InstructionMicrocodes micro_codes;
+  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(micro_codes.Compile(kMicroTestInstructions, &error)) << error;
+  EXPECT_TRUE(compiler.Compile(kMicroTestInstructions, &error)) << error;
 }
 
 TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
