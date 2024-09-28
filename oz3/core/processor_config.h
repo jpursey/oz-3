@@ -31,13 +31,13 @@ class ProcessorConfig {
 
   // Creates a ProcessorConfig with a single core and a single memory bank with
   // max RAM.
-  static ProcessorConfig OneCore(absl::Span<const InstructionDef> instructions =
-                                     GetDefaultInstructionSet());
+  static ProcessorConfig OneCore(std::shared_ptr<const InstructionSet>
+                                     instructions = GetDefaultInstructionSet());
 
   // Creates a ProcessorConfig with the specified number of cores and a single
   // memory bank with max RAM (can be overridden).
   static ProcessorConfig MultiCore(
-      int num_cores, absl::Span<const InstructionDef> instructions =
+      int num_cores, std::shared_ptr<const InstructionSet> instructions =
                          GetDefaultInstructionSet());
 
   // Creates a new ProcessorConfig with no resources.

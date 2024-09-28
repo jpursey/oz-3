@@ -206,6 +206,19 @@ struct InstructionDef {
   std::string_view code;
 };
 
+//------------------------------------------------------------------------------
+// InstructionSet definition.
+//------------------------------------------------------------------------------
+
+// Defines a set of instructions and macros for the OZ-3 CPU.
+struct InstructionSetDef {
+  // The list of all instruction definitions in the instruction set.
+  absl::Span<const InstructionDef> instructions;
+
+  // The list of all macro definitions in the instruction set.
+  absl::Span<const MacroDef> macros;
+};
+
 }  // namespace oz3
 
 #endif  // OZ3_CORE_INSTRUCTION_H_

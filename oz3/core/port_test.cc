@@ -6,7 +6,7 @@
 #include "oz3/core/port.h"
 
 #include "gtest/gtest.h"
-#include "oz3/core/cpu_core_config.h"
+#include "oz3/core/core_types.h"
 
 namespace oz3 {
 namespace {

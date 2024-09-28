@@ -7,9 +7,10 @@
 #define OZ3_CORE_DEFAULT_INSTRUCTION_SET_H_
 
 #include <cstdint>
+#include <memory>
 
 #include "absl/types/span.h"
-#include "oz3/core/instruction.h"
+#include "oz3/core/instruction_set.h"
 
 namespace oz3 {
 
@@ -21,9 +22,10 @@ enum Op : uint8_t {
 };
 
 // Returns the entire default instruction set for the OZ-3 CPU.
-absl::Span<const InstructionDef> GetDefaultInstructionSet();
+const InstructionSetDef& GetDefaultInstructionSetDef();
 
-// Converts an argument
+// Returns the default instruction set compiled into an InstructionSet.
+std::shared_ptr<const InstructionSet> GetDefaultInstructionSet();
 
 }  // namespace oz3
 

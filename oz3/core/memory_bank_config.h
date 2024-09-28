@@ -15,28 +15,6 @@
 namespace oz3 {
 
 //==============================================================================
-// Constants
-//==============================================================================
-
-// The maximum number of memory banks that can managed by a single Processor.
-inline constexpr int kMaxMemoryBanks = 16;
-
-// Total number of MemoryBank pages.
-inline constexpr int kMemoryBankPageCount = 16;
-
-// Size in 16-bit words of a MemoryBank page.
-inline constexpr int kMemoryBankPageSize = 4096;
-
-// Max size in 16-bit words of a MemoryBank.
-inline constexpr int kMemoryBankMaxSize =
-    kMemoryBankPageCount * kMemoryBankPageSize;
-static_assert(kMemoryBankMaxSize - 1 == std::numeric_limits<uint16_t>::max());
-
-// Cycle timing constants for MemoryBank access
-inline constexpr Cycles kMemoryBankSetAddressCycles = 1;
-inline constexpr Cycles kMemoryBankAccessWordCycles = 1;
-
-//==============================================================================
 // MemoryPageMasks
 //==============================================================================
 

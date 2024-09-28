@@ -6,81 +6,12 @@
 #ifndef OZ3_CORE_CPU_CORE_CONFIG_H_
 #define OZ3_CORE_CPU_CORE_CONFIG_H_
 
+#include <memory>
+
 #include "absl/types/span.h"
-#include "oz3/core/instruction.h"
-#include "oz3/core/memory_bank_config.h"
+#include "oz3/core/instruction_set.h"
 
 namespace oz3 {
-
-//==============================================================================
-// Constants
-//==============================================================================
-
-// The maximum number of cores that can managed by a single Processor.
-inline constexpr int kMaxCores = 8;
-
-// The maximum number of ports that can be managed by a single Processor.
-inline constexpr int kMaxPorts = 256;
-
-// The number of cycles required to fetch and decode any instruction on a
-// CpuCore. This is the minimum number of cycles an instruction can take (the
-// NOP execution time).
-inline constexpr int kCpuCoreFetchAndDecodeCycles =
-    kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles + 1;
-
-// The number of cycles required to start an interrupt on a CpuCore.
-inline constexpr int kCpuCoreStartInterruptCycles =
-    kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
-
-// The number of cycles required to return from an interrupt on a CpuCore.
-inline constexpr int kCpuCoreReturnFromInterruptCycles =
-    kMemoryBankSetAddressCycles + kMemoryBankAccessWordCycles * 2;
-
-// The number of cycles required to execute each microcode operation.
-inline constexpr int kCpuCoreCycles_MSC = 0;
-inline constexpr int kCpuCoreCycles_MSS = 0;
-inline constexpr int kCpuCoreCycles_MSX = 0;
-inline constexpr int kCpuCoreCycles_MSM = 1;
-inline constexpr int kCpuCoreCycles_MSR = 0;
-inline constexpr int kCpuCoreCycles_ADR = kMemoryBankSetAddressCycles;
-inline constexpr int kCpuCoreCycles_LAD = 0;
-inline constexpr int kCpuCoreCycles_LD = kMemoryBankAccessWordCycles;
-inline constexpr int kCpuCoreCycles_ST = kMemoryBankAccessWordCycles;
-inline constexpr int kCpuCoreCycles_STP = kMemoryBankAccessWordCycles;
-inline constexpr int kCpuCoreCycles_MOV = 1;
-inline constexpr int kCpuCoreCycles_MOVI = 1;
-inline constexpr int kCpuCoreCycles_ADD = 1;
-inline constexpr int kCpuCoreCycles_ADC = 1;
-inline constexpr int kCpuCoreCycles_ADDI = 1;
-inline constexpr int kCpuCoreCycles_SUB = 1;
-inline constexpr int kCpuCoreCycles_SBC = 1;
-inline constexpr int kCpuCoreCycles_NEG = 1;
-inline constexpr int kCpuCoreCycles_CMP = 1;
-inline constexpr int kCpuCoreCycles_TST = 1;
-inline constexpr int kCpuCoreCycles_NOT = 1;
-inline constexpr int kCpuCoreCycles_AND = 1;
-inline constexpr int kCpuCoreCycles_OR = 1;
-inline constexpr int kCpuCoreCycles_XOR = 1;
-inline constexpr int kCpuCoreCycles_SL = 1;
-inline constexpr int kCpuCoreCycles_SR = 1;
-inline constexpr int kCpuCoreCycles_SRA = 1;
-inline constexpr int kCpuCoreCycles_RL = 1;
-inline constexpr int kCpuCoreCycles_RR = 1;
-inline constexpr int kCpuCoreCycles_RLC = 1;
-inline constexpr int kCpuCoreCycles_RRC = 1;
-inline constexpr int kCpuCoreCycles_JP = 0;
-inline constexpr int kCpuCoreCycles_JC_False = 0;
-inline constexpr int kCpuCoreCycles_JC_True = 1;
-inline constexpr int kCpuCoreCycles_JD_NonZero = 1;
-inline constexpr int kCpuCoreCycles_JD_Zero = 1;
-inline constexpr int kCpuCoreCycles_INT = 0;
-inline constexpr int kCpuCoreCycles_ILD = 1;
-inline constexpr int kCpuCoreCycles_IST = 1;
-inline constexpr int kCpuCoreCycles_PLD = 1;
-inline constexpr int kCpuCoreCycles_PST = 1;
-inline constexpr int kCpuCoreCycles_CBK = 1;
-inline constexpr int kCpuCoreCycles_CLD = 1;
-inline constexpr int kCpuCoreCycles_CST = 1;
 
 //==============================================================================
 // CpuCoreConfig
@@ -106,14 +37,14 @@ class CpuCoreConfig {
   // specifications. Custom implementations may choose to override this with a
   // custom instruction set.
   CpuCoreConfig& SetInstructionSet(
-      absl::Span<const InstructionDef> instructions);
+      std::shared_ptr<const InstructionSet> instructions);
 
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
 
   // Returns the instruction set for this core.
-  absl::Span<const InstructionDef> GetInstructions() const {
+  std::shared_ptr<const InstructionSet> GetInstructions() const {
     return instructions_;
   }
 
@@ -122,7 +53,7 @@ class CpuCoreConfig {
   // Implementation
   //----------------------------------------------------------------------------
 
-  absl::Span<const InstructionDef> instructions_;
+  std::shared_ptr<const InstructionSet> instructions_;
 };
 
 }  // namespace oz3

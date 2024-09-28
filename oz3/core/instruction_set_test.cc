@@ -50,13 +50,12 @@ TEST(InstructionSetTest, BankDecodedCorrectly) {
       {.op = kOp_TEST, .code = "UL;OP(CODE);OP(STACK);OP(DATA);OP(EXTRA)"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -86,13 +85,12 @@ TEST(InstructionSetTest, StatusDecodedCorrectly) {
                "OP(ZSCO);OP(CCC_SSS_OZ_OZ_OZ);OP(I);"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -142,13 +140,12 @@ TEST(InstructionSetTest, PortModeDecodedCorrectly) {
                "OP(TSA);OP(STA);OP(T_A);"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -178,13 +175,12 @@ TEST(InstructionSetTest, ConditionDecodedCorrectly) {
       {.op = kOp_TEST, .code = "UL;OP(Z,NZ);OP(S,NS);OP(C,NC);OP(O,NO);"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -221,13 +217,12 @@ TEST(InstructionSetTest, AddressDecodedCorrecty) {
       },
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -253,13 +248,12 @@ TEST(InstructionSetTest, ImmArgsDecodedCorrectly) {
       {.op = kOp_TEST, .code = "UL;OP(0,1);OP(127,-42);OP(-128,97)"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -285,13 +279,12 @@ TEST(InstructionSetTest, WordRegArgsDecodedCorrectly) {
                "OP(C0,C1);OP(C2,PC);OP(SP,DP);OP(ST,BM);"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -328,13 +321,12 @@ TEST(InstructionSetTest, DwordRegArgsDecodedCorrectly) {
       {.op = kOp_TEST, .code = "UL;OP(D0,D1);OP(D2,D3);OP(SD,SD)"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
   EXPECT_EQ(decoded.c[0], 0);
   EXPECT_EQ(decoded.c[1], 0);
@@ -364,16 +356,15 @@ TEST(InstructionSetTest, ImmOpArgDecodedCorrectly) {
        .code = "UL;OP(C0,C1)"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
   for (uint16_t i = 0; i < 8; ++i) {
     uint16_t c0 = (i * i + 1) % 8;   // 3 bits
     uint16_t c1 = (i * i + 2) % 32;  // 5 bits
-    EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST, c0 | (c1 << 3)), decoded));
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, c0 | (c1 << 3)), decoded));
     EXPECT_EQ(decoded.c[0], c0);
     EXPECT_EQ(decoded.c[1], c1);
     EXPECT_EQ(decoded.r[0], 0);
@@ -397,16 +388,15 @@ TEST(InstructionSetTest, WordOpArgDecodedCorrectly) {
        .code = "UL;OP(a,b);OP(b,a);"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
   for (uint16_t i = 0; i < 8; ++i) {
     uint16_t a = i;
     uint16_t b = (i + 1) % 8;
-    EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST, a | (b << 3)), decoded));
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, a | (b << 3)), decoded));
     EXPECT_EQ(decoded.c[0], 0);
     EXPECT_EQ(decoded.c[1], 0);
     EXPECT_EQ(decoded.r[0], CpuCore::R0 + a);
@@ -431,16 +421,15 @@ TEST(InstructionSetTest, DwordOpArgDecodedCorrectly) {
        .code = "UL;OP(A,B);OP(B,A)"},
   };
 
-  InstructionCompiler compiler(micro_defs);
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_defs, &error));
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
   for (uint16_t i = 0; i < 4; ++i) {
     uint16_t a = i;
     uint16_t b = (i + 1) % 4;
-    EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST, a | (b << 2)), decoded))
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, a | (b << 2)), decoded))
         << "a=" << a << ", b=" << b;
     EXPECT_EQ(decoded.c[0], 0) << "a=" << a << ", b=" << b;
     EXPECT_EQ(decoded.c[1], 0) << "a=" << a << ", b=" << b;
@@ -457,39 +446,36 @@ TEST(InstructionSetTest, DwordOpArgDecodedCorrectly) {
 TEST(MicrocodeTest, DefaultCodeSizeIsOne) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
-  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_def, &error));
+  auto codes =
+      CompileInstructionSet({.instructions = {instruction_def}}, &error);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
 }
 
 TEST(MicrocodeTest, LoadDuringFetchIncreasesCodeSize) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);UL;"};
-  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_def, &error));
+  auto codes =
+      CompileInstructionSet({.instructions = {instruction_def}}, &error);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 2);
 }
 
 TEST(MicrocodeTest, TwoLoadsDuringFetch) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);LD(C1);UL;"};
-  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_def, &error));
+  auto codes =
+      CompileInstructionSet({.instructions = {instruction_def}}, &error);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 3);
 }
 
@@ -497,26 +483,24 @@ TEST(MicrocodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {.op = kOp_TEST,
                                     .op_name = "TEST",
                                     .code = "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
-  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_def, &error));
+  auto codes =
+      CompileInstructionSet({.instructions = {instruction_def}}, &error);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
 }
 
 TEST(MicrocodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "ADR(C0);LD(C0);UL;"};
-  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(compiler.Compile(instruction_def, &error));
+  auto codes =
+      CompileInstructionSet({.instructions = {instruction_def}}, &error);
   EXPECT_THAT(error, IsEmpty());
-  InstructionSet codes = std::move(compiler).ToInstructionSet();
   DecodedInstruction decoded;
-  EXPECT_TRUE(codes.Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
 }
 

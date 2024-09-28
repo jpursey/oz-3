@@ -29,16 +29,21 @@ constexpr int kFirstCoreLock = 200;
 
 }  // namespace
 
-class InstructionCompiler::Impl {
+class InstructionCompiler {
  public:
-  Impl(absl::Span<const MicrocodeDef> microcode_defs)
+  InstructionCompiler(absl::Span<const MicrocodeDef> microcode_defs)
       : microcode_defs_(microcode_defs) {}
 
   bool Compile(const InstructionDef& instruction_def,
                std::string* error_string);
 
+  InstructionSet ToInstructionSet() && {
+    return InstructionSet(std::move(instructions_),
+                          std::move(sub_instructions_), std::move(microcodes_));
+  }
+
  private:
-  friend class InstructionCompiler;
+  friend class OldInstructionCompiler;
 
   struct MacroCode {
     uint16_t code_start = 0;  // Start index in microcode
@@ -87,6 +92,10 @@ class InstructionCompiler::Impl {
   // Initial state.
   absl::Span<const MicrocodeDef> microcode_defs_;
 
+  using Instruction = microcode_internal::Instruction;
+  using SubInstruction = microcode_internal::SubInstruction;
+  using InstructionCode = microcode_internal::InstructionCode;
+
   // Persistent state.
   std::vector<Instruction> instructions_;
   std::vector<SubInstruction> sub_instructions_;
@@ -123,8 +132,8 @@ class InstructionCompiler::Impl {
   } state_;
 };
 
-bool InstructionCompiler::Impl::Compile(const InstructionDef& instruction_def,
-                                        std::string* error_string) {
+bool InstructionCompiler::Compile(const InstructionDef& instruction_def,
+                                  std::string* error_string) {
   state_ = {};
   state_.instruction_def = &instruction_def;
   state_.error = error_string;
@@ -186,7 +195,7 @@ bool InstructionCompiler::Impl::Compile(const InstructionDef& instruction_def,
   return true;
 }
 
-bool InstructionCompiler::Impl::CompileMicroCode(int index) {
+bool InstructionCompiler::CompileMicroCode(int index) {
   auto parsed = state_.parsed_code[index];
   const MicrocodeDef* def = FindMicroCodeDef(parsed.op_name);
   if (def == nullptr) {
@@ -329,7 +338,7 @@ bool InstructionCompiler::Impl::CompileMicroCode(int index) {
   return true;
 }
 
-bool InstructionCompiler::Impl::ExtractLabels() {
+bool InstructionCompiler::ExtractLabels() {
   int index = 0;
   for (std::string_view& code : state_.src_code) {
     if (code.starts_with('@')) {
@@ -368,7 +377,7 @@ absl::string_view LockOpNameFromIndex(int lock) {
   return "CLK";
 }
 
-bool InstructionCompiler::Impl::InitLocks() {
+bool InstructionCompiler::InitLocks() {
   state_.locks.reserve(state_.parsed_code.size());
   static_assert(
       CpuCore::CODE < kFirstPortLock && CpuCore::STACK < kFirstPortLock &&
@@ -450,8 +459,8 @@ bool InstructionCompiler::Impl::InitLocks() {
   return true;
 }
 
-InstructionCompiler::Impl::ParsedMicroCode
-InstructionCompiler::Impl::ParseMicroCode(std::string_view code) {
+InstructionCompiler::ParsedMicroCode InstructionCompiler::ParseMicroCode(
+    std::string_view code) {
   auto RemovePrefix = [&code](std::string_view::size_type amount) {
     code.remove_prefix(std::min(code.size(), amount));
   };
@@ -476,7 +485,7 @@ InstructionCompiler::Impl::ParseMicroCode(std::string_view code) {
   return parsed;
 }
 
-const MicrocodeDef* InstructionCompiler::Impl::FindMicroCodeDef(
+const MicrocodeDef* InstructionCompiler::FindMicroCodeDef(
     std::string_view op_name) {
   for (const MicrocodeDef& def : microcode_defs_) {
     if (def.op_name == op_name) {
@@ -509,9 +518,9 @@ std::string LockName(int lock) {
   return "UNKNOWN";
 }
 
-bool InstructionCompiler::Impl::DecodeArg(ParsedMicroCode* parsed, int index,
-                                          std::string_view arg_name,
-                                          MicroArgType arg_type, int8_t& arg) {
+bool InstructionCompiler::DecodeArg(ParsedMicroCode* parsed, int index,
+                                    std::string_view arg_name,
+                                    MicroArgType arg_type, int8_t& arg) {
   if (arg_name.empty() && arg_type == MicroArgType::kNone) {
     return true;
   }
@@ -743,59 +752,18 @@ bool InstructionCompiler::Impl::DecodeArg(ParsedMicroCode* parsed, int index,
   return Error(parsed, "Unhandled argument type!");
 }
 
-InstructionCompiler::InstructionCompiler()
-    : InstructionCompiler(GetMicrocodeDefs()) {}
-
-InstructionCompiler::InstructionCompiler(
-    absl::Span<const MicrocodeDef> microcode_defs)
-    : impl_(std::make_unique<Impl>(microcode_defs)) {}
-
-InstructionCompiler::~InstructionCompiler() = default;
-
-bool InstructionCompiler::Compile(const MacroDef& macro_def,
-                                  std::string* error_string) {
-  // TODO
-  return false;
-}
-
-bool InstructionCompiler::Compile(absl::Span<const MacroDef> macro_defs,
-                                  std::string* error_string) {
-  for (const MacroDef& macro_def : macro_defs) {
-    if (!Compile(macro_def, error_string)) {
-      return false;
+std::shared_ptr<const InstructionSet> CompileInstructionSet(
+    InstructionSetDef instruction_set_def, std::string* error_string,
+    absl::Span<const MicrocodeDef> microcode_defs) {
+  InstructionCompiler compiler(microcode_defs);
+  for (const InstructionDef& instruction_def :
+       instruction_set_def.instructions) {
+    if (!compiler.Compile(instruction_def, error_string)) {
+      return std::make_shared<InstructionSet>();
     }
   }
-  return true;
-}
-
-bool InstructionCompiler::Compile(const InstructionDef& instruction_def,
-                                  std::string* error_string) {
-  if (!impl_->Compile(instruction_def, error_string)) {
-    return false;
-  }
-  return true;
-}
-
-bool InstructionCompiler::Compile(
-    absl::Span<const InstructionDef> instruction_defs,
-    std::string* error_string) {
-  for (const InstructionDef& instruction_def : instruction_defs) {
-    if (!Compile(instruction_def, error_string)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-InstructionSet InstructionCompiler::CreateInstructionSet() const {
-  return InstructionSet(impl_->instructions_, impl_->sub_instructions_,
-                        impl_->microcodes_);
-}
-
-InstructionSet InstructionCompiler::ToInstructionSet() && {
-  return InstructionSet(std::move(impl_->instructions_),
-                        std::move(impl_->sub_instructions_),
-                        std::move(impl_->microcodes_));
+  return std::make_shared<const InstructionSet>(
+      std::move(compiler).ToInstructionSet());
 }
 
 }  // namespace oz3

@@ -14,13 +14,10 @@
 namespace oz3 {
 namespace {
 
-using ::testing::IsEmpty;
-
 TEST(DefaultInstructionSetTest, InstructionSetCompiles) {
-  InstructionCompiler codes;
   std::string error;
-  EXPECT_TRUE(codes.Compile(GetDefaultInstructionSet(), &error));
-  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(CompileInstructionSet(GetDefaultInstructionSetDef(), &error))
+      << error;
 }
 
 }  // namespace

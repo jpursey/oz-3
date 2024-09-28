@@ -8,17 +8,16 @@
 #include "absl/cleanup/cleanup.h"
 #include "glog/logging.h"
 #include "oz3/core/instruction.h"
+#include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/port.h"
 #include "oz3/core/processor.h"
-#include "oz3/core/instruction_compiler.h"
 
 namespace oz3 {
 
 CpuCore::CpuCore(const CpuCoreConfig& config) {
-  InstructionCompiler compiler;
-  CHECK(compiler.Compile(config.GetInstructions()));
-  micro_codes_ = std::move(compiler).ToInstructionSet();
+  instructions_ = config.GetInstructions();
+  DCHECK(instructions_ != nullptr);
 }
 
 CpuCore::~CpuCore() = default;
@@ -240,7 +239,7 @@ void CpuCore::FetchInstruction() {
   banks_[CODE]->SetAddress(*lock_, r_[PC]);
   uint16_t code;
   banks_[CODE]->LoadWord(*lock_, code);
-  micro_codes_.Decode(code, instruction_);
+  instructions_->Decode(code, instruction_);
   r_[PC] += instruction_.size;
   fetch_start_ = GetCycles();
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;

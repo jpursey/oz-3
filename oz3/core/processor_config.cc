@@ -6,6 +6,7 @@
 #include "oz3/core/processor_config.h"
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "glog/logging.h"
@@ -13,14 +14,15 @@
 namespace oz3 {
 
 ProcessorConfig ProcessorConfig::OneCore(
-    absl::Span<const InstructionDef> instructions) {
+    std::shared_ptr<const InstructionSet> instructions) {
   return ProcessorConfig()
-      .AddCpuCore(CpuCoreConfig::Default().SetInstructionSet(instructions))
+      .AddCpuCore(
+          CpuCoreConfig::Default().SetInstructionSet(std::move(instructions)))
       .SetMemoryBank(0, MemoryBankConfig::MaxRam());
 }
 
 ProcessorConfig ProcessorConfig::MultiCore(
-    int num_cores, absl::Span<const InstructionDef> instructions) {
+    int num_cores, std::shared_ptr<const InstructionSet> instructions) {
   ProcessorConfig config;
   num_cores = std::clamp(num_cores, 1, kMaxCores);
   for (int i = 0; i < num_cores; ++i) {

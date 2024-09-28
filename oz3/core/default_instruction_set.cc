@@ -5,11 +5,14 @@
 
 #include "oz3/core/default_instruction_set.h"
 
+#include "glog/logging.h"
+#include "oz3/core/instruction_compiler.h"
+
 namespace oz3 {
 
 namespace {
 
-const InstructionDef kDefaultInstructionSet[] = {
+const InstructionDef kDefaultInstructions[] = {
     {.op = kOp_NOP, .op_name = "NOP", .code = "UL;"},
     {.op = kOp_HALT,
      .op_name = "HALT",
@@ -22,10 +25,20 @@ const InstructionDef kDefaultInstructionSet[] = {
              "WAIT(a);"},
 };
 
+const InstructionSetDef kDefaultInstructionSet = {
+    .instructions = kDefaultInstructions,
+};
+
 }  // namespace
 
-absl::Span<const InstructionDef> GetDefaultInstructionSet() {
+const InstructionSetDef& GetDefaultInstructionSetDef() {
   return kDefaultInstructionSet;
+}
+
+std::shared_ptr<const InstructionSet> GetDefaultInstructionSet() {
+  static std::shared_ptr<const InstructionSet> instruction_set =
+      CompileInstructionSet(kDefaultInstructionSet);
+  return instruction_set;
 }
 
 }  // namespace oz3

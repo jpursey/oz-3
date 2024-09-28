@@ -8,7 +8,6 @@
 #include "gb/base/callback.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/core/cpu_core_config.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
@@ -676,6 +675,12 @@ const InstructionDef kMicroTestInstructions[] = {
              "MOV(BM,a);"},
 };
 
+std::shared_ptr<const InstructionSet> GetMicroTestInstructionSet() {
+  static std::shared_ptr<const InstructionSet> instruction_set =
+      CompileInstructionSet({kMicroTestInstructions});
+  return instruction_set;
+}
+
 // Helper class to fetch and update the state of a CpuCore.
 struct CoreState {
   explicit CoreState(CpuCore& core) : core(core) { Update(); }
@@ -1192,13 +1197,13 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
 }
 
 TEST(CpuCoreTest, MicrocodeTestInstructionsCompile) {
-  InstructionCompiler compiler;
   std::string error;
-  EXPECT_TRUE(compiler.Compile(kMicroTestInstructions, &error)) << error;
+  EXPECT_NE(CompileInstructionSet({kMicroTestInstructions}, &error), nullptr)
+      << error;
 }
 
 TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   MemoryBank& memory_bank = *processor.GetMemory(0);
@@ -1238,7 +1243,7 @@ TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
 }
 
 TEST(CpuCoreTest, HaltOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   MemoryBank& memory_bank = *processor.GetMemory(0);
@@ -1262,7 +1267,7 @@ TEST(CpuCoreTest, HaltOp) {
 }
 
 TEST(CpuCoreTest, WaitOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   MemoryBank& memory_bank = *processor.GetMemory(0);
@@ -1330,7 +1335,7 @@ TEST(CpuCoreTest, WaitOp) {
 }
 
 TEST(CpuCoreTest, AdrLdStOps) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet())
                           .SetMemoryBank(1, MemoryBankConfig::MaxRam())
                           .SetMemoryBank(2, MemoryBankConfig::MaxRam())
                           .SetMemoryBank(3, MemoryBankConfig::MaxRam()));
@@ -1459,7 +1464,7 @@ TEST(CpuCoreTest, AdrLdStOps) {
 }
 
 TEST(CpuCoreTest, RegisterMemoryStore) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet())
                           .SetMemoryBank(1, MemoryBankConfig::MaxRam())
                           .SetMemoryBank(2, MemoryBankConfig::MaxRam())
                           .SetMemoryBank(3, MemoryBankConfig::MaxRam()));
@@ -1505,7 +1510,7 @@ TEST(CpuCoreTest, RegisterMemoryStore) {
 }
 
 TEST(CpuCoreTest, LkWhenLocked) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet())
                           .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
@@ -1546,7 +1551,7 @@ TEST(CpuCoreTest, LkWhenLocked) {
 }
 
 TEST(CpuCoreTest, MovStOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet())
                           .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
@@ -1594,7 +1599,7 @@ TEST(CpuCoreTest, MovStOp) {
 }
 
 TEST(CpuCoreTest, MoviOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1616,7 +1621,7 @@ TEST(CpuCoreTest, MoviOp) {
 }
 
 TEST(CpuCoreTest, MstsMstcOps) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1645,7 +1650,7 @@ TEST(CpuCoreTest, MstsMstcOps) {
 }
 
 TEST(CpuCoreTest, MstxOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1674,7 +1679,7 @@ TEST(CpuCoreTest, MstxOp) {
 }
 
 TEST(CpuCoreTest, MstiOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1699,7 +1704,7 @@ TEST(CpuCoreTest, MstiOp) {
 }
 
 TEST(CpuCoreTest, MstrOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1743,7 +1748,7 @@ TEST(CpuCoreTest, MstrOp) {
 }
 
 TEST(CpuCoreTest, AddiOp1) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1810,7 +1815,7 @@ TEST(CpuCoreTest, AddiOp1) {
 }
 
 TEST(CpuCoreTest, AddiOp2) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1877,7 +1882,7 @@ TEST(CpuCoreTest, AddiOp2) {
 }
 
 TEST(CpuCoreTest, AddOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -1945,7 +1950,7 @@ TEST(CpuCoreTest, AddOp) {
 }
 
 TEST(CpuCoreTest, SubOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2013,7 +2018,7 @@ TEST(CpuCoreTest, SubOp) {
 }
 
 TEST(CpuCoreTest, AdcOpNoCarry) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2108,7 +2113,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
 }
 
 TEST(CpuCoreTest, AdcOpWithCarry) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2203,7 +2208,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
 }
 
 TEST(CpuCoreTest, SbcOpNoCarry) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2286,7 +2291,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
 }
 
 TEST(CpuCoreTest, SbcOpWithCarry) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2371,7 +2376,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
 }
 
 TEST(CpuCoreTest, NegOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2438,7 +2443,7 @@ TEST(CpuCoreTest, NegOp) {
 }
 
 TEST(CpuCoreTest, CmpOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2506,7 +2511,7 @@ TEST(CpuCoreTest, CmpOp) {
 }
 
 TEST(CpuCoreTest, NotOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2583,7 +2588,7 @@ TEST(CpuCoreTest, NotOp) {
 }
 
 TEST(CpuCoreTest, AndOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2680,7 +2685,7 @@ TEST(CpuCoreTest, AndOp) {
 }
 
 TEST(CpuCoreTest, OrOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2777,7 +2782,7 @@ TEST(CpuCoreTest, OrOp) {
 }
 
 TEST(CpuCoreTest, XorOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2874,7 +2879,7 @@ TEST(CpuCoreTest, XorOp) {
 }
 
 TEST(CpuCoreTest, SlSrSraOps) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -2971,7 +2976,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
 }
 
 TEST(CpuCoreTest, RlRrOps) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3067,7 +3072,7 @@ TEST(CpuCoreTest, RlRrOps) {
 }
 
 TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3172,7 +3177,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
 }
 
 TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3277,7 +3282,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
 }
 
 TEST(CpuCoreTest, MathOpsLeaveInterruptFlagAlone) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3303,7 +3308,7 @@ TEST(CpuCoreTest, MathOpsLeaveInterruptFlagAlone) {
 }
 
 TEST(CpuCoreTest, JcJpEndOps) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3445,7 +3450,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
 }
 
 TEST(CpuCoreTest, JdOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3483,7 +3488,7 @@ TEST(CpuCoreTest, JdOp) {
 }
 
 TEST(CpuCoreTest, InterruptDuringExecution) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3532,7 +3537,7 @@ TEST(CpuCoreTest, InterruptDuringExecution) {
 }
 
 TEST(CpuCoreTest, InterruptDuringWait) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3599,7 +3604,7 @@ TEST(CpuCoreTest, InterruptDuringWait) {
 }
 
 TEST(CpuCoreTest, InterruptDuringHalt) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3638,7 +3643,7 @@ TEST(CpuCoreTest, InterruptDuringHalt) {
 }
 
 TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3676,7 +3681,7 @@ TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
 }
 
 TEST(CpuCoreTest, EnableInterruptAfterRaise) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3713,7 +3718,7 @@ TEST(CpuCoreTest, EnableInterruptAfterRaise) {
 }
 
 TEST(CpuCoreTest, InterruptInInterrupt) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3773,7 +3778,7 @@ TEST(CpuCoreTest, InterruptInInterrupt) {
 }
 
 TEST(CpuCoreTest, LockCoreDuringInterrupt) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3823,7 +3828,7 @@ TEST(CpuCoreTest, LockCoreDuringInterrupt) {
 }
 
 TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions)
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet())
                           .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
@@ -3885,7 +3890,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
 }
 
 TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3947,7 +3952,7 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
 
 TEST(CpuCoreTest, LoadFromInvalidPort) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(10));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(10));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -3991,7 +3996,7 @@ TEST(CpuCoreTest, LoadFromInvalidPort) {
 
 TEST(CpuCoreTest, LoadFromPortOnlyChangesFlagS) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4042,7 +4047,7 @@ TEST(CpuCoreTest, LoadFromPortOnlyChangesFlagS) {
 
 TEST(CpuCoreTest, LoadWordFromPortMode0) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4088,7 +4093,7 @@ TEST(CpuCoreTest, LoadWordFromPortMode0) {
 
 TEST(CpuCoreTest, LoadWordFromPortModeS) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4134,7 +4139,7 @@ TEST(CpuCoreTest, LoadWordFromPortModeS) {
 
 TEST(CpuCoreTest, LoadWordFromPortModeA) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4180,7 +4185,7 @@ TEST(CpuCoreTest, LoadWordFromPortModeA) {
 
 TEST(CpuCoreTest, LoadWordFromPortModeT) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4226,7 +4231,7 @@ TEST(CpuCoreTest, LoadWordFromPortModeT) {
 
 TEST(CpuCoreTest, LoadWordFromPortModeTSA) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(3));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(3));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4285,7 +4290,7 @@ TEST(CpuCoreTest, LoadWordFromPortModeTSA) {
 
 TEST(CpuCoreTest, StoreToInvalidPort) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(10));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(10));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4321,7 +4326,7 @@ TEST(CpuCoreTest, StoreToInvalidPort) {
 
 TEST(CpuCoreTest, StoreToPortOnlyChangesFlagS) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4374,7 +4379,7 @@ TEST(CpuCoreTest, StoreToPortOnlyChangesFlagS) {
 
 TEST(CpuCoreTest, StoreWordToPortMode0) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4423,7 +4428,7 @@ TEST(CpuCoreTest, StoreWordToPortMode0) {
 
 TEST(CpuCoreTest, StoreWordToPortModeA) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4472,7 +4477,7 @@ TEST(CpuCoreTest, StoreWordToPortModeA) {
 
 TEST(CpuCoreTest, StoreWordToPortModeS) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4521,7 +4526,7 @@ TEST(CpuCoreTest, StoreWordToPortModeS) {
 
 TEST(CpuCoreTest, StoreWordToPortModeT) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4570,7 +4575,7 @@ TEST(CpuCoreTest, StoreWordToPortModeT) {
 
 TEST(CpuCoreTest, StoreWordToPortModeTSA) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(3));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(3));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4633,7 +4638,7 @@ TEST(CpuCoreTest, StoreWordToPortModeTSA) {
 
 TEST(CpuCoreTest, LockPortBlocksCpuCore) {
   Processor processor(
-      ProcessorConfig::OneCore(kMicroTestInstructions).SetPortCount(2));
+      ProcessorConfig::OneCore(GetMicroTestInstructionSet()).SetPortCount(2));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4688,7 +4693,7 @@ TEST(CpuCoreTest, LockPortBlocksCpuCore) {
 }
 
 TEST(CpuCoreTest, SelfCoreOp) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4729,8 +4734,9 @@ TEST(CpuCoreTest, SelfCoreOp) {
 }
 
 TEST(CpuCoreTest, ModifyOtherCore) {
-  Processor processor(ProcessorConfig::MultiCore(2, kMicroTestInstructions)
-                          .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
+  Processor processor(
+      ProcessorConfig::MultiCore(2, GetMicroTestInstructionSet())
+          .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
   CpuCore& core0 = *processor.GetCore(0);
   CpuCore& core1 = *processor.GetCore(1);
   CoreState state0(core0);
@@ -4787,7 +4793,7 @@ TEST(CpuCoreTest, ModifyOtherCore) {
 }
 
 TEST(CpuCoreTest, SelfCoreInterrupt) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4808,7 +4814,8 @@ TEST(CpuCoreTest, SelfCoreInterrupt) {
 }
 
 TEST(CpuCoreTest, OtherCoreInterrupt) {
-  Processor processor(ProcessorConfig::MultiCore(2, kMicroTestInstructions));
+  Processor processor(
+      ProcessorConfig::MultiCore(2, GetMicroTestInstructionSet()));
   CpuCore& core0 = *processor.GetCore(0);
   CpuCore& core1 = *processor.GetCore(1);
   CoreState state0(core0);
@@ -4842,9 +4849,10 @@ TEST(CpuCoreTest, OtherCoreInterrupt) {
 }
 
 TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {
-  Processor processor(ProcessorConfig::MultiCore(2, kMicroTestInstructions)
-                          .SetMemoryBank(1, MemoryBankConfig::MaxRam())
-                          .SetMemoryBank(2, MemoryBankConfig::MaxRam()));
+  Processor processor(
+      ProcessorConfig::MultiCore(2, GetMicroTestInstructionSet())
+          .SetMemoryBank(1, MemoryBankConfig::MaxRam())
+          .SetMemoryBank(2, MemoryBankConfig::MaxRam()));
   CpuCore& core0 = *processor.GetCore(0);
   CpuCore& core1 = *processor.GetCore(1);
   CoreState state0(core0);
@@ -4906,7 +4914,7 @@ TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {
 }
 
 TEST(CpuCoreTest, CbkResetsWaitOnSelf) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4951,7 +4959,7 @@ TEST(CpuCoreTest, CbkResetsWaitOnSelf) {
 }
 
 TEST(CpuCoreTest, ResetDuringWait) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();
@@ -4990,8 +4998,9 @@ TEST(CpuCoreTest, ResetDuringWait) {
 }
 
 TEST(CpuCoreTest, CoreLockBlocks) {
-  Processor processor(ProcessorConfig::MultiCore(2, kMicroTestInstructions)
-                          .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
+  Processor processor(
+      ProcessorConfig::MultiCore(2, GetMicroTestInstructionSet())
+          .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
   CpuCore& core0 = *processor.GetCore(0);
   CpuCore& core1 = *processor.GetCore(1);
   CoreState state0(core0);
@@ -5037,7 +5046,7 @@ TEST(CpuCoreTest, CoreLockBlocks) {
 }
 
 TEST(CpuCoreTest, ReadOnlyRegisters) {
-  Processor processor(ProcessorConfig::OneCore(kMicroTestInstructions));
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
   state.ResetCore();

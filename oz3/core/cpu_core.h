@@ -342,7 +342,7 @@ class CpuCore final : public ExecutionComponent {
   CpuCore* locked_core_ = this;  // Current locked core.
 
   // Microcode implementation
-  InstructionSet micro_codes_;
+  std::shared_ptr<const InstructionSet> instructions_;
   DecodedInstruction instruction_ = {};
   int mpc_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).

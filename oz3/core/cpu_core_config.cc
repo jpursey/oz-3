@@ -7,14 +7,16 @@
 
 #include <algorithm>
 
+#include "glog/logging.h"
 #include "oz3/core/default_instruction_set.h"
+#include "oz3/core/instruction_compiler.h"
 
 namespace oz3 {
 
 CpuCoreConfig::CpuCoreConfig() : instructions_(GetDefaultInstructionSet()) {}
 
 CpuCoreConfig& CpuCoreConfig::SetInstructionSet(
-    absl::Span<const InstructionDef> instructions) {
+    std::shared_ptr<const InstructionSet> instructions) {
   instructions_ = instructions;
   return *this;
 }
