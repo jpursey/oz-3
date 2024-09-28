@@ -34,14 +34,17 @@ enum class ArgType : uint8_t {
   // Immediate value argument (1-8 bits).
   //
   // In Microcode, these are loaded into C0 for the first argument, and C1 for
-  // the second argument.
+  // the second argument. As a macro argument, it is referred to as "i", which
+  // will resolve to either C0 or C1 depending on which argument the macro was
+  // for.
   kImmediate,
 
   // 16-bit register argument (3 bits).
   //
   // In microcode, the first argument is referred to as "a", and the second
-  // argument is referred to as "b". As a macro parameter it is referred to as
-  // "p", and a as a macro return it is referred to as "r".
+  // argument is referred to as "b". As a macro argument, it is referred to as
+  // "m", and as a macro parameter it is referred to as "p", and finally as a
+  // macro return it is referred to as "r".
   //
   // Word registers are always 3 bits in size to refer to registers R0-R7.
   kWordReg,
@@ -49,8 +52,9 @@ enum class ArgType : uint8_t {
   // 32-bit register argument (2 bits).
   //
   // In microcode, the first argument is referred to as "A"/"a0"/"a1", and the
-  // second argument is referred to as "B"/"b0"/"b1". As a macro parameter it
-  // is referred to as "P"/"p0"/"p1", and as a macro return it is referred to as
+  // second argument is referred to as "B"/"b0"/"b1". As a macro argument, it is
+  // referred to as "M"/"m0"/"m1", and as a macro parameter it is referred to as
+  // "P"/"p0"/"p1", and finally as a macro return it is referred to as
   // "R"/"r0"/"r1".
   kDwordReg,
 
@@ -120,8 +124,8 @@ struct MacroCodeDef {
   //   parameter separators, and labels respectively.
   // - The string may contain "$r", "$R", or "$#1" to "$#8" which will match a
   //   word, dword, or immediate value respectively that can be referred to in
-  //   the macro microcode as "a", "a0"/"a1", or "i". There may only be one of
-  //   these in the string. The character "$" cannot otherwise appear in the
+  //   the macro microcode as "m", "M"/"m0"/"m1", or "i". There may only be one
+  //   of these in the string. The character "$" cannot otherwise appear in the
   //   string.
   // - If the string contains any parentheses, brackets, or braces, they must be
   //   balanced.
@@ -135,7 +139,7 @@ struct MacroCodeDef {
 
   // Argument contained within the macro itself. This is used to specify the
   // number of bits the macro argument takes. The argument is referred to as
-  // "a", "a0"/"a1", or "i" in the microcode source. This must match the
+  // "m", "M"/"m0"/"m1", or "i" in the microcode source. This must match the
   // definition in the source. In addition prefix.size + arg.size must equal the
   // MacroDef size.
   Argument arg;
@@ -152,19 +156,20 @@ struct MacroCodeDef {
 
 // Definition of a microcode instruction macro for the OZ-3 CPU.
 struct MacroDef {
-  // The name of the macro. This is referred to as "$name;" or "$name(arg);"
-  // in the microcode to refer to a macro (depending on whether it takes an
+  // The name of the macro. It should consist only of alphanumeric characters.
+  // It is case-sensitive. This is referred to as "$name;" or "$name(arg);" in
+  // the microcode to refer to a macro (depending on whether it takes an
   // argument or not).
   std::string_view name;
 
-  // The type of the macro argument, if there is any. This is referred to as "r"
-  // in the macro source if it is a word register, and "R" if it is a dword
-  // register. Other argument types are not supported.
+  // The type of the macro argument, if there is any. This is referred to as "p"
+  // in the macro source if it is a word register, and "P"/"p0"/"p1" if it is a
+  // dword register. Other argument types are not supported.
   ArgType arg = ArgType::kNone;
 
   // The return type of the macro. This is referred to as "r" in the instruction
-  // source if it is a word register, and "R" if it is a dword register.  Other
-  // argument types are not supported.
+  // source if it is a word register, and "R"/"r0"/"r1" if it is a dword
+  // register. Other argument types are not supported.
   ArgType ret = ArgType::kNone;
 
   // The number of bits the macro argument takes.
