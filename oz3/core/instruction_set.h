@@ -39,6 +39,12 @@ class InstructionSet {
   InstructionSet& operator=(InstructionSet&&) = default;
   ~InstructionSet() = default;
 
+  // Returns true if the instruction set is empty.
+  //
+  // This occurs if the instruction set was default constructed, or if
+  // CompileInstructionSet failed.
+  bool IsEmpty() const { return instructions_.empty(); }
+
   // Decodes an instruction code into a set of microcode instructions and
   // parameters.
   //

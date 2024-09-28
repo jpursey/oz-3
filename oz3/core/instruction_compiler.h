@@ -16,6 +16,10 @@
 namespace oz3 {
 
 // Compiles the provided instruction set definition into an instruction set.
+//
+// If an error occurs, this function returns an empty instruction set (all
+// decode operations will result in a NOP), and it will set the error_string to
+// a description of the error.
 std::shared_ptr<const InstructionSet> CompileInstructionSet(
     InstructionSetDef instruction_set_def, std::string* error_string = nullptr,
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs());

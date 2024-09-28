@@ -29,17 +29,19 @@ constexpr MicrocodeDef kMicroNoArgs = {kMicro_TEST, "TEST"};
 
 bool CompileForTest(absl::Span<const MicrocodeDef> micros,
                     const InstructionDef& instruction_def, std::string& error) {
-  CompileInstructionSet(
-      {.instructions = absl::Span<const InstructionDef>(&instruction_def, 1)},
-      &error, micros);
-  return error.empty();
+  return !CompileInstructionSet(
+             {.instructions =
+                  absl::Span<const InstructionDef>(&instruction_def, 1)},
+             &error, micros)
+      ->IsEmpty();
 }
 
 bool CompileForTest(const InstructionDef& instruction_def, std::string& error) {
-  CompileInstructionSet(
-      {.instructions = absl::Span<const InstructionDef>(&instruction_def, 1)},
-      &error);
-  return error.empty();
+  return !CompileInstructionSet(
+             {.instructions =
+                  absl::Span<const InstructionDef>(&instruction_def, 1)},
+             &error)
+      ->IsEmpty();
 }
 
 bool TestCompile(const MicrocodeDef& microcode_def,
@@ -50,10 +52,11 @@ bool TestCompile(const MicrocodeDef& microcode_def,
   InstructionDef instruction = instruction_def;
   instruction.code = new_code;
   instruction.op_name = "TEST";
-  CompileInstructionSet(
-      {.instructions = absl::Span<const InstructionDef>(&instruction, 1)},
-      &error, micros);
-  return error.empty();
+  return !CompileInstructionSet(
+             {.instructions =
+                  absl::Span<const InstructionDef>(&instruction, 1)},
+             &error, micros)
+      ->IsEmpty();
 }
 
 InstructionDef MakeDef(std::string_view code) {
