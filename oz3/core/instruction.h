@@ -105,7 +105,7 @@ struct MacroPrefix {
   uint8_t value = 0;
 
   // Number of bits in the prefix.
-  int8_t size = 0;
+  uint8_t size = 0;
 };
 
 // Definition of one of the code options for a macro.
@@ -173,7 +173,7 @@ struct MacroDef {
   ArgType ret = ArgType::kNone;
 
   // The number of bits the macro argument takes.
-  uint8_t size = 0;
+  uint16_t size = 0;
 
   // The source code for the macro (up to 2^size entries).
   absl::Span<const MacroCodeDef> code;

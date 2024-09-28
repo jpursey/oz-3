@@ -7,6 +7,7 @@
 #define OZ3_CORE_MICRO_CODE_H_
 
 #include <cstdint>
+#include <ostream>
 #include <string>
 
 #include "absl/container/flat_hash_map.h"
@@ -121,13 +122,20 @@ struct Microcode {
   //   than zero, it is just the register index. If it is less than zero, then
   //   it refers to the decoded arguments from the instruction code: -1 is reg1,
   //   and -2 is reg2, -3 is reg1 second word, and -4 is reg2 second word.
-  // - Immediate, bank, or ZSCO: If the argument is an immediate value, bank, or
-  //   ZSCO flags, then the value is the arg itself.
+  // - Immediate: If the argument is an immediate value, bank, or status flags,
+  //   port mode, condition, or address then the value is the arg itself.
   int8_t arg1;
   int8_t arg2;
 
   auto operator<=>(const Microcode&) const = default;
 };
+
+// Debug printer tests.
+inline void PrintTo(const Microcode& microcode, std::ostream* os) {
+  *os << "Microcode{op=" << static_cast<int>(microcode.op)
+      << ", arg1=" << static_cast<int>(microcode.arg1)
+      << ", arg2=" << static_cast<int>(microcode.arg2) << "}";
+}
 
 // Returns the microcode definitions for the OZ-3 CPU.
 absl::Span<const MicrocodeDef> GetMicrocodeDefs();

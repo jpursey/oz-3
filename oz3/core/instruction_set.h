@@ -65,6 +65,7 @@ class InstructionSet {
     DecodedInstruction& decoded;
     const Instruction& instruction;
     const InstructionCode* code;
+    const SubInstruction* sub_instruction = nullptr;
     uint16_t code_word;
   };
 
