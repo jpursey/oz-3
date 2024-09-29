@@ -309,6 +309,13 @@ bool InstructionCompiler::CompileInstruction(
   state_.arg1 = &instruction.arg1;
   state_.arg2 = &instruction.arg2;
 
+  if (!instruction.arg1.IsValid()) {
+    return Error("Invalid first argument (size is probably invalid for type)");
+  }
+  if (!instruction.arg2.IsValid()) {
+    return Error("Invalid second argument (size is probably invalid for type)");
+  }
+
   state_.src_code =
       absl::StrSplit(instruction_def_->code, ';', absl::SkipWhitespace());
   if (!ExtractLabels()) {

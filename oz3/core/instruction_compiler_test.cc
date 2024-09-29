@@ -75,6 +75,61 @@ InstructionDef MakeDef(std::pair<Argument, Argument> args,
   return InstructionDef{.arg1 = args.first, .arg2 = args.second, .code = code};
 }
 
+TEST(InstructionCompilerTest, InvalidFirstArg) {
+  std::string error;
+  auto MakeDef = [](Argument arg) {
+    return InstructionDef{
+        .op = kOp_TEST, .op_name = "TEST", .arg1 = arg, .code = "UL;"};
+  };
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kNone, 1}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kImmediate, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kImmediate, 9}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kWordReg, 5}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kWordReg, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kDwordReg, 3}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kDwordReg, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 9}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("first argument"));
+}
+
+TEST(InstructionCompilerTest, InvalidSecondArg) {
+  std::string error;
+  auto MakeDef = [](Argument arg) {
+    return InstructionDef{.op = kOp_TEST,
+                          .op_name = "TEST",
+                          .arg1 = ArgType::kWordReg,
+                          .arg2 = arg,
+                          .code = "UL;"};
+  };
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kNone, 1}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kImmediate, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kImmediate, 9}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kWordReg, 5}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kWordReg, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kDwordReg, 3}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kDwordReg, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 0}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 9}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
+}
+
 TEST(InstructionCompilerTest, BankArg) {
   const MicrocodeDef kMicroBankArg1 = {kMicro_TEST, "TEST",
                                        MicroArgType::kBank};
