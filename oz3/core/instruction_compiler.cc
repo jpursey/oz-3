@@ -142,10 +142,12 @@ class InstructionCompiler {
 
   enum class LockType { kNone, kMemory, kPort, kCore };
 
-  bool Error(absl::string_view message) {
+  template <typename... Args>
+  bool Error(Args&&... args) {
     if (error_ == nullptr) {
       return false;
     }
+    std::string message = absl::StrCat(std::forward<Args>(args)...);
     std::string context;
     if (instruction_def_ != nullptr) {
       context = absl::StrCat(" in ", instruction_def_->op_name);
@@ -246,14 +248,13 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
   auto pos = macro_def.name.find_first_not_of(
       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_0123456789");
   if (pos != std::string::npos) {
-    return Error(absl::StrCat("Invalid character '",
-                              macro_def.name.substr(pos, 1),
-                              "' in macro name"));
+    return Error("Invalid character '", macro_def.name.substr(pos, 1),
+                 "' in macro name");
   }
 
   if (macro_def.size < 1 || macro_def.size > 8) {
-    return Error(absl::StrCat("Macro size must be between 1 and 8. Size is ",
-                              macro_def.size));
+    return Error("Macro size must be between 1 and 8. Size is ",
+                 macro_def.size);
   }
   int sub_count = (1 << macro_def.size);
 
@@ -270,15 +271,14 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     state_ = {};
     state_.macro_code_def = &code_def;
     if (code_def.arg.size + code_def.prefix.size != macro_def.size) {
-      return Error(absl::StrCat("Prefix + argument size ",
-                                code_def.arg.size + code_def.prefix.size,
-                                " does not match macro size ", macro_def.size));
+      return Error("Prefix + argument size ",
+                   code_def.arg.size + code_def.prefix.size,
+                   " does not match macro size ", macro_def.size);
     }
     const int max_prefix_value = (1 << code_def.prefix.size) - 1;
     if (code_def.prefix.value > max_prefix_value) {
-      return Error(
-          absl::StrCat("Prefix value too large: ", code_def.prefix.value, " > ",
-                       max_prefix_value));
+      return Error("Prefix value too large: ", code_def.prefix.value, " > ",
+                   max_prefix_value);
     }
     if (!code_def.arg.IsValid()) {
       return Error(
@@ -420,8 +420,8 @@ bool InstructionCompiler::CompileInstruction(
       ((instruction.arg1.type == ArgType::kMacro) ? instruction.arg1.size
                                                   : instruction.arg2.size);
   if (macro_size != macro.bit_size) {
-    return Error(absl::StrCat("Macro size ", macro.bit_size,
-                              " does not macro argument size ", macro_size));
+    return Error("Macro size ", macro.bit_size,
+                 " does not macro argument size ", macro_size);
   }
 
   state_.pre_codes.assign(state_.microcodes.begin(),
@@ -460,18 +460,18 @@ bool InstructionCompiler::ExtractLabels() {
     if (code.starts_with('@')) {
       auto label_end = code.find(':', 1);
       if (label_end == std::string_view::npos) {
-        return Error(absl::StrCat("Expected ':' after @ label: ", code));
+        return Error("Expected ':' after @ label: ", code);
       }
       std::string_view label = code.substr(1, label_end - 1);
       code.remove_prefix(label_end + 1);
       for (char c : label) {
         if (!absl::ascii_isalnum(c) && c != '_') {
-          return Error(absl::StrCat("Invalid label: ", label));
+          return Error("Invalid label: ", label);
         }
       }
       std::string label_key = absl::AsciiStrToUpper(label);
       if (state_.labels.contains(label_key)) {
-        return Error(absl::StrCat("Duplicate label: ", label));
+        return Error("Duplicate label: ", label);
       }
       state_.labels[label_key] = index;
     }
@@ -497,17 +497,16 @@ bool InstructionCompiler::InitLocks() {
     switch (state_.microcode->op) {
       case kMicro_LK: {
         if (lock >= 0) {
-          return Error(absl::StrCat("LK when prior ", LockOpNameFromIndex(lock),
-                                    " is still locked."));
+          return Error("LK when prior ", LockOpNameFromIndex(lock),
+                       " is still locked.");
         }
         lock = state_.microcode->arg1;
         ++lock_count;
       } break;
       case kMicro_LKR: {
         if (lock >= 0) {
-          return Error(absl::StrCat("LKR when prior ",
-                                    LockOpNameFromIndex(lock),
-                                    " is still locked."));
+          return Error("LKR when prior ", LockOpNameFromIndex(lock),
+                       " is still locked.");
         }
         lock = kFirstRegisterLock + state_.microcode->arg1 + 10;
         DCHECK(lock >= kFirstRegisterLock);
@@ -521,9 +520,8 @@ bool InstructionCompiler::InitLocks() {
       } break;
       case kMicro_PLK: {
         if (lock >= 0) {
-          return Error(absl::StrCat("PLK when prior ",
-                                    LockOpNameFromIndex(lock),
-                                    " is still locked."));
+          return Error("PLK when prior ", LockOpNameFromIndex(lock),
+                       " is still locked.");
         }
         lock = port_lock++;
         ++lock_count;
@@ -536,9 +534,8 @@ bool InstructionCompiler::InitLocks() {
       } break;
       case kMicro_CLK: {
         if (lock >= 0) {
-          return Error(absl::StrCat("CLK when prior ",
-                                    LockOpNameFromIndex(lock),
-                                    " is still locked."));
+          return Error("CLK when prior ", LockOpNameFromIndex(lock),
+                       " is still locked.");
         }
         lock = core_lock++;
         ++lock_count;
@@ -551,8 +548,8 @@ bool InstructionCompiler::InitLocks() {
       } break;
     }
     if (lock_count > kMaxLocksPerInstruction) {
-      return Error(absl::StrCat("Too many LK/UL, PLK/PUL, CLK/CUL pairs (max ",
-                                kMaxLocksPerInstruction, ")"));
+      return Error("Too many LK/UL, PLK/PUL, CLK/CUL pairs (max ",
+                   kMaxLocksPerInstruction, ")");
     }
     ++state_.microcode;
   }
@@ -707,8 +704,8 @@ bool InstructionCompiler::CompileSubInstruction() {
 
 bool InstructionCompiler::CompileInstructionVariant() {
   if (state_.microcodes.size() > kMaxInstructionMicrocodes) {
-    return Error(absl::StrCat("Too much microcode: ", state_.microcodes.size(),
-                              " > ", kMaxInstructionMicrocodes));
+    return Error("Too much microcode: ", state_.microcodes.size(), " > ",
+                 kMaxInstructionMicrocodes);
   }
 
   state_.code->pc_size = 1;
@@ -782,7 +779,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       } else if (arg_name == "EXTRA") {
         arg = CpuCore::EXTRA;
       } else {
-        return Error(absl::StrCat("Invalid bank: ", arg_name));
+        return Error("Invalid bank: ", arg_name);
       }
       return true;
     } break;
@@ -799,7 +796,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
         } else if (c == 'I') {
           arg |= CpuCore::I;
         } else if (c != '_') {
-          return Error(absl::StrCat("Invalid status flags: ", arg_name));
+          return Error("Invalid status flags: ", arg_name);
         }
       }
       return true;
@@ -813,7 +810,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
         } else if (c == 'A') {
           arg |= Port::A;
         } else if (c != '_') {
-          return Error(absl::StrCat("Invalid port mode: ", arg_name));
+          return Error("Invalid port mode: ", arg_name);
         }
       }
       return true;
@@ -836,7 +833,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       } else if (arg_name == "NO") {
         arg = CpuCore::OShift;
       } else {
-        return Error(absl::StrCat("Invalid condition: ", arg_name));
+        return Error("Invalid condition: ", arg_name);
       }
       return true;
     } break;
@@ -848,13 +845,13 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       int jump = 0;
       if (arg_name[0] != '@') {
         if (!absl::SimpleAtoi(arg_name, &jump)) {
-          return Error(absl::StrCat("Invalid argument: ", arg_name));
+          return Error("Invalid argument: ", arg_name);
         }
       } else {
         std::string_view label = arg_name.substr(1);
         std::string label_key = absl::AsciiStrToUpper(label);
         if (!state_.labels.contains(label_key)) {
-          return Error(absl::StrCat("Unknown label: ", label));
+          return Error("Unknown label: ", label);
         }
         jump = state_.labels[label_key] - jump_from;
       }
@@ -862,8 +859,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       const int max_jump = std::min<int>(
           127, static_cast<int>(state_.parsed_code.size()) - jump_from);
       if (jump < min_jump || jump > max_jump) {
-        return Error(absl::StrCat("Value out of range [", min_jump, ",",
-                                  max_jump, "]: ", arg_name));
+        return Error("Value out of range [", min_jump, ",", max_jump,
+                     "]: ", arg_name);
       }
       arg = jump;
       return true;
@@ -871,10 +868,10 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
     case MicroArgType::kValue: {
       int value;
       if (!absl::SimpleAtoi(arg_name, &value)) {
-        return Error(absl::StrCat("Invalid argument: ", arg_name));
+        return Error("Invalid argument: ", arg_name);
       }
       if (value < -128 || value > 127) {
-        return Error(absl::StrCat("Value out of range [-128,127]: ", arg_name));
+        return Error("Value out of range [-128,127]: ", arg_name);
       }
       arg = value;
       return true;
@@ -887,9 +884,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kWordReg) {
-          return Error(
-              absl::StrCat("First argument is not a word register. It is ",
-                           ArgTypeToString(state_.arg1->type), ")"));
+          return Error("First argument is not a word register. It is ",
+                       ArgTypeToString(state_.arg1->type), ")");
         }
         arg = kArg_a;
       } else if (arg_name == "a0") {
@@ -899,9 +895,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("First argument is not a dwrod register. It is ",
-                           ArgTypeToString(state_.arg1->type), ")"));
+          return Error("First argument is not a dwrod register. It is ",
+                       ArgTypeToString(state_.arg1->type), ")");
         }
         arg = kArg_a0;
       } else if (arg_name == "a1") {
@@ -911,9 +906,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("First argument is not a dwrod register. It is ",
-                           ArgTypeToString(state_.arg1->type), ")"));
+          return Error("First argument is not a dwrod register. It is ",
+                       ArgTypeToString(state_.arg1->type), ")");
         }
         arg = kArg_a1;
       } else if (arg_name == "b") {
@@ -923,9 +917,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kWordReg) {
-          return Error(
-              absl::StrCat("Second argument is not a word register. It is ",
-                           ArgTypeToString(state_.arg2->type), ")"));
+          return Error("Second argument is not a word register. It is ",
+                       ArgTypeToString(state_.arg2->type), ")");
         }
         arg = kArg_b;
       } else if (arg_name == "b0") {
@@ -935,9 +928,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("Second argument is not a dword register. It is ",
-                           ArgTypeToString(state_.arg2->type), ")"));
+          return Error("Second argument is not a dword register. It is ",
+                       ArgTypeToString(state_.arg2->type), ")");
         }
         arg = kArg_b0;
       } else if (arg_name == "b1") {
@@ -947,9 +939,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("Second argument is not a dword register. It is ",
-                           ArgTypeToString(state_.arg2->type), ")"));
+          return Error("Second argument is not a dword register. It is ",
+                       ArgTypeToString(state_.arg2->type), ")");
         }
         arg = kArg_b1;
       } else if (arg_name == "i") {
@@ -959,9 +950,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"C0\"/\"C1\" for instruction immediate values)");
         }
         if (state_.argm->type != ArgType::kImmediate) {
-          return Error(
-              absl::StrCat("Macro argument is not an immediate value. It is ",
-                           ArgTypeToString(state_.argm->type), ")"));
+          return Error("Macro argument is not an immediate value. It is ",
+                       ArgTypeToString(state_.argm->type), ")");
         }
         arg = kArg_i;
       } else if (arg_name == "m") {
@@ -971,9 +961,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"a\"/\"b\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kWordReg) {
-          return Error(
-              absl::StrCat("Macro argument is not a word register. It is ",
-                           ArgTypeToString(state_.argm->type), ")"));
+          return Error("Macro argument is not a word register. It is ",
+                       ArgTypeToString(state_.argm->type), ")");
         }
         arg = kArg_m;
       } else if (arg_name == "m0") {
@@ -983,9 +972,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"a0\"/\"b0\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("Macro argument is not a dword register. It is ",
-                           ArgTypeToString(state_.argm->type), ")"));
+          return Error("Macro argument is not a dword register. It is ",
+                       ArgTypeToString(state_.argm->type), ")");
         }
         arg = kArg_m0;
       } else if (arg_name == "m1") {
@@ -995,15 +983,14 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"a1\"/\"b1\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("Macro argument is not a dword register. It is ",
-                           ArgTypeToString(state_.argm->type), ")"));
+          return Error("Macro argument is not a dword register. It is ",
+                       ArgTypeToString(state_.argm->type), ")");
         }
         arg = kArg_m1;
       } else if (arg_name[0] == 'R' && arg_name.size() == 2) {
         arg = arg_name[1] - '0';
         if (arg < 0 || arg > 7) {
-          return Error(absl::StrCat("Invalid register index: ", arg_name));
+          return Error("Invalid register index: ", arg_name);
         }
         arg += CpuCore::R0;
       } else if (arg_name == "C0") {
@@ -1023,7 +1010,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       } else if (arg_name == "BM") {
         arg = CpuCore::BM;
       } else {
-        return Error(absl::StrCat("Invalid word argument: ", arg_name));
+        return Error("Invalid word argument: ", arg_name);
       }
       return true;
     } break;
@@ -1035,9 +1022,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("First argument is not a dwrod register. It is ",
-                           ArgTypeToString(state_.arg1->type), ")"));
+          return Error("First argument is not a dwrod register. It is ",
+                       ArgTypeToString(state_.arg1->type), ")");
         }
         arg = kArg_A;
       } else if (arg_name == "B") {
@@ -1047,9 +1033,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("Second argument is not a dword register. It is ",
-                           ArgTypeToString(state_.arg2->type), ")"));
+          return Error("Second argument is not a dword register. It is ",
+                       ArgTypeToString(state_.arg2->type), ")");
         }
         arg = kArg_B;
       } else if (arg_name == "M") {
@@ -1059,21 +1044,20 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"A\"/\"B\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kDwordReg) {
-          return Error(
-              absl::StrCat("Macro argument is not a dword register. It is ",
-                           ArgTypeToString(state_.argm->type), ")"));
+          return Error("Macro argument is not a dword register. It is ",
+                       ArgTypeToString(state_.argm->type), ")");
         }
         arg = kArg_M;
       } else if (arg_name[0] == 'D' && arg_name.size() == 2) {
         arg = arg_name[1] - '0';
         if (arg < 0 || arg > 3) {
-          return Error(absl::StrCat("Invalid register index: ", arg_name));
+          return Error("Invalid register index: ", arg_name);
         }
         arg = CpuCore::D0 + arg * 2;
       } else if (arg_name == "SD") {
         arg = CpuCore::SD;
       } else {
-        return Error(absl::StrCat("Invalid dword argument: ", arg_name));
+        return Error("Invalid dword argument: ", arg_name);
       }
       return true;
     } break;
@@ -1225,9 +1209,8 @@ bool InstructionCompiler::ValidateMicroArg(int index, MicroArgType arg_type,
   if (arg_type == MicroArgType::kAddress) {
     const int jump = index + arg + 1;
     if (state_.locks[index] != state_.locks[jump]) {
-      return Error(absl::StrCat("Jump between locks from ",
-                                LockName(state_.locks[index]), " to ",
-                                LockName(state_.locks[jump])));
+      return Error("Jump between locks from ", LockName(state_.locks[index]),
+                   " to ", LockName(state_.locks[jump]));
     }
   }
   return true;
