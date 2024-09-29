@@ -797,7 +797,7 @@ TEST(InstructionSetTest, DwordOpMacroArgDecodedCorrectly) {
     EXPECT_EQ(decoded.c[0], 0);
     EXPECT_EQ(decoded.c[1], 0);
     EXPECT_EQ(decoded.r[0], CpuCore::R0);
-    EXPECT_EQ(decoded.r[1], CpuCore::D0 + i*2);
+    EXPECT_EQ(decoded.r[1], CpuCore::D0 + i * 2);
   }
   EXPECT_THAT(
       decoded.code,
@@ -866,6 +866,31 @@ TEST(MicrocodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   DecodedInstruction decoded;
   EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
   EXPECT_EQ(decoded.size, 1);
+}
+
+TEST(MicrocodeTest, MacroChangesCodeSize) {
+  const MacroCodeDef macro_code_defs[] = {
+      {.source = "ONE", .prefix = {0, 2}, .code = "LD(R0);"},
+      {.source = "TWO", .prefix = {1, 2}, .code = "LD(R0);LD(R1);"},
+      {.source = "THREE", .prefix = {2, 2}, .code = "LD(R0);LD(R1);LD(R2);"},
+      {.source = "FOUR",
+       .prefix = {3, 2},
+       .code = "LD(R0);LD(R1);LD(R2);LD(R3);"},
+  };
+  const MacroDef macro_defs[] = {
+      {.name = "Macro", .size = 2, .code = macro_code_defs}};
+  InstructionDef instruction_defs[] = {{.op = kOp_TEST,
+                                        .op_name = "TEST",
+                                        .arg1 = {ArgType::kMacro, 2},
+                                        .code = "$Macro;UL;"}};
+  std::string error;
+  auto codes = CompileInstructionSet({instruction_defs, macro_defs}, &error);
+  EXPECT_THAT(error, IsEmpty());
+  DecodedInstruction decoded;
+  for (uint16_t i = 0; i < 4; ++i) {
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, i), decoded));
+    EXPECT_EQ(decoded.size, i + 2);
+  }
 }
 
 }  // namespace
