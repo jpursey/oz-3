@@ -61,6 +61,7 @@ bool InstructionSet::Decode(uint16_t code_word,
 
 bool InstructionSet::DecodeArgument(DecodeState& state, const Argument& arg,
                                     int arg_index) const {
+  DCHECK(arg.IsValid());
   const uint16_t arg_value = state.code_word & ((1 << arg.size) - 1);
   switch (arg.type) {
     case ArgType::kNone:

@@ -42,6 +42,23 @@ uint8_t GetDefaultArgTypeSize(ArgType type) {
   }
 }
 
+bool Argument::IsValid() const {
+  switch (type) {
+    case ArgType::kNone:
+      return size == 0;
+    case ArgType::kImmediate:
+      return size >= 1 && size <= 8;
+    case ArgType::kWordReg:
+      return size >= 1 && size <= 4;
+    case ArgType::kDwordReg:
+      return size >= 1 && size <= 2;
+    case ArgType::kMacro:
+      return size >= 1 && size <= 8;
+    default:
+      return false;
+  }
+}
+
 uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
   uint16_t code = static_cast<uint16_t>(op) << 8;
   uint16_t args = 0;

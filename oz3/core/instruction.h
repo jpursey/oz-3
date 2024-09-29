@@ -39,7 +39,7 @@ enum class ArgType : uint8_t {
   // for.
   kImmediate,
 
-  // 16-bit register argument (3 bits).
+  // 16-bit register argument (1-4 bits).
   //
   // In microcode, the first argument is referred to as "a", and the second
   // argument is referred to as "b". As a macro argument, it is referred to as
@@ -49,7 +49,7 @@ enum class ArgType : uint8_t {
   // Word registers are always 3 bits in size to refer to registers R0-R7.
   kWordReg,
 
-  // 32-bit register argument (2 bits).
+  // 32-bit register argument (1-2 bits).
   //
   // In microcode, the first argument is referred to as "A"/"a0"/"a1", and the
   // second argument is referred to as "B"/"b0"/"b1". As a macro argument, it is
@@ -88,6 +88,8 @@ struct Argument {
       : type(in_type), size(GetDefaultArgTypeSize(in_type)) {}
   Argument(ArgType in_type, int in_size)
       : type(in_type), size(static_cast<uint8_t>(in_size)) {}
+
+  bool IsValid() const;
 
   ArgType type = ArgType::kNone;  // The type of argument.
   uint8_t size = 0;               // Number of bits the argument takes.
