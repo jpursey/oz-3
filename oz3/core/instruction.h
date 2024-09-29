@@ -119,16 +119,13 @@ struct MacroCodeDef {
   // - The string must be unique within the macro set.
   // - The string may contain space characters which will match one or more
   //   space characters in the assembly source.
-  // - The string must not contain the following characters: ";", "#", ",", or
-  //   "@". These are reserved by the assembler for comments, immediate values,
-  //   parameter separators, and labels respectively.
-  // - The string may contain "$r", "$R", or "$#1" to "$#8" which will match a
-  //   word, dword, or immediate value respectively that can be referred to in
-  //   the macro microcode as "m", "M"/"m0"/"m1", or "i". There may only be one
-  //   of these in the string. The character "$" cannot otherwise appear in the
-  //   string.
+  // - The string must not contain the following characters: ";", "#", or "@".
+  //   These are reserved by the assembler.
+  // - The string may contain "$arg" which will match the argument specification
+  //   (of any type). There may only be one of these in the string. The
+  //   character "$" cannot otherwise appear in the string.
   // - If the string contains any parentheses, brackets, or braces, they must be
-  //   balanced.
+  //   balanced, and nested correctly.
   std::string_view source;
 
   // A string of prefix bits which uniquely identify the macro. This is used to
@@ -139,9 +136,9 @@ struct MacroCodeDef {
 
   // Argument contained within the macro itself. This is used to specify the
   // number of bits the macro argument takes. The argument is referred to as
-  // "m", "M"/"m0"/"m1", or "i" in the microcode source. This must match the
-  // definition in the source. In addition prefix.size + arg.size must equal the
-  // MacroDef size.
+  // "m", "M"/"m0"/"m1", or "i" in the microcode source for word, dword, and
+  // immediate value respectively. In addition prefix.size + arg.size must equal
+  // the MacroDef size.
   Argument arg;
 
   // The return register index for the macro. This must be a register that
