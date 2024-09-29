@@ -13,16 +13,16 @@ namespace oz3 {
 std::string_view ArgTypeToString(ArgType type) {
   switch (type) {
     case ArgType::kNone:
-      return "kNone";
+      return "none";
     case ArgType::kImmediate:
-      return "kImmediate";
+      return "immediate";
     case ArgType::kWordReg:
-      return "kWordReg";
+      return "word register";
     case ArgType::kDwordReg:
-      return "kDwordReg";
+      return "dword register";
     default:
       LOG(FATAL) << "Unknown argument type: " << static_cast<int>(type);
-      return "Unknown";
+      return "unknown";
   }
 }
 
