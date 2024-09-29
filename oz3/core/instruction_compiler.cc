@@ -508,6 +508,7 @@ bool InstructionCompiler::InitLocks() {
           return Error("LKR when prior ", LockOpNameFromIndex(lock),
                        " is still locked.");
         }
+        DCHECK(state_.microcode->arg1 >= -10);
         lock = kFirstRegisterLock + state_.microcode->arg1 + 10;
         DCHECK(lock >= kFirstRegisterLock);
         ++lock_count;
