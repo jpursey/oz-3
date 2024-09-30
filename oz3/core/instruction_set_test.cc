@@ -19,6 +19,10 @@
 namespace oz3 {
 namespace {
 
+using ::oz3::compiler_internal::kArg_p;
+using ::oz3::compiler_internal::kArg_P;
+using ::oz3::compiler_internal::kArg_p0;
+using ::oz3::compiler_internal::kArg_p1;
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
@@ -845,6 +849,273 @@ TEST(InstructionSetTest, MacroWordParamDecodedCorrectly) {
           Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = CpuCore::R1}));
 }
 
+TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
+  };
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "WORD", .prefix = {0, 1}, .code = "OP(R0,R1);"},
+  };
+  MacroDef macro_defs[] = {{.name = "Macro",
+                            .ret = ArgType::kWordReg,
+                            .size = 1,
+                            .code = macro_code_defs}};
+  InstructionDef instruction_defs[] = {
+      {.op = kOp_TEST, .arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 1}},
+      {.op = kOp_TEST, .arg1 = {ArgType::kMacro, 1}, .arg2 = ArgType::kWordReg},
+      {.op = kOp_TEST,
+       .arg1 = ArgType::kDwordReg,
+       .arg2 = {ArgType::kMacro, 1}},
+      {.op = kOp_TEST,
+       .arg1 = {ArgType::kMacro, 1},
+       .arg2 = ArgType::kDwordReg},
+  };
+  auto MakeInstructionSetDef = [&](int i, ArgType param_type, int ret_value,
+                                   std::string_view code) -> InstructionSetDef {
+    macro_defs[0].param = param_type;
+    macro_code_defs[0].ret = ret_value;
+    instruction_defs[i].code = code;
+    return {absl::Span(&instruction_defs[i], 1), macro_defs};
+  };
+  std::string error;
+  std::shared_ptr<const InstructionSet> codes;
+  DecodedInstruction decoded;
+
+  for (int8_t reg = 0; reg < CpuCore::kRegisterCount; ++reg) {
+    auto reg_name = CpuCore::GetWordRegName(reg);
+    const std::string context = absl::StrCat("Context: ", reg_name);
+    codes = CompileInstructionSet(
+        MakeInstructionSetDef(0, ArgType::kNone, reg,
+                              "UL;$Macro;OP(R0,r);OP(r,R1);"),
+        &error, micro_defs);
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded)) << context;
+    EXPECT_EQ(decoded.c[0], 0) << context;
+    EXPECT_EQ(decoded.c[1], 0) << context;
+    EXPECT_EQ(decoded.r[0], 0) << context;
+    EXPECT_EQ(decoded.r[1], 0) << context;
+    EXPECT_EQ(decoded.r[2], 0) << context;
+    EXPECT_EQ(decoded.r[3], 0) << context;
+    EXPECT_THAT(
+        decoded.code,
+        ElementsAre(
+            Microcode{.op = kMicro_UL},
+            Microcode{
+                .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+            Microcode{.op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = reg},
+            Microcode{.op = kMicro_TEST, .arg1 = reg, .arg2 = CpuCore::R1}))
+        << context;
+  }
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(0, ArgType::kWordReg, kArg_p,
+                            "UL;$Macro(R4);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R4},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R4, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_p0,
+                            "UL;$Macro(D2);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R4},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R4, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_p1,
+                            "UL;$Macro(D2);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R5},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R5, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(0, ArgType::kWordReg, kArg_p,
+                            "UL;$Macro(a);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 4), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], CpuCore::R4);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::A0},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::A0, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(2, ArgType::kDwordReg, kArg_p0,
+                            "UL;$Macro(A);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 2), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], CpuCore::D2);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], CpuCore::D2 + 1);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::A0},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::A0, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(2, ArgType::kDwordReg, kArg_p1,
+                            "UL;$Macro(A);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 2), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], CpuCore::D2);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], CpuCore::D2 + 1);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::A1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::A1, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(1, ArgType::kWordReg, kArg_p,
+                            "UL;$Macro(b);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 4 << 1), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], CpuCore::R4);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::B0},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::B0, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(3, ArgType::kDwordReg, kArg_p0,
+                            "UL;$Macro(B);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 2 << 1), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], CpuCore::D2);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], CpuCore::D2 + 1);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::B0},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::B0, .arg2 = CpuCore::R1}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(3, ArgType::kDwordReg, kArg_p1,
+                            "UL;$Macro(B);OP(R0,r);OP(r,R1);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 2 << 1), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], CpuCore::D2);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], CpuCore::D2 + 1);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::B1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::B1, .arg2 = CpuCore::R1}));
+}
+
 TEST(InstructionSetTest, DwordOpArgDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
@@ -1050,6 +1321,159 @@ TEST(InstructionSetTest, MacroDwordParamDecodedCorrectly) {
           Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R5, .arg2 = -3},
           Microcode{.op = kMicro_MOV, .arg1 = -1, .arg2 = CpuCore::R6},
           Microcode{.op = kMicro_MOV, .arg1 = -3, .arg2 = CpuCore::R7}));
+}
+
+TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+      {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
+  };
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "DWORD", .prefix = {0, 1}, .code = "OP(D0,D1);"},
+  };
+  MacroDef macro_defs[] = {{.name = "Macro",
+                            .ret = ArgType::kDwordReg,
+                            .size = 1,
+                            .code = macro_code_defs}};
+  InstructionDef instruction_defs[] = {
+      {.op = kOp_TEST,
+       .arg1 = ArgType::kDwordReg,
+       .arg2 = {ArgType::kMacro, 1}},
+      {.op = kOp_TEST,
+       .arg1 = {ArgType::kMacro, 1},
+       .arg2 = ArgType::kDwordReg},
+  };
+  auto MakeInstructionSetDef = [&](int i, ArgType param_type, int ret_value,
+                                   std::string_view code) -> InstructionSetDef {
+    macro_defs[0].param = param_type;
+    macro_code_defs[0].ret = ret_value;
+    instruction_defs[i].code = code;
+    return {absl::Span(&instruction_defs[i], 1), macro_defs};
+  };
+  std::string error;
+  std::shared_ptr<const InstructionSet> codes;
+  DecodedInstruction decoded;
+
+  for (int8_t reg = 0; reg < CpuCore::kRegisterCount; ++reg) {
+    if (!CpuCore::IsDwordReg(reg)) {
+      continue;
+    }
+    auto reg_name = CpuCore::GetDwordRegName(reg);
+    const std::string context = absl::StrCat("Context: ", reg_name);
+    codes = CompileInstructionSet(
+        MakeInstructionSetDef(0, ArgType::kNone, reg,
+                              "UL;$Macro;"
+                              "OP(D0,R);OP(R,D1);"
+                              "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),
+        &error, micro_defs);
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded)) << context;
+    EXPECT_EQ(decoded.c[0], 0) << context;
+    EXPECT_EQ(decoded.c[1], 0) << context;
+    EXPECT_EQ(decoded.r[0], CpuCore::D0) << context;
+    EXPECT_EQ(decoded.r[1], 0) << context;
+    EXPECT_EQ(decoded.r[2], CpuCore::D0 + 1) << context;
+    EXPECT_EQ(decoded.r[3], 0) << context;
+    EXPECT_THAT(
+        decoded.code,
+        ElementsAre(
+            Microcode{.op = kMicro_UL},
+            Microcode{
+                .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
+            Microcode{.op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = reg},
+            Microcode{.op = kMicro_TEST, .arg1 = reg, .arg2 = CpuCore::D1},
+            Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = reg},
+            Microcode{.op = kMicro_MOV, .arg1 = reg, .arg2 = CpuCore::R5},
+            Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = reg + 1},
+            Microcode{.op = kMicro_MOV, .arg1 = reg + 1, .arg2 = CpuCore::R7}))
+        << context;
+  }
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_P,
+                            "UL;$Macro(D2);"
+                            "OP(D0,R);OP(R,D1);"
+                            "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], CpuCore::D0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], CpuCore::D0 + 1);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D2},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::D2, .arg2 = CpuCore::D1},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = CpuCore::R4},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = CpuCore::R5},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = CpuCore::R5},
+          Microcode{
+              .op = kMicro_MOV, .arg1 = CpuCore::R5, .arg2 = CpuCore::R7}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_P,
+                            "UL;$Macro(A);"
+                            "OP(D0,R);OP(R,D1);"
+                            "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 2), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], CpuCore::D2);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], CpuCore::D2 + 1);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
+          Microcode{.op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = -1},
+          Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = CpuCore::D1},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = -1},
+          Microcode{.op = kMicro_MOV, .arg1 = -1, .arg2 = CpuCore::R5},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = -3},
+          Microcode{
+              .op = kMicro_MOV, .arg1 = -3, .arg2 = CpuCore::R7}));
+
+  codes = CompileInstructionSet(
+      MakeInstructionSetDef(1, ArgType::kDwordReg, kArg_P,
+                            "UL;$Macro(B);"
+                            "OP(D0,R);OP(R,D1);"
+                            "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),
+      &error, micro_defs);
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 2 << 1), decoded));
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], CpuCore::D2);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], CpuCore::D2 + 1);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{
+              .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
+          Microcode{.op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = -2},
+          Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = CpuCore::D1},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = -2},
+          Microcode{.op = kMicro_MOV, .arg1 = -2, .arg2 = CpuCore::R5},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = -4},
+          Microcode{.op = kMicro_MOV, .arg1 = -4, .arg2 = CpuCore::R7}));
 }
 
 TEST(MicrocodeTest, DefaultCodeSizeIsOne) {

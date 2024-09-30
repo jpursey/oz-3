@@ -24,50 +24,41 @@ namespace oz3 {
 namespace {
 
 // Instruction word reg arguments.
-constexpr int8_t kArg_a = -1;
-constexpr int8_t kArg_a0 = kArg_a;
-constexpr int8_t kArg_a1 = -3;
-constexpr int8_t kArg_b = -2;
-constexpr int8_t kArg_b0 = kArg_b;
-constexpr int8_t kArg_b1 = -4;
-static_assert(kArg_b == kArg_a - 1, "Required offset to convert macro args");
-static_assert(kArg_b0 == kArg_a0 - 1, "Required offset to convert macro args");
-static_assert(kArg_b1 == kArg_a1 - 1, "Required offset to convert macro args");
-constexpr int8_t kInstructionMinWordRegArg = -4;
+using ::oz3::compiler_internal::kArg_a;
+using ::oz3::compiler_internal::kArg_a0;
+using ::oz3::compiler_internal::kArg_a1;
+using ::oz3::compiler_internal::kArg_b;
+using ::oz3::compiler_internal::kArg_b0;
+using ::oz3::compiler_internal::kArg_b1;
+using ::oz3::compiler_internal::kInstructionMinWordRegArg;
 
 // Instruction dword reg arguments.
-constexpr int8_t kArg_A = kArg_a;
-constexpr int8_t kArg_B = kArg_b;
-static_assert(kArg_B == kArg_A - 1, "Required offset to convert macro args");
-constexpr int8_t kInstructionMinDwordRegArg = -2;
+using ::oz3::compiler_internal::kArg_A;
+using ::oz3::compiler_internal::kArg_B;
+using ::oz3::compiler_internal::kInstructionMinDwordRegArg;
 
 // Minimum value for instruction arguments.
-constexpr int8_t kInstructionMinArg =
-    std::min(kInstructionMinWordRegArg, kInstructionMinDwordRegArg);
+using ::oz3::compiler_internal::kInstructionMinArg;
 
 // Macro parameter arguments
-constexpr int8_t kArg_p = -5;
-constexpr int8_t kArg_p0 = kArg_p;
-constexpr int8_t kArg_p1 = -6;
-constexpr int8_t kArg_P = kArg_p;
+using ::oz3::compiler_internal::kArg_p;
+using ::oz3::compiler_internal::kArg_P;
+using ::oz3::compiler_internal::kArg_p0;
+using ::oz3::compiler_internal::kArg_p1;
 
 // Macro return arguments
-constexpr int8_t kArg_r = -7;
-constexpr int8_t kArg_r0 = kArg_r;
-constexpr int8_t kArg_r1 = -8;
-constexpr int8_t kArg_R = kArg_r;
-
-// Offset to convert macro arguments to instruction arguments.
-constexpr int8_t kMacroArgOffset = CpuCore::kRegisterCount + 16;
-static_assert(CpuCore::kRegisterCount - kMacroArgOffset < -8);
-constexpr int8_t MacroArgValue(int8_t value) { return value - kMacroArgOffset; }
+using ::oz3::compiler_internal::kArg_r;
+using ::oz3::compiler_internal::kArg_R;
+using ::oz3::compiler_internal::kArg_r0;
+using ::oz3::compiler_internal::kArg_r1;
 
 // Macro arguments.
-constexpr int8_t kArg_i = MacroArgValue(CpuCore::C0);
-constexpr int8_t kArg_M = MacroArgValue(kArg_A);
-constexpr int8_t kArg_m = MacroArgValue(kArg_a);
-constexpr int8_t kArg_m0 = MacroArgValue(kArg_a0);
-constexpr int8_t kArg_m1 = MacroArgValue(kArg_a1);
+using ::oz3::compiler_internal::kArg_i;
+using ::oz3::compiler_internal::kArg_M;
+using ::oz3::compiler_internal::kArg_m;
+using ::oz3::compiler_internal::kArg_m0;
+using ::oz3::compiler_internal::kArg_m1;
+using ::oz3::compiler_internal::kMacroArgOffset;
 
 constexpr int kFirstRegisterLock = 10;
 constexpr int kFirstPortLock = 100;
@@ -154,6 +145,12 @@ class InstructionCompiler {
 
   enum class LockType { kNone, kMemory, kPort, kCore };
 
+  using MacrosMap = absl::flat_hash_map<std::string, Macro>;
+
+  using Instruction = microcode_internal::Instruction;
+  using SubInstruction = microcode_internal::SubInstruction;
+  using InstructionCode = microcode_internal::InstructionCode;
+
   template <typename... Args>
   bool Error(Args&&... args) {
     if (error_ == nullptr) {
@@ -187,22 +184,19 @@ class InstructionCompiler {
   bool CompileMicrocode();
   bool CompileMicroArg(std::string_view arg_name, MicroArgType arg_type,
                        int8_t& arg);
+  bool ValidateMacroReturnRegister(int8_t ret);
   bool ValidateMicrocode(int index);
   bool ValidateMicroArg(int index, MicroArgType arg_type, int8_t arg);
 
   // Initial state.
   absl::Span<const MicrocodeDef> microcode_defs_;
 
-  using Instruction = microcode_internal::Instruction;
-  using SubInstruction = microcode_internal::SubInstruction;
-  using InstructionCode = microcode_internal::InstructionCode;
-
   // Persistent state.
   std::vector<Instruction> instructions_;
   std::vector<SubInstruction> sub_instructions_;
   std::vector<Microcode> microcodes_;
 
-  absl::flat_hash_map<std::string, Macro> macros_;
+  MacrosMap macros_;
   std::vector<SubMacro> sub_macros_;
   std::vector<Microcode> macro_codes_;
   std::vector<ParsedMicrocode> parsed_macro_codes_;
@@ -219,6 +213,7 @@ class InstructionCompiler {
     const Argument* arg2 = &kNoArgument;
     const Argument* argm = &kNoArgument;
     int8_t macro_param = 0;
+    std::optional<ArgType> macro_return_type;
     std::vector<std::string_view> src_code;
     std::vector<ParsedMicrocode> parsed_code;
     std::vector<ParsedMicrocode> pre_parsed;
@@ -283,7 +278,10 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     return Error("Invalid macro parameter type: ",
                  ArgTypeToString(macro.param));
   }
-  // TODO: Validate return type
+  if (macro.ret != ArgType::kNone && macro.ret != ArgType::kWordReg &&
+      macro.ret != ArgType::kDwordReg) {
+    return Error("Invalid macro return type: ", ArgTypeToString(macro.ret));
+  }
 
   // TODO: Validate all prefixes are unique.
 
@@ -303,6 +301,9 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     if (!code_def.arg.IsValid()) {
       return Error(
           "Invalid macro argument (size is probably invalid for type)");
+    }
+    if (!ValidateMacroReturnRegister(code_def.ret)) {
+      return false;
     }
     SubMacro sub_macro = {.arg = code_def.arg, .ret = code_def.ret};
     state_.argm = &sub_macro.arg;
@@ -385,6 +386,7 @@ bool InstructionCompiler::CompileInstruction(
   for (std::string_view& src_code : state_.src_code) {
     state_.parsed_code.push_back(ParseMicrocode(src_code));
   }
+  MacrosMap::const_iterator macro_it;
   int macro_pos = -1;
   const ParsedMicrocode* macro_parsed = nullptr;
   state_.microcodes.resize(state_.parsed_code.size());
@@ -397,6 +399,11 @@ bool InstructionCompiler::CompileInstruction(
       }
       macro_parsed = &parsed;
       macro_pos = static_cast<int>(&parsed - state_.parsed_code.data());
+      macro_it = macros_.find(macro_parsed->op_name);
+      if (macro_it == macros_.end()) {
+        return Error("Unknown macro");
+      }
+      state_.macro_return_type = macro_it->second.ret;
     } else {
       if (state_.microcodes.size() > kMaxInstructionMicrocodes) {
         return Error("Too much compiled microcode");
@@ -409,7 +416,7 @@ bool InstructionCompiler::CompileInstruction(
   }
   state_.parsed = nullptr;
 
-  if (macro_pos < 0) {
+  if (macro_parsed == nullptr) {
     if (instruction.arg1.type == ArgType::kMacro ||
         instruction.arg2.type == ArgType::kMacro) {
       return Error("Macro argument specified without macro");
@@ -424,17 +431,12 @@ bool InstructionCompiler::CompileInstruction(
   }
 
   state_.parsed = macro_parsed;
+  const Macro& macro = macro_it->second;
 
   if (instruction.arg1.type != ArgType::kMacro &&
       instruction.arg2.type != ArgType::kMacro) {
     return Error("Macro called without instruction macro argument");
   }
-
-  auto macro_it = macros_.find(macro_parsed->op_name);
-  if (macro_it == macros_.end()) {
-    return Error("Unknown macro");
-  }
-  Macro& macro = macro_it->second;
 
   if (!macro_parsed->arg1_name.empty()) {
     if (macro.param == ArgType::kNone) {
@@ -642,6 +644,8 @@ const MicrocodeDef* InstructionCompiler::FindMicrocodeDef(int op) {
 }
 
 bool InstructionCompiler::CompileSubInstruction() {
+  // TODO: Short cicruit for empty and duplicated sub macro code.
+
   const int pre_size = static_cast<int>(state_.pre_codes.size());
   const int post_size = static_cast<int>(state_.post_codes.size());
   const int macro_code_start = state_.sub_macro->code_start;
@@ -650,6 +654,23 @@ bool InstructionCompiler::CompileSubInstruction() {
   const int macro_size_increase = macro_code_size - 1;
   const int8_t arg_offset =
       (instruction_def_->arg1.type == ArgType::kMacro ? 0 : 1);
+
+  const int8_t macro_param0 = state_.macro_param;
+  const int8_t macro_param1 =
+      (macro_param0 >= 0 ? macro_param0 + 1 : macro_param0 - 2);
+
+  int8_t macro_return0 = state_.sub_macro->ret;
+  if (macro_return0 == kArg_p0) {
+    macro_return0 = macro_param0;
+  } else if (macro_return0 == kArg_p1) {
+    macro_return0 = macro_param1;
+  }
+  int8_t macro_return1 = state_.sub_macro->ret;
+  if (macro_return1 >= 0) {
+    macro_return1 += 1;
+  } else if (macro_return1 == kArg_P) {
+    macro_return1 = macro_param1;
+  }
 
   state_.microcodes.assign(state_.pre_codes.begin(), state_.pre_codes.end());
   state_.microcodes.insert(state_.microcodes.end(),
@@ -699,13 +720,9 @@ bool InstructionCompiler::CompileSubInstruction() {
       if (arg1 == kArg_i) {
         arg1 += kMacroArgOffset + arg_offset;
       } else if (arg1 == kArg_p0) {  // Also matches kArg_p and kArg_P
-        arg1 = state_.macro_param;
+        arg1 = macro_param0;
       } else if (arg1 == kArg_p1) {
-        if (state_.macro_param >= 0) {
-          arg1 = state_.macro_param + 1;
-        } else {
-          arg1 = state_.macro_param - 2;
-        }
+        arg1 = macro_param1;
       } else {
         arg1 += kMacroArgOffset - arg_offset;
       }
@@ -717,20 +734,15 @@ bool InstructionCompiler::CompileSubInstruction() {
       if (arg2 == kArg_i) {
         arg2 += kMacroArgOffset + arg_offset;
       } else if (arg2 == kArg_p0) {  // Also matches kArg_p and kArg_P
-        arg2 = state_.macro_param;
+        arg2 = macro_param0;
       } else if (arg2 == kArg_p1) {
-        if (state_.macro_param >= 0) {
-          arg2 = state_.macro_param + 1;
-        } else {
-          arg2 = state_.macro_param - 2;
-        }
+        arg2 = macro_param1;
       } else {
         arg2 += kMacroArgOffset - arg_offset;
       }
     }
   }
   for (int k = 0; k < post_size; ++k) {
-    // TODO: Update macro return values
     const int index = pre_size + macro_size_increase + 1 + k;
     state_.parsed = &state_.parsed_code[index];
     state_.microcode = &state_.microcodes[index];
@@ -748,6 +760,26 @@ bool InstructionCompiler::CompileSubInstruction() {
       }
       state_.microcode->arg2 -= macro_size_increase;
       DCHECK(state_.microcode->arg2 < 0);
+    }
+    if (((def->arg1 == MicroArgType::kWordReg) ||
+         (def->arg1 == MicroArgType::kDwordReg)) &&
+        state_.microcode->arg1 < kInstructionMinArg) {
+      int8_t& arg1 = state_.microcode->arg1;
+      if (arg1 == kArg_r0) {  // Also matches kArg_r and kArg_R
+        arg1 = macro_return0;
+      } else if (arg1 == kArg_r1) {
+        arg1 = macro_return1;
+      }
+    }
+    if (((def->arg2 == MicroArgType::kWordReg) ||
+         (def->arg2 == MicroArgType::kDwordReg)) &&
+        state_.microcode->arg2 < kInstructionMinArg) {
+      int8_t& arg2 = state_.microcode->arg2;
+      if (arg2 == kArg_r0) {  // Also matches kArg_r and kArg_R
+        arg2 = macro_return0;
+      } else if (arg2 == kArg_r1) {
+        arg2 = macro_return1;
+      }
     }
   }
 
@@ -938,7 +970,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kWordReg) {
-          return Error("First argument is not a word register. It is ",
+          return Error("First argument is not a word register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = kArg_a;
@@ -949,7 +981,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("First argument is not a dwrod register. It is ",
+          return Error("First argument is not a dwrod register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = kArg_a0;
@@ -960,7 +992,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("First argument is not a dwrod register. It is ",
+          return Error("First argument is not a dwrod register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = kArg_a1;
@@ -971,7 +1003,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kWordReg) {
-          return Error("Second argument is not a word register. It is ",
+          return Error("Second argument is not a word register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = kArg_b;
@@ -982,7 +1014,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("Second argument is not a dword register. It is ",
+          return Error("Second argument is not a dword register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = kArg_b0;
@@ -993,7 +1025,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("Second argument is not a dword register. It is ",
+          return Error("Second argument is not a dword register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = kArg_b1;
@@ -1004,7 +1036,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"C0\"/\"C1\" for instruction immediate values)");
         }
         if (state_.argm->type != ArgType::kImmediate) {
-          return Error("Macro argument is not an immediate value. It is ",
+          return Error("Macro argument is not an immediate value. Argument is ",
                        ArgTypeToString(state_.argm->type));
         }
         arg = kArg_i;
@@ -1015,7 +1047,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"a\"/\"b\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kWordReg) {
-          return Error("Macro argument is not a word register. It is ",
+          return Error("Macro argument is not a word register. Argument is ",
                        ArgTypeToString(state_.argm->type));
         }
         arg = kArg_m;
@@ -1026,7 +1058,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"a0\"/\"b0\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kDwordReg) {
-          return Error("Macro argument is not a dword register. It is ",
+          return Error("Macro argument is not a dword register. Argument is ",
                        ArgTypeToString(state_.argm->type));
         }
         arg = kArg_m0;
@@ -1037,7 +1069,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"a1\"/\"b1\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kDwordReg) {
-          return Error("Macro argument is not a dword register. It is ",
+          return Error("Macro argument is not a dword register. Argument is ",
                        ArgTypeToString(state_.argm->type));
         }
         arg = kArg_m1;
@@ -1046,7 +1078,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
           return Error("Instruction code cannot reference macro parameter");
         }
         if (macro_def_->param != ArgType::kWordReg) {
-          return Error("Macro parameter is not a word register. It is ",
+          return Error("Macro parameter is not a word register. Parameter is ",
                        ArgTypeToString(macro_def_->param));
         }
         arg = kArg_p;
@@ -1055,7 +1087,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
           return Error("Instruction code cannot reference macro parameter");
         }
         if (macro_def_->param != ArgType::kDwordReg) {
-          return Error("Macro parameter is not a dword register. It is ",
+          return Error("Macro parameter is not a dword register. Parameter is ",
                        ArgTypeToString(macro_def_->param));
         }
         arg = kArg_p0;
@@ -1064,10 +1096,49 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
           return Error("Instruction code cannot reference macro parameter");
         }
         if (macro_def_->param != ArgType::kDwordReg) {
-          return Error("Macro parameter is not a dword register. It is ",
+          return Error("Macro parameter is not a dword register. Parameter is ",
                        ArgTypeToString(macro_def_->param));
         }
         arg = kArg_p1;
+      } else if (arg_name == "r") {
+        if (state_.macro_code_def != nullptr) {
+          return Error("Macro code cannot reference its own return value");
+        }
+        if (!state_.macro_return_type.has_value()) {
+          return Error("Macro return type referenced before macro called");
+        }
+        if (*state_.macro_return_type != ArgType::kWordReg) {
+          return Error(
+              "Macro return type is not a word register. Return type is ",
+              ArgTypeToString(*state_.macro_return_type));
+        }
+        arg = kArg_r;
+      } else if (arg_name == "r0") {
+        if (state_.macro_code_def != nullptr) {
+          return Error("Macro code cannot reference its own return value");
+        }
+        if (!state_.macro_return_type.has_value()) {
+          return Error("Macro return type referenced before macro called");
+        }
+        if (*state_.macro_return_type != ArgType::kDwordReg) {
+          return Error(
+              "Macro return type is not a dword register. Return type is ",
+              ArgTypeToString(*state_.macro_return_type));
+        }
+        arg = kArg_r0;
+      } else if (arg_name == "r1") {
+        if (state_.macro_code_def != nullptr) {
+          return Error("Macro code cannot reference its own return value");
+        }
+        if (!state_.macro_return_type.has_value()) {
+          return Error("Macro return type referenced before macro called");
+        }
+        if (*state_.macro_return_type != ArgType::kDwordReg) {
+          return Error(
+              "Macro return type is not a dword register. Return type is ",
+              ArgTypeToString(*state_.macro_return_type));
+        }
+        arg = kArg_r1;
       } else if (arg_name[0] == 'R' && arg_name.size() == 2) {
         arg = arg_name[1] - '0';
         if (arg < 0 || arg > 7) {
@@ -1103,7 +1174,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("First argument is not a dwrod register. It is ",
+          return Error("First argument is not a dwrod register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = kArg_A;
@@ -1114,7 +1185,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("Second argument is not a dword register. It is ",
+          return Error("Second argument is not a dword register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = kArg_B;
@@ -1125,7 +1196,7 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "\"A\"/\"B\" for instruction arguments)");
         }
         if (state_.argm->type != ArgType::kDwordReg) {
-          return Error("Macro argument is not a dword register. It is ",
+          return Error("Macro argument is not a dword register. Argument is ",
                        ArgTypeToString(state_.argm->type));
         }
         arg = kArg_M;
@@ -1134,10 +1205,23 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
           return Error("Instruction code cannot reference macro parameters");
         }
         if (macro_def_->param != ArgType::kDwordReg) {
-          return Error("Macro parameter is not a dword register. It is ",
+          return Error("Macro parameter is not a dword register. Parameter is ",
                        ArgTypeToString(macro_def_->param));
         }
         arg = kArg_P;
+      } else if (arg_name == "R") {
+        if (state_.macro_code_def != nullptr) {
+          return Error("Macro code cannot reference its own return value");
+        }
+        if (!state_.macro_return_type.has_value()) {
+          return Error("Macro return type referenced before macro called");
+        }
+        if (*state_.macro_return_type != ArgType::kDwordReg) {
+          return Error(
+              "Macro return type is not a dword register. Return type is ",
+              ArgTypeToString(*state_.macro_return_type));
+        }
+        arg = kArg_R;
       } else if (arg_name[0] == 'D' && arg_name.size() == 2) {
         arg = arg_name[1] - '0';
         if (arg < 0 || arg > 3) {
@@ -1153,6 +1237,44 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
     } break;
   }
   return Error("Unhandled argument type!");
+}
+
+bool InstructionCompiler::ValidateMacroReturnRegister(int8_t ret) {
+  DCHECK(macro_def_ != nullptr);
+  if (macro_def_->ret == ArgType::kNone) {
+    if (ret != 0) {
+      return Error("Invalid return register for macro with no return value");
+    }
+    return true;
+  }
+  if (macro_def_->ret == ArgType::kWordReg) {
+    if (ret >= 0 && ret < CpuCore::kRegisterCount) {
+      return true;
+    }
+    if (ret == kArg_p0 && (macro_def_->param == ArgType::kWordReg ||
+                           macro_def_->param == ArgType::kDwordReg)) {
+      return true;
+    }
+    if (ret == kArg_p1 && macro_def_->param == ArgType::kDwordReg) {
+      return true;
+    }
+    return Error("Invalid word register '",
+                 compiler_internal::GetWordRegArgName(ret),
+                 "' for return type ", ArgTypeToString(macro_def_->ret));
+  } else if (macro_def_->ret == ArgType::kDwordReg) {
+    if (ret == CpuCore::D0 || ret == CpuCore::D1 || ret == CpuCore::D2 ||
+        ret == CpuCore::D3 || ret == CpuCore::SD) {
+      return true;
+    }
+    if (ret == kArg_P && macro_def_->param == ArgType::kDwordReg) {
+      return true;
+    }
+    return Error("Invalid dword register '",
+                 compiler_internal::GetDwordRegArgName(ret),
+                 "' for return type ", ArgTypeToString(macro_def_->ret));
+  }
+  LOG(FATAL) << "Invalid return type";  // Ensured by CompileMacro
+  return false;
 }
 
 bool InstructionCompiler::ValidateMicrocode(int index) {
@@ -1324,5 +1446,53 @@ std::shared_ptr<const InstructionSet> CompileInstructionSet(
   return std::make_shared<const InstructionSet>(
       std::move(compiler).ToInstructionSet());
 }
+
+namespace compiler_internal {
+
+std::string_view GetWordRegArgName(int8_t arg) {
+  switch (arg) {
+    case kArg_a0:
+      return "a/a0";
+    case kArg_a1:
+      return "a1";
+    case kArg_b:
+      return "b/b0";
+    case kArg_b1:
+      return "b1";
+    case kArg_i:
+      return "i";
+    case kArg_m:
+      return "m/m0";
+    case kArg_m1:
+      return "m1";
+    case kArg_p:
+      return "p/p0";
+    case kArg_p1:
+      return "p1";
+    case kArg_r:
+      return "r/r0";
+    case kArg_r1:
+      return "r1";
+  }
+  return CpuCore::GetWordRegName(arg);
+}
+
+std::string_view GetDwordRegArgName(int8_t arg) {
+  switch (arg) {
+    case kArg_A:
+      return "A";
+    case kArg_B:
+      return "B";
+    case kArg_M:
+      return "M";
+    case kArg_P:
+      return "P";
+    case kArg_R:
+      return "R";
+  }
+  return CpuCore::GetDwordRegName(arg);
+}
+
+}  // namespace compiler_internal
 
 }  // namespace oz3

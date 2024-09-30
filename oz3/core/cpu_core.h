@@ -64,6 +64,12 @@ class CpuCore final : public ExecutionComponent {
   // Number of 16-bit registers.
   static constexpr int kRegisterCount = BM + 1;
 
+  // Microcode register argument index values (when argument is word or dword)
+  static constexpr int8_t A0 = -1;  // 1st arg, low word: index in decoded r[0]
+  static constexpr int8_t B0 = -2;  // 2nd arg, low word: index in decoded r[1]
+  static constexpr int8_t A1 = -3;  // 1st arg, high word: index in decoded r[2]
+  static constexpr int8_t B1 = -4;  // 2nd arg, high word: index in decoded r[3]
+
   // Status flags in the ST register. The upper byte of the ST register is for
   // external control flags and cannot be changed by microcode.
   static constexpr uint16_t ZShift = 0;       // Zero flag shift
@@ -224,6 +230,26 @@ class CpuCore final : public ExecutionComponent {
   CpuCore(const CpuCore&) = delete;
   CpuCore& operator=(const CpuCore&) = delete;
   ~CpuCore();
+
+  //----------------------------------------------------------------------------
+  // Utility methods
+  //----------------------------------------------------------------------------
+
+  // Returns true if the index is a 16-bit register index.
+  static bool IsWordReg(int reg) { return reg >= 0 && reg < kRegisterCount; }
+
+  // Returns the standard name for the specified 16-bit register, or "invalid"
+  // if it is not a valid register.
+  static std::string_view GetWordRegName(int reg);
+
+  // Returns true if the index is a 32-bit register index.
+  static bool IsDwordReg(int reg) {
+    return reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == SD;
+  }
+
+  // Returns the standard name for the specified 32-bit register, or "invalid"
+  // if it is not a valid register.
+  static std::string_view GetDwordRegName(int reg);
 
   //----------------------------------------------------------------------------
   // Attributes

@@ -18,6 +18,13 @@
 namespace oz3 {
 namespace {
 
+using ::oz3::compiler_internal::GetDwordRegArgName;
+using ::oz3::compiler_internal::GetWordRegArgName;
+using ::oz3::compiler_internal::kArg_p;
+using ::oz3::compiler_internal::kArg_P;
+using ::oz3::compiler_internal::kArg_p0;
+using ::oz3::compiler_internal::kArg_p1;
+using ::oz3::compiler_internal::kMinArgValue;
 using ::testing::AllOf;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
@@ -254,6 +261,12 @@ TEST(InstructionCompilerTest, InstructionWordRegArg) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter"));
   EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(p1)"), error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter"));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(r)"), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return"));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(r0)"), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return"));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(r1)"), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return"));
   EXPECT_FALSE(TestCompile(
       kMicroWordArg1, MakeDef(ArgType::kDwordReg, ArgType::kNone, "TEST(A)"),
       error));
@@ -383,6 +396,12 @@ TEST(InstructionCompilerTest, MacroWordRegArg) {
   EXPECT_FALSE(TestCompile("MOV(p1,R0);"));
   EXPECT_THAT(absl::AsciiStrToLower(error),
               AllOf(HasSubstr("macro parameter"), HasSubstr("word register")));
+  EXPECT_FALSE(TestCompile("MOV(r,R0);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("own return value"));
+  EXPECT_FALSE(TestCompile("MOV(r0,R0);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("own return value"));
+  EXPECT_FALSE(TestCompile("MOV(r1,R0);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("own return value"));
 }
 
 TEST(InstructionCompilerTest, MacroWordRegParam) {
@@ -408,6 +427,130 @@ TEST(InstructionCompilerTest, MacroWordRegParam) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter"));
   EXPECT_FALSE(TestCompile("MOV(p1,R0);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter"));
+}
+
+TEST(InstructionCompilerTest, MacroWordRegReturn) {
+  const MicrocodeDef microcode_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+      {kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kDwordReg}};
+  const MacroCodeDef macro_code_defs[] = {
+      {.source = "R0",
+       .prefix = {0, 1},
+       .ret = CpuCore::R0,
+       .code = "MOV(R0,R7);"},
+      {.source = "R1",
+       .prefix = {1, 1},
+       .ret = CpuCore::R1,
+       .code = "MOV(R1,R7);"},
+  };
+  const MacroDef macro_def = {.name = "Macro",
+                              .ret = ArgType::kWordReg,
+                              .size = 1,
+                              .code = macro_code_defs};
+  InstructionDef instruction_def = {
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  std::string error;
+  auto TestCompile = [&](std::string_view code) {
+    instruction_def.code = code;
+    return CompileForTest(instruction_def, macro_def, error, microcode_defs);
+  };
+  EXPECT_TRUE(TestCompile("UL;$Macro;MOV(R4,r);MOV(r,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile("UL;$Macro;MOV(R4,r0);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_FALSE(TestCompile("UL;$Macro;MOV(R4,r1);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_FALSE(TestCompile("UL;$Macro;TEST(D2,R);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+}
+
+TEST(InstructionCompilerTest, MacroWordParamRegReturn) {
+  const MicrocodeDef microcode_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+      {kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kDwordReg}};
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,R7);"},
+  };
+  MacroDef macro_def = {.name = "Macro",
+                        .ret = ArgType::kWordReg,
+                        .size = 1,
+                        .code = macro_code_defs};
+  InstructionDef instruction_def = {
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  std::string error;
+  auto TestCompile = [&](ArgType param_type, int8_t ret_value,
+                         std::string_view code) {
+    macro_code_defs[0].ret = ret_value;
+    macro_def.param = param_type;
+    instruction_def.code = code;
+    return CompileForTest(instruction_def, macro_def, error, microcode_defs);
+  };
+  EXPECT_TRUE(TestCompile(ArgType::kWordReg, kArg_p,
+                          "UL;$Macro(R1);MOV(R4,r);MOV(r,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p,
+                          "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p,
+                           "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p0,
+                          "UL;$Macro(D1);MOV(R4,r);MOV(r,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p0,
+                           "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p0,
+                           "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p1,
+                          "UL;$Macro(D1);MOV(R4,r);MOV(r,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1,
+                           "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1,
+                           "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
+}
+
+TEST(InstructionCompilerTest, MacroWordRegReturnTypes) {
+  const MicrocodeDef microcode_defs[] = {{kMicro_UL, "UL"},
+                                         {kMicro_TEST_NOP, "NOP"}};
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "TEST", .prefix = {0, 1}, .code = "NOP;"}};
+  std::string error;
+  auto TestCompile = [&](ArgType param, int8_t reg) {
+    macro_code_defs[0].ret = reg;
+    const MacroDef macro_def = {.name = "Macro",
+                                .param = param,
+                                .ret = ArgType::kWordReg,
+                                .size = 1,
+                                .code = macro_code_defs};
+    return CompileForTest(macro_def, error, microcode_defs);
+  };
+  for (int i = kMinArgValue; i < CpuCore::kRegisterCount; ++i) {
+    const bool should_succeed = (CpuCore::GetWordRegName(i) != "invalid");
+    std::string context =
+        absl::StrCat("Context: ", GetWordRegArgName(i), " (", i, ")");
+    EXPECT_EQ(TestCompile(ArgType::kNone, i), should_succeed) << context;
+    if (should_succeed) {
+      EXPECT_THAT(error, IsEmpty()) << context;
+    } else {
+      EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type word"))
+          << context;
+    }
+  }
+  EXPECT_TRUE(TestCompile(ArgType::kWordReg, kArg_p));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p1));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type word"));
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p0));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p1));
+  EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, InstructionDwordRegArg) {
@@ -448,6 +591,8 @@ TEST(InstructionCompilerTest, InstructionDwordRegArg) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro argument"));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(P)"), error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter"));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R)"), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return type"));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(0)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R0)"), error));
@@ -535,6 +680,8 @@ TEST(InstructionCompilerTest, MacroDwordRegArg) {
   EXPECT_FALSE(TestCompile("TEST(P,D0);"));
   EXPECT_THAT(absl::AsciiStrToLower(error),
               AllOf(HasSubstr("macro parameter"), HasSubstr("dword register")));
+  EXPECT_FALSE(TestCompile("TEST(R,D0);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("own return value"));
 }
 
 TEST(InstructionCompilerTest, MacroDwordRegParam) {
@@ -565,6 +712,130 @@ TEST(InstructionCompilerTest, MacroDwordRegParam) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile("MOV(p,R0);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter"));
+}
+
+TEST(InstructionCompilerTest, MacroDwordRegReturn) {
+  const MicrocodeDef microcode_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+      {kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kDwordReg}};
+  const MacroCodeDef macro_code_defs[] = {
+      {.source = "R0",
+       .prefix = {0, 1},
+       .ret = CpuCore::D0,
+       .code = "TEST(D0,D3);"},
+      {.source = "R1",
+       .prefix = {1, 1},
+       .ret = CpuCore::D1,
+       .code = "TEST(D1,D3);"},
+  };
+  const MacroDef macro_def = {.name = "Macro",
+                              .ret = ArgType::kDwordReg,
+                              .size = 1,
+                              .code = macro_code_defs};
+  InstructionDef instruction_def = {
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  std::string error;
+  auto TestCompile = [&](std::string_view code) {
+    instruction_def.code = code;
+    return CompileForTest(instruction_def, macro_def, error, microcode_defs);
+  };
+  EXPECT_FALSE(TestCompile("UL;$Macro;MOV(R4,r);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is dword"));
+  EXPECT_TRUE(TestCompile("UL;$Macro;MOV(R4,r0);MOV(r0,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile("UL;$Macro;MOV(R4,r1);MOV(r1,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile("UL;$Macro;TEST(D2,R);TEST(R,D3);"));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(InstructionCompilerTest, MacroDwordParamRegReturn) {
+  const MicrocodeDef microcode_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
+      {kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kDwordReg}};
+  const MacroCodeDef macro_code_defs[] = {
+      {.source = "R0", .prefix = {0, 1}, .ret = kArg_P, .code = "TEST(D0,D3);"},
+  };
+  const MacroDef macro_def = {.name = "Macro",
+                              .param = ArgType::kDwordReg,
+                              .ret = ArgType::kDwordReg,
+                              .size = 1,
+                              .code = macro_code_defs};
+  InstructionDef instruction_def = {
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  std::string error;
+  auto TestCompile = [&](std::string_view code) {
+    instruction_def.code = code;
+    return CompileForTest(instruction_def, macro_def, error, microcode_defs);
+  };
+  EXPECT_FALSE(TestCompile("UL;$Macro(D0);MOV(R4,r);"));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is dword"));
+  EXPECT_TRUE(TestCompile("UL;$Macro(D0);MOV(R4,r0);MOV(r0,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile("UL;$Macro(D0);MOV(R4,r1);MOV(r1,R5);"));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile("UL;$Macro(D0);TEST(D2,R);TEST(R,D3);"));
+  EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(InstructionCompilerTest, MacroDwordRegReturnTypes) {
+  const MicrocodeDef microcode_defs[] = {{kMicro_UL, "UL"},
+                                         {kMicro_TEST_NOP, "NOP"}};
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "TEST", .prefix = {0, 1}, .code = "NOP;"}};
+  std::string error;
+  auto TestCompile = [&](ArgType param, int8_t reg) {
+    macro_code_defs[0].ret = reg;
+    const MacroDef macro_def = {.name = "Macro",
+                                .param = param,
+                                .ret = ArgType::kDwordReg,
+                                .size = 1,
+                                .code = macro_code_defs};
+    return CompileForTest(macro_def, error, microcode_defs);
+  };
+  for (int i = kMinArgValue; i < CpuCore::kRegisterCount; ++i) {
+    const bool should_succeed = (CpuCore::GetDwordRegName(i) != "invalid");
+    std::string context =
+        absl::StrCat("Context: ", GetDwordRegArgName(i), " (", i, ")");
+    EXPECT_EQ(TestCompile(ArgType::kNone, i), should_succeed) << context;
+    if (should_succeed) {
+      EXPECT_THAT(error, IsEmpty()) << context;
+    } else {
+      EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type dword"))
+          << context;
+    }
+  }
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_P));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type dword"));
+}
+
+TEST(InstructionCompilerTest, MacroNoReturnTypeWithSpecifiedRegister) {
+  const MicrocodeDef microcode_defs[] = {{kMicro_UL, "UL"},
+                                         {kMicro_TEST_NOP, "NOP"}};
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "TEST", .prefix = {0, 1}, .code = "NOP;"}};
+  std::string error;
+  auto TestCompile = [&](ArgType param, int8_t reg) {
+    macro_code_defs[0].ret = reg;
+    const MacroDef macro_def = {.name = "Macro",
+                                .param = param,
+                                .ret = ArgType::kNone,
+                                .size = 1,
+                                .code = macro_code_defs};
+    return CompileForTest(macro_def, error, microcode_defs);
+  };
+  EXPECT_TRUE(TestCompile(ArgType::kNone, 0));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(ArgType::kNone, CpuCore::R2));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no return value"));
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p0));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no return value"));
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no return value"));
 }
 
 TEST(InstructionCompilerTest, StatusArg) {
@@ -2048,7 +2319,6 @@ TEST(InstructionCompilerTest, CallMacroWithNoParameters) {
 TEST(InstructionCompilerTest, MacroFirstParameterType) {
   MacroCodeDef macro_code_defs[] = {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
-      {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"},
   };
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
   auto MacroWithParam = [&](ArgType param) -> const MacroDef& {
@@ -2066,6 +2336,28 @@ TEST(InstructionCompilerTest, MacroFirstParameterType) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(CompileForTest(MacroWithParam(ArgType::kMacro), error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro parameter type"));
+}
+
+TEST(InstructionCompilerTest, MacroReturnType) {
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
+  };
+  MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
+  auto MacroWithReturn = [&](ArgType return_type) -> const MacroDef& {
+    macro_def.ret = return_type;
+    return macro_def;
+  };
+  std::string error;
+  EXPECT_TRUE(CompileForTest(MacroWithReturn(ArgType::kNone), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(MacroWithReturn(ArgType::kImmediate), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return type"));
+  EXPECT_TRUE(CompileForTest(MacroWithReturn(ArgType::kWordReg), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(CompileForTest(MacroWithReturn(ArgType::kDwordReg), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(MacroWithReturn(ArgType::kMacro), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return type"));
 }
 
 TEST(InstructionCompilerTest, CallMacroMissingFirstParameter) {

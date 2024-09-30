@@ -15,6 +15,60 @@
 
 namespace oz3 {
 
+std::string_view CpuCore::GetWordRegName(int reg) {
+  switch (reg) {
+    case R0:
+      return "R0";
+    case R1:
+      return "R1";
+    case R2:
+      return "R2";
+    case R3:
+      return "R3";
+    case R4:
+      return "R4";
+    case R5:
+      return "R5";
+    case R6:
+      return "R6";
+    case R7:
+      return "R7";
+    case C0:
+      return "C0";
+    case C1:
+      return "C1";
+    case C2:
+      return "C2";
+    case PC:
+      return "PC";
+    case SP:
+      return "SP";
+    case DP:
+      return "DP";
+    case ST:
+      return "ST";
+    case BM:
+      return "BM";
+  }
+  return "invalid";
+}
+
+std::string_view CpuCore::GetDwordRegName(int reg) {
+  switch (reg) {
+    case D0:
+      return "D0";
+    case D1:
+      return "D1";
+    case D2:
+      return "D2";
+    case D3:
+      return "D3";
+    case SD:
+      return "SD";
+  }
+  return "invalid";
+}
+
 CpuCore::CpuCore(const CpuCoreConfig& config) {
   instructions_ = config.GetInstructions();
   DCHECK(instructions_ != nullptr);
