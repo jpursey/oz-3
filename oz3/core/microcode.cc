@@ -80,6 +80,24 @@ const MicrocodeDef kMicroCodeDefs[] = {
 
 }  // namespace
 
+MicroArgType ToMicroArgType(ArgType type) {
+  switch (type) {
+    case ArgType::kNone:
+      return MicroArgType::kNone;
+    case ArgType::kImmediate:
+      // Immediate args become the C0/C1 registers in microcode.
+      return MicroArgType::kWordReg;
+    case ArgType::kWordReg:
+      return MicroArgType::kWordReg;
+    case ArgType::kDwordReg:
+      return MicroArgType::kDwordReg;
+    case ArgType::kMacro:
+      return MicroArgType::kNone;
+  }
+  LOG(FATAL) << "Unknown argument type: " << static_cast<int>(type);
+  return MicroArgType::kNone;
+}
+
 absl::Span<const MicrocodeDef> GetMicrocodeDefs() { return kMicroCodeDefs; }
 
 }  // namespace oz3

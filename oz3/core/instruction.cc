@@ -20,6 +20,8 @@ std::string_view ArgTypeToString(ArgType type) {
       return "word register";
     case ArgType::kDwordReg:
       return "dword register";
+    case ArgType::kMacro:
+      return "macro";
     default:
       LOG(FATAL) << "Unknown argument type: " << static_cast<int>(type);
       return "unknown";
@@ -36,7 +38,7 @@ uint8_t GetDefaultArgTypeSize(ArgType type) {
       return 2;
     default:
       LOG(FATAL) << "Cannot derive default size for argument type "
-                 << static_cast<int>(type);
+                 << ArgTypeToString(type);
       // The rest do not have a default size.
       return 0;
   }

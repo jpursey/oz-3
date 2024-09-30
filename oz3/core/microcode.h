@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_CORE_MICRO_CODE_H_
-#define OZ3_CORE_MICRO_CODE_H_
+#ifndef OZ3_CORE_MICROCODE_H_
+#define OZ3_CORE_MICROCODE_H_
 
 #include <cstdint>
 #include <ostream>
@@ -101,6 +101,9 @@ enum class MicroArgType {
   kDwordReg,   // Dword register.
 };
 
+// Converts an ArgType to a MicroArgType.
+MicroArgType ToMicroArgType(ArgType type);
+
 // Definition of a microcode operation.
 struct MicrocodeDef {
   uint8_t op;                // The microcode operation code.
@@ -175,4 +178,4 @@ static constexpr size_t kMaxSubInstructions =
 
 }  // namespace oz3
 
-#endif  // OZ3_CORE_MICRO_CODE_H_
+#endif  // OZ3_CORE_MICROCODE_H_

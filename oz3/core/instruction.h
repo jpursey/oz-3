@@ -161,10 +161,10 @@ struct MacroDef {
   // argument or not).
   std::string_view name;
 
-  // The type of the macro argument, if there is any. This is referred to as "p"
-  // in the macro source if it is a word register, and "P"/"p0"/"p1" if it is a
-  // dword register. Other argument types are not supported.
-  ArgType arg = ArgType::kNone;
+  // The type of the macro parameter, if there is any. This is referred to as
+  // "p" in the macro source if it is a word register, and "P"/"p0"/"p1" if it
+  // is a dword register. Other argument types are not supported.
+  ArgType param = ArgType::kNone;
 
   // The return type of the macro. This is referred to as "r" in the instruction
   // source if it is a word register, and "R"/"r0"/"r1" if it is a dword
