@@ -63,8 +63,8 @@ enum class ArgType : uint8_t {
   // These are used to specify the number of bits used for an instruction macro.
   // Macros may also define an input argument (which can only be kWordReg or
   // kDwordReg), and they also may define a single internal argument (of any
-  // type -- including another macro). There can only be one macro argument
-  // at the instruction level, however.
+  // type except macro). There can only be one macro argument at the instruction
+  // level.
   kMacro,
 };
 
