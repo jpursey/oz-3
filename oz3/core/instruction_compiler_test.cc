@@ -317,10 +317,8 @@ TEST(InstructionCompilerTest, InstructionWordRegArg) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C1)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C2)"), error));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(BP)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(C3)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(SP)"), error));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(DP)"), error));
@@ -627,9 +625,7 @@ TEST(InstructionCompilerTest, InstructionDwordRegArg) {
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C1)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C2)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C3)"), error));
+  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(BP)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(SP)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -986,13 +982,11 @@ TEST(InstructionCompilerTest, AddressArg) {
       microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code =
                          "@label:NOP;TEST(@label);UL;NOP;LK(DATA);NOP;UL;NOP;"},
       error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code =
                          "NOP;TEST(@label);@label:UL;NOP;LK(DATA);NOP;UL;NOP;"},
       error, microcode_defs));
@@ -1004,7 +998,6 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code =
                          "NOP;UL;TEST(@label);NOP;@label:LK(DATA);NOP;UL;NOP;"},
       error, microcode_defs));
@@ -1016,7 +1009,6 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code =
                          "NOP;UL;TEST(@label);NOP;LK(DATA);NOP;UL;@label:NOP;"},
       error, microcode_defs));
@@ -1044,7 +1036,6 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code = "UL;PLK(C0);NOP;TEST(@label);NOP;@label:NOP;PUL;"},
       error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
@@ -1070,7 +1061,6 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code = "UL;CLK(C0);NOP;TEST(@label);NOP;@label:NOP;CUL;"},
       error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
@@ -1081,7 +1071,6 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code = "UL;"
                              "LKR(R0);TEST(2);UL;LKR(R0);TEST(-4);UL;"
                              "LKR(R1);TEST(2);UL;LKR(R1);TEST(-4);UL;"
@@ -1090,7 +1079,6 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code = "UL;"
                              "LKR(R4);TEST(2);UL;LKR(R4);TEST(-4);UL;"
                              "LKR(R5);TEST(2);UL;LKR(R5);TEST(-4);UL;"
@@ -1099,16 +1087,14 @@ TEST(InstructionCompilerTest, AddressArg) {
       error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code = "UL;"
                              "LKR(C0);TEST(2);UL;LKR(C0);TEST(-4);UL;"
                              "LKR(C1);TEST(2);UL;LKR(C1);TEST(-4);UL;"
-                             "LKR(C2);TEST(2);UL;LKR(C2);TEST(-4);UL;"
-                             "LKR(PC);TEST(2);UL;LKR(PC);TEST(-4);UL;"},
+                             "LKR(PC);TEST(2);UL;LKR(PC);TEST(-4);UL;"
+                             "LKR(BP);TEST(2);UL;LKR(BP);TEST(-4);UL;"},
       error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(CompileForTest(
-
       InstructionDef{.code = "UL;"
                              "LKR(SP);TEST(2);UL;LKR(SP);TEST(-4);UL;"
                              "LKR(DP);TEST(2);UL;LKR(DP);TEST(-4);UL;"
@@ -1137,7 +1123,15 @@ TEST(InstructionCompilerTest, AddressArg) {
       microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(C2);TEST(2);UL;LKR(PC);TEST(-4);UL;"}, error,
+      InstructionDef{.code = "LKR(C1);TEST(2);UL;LKR(PC);TEST(-4);UL;"}, error,
+      microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(
+      InstructionDef{.code = "LKR(PC);TEST(2);UL;LKR(BP);TEST(-4);UL;"}, error,
+      microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(
+      InstructionDef{.code = "LKR(BP);TEST(2);UL;LKR(SP);TEST(-4);UL;"}, error,
       microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(CompileForTest(

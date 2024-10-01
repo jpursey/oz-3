@@ -1185,10 +1185,10 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
         arg = CpuCore::C0;
       } else if (arg_name == "C1") {
         arg = CpuCore::C1;
-      } else if (arg_name == "C2") {
-        arg = CpuCore::C2;
       } else if (arg_name == "PC") {
         arg = CpuCore::PC;
+      } else if (arg_name == "BP") {
+        arg = CpuCore::BP;
       } else if (arg_name == "SP") {
         arg = CpuCore::SP;
       } else if (arg_name == "DP") {
@@ -1298,8 +1298,7 @@ bool InstructionCompiler::ValidateMacroReturnRegister(int8_t ret) {
                  compiler_internal::GetWordRegArgName(ret),
                  "' for return type ", ArgTypeToString(macro_def_->ret));
   } else if (macro_def_->ret == ArgType::kDwordReg) {
-    if (ret == CpuCore::D0 || ret == CpuCore::D1 || ret == CpuCore::D2 ||
-        ret == CpuCore::D3 || ret == CpuCore::SD) {
+    if (CpuCore::IsDwordReg(ret)) {
       return true;
     }
     if (ret == kArg_P && macro_def_->param == ArgType::kDwordReg) {
@@ -1451,9 +1450,8 @@ bool InstructionCompiler::ValidateMicroArg(int index, MicroArgType arg_type,
   DCHECK(arg_type != MicroArgType::kWordReg ||
          (arg >= kInstructionMinWordRegArg) && arg < CpuCore::kRegisterCount);
   DCHECK(arg_type != MicroArgType::kDwordReg ||
-         (arg >= kInstructionMinDwordRegArg && arg < 0) || arg == CpuCore::D0 ||
-         arg == CpuCore::D1 || arg == CpuCore::D2 || arg == CpuCore::D3 ||
-         arg == CpuCore::SD);
+         (arg >= kInstructionMinDwordRegArg && arg < 0) ||
+         CpuCore::IsDwordReg(arg));
   if (arg_type == MicroArgType::kAddress) {
     const int jump = index + arg + 1;
     if (state_.locks[index] != state_.locks[jump]) {

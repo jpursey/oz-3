@@ -442,7 +442,7 @@ TEST(InstructionSetTest, WordRegArgsDecodedCorrectly) {
       {.op = kOp_TEST,
        .code = "UL;"
                "OP(R0,R1);OP(R2,R3);OP(R4,R5);OP(R6,R7);"
-               "OP(C0,C1);OP(C2,PC);OP(SP,DP);OP(ST,BM);"},
+               "OP(C0,C1);OP(PC,BP);OP(SP,DP);OP(ST,BM);"},
   };
 
   std::string error;
@@ -473,7 +473,7 @@ TEST(InstructionSetTest, WordRegArgsDecodedCorrectly) {
           Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::C0, .arg2 = CpuCore::C1},
           Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::C2, .arg2 = CpuCore::PC},
+              .op = kMicro_TEST, .arg1 = CpuCore::PC, .arg2 = CpuCore::BP},
           Microcode{
               .op = kMicro_TEST, .arg1 = CpuCore::SP, .arg2 = CpuCore::DP},
           Microcode{
@@ -790,7 +790,7 @@ TEST(InstructionSetTest, MacroWordParamDecodedCorrectly) {
       {CpuCore::R0, "R0"}, {CpuCore::R1, "R1"}, {CpuCore::R2, "R2"},
       {CpuCore::R3, "R3"}, {CpuCore::R4, "R4"}, {CpuCore::R5, "R5"},
       {CpuCore::R6, "R6"}, {CpuCore::R7, "R7"}, {CpuCore::C0, "C0"},
-      {CpuCore::C1, "C1"}, {CpuCore::C2, "C2"}, {CpuCore::PC, "PC"},
+      {CpuCore::C1, "C1"}, {CpuCore::PC, "PC"}, {CpuCore::BP, "BP"},
       {CpuCore::DP, "DP"}, {CpuCore::SP, "SP"}, {CpuCore::ST, "ST"},
       {CpuCore::BM, "BM"},
   };

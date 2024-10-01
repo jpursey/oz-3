@@ -37,10 +37,10 @@ std::string_view CpuCore::GetWordRegName(int reg) {
       return "C0";
     case C1:
       return "C1";
-    case C2:
-      return "C2";
     case PC:
       return "PC";
+    case BP:
+      return "BP";
     case SP:
       return "SP";
     case DP:
@@ -301,7 +301,6 @@ void CpuCore::FetchInstruction() {
   mpc_ = 0;
   mst_ = msr_ = r_[ST];
   mbm_ = r_[BM];
-  r_[C2] = 1;
   state_ = State::kRunInstruction;
   RunInstruction();
 }

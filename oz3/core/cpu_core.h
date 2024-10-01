@@ -51,10 +51,10 @@ class CpuCore final : public ExecutionComponent {
   // Cache registers (set as noted at the beginning of each instruction)
   static constexpr int C0 = 8;   // Cache register 0 (first arg or zero)
   static constexpr int C1 = 9;   // Cache register 1 (second arg or zero)
-  static constexpr int C2 = 10;  // Cache register 2 (set to one)
 
   // Special purpose registers
-  static constexpr int PC = 11;  // Program counter
+  static constexpr int PC = 10;  // Program counter
+  static constexpr int BP = 11;  // Base pointer
   static constexpr int SP = 12;  // Stack pointer
   static constexpr int DP = 13;  // Data pointer
   static constexpr int SD = SP;  // 32-bit stack+data pointer (SP,DP)
@@ -62,7 +62,7 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int BM = 15;  // Bank map register (read-only outside of CBK)
 
   // Number of 16-bit registers.
-  static constexpr int kRegisterCount = BM + 1;
+  static constexpr int kRegisterCount = 16;
 
   // Microcode register argument index values (when argument is word or dword)
   static constexpr int8_t A0 = -1;  // 1st arg, low word: index in decoded r[0]
@@ -99,7 +99,7 @@ class CpuCore final : public ExecutionComponent {
   // Register / memory bank association.
   static constexpr int kRegisterBankMap[kRegisterCount] = {
       DATA, DATA, DATA, DATA, EXTRA, EXTRA, STACK, STACK,
-      CODE, CODE, CODE, CODE, STACK, DATA,  CODE,  CODE,
+      CODE, CODE, CODE, STACK, STACK, DATA,  CODE,  CODE,
   };
 
   // Registers of the CPU core.

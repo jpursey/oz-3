@@ -605,10 +605,11 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg1 = {ArgType::kImmediate, 2},
      .arg2 = {ArgType::kImmediate, 6},
      .code = "UL;"
-             "CLK(C2);"
-             "MOVI(C2,0);CMP(C0,C2);JC(Z,@code);"
-             "MOVI(C2,1);CMP(C0,C2);JC(Z,@stack);"
-             "MOVI(C2,2);CMP(C0,C2);JC(Z,@data);"
+             "MOVI(R7,1);"
+             "CLK(R7);"
+             "MOVI(R7,0);CMP(C0,R7);JC(Z,@code);"
+             "MOVI(R7,1);CMP(C0,R7);JC(Z,@stack);"
+             "MOVI(R7,2);CMP(C0,R7);JC(Z,@data);"
              "@extra:CBK(EXTRA,C1);JP(@end);"
              "@code:CBK(CODE,C1);JP(@end);"
              "@stack:CBK(STACK,C1);JP(@end);"
@@ -729,7 +730,6 @@ struct CoreState {
   }
   const uint16_t& c0 = r[CpuCore::C0];
   const uint16_t& c1 = r[CpuCore::C1];
-  const uint16_t& c2 = r[CpuCore::C2];
   const uint16_t& pc = r[CpuCore::PC];
   const uint16_t& sp = r[CpuCore::SP];
   const uint16_t& dp = r[CpuCore::DP];
