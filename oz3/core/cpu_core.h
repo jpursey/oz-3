@@ -312,7 +312,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Sets the specified 32-bit register value.
   //
-  // It must be a valid 32-bit register index (D0, D1, D2, D3, CD, or SD).
+  // It must be a valid 32-bit register index (see constants above).
   void SetDwordRegister(const Lock& lock, int reg, uint32_t value);
 
   // Sets the interrupt vector for the specified interrupt.

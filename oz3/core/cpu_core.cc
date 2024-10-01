@@ -141,7 +141,7 @@ void CpuCore::SetWordRegister(const Lock& lock, int reg, uint16_t value) {
 
 void CpuCore::SetDwordRegister(const Lock& lock, int reg, uint32_t value) {
   DCHECK(lock.IsLocked(*this));
-  DCHECK(reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == SD);
+  DCHECK(IsDwordReg(reg));
   r_[reg] = static_cast<uint16_t>(value & 0xFFFF);
   r_[reg + 1] = static_cast<uint16_t>(value >> 16);
 }
