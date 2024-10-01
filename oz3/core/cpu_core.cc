@@ -17,10 +17,11 @@ namespace oz3 {
 
 namespace {
 
-constexpr std::string_view kWordRegNames[CpuCore::kRegisterCount] = {
-    "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
-    "C0", "C1", "PC", "BP", "SP", "DP", "ST", "BM",
-};
+constexpr std::string_view kWordRegNames[] = {
+    "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",  //
+    "BC", "BS", "BD", "BE", "BM", "PC", "BP", "SP",  //
+    "C0", "C1", "C2", "ST"};
+static_assert(ABSL_ARRAYSIZE(kWordRegNames) == CpuCore::kRegisterCount);
 static_assert(kWordRegNames[CpuCore::R0] == "R0");
 static_assert(kWordRegNames[CpuCore::R1] == "R1");
 static_assert(kWordRegNames[CpuCore::R2] == "R2");
@@ -29,26 +30,33 @@ static_assert(kWordRegNames[CpuCore::R4] == "R4");
 static_assert(kWordRegNames[CpuCore::R5] == "R5");
 static_assert(kWordRegNames[CpuCore::R6] == "R6");
 static_assert(kWordRegNames[CpuCore::R7] == "R7");
-static_assert(kWordRegNames[CpuCore::C0] == "C0");
-static_assert(kWordRegNames[CpuCore::C1] == "C1");
+static_assert(kWordRegNames[CpuCore::BM] == "BM");
+static_assert(kWordRegNames[CpuCore::BC] == "BC");
+static_assert(kWordRegNames[CpuCore::BS] == "BS");
+static_assert(kWordRegNames[CpuCore::BD] == "BD");
+static_assert(kWordRegNames[CpuCore::BE] == "BE");
 static_assert(kWordRegNames[CpuCore::PC] == "PC");
 static_assert(kWordRegNames[CpuCore::BP] == "BP");
 static_assert(kWordRegNames[CpuCore::SP] == "SP");
-static_assert(kWordRegNames[CpuCore::DP] == "DP");
+static_assert(kWordRegNames[CpuCore::C0] == "C0");
+static_assert(kWordRegNames[CpuCore::C1] == "C1");
+static_assert(kWordRegNames[CpuCore::C2] == "C2");
 static_assert(kWordRegNames[CpuCore::ST] == "ST");
-static_assert(kWordRegNames[CpuCore::BM] == "BM");
 
 constexpr std::string_view kDwordRegNames[CpuCore::kRegisterCount] = {
-    "D0", "", "D1", "", "D2", "", "D3", "", "", "", "", "", "SD", "", "", "",
+    "D0", "", "D1", "", "D2", "", "D3", "", "", "", "", "", "", "", "", "",
 };
+static_assert(ABSL_ARRAYSIZE(kDwordRegNames) == CpuCore::kRegisterCount);
 static_assert(kDwordRegNames[CpuCore::D0] == "D0");
 static_assert(kDwordRegNames[CpuCore::D1] == "D1");
 static_assert(kDwordRegNames[CpuCore::D2] == "D2");
 static_assert(kDwordRegNames[CpuCore::D3] == "D3");
-static_assert(kDwordRegNames[CpuCore::SD] == "SD");
 
 constexpr std::string_view kDwordRegNamesCompressed[] = {
-    "D0", "D1", "D2", "D3", "SD",
+    "D0",
+    "D1",
+    "D2",
+    "D3",
 };
 
 }  // namespace
@@ -114,20 +122,26 @@ void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
   DCHECK(processor_ != nullptr);
 
   std::memset(&r_[R0], 0, sizeof(uint16_t) * 8);
-  const uint16_t bank_mask = ((params.mask & ResetParams::BC) ? 0xF : 0) |
-                             ((params.mask & ResetParams::BS) ? 0xF0 : 0) |
-                             ((params.mask & ResetParams::BD) ? 0xF00 : 0) |
-                             ((params.mask & ResetParams::BE) ? 0xF000 : 0);
+  const uint16_t bank_mask = ((params.mask & ResetParams::MC) ? 0xF : 0) |
+                             ((params.mask & ResetParams::MS) ? 0xF0 : 0) |
+                             ((params.mask & ResetParams::MD) ? 0xF00 : 0) |
+                             ((params.mask & ResetParams::ME) ? 0xF000 : 0);
   r_[BM] = (r_[BM] & ~bank_mask) | (params.bm & bank_mask);
   InitBanks();
-  if (params.mask & ResetParams::PC) {
-    r_[PC] = params.pc;
+  if (params.mask & ResetParams::RBC) {
+    r_[BC] = params.bc;
+    r_[PC] = 0;
   }
-  if (params.mask & ResetParams::SP) {
-    r_[SP] = params.sp;
+  if (params.mask & ResetParams::RBS) {
+    r_[BS] = params.bs;
+    r_[BP] = 0;
+    r_[SP] = 0;
   }
-  if (params.mask & ResetParams::DP) {
-    r_[DP] = params.dp;
+  if (params.mask & ResetParams::RBD) {
+    r_[BD] = params.bd;
+  }
+  if (params.mask & ResetParams::RBE) {
+    r_[BE] = params.be;
   }
   r_[ST] &= ~W;
   state_ = State::kStartInstruction;
@@ -260,7 +274,7 @@ void CpuCore::PushInterruptState() {
   DCHECK(lock_ != nullptr && locked_bank_ == STACK);
   DCHECK(interrupt_ >= 0 && interrupt_ < kInterruptCount &&
          ivec_[interrupt_] != 0);
-  banks_[STACK]->SetAddress(*lock_, r_[SP]);
+  banks_[STACK]->SetAddress(*lock_, r_[BS] + r_[SP]);
   banks_[STACK]->PushWord(*lock_, r_[PC]);
   banks_[STACK]->PushWord(*lock_, r_[ST]);
   r_[SP] -= 2;
@@ -282,7 +296,7 @@ void CpuCore::StartInterrupt() {
 
 void CpuCore::ReturnFromInterrupt() {
   DCHECK(lock_ != nullptr && locked_bank_ == STACK);
-  banks_[STACK]->SetAddress(*lock_, r_[SP]);
+  banks_[STACK]->SetAddress(*lock_, r_[BS] + r_[SP]);
   banks_[STACK]->LoadWord(*lock_, msr_);
   r_[ST] = r_[ST] & 0xFF00 | (msr_ & 0x00FF);
   banks_[STACK]->LoadWord(*lock_, r_[PC]);
@@ -318,7 +332,7 @@ void CpuCore::StartInstruction() {
 
 void CpuCore::FetchInstruction() {
   DCHECK(lock_ != nullptr && locked_bank_ == CODE);
-  banks_[CODE]->SetAddress(*lock_, r_[PC]);
+  banks_[CODE]->SetAddress(*lock_, r_[BC] + r_[PC]);
   uint16_t code;
   banks_[CODE]->LoadWord(*lock_, code);
   instructions_->Decode(code, instruction_);
@@ -326,6 +340,7 @@ void CpuCore::FetchInstruction() {
   fetch_start_ = GetCycles();
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[C0], instruction_.c, sizeof(instruction_.c));
+  r_[C2] = 0;
   mpc_ = 0;
   mst_ = msr_ = r_[ST];
   mbm_ = r_[BM];
@@ -453,14 +468,16 @@ void CpuCore::RunInstructionLoop() {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
-        banks_[locked_bank_]->SetAddress(*lock_, r_[reg1]);
+        banks_[locked_bank_]->SetAddress(*lock_,
+                                         r_[BC + locked_bank_] + r_[reg1]);
         exec_cycles_ += kCpuCoreCycles_ADR;
       } break;
       case kMicro_LAD: {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         OZ3_INIT_REG1;
-        r_[reg1] = banks_[locked_bank_]->GetAddress(*lock_);
+        r_[reg1] =
+            banks_[locked_bank_]->GetAddress(*lock_) - r_[BC + locked_bank_];
         exec_cycles_ += kCpuCoreCycles_LAD;
       } break;
       case kMicro_LD: {

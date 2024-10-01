@@ -26,11 +26,18 @@ namespace oz3 {
 class CpuCore final : public ExecutionComponent {
  public:
   //----------------------------------------------------------------------------
-  // Constants and Types
+  // Constants
   //----------------------------------------------------------------------------
 
   // Number of interrupts.
   static constexpr int kInterruptCount = 32;
+
+  // Number of 16-bit registers.
+  static constexpr int kRegisterCount = 20;
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // General purpose registers (addressible with 3 bits)
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // General purpose 16-bit registers
   static constexpr int R0 = 0;  // 16-bit register, DATA bank addressing
@@ -48,30 +55,46 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int D2 = R4;  // 32-bit register (R4,R5)
   static constexpr int D3 = R6;  // 32-bit register (R6,R7)
 
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Special purpose registers (addressible with 4 bits)
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  static constexpr int BC = 8;   // Base pointer (code bank)
+  static constexpr int BS = 9;   // Base pointer (stack bank)
+  static constexpr int BD = 10;  // Base pointer (data bank)
+  static constexpr int BE = 11;  // Base pointer (extra bank)
+  static constexpr int BM = 12;  // Bank map register (read-only outside of CBK)
+  static constexpr int PC = 13;  // Program counter (offset from BC)
+  static constexpr int BP = 14;  // Base stack pointer (offset from BS)
+  static constexpr int SP = 15;  // Stack pointer (offset from BS)
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Special purpose registers (addressible only in microcode)
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // Status flags register
+  static constexpr int ST = 19;  // Status register (ready-only outside of MSR)
+
   // Cache registers (set as noted at the beginning of each instruction)
-  static constexpr int C0 = 8;  // Cache register 0 (first arg or zero)
-  static constexpr int C1 = 9;  // Cache register 1 (second arg or zero)
+  static constexpr int C0 = 16;  // Cache register 0 (first arg or zero)
+  static constexpr int C1 = 17;  // Cache register 1 (second arg or zero)
+  static constexpr int C2 = 18;  // Cache register 2 (zero)
 
-  // Special purpose registers
-  static constexpr int PC = 10;  // Program counter
-  static constexpr int BP = 11;  // Base pointer
-  static constexpr int SP = 12;  // Stack pointer
-  static constexpr int DP = 13;  // Data pointer
-  static constexpr int SD = SP;  // 32-bit stack+data pointer (SP,DP)
-  static constexpr int ST = 14;  // Status register (ready-only outside of MSR)
-  static constexpr int BM = 15;  // Bank map register (read-only outside of CBK)
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Instruction argument register indexes from microcode
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  // Number of 16-bit registers.
-  static constexpr int kRegisterCount = 16;
-
-  // Microcode register argument index values (when argument is word or dword)
   static constexpr int8_t A0 = -1;  // 1st arg, low word: index in decoded r[0]
   static constexpr int8_t B0 = -2;  // 2nd arg, low word: index in decoded r[1]
   static constexpr int8_t A1 = -3;  // 1st arg, high word: index in decoded r[2]
   static constexpr int8_t B1 = -4;  // 2nd arg, high word: index in decoded r[3]
 
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Status flags in the ST register. The upper byte of the ST register is for
   // external control flags and cannot be changed by microcode.
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // Status flags
   static constexpr uint16_t ZShift = 0;       // Zero flag shift
   static constexpr uint16_t SShift = 1;       // Sign flag shift
   static constexpr uint16_t CShift = 2;       // Carry flag shift
@@ -85,10 +108,15 @@ class CpuCore final : public ExecutionComponent {
   static constexpr uint16_t I = 1 << IShift;       // Interrupt enable flag
   static constexpr uint16_t ZSCOI = ZSCO | I;      // All core-settable flags
 
+  // Control flags
   static constexpr uint16_t TShift = 8;       // Trace flag shift
   static constexpr uint16_t WShift = 9;       // Wait flag shift
   static constexpr uint16_t T = 1 << TShift;  // Trace flag
   static constexpr uint16_t W = 1 << WShift;  // Wait flag
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Banks
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // Banks reference in the CPU core
   static constexpr int CODE = 0;   // Code bank
@@ -97,15 +125,22 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int EXTRA = 3;  // Extra bank
 
   // Register / memory bank association.
-  static constexpr int kRegisterBankMap[kRegisterCount] = {
-      DATA, DATA, DATA, DATA,  EXTRA, EXTRA, STACK, STACK,
-      CODE, CODE, CODE, STACK, STACK, DATA,  CODE,  CODE,
+  static constexpr int kRegisterBankMap[] = {
+      DATA, DATA,  DATA, DATA, EXTRA, EXTRA, STACK, STACK, CODE, STACK,
+      DATA, EXTRA, CODE, CODE, STACK, STACK, CODE,  CODE,  CODE, CODE,
   };
+  static_assert(ABSL_ARRAYSIZE(kRegisterBankMap) == kRegisterCount);
+
+  //----------------------------------------------------------------------------
+  // Types
+  //----------------------------------------------------------------------------
 
   // Registers of the CPU core.
   using Registers = gb::Array<uint16_t, kRegisterCount>;
 
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Internal state of the processor.
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   enum class State {
     // Initial state of a core, and whenever HALT instruction is executed.
     // Transitions to:
@@ -160,6 +195,14 @@ class CpuCore final : public ExecutionComponent {
     kRunInstruction,
   };
 
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Bank mapping conversion helper
+  //
+  // This is a helper struct that can be used to convert a 16-bit word (in the
+  // format of the BM register) to and from the Banks struct. This is useful for
+  // serialization and deserialization of the bank mapping.
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   // This specifies which banks are mapped to which core purposes. These can be
   // changed during execution only by calling the Reset function.
   struct Banks {
@@ -200,26 +243,32 @@ class CpuCore final : public ExecutionComponent {
     int extra = 0;  // Index of second general purpose data bank.
   };
 
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // ResetParams
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
   // Reset() parameters for the CPU core.
   struct ResetParams {
     // Bit flags for `reset_mask`.
-    static constexpr uint16_t BC = 1 << 0;  // Set code bank.
-    static constexpr uint16_t BS = 1 << 1;  // Set stack bank.
-    static constexpr uint16_t BD = 1 << 2;  // Set data bank.
-    static constexpr uint16_t BE = 1 << 3;  // Set extra bank.
-    static constexpr uint16_t PC = 1 << 4;  // Set program counter.
-    static constexpr uint16_t SP = 1 << 5;  // Set stack pointer.
-    static constexpr uint16_t DP = 1 << 6;  // Set data pointer.
-    static constexpr uint16_t ALL = BC | BS | BD | BE | PC | SP | DP;
+    static constexpr uint16_t MC = 1 << 0;   // Set code bank.
+    static constexpr uint16_t MS = 1 << 1;   // Set stack bank.
+    static constexpr uint16_t MD = 1 << 2;   // Set data bank.
+    static constexpr uint16_t ME = 1 << 3;   // Set extra bank.
+    static constexpr uint16_t RBC = 1 << 4;  // Set BC register.
+    static constexpr uint16_t RBS = 1 << 5;  // Set BS register.
+    static constexpr uint16_t RBD = 1 << 6;  // Set BD register.
+    static constexpr uint16_t RBE = 1 << 7;  // Set BE register.
+    static constexpr uint16_t ALL = MC | MS | MD | ME | RBC | RBS | RBD | RBE;
 
     // Specifies which registers (and parts of registers) to reset.
     uint16_t mask = ALL;
 
     // Register values to set.
-    uint16_t bm = 0;  // BM register. Requires reset_mask & (BC | BS | BD | BE).
-    uint16_t pc = 0;  // PC register. Requires reset_mask & PC.
-    uint16_t sp = 0;  // SP register. Requires reset_mask & SP.
-    uint16_t dp = 0;  // DP register. Requires reset_mask & DP.
+    uint16_t bm = 0;  // BM register. Requires reset_mask & (MC | MS | MD | ME)
+    uint16_t bc = 0;  // BC register. Requires reset_mask & RBC
+    uint16_t bs = 0;  // BS register. Requires reset_mask & RBS
+    uint16_t bd = 0;  // BD register. Requires reset_mask & RBD
+    uint16_t be = 0;  // BE register. Requires reset_mask & RBE
   };
 
   //----------------------------------------------------------------------------
@@ -251,7 +300,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Returns true if the index is a 32-bit register index.
   static bool IsDwordReg(int reg) {
-    return reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == SD;
+    return reg == D0 || reg == D1 || reg == D2 || reg == D3;
   }
 
   // Returns all names for the 32-bit registers.

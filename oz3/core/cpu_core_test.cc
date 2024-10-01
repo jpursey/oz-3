@@ -728,17 +728,20 @@ struct CoreState {
     return static_cast<uint32_t>(r[CpuCore::D3]) |
            (static_cast<uint32_t>(r[CpuCore::D3 + 1]) << 16);
   }
+  const uint16_t& bc = r[CpuCore::BC];
+  const uint16_t& bs = r[CpuCore::BS];
+  const uint16_t& bd = r[CpuCore::BD];
+  const uint16_t& be = r[CpuCore::BE];
+  const uint16_t& bm = r[CpuCore::BM];
+  const uint16_t& pc = r[CpuCore::PC];
+  const uint16_t& bp = r[CpuCore::BP];
+  const uint16_t& sp = r[CpuCore::SP];
+
+  const uint16_t& st = r[CpuCore::ST];
+
   const uint16_t& c0 = r[CpuCore::C0];
   const uint16_t& c1 = r[CpuCore::C1];
-  const uint16_t& pc = r[CpuCore::PC];
-  const uint16_t& sp = r[CpuCore::SP];
-  const uint16_t& dp = r[CpuCore::DP];
-  uint32_t sd() const {
-    return static_cast<uint32_t>(r[CpuCore::SD]) |
-           (static_cast<uint32_t>(r[CpuCore::SD + 1]) << 16);
-  }
-  const uint16_t& st = r[CpuCore::ST];
-  const uint16_t& bm = r[CpuCore::BM];
+  const uint16_t& c2 = r[CpuCore::C2];
 
   MemoryBank* code_bank = nullptr;
   MemoryBank* stack_bank = nullptr;
@@ -845,113 +848,211 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
 
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
   CpuCore::Banks banks = {.code = 1, .stack = 2, .data = 3, .extra = 4};
   state.ResetCore(CpuCore::ResetParams{.mask = CpuCore::ResetParams::ALL,
                                        .bm = banks.ToWord(),
-                                       .pc = 5,
-                                       .sp = 6,
-                                       .dp = 7});
+                                       .bc = 5,
+                                       .bs = 6,
+                                       .bd = 7,
+                                       .be = 8});
 
   state.Update();
   EXPECT_EQ(state.bm, banks.ToWord());
-  EXPECT_EQ(state.pc, 5);
-  EXPECT_EQ(state.sp, 6);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 5);
+  EXPECT_EQ(state.pc, 0);
+  EXPECT_EQ(state.bs, 6);
+  EXPECT_EQ(state.bp, 0);
+  EXPECT_EQ(state.sp, 0);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(1));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(2));
   EXPECT_EQ(state.data_bank, processor.GetMemory(3));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
   // Change only the code bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
-      .mask = CpuCore::ResetParams::BC,
+      .mask = CpuCore::ResetParams::MC,
       .bm = CpuCore::Banks::Default().SetCode(15).ToWord()});
   state.Update();
   EXPECT_EQ(state.bm, banks.SetCode(15).ToWord());
-  EXPECT_EQ(state.pc, 5);
-  EXPECT_EQ(state.sp, 6);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 5);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 6);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(2));
   EXPECT_EQ(state.data_bank, processor.GetMemory(3));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
   // Change only the stack bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
-      .mask = CpuCore::ResetParams::BS,
+      .mask = CpuCore::ResetParams::MS,
       .bm = CpuCore::Banks::Default().SetStack(14).ToWord()});
   state.Update();
   EXPECT_EQ(state.bm, banks.SetStack(14).ToWord());
-  EXPECT_EQ(state.pc, 5);
-  EXPECT_EQ(state.sp, 6);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 5);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 6);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
   EXPECT_EQ(state.data_bank, processor.GetMemory(3));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
   // Change only the data bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
-      .mask = CpuCore::ResetParams::BD,
+      .mask = CpuCore::ResetParams::MD,
       .bm = CpuCore::Banks::Default().SetData(13).ToWord()});
   state.Update();
   EXPECT_EQ(state.bm, banks.SetData(13).ToWord());
-  EXPECT_EQ(state.pc, 5);
-  EXPECT_EQ(state.sp, 6);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 5);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 6);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
   EXPECT_EQ(state.data_bank, processor.GetMemory(13));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
   // Change only the extra bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
-      .mask = CpuCore::ResetParams::BE,
+      .mask = CpuCore::ResetParams::ME,
       .bm = CpuCore::Banks::Default().SetExtra(12).ToWord()});
   state.Update();
   EXPECT_EQ(state.bm, banks.SetExtra(12).ToWord());
-  EXPECT_EQ(state.pc, 5);
-  EXPECT_EQ(state.sp, 6);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 5);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 6);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
   EXPECT_EQ(state.data_bank, processor.GetMemory(13));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
 
-  // Change only the program counter and reset again.
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
+  // Change only the base code offset and reset again.
   state.ResetCore(
-      CpuCore::ResetParams{.mask = CpuCore::ResetParams::PC, .pc = 10});
+      CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBC, .bc = 10});
   state.Update();
   EXPECT_EQ(state.bm, banks.ToWord());
-  EXPECT_EQ(state.pc, 10);
-  EXPECT_EQ(state.sp, 6);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 10);
+  EXPECT_EQ(state.pc, 0);
+  EXPECT_EQ(state.bs, 6);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
   EXPECT_EQ(state.data_bank, processor.GetMemory(13));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
+
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
 
   // Change only the stack pointer and reset again.
   state.ResetCore(
-      CpuCore::ResetParams{.mask = CpuCore::ResetParams::SP, .sp = 9});
+      CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBS, .bs = 9});
   state.Update();
   EXPECT_EQ(state.bm, banks.ToWord());
-  EXPECT_EQ(state.pc, 10);
-  EXPECT_EQ(state.sp, 9);
-  EXPECT_EQ(state.dp, 7);
+  EXPECT_EQ(state.bc, 10);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 9);
+  EXPECT_EQ(state.bp, 0);
+  EXPECT_EQ(state.sp, 0);
+  EXPECT_EQ(state.bd, 7);
+  EXPECT_EQ(state.be, 8);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
   EXPECT_EQ(state.data_bank, processor.GetMemory(13));
   EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
 
+  lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::PC, 100);
+  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::SP, 300);
+  lock.reset();
+
   // Change only the data pointer and reset again.
   state.ResetCore(
-      CpuCore::ResetParams{.mask = CpuCore::ResetParams::DP, .dp = 8});
+      CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBD, .bd = 8});
   state.Update();
   EXPECT_EQ(state.bm, banks.ToWord());
-  EXPECT_EQ(state.pc, 10);
-  EXPECT_EQ(state.sp, 9);
-  EXPECT_EQ(state.dp, 8);
+  EXPECT_EQ(state.bc, 10);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 9);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 8);
+  EXPECT_EQ(state.be, 8);
+  EXPECT_EQ(state.code_bank, processor.GetMemory(15));
+  EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
+  EXPECT_EQ(state.data_bank, processor.GetMemory(13));
+  EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
+
+  // Change only the extra pointer and reset again.
+  state.ResetCore(
+      CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBE, .be = 7});
+  state.Update();
+  EXPECT_EQ(state.bm, banks.ToWord());
+  EXPECT_EQ(state.bc, 10);
+  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.bs, 9);
+  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.sp, 300);
+  EXPECT_EQ(state.bd, 8);
+  EXPECT_EQ(state.be, 7);
   EXPECT_EQ(state.code_bank, processor.GetMemory(15));
   EXPECT_EQ(state.stack_bank, processor.GetMemory(14));
   EXPECT_EQ(state.data_bank, processor.GetMemory(13));
@@ -1076,11 +1177,20 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   Processor processor(ProcessorConfig::MultiCore(3));
   MemoryBank& memory_bank = *processor.GetMemory(0);
   CoreState state0(*processor.GetCore(0));
-  state0.ResetCore({.pc = 10});
+  state0.ResetCore();
+  auto lock = state0.core.RequestLock();
+  state0.core.SetWordRegister(*lock, CpuCore::PC, 10);
+  lock.reset();
   CoreState state1(*processor.GetCore(1));
-  state1.ResetCore({.pc = 20});
+  state1.ResetCore();
+  lock = state1.core.RequestLock();
+  state1.core.SetWordRegister(*lock, CpuCore::PC, 20);
+  lock.reset();
   CoreState state2(*processor.GetCore(2));
-  state2.ResetCore({.pc = 30});
+  state2.ResetCore();
+  lock = state2.core.RequestLock();
+  state2.core.SetWordRegister(*lock, CpuCore::PC, 30);
+  lock.reset();
 
   // Run the processor for one fetch and decode cycle. This will result in the
   // first core locking memory and decoding the first NOP. The other cores
@@ -4821,7 +4931,10 @@ TEST(CpuCoreTest, OtherCoreInterrupt) {
   CoreState state0(core0);
   CoreState state1(core1);
   state0.ResetCore();
-  state1.ResetCore({.pc = 100});
+  state1.ResetCore();
+  auto lock = core1.RequestLock();
+  core1.SetWordRegister(*lock, CpuCore::PC, 100);
+  lock.reset();
   MemAccessor mem(*processor.GetMemory(0));
 
   // Core 0 program
@@ -4988,7 +5101,7 @@ TEST(CpuCoreTest, ResetDuringWait) {
 
   lock = core.RequestLock();
   ASSERT_TRUE(lock->IsLocked());
-  core.Reset(*lock, {.mask = CpuCore::ResetParams::BC, .bm = 0});
+  core.Reset(*lock, {.mask = CpuCore::ResetParams::MC, .bm = 0});
   lock.reset();
 
   ExecuteUntilHalt(processor, state);
