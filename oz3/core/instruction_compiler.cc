@@ -105,6 +105,14 @@ absl::string_view LockOpNameFromIndex(int lock) {
   return "CLK";
 }
 
+std::string ToBitString(int value, int count) {
+  std::string result;
+  for (int i = 1 << (count - 1); i > 0; i >>= 1) {
+    result.push_back((value & i) ? '1' : '0');
+  }
+  return result;
+}
+
 }  // namespace
 
 class InstructionCompiler {
@@ -283,8 +291,7 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     return Error("Invalid macro return type: ", ArgTypeToString(macro.ret));
   }
 
-  // TODO: Validate all prefixes are unique.
-
+  std::vector<const MacroCodeDef*> sub_code_defs(sub_count, nullptr);
   for (const MacroCodeDef& code_def : macro_def.code) {
     state_ = {};
     state_.macro_code_def = &code_def;
@@ -298,6 +305,20 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
       return Error("Prefix value too large: ", code_def.prefix.value, " > ",
                    max_prefix_value);
     }
+
+    const int num_sub_macros = (1 << code_def.arg.size);
+    const int start_sub_index =
+        macro.sub_index + (code_def.prefix.value << code_def.arg.size);
+    for (int i = start_sub_index; i < start_sub_index + num_sub_macros; ++i) {
+      if (sub_code_defs[i] != nullptr) {
+        return Error("Duplicate macro sub code ",
+                     ToBitString(i, macro_def.size), " between \"",
+                     sub_code_defs[i]->source, "\" and \"", code_def.source,
+                     "\"");
+      }
+      sub_code_defs[i] = &code_def;
+    }
+
     if (!code_def.arg.IsValid()) {
       return Error(
           "Invalid macro argument (size is probably invalid for type)");
@@ -339,9 +360,6 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     sub_macro.code_size =
         static_cast<uint8_t>(macro_codes_.size() - sub_macro.code_start);
 
-    const int num_sub_macros = (1 << code_def.arg.size);
-    const int start_sub_index =
-        macro.sub_index + (code_def.prefix.value << code_def.arg.size);
     for (int i = 0; i < num_sub_macros; ++i) {
       sub_macros_[start_sub_index + i] = sub_macro;
     }

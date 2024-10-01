@@ -491,7 +491,7 @@ TEST(InstructionCompilerTest, MacroWordParamRegReturn) {
                           "UL;$Macro(R1);MOV(R4,r);MOV(r,R5);"));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p,
-                          "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
+                           "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
   EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p,
                            "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
@@ -2452,6 +2452,91 @@ TEST(InstructionCompilerTest, CallMacroWithDwordParameter) {
   EXPECT_TRUE(
       CompileForTest(InstructionWithCode("UL;$Macro(D0);"), macro_def, error));
   EXPECT_THAT(error, IsEmpty());
+}
+
+TEST(InstructionCompilerTest, MacroWithConflictingPrefix) {
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "Test0", .prefix = {0, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test1", .prefix = {1, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test2", .prefix = {2, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test3", .prefix = {3, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test4", .prefix = {4, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test5", .prefix = {5, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test6", .prefix = {2, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test7", .prefix = {7, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test8", .prefix = {8, 3}, .code = "MOV(R0,R1);"},
+  };
+  MacroDef macro_def = {.name = "Macro",
+                        .param = ArgType::kDwordReg,
+                        .size = 3,
+                        .code = macro_code_defs};
+  std::string error;
+  EXPECT_FALSE(CompileForTest(macro_def, error));
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("duplicate macro"), HasSubstr("test2"),
+                    HasSubstr("test6"), HasSubstr(" 010 ")));
+}
+
+TEST(InstructionCompilerTest, MacroWithConflictingArgAndPrefix) {
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "Test0", .prefix = {0, 3}, .code = "MOV(R0,R1);"},
+      {.source = "Test1", .arg = ArgType::kWordReg, .code = "MOV(R0,R1);"},
+  };
+  MacroDef macro_def = {.name = "Macro",
+                        .param = ArgType::kDwordReg,
+                        .size = 3,
+                        .code = macro_code_defs};
+  InstructionDef instruction_def = {
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  auto InstructionWithCode =
+      [&](std::string_view code) -> const InstructionDef& {
+    instruction_def.code = code;
+    return instruction_def;
+  };
+  std::string error;
+  EXPECT_FALSE(
+      CompileForTest(InstructionWithCode("UL;$Macro(2);"), macro_def, error));
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("duplicate macro"), HasSubstr(" 000 ")));
+}
+
+TEST(InstructionCompilerTest, MacroWithConflictingArgPrefixCombos) {
+  MacroCodeDef macro_code_defs[] = {
+      {
+          .source = "Test0",
+          .prefix = {0b11001, 5},
+          .code = "MOV(R0,R1);",
+      },
+      {
+          .source = "Test1",
+          .prefix = {0b01, 2},
+          .arg = ArgType::kWordReg,
+          .code = "MOV(R0,R1);",
+      },
+      {
+          .source = "Test2",
+          .prefix = {0b1, 1},
+          .arg = {ArgType::kImmediate, 4},
+          .code = "MOV(R0,R1);",
+      },
+  };
+  MacroDef macro_def = {.name = "Macro",
+                        .param = ArgType::kDwordReg,
+                        .size = 5,
+                        .code = macro_code_defs};
+  InstructionDef instruction_def = {
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  auto InstructionWithCode =
+      [&](std::string_view code) -> const InstructionDef& {
+    instruction_def.code = code;
+    return instruction_def;
+  };
+  std::string error;
+  EXPECT_FALSE(
+      CompileForTest(InstructionWithCode("UL;$Macro(2);"), macro_def, error));
+  EXPECT_THAT(absl::AsciiStrToLower(error),
+              AllOf(HasSubstr("duplicate macro"), HasSubstr("test0"),
+                    HasSubstr("test2"), HasSubstr(" 11001 ")));
 }
 
 }  // namespace
