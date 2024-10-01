@@ -53,6 +53,10 @@ bool InstructionSet::Decode(uint16_t code_word,
     state.code_word >>= instruction->arg1.size;
     DecodeArgument(state, instruction->arg2, 1);
   }
+  if (state.code->code_size == 0) {
+    decoded = kNopDecoded;
+    return false;
+  }
 
   decoded.code = GetCode(*state.code);
   decoded.size = state.code->pc_size;

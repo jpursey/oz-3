@@ -213,6 +213,8 @@ class InstructionCompiler {
   std::string* error_ = nullptr;
   const MacroDef* macro_def_ = nullptr;
   const InstructionDef* instruction_def_ = nullptr;
+  int last_macro_code_start_ = -1;
+  const SubInstruction* last_sub_instruction_ = nullptr;
   struct State {
     const MacroCodeDef* macro_code_def = nullptr;
     const SubMacro* sub_macro = nullptr;
@@ -662,7 +664,22 @@ const MicrocodeDef* InstructionCompiler::FindMicrocodeDef(int op) {
 }
 
 bool InstructionCompiler::CompileSubInstruction() {
-  // TODO: Short cicruit for empty and duplicated sub macro code.
+  // If there was no sub-macro code, then this is not a valid sub-instruction.
+  // We simply don't store any code, and it will automatically become a NOP if
+  // it ever gets decoded.
+  if (state_.sub_macro->code_size == 0) {
+    return true;
+  }
+
+  // Macros with arguments generate many sub instructions with the same code.
+  // We can just reuse the same code, since the instruction didn't change
+  // either.
+  if (last_macro_code_start_ == state_.sub_macro->code_start) {
+    *state_.sub_instruction = *last_sub_instruction_;
+    return true;
+  }
+  last_macro_code_start_ = state_.sub_macro->code_start;
+  last_sub_instruction_ = state_.sub_instruction;
 
   const int pre_size = static_cast<int>(state_.pre_codes.size());
   const int post_size = static_cast<int>(state_.post_codes.size());
@@ -670,6 +687,7 @@ bool InstructionCompiler::CompileSubInstruction() {
   const int macro_code_end = macro_code_start + state_.sub_macro->code_size;
   const int macro_code_size = state_.sub_macro->code_size;
   const int macro_size_increase = macro_code_size - 1;
+
   const int8_t arg_offset =
       (instruction_def_->arg1.type == ArgType::kMacro ? 0 : 1);
 
