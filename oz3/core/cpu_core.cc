@@ -15,58 +15,86 @@
 
 namespace oz3 {
 
+namespace {
+
+constexpr std::string_view kWordRegNames[CpuCore::kRegisterCount] = {
+    "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
+    "C0", "C1", "PC", "BP", "SP", "DP", "ST", "BM",
+};
+static_assert(kWordRegNames[CpuCore::R0] == "R0");
+static_assert(kWordRegNames[CpuCore::R1] == "R1");
+static_assert(kWordRegNames[CpuCore::R2] == "R2");
+static_assert(kWordRegNames[CpuCore::R3] == "R3");
+static_assert(kWordRegNames[CpuCore::R4] == "R4");
+static_assert(kWordRegNames[CpuCore::R5] == "R5");
+static_assert(kWordRegNames[CpuCore::R6] == "R6");
+static_assert(kWordRegNames[CpuCore::R7] == "R7");
+static_assert(kWordRegNames[CpuCore::C0] == "C0");
+static_assert(kWordRegNames[CpuCore::C1] == "C1");
+static_assert(kWordRegNames[CpuCore::PC] == "PC");
+static_assert(kWordRegNames[CpuCore::BP] == "BP");
+static_assert(kWordRegNames[CpuCore::SP] == "SP");
+static_assert(kWordRegNames[CpuCore::DP] == "DP");
+static_assert(kWordRegNames[CpuCore::ST] == "ST");
+static_assert(kWordRegNames[CpuCore::BM] == "BM");
+
+constexpr std::string_view kDwordRegNames[CpuCore::kRegisterCount] = {
+    "D0", "", "D1", "", "D2", "", "D3", "", "", "", "", "", "SD", "", "", "",
+};
+static_assert(kDwordRegNames[CpuCore::D0] == "D0");
+static_assert(kDwordRegNames[CpuCore::D1] == "D1");
+static_assert(kDwordRegNames[CpuCore::D2] == "D2");
+static_assert(kDwordRegNames[CpuCore::D3] == "D3");
+static_assert(kDwordRegNames[CpuCore::SD] == "SD");
+
+constexpr std::string_view kDwordRegNamesCompressed[] = {
+    "D0", "D1", "D2", "D3", "SD",
+};
+
+}  // namespace
+
+absl::Span<const std::string_view> CpuCore::GetWordRegisterNames() {
+  return kWordRegNames;
+}
+
+absl::Span<const std::string_view> CpuCore::GetDwordRegisterNames() {
+  return kDwordRegNamesCompressed;
+}
+
 std::string_view CpuCore::GetWordRegName(int reg) {
-  switch (reg) {
-    case R0:
-      return "R0";
-    case R1:
-      return "R1";
-    case R2:
-      return "R2";
-    case R3:
-      return "R3";
-    case R4:
-      return "R4";
-    case R5:
-      return "R5";
-    case R6:
-      return "R6";
-    case R7:
-      return "R7";
-    case C0:
-      return "C0";
-    case C1:
-      return "C1";
-    case PC:
-      return "PC";
-    case BP:
-      return "BP";
-    case SP:
-      return "SP";
-    case DP:
-      return "DP";
-    case ST:
-      return "ST";
-    case BM:
-      return "BM";
+  if (reg < 0 || reg >= kRegisterCount) {
+    return "invalid";
   }
-  return "invalid";
+  return kWordRegNames[reg];
+}
+
+int CpuCore::GetWordRegFromName(std::string_view name) {
+  for (int i = 0; i < kRegisterCount; ++i) {
+    if (kWordRegNames[i] == name) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 std::string_view CpuCore::GetDwordRegName(int reg) {
-  switch (reg) {
-    case D0:
-      return "D0";
-    case D1:
-      return "D1";
-    case D2:
-      return "D2";
-    case D3:
-      return "D3";
-    case SD:
-      return "SD";
+  if (reg < 0 || reg >= kRegisterCount) {
+    return "invalid";
   }
-  return "invalid";
+  std::string_view name = kDwordRegNames[reg];
+  return name.empty() ? "invalid" : name;
+}
+
+int CpuCore::GetDwordRegFromName(std::string_view name) {
+  if (name.empty()) {
+    return -1;
+  }
+  for (int i = 0; i < kRegisterCount; ++i) {
+    if (kDwordRegNames[i] == name) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 CpuCore::CpuCore(const CpuCoreConfig& config) {

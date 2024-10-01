@@ -9,6 +9,7 @@
 
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/substitute.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
@@ -285,52 +286,21 @@ TEST(InstructionCompilerTest, InstructionWordRegArg) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("word argument"));
   EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(0)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R0)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R1)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R2)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R3)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R4)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R5)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R6)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(R7)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(R8)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D0)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D1)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D2)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D3)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(D4)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C0)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(C1)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(BP)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(SP)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(DP)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(SD)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(PC)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(ST)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroWordArg1, MakeDef("TEST(BM)"), error));
-  EXPECT_THAT(error, IsEmpty());
+
+  for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+  }
+  for (std::string_view reg_name : CpuCore::GetDwordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+  }
 }
 
 TEST(InstructionCompilerTest, MacroWordRegArg) {
@@ -593,52 +563,20 @@ TEST(InstructionCompilerTest, InstructionDwordRegArg) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro return type"));
   EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(0)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R0)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R1)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R2)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R3)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R4)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R5)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R6)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R7)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(R8)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D0)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D1)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D2)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D3)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(D4)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C0)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(C1)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(BP)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(SP)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(DP)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(TestCompile(kMicroDwordArg1, MakeDef("TEST(SD)"), error));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(PC)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(ST)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(TestCompile(kMicroDwordArg1, MakeDef("TEST(BM)"), error));
-  EXPECT_THAT(error, Not(IsEmpty()));
+  for (std::string_view reg_name : CpuCore::GetDwordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_TRUE(TestCompile(
+        kMicroDwordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+  }
+  for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_FALSE(TestCompile(
+        kMicroDwordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+  }
 }
 
 TEST(InstructionCompilerTest, MacroDwordRegArg) {
@@ -1070,78 +1008,27 @@ TEST(InstructionCompilerTest, AddressArg) {
                              "label:NOP;CUL;"},
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;"
-                             "LKR(R0);TEST(2);UL;LKR(R0);TEST(-4);UL;"
-                             "LKR(R1);TEST(2);UL;LKR(R1);TEST(-4);UL;"
-                             "LKR(R2);TEST(2);UL;LKR(R2);TEST(-4);UL;"
-                             "LKR(R3);TEST(2);UL;LKR(R3);TEST(-4);UL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;"
-                             "LKR(R4);TEST(2);UL;LKR(R4);TEST(-4);UL;"
-                             "LKR(R5);TEST(2);UL;LKR(R5);TEST(-4);UL;"
-                             "LKR(R6);TEST(2);UL;LKR(R6);TEST(-4);UL;"
-                             "LKR(R7);TEST(2);UL;LKR(R7);TEST(-4);UL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;"
-                             "LKR(C0);TEST(2);UL;LKR(C0);TEST(-4);UL;"
-                             "LKR(C1);TEST(2);UL;LKR(C1);TEST(-4);UL;"
-                             "LKR(PC);TEST(2);UL;LKR(PC);TEST(-4);UL;"
-                             "LKR(BP);TEST(2);UL;LKR(BP);TEST(-4);UL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;"
-                             "LKR(SP);TEST(2);UL;LKR(SP);TEST(-4);UL;"
-                             "LKR(DP);TEST(2);UL;LKR(DP);TEST(-4);UL;"
-                             "LKR(ST);TEST(2);UL;LKR(ST);TEST(-4);UL;"
-                             "LKR(BM);TEST(2);UL;LKR(BM);TEST(-4);UL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(R0);TEST(2);UL;LKR(R1);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(R2);TEST(2);UL;LKR(R3);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(R4);TEST(2);UL;LKR(R5);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(R6);TEST(2);UL;LKR(R7);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(C0);TEST(2);UL;LKR(C1);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(C1);TEST(2);UL;LKR(PC);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(PC);TEST(2);UL;LKR(BP);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(BP);TEST(2);UL;LKR(SP);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(SP);TEST(2);UL;LKR(DP);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "LKR(ST);TEST(2);UL;LKR(BM);TEST(-4);UL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
+  for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    std::string code = absl::Substitute(
+        "UL;LKR($0);TEST(2);UL;LKR($0);TEST(-4);UL;", reg_name);
+    EXPECT_TRUE(
+        CompileForTest(InstructionDef{.code = code}, error, microcode_defs))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+  }
+  for (int i = 0; i < CpuCore::kRegisterCount; ++i) {
+    int j = (i + 1) % CpuCore::kRegisterCount;
+    std::string context = absl::StrCat("Context: ", CpuCore::GetWordRegName(i),
+                                       " and ", CpuCore::GetWordRegName(j));
+    std::string code = absl::Substitute(
+        "UL;LKR($0);TEST(2);UL;LKR($1);TEST(-4);UL;",
+        CpuCore::GetWordRegName(i), CpuCore::GetWordRegName(j));
+    EXPECT_FALSE(
+        CompileForTest(InstructionDef{.code = code}, error, microcode_defs))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+  }
 }
 
 TEST(InstructionCompilerTest, InvalidMicrocodeName) {

@@ -1175,30 +1175,11 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               ArgTypeToString(*state_.macro_return_type));
         }
         arg = kArg_r1;
-      } else if (arg_name[0] == 'R' && arg_name.size() == 2) {
-        arg = arg_name[1] - '0';
-        if (arg < 0 || arg > 7) {
-          return Error("Invalid register index: ", arg_name);
-        }
-        arg += CpuCore::R0;
-      } else if (arg_name == "C0") {
-        arg = CpuCore::C0;
-      } else if (arg_name == "C1") {
-        arg = CpuCore::C1;
-      } else if (arg_name == "PC") {
-        arg = CpuCore::PC;
-      } else if (arg_name == "BP") {
-        arg = CpuCore::BP;
-      } else if (arg_name == "SP") {
-        arg = CpuCore::SP;
-      } else if (arg_name == "DP") {
-        arg = CpuCore::DP;
-      } else if (arg_name == "ST") {
-        arg = CpuCore::ST;
-      } else if (arg_name == "BM") {
-        arg = CpuCore::BM;
       } else {
-        return Error("Invalid word argument: ", arg_name);
+        arg = CpuCore::GetWordRegFromName(arg_name);
+        if (arg < 0) {
+          return Error("Invalid word argument: ", arg_name);
+        }
       }
       return true;
     } break;
@@ -1258,16 +1239,11 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               ArgTypeToString(*state_.macro_return_type));
         }
         arg = kArg_R;
-      } else if (arg_name[0] == 'D' && arg_name.size() == 2) {
-        arg = arg_name[1] - '0';
-        if (arg < 0 || arg > 3) {
-          return Error("Invalid register index: ", arg_name);
-        }
-        arg = CpuCore::D0 + arg * 2;
-      } else if (arg_name == "SD") {
-        arg = CpuCore::SD;
       } else {
-        return Error("Invalid dword argument: ", arg_name);
+        arg = CpuCore::GetDwordRegFromName(arg_name);
+        if (arg < 0) {
+          return Error("Invalid dword argument: ", arg_name);
+        }
       }
       return true;
     } break;

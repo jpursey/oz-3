@@ -49,8 +49,8 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int D3 = R6;  // 32-bit register (R6,R7)
 
   // Cache registers (set as noted at the beginning of each instruction)
-  static constexpr int C0 = 8;   // Cache register 0 (first arg or zero)
-  static constexpr int C1 = 9;   // Cache register 1 (second arg or zero)
+  static constexpr int C0 = 8;  // Cache register 0 (first arg or zero)
+  static constexpr int C1 = 9;  // Cache register 1 (second arg or zero)
 
   // Special purpose registers
   static constexpr int PC = 10;  // Program counter
@@ -98,7 +98,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Register / memory bank association.
   static constexpr int kRegisterBankMap[kRegisterCount] = {
-      DATA, DATA, DATA, DATA, EXTRA, EXTRA, STACK, STACK,
+      DATA, DATA, DATA, DATA,  EXTRA, EXTRA, STACK, STACK,
       CODE, CODE, CODE, STACK, STACK, DATA,  CODE,  CODE,
   };
 
@@ -238,18 +238,32 @@ class CpuCore final : public ExecutionComponent {
   // Returns true if the index is a 16-bit register index.
   static bool IsWordReg(int reg) { return reg >= 0 && reg < kRegisterCount; }
 
+  // Returns all names for the 16-bit registers.
+  static absl::Span<const std::string_view> GetWordRegisterNames();
+
   // Returns the standard name for the specified 16-bit register, or "invalid"
   // if it is not a valid register.
   static std::string_view GetWordRegName(int reg);
+
+  // Returns the 16-bit register index for the specified register name, or -1 if
+  // the name is not a valid 16-bit register name.
+  static int GetWordRegFromName(std::string_view name);
 
   // Returns true if the index is a 32-bit register index.
   static bool IsDwordReg(int reg) {
     return reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == SD;
   }
 
+  // Returns all names for the 32-bit registers.
+  static absl::Span<const std::string_view> GetDwordRegisterNames();
+
   // Returns the standard name for the specified 32-bit register, or "invalid"
   // if it is not a valid register.
   static std::string_view GetDwordRegName(int reg);
+
+  // Returns the 32-bit register index for the specified register name, or -1 if
+  // the name is not a valid 32-bit register name.
+  static int GetDwordRegFromName(std::string_view name);
 
   //----------------------------------------------------------------------------
   // Attributes

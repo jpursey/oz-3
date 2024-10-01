@@ -8,6 +8,7 @@
 #include <ostream>
 #include <string>
 
+#include "absl/strings/substitute.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
@@ -438,46 +439,31 @@ TEST(InstructionSetTest, WordRegArgsDecodedCorrectly) {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
-  const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .code = "UL;"
-               "OP(R0,R1);OP(R2,R3);OP(R4,R5);OP(R6,R7);"
-               "OP(C0,C1);OP(PC,BP);OP(SP,DP);OP(ST,BM);"},
-  };
+  for (int8_t i = 0; i < CpuCore::kRegisterCount; ++i) {
+    std::string code =
+        absl::Substitute("UL;OP($0,$0);", CpuCore::GetWordRegName(i));
+    const InstructionDef instruction_defs[] = {
+        {.op = kOp_TEST, .code = code},
+    };
 
-  std::string error;
-  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
-                                     micro_defs);
-  EXPECT_THAT(error, IsEmpty());
-  DecodedInstruction decoded;
-  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
-  EXPECT_EQ(decoded.size, 1);
-  EXPECT_EQ(decoded.c[0], 0);
-  EXPECT_EQ(decoded.c[1], 0);
-  EXPECT_EQ(decoded.r[0], 0);
-  EXPECT_EQ(decoded.r[1], 0);
-  EXPECT_EQ(decoded.r[2], 0);
-  EXPECT_EQ(decoded.r[3], 0);
-  EXPECT_THAT(
-      decoded.code,
-      ElementsAre(
-          Microcode{.op = kMicro_UL},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::R2, .arg2 = CpuCore::R3},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::R4, .arg2 = CpuCore::R5},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::R6, .arg2 = CpuCore::R7},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::C0, .arg2 = CpuCore::C1},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::PC, .arg2 = CpuCore::BP},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::SP, .arg2 = CpuCore::DP},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::ST, .arg2 = CpuCore::BM}));
+    std::string error;
+    auto codes = CompileInstructionSet({.instructions = instruction_defs},
+                                       &error, micro_defs);
+    EXPECT_THAT(error, IsEmpty());
+    DecodedInstruction decoded;
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
+    EXPECT_EQ(decoded.size, 1);
+    EXPECT_EQ(decoded.c[0], 0);
+    EXPECT_EQ(decoded.c[1], 0);
+    EXPECT_EQ(decoded.r[0], 0);
+    EXPECT_EQ(decoded.r[1], 0);
+    EXPECT_EQ(decoded.r[2], 0);
+    EXPECT_EQ(decoded.r[3], 0);
+    EXPECT_THAT(
+        decoded.code,
+        ElementsAre(Microcode{.op = kMicro_UL},
+                    Microcode{.op = kMicro_TEST, .arg1 = i, .arg2 = i}));
+  }
 }
 
 TEST(InstructionSetTest, DwordRegArgsDecodedCorrectly) {
@@ -485,33 +471,35 @@ TEST(InstructionSetTest, DwordRegArgsDecodedCorrectly) {
       {kMicro_UL, "UL"},
       {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
   };
-  const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .code = "UL;OP(D0,D1);OP(D2,D3);OP(SD,SD)"},
-  };
+  for (int8_t i = 0; i < CpuCore::kRegisterCount; ++i) {
+    std::string_view reg_name = CpuCore::GetDwordRegName(i);
+    if (reg_name == "invalid") {
+      continue;
+    }
+    std::string context = absl::StrCat("Context: ", reg_name);
+    std::string code = absl::Substitute("UL;OP($0,$0);", reg_name);
+    const InstructionDef instruction_defs[] = {
+        {.op = kOp_TEST, .code = code},
+    };
 
-  std::string error;
-  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
-                                     micro_defs);
-  EXPECT_THAT(error, IsEmpty());
-  DecodedInstruction decoded;
-  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
-  EXPECT_EQ(decoded.size, 1);
-  EXPECT_EQ(decoded.c[0], 0);
-  EXPECT_EQ(decoded.c[1], 0);
-  EXPECT_EQ(decoded.r[0], 0);
-  EXPECT_EQ(decoded.r[1], 0);
-  EXPECT_EQ(decoded.r[2], 0);
-  EXPECT_EQ(decoded.r[3], 0);
-  EXPECT_THAT(
-      decoded.code,
-      ElementsAre(
-          Microcode{.op = kMicro_UL},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::D2, .arg2 = CpuCore::D3},
-          Microcode{
-              .op = kMicro_TEST, .arg1 = CpuCore::SD, .arg2 = CpuCore::SD}));
+    std::string error;
+    auto codes = CompileInstructionSet({.instructions = instruction_defs},
+                                       &error, micro_defs);
+    EXPECT_THAT(error, IsEmpty());
+    DecodedInstruction decoded;
+    EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded)) << context;
+    EXPECT_EQ(decoded.size, 1) << context;
+    EXPECT_EQ(decoded.c[0], 0) << context;
+    EXPECT_EQ(decoded.c[1], 0) << context;
+    EXPECT_EQ(decoded.r[0], 0) << context;
+    EXPECT_EQ(decoded.r[1], 0) << context;
+    EXPECT_EQ(decoded.r[2], 0) << context;
+    EXPECT_EQ(decoded.r[3], 0) << context;
+    EXPECT_THAT(decoded.code,
+                ElementsAre(Microcode{.op = kMicro_UL},
+                            Microcode{.op = kMicro_TEST, .arg1 = i, .arg2 = i}))
+        << context;
+  }
 }
 
 TEST(InstructionSetTest, ImmOpArgDecodedCorrectly) {
@@ -786,16 +774,8 @@ TEST(InstructionSetTest, MacroWordParamDecodedCorrectly) {
   std::shared_ptr<const InstructionSet> codes;
   DecodedInstruction decoded;
 
-  const std::pair<int8_t, std::string_view> tests[] = {
-      {CpuCore::R0, "R0"}, {CpuCore::R1, "R1"}, {CpuCore::R2, "R2"},
-      {CpuCore::R3, "R3"}, {CpuCore::R4, "R4"}, {CpuCore::R5, "R5"},
-      {CpuCore::R6, "R6"}, {CpuCore::R7, "R7"}, {CpuCore::C0, "C0"},
-      {CpuCore::C1, "C1"}, {CpuCore::PC, "PC"}, {CpuCore::BP, "BP"},
-      {CpuCore::DP, "DP"}, {CpuCore::SP, "SP"}, {CpuCore::ST, "ST"},
-      {CpuCore::BM, "BM"},
-  };
-
-  for (auto& [reg, reg_name] : tests) {
+  for (int8_t reg = 0; reg < CpuCore::kRegisterCount; ++reg) {
+    absl::string_view reg_name = CpuCore::GetWordRegName(reg);
     codes = CompileInstructionSet(MakeInstructionSetDef(0, reg_name), &error,
                                   micro_defs);
     const std::string context = absl::StrCat("Context: $Macro(", reg_name, ")");
@@ -1252,12 +1232,11 @@ TEST(InstructionSetTest, MacroDwordParamDecodedCorrectly) {
   std::shared_ptr<const InstructionSet> codes;
   DecodedInstruction decoded;
 
-  const std::pair<int8_t, std::string_view> tests[] = {
-      {CpuCore::D0, "D0"}, {CpuCore::D1, "D1"}, {CpuCore::D2, "D2"},
-      {CpuCore::D3, "D3"}, {CpuCore::SD, "SD"},
-  };
-
-  for (auto& [reg, reg_name] : tests) {
+  for (int8_t reg = 0; reg < CpuCore::kRegisterCount; ++reg) {
+    std::string_view reg_name = CpuCore::GetDwordRegName(reg);
+    if (reg_name == "invalid") {
+      continue;
+    }
     codes = CompileInstructionSet(MakeInstructionSetDef(0, reg_name), &error,
                                   micro_defs);
     const std::string context = absl::StrCat("Context: $Macro(", reg_name, ")");
