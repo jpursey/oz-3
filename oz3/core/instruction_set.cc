@@ -63,6 +63,12 @@ bool InstructionSet::Decode(uint16_t code_word,
   return true;
 }
 
+int InstructionSet::GetTotalSizeInBytes() const {
+  return static_cast<int>(instructions_.size() * sizeof(Instruction) +
+                          sub_instructions_.size() * sizeof(SubInstruction) +
+                          microcodes_.size() * sizeof(Microcode));
+}
+
 bool InstructionSet::DecodeArgument(DecodeState& state, const Argument& arg,
                                     int arg_index) const {
   DCHECK(arg.IsValid());

@@ -13,9 +13,17 @@
 
 namespace oz3 {
 
-// Decoded instruction from the OZ-3 CPU.
+//==============================================================================
+// DecodedInstruction
+//==============================================================================
+
+// Decoded instruction from an instruction set.
 //
-// This is used by the CpuCode to execute instructions via microcode.
+// Instructions in the OZ-3 CPU are defines by a single 16-bit code word. This
+// class represents the decoded instruction, which includes the microcode
+// instructions that make up the instruction, how many words it takes (how far
+// to advance the PC register), as well as any decoded immediate value and
+// register arguments.
 struct DecodedInstruction {
   absl::Span<const Microcode> code;
   uint16_t size;  // Size of the full instruction (including inline values).
@@ -25,6 +33,10 @@ struct DecodedInstruction {
   auto operator<=>(const DecodedInstruction&) const = default;
 };
 
+//==============================================================================
+// InstructionSet
+//==============================================================================
+
 // This class represents a compiled instruction set for the OZ-3 CPU.
 //
 // To create an instruction set, use the OldInstructionCompiler class to compile
@@ -32,6 +44,9 @@ struct DecodedInstruction {
 // instruction codes into microcode instructions.
 class InstructionSet {
  public:
+  //----------------------------------------------------------------------------
+  // Construction / Destruction
+  //----------------------------------------------------------------------------
   InstructionSet() = default;
   InstructionSet(const InstructionSet&) = default;
   InstructionSet& operator=(const InstructionSet&) = default;
@@ -39,11 +54,27 @@ class InstructionSet {
   InstructionSet& operator=(InstructionSet&&) = default;
   ~InstructionSet() = default;
 
+  //----------------------------------------------------------------------------
+  // Properties
+  //----------------------------------------------------------------------------
+
   // Returns true if the instruction set is empty.
   //
   // This occurs if the instruction set was default constructed, or if
   // CompileInstructionSet failed.
   bool IsEmpty() const { return instructions_.empty(); }
+
+  // Returns the number of instructions in the instruction set.
+  int GetInstructionCount() const {
+    return static_cast<int>(instructions_.size());
+  }
+
+  // Returns the total size in bytes the instruction set consumes.
+  int GetTotalSizeInBytes() const;
+
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
 
   // Decodes an instruction code into a set of microcode instructions and
   // parameters.
@@ -55,6 +86,10 @@ class InstructionSet {
   bool Decode(uint16_t code_word, DecodedInstruction& decoded) const;
 
  private:
+  //----------------------------------------------------------------------------
+  // Implementation
+  //----------------------------------------------------------------------------
+
   friend class InstructionCompiler;
 
   using Instruction = microcode_internal::Instruction;
