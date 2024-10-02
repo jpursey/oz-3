@@ -5,8 +5,8 @@
 
 #include "oz3/core/instruction.h"
 
+#include "absl/log/log.h"
 #include "absl/types/span.h"
-#include "glog/logging.h"
 
 namespace oz3 {
 

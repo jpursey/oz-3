@@ -6,7 +6,7 @@
 #include "oz3/core/cpu_core.h"
 
 #include "absl/cleanup/cleanup.h"
-#include "glog/logging.h"
+#include "absl/log/log.h"
 #include "oz3/core/instruction.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"

@@ -5,8 +5,8 @@
 
 #include "oz3/core/memory_bank.h"
 
+#include "absl/log/log.h"
 #include "absl/memory/memory.h"
-#include "glog/logging.h"
 
 namespace oz3 {
 

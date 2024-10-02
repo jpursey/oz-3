@@ -28,7 +28,8 @@ set(oz3_core_DEPS
   gb_container
 )
 set(oz3_core_LIBS
-  glog
+  absl::check
+  absl::log
 )
 
 set(oz3_core_TEST_SOURCE

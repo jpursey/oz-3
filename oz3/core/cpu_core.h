@@ -8,8 +8,9 @@
 
 #include <cstdint>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "gb/container/array.h"
-#include "glog/logging.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/execution_component.h"

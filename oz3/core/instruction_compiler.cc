@@ -10,12 +10,12 @@
 #include <string>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/log/log.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
-#include "glog/logging.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/port.h"
 

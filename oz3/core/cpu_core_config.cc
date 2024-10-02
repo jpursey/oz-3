@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-#include "glog/logging.h"
+#include "absl/log/log.h"
 #include "oz3/core/default_instruction_set.h"
 #include "oz3/core/instruction_compiler.h"
 

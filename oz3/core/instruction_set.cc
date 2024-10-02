@@ -5,7 +5,7 @@
 
 #include "oz3/core/instruction_set.h"
 
-#include "glog/logging.h"
+#include "absl/log/log.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/microcode.h"
 

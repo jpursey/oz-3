@@ -11,8 +11,9 @@
 #include <memory>
 #include <vector>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/types/span.h"
-#include "glog/logging.h"
 #include "oz3/core/component.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/memory_bank_config.h"
@@ -148,8 +149,7 @@ inline uint16_t MemoryBank::GetAddress(const Lock& lock) const {
   return address_;
 }
 
-inline Cycles MemoryBank::SetAddress(const Lock& lock,
-                                     uint16_t address) {
+inline Cycles MemoryBank::SetAddress(const Lock& lock, uint16_t address) {
   DCHECK(lock.IsLocked(*this));
   address_ = address;
   return kMemoryBankSetAddressCycles;
