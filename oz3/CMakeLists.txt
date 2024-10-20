@@ -12,3 +12,4 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
 endif()
 
 add_subdirectory(core)
+add_subdirectory(tools)
