@@ -64,9 +64,9 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int BS = 9;   // Base pointer (stack bank)
   static constexpr int BD = 10;  // Base pointer (data bank)
   static constexpr int BE = 11;  // Base pointer (extra bank)
-  static constexpr int BM = 12;  // Bank map register (read-only outside of CBK)
-  static constexpr int PC = 13;  // Program counter (offset from BC)
-  static constexpr int BP = 14;  // Base stack pointer (offset from BS)
+  static constexpr int MB = 12;  // Memory bank register (R/O outside of CBK)
+  static constexpr int IP = 13;  // Program counter (offset from BC)
+  static constexpr int FP = 14;  // Stack base pointer (offset from BS)
   static constexpr int SP = 15;  // Stack pointer (offset from BS)
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -200,7 +200,7 @@ class CpuCore final : public ExecutionComponent {
   // Bank mapping conversion helper
   //
   // This is a helper struct that can be used to convert a 16-bit word (in the
-  // format of the BM register) to and from the Banks struct. This is useful for
+  // format of the MB register) to and from the Banks struct. This is useful for
   // serialization and deserialization of the bank mapping.
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -249,6 +249,12 @@ class CpuCore final : public ExecutionComponent {
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
   // Reset() parameters for the CPU core.
+  //
+  // Resets the CPU memory bank assignments and associated address registers.
+  // Only the specified memory bank assignmends at registers are reset, and the
+  // rest are left unchanged. In addition, the IP register is set to zero if the
+  // BC register is reset, and the SP and FP registers are set to zero if the BS
+  // register is reset.
   struct ResetParams {
     // Bit flags for `reset_mask`.
     static constexpr uint16_t MC = 1 << 0;   // Set code bank.
@@ -265,7 +271,7 @@ class CpuCore final : public ExecutionComponent {
     uint16_t mask = ALL;
 
     // Register values to set.
-    uint16_t bm = 0;  // BM register. Requires reset_mask & (MC | MS | MD | ME)
+    uint16_t mb = 0;  // MB register. Requires reset_mask & (MC | MS | MD | ME)
     uint16_t bc = 0;  // BC register. Requires reset_mask & RBC
     uint16_t bs = 0;  // BS register. Requires reset_mask & RBS
     uint16_t bd = 0;  // BD register. Requires reset_mask & RBD
@@ -409,7 +415,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Wait state
   Cycles wait_end_ = 0;    // Cycle count when wait should end
-  uint16_t wait_pc_ = 0;   // PC value to return to after wait completes.
+  uint16_t wait_pc_ = 0;   // IP value to return to after wait completes.
   uint16_t wait_reg_ = 0;  // Register that will receive completion info.
 
   // Bank assignments.
@@ -434,10 +440,10 @@ class CpuCore final : public ExecutionComponent {
   // Microcode implementation
   std::shared_ptr<const InstructionSet> instructions_;
   DecodedInstruction instruction_ = {};
-  int mpc_ = 0;       // Microcode index into the current instruction.
+  int mip_ = 0;       // Microcode index into the current instruction.
   uint16_t mst_ = 0;  // Status flags from microcode (same ST register flags).
   uint16_t msr_ = 0;  // Status flags that are the result of the instruction.
-  uint16_t mbm_ = 0;  // Bank mapping from microcode (same BM register).
+  uint16_t mbm_ = 0;  // Bank mapping from microcode (same MB register).
 };
 static_assert(sizeof(CpuCore) < 512, "CpuCore too big");
 

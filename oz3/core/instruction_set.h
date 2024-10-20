@@ -22,7 +22,7 @@ namespace oz3 {
 // Instructions in the OZ-3 CPU are defines by a single 16-bit code word. This
 // class represents the decoded instruction, which includes the microcode
 // instructions that make up the instruction, how many words it takes (how far
-// to advance the PC register), as well as any decoded immediate value and
+// to advance the IP register), as well as any decoded immediate value and
 // register arguments.
 struct DecodedInstruction {
   absl::Span<const Microcode> code;

@@ -19,7 +19,7 @@ namespace {
 
 constexpr std::string_view kWordRegNames[] = {
     "R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",  //
-    "BC", "BS", "BD", "BE", "BM", "PC", "BP", "SP",  //
+    "BC", "BS", "BD", "BE", "MB", "IP", "FP", "SP",  //
     "C0", "C1", "C2", "ST"};
 static_assert(ABSL_ARRAYSIZE(kWordRegNames) == CpuCore::kRegisterCount);
 static_assert(kWordRegNames[CpuCore::R0] == "R0");
@@ -30,13 +30,13 @@ static_assert(kWordRegNames[CpuCore::R4] == "R4");
 static_assert(kWordRegNames[CpuCore::R5] == "R5");
 static_assert(kWordRegNames[CpuCore::R6] == "R6");
 static_assert(kWordRegNames[CpuCore::R7] == "R7");
-static_assert(kWordRegNames[CpuCore::BM] == "BM");
+static_assert(kWordRegNames[CpuCore::MB] == "MB");
 static_assert(kWordRegNames[CpuCore::BC] == "BC");
 static_assert(kWordRegNames[CpuCore::BS] == "BS");
 static_assert(kWordRegNames[CpuCore::BD] == "BD");
 static_assert(kWordRegNames[CpuCore::BE] == "BE");
-static_assert(kWordRegNames[CpuCore::PC] == "PC");
-static_assert(kWordRegNames[CpuCore::BP] == "BP");
+static_assert(kWordRegNames[CpuCore::IP] == "IP");
+static_assert(kWordRegNames[CpuCore::FP] == "FP");
 static_assert(kWordRegNames[CpuCore::SP] == "SP");
 static_assert(kWordRegNames[CpuCore::C0] == "C0");
 static_assert(kWordRegNames[CpuCore::C1] == "C1");
@@ -126,15 +126,15 @@ void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
                              ((params.mask & ResetParams::MS) ? 0xF0 : 0) |
                              ((params.mask & ResetParams::MD) ? 0xF00 : 0) |
                              ((params.mask & ResetParams::ME) ? 0xF000 : 0);
-  r_[BM] = (r_[BM] & ~bank_mask) | (params.bm & bank_mask);
+  r_[MB] = (r_[MB] & ~bank_mask) | (params.mb & bank_mask);
   InitBanks();
   if (params.mask & ResetParams::RBC) {
     r_[BC] = params.bc;
-    r_[PC] = 0;
+    r_[IP] = 0;
   }
   if (params.mask & ResetParams::RBS) {
     r_[BS] = params.bs;
-    r_[BP] = 0;
+    r_[FP] = 0;
     r_[SP] = 0;
   }
   if (params.mask & ResetParams::RBD) {
@@ -166,7 +166,7 @@ void CpuCore::RaiseInterrupt(int interrupt) {
 }
 
 void CpuCore::InitBanks() {
-  const Banks banks = Banks::FromWord(r_[BM]);
+  const Banks banks = Banks::FromWord(r_[MB]);
   banks_[CODE] = processor_->GetMemory(banks.code);
   banks_[STACK] = processor_->GetMemory(banks.stack);
   banks_[DATA] = processor_->GetMemory(banks.data);
@@ -275,10 +275,10 @@ void CpuCore::PushInterruptState() {
   DCHECK(interrupt_ >= 0 && interrupt_ < kInterruptCount &&
          ivec_[interrupt_] != 0);
   banks_[STACK]->SetAddress(*lock_, r_[BS] + r_[SP]);
-  banks_[STACK]->PushWord(*lock_, r_[PC]);
+  banks_[STACK]->PushWord(*lock_, r_[IP]);
   banks_[STACK]->PushWord(*lock_, r_[ST]);
   r_[SP] -= 2;
-  r_[PC] = ivec_[interrupt_];
+  r_[IP] = ivec_[interrupt_];
   r_[ST] &= 0xFF00;  // Clear status flags including I, but not control flags.
   exec_cycles_ += kCpuCoreStartInterruptCycles;
   state_ = State::kStartInterrupt;
@@ -299,13 +299,13 @@ void CpuCore::ReturnFromInterrupt() {
   banks_[STACK]->SetAddress(*lock_, r_[BS] + r_[SP]);
   banks_[STACK]->LoadWord(*lock_, msr_);
   r_[ST] = r_[ST] & 0xFF00 | (msr_ & 0x00FF);
-  banks_[STACK]->LoadWord(*lock_, r_[PC]);
+  banks_[STACK]->LoadWord(*lock_, r_[IP]);
   lock_ = nullptr;
   locked_bank_ = -1;
   r_[SP] += 2;
   AllowLock();
   exec_cycles_ += kCpuCoreReturnFromInterruptCycles;
-  if ((r_[ST] & W) != 0 && r_[PC] == wait_pc_) {
+  if ((r_[ST] & W) != 0 && r_[IP] == wait_pc_) {
     state_ = State::kWaiting;
   } else {
     state_ = State::kStartInstruction;
@@ -332,18 +332,18 @@ void CpuCore::StartInstruction() {
 
 void CpuCore::FetchInstruction() {
   DCHECK(lock_ != nullptr && locked_bank_ == CODE);
-  banks_[CODE]->SetAddress(*lock_, r_[BC] + r_[PC]);
+  banks_[CODE]->SetAddress(*lock_, r_[BC] + r_[IP]);
   uint16_t code;
   banks_[CODE]->LoadWord(*lock_, code);
   instructions_->Decode(code, instruction_);
-  r_[PC] += instruction_.size;
+  r_[IP] += instruction_.size;
   fetch_start_ = GetCycles();
   exec_cycles_ += kCpuCoreFetchAndDecodeCycles;
   std::memcpy(&r_[C0], instruction_.c, sizeof(instruction_.c));
   r_[C2] = 0;
-  mpc_ = 0;
+  mip_ = 0;
   mst_ = msr_ = r_[ST];
-  mbm_ = r_[BM];
+  mbm_ = r_[MB];
   state_ = State::kRunInstruction;
   RunInstruction();
 }
@@ -352,7 +352,7 @@ void CpuCore::RunInstruction() {
   RunInstructionLoop();
   if (state_ != State::kRunInstruction) {
     r_[ST] = msr_;
-    r_[BM] = mbm_;
+    r_[MB] = mbm_;
     if (state_ != State::kReturnFromInterrupt) {
       AllowLock();
     }
@@ -375,8 +375,8 @@ void CpuCore::RunInstruction() {
 #define OZ3_C ((r < a1) << CShift)
 #define OZ3_O ((~((a1 >> 15) ^ (a2 >> 15)) & ((a1 >> 15) ^ rs)) << OShift)
 void CpuCore::RunInstructionLoop() {
-  while (mpc_ < instruction_.code.size()) {
-    const Microcode code = instruction_.code[mpc_++];
+  while (mip_ < instruction_.code.size()) {
+    const Microcode code = instruction_.code[mip_++];
     switch (code.op) {
       case kMicro_MSC: {
         mst_ &= ~static_cast<uint16_t>(code.arg1);
@@ -421,7 +421,7 @@ void CpuCore::RunInstructionLoop() {
         } else {
           msr_ |= W;
           state_ = State::kWaiting;
-          wait_pc_ = r_[PC];
+          wait_pc_ = r_[IP];
         }
         return;
       } break;
@@ -432,7 +432,7 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_LK: {
         DCHECK(lock_ == nullptr && locked_bank_ == -1);
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         locked_bank_ = code.arg1;
@@ -444,7 +444,7 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_LKR: {
         DCHECK(lock_ == nullptr && locked_bank_ == -1);
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         OZ3_INIT_REG1;
@@ -458,7 +458,7 @@ void CpuCore::RunInstructionLoop() {
         DCHECK(lock_ != nullptr && locked_bank_ >= 0 &&
                lock_->IsLocked(*banks_[locked_bank_]));
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         lock_ = nullptr;
@@ -650,12 +650,12 @@ void CpuCore::RunInstructionLoop() {
         exec_cycles_ += kCpuCoreCycles_RRC;
       } break;
       case kMicro_JP: {
-        mpc_ = std::max(0, mpc_ + code.arg1);
+        mip_ = std::max(0, mip_ + code.arg1);
         exec_cycles_ += kCpuCoreCycles_JP;
       } break;
       case kMicro_JC: {
         if (((mst_ >> (code.arg1 & 3)) & 1) == (code.arg1 >> 2)) {
-          mpc_ = std::max(0, mpc_ + code.arg2);
+          mip_ = std::max(0, mip_ + code.arg2);
           exec_cycles_ += kCpuCoreCycles_JC_True;
         } else {
           exec_cycles_ += kCpuCoreCycles_JC_False;
@@ -664,7 +664,7 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_JD: {
         OZ3_INIT_REG1;
         if (--r_[reg1] != 0) {
-          mpc_ = std::max(0, mpc_ + code.arg2);
+          mip_ = std::max(0, mip_ + code.arg2);
           exec_cycles_ += kCpuCoreCycles_JD_NonZero;
         } else {
           exec_cycles_ += kCpuCoreCycles_JD_Zero;
@@ -698,7 +698,7 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_IRT: {
         DCHECK(lock_ == nullptr && locked_bank_ == -1);
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         locked_bank_ = STACK;
@@ -708,7 +708,7 @@ void CpuCore::RunInstructionLoop() {
       } break;
       case kMicro_PLK: {
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         DCHECK(lock_ == nullptr && locked_port_ == -1);
@@ -725,7 +725,7 @@ void CpuCore::RunInstructionLoop() {
       } break;
       case kMicro_PUL: {
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         if (locked_port_ == -1) {
@@ -761,7 +761,7 @@ void CpuCore::RunInstructionLoop() {
       } break;
       case kMicro_CLK: {
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         DCHECK(lock_ == nullptr && locked_core_ == this);
@@ -781,7 +781,7 @@ void CpuCore::RunInstructionLoop() {
       } break;
       case kMicro_CUL: {
         if (exec_cycles_ > 0) {
-          --mpc_;
+          --mip_;
           return;
         }
         DCHECK(lock_ != nullptr || locked_core_ == this ||
@@ -803,8 +803,8 @@ void CpuCore::RunInstructionLoop() {
         }
         locked_core_->banks_[code.arg1] = processor_->GetMemory(bank_index);
         const uint16_t bank_mask = uint16_t(0xF) << (code.arg1 * 4);
-        locked_core_->r_[BM] = locked_core_->mbm_ =
-            (locked_core_->r_[BM] & ~bank_mask) |
+        locked_core_->r_[MB] = locked_core_->mbm_ =
+            (locked_core_->r_[MB] & ~bank_mask) |
             (bank_index << (code.arg1 * 4));
         if (code.arg1 == CODE) {
           locked_core_->r_[ST] &= ~W;
@@ -834,7 +834,7 @@ void CpuCore::RunInstructionLoop() {
         DCHECK(lock_ != nullptr || locked_core_ == this);
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        if (reg1 != BM && reg1 != ST) {
+        if (reg1 != MB && reg1 != ST) {
           locked_core_->r_[reg1] = r_[reg2];
         }
       } break;

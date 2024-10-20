@@ -508,7 +508,7 @@ const InstructionDef kMicroTestInstructions[] = {
      .op_name = "JMP",
      .code = "LD(C0);"
              "UL;"
-             "ADD(PC,C0);"},
+             "ADD(IP,C0);"},
     {.op = kTestOp_INT,
      .op_name = "INT",
      .arg1 = {ArgType::kImmediate, 5},
@@ -673,7 +673,7 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg1 = ArgType::kWordReg,
      .code = "UL;"
              "MOV(ST,a);"
-             "MOV(BM,a);"},
+             "MOV(MB,a);"},
 };
 
 std::shared_ptr<const InstructionSet> GetMicroTestInstructionSet() {
@@ -732,9 +732,9 @@ struct CoreState {
   const uint16_t& bs = r[CpuCore::BS];
   const uint16_t& bd = r[CpuCore::BD];
   const uint16_t& be = r[CpuCore::BE];
-  const uint16_t& bm = r[CpuCore::BM];
-  const uint16_t& pc = r[CpuCore::PC];
-  const uint16_t& bp = r[CpuCore::BP];
+  const uint16_t& mb = r[CpuCore::MB];
+  const uint16_t& pc = r[CpuCore::IP];
+  const uint16_t& bp = r[CpuCore::FP];
   const uint16_t& sp = r[CpuCore::SP];
 
   const uint16_t& st = r[CpuCore::ST];
@@ -849,21 +849,21 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   CoreState state(core);
 
   auto lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
   CpuCore::Banks banks = {.code = 1, .stack = 2, .data = 3, .extra = 4};
   state.ResetCore(CpuCore::ResetParams{.mask = CpuCore::ResetParams::ALL,
-                                       .bm = banks.ToWord(),
+                                       .mb = banks.ToWord(),
                                        .bc = 5,
                                        .bs = 6,
                                        .bd = 7,
                                        .be = 8});
 
   state.Update();
-  EXPECT_EQ(state.bm, banks.ToWord());
+  EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 5);
   EXPECT_EQ(state.pc, 0);
   EXPECT_EQ(state.bs, 6);
@@ -877,17 +877,17 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
   // Change only the code bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
       .mask = CpuCore::ResetParams::MC,
-      .bm = CpuCore::Banks::Default().SetCode(15).ToWord()});
+      .mb = CpuCore::Banks::Default().SetCode(15).ToWord()});
   state.Update();
-  EXPECT_EQ(state.bm, banks.SetCode(15).ToWord());
+  EXPECT_EQ(state.mb, banks.SetCode(15).ToWord());
   EXPECT_EQ(state.bc, 5);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 6);
@@ -901,17 +901,17 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
   // Change only the stack bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
       .mask = CpuCore::ResetParams::MS,
-      .bm = CpuCore::Banks::Default().SetStack(14).ToWord()});
+      .mb = CpuCore::Banks::Default().SetStack(14).ToWord()});
   state.Update();
-  EXPECT_EQ(state.bm, banks.SetStack(14).ToWord());
+  EXPECT_EQ(state.mb, banks.SetStack(14).ToWord());
   EXPECT_EQ(state.bc, 5);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 6);
@@ -925,17 +925,17 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
   // Change only the data bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
       .mask = CpuCore::ResetParams::MD,
-      .bm = CpuCore::Banks::Default().SetData(13).ToWord()});
+      .mb = CpuCore::Banks::Default().SetData(13).ToWord()});
   state.Update();
-  EXPECT_EQ(state.bm, banks.SetData(13).ToWord());
+  EXPECT_EQ(state.mb, banks.SetData(13).ToWord());
   EXPECT_EQ(state.bc, 5);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 6);
@@ -949,17 +949,17 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(4));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
   // Change only the extra bank and reset again.
   state.ResetCore(CpuCore::ResetParams{
       .mask = CpuCore::ResetParams::ME,
-      .bm = CpuCore::Banks::Default().SetExtra(12).ToWord()});
+      .mb = CpuCore::Banks::Default().SetExtra(12).ToWord()});
   state.Update();
-  EXPECT_EQ(state.bm, banks.SetExtra(12).ToWord());
+  EXPECT_EQ(state.mb, banks.SetExtra(12).ToWord());
   EXPECT_EQ(state.bc, 5);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 6);
@@ -973,8 +973,8 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
@@ -982,7 +982,7 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.ResetCore(
       CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBC, .bc = 10});
   state.Update();
-  EXPECT_EQ(state.bm, banks.ToWord());
+  EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
   EXPECT_EQ(state.pc, 0);
   EXPECT_EQ(state.bs, 6);
@@ -996,8 +996,8 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
@@ -1005,7 +1005,7 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.ResetCore(
       CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBS, .bs = 9});
   state.Update();
-  EXPECT_EQ(state.bm, banks.ToWord());
+  EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 9);
@@ -1019,8 +1019,8 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.extra_bank, processor.GetMemory(12));
 
   lock = core.RequestLock();
-  core.SetWordRegister(*lock, CpuCore::PC, 100);
-  core.SetWordRegister(*lock, CpuCore::BP, 200);
+  core.SetWordRegister(*lock, CpuCore::IP, 100);
+  core.SetWordRegister(*lock, CpuCore::FP, 200);
   core.SetWordRegister(*lock, CpuCore::SP, 300);
   lock.reset();
 
@@ -1028,7 +1028,7 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.ResetCore(
       CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBD, .bd = 8});
   state.Update();
-  EXPECT_EQ(state.bm, banks.ToWord());
+  EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 9);
@@ -1045,7 +1045,7 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.ResetCore(
       CpuCore::ResetParams{.mask = CpuCore::ResetParams::RBE, .be = 7});
   state.Update();
-  EXPECT_EQ(state.bm, banks.ToWord());
+  EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
   EXPECT_EQ(state.pc, 100);
   EXPECT_EQ(state.bs, 9);
@@ -1179,17 +1179,17 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   CoreState state0(*processor.GetCore(0));
   state0.ResetCore();
   auto lock = state0.core.RequestLock();
-  state0.core.SetWordRegister(*lock, CpuCore::PC, 10);
+  state0.core.SetWordRegister(*lock, CpuCore::IP, 10);
   lock.reset();
   CoreState state1(*processor.GetCore(1));
   state1.ResetCore();
   lock = state1.core.RequestLock();
-  state1.core.SetWordRegister(*lock, CpuCore::PC, 20);
+  state1.core.SetWordRegister(*lock, CpuCore::IP, 20);
   lock.reset();
   CoreState state2(*processor.GetCore(2));
   state2.ResetCore();
   lock = state2.core.RequestLock();
-  state2.core.SetWordRegister(*lock, CpuCore::PC, 30);
+  state2.core.SetWordRegister(*lock, CpuCore::IP, 30);
   lock.reset();
 
   // Run the processor for one fetch and decode cycle. This will result in the
@@ -1456,7 +1456,7 @@ TEST(CpuCoreTest, AdrLdStOps) {
   MemoryBank& data_bank = *processor.GetMemory(banks.data);
   MemoryBank& extra_bank = *processor.GetMemory(banks.extra);
   CoreState state(core);
-  state.ResetCore({.bm = banks.ToWord()});
+  state.ResetCore({.mb = banks.ToWord()});
 
   MemAccessor code_mem(code_bank);
   code_mem.AddCode(kTestOp_LCODE, CpuCore::R0, 15);
@@ -1585,7 +1585,7 @@ TEST(CpuCoreTest, RegisterMemoryStore) {
   MemoryBank& stack_bank = *processor.GetMemory(banks.stack);
   MemoryBank& data_bank = *processor.GetMemory(banks.data);
   MemoryBank& extra_bank = *processor.GetMemory(banks.extra);
-  state.ResetCore({.bm = banks.ToWord()});
+  state.ResetCore({.mb = banks.ToWord()});
 
   auto lock = core.RequestLock();
   core.SetWordRegister(*lock, CpuCore::R0, 1000);
@@ -1627,7 +1627,7 @@ TEST(CpuCoreTest, LkWhenLocked) {
   CpuCore::Banks banks = {.code = 0, .data = 1};
   MemoryBank& code_bank = *processor.GetMemory(banks.code);
   MemoryBank& data_bank = *processor.GetMemory(banks.data);
-  state.ResetCore({.bm = banks.ToWord()});
+  state.ResetCore({.mb = banks.ToWord()});
 
   MemAccessor code_mem(code_bank);
   code_mem.AddCode(kTestOp_LDATA, CpuCore::R0, 10);
@@ -1668,7 +1668,7 @@ TEST(CpuCoreTest, MovStOp) {
   CpuCore::Banks banks = {.code = 0, .data = 1};
   MemoryBank& code_bank = *processor.GetMemory(banks.code);
   MemoryBank& data_bank = *processor.GetMemory(banks.data);
-  state.ResetCore({.bm = banks.ToWord()});
+  state.ResetCore({.mb = banks.ToWord()});
 
   auto lock = core.RequestLock();
   EXPECT_TRUE(lock->IsLocked());
@@ -3942,7 +3942,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
                           .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
   CpuCore& core = *processor.GetCore(0);
   CoreState state(core);
-  state.ResetCore({.bm = CpuCore::Banks().SetStack(1).ToWord()});
+  state.ResetCore({.mb = CpuCore::Banks().SetStack(1).ToWord()});
   MemAccessor mem(*processor.GetMemory(0));
 
   // Main program
@@ -4830,7 +4830,7 @@ TEST(CpuCoreTest, SelfCoreOp) {
 
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
-  EXPECT_EQ(state.bm, CpuCore::Banks().SetData(1).SetExtra(2).ToWord());
+  EXPECT_EQ(state.mb, CpuCore::Banks().SetData(1).SetExtra(2).ToWord());
   EXPECT_EQ(state.r0, 1000);
   EXPECT_EQ(state.r1, 1005);
   EXPECT_EQ(state.r2, 1002);
@@ -4852,7 +4852,7 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   CoreState state0(core0);
   CoreState state1(core1);
   state0.ResetCore();
-  state1.ResetCore({.bm = CpuCore::Banks().SetCode(1).ToWord()});
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
   MemAccessor mem0(*processor.GetMemory(0));
   MemAccessor mem1(*processor.GetMemory(1));
 
@@ -4887,14 +4887,14 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   ExecuteUntilHalt(processor, state0);
   state1.Update();
   EXPECT_EQ(state0.pc, end_pc0);
-  EXPECT_EQ(state0.bm, 0);
+  EXPECT_EQ(state0.mb, 0);
   EXPECT_EQ(state0.r0, 1000);
   EXPECT_EQ(state0.r1, 1001);
   EXPECT_EQ(state0.r2, 2000);
   EXPECT_EQ(state0.r3, 1003);
   EXPECT_EQ(state1.pc, end_pc1);
   EXPECT_EQ(
-      state1.bm,
+      state1.mb,
       CpuCore::Banks().SetCode(2).SetStack(3).SetData(4).SetExtra(5).ToWord());
   EXPECT_EQ(state1.r0, 2000);
   EXPECT_EQ(state1.r1, 1003);
@@ -4933,7 +4933,7 @@ TEST(CpuCoreTest, OtherCoreInterrupt) {
   state0.ResetCore();
   state1.ResetCore();
   auto lock = core1.RequestLock();
-  core1.SetWordRegister(*lock, CpuCore::PC, 100);
+  core1.SetWordRegister(*lock, CpuCore::IP, 100);
   lock.reset();
   MemAccessor mem(*processor.GetMemory(0));
 
@@ -4971,7 +4971,7 @@ TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {
   CoreState state0(core0);
   CoreState state1(core1);
   state0.ResetCore();
-  state1.ResetCore({.bm = CpuCore::Banks().SetCode(1).ToWord()});
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
   MemAccessor mem0(*processor.GetMemory(0));
   MemAccessor mem1(*processor.GetMemory(1));
   MemAccessor mem2(*processor.GetMemory(2));
@@ -5101,7 +5101,7 @@ TEST(CpuCoreTest, ResetDuringWait) {
 
   lock = core.RequestLock();
   ASSERT_TRUE(lock->IsLocked());
-  core.Reset(*lock, {.mask = CpuCore::ResetParams::MC, .bm = 0});
+  core.Reset(*lock, {.mask = CpuCore::ResetParams::MC, .mb = 0});
   lock.reset();
 
   ExecuteUntilHalt(processor, state);
@@ -5119,7 +5119,7 @@ TEST(CpuCoreTest, CoreLockBlocks) {
   CoreState state0(core0);
   CoreState state1(core1);
   state0.ResetCore();
-  state1.ResetCore({.bm = CpuCore::Banks().SetCode(1).ToWord()});
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
   MemAccessor mem0(*processor.GetMemory(0));
   MemAccessor mem1(*processor.GetMemory(1));
 
@@ -5139,13 +5139,13 @@ TEST(CpuCoreTest, CoreLockBlocks) {
   ASSERT_TRUE(ExecuteUntil(processor, state0,
                            [&] { return state0.pc == blocked_pc0; }));
   state1.Update();
-  EXPECT_EQ(state1.bm, CpuCore::Banks().SetCode(1).ToWord());
+  EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
   for (int i = 0; i < 10; ++i) {
     processor.Execute(1);
   }
   state0.Update();
   EXPECT_EQ(state0.pc, blocked_pc0);
-  EXPECT_EQ(state1.bm, CpuCore::Banks().SetCode(1).ToWord());
+  EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
 
   // Unblock execution of core 0 by releasing the lock.
   lock.reset();
@@ -5153,9 +5153,9 @@ TEST(CpuCoreTest, CoreLockBlocks) {
   ExecuteUntilHalt(processor, state0);
   state1.Update();
   EXPECT_EQ(state0.pc, end_pc0);
-  EXPECT_EQ(state0.bm, 0);
+  EXPECT_EQ(state0.mb, 0);
   EXPECT_EQ(state1.pc, end_pc1);
-  EXPECT_EQ(state1.bm, CpuCore::Banks().SetCode(1).SetData(1).ToWord());
+  EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).SetData(1).ToWord());
 }
 
 TEST(CpuCoreTest, ReadOnlyRegisters) {
@@ -5176,7 +5176,7 @@ TEST(CpuCoreTest, ReadOnlyRegisters) {
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
   EXPECT_EQ(state.st, 0x0000);
-  EXPECT_EQ(state.bm, 0x0000);
+  EXPECT_EQ(state.mb, 0x0000);
 }
 
 }  // namespace
