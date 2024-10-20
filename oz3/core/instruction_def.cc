@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/core/instruction.h"
+#include "oz3/core/instruction_def.h"
 
 #include "absl/log/log.h"
 #include "absl/types/span.h"

@@ -10,7 +10,7 @@ set(oz3_core_SOURCE
   cpu_core_config.cc cpu_core_config.h
   default_instruction_set.cc default_instruction_set.h
   execution_component.h
-  instruction.cc instruction.h
+  instruction_def.cc instruction_def.h
   instruction_compiler.cc instruction_compiler.h
   instruction_set.cc instruction_set.h
   lockable.cc lockable.h

@@ -13,7 +13,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
-#include "oz3/core/instruction.h"
+#include "oz3/core/instruction_def.h"
 #include "oz3/core/microcode.h"
 
 namespace oz3 {

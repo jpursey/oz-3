@@ -13,7 +13,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/types/span.h"
 #include "oz3/core/core_types.h"
-#include "oz3/core/instruction.h"
+#include "oz3/core/instruction_def.h"
 
 namespace oz3 {
 

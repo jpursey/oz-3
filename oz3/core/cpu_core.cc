@@ -7,7 +7,7 @@
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/log/log.h"
-#include "oz3/core/instruction.h"
+#include "oz3/core/instruction_def.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/port.h"
