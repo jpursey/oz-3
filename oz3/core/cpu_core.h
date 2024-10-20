@@ -65,8 +65,8 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int BD = 10;  // Base pointer (data bank)
   static constexpr int BE = 11;  // Base pointer (extra bank)
   static constexpr int MB = 12;  // Memory bank register (R/O outside of CBK)
-  static constexpr int IP = 13;  // Program counter (offset from BC)
-  static constexpr int FP = 14;  // Stack base pointer (offset from BS)
+  static constexpr int IP = 13;  // Instruction pointer (offset from BC)
+  static constexpr int FP = 14;  // Frame pointer (offset from BS)
   static constexpr int SP = 15;  // Stack pointer (offset from BS)
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
