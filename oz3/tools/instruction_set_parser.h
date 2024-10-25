@@ -8,13 +8,16 @@
 
 #include <string_view>
 
+#include "gb/file/file_system.h"
+
 namespace oz3 {
 
 // Parses an instruction set from the provided text.
-bool ParseInstructionSet(std::string_view text);
+bool ParseInstructionSet(std::string text);
 
-// Parses an instruction set from the provided file.
-bool ParseInstructionSetFile(std::string_view filename);
+// Parses an instruction set from the file at the specified path.
+bool ParseInstructionSetFile(gb::FileSystem& file_system,
+                             std::string_view path);
 
 }  // namespace oz3
 

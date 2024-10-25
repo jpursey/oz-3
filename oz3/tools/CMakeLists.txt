@@ -7,6 +7,7 @@ set(oz3_tools_SOURCE
   instruction_set_parser.cc instruction_set_parser.h
 )
 set(oz3_tools_DEPS
+  gb_file
   gb_parse
   oz3_core
 )
