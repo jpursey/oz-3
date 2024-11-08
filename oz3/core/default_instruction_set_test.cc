@@ -15,9 +15,9 @@ namespace oz3 {
 namespace {
 
 TEST(DefaultInstructionSetTest, InstructionSetCompiles) {
-  std::string error;
+  InstructionError error;
   EXPECT_TRUE(CompileInstructionSet(GetDefaultInstructionSetDef(), &error))
-      << error;
+      << error.message;
 }
 
 }  // namespace

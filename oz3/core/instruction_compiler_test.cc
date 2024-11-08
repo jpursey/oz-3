@@ -40,9 +40,15 @@ constexpr MicrocodeDef kMicroNoArgs = {kMicro_TEST, "TEST"};
 bool CompileForTest(
     const InstructionDef& instruction_def, std::string& error,
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
-  return !CompileInstructionSet({.instructions = {instruction_def}}, &error,
-                                microcode_defs)
-              ->IsEmpty();
+  InstructionError instruction_error;
+  if (CompileInstructionSet({.instructions = {instruction_def}},
+                            &instruction_error, microcode_defs)
+          ->IsEmpty()) {
+    error = instruction_error.message;
+    return false;
+  }
+  error.clear();
+  return true;
 }
 
 bool CompileForTest(
@@ -52,18 +58,30 @@ bool CompileForTest(
   // unimportant, as this is only for compiling the macro.
   const InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
-  return !CompileInstructionSet({{instruction_def}, {macro_def}}, &error,
-                                microcode_defs)
-              ->IsEmpty();
+  InstructionError instruction_error;
+  if (CompileInstructionSet({{instruction_def}, {macro_def}},
+                            &instruction_error, microcode_defs)
+          ->IsEmpty()) {
+    error = instruction_error.message;
+    return false;
+  }
+  error.clear();
+  return true;
 }
 
 bool CompileForTest(
     const InstructionDef& instruction_def, const MacroDef& macro_def,
     std::string& error,
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
-  return !CompileInstructionSet({{instruction_def}, {macro_def}}, &error,
-                                microcode_defs)
-              ->IsEmpty();
+  InstructionError instruction_error;
+  if (CompileInstructionSet({{instruction_def}, {macro_def}},
+                            &instruction_error, microcode_defs)
+          ->IsEmpty()) {
+    error = instruction_error.message;
+    return false;
+  }
+  error.clear();
+  return true;
 }
 
 bool TestCompile(const MicrocodeDef& microcode_def,

@@ -120,9 +120,9 @@ class InstructionCompiler {
   InstructionCompiler(absl::Span<const MicrocodeDef> microcode_defs)
       : microcode_defs_(microcode_defs) {}
 
-  bool CompileMacro(const MacroDef& macro_def, std::string* error_string);
+  bool CompileMacro(const MacroDef& macro_def, InstructionError* error);
   bool CompileInstruction(const InstructionDef& instruction_def,
-                          std::string* error_string);
+                          InstructionError* error);
 
   InstructionSet ToInstructionSet() && {
     return InstructionSet(std::move(instructions_),
@@ -167,18 +167,30 @@ class InstructionCompiler {
     std::string message = absl::StrCat(std::forward<Args>(args)...);
     std::string context;
     if (instruction_def_ != nullptr) {
+      error_->def = InstructionError::Def::kInstruction;
+      error_->def_name = instruction_def_->op_name;
       context = absl::StrCat(" in ", instruction_def_->op_name);
     } else if (macro_def_ != nullptr) {
+      error_->def = InstructionError::Def::kMacro;
+      error_->def_name = macro_def_->name;
       context = absl::StrCat(" in $", macro_def_->name);
       if (state_.macro_code_def != nullptr &&
           !state_.macro_code_def->source.empty()) {
+        error_->macro_source_name = state_.macro_code_def->source;
         absl::StrAppend(&context, " ", state_.macro_code_def->source);
       }
     }
     if (state_.parsed != nullptr) {
-      absl::StrAppend(&context, " for \"", state_.parsed->code, "\"");
+      DCHECK(state_.code_index >= 0);
+      absl::StrAppend(&context, " for \"", state_.parsed->code, "\" (", state_.code_index);
+      if (state_.sub_code_index >= 0) {
+        absl::StrAppend(&context, "/", state_.sub_code_index);
+      }
+      absl::StrAppend(&context, ")");
     }
-    *error_ = absl::StrCat("Error", context, ": ", message);
+    error_->code_index = state_.code_index;
+    error_->sub_code_index = state_.sub_code_index;
+    error_->message = absl::StrCat("Error", context, ": ", message);
     return false;
   }
 
@@ -188,7 +200,7 @@ class InstructionCompiler {
   const MicrocodeDef* FindMicrocodeDef(std::string_view op_name);
   const MicrocodeDef* FindMicrocodeDef(int op);
   bool CompileSubInstruction();
-  bool CompileInstructionVariant();
+  bool CompileInstructionVariant(int macro_index = 0, int macro_size = 0);
   bool CompileMicrocode();
   bool CompileMicroArg(std::string_view arg_name, MicroArgType arg_type,
                        int8_t& arg);
@@ -210,7 +222,7 @@ class InstructionCompiler {
   std::vector<ParsedMicrocode> parsed_macro_codes_;
 
   // Temporary state during compilation.
-  std::string* error_ = nullptr;
+  InstructionError* error_ = nullptr;
   const MacroDef* macro_def_ = nullptr;
   const InstructionDef* instruction_def_ = nullptr;
   int last_macro_code_start_ = -1;
@@ -233,6 +245,8 @@ class InstructionCompiler {
     std::vector<Microcode> post_codes;
     absl::flat_hash_map<std::string, int> labels;
     const ParsedMicrocode* parsed = nullptr;
+    int code_index = -1;
+    int sub_code_index = -1;
     std::vector<int> locks;
     InstructionCode* code = nullptr;
     Microcode* microcode = nullptr;
@@ -252,12 +266,12 @@ class InstructionCompiler {
 };
 
 bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
-                                       std::string* error_string) {
+                                       InstructionError* error) {
   instruction_def_ = nullptr;
   macro_def_ = &macro_def;
-  error_ = error_string;
+  error_ = error;
   if (error_ != nullptr) {
-    error_->clear();
+    *error_ = {};
   }
 
   if (macro_def.name.empty()) {
@@ -344,6 +358,7 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
       state_.parsed_code.push_back(ParseMicrocode(src_code));
     }
     sub_macro.code_start = static_cast<uint16_t>(macro_codes_.size());
+    state_.code_index = 0;
     for (const ParsedMicrocode& parsed : state_.parsed_code) {
       state_.parsed = &parsed;
       state_.microcode = &macro_codes_.emplace_back();
@@ -355,8 +370,10 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
       if (!CompileMicrocode()) {
         return false;
       }
+      ++state_.code_index;
     }
     state_.parsed = nullptr;
+    state_.code_index = -1;
     DCHECK(macro_codes_.size() - sub_macro.code_start <=
            kMaxInstructionMicrocodes);
     sub_macro.code_size =
@@ -371,12 +388,12 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
 }
 
 bool InstructionCompiler::CompileInstruction(
-    const InstructionDef& instruction_def, std::string* error_string) {
+    const InstructionDef& instruction_def, InstructionError* error) {
   macro_def_ = nullptr;
   instruction_def_ = &instruction_def;
-  error_ = error_string;
+  error_ = error;
   if (error_ != nullptr) {
-    error_->clear();
+    *error_ = {};
   }
   state_ = {};
 
@@ -411,6 +428,7 @@ bool InstructionCompiler::CompileInstruction(
   const ParsedMicrocode* macro_parsed = nullptr;
   state_.microcodes.resize(state_.parsed_code.size());
   state_.microcode = state_.microcodes.data();
+  state_.code_index = 0;
   for (const ParsedMicrocode& parsed : state_.parsed_code) {
     state_.parsed = &parsed;
     if (parsed.op_name.starts_with('$')) {
@@ -418,7 +436,7 @@ bool InstructionCompiler::CompileInstruction(
         return Error("Multiple macros in instruction");
       }
       macro_parsed = &parsed;
-      macro_pos = static_cast<int>(&parsed - state_.parsed_code.data());
+      macro_pos = state_.code_index;
       macro_it = macros_.find(macro_parsed->op_name);
       if (macro_it == macros_.end()) {
         return Error("Unknown macro");
@@ -433,8 +451,10 @@ bool InstructionCompiler::CompileInstruction(
       }
     }
     ++state_.microcode;
+    ++state_.code_index;
   }
   state_.parsed = nullptr;
+  state_.code_index = -1;
 
   if (macro_parsed == nullptr) {
     if (instruction.arg1.type == ArgType::kMacro ||
@@ -451,6 +471,7 @@ bool InstructionCompiler::CompileInstruction(
   }
 
   state_.parsed = macro_parsed;
+  state_.code_index = macro_pos;
   const Macro& macro = macro_it->second;
 
   if (instruction.arg1.type != ArgType::kMacro &&
@@ -723,7 +744,8 @@ bool InstructionCompiler::CompileSubInstruction() {
                             state_.post_parsed.begin(),
                             state_.post_parsed.end());
 
-  for (int k = 0; k < pre_size; ++k) {
+  state_.code_index = 0;
+  for (int k = 0; k < pre_size; ++k, ++state_.code_index) {
     state_.parsed = &state_.parsed_code[k];
     state_.microcode = &state_.microcodes[k];
     const MicrocodeDef* def = FindMicrocodeDef(state_.microcode->op);
@@ -778,7 +800,8 @@ bool InstructionCompiler::CompileSubInstruction() {
       }
     }
   }
-  for (int k = 0; k < post_size; ++k) {
+  ++state_.code_index;
+  for (int k = 0; k < post_size; ++k, ++state_.code_index) {
     const int index = pre_size + macro_size_increase + 1 + k;
     state_.parsed = &state_.parsed_code[index];
     state_.microcode = &state_.microcodes[index];
@@ -819,12 +842,16 @@ bool InstructionCompiler::CompileSubInstruction() {
     }
   }
 
+  state_.parsed = nullptr;
+  state_.code_index = -1;
+
   state_.sub_instruction->arg = state_.sub_macro->arg;
   state_.code = &state_.sub_instruction->code;
-  return CompileInstructionVariant();
+  return CompileInstructionVariant(pre_size, macro_code_size);
 }
 
-bool InstructionCompiler::CompileInstructionVariant() {
+bool InstructionCompiler::CompileInstructionVariant(int macro_index,
+                                                    int macro_size) {
   if (state_.microcodes.size() > kMaxInstructionMicrocodes) {
     return Error("Too much microcode: ", state_.microcodes.size(), " > ",
                  kMaxInstructionMicrocodes);
@@ -842,6 +869,17 @@ bool InstructionCompiler::CompileInstructionVariant() {
   int start = state_.code->code_start;
   int index = 0;
   for (const ParsedMicrocode& parsed : state_.parsed_code) {
+    if (macro_size == 0 || index < macro_index) {
+      state_.code_index = index;
+    } else if (index == macro_index) {
+      state_.code_index = index;
+      state_.sub_code_index = 0;
+    } else if (index > macro_index && index < macro_index + macro_size) {
+      state_.sub_code_index = index - macro_index;
+    } else {
+      state_.code_index = index - macro_size + 1;
+      state_.sub_code_index = -1;
+    }
     state_.parsed = &parsed;
     state_.microcode = &microcodes_[start + index];
     if (!ValidateMicrocode(index)) {
@@ -849,6 +887,9 @@ bool InstructionCompiler::CompileInstructionVariant() {
     }
     ++index;
   }
+  state_.parsed = nullptr;
+  state_.code_index = -1;
+  state_.sub_code_index = -1;
   if (state_.lock_type_ == LockType::kMemory) {
     if (state_.had_lk_) {
       return Error("LK or LKR not cleared by UL");
@@ -1439,17 +1480,17 @@ bool InstructionCompiler::ValidateMicroArg(int index, MicroArgType arg_type,
 }
 
 std::shared_ptr<const InstructionSet> CompileInstructionSet(
-    InstructionSetDef instruction_set_def, std::string* error_string,
+    InstructionSetDef instruction_set_def, InstructionError* error,
     absl::Span<const MicrocodeDef> microcode_defs) {
   InstructionCompiler compiler(microcode_defs);
   for (const MacroDef& macro_def : instruction_set_def.macros) {
-    if (!compiler.CompileMacro(macro_def, error_string)) {
+    if (!compiler.CompileMacro(macro_def, error)) {
       return std::make_shared<InstructionSet>();
     }
   }
   for (const InstructionDef& instruction_def :
        instruction_set_def.instructions) {
-    if (!compiler.CompileInstruction(instruction_def, error_string)) {
+    if (!compiler.CompileInstruction(instruction_def, error)) {
       return std::make_shared<InstructionSet>();
     }
   }

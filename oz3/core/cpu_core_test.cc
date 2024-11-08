@@ -1307,9 +1307,9 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
 }
 
 TEST(CpuCoreTest, MicrocodeTestInstructionsCompile) {
-  std::string error;
+  InstructionError error;
   EXPECT_NE(CompileInstructionSet({kMicroTestInstructions}, &error), nullptr)
-      << error;
+      << error.message;
 }
 
 TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {

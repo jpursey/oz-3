@@ -39,7 +39,7 @@ struct DecodedInstruction {
 
 // This class represents a compiled instruction set for the OZ-3 CPU.
 //
-// To create an instruction set, use the OldInstructionCompiler class to compile
+// To create an instruction set, use the CompileInstructionSet to compile
 // a set of instructions into microcode, and then use this class to decode
 // instruction codes into microcode instructions.
 class InstructionSet {
