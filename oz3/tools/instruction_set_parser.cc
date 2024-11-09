@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "absl/base/no_destructor.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
@@ -97,12 +98,11 @@ constexpr std::string_view kParserProgram = R"---(
 )---";
 
 gb::ParseResult Parse(std::string_view filename, std::string text) {
-  std::string error;
-  auto parser = gb::Parser::Create(
-      gb::ParserProgram::Create(kLexerConfig, kParserProgram, &error));
+  static const absl::NoDestructor<std::shared_ptr<const gb::ParserProgram>>
+      parser_program(gb::ParserProgram::Create(kLexerConfig, kParserProgram));
+  auto parser = gb::Parser::Create(*parser_program);
   if (parser == nullptr) {
-    LOG(ERROR) << error;
-    return gb::ParseError("Internal error: Lexer configuration is invalid");
+    return gb::ParseError("Internal error: Invalid parser or lexer program");
   }
   gb::LexerContentId content =
       parser->GetLexer().AddFileContent(filename, std::move(text));

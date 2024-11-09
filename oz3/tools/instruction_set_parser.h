@@ -18,7 +18,7 @@ gb::ParseResult ParseInstructionSet(std::string text);
 
 // Parses an instruction set from the file at the specified path.
 gb::ParseResult ParseInstructionSetFile(gb::FileSystem& file_system,
-                             std::string_view path);
+                                        std::string_view path);
 
 }  // namespace oz3
 
