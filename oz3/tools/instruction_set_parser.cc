@@ -67,7 +67,7 @@ constexpr std::string_view kParserProgram = R"---(
   }
 
   MacroCode {
-    "CODE" [$prefix=%int] [":" $ret=%ident] $source=%string
+    "CODE" [":" $ret=%ident] $source=%string
     "{" $code=MicroCode* "}";
   }
 
