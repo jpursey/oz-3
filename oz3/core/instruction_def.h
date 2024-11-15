@@ -116,18 +116,22 @@ struct MacroCodeDef {
   //
   // This is only used by the OZ-3 assembler, and may be empty if not using it.
   //
-  // This can be any unique string of ASCII non-control characters in the
-  // range [32, 127] with the following restrictions:
-  // - The string must be unique within the macro set.
-  // - The string may contain space characters which will match one or more
-  //   space characters in the assembly source.
-  // - The string must not contain the following characters: ";", "#", or "@".
-  //   These are reserved by the assembler.
-  // - The string may contain "$arg" which will match the argument specification
-  //   (of any type). There may only be one of these in the string. The
-  //   character "$" cannot otherwise appear in the string.
-  // - If the string contains any parentheses, brackets, or braces, they must be
+  // This must conform to the following rules:
+  // - The source must be unique within the macro set.
+  // - It may contain "$r", "$R", ot "$#", specifications. There may be at
+  //   most one of these with and it must match the type of arg/ If sizes are
+  //   specified ("$r2", "$#5", etc.) then it must also match the argument size.
+  //   Otherwise they are implied. However, if compiling an an argument set, the
+  //   sizes are required for non-default register sizes and all immediate value
+  //   sizes.
+  // - It may contain any number of "$v" and "$V" specifications which will
+  //   result in added word and dword values to the instruction word. These do
+  //   not map to the argument.
+  // - It may contain any parentheses, brackets, or braces, but they must be
   //   balanced, and nested correctly.
+  // - It may contain C-style identifiers, integer, floating-point, string, and
+  //   character constants.
+  // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
 
   // A string of prefix bits which uniquely identify the macro. This is used to
@@ -194,11 +198,36 @@ struct InstructionDef {
   // instruction).
   uint8_t op;
 
-  // OZ-3 assembly operation name. This does not need/ be unique with the
-  // instruction op-code value itself. Multiple instructions can use the same
-  // name like "MOV" as long as the argument types are sufficient to
-  // disambiguate between them in the assembler.
+  // OZ-3 assembly operation name of the form "name.ext" where name is any valid
+  // C identifier and ext is any valid c identifier. Typically, these would be
+  // all upper case and alpha characters only, but that is not required. This
+  // must be unique across instructions in an instruction set. Multiple
+  // instructions can use the same root name like "MOV" as long as the
+  // extensions ensure the full name is unique. The asseumbler will accept just
+  // the root name if argument types are sufficient to disambiguate them.
   std::string_view op_name;
+
+  // String defining the source arguments as it appears for the assembler.
+  //
+  // This is only used by the OZ-3 assembler, and may be empty if not using it.
+  //
+  // This must be a comma delimited set of expressions where each expression
+  // conforms to the following rules:
+  // - It may contain "$r", "$R", "$#", or "$m" specifications. There may be at
+  //   most two of these with the first matching the type of arg1 and the second
+  //   matching the type of arg2. If sizes are specified ("$r2", "$#5", etc.)
+  //   then they must also match the argument size. Otherwise they are implied.
+  //   However, if compiling an an argument set, the sizes are required for
+  //   non-default register sizes and all immediate value sizes.
+  // - It may contain any number of "$v" and "$V" specifications which will
+  //   result in added word and dword values to the instruction word. These do
+  //   not map to the arguments.
+  // - It may contain any parentheses, brackets, or braces, but they must be
+  //   balanced, and nested correctly.
+  // - It may contain C-style identifiers, integer, floating-point, string, and
+  //   character constants.
+  // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
+  std::string_view arg_source;
 
   // The argument definitions for the instruction that are encoded in the lower
   // byte of the instruction word. The total number of bits required must not
