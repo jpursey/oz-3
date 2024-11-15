@@ -32,11 +32,11 @@ constexpr gb::LexerConfig::UserToken kUserTokens[] = {
     {.name = "label", .type = kTokenLabel, .regex = R"-((\@[a-zA-Z]\w*))-"},
 };
 constexpr gb::LexerConfig kLexerConfig = {
-    .flags = {gb::kLexerFlags_AllPositiveIntegers,
-              gb::LexerFlag::kBinaryIntegers, gb::LexerFlag::kHexUpperIntegers,
-              gb::LexerFlag::kHexLowerIntegers,
+    .flags = {gb::kLexerFlags_AllIntegers,
+              gb::kLexerFlags_AllIntegerFormats - gb::LexerFlag::kOctalIntegers,
+              gb::kLexerFlags_AllFloats, gb::kLexerFlags_CIdentifiers,
               gb::LexerFlag::kDoubleQuoteString,
-              gb::LexerFlag::kSingleQuoteString, gb::kLexerFlags_CIdentifiers},
+              gb::LexerFlag::kSingleQuoteString},
     .binary_prefix = "0b",
     .hex_prefix = "0x",
     .line_comments = kLineComments,
@@ -111,7 +111,7 @@ constexpr gb::Symbol kSourceSymbols[] = {
 constexpr gb::LexerConfig::UserToken kSourceUserTokens[] = {
     {.name = "arg type",
      .type = kTokenArgType,
-     .regex = R"-(\$([r[1-4]?|R[1-2]?|#[1-8]|m[1-8]?|[vV]))-"},
+     .regex = R"-(\$(r[1-4]?|R[1-2]?|#[1-8]|m[1-8]?|[vV]))-"},
 };
 constexpr gb::LexerConfig kSourceLexerConfig = {
     .flags = {gb::kLexerFlags_AllIntegers, gb::kLexerFlags_AllFloats,
@@ -275,6 +275,7 @@ std::unique_ptr<AsmInstructionSet> InstructionSetAssembler::Assemble(
       return nullptr;
     }
     instruction_def.op = static_cast<uint8_t>(opcode);
+    ++opcode;
   }
 
   if (!Compile()) {
@@ -325,7 +326,6 @@ bool InstructionSetAssembler::AssembleMacro(
       return false;
     }
   }
-  macro_def.code = macro_code_defs;
 
   const int fixed_bits = parsed_macro.GetInt("bits");
   if (fixed_bits < 0 || fixed_bits > 8) {
@@ -360,6 +360,14 @@ bool InstructionSetAssembler::AssembleMacro(
   if (total_bits == 0) {
     total_bits = 1;
   }
+
+  // Sort the macro code definitions by argument size, so we can assign prefix
+  // values trivially.
+  std::sort(macro_code_defs.begin(), macro_code_defs.end(),
+            [](const MacroCodeDef& a, const MacroCodeDef& b) {
+              return a.arg.size < b.arg.size;
+            });
+
   int next_code = 0;
   for (int i = 0; i < macro_code_defs.size(); ++i) {
     auto& prefix = macro_code_defs[i].prefix;
@@ -369,6 +377,8 @@ bool InstructionSetAssembler::AssembleMacro(
     next_code += 1 << value_bits;
   }
 
+  macro_def.size = total_bits;
+  macro_def.code = macro_code_defs;
   return true;
 }
 
@@ -546,7 +556,7 @@ bool InstructionSetAssembler::AssembleInstructionCodeSource(
   int instruction_arg_count = 0;
   bool has_macro_arg = false;
   for (const auto& arg : args) {
-    auto types = args[0].GetItems("types");
+    auto types = arg.GetItems("types");
     for (const auto& type : types) {
       std::string_view type_name = type.GetToken().GetString();
       char type_char = type_name[0];
