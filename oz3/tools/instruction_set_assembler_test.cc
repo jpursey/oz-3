@@ -1074,7 +1074,7 @@ TEST(InstructionSetAssemblerTest, ErrorLocationAfterMacroCorrect) {
   std::string source = R"---(
     macro Macro {
       code "X" { 
-        MOV(R0,R1); 
+        MOV(R0,R1);
         MOV(R2,R3);
         MOV(R4,R5);
         MOV(R6,R7);
@@ -1093,12 +1093,12 @@ TEST(InstructionSetAssemblerTest, ErrorLocationAfterMacroCorrect) {
 }
 
 TEST(InstructionSetAssemblerTest,
-  ErrorInsideMacroExpansionLocationAtMacroCall) {
+     ErrorInsideMacroExpansionLocationAtMacroCall) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
       code "X" { 
-        MOV(R0,R1); 
+        MOV(R0,R1);
         MOV(R2,R3);
         LD(R5);
         MOV(R4,R5);
