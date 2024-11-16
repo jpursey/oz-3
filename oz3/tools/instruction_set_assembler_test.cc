@@ -9,12 +9,18 @@
 #include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/cpu_core.h"
+#include "oz3/core/instruction_compiler.h"
 
 namespace oz3 {
 namespace {
 
 using ::testing::AllOf;
 using ::testing::HasSubstr;
+
+MATCHER_P2(AtLineCol, line, column, "") {
+  return arg.line == line && arg.column == column;
+}
 
 TEST(InstructionSetAssemblerTest, BasicSuccess) {
   gb::ParseError error;
@@ -70,6 +76,7 @@ TEST(InstructionSetAssemblerTest, FailToOpenFile) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               HasSubstr("test.oz3ism"));
+  EXPECT_EQ(error.GetLocation(), gb::LexerLocation());
 }
 
 TEST(InstructionSetAssemblerTest, AutoAssignOpcodes) {
@@ -134,6 +141,7 @@ TEST(InstructionSetAssemblerTest, TooManyInstructions) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               HasSubstr("instructions"));
+  EXPECT_EQ(error.GetLocation(), gb::LexerLocation());
 }
 
 TEST(InstructionSetAssemblerTest, DuplicateOpcode) {
@@ -150,6 +158,7 @@ TEST(InstructionSetAssemblerTest, DuplicateOpcode) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("already defined"), HasSubstr("42")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
 TEST(InstructionSetAssemblerTest, OpcodeNegative) {
@@ -163,6 +172,7 @@ TEST(InstructionSetAssemblerTest, OpcodeNegative) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("opcode"), HasSubstr("-1")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
 TEST(InstructionSetAssemblerTest, OpcodeTooBig) {
@@ -176,6 +186,7 @@ TEST(InstructionSetAssemblerTest, OpcodeTooBig) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("opcode"), HasSubstr("256")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
 TEST(InstructionSetAssemblerTest, InstructionValidArgSource) {
@@ -211,6 +222,7 @@ TEST(InstructionSetAssemblerTest, InstructionInvalidArgSource) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("invalid"), HasSubstr("$x")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
 TEST(InstructionSetAssemblerTest, InstructionEmbeddedArgumentTypes) {
@@ -261,6 +273,7 @@ TEST(InstructionSetAssemblerTest, InstructionTooManyEmbeddedArgTypes) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("invalid"), HasSubstr("$r1, $r2, $r3")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
 TEST(InstructionSetAssemblerTest, OpcodeNameWithExtension) {
@@ -297,6 +310,7 @@ TEST(InstructionSetAssemblerTest, DuplicateOpcodeNames) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("already defined"), HasSubstr("alpha")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
 TEST(InstructionSetAssemblerTest, OpcodeNamesDifferByExtension) {
@@ -335,6 +349,7 @@ TEST(InstructionSetAssemblerTest, DuplicateOpcodeNamesWithExtensions) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("already defined"), HasSubstr("alpha.beta")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
 TEST(InstructionSetAssemblerTest, InstructionFirstMacroArgument) {
@@ -398,6 +413,708 @@ TEST(InstructionSetAssemblerTest, InstructionTwoMacroArgumentsAreInvalid) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("invalid"), HasSubstr("$m, $m")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
+}
+
+TEST(InstructionSetAssemblerTest, InstructionMacroArgumentSizeMismatch) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$r" { MOV(R0,m); }
+    }
+    instruction TEST "$m4" {
+      UL;
+      $Macro;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(
+      absl::AsciiStrToLower(error.GetMessage()),
+      AllOf(HasSubstr("macro argument size"), HasSubstr("3"), HasSubstr("4")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(6, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MinimumValidMacro) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_NE(asm_set->GetInstructionSet(), nullptr);
+  EXPECT_EQ(asm_set->GetInstructionSet()->GetInstructionCount(), 0);
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  EXPECT_EQ(macro.name, "Macro");
+  EXPECT_EQ(macro.param, ArgType::kNone);
+  EXPECT_EQ(macro.ret, ArgType::kNone);
+  EXPECT_EQ(macro.size, 1);
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.arg.type, ArgType::kNone);
+  EXPECT_EQ(code.arg.size, 0);
+  EXPECT_EQ(code.ret, 0);
+  EXPECT_EQ(code.source, "X");
+  EXPECT_EQ(code.prefix.value, 0);
+  EXPECT_EQ(code.prefix.size, 1);
+  EXPECT_EQ(code.code, "MOV(R0,R1);");
+}
+
+TEST(InstructionSetAssemblerTest, DuplicateMacroName) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { MOV(R0,R1); }
+    }
+    macro Macro {
+      code "Y" { MOV(R1,R0); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("already defined"), HasSubstr("macro")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
+}
+
+TEST(InstructionSetAssemblerTest, MacroWithWordParameter) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro(p) {
+      code "X" { MOV(R0,p); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  EXPECT_EQ(macro.name, "Macro");
+  EXPECT_EQ(macro.param, ArgType::kWordReg);
+}
+
+TEST(InstructionSetAssemblerTest, MacroWithDwordParameter) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro(P) {
+      code "X" { MOV(R0,p0); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  EXPECT_EQ(macro.name, "Macro");
+  EXPECT_EQ(macro.param, ArgType::kDwordReg);
+}
+
+TEST(InstructionSetAssemblerTest, MacroWithWordReturn) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro:r {
+      code:R4 "X" { MOV(R4,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  EXPECT_EQ(macro.name, "Macro");
+  EXPECT_EQ(macro.ret, ArgType::kWordReg);
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.ret, CpuCore::R4);
+}
+
+TEST(InstructionSetAssemblerTest, MacroWithDwordReturn) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro:R {
+      code:D1 "X" { MOV(R2,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  EXPECT_EQ(macro.name, "Macro");
+  EXPECT_EQ(macro.ret, ArgType::kDwordReg);
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.ret, CpuCore::D1);
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeRetWithoutMacroRet) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code:R0 "X" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("macro"), HasSubstr("return")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeNoRetWithMacroRet) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro:r {
+      code "X" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("macro"), HasSubstr("return")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+struct RetParamTest {
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const RetParamTest& test) {
+    absl::Format(&sink, "RetParamTest(%s, %s, %s)", test.param_type,
+                 test.ret_type, test.ret);
+  }
+
+  std::string_view param_type;
+  std::string_view ret_type;
+  std::string_view ret;
+};
+
+TEST(InstructionSetAssemblerTest, MacroCodeRetParamValid) {
+  const RetParamTest kTests[] = {
+      {"p", "r", "p"},
+      {"P", "r", "p0"},
+      {"P", "r", "p1"},
+      {"P", "R", "P"},
+  };
+
+  for (const auto& test : kTests) {
+    gb::ParseError error;
+    std::string source =
+        absl::StrCat("macro Macro(", test.param_type, "):", test.ret_type,
+                     " { code:", test.ret, " \"X\" { MOV(R0,R1); } }");
+    auto asm_set = AssembleInstructionSet(source, &error);
+    ASSERT_NE(asm_set, nullptr) << test << " Error: " << error.FormatMessage();
+    ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1) << test;
+    auto macro = asm_set->GetInstructionSetDef().macros[0];
+    ASSERT_EQ(macro.code.size(), 1) << test;
+    auto code = macro.code[0];
+    EXPECT_EQ(code.ret, (test.ret == "p1" ? CpuCore::P1 : CpuCore::P0)) << test;
+  }
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeRetParamInvalid) {
+  const RetParamTest kTests[] = {
+      {"p", "r", "P"}, {"p", "r", "p0"}, {"p", "r", "p1"}, {"p", "R", "p"},
+      {"p", "R", "P"}, {"p", "R", "p0"}, {"p", "R", "p1"}, {"P", "r", "p"},
+      {"P", "r", "P"}, {"P", "R", "p"},  {"P", "R", "p0"}, {"P", "R", "p1"},
+  };
+  for (const auto& test : kTests) {
+    gb::ParseError error;
+    std::string source =
+        absl::StrCat("macro Macro(", test.param_type, "):", test.ret_type,
+                     " { code:", test.ret, " \"X\" { MOV(R0,R1); } }");
+    auto asm_set = AssembleInstructionSet(source, &error);
+    EXPECT_EQ(asm_set, nullptr) << test;
+    ASSERT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+                AllOf(HasSubstr("macro"), HasSubstr("return")))
+        << test;
+    EXPECT_THAT(error.GetLocation(), AtLineCol(0, 19));
+  }
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeInvalidWordRegReturn) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro:r {
+      code:D0 "X" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("invalid"), HasSubstr("d0")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeInvalidDwordRegReturn) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro:R {
+      code:R4 "X" { MOV(R4,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("invalid"), HasSubstr("r4")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, DuplicateMacroCodeSource) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "XYZ" { MOV(R0,R1); }
+      code "XYZ" { MOV(R1,R0); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("already defined"), HasSubstr("xyz")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
+}
+
+TEST(InstructionSetAssemblerTest, DuplicateMacroCodeSourceIgnoreSpaces) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "[ X + Y-Z ]" { MOV(R0,R1); }
+      code "[X+Y -   Z] " { MOV(R1,R0); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("already defined"), HasSubstr("[x+y -   z] ")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeSourceInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$x" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("invalid"), HasSubstr("$x")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeSourceMultipleArgsInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "A,B" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("invalid"), HasSubstr("a,b")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeSourceWithCodeValues) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$V + $v" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.source, "$V + $v");
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeSourceWithMacroArgInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$m" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("invalid"), HasSubstr("$m")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest,
+     MacroCodeSourceWithMultipleNonCodeValueArgsInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$r + $#3" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("invalid"), HasSubstr("$r + $#3")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, MacroBitsSetExplicitly) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro(bits:2) Macro {
+      code "X" { MOV(R0,R1); }
+      code "Y" { MOV(R1,R0); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.size, 2);
+  ASSERT_EQ(macro.code.size(), 2);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.prefix.value, 0);
+  EXPECT_EQ(code.prefix.size, 2);
+  code = macro.code[1];
+  EXPECT_EQ(code.prefix.value, 1);
+  EXPECT_EQ(code.prefix.size, 2);
+}
+
+TEST(InstructionSetAssemblerTest, MacroBitsMinMax) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro(bits:0) Macro {
+      code "X" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("bits"), HasSubstr("0")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+
+  source = R"---(
+    macro(bits:1) Macro {
+      code "X" { MOV(R0,R1); }
+    }
+  )---";
+  asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr);
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  auto macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.size, 1);
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.prefix.value, 0);
+  EXPECT_EQ(code.prefix.size, 1);
+
+  source = R"---(
+    macro(bits:8) Macro {
+      code "X" { MOV(R0,R1); }
+    }
+  )---";
+  asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr);
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.size, 8);
+  ASSERT_EQ(macro.code.size(), 1);
+  code = macro.code[0];
+  EXPECT_EQ(code.prefix.value, 0);
+  EXPECT_EQ(code.prefix.size, 8);
+
+  source = R"---(
+    macro(bits:9) Macro {
+      code "X" { MOV(R0,R1); }
+    }
+  )---";
+  asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("bits"), HasSubstr("9")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionSetAssemblerTest, MacroBitsAutoSourceArgSizes) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$r3" { MOV(R0,m); }
+      code "$R2" { MOV(R0,m0); }
+      code "$#2" { MOV(R0,i); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.size, 4);
+  ASSERT_EQ(macro.code.size(), 3);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.prefix.value, 0);
+  EXPECT_EQ(code.prefix.size, 1);
+  code = macro.code[1];
+  EXPECT_EQ(code.prefix.value, 0b10);
+  EXPECT_EQ(code.prefix.size, 2);
+  code = macro.code[2];
+  EXPECT_EQ(code.prefix.value, 0b11);
+  EXPECT_EQ(code.prefix.size, 2);
+}
+
+TEST(InstructionSetAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$r1" { MOV(R1,m); }
+      code "$r2" { MOV(R2,m); }
+      code "$r3" { MOV(R3,m); }
+      code "$r4" { MOV(R4,m); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.size, 5);
+  ASSERT_EQ(macro.code.size(), 4);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.source, "$r4");
+  EXPECT_EQ(code.prefix.value, 0);
+  EXPECT_EQ(code.prefix.size, 1);
+  code = macro.code[1];
+  EXPECT_EQ(code.source, "$r3");
+  EXPECT_EQ(code.prefix.value, 0b10);
+  EXPECT_EQ(code.prefix.size, 2);
+  code = macro.code[2];
+  EXPECT_EQ(code.source, "$r2");
+  EXPECT_EQ(code.prefix.value, 0b110);
+  EXPECT_EQ(code.prefix.size, 3);
+  code = macro.code[3];
+  EXPECT_EQ(code.source, "$r1");
+  EXPECT_EQ(code.prefix.value, 0b1110);
+  EXPECT_EQ(code.prefix.size, 4);
+}
+
+TEST(InstructionSetAssemblerTest, MacroCodeSourceExceedsSetBits) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro(bits:2) Macro {
+      code "$r3" { MOV(R1,m); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("exceeds"), HasSubstr("2")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+
+  source = R"---(
+    macro(bits:2) Macro {
+      code "$r2" { MOV(R1,m); }
+      code "$#2" { MOV(R1,m); }
+    }
+  )---";
+  asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("exceeds"), HasSubstr("2")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionSetAssemblerTest, AllMicrocodeSyntaxValid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro NoArg {
+      code "$r" { MOV(R0,m); }
+    }
+    macro WithArg(p) {
+      code "$r" { MOV(m,p); }
+    }
+    instruction TEST "$r, $m" { 
+      LD(C0);             # Load value into C0
+      UL;                 # End fetch phase
+      @label:ADDI(a,1);   # Increment argument by 1
+      JC(NZ,@label);      # Continue looping if argument is not zero
+      $NoArg;             # Call macro with no argument
+    }
+    instruction TEST2 "$m" {
+      UL;
+      $WithArg(R0);
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().instructions.size(), 2);
+  auto instruction = asm_set->GetInstructionSetDef().instructions[0];
+  EXPECT_EQ(instruction.code,
+            "LD(C0);UL;@label:ADDI(a,1);JC(NZ,@label);$NoArg;");
+  instruction = asm_set->GetInstructionSetDef().instructions[1];
+  EXPECT_EQ(instruction.code, "UL;$WithArg(R0);");
+}
+
+TEST(InstructionSetAssemblerTest, CallMacroInMacroInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { $Macro; }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()), HasSubstr("macro"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 17));
+}
+
+TEST(InstructionSetAssemblerTest, CallMacroWithNoMacroParameterInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { MOV(R0,R1); }
+    }
+    instruction TEST {
+      UL;
+      $Macro;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()), HasSubstr("macro"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(6, 6));
+}
+
+TEST(InstructionSetAssemblerTest, CallMultipleMacrosInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro1 {
+      code "X" { MOV(R0,R1); }
+    }
+    macro Macro2 {
+      code "Y" { MOV(R1,R0); }
+    }
+    instruction TEST "$m" {
+      UL;
+      $Macro1;
+      $Macro2;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("multiple"), HasSubstr("macro")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(10, 6));
+}
+
+TEST(InstructionSetAssemblerTest, CallUndefinedMacro) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction TEST "$m" {
+      UL;
+      $Macro;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
+              AllOf(HasSubstr("undefined"), HasSubstr("macro")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
+}
+
+TEST(InstructionSetAssemblerTest, NoCodeForMacroCode) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()), HasSubstr("code"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionSetAssemblerTest, ErrorInMacroCodeCode) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { INVALID; }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("INVALID"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 17));
+}
+
+TEST(InstructionSetAssemblerTest, NoULForInstruction) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction TEST { MOV(R0,R1); }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("UL"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionSetAssemblerTest, ErrorInInstructionCode) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction TEST { UL; INVALID; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("INVALID"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 27));
+}
+
+TEST(InstructionSetAssemblerTest, ErrorLocationAfterMacroCorrect) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { 
+        MOV(R0,R1); 
+        MOV(R2,R3);
+        MOV(R4,R5);
+        MOV(R6,R7);
+      }
+    }
+    instruction TEST "$m" {
+      UL;
+      $Macro;
+      INVALID;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("INVALID"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(12, 6));
+}
+
+TEST(InstructionSetAssemblerTest,
+  ErrorInsideMacroExpansionLocationAtMacroCall) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "X" { 
+        MOV(R0,R1); 
+        MOV(R2,R3);
+        LD(R5);
+        MOV(R4,R5);
+        MOV(R6,R7);
+      }
+    }
+    instruction TEST "$m" {
+      UL;
+      $Macro;
+      MOV(R6,R7);
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("LD(R5)"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(12, 6));
 }
 
 }  // namespace

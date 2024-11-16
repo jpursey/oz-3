@@ -50,15 +50,15 @@ constexpr std::string_view kParserProgram = R"---(
 
   InstructionSet {
     ($macros=Macro | $instructions=Instruction)*
-    %end;
+    %end:'Expected "macro" or "instruction"';
   }
 
   Macro {
     "macro" 
     ["(" <MacroConfig>,+ ")"] 
     $name=%ident 
-    ["(" $param=("p" | "P") ")"] 
-    [":" $ret=("r" | "R")] 
+    ["(" $param=("p" | "P"):"Expected 'p' or 'P' for parameter" ")"] 
+    [":" $ret=("r" | "R"):"Expected 'r' or 'R' for return"] 
     "{" $code=MacroCode* "}";
   }
 
@@ -327,26 +327,29 @@ bool InstructionSetAssembler::AssembleMacro(
     }
   }
 
-  const int fixed_bits = parsed_macro.GetInt("bits");
-  if (fixed_bits < 0 || fixed_bits > 8) {
-    return ErrorAt(parsed_macro, "Invalid bits value: ", fixed_bits);
+  int fixed_bits = 0;
+  if (const auto* parsed_bits = parsed_macro.GetItem("bits");
+      parsed_bits != nullptr) {
+    fixed_bits = parsed_bits->GetToken().GetInt();
+    if (fixed_bits < 1 || fixed_bits > 8) {
+      return ErrorAt(parsed_macro, "Invalid bits value: ", fixed_bits);
+    }
   }
   const int max_bits = (fixed_bits > 0 ? fixed_bits : 8);
   const int max_values = 1 << max_bits;
 
   int sum_values = 0;
-  int max_value_bits = 0;
+  int total_bits = std::max(fixed_bits, 1);
   for (const MacroCodeDef& code_def : macro_code_defs) {
-    if (code_def.arg.size > max_value_bits) {
-      max_value_bits = code_def.arg.size;
+    if (code_def.arg.size > total_bits) {
+      total_bits = code_def.arg.size;
     }
-    if (max_value_bits > max_bits) {
+    if (total_bits > max_bits) {
       return ErrorAt(parsed_macro, "Macro code \"", code_def.source,
-                     "\" size exceeds max bits value: ", max_value_bits);
+                     "\" size exceeds max bits value: ", max_bits);
     }
     sum_values += 1 << code_def.arg.size;
   }
-  int total_bits = std::max(fixed_bits, max_value_bits);
   while ((1 << total_bits) < sum_values) {
     ++total_bits;
   }
@@ -354,18 +357,12 @@ bool InstructionSetAssembler::AssembleMacro(
     return ErrorAt(parsed_macro, "Macro requires ", total_bits,
                    " bits for all codes which exceeds max bits: ", max_bits);
   }
-  // Right now, we always require at least one bit (even if it would always be
-  // zero). This almost never happens in practice, and it is easier to handle
-  // this case by always requiring at least one bit.
-  if (total_bits == 0) {
-    total_bits = 1;
-  }
 
-  // Sort the macro code definitions by argument size, so we can assign prefix
-  // values trivially.
+  // Sort the macro code definitions by argument size (largest to smallest), so
+  // we can assign prefix values trivially.
   std::sort(macro_code_defs.begin(), macro_code_defs.end(),
             [](const MacroCodeDef& a, const MacroCodeDef& b) {
-              return a.arg.size < b.arg.size;
+              return a.arg.size > b.arg.size;
             });
 
   int next_code = 0;
@@ -410,19 +407,30 @@ bool InstructionSetAssembler::AssembleMacroCode(
       return ErrorAt(parsed_macro_code, "Macro does not return a value");
     }
   } else if (ret.empty()) {
-    if (macro_def.param != macro_def.ret) {
-      return ErrorAt(parsed_macro_code, "Macro code missing return value");
-    }
-    macro_code_def.ret = -1;
+    return ErrorAt(parsed_macro_code, "Macro code missing return value");
   } else if (macro_def.ret == ArgType::kWordReg) {
-    macro_code_def.ret = CpuCore::GetWordRegFromName(ret);
-    if (macro_code_def.ret < 0) {
-      return ErrorAt(parsed_macro_code, "Invalid return word register: ", ret);
+    if (macro_def.param == ArgType::kWordReg && ret == "p") {
+      macro_code_def.ret = CpuCore::P;
+    } else if (macro_def.param == ArgType::kDwordReg && ret == "p0") {
+      macro_code_def.ret = CpuCore::P0;
+    } else if (macro_def.param == ArgType::kDwordReg && ret == "p1") {
+      macro_code_def.ret = CpuCore::P1;
+    } else {
+      macro_code_def.ret = CpuCore::GetWordRegFromName(ret);
+      if (macro_code_def.ret < 0) {
+        return ErrorAt(parsed_macro_code,
+                       "Invalid macro code return word register: ", ret);
+      }
     }
   } else if (macro_def.ret == ArgType::kDwordReg) {
-    macro_code_def.ret = CpuCore::GetDwordRegFromName(ret);
-    if (macro_code_def.ret < 0) {
-      return ErrorAt(parsed_macro_code, "Invalid return dword register: ", ret);
+    if (macro_def.param == ArgType::kDwordReg && ret == "P") {
+      macro_code_def.ret = CpuCore::P;
+    } else {
+      macro_code_def.ret = CpuCore::GetDwordRegFromName(ret);
+      if (macro_code_def.ret < 0) {
+        return ErrorAt(parsed_macro_code,
+                       "Invalid macro code return dword register: ", ret);
+      }
     }
   }
 
@@ -635,8 +643,7 @@ bool InstructionSetAssembler::AssembleMicrocode(
       }
       has_macro = true;
       if (macro_arg == nullptr) {
-        return ErrorAt(parsed_micro_code,
-                       "No macro argument specified for instruction");
+        return ErrorAt(parsed_micro_code, "No macro argument specified");
       }
       auto it = macro_map_.find(macro_name);
       if (it == macro_map_.end()) {
@@ -680,7 +687,7 @@ bool InstructionSetAssembler::Compile() {
   InstructionError error;
   result_->instruction_set_ =
       CompileInstructionSet(result_->instruction_set_def_, &error);
-  if (result_->instruction_set_ != nullptr) {
+  if (error.message.empty()) {
     return true;
   }
   if (error.def == InstructionError::Def::kMacro) {
@@ -696,9 +703,7 @@ bool InstructionSetAssembler::Compile() {
       return ErrorAt(macro_code_tokens.def, error.message);
     }
     DCHECK(error.code_index < macro_code_tokens.code.size());
-    if (error.sub_code_index < 0) {
-      return ErrorAt(macro_code_tokens.code[error.code_index], error.message);
-    }
+    return ErrorAt(macro_code_tokens.code[error.code_index], error.message);
   }
   if (error.def == InstructionError::Def::kInstruction) {
     DCHECK(instruction_token_map_.contains(error.def_name));

@@ -86,10 +86,12 @@ inline constexpr int8_t kInstructionMinDwordRegArg = std::min(kArg_A, kArg_B);
 inline constexpr int8_t kInstructionMinArg = kInstructionMinWordRegArg;
 
 // Macro parameter arguments
-inline constexpr int8_t kArg_p = kInstructionMinArg - 1;
-inline constexpr int8_t kArg_p0 = kArg_p;
-inline constexpr int8_t kArg_p1 = kInstructionMinArg - 2;
-inline constexpr int8_t kArg_P = kArg_p;
+static_assert(kInstructionMinArg - 1 == CpuCore::P0 &&
+              kInstructionMinArg - 2 == CpuCore::P1);
+inline constexpr int8_t kArg_p = CpuCore::P;
+inline constexpr int8_t kArg_p0 = CpuCore::P0;
+inline constexpr int8_t kArg_p1 = CpuCore::P1;
+inline constexpr int8_t kArg_P = CpuCore::P;
 
 // Macro return arguments
 inline constexpr int8_t kArg_r = kInstructionMinArg - 3;

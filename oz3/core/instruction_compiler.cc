@@ -182,7 +182,8 @@ class InstructionCompiler {
     }
     if (state_.parsed != nullptr) {
       DCHECK(state_.code_index >= 0);
-      absl::StrAppend(&context, " for \"", state_.parsed->code, "\" (", state_.code_index);
+      absl::StrAppend(&context, " for \"", state_.parsed->code, "\" (",
+                      state_.code_index);
       if (state_.sub_code_index >= 0) {
         absl::StrAppend(&context, "/", state_.sub_code_index);
       }
@@ -326,13 +327,14 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     const int start_sub_index =
         macro.sub_index + (code_def.prefix.value << code_def.arg.size);
     for (int i = start_sub_index; i < start_sub_index + num_sub_macros; ++i) {
-      if (sub_code_defs[i] != nullptr) {
+      const int sub_index = i - macro.sub_index;
+      if (sub_code_defs[sub_index] != nullptr) {
         return Error("Duplicate macro sub code ",
-                     ToBitString(i, macro_def.size), " between \"",
-                     sub_code_defs[i]->source, "\" and \"", code_def.source,
-                     "\"");
+                     ToBitString(sub_index, macro_def.size), " between \"",
+                     sub_code_defs[sub_index]->source, "\" and \"",
+                     code_def.source, "\"");
       }
-      sub_code_defs[i] = &code_def;
+      sub_code_defs[sub_index] = &code_def;
     }
 
     if (!code_def.arg.IsValid()) {

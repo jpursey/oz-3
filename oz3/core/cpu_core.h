@@ -91,6 +91,14 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int8_t B1 = -4;  // 2nd arg, high word: index in decoded r[3]
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Virtual register indexes used in microcode definitions
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  static constexpr int8_t P = -5;   // Macro parameter (word or dword)
+  static constexpr int8_t P0 = -5;  // Macro parameter, low word
+  static constexpr int8_t P1 = -6;  // Macro parameter, high word
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Status flags in the ST register. The upper byte of the ST register is for
   // external control flags and cannot be changed by microcode.
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
