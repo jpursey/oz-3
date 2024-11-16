@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/instruction_set_assembler.h"
+#include "oz3/tools/instruction_assembler.h"
 
 #include "absl/strings/ascii.h"
 #include "gb/file/memory_file_protocol.h"
@@ -22,7 +22,7 @@ MATCHER_P2(AtLineCol, line, column, "") {
   return arg.line == line && arg.column == column;
 }
 
-TEST(InstructionSetAssemblerTest, BasicSuccess) {
+TEST(InstructionAssemblerTest, BasicSuccess) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) NOP { 
@@ -43,7 +43,7 @@ TEST(InstructionSetAssemblerTest, BasicSuccess) {
   EXPECT_EQ(instruction.code, "UL;");
 }
 
-TEST(InstructionSetAssemblerTest, BasicSuccessFromFile) {
+TEST(InstructionAssemblerTest, BasicSuccessFromFile) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) NOP { 
@@ -68,7 +68,7 @@ TEST(InstructionSetAssemblerTest, BasicSuccessFromFile) {
   EXPECT_EQ(instruction.code, "UL;");
 }
 
-TEST(InstructionSetAssemblerTest, FailToOpenFile) {
+TEST(InstructionAssemblerTest, FailToOpenFile) {
   gb::ParseError error;
   gb::FileSystem file_system;
   auto asm_set =
@@ -79,7 +79,7 @@ TEST(InstructionSetAssemblerTest, FailToOpenFile) {
   EXPECT_EQ(error.GetLocation(), gb::LexerLocation());
 }
 
-TEST(InstructionSetAssemblerTest, AutoAssignOpcodes) {
+TEST(InstructionAssemblerTest, AutoAssignOpcodes) {
   gb::ParseError error;
   std::string source = R"---(
     instruction ZERO { 
@@ -114,7 +114,7 @@ TEST(InstructionSetAssemblerTest, AutoAssignOpcodes) {
   EXPECT_EQ(instruction3.op, 3);
 }
 
-TEST(InstructionSetAssemblerTest, MaxInstructions) {
+TEST(InstructionAssemblerTest, MaxInstructions) {
   gb::ParseError error;
   std::string source;
   for (int i = 0; i < 256; ++i) {
@@ -131,7 +131,7 @@ TEST(InstructionSetAssemblerTest, MaxInstructions) {
   }
 }
 
-TEST(InstructionSetAssemblerTest, TooManyInstructions) {
+TEST(InstructionAssemblerTest, TooManyInstructions) {
   gb::ParseError error;
   std::string source;
   for (int i = 0; i < 257; ++i) {
@@ -144,7 +144,7 @@ TEST(InstructionSetAssemblerTest, TooManyInstructions) {
   EXPECT_EQ(error.GetLocation(), gb::LexerLocation());
 }
 
-TEST(InstructionSetAssemblerTest, DuplicateOpcode) {
+TEST(InstructionAssemblerTest, DuplicateOpcode) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:42) ALPHA { 
@@ -161,7 +161,7 @@ TEST(InstructionSetAssemblerTest, DuplicateOpcode) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
-TEST(InstructionSetAssemblerTest, OpcodeNegative) {
+TEST(InstructionAssemblerTest, OpcodeNegative) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:-1) ALPHA { 
@@ -175,7 +175,7 @@ TEST(InstructionSetAssemblerTest, OpcodeNegative) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, OpcodeTooBig) {
+TEST(InstructionAssemblerTest, OpcodeTooBig) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:256) ALPHA { 
@@ -189,7 +189,7 @@ TEST(InstructionSetAssemblerTest, OpcodeTooBig) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, InstructionValidArgSource) {
+TEST(InstructionAssemblerTest, InstructionValidArgSource) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) ALPHA "$v" { 
@@ -211,7 +211,7 @@ TEST(InstructionSetAssemblerTest, InstructionValidArgSource) {
   EXPECT_EQ(instruction.code, "LD(R0);UL;");
 }
 
-TEST(InstructionSetAssemblerTest, InstructionInvalidArgSource) {
+TEST(InstructionAssemblerTest, InstructionInvalidArgSource) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) ALPHA "$x" { 
@@ -225,7 +225,7 @@ TEST(InstructionSetAssemblerTest, InstructionInvalidArgSource) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, InstructionEmbeddedArgumentTypes) {
+TEST(InstructionAssemblerTest, InstructionEmbeddedArgumentTypes) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) WORD "$r, $r4" { 
@@ -262,7 +262,7 @@ TEST(InstructionSetAssemblerTest, InstructionEmbeddedArgumentTypes) {
   EXPECT_EQ(instruction2.arg2.size, 5);
 }
 
-TEST(InstructionSetAssemblerTest, InstructionTooManyEmbeddedArgTypes) {
+TEST(InstructionAssemblerTest, InstructionTooManyEmbeddedArgTypes) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) WORDS "$r1, $r2, $r3" { 
@@ -276,7 +276,7 @@ TEST(InstructionSetAssemblerTest, InstructionTooManyEmbeddedArgTypes) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, OpcodeNameWithExtension) {
+TEST(InstructionAssemblerTest, OpcodeNameWithExtension) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) ALPHA.BETA { 
@@ -296,7 +296,7 @@ TEST(InstructionSetAssemblerTest, OpcodeNameWithExtension) {
   EXPECT_EQ(instruction.code, "UL;");
 }
 
-TEST(InstructionSetAssemblerTest, DuplicateOpcodeNames) {
+TEST(InstructionAssemblerTest, DuplicateOpcodeNames) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) ALPHA { 
@@ -313,7 +313,7 @@ TEST(InstructionSetAssemblerTest, DuplicateOpcodeNames) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
-TEST(InstructionSetAssemblerTest, OpcodeNamesDifferByExtension) {
+TEST(InstructionAssemblerTest, OpcodeNamesDifferByExtension) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) ALPHA { 
@@ -335,7 +335,7 @@ TEST(InstructionSetAssemblerTest, OpcodeNamesDifferByExtension) {
   EXPECT_EQ(instruction1.op_name, "ALPHA.BETA");
 }
 
-TEST(InstructionSetAssemblerTest, DuplicateOpcodeNamesWithExtensions) {
+TEST(InstructionAssemblerTest, DuplicateOpcodeNamesWithExtensions) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) ALPHA.BETA { 
@@ -352,7 +352,7 @@ TEST(InstructionSetAssemblerTest, DuplicateOpcodeNamesWithExtensions) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
-TEST(InstructionSetAssemblerTest, InstructionFirstMacroArgument) {
+TEST(InstructionAssemblerTest, InstructionFirstMacroArgument) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -374,7 +374,7 @@ TEST(InstructionSetAssemblerTest, InstructionFirstMacroArgument) {
   EXPECT_EQ(instruction.code, "UL;$Macro;");
 }
 
-TEST(InstructionSetAssemblerTest, InstructionSecondMacroArgument) {
+TEST(InstructionAssemblerTest, InstructionSecondMacroArgument) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -398,7 +398,7 @@ TEST(InstructionSetAssemblerTest, InstructionSecondMacroArgument) {
   EXPECT_EQ(instruction.code, "UL;$Macro;");
 }
 
-TEST(InstructionSetAssemblerTest, InstructionTwoMacroArgumentsAreInvalid) {
+TEST(InstructionAssemblerTest, InstructionTwoMacroArgumentsAreInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -416,7 +416,7 @@ TEST(InstructionSetAssemblerTest, InstructionTwoMacroArgumentsAreInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
-TEST(InstructionSetAssemblerTest, InstructionMacroArgumentSizeMismatch) {
+TEST(InstructionAssemblerTest, InstructionMacroArgumentSizeMismatch) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -435,7 +435,7 @@ TEST(InstructionSetAssemblerTest, InstructionMacroArgumentSizeMismatch) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(6, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MinimumValidMacro) {
+TEST(InstructionAssemblerTest, MinimumValidMacro) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -463,7 +463,7 @@ TEST(InstructionSetAssemblerTest, MinimumValidMacro) {
   EXPECT_EQ(code.code, "MOV(R0,R1);");
 }
 
-TEST(InstructionSetAssemblerTest, DuplicateMacroName) {
+TEST(InstructionAssemblerTest, DuplicateMacroName) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -480,7 +480,7 @@ TEST(InstructionSetAssemblerTest, DuplicateMacroName) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
-TEST(InstructionSetAssemblerTest, MacroWithWordParameter) {
+TEST(InstructionAssemblerTest, MacroWithWordParameter) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro(p) {
@@ -495,7 +495,7 @@ TEST(InstructionSetAssemblerTest, MacroWithWordParameter) {
   EXPECT_EQ(macro.param, ArgType::kWordReg);
 }
 
-TEST(InstructionSetAssemblerTest, MacroWithDwordParameter) {
+TEST(InstructionAssemblerTest, MacroWithDwordParameter) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro(P) {
@@ -510,7 +510,7 @@ TEST(InstructionSetAssemblerTest, MacroWithDwordParameter) {
   EXPECT_EQ(macro.param, ArgType::kDwordReg);
 }
 
-TEST(InstructionSetAssemblerTest, MacroWithWordReturn) {
+TEST(InstructionAssemblerTest, MacroWithWordReturn) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro:r {
@@ -528,7 +528,7 @@ TEST(InstructionSetAssemblerTest, MacroWithWordReturn) {
   EXPECT_EQ(code.ret, CpuCore::R4);
 }
 
-TEST(InstructionSetAssemblerTest, MacroWithDwordReturn) {
+TEST(InstructionAssemblerTest, MacroWithDwordReturn) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro:R {
@@ -546,7 +546,7 @@ TEST(InstructionSetAssemblerTest, MacroWithDwordReturn) {
   EXPECT_EQ(code.ret, CpuCore::D1);
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeRetWithoutMacroRet) {
+TEST(InstructionAssemblerTest, MacroCodeRetWithoutMacroRet) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -560,7 +560,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeRetWithoutMacroRet) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeNoRetWithMacroRet) {
+TEST(InstructionAssemblerTest, MacroCodeNoRetWithMacroRet) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro:r {
@@ -586,7 +586,7 @@ struct RetParamTest {
   std::string_view ret;
 };
 
-TEST(InstructionSetAssemblerTest, MacroCodeRetParamValid) {
+TEST(InstructionAssemblerTest, MacroCodeRetParamValid) {
   const RetParamTest kTests[] = {
       {"p", "r", "p"},
       {"P", "r", "p0"},
@@ -609,7 +609,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeRetParamValid) {
   }
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeRetParamInvalid) {
+TEST(InstructionAssemblerTest, MacroCodeRetParamInvalid) {
   const RetParamTest kTests[] = {
       {"p", "r", "P"}, {"p", "r", "p0"}, {"p", "r", "p1"}, {"p", "R", "p"},
       {"p", "R", "P"}, {"p", "R", "p0"}, {"p", "R", "p1"}, {"P", "r", "p"},
@@ -629,7 +629,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeRetParamInvalid) {
   }
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeInvalidWordRegReturn) {
+TEST(InstructionAssemblerTest, MacroCodeInvalidWordRegReturn) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro:r {
@@ -643,7 +643,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeInvalidWordRegReturn) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeInvalidDwordRegReturn) {
+TEST(InstructionAssemblerTest, MacroCodeInvalidDwordRegReturn) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro:R {
@@ -657,7 +657,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeInvalidDwordRegReturn) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, DuplicateMacroCodeSource) {
+TEST(InstructionAssemblerTest, DuplicateMacroCodeSource) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -672,7 +672,7 @@ TEST(InstructionSetAssemblerTest, DuplicateMacroCodeSource) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
 }
 
-TEST(InstructionSetAssemblerTest, DuplicateMacroCodeSourceIgnoreSpaces) {
+TEST(InstructionAssemblerTest, DuplicateMacroCodeSourceIgnoreSpaces) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -687,7 +687,7 @@ TEST(InstructionSetAssemblerTest, DuplicateMacroCodeSourceIgnoreSpaces) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeSourceInvalid) {
+TEST(InstructionAssemblerTest, MacroCodeSourceInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -701,7 +701,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeSourceInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeSourceMultipleArgsInvalid) {
+TEST(InstructionAssemblerTest, MacroCodeSourceMultipleArgsInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -715,7 +715,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeSourceMultipleArgsInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeSourceWithCodeValues) {
+TEST(InstructionAssemblerTest, MacroCodeSourceWithCodeValues) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -731,7 +731,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeSourceWithCodeValues) {
   EXPECT_EQ(code.source, "$V + $v");
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeSourceWithMacroArgInvalid) {
+TEST(InstructionAssemblerTest, MacroCodeSourceWithMacroArgInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -745,7 +745,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeSourceWithMacroArgInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest,
+TEST(InstructionAssemblerTest,
      MacroCodeSourceWithMultipleNonCodeValueArgsInvalid) {
   gb::ParseError error;
   std::string source = R"---(
@@ -760,7 +760,7 @@ TEST(InstructionSetAssemblerTest,
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, MacroBitsSetExplicitly) {
+TEST(InstructionAssemblerTest, MacroBitsSetExplicitly) {
   gb::ParseError error;
   std::string source = R"---(
     macro(bits:2) Macro {
@@ -782,7 +782,7 @@ TEST(InstructionSetAssemblerTest, MacroBitsSetExplicitly) {
   EXPECT_EQ(code.prefix.size, 2);
 }
 
-TEST(InstructionSetAssemblerTest, MacroBitsMinMax) {
+TEST(InstructionAssemblerTest, MacroBitsMinMax) {
   gb::ParseError error;
   std::string source = R"---(
     macro(bits:0) Macro {
@@ -837,7 +837,7 @@ TEST(InstructionSetAssemblerTest, MacroBitsMinMax) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, MacroBitsAutoSourceArgSizes) {
+TEST(InstructionAssemblerTest, MacroBitsAutoSourceArgSizes) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -863,7 +863,7 @@ TEST(InstructionSetAssemblerTest, MacroBitsAutoSourceArgSizes) {
   EXPECT_EQ(code.prefix.size, 2);
 }
 
-TEST(InstructionSetAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
+TEST(InstructionAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -897,7 +897,7 @@ TEST(InstructionSetAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
   EXPECT_EQ(code.prefix.size, 4);
 }
 
-TEST(InstructionSetAssemblerTest, MacroCodeSourceExceedsSetBits) {
+TEST(InstructionAssemblerTest, MacroCodeSourceExceedsSetBits) {
   gb::ParseError error;
   std::string source = R"---(
     macro(bits:2) Macro {
@@ -923,7 +923,7 @@ TEST(InstructionSetAssemblerTest, MacroCodeSourceExceedsSetBits) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, AllMicrocodeSyntaxValid) {
+TEST(InstructionAssemblerTest, AllMicrocodeSyntaxValid) {
   gb::ParseError error;
   std::string source = R"---(
     macro NoArg {
@@ -954,7 +954,7 @@ TEST(InstructionSetAssemblerTest, AllMicrocodeSyntaxValid) {
   EXPECT_EQ(instruction.code, "UL;$WithArg(R0);");
 }
 
-TEST(InstructionSetAssemblerTest, CallMacroInMacroInvalid) {
+TEST(InstructionAssemblerTest, CallMacroInMacroInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -967,7 +967,7 @@ TEST(InstructionSetAssemblerTest, CallMacroInMacroInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 17));
 }
 
-TEST(InstructionSetAssemblerTest, CallMacroWithNoMacroParameterInvalid) {
+TEST(InstructionAssemblerTest, CallMacroWithNoMacroParameterInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -984,7 +984,7 @@ TEST(InstructionSetAssemblerTest, CallMacroWithNoMacroParameterInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(6, 6));
 }
 
-TEST(InstructionSetAssemblerTest, CallMultipleMacrosInvalid) {
+TEST(InstructionAssemblerTest, CallMultipleMacrosInvalid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro1 {
@@ -1006,7 +1006,7 @@ TEST(InstructionSetAssemblerTest, CallMultipleMacrosInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(10, 6));
 }
 
-TEST(InstructionSetAssemblerTest, CallUndefinedMacro) {
+TEST(InstructionAssemblerTest, CallUndefinedMacro) {
   gb::ParseError error;
   std::string source = R"---(
     instruction TEST "$m" {
@@ -1021,7 +1021,7 @@ TEST(InstructionSetAssemblerTest, CallUndefinedMacro) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
 }
 
-TEST(InstructionSetAssemblerTest, NoCodeForMacroCode) {
+TEST(InstructionAssemblerTest, NoCodeForMacroCode) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -1034,7 +1034,7 @@ TEST(InstructionSetAssemblerTest, NoCodeForMacroCode) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionSetAssemblerTest, ErrorInMacroCodeCode) {
+TEST(InstructionAssemblerTest, ErrorInMacroCodeCode) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -1047,7 +1047,7 @@ TEST(InstructionSetAssemblerTest, ErrorInMacroCodeCode) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 17));
 }
 
-TEST(InstructionSetAssemblerTest, NoULForInstruction) {
+TEST(InstructionAssemblerTest, NoULForInstruction) {
   gb::ParseError error;
   std::string source = R"---(
     instruction TEST { MOV(R0,R1); }
@@ -1058,7 +1058,7 @@ TEST(InstructionSetAssemblerTest, NoULForInstruction) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
-TEST(InstructionSetAssemblerTest, ErrorInInstructionCode) {
+TEST(InstructionAssemblerTest, ErrorInInstructionCode) {
   gb::ParseError error;
   std::string source = R"---(
     instruction TEST { UL; INVALID; }
@@ -1069,7 +1069,7 @@ TEST(InstructionSetAssemblerTest, ErrorInInstructionCode) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 27));
 }
 
-TEST(InstructionSetAssemblerTest, ErrorLocationAfterMacroCorrect) {
+TEST(InstructionAssemblerTest, ErrorLocationAfterMacroCorrect) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
@@ -1092,7 +1092,7 @@ TEST(InstructionSetAssemblerTest, ErrorLocationAfterMacroCorrect) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(12, 6));
 }
 
-TEST(InstructionSetAssemblerTest,
+TEST(InstructionAssemblerTest,
      ErrorInsideMacroExpansionLocationAtMacroCall) {
   gb::ParseError error;
   std::string source = R"---(

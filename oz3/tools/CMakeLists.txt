@@ -4,7 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_tools_SOURCE
-  instruction_set_assembler.cc instruction_set_assembler.h
+  instruction_assembler.cc instruction_assembler.h
 )
 set(oz3_tools_DEPS
   gb_file
@@ -17,7 +17,7 @@ set(oz3_tools_LIBS
 )
 
 set(oz3_tools_TEST_SOURCE
-  instruction_set_assembler_test.cc
+  instruction_assembler_test.cc
 )
 
 gb_add_library(oz3_tools)
