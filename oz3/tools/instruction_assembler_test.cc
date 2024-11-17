@@ -701,18 +701,22 @@ TEST(InstructionAssemblerTest, MacroCodeSourceInvalid) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionAssemblerTest, MacroCodeSourceMultipleArgsInvalid) {
+TEST(InstructionAssemblerTest, MacroCodeSourceMultipleArgsValid) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
-      code "A,B" { MOV(R0,R1); }
+      code "A,$r3" { MOV(R0,R1); }
     }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
-  EXPECT_EQ(asm_set, nullptr);
-  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
-              AllOf(HasSubstr("invalid"), HasSubstr("a,b")));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  EXPECT_EQ(macro.size, 3);
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.arg.type, ArgType::kWordReg);
+  EXPECT_EQ(code.arg.size, 3);
 }
 
 TEST(InstructionAssemblerTest, MacroCodeSourceWithCodeValues) {

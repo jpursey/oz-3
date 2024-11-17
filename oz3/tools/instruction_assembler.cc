@@ -460,30 +460,29 @@ bool InstructionSetAssembler::AssembleMacroCodeSource(
   }
 
   auto args = result->GetItems("args");
-  if (args.size() != 1) {
-    return ErrorAt(parsed_macro_code, "Invalid macro code source: \"", source,
-                   "\". Macros can define only one instruction argument.");
-  }
-  auto types = args[0].GetItems("types");
-  bool has_macro_arg = false;
-  for (const auto& type : types) {
-    std::string_view type_name = type.GetToken().GetString();
-    char type_char = type_name[0];
-    if (type_char == 'v' || type_char == 'V') {
-      continue;
+  for (const auto& arg : args) {
+    auto types = arg.GetItems("types");
+    bool has_macro_arg = false;
+    for (const auto& type : types) {
+      std::string_view type_name = type.GetToken().GetString();
+      char type_char = type_name[0];
+      if (type_char == 'v' || type_char == 'V') {
+        continue;
+      }
+      if (has_macro_arg) {
+        return ErrorAt(
+            parsed_macro_code, "Invalid macro code source: \"", source,
+            "\". Only one non-value macro argument type ($r, $R, or $#) is "
+            "allowed for a macro.");
+      }
+      has_macro_arg = true;
+      if (type_char != 'r' && type_char != 'R' && type_char != '#') {
+        return ErrorAt(parsed_macro_code, "Invalid macro code source: \"",
+                       source, "\". $", type_name,
+                       " is not allowed for a macro arg.");
+      }
+      AssembleArgument(type_name, macro_code_def.arg);
     }
-    if (has_macro_arg) {
-      return ErrorAt(
-          parsed_macro_code, "Invalid macro code source: \"", source,
-          "\". Only one non-value macro argument type ($r, $R, or $#) is "
-          "allowed for a macro.");
-    }
-    has_macro_arg = true;
-    if (type_char != 'r' && type_char != 'R' && type_char != '#') {
-      return ErrorAt(parsed_macro_code, "Invalid macro code source: \"", source,
-                     "\". $", type_name, " is not allowed for a macro arg.");
-    }
-    AssembleArgument(type_name, macro_code_def.arg);
   }
 
   return true;
