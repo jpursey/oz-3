@@ -5,12 +5,14 @@
 
 set(oz3_tools_SOURCE
   instruction_assembler.cc instruction_assembler.h
+  instruction_def_exporter.cc instruction_def_exporter.h
 )
 set(oz3_tools_DEPS
   gb_file
   gb_parse
   oz3_core
 )
+
 set(oz3_tools_LIBS
   absl::check
   absl::log
@@ -21,3 +23,19 @@ set(oz3_tools_TEST_SOURCE
 )
 
 gb_add_library(oz3_tools)
+
+set(oz3ism_SOURCE
+  oz3ism.cc
+)
+
+set(oz3ism_DEPS
+  oz3_core
+  oz3_tools
+)
+
+set(oz3ism_LIBS
+  absl::check
+  absl::log
+)
+
+gb_add_executable(oz3ism)

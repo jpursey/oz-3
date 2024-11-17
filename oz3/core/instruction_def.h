@@ -83,10 +83,10 @@ uint8_t GetDefaultArgTypeSize(ArgType type);
 // Then the instruction encoding would be:
 //   0|r r r|# # # #
 struct Argument {
-  Argument() = default;
+  constexpr Argument() = default;
   Argument(ArgType in_type)
       : type(in_type), size(GetDefaultArgTypeSize(in_type)) {}
-  Argument(ArgType in_type, int in_size)
+  constexpr Argument(ArgType in_type, int in_size)
       : type(in_type), size(static_cast<uint8_t>(in_size)) {}
 
   bool IsValid() const;

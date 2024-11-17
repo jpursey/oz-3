@@ -1,0 +1,13 @@
+instruction NOP {
+  UL;
+}
+
+instruction HALT {
+  UL;
+  HALT;
+}
+
+instruction WAIT "$r" {
+  UL;
+  WAIT(a);
+}

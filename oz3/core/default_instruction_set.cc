@@ -12,32 +12,29 @@ namespace oz3 {
 
 namespace {
 
-const InstructionDef kDefaultInstructions[] = {
-    {.op = kOp_NOP, .op_name = "NOP", .code = "UL;"},
-    {.op = kOp_HALT,
-     .op_name = "HALT",
-     .code = "UL;"
-             "HALT;"},
-    {.op = kOp_WAIT,
+constexpr oz3::InstructionDef kInstructions[] = {
+    {.op = 0, .op_name = "NOP", .code = "UL;"},
+    {.op = 1, .op_name = "HALT", .code = "UL;HALT;"},
+    {.op = 2,
      .op_name = "WAIT",
-     .arg1 = ArgType::kWordReg,
-     .code = "UL;"
-             "WAIT(a);"},
+     .arg_source = "$r",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;WAIT(a);"},
 };
 
-const InstructionSetDef kDefaultInstructionSet = {
-    .instructions = kDefaultInstructions,
+constexpr oz3::InstructionSetDef kInstructionSet = {
+    .instructions = kInstructions,
 };
 
 }  // namespace
 
 const InstructionSetDef& GetDefaultInstructionSetDef() {
-  return kDefaultInstructionSet;
+  return kInstructionSet;
 }
 
 std::shared_ptr<const InstructionSet> GetDefaultInstructionSet() {
   static std::shared_ptr<const InstructionSet> instruction_set =
-      CompileInstructionSet(kDefaultInstructionSet);
+      CompileInstructionSet(kInstructionSet);
   return instruction_set;
 }
 
