@@ -124,22 +124,25 @@ macro(bits:5) StoreDword(P) {
   }
 }
 
-macro LoadSReg(p) {
-  code "BC" { MOV(p,BC); }
-  code "BS" { MOV(p,BS); }
-  code "BD" { MOV(p,BD); }
-  code "BE" { MOV(p,BE); }
-  code "FP" { MOV(p,FP); }
-  code "SP" { MOV(p,SP); }
-}
-
-macro StoreSReg(p) {
-  code "BC" { MOV(BC,p); }
-  code "BS" { MOV(BS,p); }
-  code "BD" { MOV(BD,p); }
-  code "BE" { MOV(BE,p); }
-  code "FP" { MOV(FP,p); }
-  code "SP" { MOV(SP,p); }
+macro MoveSReg {
+  code "$r, BC" { UL; MOV(m,BC); }
+  code "$r, BS" { UL; MOV(m,BS); }
+  code "$r, BD" { UL; MOV(m,BD); }
+  code "$r, BE" { UL; MOV(m,BE); }
+  code "$r, FP" { UL; MOV(m,FP); }
+  code "$r, SP" { UL; MOV(m,SP); }
+  code "BC, $r" { UL; MOV(BC,m); }
+  code "BS, $r" { UL; MOV(BS,m); }
+  code "BD, $r" { UL; MOV(BD,m); }
+  code "BE, $r" { UL; MOV(BE,m); }
+  code "FP, $r" { UL; MOV(FP,m); }
+  code "SP, $r" { UL; MOV(SP,m); }
+  code "BC, $v" { LD(C0); UL; MOV(BC,C0); }
+  code "BS, $v" { LD(C0); UL; MOV(BS,C0); }
+  code "BD, $v" { LD(C0); UL; MOV(BD,C0); }
+  code "BE, $v" { LD(C0); UL; MOV(BE,C0); }
+  code "FP, $v" { LD(C0); UL; MOV(FP,C0); }
+  code "SP, $v" { LD(C0); UL; MOV(SP,C0); }
 }
 
 instruction NOP {
@@ -172,10 +175,6 @@ instruction MOV.SD "$m, $R" {
   $StoreDword(B);
 }
 
-instruction MOV.LS "$r, $m" {
-  UL; $LoadSReg(a);
-}
-
-instruction MOV.SS "$m, $r" {
-  UL; $StoreSReg(b);
+instruction MOV.S "$m" {
+  $MoveSReg;
 }
