@@ -1,3 +1,39 @@
+macro LoadWord(p) {
+  code "$r" {
+    UL; MOV(p,m); 
+  }
+  code "($r)" {
+    UL; LKR(m); ADR(m); LD(p); UL;
+  }
+  code "($r + $v)" {
+    LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(p); UL;
+  }
+  code "$v" { 
+    LD(p); UL;
+  }
+  code "C($v)" {
+    LD(C0); UL; LK(CODE); ADR(C0); LD(p); UL;
+  }
+  code "S($v)" {
+    LD(C0); UL; LK(STACK); ADR(C0); LD(p); UL;
+  }
+  code "D($v)" {
+    LD(C0); UL; LK(DATA); ADR(C0); LD(p); UL;
+  }
+  code "E($v)" {
+    LD(C0); UL; LK(EXTRA); ADR(C0); LD(p); UL;
+  }
+  code "(SP)" {
+    UL; LKR(SP); ADR(SP); LD(p); UL;
+  }
+  code "(SP + $v)" {
+    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(p); UL;
+  }
+  code "(FP + $v)" {
+    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(p); UL;
+  }
+}
+
 instruction NOP {
   UL;
 }
@@ -10,4 +46,8 @@ instruction HALT {
 instruction WAIT "$r" {
   UL;
   WAIT(a);
+}
+
+instruction MOV.LW "$r, $m" {
+  $LoadWord(a);
 }
