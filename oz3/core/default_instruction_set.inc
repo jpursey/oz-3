@@ -266,6 +266,18 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg_source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 7},
      .code = "$MoveSReg;"},
+    {.op = 8,
+     .op_name = "MVQ.LW",
+     .arg_source = "$r, $#5",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg2 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;MOV(a,C1);"},
+    {.op = 9,
+     .op_name = "MVQ.LD",
+     .arg_source = "$R, $#5",
+     .arg1 = {oz3::ArgType::kDwordReg, 2},
+     .arg2 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;MOV(a0,C1);MOVI(a1,0);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

@@ -1,3 +1,33 @@
+################################################################################
+## NOP
+################################################################################
+
+instruction NOP {
+  UL;
+}
+
+################################################################################
+## HALT
+################################################################################
+
+instruction HALT {
+  UL;
+  HALT;
+}
+
+################################################################################
+## WAIT
+################################################################################
+
+instruction WAIT "$r" {
+  UL;
+  WAIT(a);
+}
+
+################################################################################
+## MOV
+################################################################################
+
 macro(bits:5) LoadWord(p) {
   code "$r" {
     UL; MOV(p,m); 
@@ -32,6 +62,10 @@ macro(bits:5) LoadWord(p) {
   code "E($v)" {
     LD(C0); UL; LK(EXTRA); ADR(C0); LD(p); UL;
   }
+}
+
+instruction MOV.LW "$r, $m" {
+  $LoadWord(a);
 }
 
 macro(bits:5) LoadDword(P) {
@@ -70,6 +104,10 @@ macro(bits:5) LoadDword(P) {
   }
 }
 
+instruction MOV.LD "$R, $m" {
+  $LoadDword(A);
+}
+
 macro(bits:5) StoreWord(p) {
   code "($r)" {
     UL; LKR(m); ADR(m); ST(p); UL;
@@ -95,6 +133,10 @@ macro(bits:5) StoreWord(p) {
   code "(FP + $v)" {
     LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p); UL;
   }
+}
+
+instruction MOV.SW "$m, $r" {
+  $StoreWord(b);
 }
 
 macro(bits:5) StoreDword(P) {
@@ -124,6 +166,10 @@ macro(bits:5) StoreDword(P) {
   }
 }
 
+instruction MOV.SD "$m, $R" {
+  $StoreDword(B);
+}
+
 macro MoveSReg {
   code "$r, BC" { UL; MOV(m,BC); }
   code "$r, BS" { UL; MOV(m,BS); }
@@ -145,36 +191,18 @@ macro MoveSReg {
   code "SP, $v" { LD(C0); UL; MOV(SP,C0); }
 }
 
-instruction NOP {
-  UL;
-}
-
-instruction HALT {
-  UL;
-  HALT;
-}
-
-instruction WAIT "$r" {
-  UL;
-  WAIT(a);
-}
-
-instruction MOV.LW "$r, $m" {
-  $LoadWord(a);
-}
-
-instruction MOV.LD "$R, $m" {
-  $LoadDword(A);
-}
-
-instruction MOV.SW "$m, $r" {
-  $StoreWord(b);
-}
-
-instruction MOV.SD "$m, $R" {
-  $StoreDword(B);
-}
-
 instruction MOV.S "$m" {
   $MoveSReg;
+}
+
+################################################################################
+## MVQ
+################################################################################
+
+instruction MVQ.LW "$r, $#5" {
+  UL; MOV(a,C1);
+}
+
+instruction MVQ.LD "$R, $#5" {
+  UL; MOV(a0,C1); MOVI(a1,0);
 }
