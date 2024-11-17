@@ -56,14 +56,15 @@ void InstructionDefExporter::ExportArgumentField(std::string field_name,
   if (arg.type == ArgType::kNone) {
     return;
   }
-  absl::StrAppend(&result_, ", .", field_name, "={", ArgTypeConstName(arg.type),
-                  ", ", arg.size, "}");
+  absl::StrAppend(&result_, ",\n     .", field_name, " = {",
+                  ArgTypeConstName(arg.type), ", ", arg.size, "}");
 }
 
 void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
                                              const MacroCodeDef& code) {
-  absl::StrAppend(&result_, "  {.source=\"", code.source, "\", .prefix={",
-                  code.prefix.value, ", ", code.prefix.size, "}");
+  absl::StrAppend(&result_, "    {.source = \"", code.source,
+                  "\",\n     .prefix = {", code.prefix.value, ", ",
+                  code.prefix.size, "}");
   ExportArgumentField("arg", code.arg);
   std::string_view ret_name;
   switch (macro.ret) {
@@ -85,36 +86,38 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
       break;
   }
   if (!ret_name.empty()) {
-    absl::StrAppend(&result_, ", .ret=CpuCore::", ret_name);
+    absl::StrAppend(&result_, ",\n     .ret = CpuCore::", ret_name);
   }
-  absl::StrAppend(&result_, ",\n   .code=");
+  absl::StrAppend(&result_, ",\n     .code = ");
   ExportMicrocode(code.code);
   absl::StrAppend(&result_, "},\n");
 }
 
 void InstructionDefExporter::ExportMacro(const MacroDef& macro) {
-  absl::StrAppend(&result_, "  {.name=\"", macro.name, "\"");
+  absl::StrAppend(&result_, "    {.name = \"", macro.name, "\"");
   if (macro.param != ArgType::kNone) {
-    absl::StrAppend(&result_, ", .param=", ArgTypeConstName(macro.param));
+    absl::StrAppend(&result_,
+                    ",\n     .param = ", ArgTypeConstName(macro.param));
   }
   if (macro.ret != ArgType::kNone) {
-    absl::StrAppend(&result_, ", .ret=", ArgTypeConstName(macro.ret));
+    absl::StrAppend(&result_, ",\n     .ret = ", ArgTypeConstName(macro.ret));
   }
-  absl::StrAppend(&result_, ", .size=", macro.size, ", .code=", const_prefix_,
-                  "MacroCode_", macro.name, "},\n");
+  absl::StrAppend(&result_, ",\n     .size = ", macro.size,
+                  ",\n     .code = ", const_prefix_, "MacroCode_", macro.name,
+                  "},\n");
 }
 
 void InstructionDefExporter::ExportInstruction(
     const InstructionDef& instruction) {
-  absl::StrAppend(&result_, "  {.op=", instruction.op, ", .op_name=\"",
-                  instruction.op_name, "\"");
+  absl::StrAppend(&result_, "    {.op = ", instruction.op,
+                  ",\n     .op_name = \"", instruction.op_name, "\"");
   if (!instruction.arg_source.empty()) {
-    absl::StrAppend(&result_, ", .arg_source =\"", instruction.arg_source,
+    absl::StrAppend(&result_, ",\n     .arg_source = \"", instruction.arg_source,
                     "\"");
   }
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);
-  absl::StrAppend(&result_, ",\n   .code=");
+  absl::StrAppend(&result_, ",\n     .code = ");
   ExportMicrocode(instruction.code);
   absl::StrAppend(&result_, "},\n");
 }
@@ -126,7 +129,7 @@ void InstructionDefExporter::ExportMicrocode(std::string_view code) {
   int size = 0;
   for (const auto& code : codes) {
     if (size + code.size() > 60) {
-      absl::StrAppend(&result_, "\"\n   \"");
+      absl::StrAppend(&result_, "\"\n             \"");
       size = 0;
     }
     absl::StrAppend(&result_, code, ";");
@@ -165,11 +168,11 @@ std::string InstructionDefExporter::Export() {
   absl::StrAppend(&result_, "constexpr oz3::InstructionSetDef ", const_prefix_,
                   "InstructionSet = {\n");
   if (has_instructions) {
-    absl::StrAppend(&result_, "  .instructions=", const_prefix_,
+    absl::StrAppend(&result_, "    .instructions=", const_prefix_,
                     "Instructions,\n");
   }
   if (has_macros) {
-    absl::StrAppend(&result_, "  .macros=", const_prefix_, "Macros\n");
+    absl::StrAppend(&result_, "    .macros=", const_prefix_, "Macros,\n");
   }
   absl::StrAppend(&result_, "};\n");
   return result_;
