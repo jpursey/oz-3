@@ -29,39 +29,17 @@ instruction WAIT "$r" {
 ################################################################################
 
 macro(bits:5) LoadWord(p) {
-  code "$r" {
-    UL; MOV(p,m); 
-  }
-  code "($r)" {
-    UL; LKR(m); ADR(m); LD(p); UL;
-  }
-  code "($r + $v)" {
-    LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(p); UL;
-  }
-  code "(SP)" {
-    UL; LKR(SP); ADR(SP); LD(p); UL;
-  }
-  code "(SP + $v)" {
-    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(p); UL;
-  }
-  code "(FP)" {
-    UL; LKR(FP); ADR(FP); LD(p); UL;
-  }
-  code "(FP + $v)" {
-    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(p); UL;
-  }
-  code "$v" { 
-    LD(p); UL;
-  }
-  code "S($v)" {
-    LD(C0); UL; LK(STACK); ADR(C0); LD(p); UL;
-  }
-  code "D($v)" {
-    LD(C0); UL; LK(DATA); ADR(C0); LD(p); UL;
-  }
-  code "E($v)" {
-    LD(C0); UL; LK(EXTRA); ADR(C0); LD(p); UL;
-  }
+  code "$r"         { UL; MOV(p,m); }
+  code "($r)"       { UL; LKR(m); ADR(m); LD(p); UL; }
+  code "($r + $v)"  { LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(p); UL; }
+  code "(SP)"       { UL; LKR(SP); ADR(SP); LD(p); UL; }
+  code "(SP + $v)"  { LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(p); UL; }
+  code "(FP)"       { UL; LKR(FP); ADR(FP); LD(p); UL; }
+  code "(FP + $v)"  { LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(p); UL; }
+  code "$v"         { LD(p); UL; }
+  code "S($v)"      { LD(C0); UL; LK(STACK); ADR(C0); LD(p); UL; }
+  code "D($v)"      { LD(C0); UL; LK(DATA); ADR(C0); LD(p); UL; }
+  code "E($v)"      { LD(C0); UL; LK(EXTRA); ADR(C0); LD(p); UL; }
 }
 
 instruction MOV.LW "$r, $m" {
@@ -73,7 +51,7 @@ macro(bits:5) LoadDword(P) {
     UL; MOV(p0,m0); MOV(p1,m1);
   }
   code "[$r]" {
-    UL; LKR(m); ADR(m); LD(p0); LD(p1); UL; 
+    UL; LKR(m); ADR(m); LD(p0); LD(p1); UL;
   }
   code "[$r + $v]" {
     LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(p0); LD(p1); UL;
@@ -90,7 +68,7 @@ macro(bits:5) LoadDword(P) {
   code "[FP + $v]" {
     LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(p0); LD(p1); UL;
   }
-  code "$V" { 
+  code "$V" {
     LD(p0); LD(p1); UL;
   }
   code "S[$v]" {
@@ -109,30 +87,15 @@ instruction MOV.LD "$R, $m" {
 }
 
 macro(bits:5) StoreWord(p) {
-  code "($r)" {
-    UL; LKR(m); ADR(m); ST(p); UL;
-  }
-  code "($r + $v)" {
-    LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); ST(p); UL;
-  }
-  code "S($v)" {
-    LD(C0); UL; LK(STACK); ADR(C0); ST(p); UL;
-  }
-  code "D($v)" {
-    LD(C0); UL; LK(DATA); ADR(C0); ST(p); UL;
-  }
-  code "E($v)" {
-    LD(C0); UL; LK(EXTRA); ADR(C0); ST(p); UL;
-  }
-  code "(SP)" {
-    UL; LKR(SP); ADR(SP); ST(p); UL;
-  }
-  code "(SP + $v)" {
-    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); ST(p); UL;
-  }
-  code "(FP + $v)" {
-    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p); UL;
-  }
+  code "($r)"       { UL; LKR(m); ADR(m); ST(p); UL; }
+  code "($r + $v)"  { LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); ST(p); UL; }
+  code "(SP)"       { UL; LKR(SP); ADR(SP); ST(p); UL; }
+  code "(SP + $v)"  { LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); ST(p); UL; }
+  code "(FP)"       { UL; LKR(FP); ADR(FP); ST(p); UL; }
+  code "(FP + $v)"  { LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p); UL; }
+  code "S($v)"      { LD(C0); UL; LK(STACK); ADR(C0); ST(p); UL; }
+  code "D($v)"      { LD(C0); UL; LK(DATA); ADR(C0); ST(p); UL; }
+  code "E($v)"      { LD(C0); UL; LK(EXTRA); ADR(C0); ST(p); UL; }
 }
 
 instruction MOV.SW "$m, $r" {
@@ -141,10 +104,22 @@ instruction MOV.SW "$m, $r" {
 
 macro(bits:5) StoreDword(P) {
   code "[$r]" {
-    UL; LKR(m); ADR(m); ST(p0); ST(p1); UL; 
+    UL; LKR(m); ADR(m); ST(p0); ST(p1); UL;
   }
   code "[$r + $v]" {
     LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); ST(p0); ST(p1); UL;
+  }
+  code "[SP]" {
+    UL; LKR(SP); ADR(SP); ST(p0); ST(p1); UL;
+  }
+  code "[SP + $v]" {
+    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); ST(p0); ST(p1); UL;
+  }
+  code "[FP]" {
+    UL; LKR(FP); ADR(FP); ST(p0); ST(p1); UL;
+  }
+  code "[FP + $v]" {
+    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p0); ST(p1); UL;
   }
   code "S[$v]" {
     LD(C0); UL; LK(STACK); ADR(C0); ST(p0); ST(p1); UL;
@@ -154,15 +129,6 @@ macro(bits:5) StoreDword(P) {
   }
   code "E[$v]" {
     LD(C0); UL; LK(EXTRA); ADR(C0); ST(p0); ST(p1); UL;
-  }
-  code "[SP]" {
-    UL; LKR(SP); ADR(SP); ST(p0); ST(p1); UL;
-  }
-  code "[SP + $v]" {
-    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); ST(p0); ST(p1); UL;
-  }
-  code "[FP + $v]" {
-    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p0); ST(p1); UL;
   }
 }
 
@@ -205,4 +171,112 @@ instruction MVQ.LW "$r, $#5" {
 
 instruction MVQ.LD "$R, $#5" {
   UL; MOV(a0,C1); MOVI(a1,0);
+}
+
+################################################################################
+## SWP
+################################################################################
+
+macro SwapWord(p) {
+  code "$r" {
+    UL;
+    MOV(C0,p); MOV(p,m); MOV(m,C0);
+  }
+  code "($r)" {
+    UL;
+    MOV(C0,p); LKR(m); ADR(m); LD(p); STP(C0); UL;
+  }
+  code "($r + $v)" {
+    LD(C2); UL; ADD(C2,m);
+    MOV(C0,p); LKR(m); ADR(C2); LD(p); STP(C0); UL;
+  }
+  code "(SP)" {
+    UL;
+    MOV(C0,p); LKR(SP); ADR(SP); LD(p); STP(C0); UL;
+  }
+  code "(SP + $v)" {
+    LD(C2); UL; ADD(C2,SP);
+    MOV(C0,p); LKR(SP); ADR(C2); LD(p); STP(C0); UL;
+  }
+  code "(FP)" {
+    UL;
+    MOV(C0,p); LKR(FP); ADR(FP); LD(p); STP(C0); UL;
+  }
+  code "(FP + $v)" {
+    LD(C2); UL; ADD(C2,FP);
+    MOV(C0,p); LKR(FP); ADR(C2); LD(p); STP(C0); UL;
+  }
+  code "S($v)" {
+    LD(C2); UL;
+    MOV(C0,p); LK(STACK); ADR(C2); LD(p); STP(C0); UL;
+  }
+  code "D($v)" {
+    LD(C2); UL;
+    MOV(C0,p); LK(DATA); ADR(C2); LD(p); STP(C0); UL;
+  }
+  code "E($v)" {
+    LD(C2); UL;
+    MOV(C0,p); LK(EXTRA); ADR(C2); LD(p); STP(C0); UL;
+  }
+}
+
+instruction SWP.W "$r, $m" {
+  $SwapWord(a);
+}
+
+macro SwapDword(P) {
+  code "$R" {
+    UL;
+    MOV(C0,p0); MOV(p0,m0); MOV(m0,C0);
+    MOV(C1,p1); MOV(p1,m1); MOV(m1,C1);
+  }
+  code "($r)" {
+    UL;
+    MOV(C0,p0); MOV(C1,p1); 
+    LKR(m); ADR(m); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "($r + $v)" {
+    LD(C2); UL; ADD(C2,m);
+    MOV(C0,p0); MOV(C1,p1);
+    LKR(m); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "(SP)" {
+    UL;
+    MOV(C0,p0); MOV(C1,p1);
+    LKR(SP); ADR(SP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "(SP + $v)" {
+    LD(C2); UL; ADD(C2,SP);
+    MOV(C0,p0); MOV(C1,p1);
+    LKR(SP); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "(FP)" {
+    UL;
+    MOV(C0,p0); MOV(C1,p1);
+    LKR(FP); ADR(FP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "(FP + $v)" {
+    LD(C2); UL; ADD(C2,FP);
+    MOV(C0,p0); MOV(C1,p1);
+    LKR(FP); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "S($v)" {
+    LD(C2); UL;
+    MOV(C0,p0); MOV(C1,p1);
+    LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "D($v)" {
+    LD(C2); UL;
+    MOV(C0,p0); MOV(C1,p1);
+    LK(DATA); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+  code "E($v)" {
+    LD(C2); UL;
+    MOV(C0,p0); MOV(C1,p1);
+    LK(EXTRA); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+  }
+}
+
+instruction SWP.D "$R, $m" {
+  $SwapDword(A);
 }
