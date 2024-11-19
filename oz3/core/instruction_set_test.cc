@@ -1450,7 +1450,7 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
           Microcode{.op = kMicro_MOV, .arg1 = -4, .arg2 = CpuCore::R7}));
 }
 
-TEST(MicrocodeTest, DefaultCodeSizeIsOne) {
+TEST(InstructionSetTest, DefaultCodeSizeIsOne) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
   InstructionError error;
@@ -1462,7 +1462,7 @@ TEST(MicrocodeTest, DefaultCodeSizeIsOne) {
   EXPECT_EQ(decoded.size, 1);
 }
 
-TEST(MicrocodeTest, LoadDuringFetchIncreasesCodeSize) {
+TEST(InstructionSetTest, LoadDuringFetchIncreasesCodeSize) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);UL;"};
   InstructionError error;
@@ -1474,7 +1474,7 @@ TEST(MicrocodeTest, LoadDuringFetchIncreasesCodeSize) {
   EXPECT_EQ(decoded.size, 2);
 }
 
-TEST(MicrocodeTest, TwoLoadsDuringFetch) {
+TEST(InstructionSetTest, TwoLoadsDuringFetch) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);LD(C1);UL;"};
   InstructionError error;
@@ -1486,7 +1486,7 @@ TEST(MicrocodeTest, TwoLoadsDuringFetch) {
   EXPECT_EQ(decoded.size, 3);
 }
 
-TEST(MicrocodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
+TEST(InstructionSetTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {.op = kOp_TEST,
                                     .op_name = "TEST",
                                     .code = "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
@@ -1499,7 +1499,7 @@ TEST(MicrocodeTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
   EXPECT_EQ(decoded.size, 1);
 }
 
-TEST(MicrocodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
+TEST(InstructionSetTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "ADR(C0);LD(C0);UL;"};
   InstructionError error;
@@ -1511,7 +1511,36 @@ TEST(MicrocodeTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
   EXPECT_EQ(decoded.size, 1);
 }
 
-TEST(MicrocodeTest, MacroChangesCodeSize) {
+TEST(InstructionSetTest, EmptyMacroCodeInInstruction) {
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
+      {.source = "R1", .prefix = {1, 1}, .code = ""}};
+  MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
+  InstructionDef instruction_def = {.op = kOp_TEST,
+                                    .op_name = "TEST",
+                                    .arg1 = {ArgType::kMacro, 1},
+                                    .code =
+                                        "UL;"
+                                        "@Before:JC(NZ,@After);"
+                                        "@At:$Macro;"
+                                        "@After:JC(NS,@At);"
+                                        "JC(NC,@Before);"};
+  InstructionError instruction_error;
+  auto instruction_set = CompileInstructionSet({{instruction_def}, {macro_def}},
+                                               &instruction_error);
+  ASSERT_EQ(instruction_error.message, "");
+  DecodedInstruction decoded;
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(1), decoded));
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL},
+          Microcode{.op = kMicro_JC, .arg1 = CpuCore::ZShift, .arg2 = 0},
+          Microcode{.op = kMicro_JC, .arg1 = CpuCore::SShift, .arg2 = -1},
+          Microcode{.op = kMicro_JC, .arg1 = CpuCore::CShift, .arg2 = -3}));
+}
+
+TEST(InstructionSetTest, MacroChangesCodeSize) {
   const MacroCodeDef macro_code_defs[] = {
       {.source = "ONE", .prefix = {0, 2}, .code = "LD(R0);"},
       {.source = "TWO", .prefix = {1, 2}, .code = "LD(R0);LD(R1);"},
@@ -1536,7 +1565,7 @@ TEST(MicrocodeTest, MacroChangesCodeSize) {
   }
 }
 
-TEST(MicrocodeTest, UndefinedMacroOptionsResultInNop) {
+TEST(InstructionSetTest, UndefinedMacroOptionsResultInNop) {
   const MacroCodeDef macro_code_defs[] = {
       {.source = "ONE", .prefix = {0, 2}, .code = "MOV(R0,R1);"},
       {.source = "TWO", .prefix = {1, 2}, .code = "MOV(R0,R2);"},
@@ -1556,7 +1585,7 @@ TEST(MicrocodeTest, UndefinedMacroOptionsResultInNop) {
   EXPECT_THAT(decoded.code, ElementsAre(Microcode{.op = kMicro_UL}));
 }
 
-TEST(MicrocodeTest, MacroArgumentsShareSubInstructions) {
+TEST(InstructionSetTest, MacroArgumentsShareSubInstructions) {
   const MacroCodeDef macro_code_defs[] = {
       {.source = "DREG",
        .prefix = {0, 1},

@@ -1033,9 +1033,13 @@ TEST(InstructionAssemblerTest, NoCodeForMacroCode) {
     }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
-  EXPECT_EQ(asm_set, nullptr);
-  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()), HasSubstr("code"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.code.size(), 1);
+  auto code = macro.code[0];
+  EXPECT_EQ(code.source, "X");
+  EXPECT_EQ(code.code, "");
 }
 
 TEST(InstructionAssemblerTest, ErrorInMacroCodeCode) {

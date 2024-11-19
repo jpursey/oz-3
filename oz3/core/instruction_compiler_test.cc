@@ -1797,8 +1797,8 @@ TEST(InstructionCompilerTest, MacroWithNoCode) {
   InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
   std::string error;
-  EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
-  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("microcode"));
+  EXPECT_TRUE(CompileForTest(instruction_def, macro_def, error));
+  EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, MacroWithMaxCode) {

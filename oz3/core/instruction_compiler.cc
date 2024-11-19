@@ -106,6 +106,7 @@ class InstructionCompiler {
     uint16_t code_size = 0;
     Argument arg;
     int8_t ret = 0;  // Return register index (or -1 for arg).
+    bool defined = false;  // True if the sub-macro is within the macro.
   };
 
   struct Macro {
@@ -320,9 +321,6 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
 
     state_.src_code =
         absl::StrSplit(code_def.code, ';', absl::SkipWhitespace());
-    if (state_.src_code.empty()) {
-      return Error("No microcode");
-    }
     if (!ExtractLabels()) {
       return false;
     }
@@ -351,6 +349,7 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
            kMaxInstructionMicrocodes);
     sub_macro.code_size =
         static_cast<uint8_t>(macro_codes_.size() - sub_macro.code_start);
+    sub_macro.defined = true;
 
     for (int i = 0; i < num_sub_macros; ++i) {
       sub_macros_[start_sub_index + i] = sub_macro;
@@ -661,7 +660,7 @@ bool InstructionCompiler::CompileSubInstruction() {
   // If there was no sub-macro code, then this is not a valid sub-instruction.
   // We simply don't store any code, and it will automatically become a NOP if
   // it ever gets decoded.
-  if (state_.sub_macro->code_size == 0) {
+  if (!state_.sub_macro->defined) {
     return true;
   }
 
@@ -728,7 +727,7 @@ bool InstructionCompiler::CompileSubInstruction() {
         return Error("Macro size increase too large for relative address");
       }
       state_.microcode->arg1 += macro_size_increase;
-      DCHECK(state_.microcode->arg1 > 0);
+      DCHECK(state_.microcode->arg1 >= 0);
     }
     if (def->arg2 == MicroArgType::kAddress &&
         k + state_.microcode->arg2 >= pre_size) {
@@ -736,7 +735,7 @@ bool InstructionCompiler::CompileSubInstruction() {
         return Error("Macro size increase too large for relative address");
       }
       state_.microcode->arg2 += macro_size_increase;
-      DCHECK(state_.microcode->arg2 > 0);
+      DCHECK(state_.microcode->arg2 >= 0);
     }
   }
   for (int k = 0; k < macro_code_size; ++k) {
