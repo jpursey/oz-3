@@ -330,7 +330,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .code = "UL;"},
     {.op = 1,
      .op_name = "HALT",
-     .code = "UL;HALT;"},
+     .code = "UL;ADDI(IP,-1);HALT;"},
     {.op = 2,
      .op_name = "WAIT",
      .arg_source = "$r",
@@ -389,6 +389,17 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$SwapDword(A);"},
+    {.op = 12,
+     .op_name = "NEG.W",
+     .arg_source = "$r",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;SUB(C0,a);MSC(CO);MSR(ZSCO,ZSCO);MOV(a,C0);"},
+    {.op = 13,
+     .op_name = "NEG.D",
+     .arg_source = "$R",
+     .arg1 = {oz3::ArgType::kDwordReg, 2},
+     .code = "UL;SUB(C0,a0);MSR(Z,Z);SBC(C1,a1);MSC(CO);MSR(ZSCO,_SCO);"
+             "MOV(a0,C0);MOV(a1,C1);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

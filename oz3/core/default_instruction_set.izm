@@ -1,5 +1,10 @@
 ################################################################################
 ## NOP
+##
+## Cycles: 3
+## ZSCO: ----
+##
+## Minimal instruction that does nothing.
 ################################################################################
 
 instruction(opcode:0) NOP {
@@ -8,15 +13,37 @@ instruction(opcode:0) NOP {
 
 ################################################################################
 ## HALT
+##
+## Cycles: 3
+## ZSCO: ----
+##
+## Puts the core into the IDLE state. Interrupts will still be triggered and
+## executed, but the core will stay idle until it is reset to a new code
+## location.
 ################################################################################
 
 instruction HALT {
   UL;
-  HALT;
+  ADDI(IP,-1);  # Reset IP so core stays halted after interrupt
+  HALT;         # Put the core into idle state.
 }
 
 ################################################################################
-## WAIT
+## WAIT <reg>
+##
+## Cycles: 3+ ()
+## ZSCO: ---X
+##
+## Puts the core into the WAIT state for at least the number of cycles
+## specified. Interrupts may still be executed during the WAIT state, but
+## cannot recursively call WAIT themselves.
+##
+## After a successful WAIT execution (it was not called recursively from within
+## an interrupt), the provided register will be update with the number of
+## additional cycles taken. This may be longer than the requested time due to
+## an interrupt occurring or the core getting locked.
+##
+## On failure, the O flag is set. Otherwise it is cleared.
 ################################################################################
 
 instruction WAIT "$r" {
@@ -25,7 +52,20 @@ instruction WAIT "$r" {
 }
 
 ################################################################################
-## MOV
+## MOV <dst> <src>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Variants:
+##    MOV.LW <reg> <word-value>
+##    MOV.LD <dreg> <dword-value>
+##    MOV.SW <word-address> <reg>
+##    MOV.SD <dword-address> <dreg>
+##    MOV.S  <sreg> <reg>
+##    MOV.S  <reg> <sreg>
+##
+## Moves (copies) the value from from <src> into <dst>.
 ################################################################################
 
 macro(bits:5) LoadWord(p) {
@@ -162,7 +202,16 @@ instruction MOV.S "$m" {
 }
 
 ################################################################################
-## MVQ
+## MVQ <dst> <value>
+##
+## Cycles: 4-5
+## ZSCO: ----
+##
+## Variants:
+##    MVQ.LW <reg> <0..31>
+##    MVQ.LD <dreg> <0..31>
+##
+## Moves the immediate value in the range [0,31] to the specified register.
 ################################################################################
 
 instruction MVQ.LW "$r, $#5" {
@@ -174,7 +223,19 @@ instruction MVQ.LD "$R, $#5" {
 }
 
 ################################################################################
-## SWP
+## SWP <a> <b>
+##
+## Cycles: 6+
+## ZSCO: ----
+##
+## Variants:
+##    SWP.W <reg> <reg>
+##    SWP.W <reg> <word-address>
+##    SWP.D <dreg> <dreg>
+##    SWP.D <dreg> <dword-address>
+##
+## Swaps the contents of the specified register <a> with a register or memory
+## address value <b>
 ################################################################################
 
 macro SwapWord(p) {
@@ -279,4 +340,41 @@ macro SwapDword(P) {
 
 instruction SWP.D "$R, $m" {
   $SwapDword(A);
+}
+
+
+################################################################################
+## NEG <register>
+##
+## Cycles: 5-9
+## ZSCO: XX00
+##
+## Variants:
+##    NEG.W <reg>
+##    NEG.D <dreg>
+##
+## Negates the value in the specified register.
+################################################################################
+
+instruction NEG.W "$r" {
+  UL;
+  # The contract is to always clear the CO flags, which SUB won't do, so we need
+  # to clear them explicitly before returning the status
+  SUB(C0,a); MSC(CO); MSR(ZSCO,ZSCO);
+
+  # Copy result back to the register
+  MOV(a,C0);
+}
+
+instruction NEG.D "$R" {
+  UL;
+
+  # Proactively set zero bit here based on low-order result.
+  SUB(C0,a0); MSR(Z,Z); 
+  
+  # Clear the zero bit (but don't set it) based on high-order result.
+  SBC(C1,a1); MSC(CO); MSR(ZSCO,_SCO);
+  
+  # Copy result back to the register
+  MOV(a0,C0); MOV(a1,C1);
 }
