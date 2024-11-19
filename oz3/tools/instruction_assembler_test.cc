@@ -577,43 +577,55 @@ TEST(InstructionAssemblerTest, MacroCodeNoRetWithMacroRet) {
 struct RetParamTest {
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const RetParamTest& test) {
-    absl::Format(&sink, "RetParamTest(%s, %s, %s)", test.param_type,
-                 test.ret_type, test.ret);
+    absl::Format(&sink, "RetParamTest(%s, %s, %s, %s)", test.param_type,
+                 test.ret_type, test.arg_type, test.ret);
   }
 
   std::string_view param_type;
   std::string_view ret_type;
+  std::string_view arg_type;
   std::string_view ret;
 };
 
 TEST(InstructionAssemblerTest, MacroCodeRetParamValid) {
   const RetParamTest kTests[] = {
-      {"p", "r", "p"},
-      {"P", "r", "p0"},
-      {"P", "r", "p1"},
-      {"P", "R", "P"},
+      {"p", "r", "X", "p"},   {"P", "r", "X", "p0"},  {"P", "r", "X", "p1"},
+      {"P", "R", "X", "P"},   {"p", "r", "$r", "m"},  {"p", "r", "$R", "m0"},
+      {"p", "r", "$R", "m1"}, {"p", "r", "$#3", "i"}, {"p", "R", "$R", "M"},
   };
 
   for (const auto& test : kTests) {
     gb::ParseError error;
-    std::string source =
-        absl::StrCat("macro Macro(", test.param_type, "):", test.ret_type,
-                     " { code:", test.ret, " \"X\" { MOV(R0,R1); } }");
+    std::string source = absl::StrCat(
+        "macro Macro(", test.param_type, "):", test.ret_type,
+        " { code:", test.ret, " \"", test.arg_type, "\" { MOV(R0,R1); } }");
     auto asm_set = AssembleInstructionSet(source, &error);
     ASSERT_NE(asm_set, nullptr) << test << " Error: " << error.FormatMessage();
     ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1) << test;
     auto macro = asm_set->GetInstructionSetDef().macros[0];
     ASSERT_EQ(macro.code.size(), 1) << test;
     auto code = macro.code[0];
-    EXPECT_EQ(code.ret, (test.ret == "p1" ? CpuCore::MP1 : CpuCore::MP0)) << test;
+    if (CpuCore::GetVirtualDwordRegFromName(test.ret) != CpuCore::kInvalidReg) {
+      EXPECT_EQ(code.ret, CpuCore::GetVirtualDwordRegFromName(test.ret))
+          << test;
+    } else {
+      EXPECT_EQ(code.ret, CpuCore::GetVirtualWordRegFromName(test.ret)) << test;
+    }
   }
 }
 
 TEST(InstructionAssemblerTest, MacroCodeRetParamInvalid) {
   const RetParamTest kTests[] = {
-      {"p", "r", "P"}, {"p", "r", "p0"}, {"p", "r", "p1"}, {"p", "R", "p"},
-      {"p", "R", "P"}, {"p", "R", "p0"}, {"p", "R", "p1"}, {"P", "r", "p"},
-      {"P", "r", "P"}, {"P", "R", "p"},  {"P", "R", "p0"}, {"P", "R", "p1"},
+      {"p", "r", "X", "P"},  {"p", "r", "X", "p0"},  {"p", "r", "X", "p1"},
+      {"p", "R", "X", "p"},  {"p", "R", "X", "P"},   {"p", "R", "X", "p0"},
+      {"p", "R", "X", "p1"}, {"P", "r", "X", "p"},   {"P", "r", "X", "P"},
+      {"P", "R", "X", "p"},  {"P", "R", "X", "p0"},  {"P", "R", "X", "p1"},
+      {"p", "r", "$r", "M"}, {"p", "r", "$r", "m0"}, {"p", "r", "$r", "m0"},
+      {"p", "r", "$R", "M"}, {"p", "R", "$r", "m"},  {"p", "R", "$r", "m0"},
+      {"p", "R", "$r", "m1"}, {"p", "R", "$r", "M"},  {"p", "R", "$R", "m"},
+      {"p", "R", "$R", "m0"}, {"p", "R", "$R", "m1"}, {"p", "r", "$r", "i"},
+      {"p", "r", "$R", "i"},  {"p", "R", "$#3", "i"}, {"p", "r", "$#3", "m"},
+      {"p", "r", "$#3", "m0"}, {"p", "r", "$#3", "m1"}, {"p", "R", "$#3", "M"},
   };
   for (const auto& test : kTests) {
     gb::ParseError error;
@@ -1100,8 +1112,7 @@ TEST(InstructionAssemblerTest, ErrorLocationAfterMacroCorrect) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(12, 6));
 }
 
-TEST(InstructionAssemblerTest,
-     ErrorInsideMacroExpansionLocationAtMacroCall) {
+TEST(InstructionAssemblerTest, ErrorInsideMacroExpansionLocationAtMacroCall) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {

@@ -149,8 +149,10 @@ struct MacroCodeDef {
 
   // The return register index for the macro. This must be a register that
   // conforms to the return type of the macro. To return the macro parameter
-  // itself, use CpuCore::MP, CpuCore::MP0, or CpuCore::MP1. If the macro does not
-  // have a return type, this is ignored.
+  // itself, use CpuCore::MP, CpuCore::MP0, or CpuCore::MP1. To return the macro
+  // argument, use CpuCore::MM, CpuCore::MM0, CpuCore::MM1, or CpuCore::MI
+  // (depending on the argument type and size). If the macro does not have a
+  // return type, this is ignored.
   int8_t ret = 0;
 
   // The microcode source for the macro.

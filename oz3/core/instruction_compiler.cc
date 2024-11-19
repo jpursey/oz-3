@@ -105,7 +105,7 @@ class InstructionCompiler {
     uint16_t code_start = 0;
     uint16_t code_size = 0;
     Argument arg;
-    int8_t ret = 0;  // Return register index (or -1 for arg).
+    int8_t ret = 0;        // Return register index (or -1 for arg).
     bool defined = false;  // True if the sub-macro is within the macro.
   };
 
@@ -177,7 +177,7 @@ class InstructionCompiler {
   bool CompileMicrocode();
   bool CompileMicroArg(std::string_view arg_name, MicroArgType arg_type,
                        int8_t& arg);
-  bool ValidateMacroReturnRegister(int8_t ret);
+  bool ValidateMacroReturnRegister(ArgType arg_type, int8_t ret);
   bool ValidateMicrocode(int index);
   bool ValidateMicroArg(int index, MicroArgType arg_type, int8_t arg);
 
@@ -313,7 +313,7 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
       return Error(
           "Invalid macro argument (size is probably invalid for type)");
     }
-    if (!ValidateMacroReturnRegister(code_def.ret)) {
+    if (!ValidateMacroReturnRegister(code_def.arg.type, code_def.ret)) {
       return false;
     }
     SubMacro sub_macro = {.arg = code_def.arg, .ret = code_def.ret};
@@ -693,12 +693,20 @@ bool InstructionCompiler::CompileSubInstruction() {
     macro_return0 = macro_param0;
   } else if (macro_return0 == CpuCore::MP1) {
     macro_return0 = macro_param1;
+  } else if (macro_return0 == CpuCore::MM0) {
+    macro_return0 = CpuCore::A0 - arg_offset;
+  } else if (macro_return0 == CpuCore::MM1) {
+    macro_return0 = CpuCore::A1 - arg_offset;
+  } else if (macro_return0 == CpuCore::MI) {
+    macro_return0 = CpuCore::C0 + arg_offset;
   }
   int8_t macro_return1 = state_.sub_macro->ret;
   if (macro_return1 >= 0) {
     macro_return1 += 1;
   } else if (macro_return1 == CpuCore::MP) {
     macro_return1 = macro_param1;
+  } else if (macro_return1 == CpuCore::MM) {
+    macro_return1 = CpuCore::A1 - arg_offset;
   }
 
   state_.microcodes.assign(state_.pre_codes.begin(), state_.pre_codes.end());
@@ -1272,7 +1280,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
   return Error("Unhandled argument type!");
 }
 
-bool InstructionCompiler::ValidateMacroReturnRegister(int8_t ret) {
+bool InstructionCompiler::ValidateMacroReturnRegister(ArgType arg_type,
+                                                      int8_t ret) {
   DCHECK(macro_def_ != nullptr);
   if (macro_def_->ret == ArgType::kNone) {
     if (ret != 0) {
@@ -1291,6 +1300,16 @@ bool InstructionCompiler::ValidateMacroReturnRegister(int8_t ret) {
     if (ret == CpuCore::MP1 && macro_def_->param == ArgType::kDwordReg) {
       return true;
     }
+    if (ret == CpuCore::MM0 &&
+        (arg_type == ArgType::kWordReg || arg_type == ArgType::kDwordReg)) {
+      return true;
+    }
+    if (ret == CpuCore::MM1 && arg_type == ArgType::kDwordReg) {
+      return true;
+    }
+    if (ret == CpuCore::MI && arg_type == ArgType::kImmediate) {
+      return true;
+    }
     return Error("Invalid word register '", CpuCore::GetVirtualWordRegName(ret),
                  "' for return type ", ArgTypeToString(macro_def_->ret));
   } else if (macro_def_->ret == ArgType::kDwordReg) {
@@ -1298,6 +1317,9 @@ bool InstructionCompiler::ValidateMacroReturnRegister(int8_t ret) {
       return true;
     }
     if (ret == CpuCore::MP && macro_def_->param == ArgType::kDwordReg) {
+      return true;
+    }
+    if (ret == CpuCore::MM && arg_type == ArgType::kDwordReg) {
       return true;
     }
     return Error("Invalid dword register '",

@@ -409,28 +409,27 @@ bool InstructionSetAssembler::AssembleMacroCode(
   } else if (ret.empty()) {
     return ErrorAt(parsed_macro_code, "Macro code missing return value");
   } else if (macro_def.ret == ArgType::kWordReg) {
-    if (macro_def.param == ArgType::kWordReg && ret == "p") {
-      macro_code_def.ret = CpuCore::MP;
-    } else if (macro_def.param == ArgType::kDwordReg && ret == "p0") {
-      macro_code_def.ret = CpuCore::MP0;
-    } else if (macro_def.param == ArgType::kDwordReg && ret == "p1") {
-      macro_code_def.ret = CpuCore::MP1;
+    // There is ambiguitiy between "p" and "m" for word registers, and "p0" and
+    // "m0" for dword registers. We need to check the macro definition to
+    // determine which is valid, as the Compile step cannot determine the
+    // difference as they result in the same value.
+    if ((ret == "p" && macro_def.param != ArgType::kWordReg) ||
+        (ret == "p0" && macro_def.param != ArgType::kDwordReg) ||
+        (ret == "m" && macro_code_def.arg.type != ArgType::kWordReg) ||
+        (ret == "m0" && macro_code_def.arg.type != ArgType::kDwordReg)) {
+      macro_code_def.ret = CpuCore::kInvalidReg;
     } else {
-      macro_code_def.ret = CpuCore::GetWordRegFromName(ret);
-      if (macro_code_def.ret == CpuCore::kInvalidReg) {
-        return ErrorAt(parsed_macro_code,
-                       "Invalid macro code return word register: ", ret);
-      }
+      macro_code_def.ret = CpuCore::GetVirtualWordRegFromName(ret);
+    }
+    if (macro_code_def.ret == CpuCore::kInvalidReg) {
+      return ErrorAt(parsed_macro_code,
+                     "Invalid macro code return word register: ", ret);
     }
   } else if (macro_def.ret == ArgType::kDwordReg) {
-    if (macro_def.param == ArgType::kDwordReg && ret == "P") {
-      macro_code_def.ret = CpuCore::MP;
-    } else {
-      macro_code_def.ret = CpuCore::GetDwordRegFromName(ret);
-      if (macro_code_def.ret == CpuCore::kInvalidReg) {
-        return ErrorAt(parsed_macro_code,
-                       "Invalid macro code return dword register: ", ret);
-      }
+    macro_code_def.ret = CpuCore::GetVirtualDwordRegFromName(ret);
+    if (macro_code_def.ret == CpuCore::kInvalidReg) {
+      return ErrorAt(parsed_macro_code,
+                     "Invalid macro code return dword register: ", ret);
     }
   }
 

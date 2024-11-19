@@ -68,21 +68,17 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
   ExportArgumentField("arg", code.arg);
   std::string_view ret_name;
   switch (macro.ret) {
-    case ArgType::kWordReg:
-      if (code.ret == CpuCore::MP0) {
-        ret_name = (macro.param == ArgType::kWordReg ? "P" : "P0");
-      } else if (code.ret == CpuCore::MP1) {
-        ret_name = "P1";
+    case ArgType::kWordReg: {
+      std::pair<std::string_view, std::string_view> macro_ret =
+          absl::StrSplit(CpuCore::GetVirtualWordRegName(code.ret), '/');
+      if (macro_ret.second.empty() || macro.param == ArgType::kWordReg) {
+        ret_name = macro_ret.first;
       } else {
-        ret_name = CpuCore::GetWordRegName(code.ret);
+        ret_name = macro_ret.second;
       }
-      break;
+    } break;
     case ArgType::kDwordReg:
-      if (code.ret == CpuCore::MP) {
-        ret_name = "P";
-      } else {
-        ret_name = CpuCore::GetDwordRegName(code.ret);
-      }
+      ret_name = CpuCore::GetVirtualDwordRegName(code.ret);
       break;
   }
   if (!ret_name.empty()) {
@@ -112,8 +108,8 @@ void InstructionDefExporter::ExportInstruction(
   absl::StrAppend(&result_, "    {.op = ", instruction.op,
                   ",\n     .op_name = \"", instruction.op_name, "\"");
   if (!instruction.arg_source.empty()) {
-    absl::StrAppend(&result_, ",\n     .arg_source = \"", instruction.arg_source,
-                    "\"");
+    absl::StrAppend(&result_, ",\n     .arg_source = \"",
+                    instruction.arg_source, "\"");
   }
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);

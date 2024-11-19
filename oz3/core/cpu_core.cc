@@ -188,12 +188,12 @@ int CpuCore::GetVirtualDwordRegFromName(std::string_view name) {
     return kInvalidReg;
   }
   for (int i = 0; i < kRegisterCount; ++i) {
-    if (kWordRegNames[i] == name) {
+    if (kDwordRegNames[i] == name) {
       return i;
     }
   }
   for (int i = -1; i >= kMinVirtualReg; --i) {
-    if (kDwordRegNames[VRegToNameIndex(i)] == name) {
+    if (kVirtualDwordRegNames[VRegToNameIndex(i)] == name) {
       return i;
     }
   }
