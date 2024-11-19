@@ -19,13 +19,6 @@
 namespace oz3 {
 namespace {
 
-using ::oz3::compiler_internal::GetDwordRegArgName;
-using ::oz3::compiler_internal::GetWordRegArgName;
-using ::oz3::compiler_internal::kArg_p;
-using ::oz3::compiler_internal::kArg_P;
-using ::oz3::compiler_internal::kArg_p0;
-using ::oz3::compiler_internal::kArg_p1;
-using ::oz3::compiler_internal::kMinArgValue;
 using ::testing::AllOf;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
@@ -473,31 +466,31 @@ TEST(InstructionCompilerTest, MacroWordParamRegReturn) {
     instruction_def.code = code;
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
-  EXPECT_TRUE(TestCompile(ArgType::kWordReg, kArg_p,
+  EXPECT_TRUE(TestCompile(ArgType::kWordReg, CpuCore::MP,
                           "UL;$Macro(R1);MOV(R4,r);MOV(r,R5);"));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p,
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, CpuCore::MP,
                            "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
-  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p,
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, CpuCore::MP,
                            "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
-  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p0,
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, CpuCore::MP0,
                           "UL;$Macro(D1);MOV(R4,r);MOV(r,R5);"));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p0,
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, CpuCore::MP0,
                            "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
-  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p0,
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, CpuCore::MP0,
                            "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
-  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p1,
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, CpuCore::MP1,
                           "UL;$Macro(D1);MOV(R4,r);MOV(r,R5);"));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1,
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, CpuCore::MP1,
                            "UL;$Macro(R1);MOV(R4,r0);MOV(r0,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
-  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1,
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, CpuCore::MP1,
                            "UL;$Macro(R1);MOV(R4,r1);MOV(r1,R5);"));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type is word"));
 }
@@ -517,10 +510,10 @@ TEST(InstructionCompilerTest, MacroWordRegReturnTypes) {
                                 .code = macro_code_defs};
     return CompileForTest(macro_def, error, microcode_defs);
   };
-  for (int i = kMinArgValue; i < CpuCore::kRegisterCount; ++i) {
+  for (int i = CpuCore::kMinVirtualReg; i < CpuCore::kRegisterCount; ++i) {
     const bool should_succeed = (CpuCore::GetWordRegName(i) != "invalid");
-    std::string context =
-        absl::StrCat("Context: ", GetWordRegArgName(i), " (", i, ")");
+    std::string context = absl::StrCat(
+        "Context: ", CpuCore::GetVirtualWordRegName(i), " (", i, ")");
     EXPECT_EQ(TestCompile(ArgType::kNone, i), should_succeed) << context;
     if (should_succeed) {
       EXPECT_THAT(error, IsEmpty()) << context;
@@ -529,13 +522,13 @@ TEST(InstructionCompilerTest, MacroWordRegReturnTypes) {
           << context;
     }
   }
-  EXPECT_TRUE(TestCompile(ArgType::kWordReg, kArg_p));
+  EXPECT_TRUE(TestCompile(ArgType::kWordReg, CpuCore::MP));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p1));
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, CpuCore::MP1));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type word"));
-  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p0));
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, CpuCore::MP0));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_p1));
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, CpuCore::MP1));
   EXPECT_THAT(error, IsEmpty());
 }
 
@@ -708,7 +701,10 @@ TEST(InstructionCompilerTest, MacroDwordParamRegReturn) {
       {kMicro_MOV, "MOV", MicroArgType::kWordReg, MicroArgType::kWordReg},
       {kMicro_TEST, "TEST", MicroArgType::kDwordReg, MicroArgType::kDwordReg}};
   const MacroCodeDef macro_code_defs[] = {
-      {.source = "R0", .prefix = {0, 1}, .ret = kArg_P, .code = "TEST(D0,D3);"},
+      {.source = "R0",
+       .prefix = {0, 1},
+       .ret = CpuCore::MP,
+       .code = "TEST(D0,D3);"},
   };
   const MacroDef macro_def = {.name = "Macro",
                               .param = ArgType::kDwordReg,
@@ -747,10 +743,10 @@ TEST(InstructionCompilerTest, MacroDwordRegReturnTypes) {
                                 .code = macro_code_defs};
     return CompileForTest(macro_def, error, microcode_defs);
   };
-  for (int i = kMinArgValue; i < CpuCore::kRegisterCount; ++i) {
+  for (int i = CpuCore::kMinVirtualReg; i < CpuCore::kRegisterCount; ++i) {
     const bool should_succeed = (CpuCore::GetDwordRegName(i) != "invalid");
-    std::string context =
-        absl::StrCat("Context: ", GetDwordRegArgName(i), " (", i, ")");
+    std::string context = absl::StrCat(
+        "Context: ", CpuCore::GetVirtualDwordRegName(i), " (", i, ")");
     EXPECT_EQ(TestCompile(ArgType::kNone, i), should_succeed) << context;
     if (should_succeed) {
       EXPECT_THAT(error, IsEmpty()) << context;
@@ -759,9 +755,9 @@ TEST(InstructionCompilerTest, MacroDwordRegReturnTypes) {
           << context;
     }
   }
-  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, kArg_P));
+  EXPECT_TRUE(TestCompile(ArgType::kDwordReg, CpuCore::MP));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1));
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, CpuCore::MP1));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("return type dword"));
 }
 
@@ -784,9 +780,9 @@ TEST(InstructionCompilerTest, MacroNoReturnTypeWithSpecifiedRegister) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile(ArgType::kNone, CpuCore::R2));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no return value"));
-  EXPECT_FALSE(TestCompile(ArgType::kWordReg, kArg_p0));
+  EXPECT_FALSE(TestCompile(ArgType::kWordReg, CpuCore::MP0));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no return value"));
-  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, kArg_p1));
+  EXPECT_FALSE(TestCompile(ArgType::kDwordReg, CpuCore::MP1));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("no return value"));
 }
 

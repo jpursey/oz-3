@@ -12,18 +12,14 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
-#include "oz3/core/instruction_def.h"
 #include "oz3/core/instruction_compiler.h"
+#include "oz3/core/instruction_def.h"
 #include "oz3/core/microcode.h"
 #include "oz3/core/port.h"
 
 namespace oz3 {
 namespace {
 
-using ::oz3::compiler_internal::kArg_p;
-using ::oz3::compiler_internal::kArg_P;
-using ::oz3::compiler_internal::kArg_p0;
-using ::oz3::compiler_internal::kArg_p1;
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
@@ -889,7 +885,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
   }
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(0, ArgType::kWordReg, kArg_p,
+      MakeInstructionSetDef(0, ArgType::kWordReg, CpuCore::MP,
                             "UL;$Macro(R4);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -912,7 +908,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::R4, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_p0,
+      MakeInstructionSetDef(0, ArgType::kDwordReg, CpuCore::MP0,
                             "UL;$Macro(D2);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -935,7 +931,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::R4, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_p1,
+      MakeInstructionSetDef(0, ArgType::kDwordReg, CpuCore::MP1,
                             "UL;$Macro(D2);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -958,7 +954,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::R5, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(0, ArgType::kWordReg, kArg_p,
+      MakeInstructionSetDef(0, ArgType::kWordReg, CpuCore::MP,
                             "UL;$Macro(a);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -981,7 +977,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::A0, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(2, ArgType::kDwordReg, kArg_p0,
+      MakeInstructionSetDef(2, ArgType::kDwordReg, CpuCore::MP0,
                             "UL;$Macro(A);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1004,7 +1000,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::A0, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(2, ArgType::kDwordReg, kArg_p1,
+      MakeInstructionSetDef(2, ArgType::kDwordReg, CpuCore::MP1,
                             "UL;$Macro(A);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1027,7 +1023,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::A1, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(1, ArgType::kWordReg, kArg_p,
+      MakeInstructionSetDef(1, ArgType::kWordReg, CpuCore::MP,
                             "UL;$Macro(b);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1050,7 +1046,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::B0, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(3, ArgType::kDwordReg, kArg_p0,
+      MakeInstructionSetDef(3, ArgType::kDwordReg, CpuCore::MP0,
                             "UL;$Macro(B);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1073,7 +1069,7 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
               .op = kMicro_TEST, .arg1 = CpuCore::B0, .arg2 = CpuCore::R1}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(3, ArgType::kDwordReg, kArg_p1,
+      MakeInstructionSetDef(3, ArgType::kDwordReg, CpuCore::MP1,
                             "UL;$Macro(B);OP(R0,r);OP(r,R1);"),
       &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1370,7 +1366,7 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
   }
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_P,
+      MakeInstructionSetDef(0, ArgType::kDwordReg, CpuCore::MP,
                             "UL;$Macro(D2);"
                             "OP(D0,R);OP(R,D1);"
                             "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),
@@ -1400,7 +1396,7 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
               .op = kMicro_MOV, .arg1 = CpuCore::R5, .arg2 = CpuCore::R7}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(0, ArgType::kDwordReg, kArg_P,
+      MakeInstructionSetDef(0, ArgType::kDwordReg, CpuCore::MP,
                             "UL;$Macro(A);"
                             "OP(D0,R);OP(R,D1);"
                             "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),
@@ -1427,7 +1423,7 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
           Microcode{.op = kMicro_MOV, .arg1 = -3, .arg2 = CpuCore::R7}));
 
   codes = CompileInstructionSet(
-      MakeInstructionSetDef(1, ArgType::kDwordReg, kArg_P,
+      MakeInstructionSetDef(1, ArgType::kDwordReg, CpuCore::MP,
                             "UL;$Macro(B);"
                             "OP(D0,R);OP(R,D1);"
                             "MOV(R4,r0);MOV(r0,R5);MOV(R6,r1);MOV(r1,R7);"),

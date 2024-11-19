@@ -7,8 +7,9 @@
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/log/log.h"
-#include "oz3/core/instruction_def.h"
+#include "absl/strings/str_split.h"
 #include "oz3/core/instruction_compiler.h"
+#include "oz3/core/instruction_def.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/port.h"
 #include "oz3/core/processor.h"
@@ -43,14 +44,46 @@ static_assert(kWordRegNames[CpuCore::C1] == "C1");
 static_assert(kWordRegNames[CpuCore::C2] == "C2");
 static_assert(kWordRegNames[CpuCore::ST] == "ST");
 
-constexpr std::string_view kDwordRegNames[CpuCore::kRegisterCount] = {
-    "D0", "", "D1", "", "D2", "", "D3", "", "", "", "", "", "", "", "", "",
-};
+constexpr int VRegToNameIndex(int index) { return -index - 1; }
+
+constexpr std::string_view kVirtualWordRegNames[] = {
+    "a/a0", "b/b0", "a1", "b1", "p/p0", "p1", "r/r0", "r1", "m/m0", "m1", "i"};
+static_assert(ABSL_ARRAYSIZE(kVirtualWordRegNames) == -CpuCore::kMinVirtualReg);
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::A)] == "a/a0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::A0)] == "a/a0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::B)] == "b/b0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::B0)] == "b/b0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::A1)] == "a1");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::B1)] == "b1");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MP)] == "p/p0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MP0)] == "p/p0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MP1)] == "p1");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MR)] == "r/r0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MR0)] == "r/r0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MR1)] == "r1");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MM)] == "m/m0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MM0)] == "m/m0");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MM1)] == "m1");
+static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MI)] == "i");
+
+constexpr std::string_view kDwordRegNames[] = {
+    "D0", "", "D1", "", "D2", "", "D3", "", "", "",
+    "",   "", "",   "", "",   "", "",   "", "", ""};
 static_assert(ABSL_ARRAYSIZE(kDwordRegNames) == CpuCore::kRegisterCount);
 static_assert(kDwordRegNames[CpuCore::D0] == "D0");
 static_assert(kDwordRegNames[CpuCore::D1] == "D1");
 static_assert(kDwordRegNames[CpuCore::D2] == "D2");
 static_assert(kDwordRegNames[CpuCore::D3] == "D3");
+
+constexpr std::string_view kVirtualDwordRegNames[] = {
+    "A", "B", "", "", "P", "", "R", "", "M", "", ""};
+static_assert(ABSL_ARRAYSIZE(kVirtualDwordRegNames) ==
+              -CpuCore::kMinVirtualReg);
+static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::A)] == "A");
+static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::B)] == "B");
+static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MP)] == "P");
+static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MR)] == "R");
+static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MM)] == "M");
 
 constexpr std::string_view kDwordRegNamesCompressed[] = {
     "D0",
@@ -77,12 +110,44 @@ std::string_view CpuCore::GetWordRegName(int reg) {
 }
 
 int CpuCore::GetWordRegFromName(std::string_view name) {
+  if (name.empty()) {
+    return kInvalidReg;
+  }
   for (int i = 0; i < kRegisterCount; ++i) {
     if (kWordRegNames[i] == name) {
       return i;
     }
   }
-  return -1;
+  return kInvalidReg;
+}
+
+std::string_view CpuCore::GetVirtualWordRegName(int reg) {
+  if (reg < kMinVirtualReg && reg >= kRegisterCount) {
+    return "invalid";
+  }
+  if (reg < 0) {
+    return kVirtualWordRegNames[VRegToNameIndex(reg)];
+  }
+  return kWordRegNames[reg];
+}
+
+int CpuCore::GetVirtualWordRegFromName(std::string_view name) {
+  if (name.empty()) {
+    return kInvalidReg;
+  }
+  for (int i = 0; i < kRegisterCount; ++i) {
+    if (kWordRegNames[i] == name) {
+      return i;
+    }
+  }
+  for (int i = -1; i >= kMinVirtualReg; --i) {
+    std::pair<std::string_view, std::string_view> names =
+        absl::StrSplit(kVirtualWordRegNames[VRegToNameIndex(i)], "/");
+    if (names.first == name || names.second == name) {
+      return i;
+    }
+  }
+  return kInvalidReg;
 }
 
 std::string_view CpuCore::GetDwordRegName(int reg) {
@@ -95,14 +160,44 @@ std::string_view CpuCore::GetDwordRegName(int reg) {
 
 int CpuCore::GetDwordRegFromName(std::string_view name) {
   if (name.empty()) {
-    return -1;
+    return kInvalidReg;
   }
   for (int i = 0; i < kRegisterCount; ++i) {
     if (kDwordRegNames[i] == name) {
       return i;
     }
   }
-  return -1;
+  return kInvalidReg;
+}
+
+std::string_view CpuCore::GetVirtualDwordRegName(int reg) {
+  if (reg < kMinVirtualReg && reg >= kRegisterCount) {
+    return "invalid";
+  }
+  std::string_view name;
+  if (reg < 0) {
+    name = kVirtualDwordRegNames[VRegToNameIndex(reg)];
+  } else {
+    name = kDwordRegNames[reg];
+  }
+  return name.empty() ? "invalid" : name;
+}
+
+int CpuCore::GetVirtualDwordRegFromName(std::string_view name) {
+  if (name.empty()) {
+    return kInvalidReg;
+  }
+  for (int i = 0; i < kRegisterCount; ++i) {
+    if (kWordRegNames[i] == name) {
+      return i;
+    }
+  }
+  for (int i = -1; i >= kMinVirtualReg; --i) {
+    if (kDwordRegNames[VRegToNameIndex(i)] == name) {
+      return i;
+    }
+  }
+  return kInvalidReg;
 }
 
 CpuCore::CpuCore(const CpuCoreConfig& config) {

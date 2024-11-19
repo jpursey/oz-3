@@ -149,7 +149,7 @@ struct MacroCodeDef {
 
   // The return register index for the macro. This must be a register that
   // conforms to the return type of the macro. To return the macro parameter
-  // itself, use CpuCore::P, CpuCore::P0, or CpuCore::P1. If the macro does not
+  // itself, use CpuCore::MP, CpuCore::MP0, or CpuCore::MP1. If the macro does not
   // have a return type, this is ignored.
   int8_t ret = 0;
 

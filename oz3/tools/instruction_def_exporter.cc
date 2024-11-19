@@ -69,16 +69,16 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
   std::string_view ret_name;
   switch (macro.ret) {
     case ArgType::kWordReg:
-      if (code.ret == CpuCore::P0) {
+      if (code.ret == CpuCore::MP0) {
         ret_name = (macro.param == ArgType::kWordReg ? "P" : "P0");
-      } else if (code.ret == CpuCore::P1) {
+      } else if (code.ret == CpuCore::MP1) {
         ret_name = "P1";
       } else {
         ret_name = CpuCore::GetWordRegName(code.ret);
       }
       break;
     case ArgType::kDwordReg:
-      if (code.ret == CpuCore::P) {
+      if (code.ret == CpuCore::MP) {
         ret_name = "P";
       } else {
         ret_name = CpuCore::GetDwordRegName(code.ret);

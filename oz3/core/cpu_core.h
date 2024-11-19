@@ -85,18 +85,50 @@ class CpuCore final : public ExecutionComponent {
   // Instruction argument register indexes from microcode
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+  static constexpr int8_t A = -1;   // 1st arg: (word or dword)
   static constexpr int8_t A0 = -1;  // 1st arg, low word: index in decoded r[0]
-  static constexpr int8_t B0 = -2;  // 2nd arg, low word: index in decoded r[1]
   static constexpr int8_t A1 = -3;  // 1st arg, high word: index in decoded r[2]
+  static constexpr int8_t B = -2;   // 2nd arg: (word or dword)
+  static constexpr int8_t B0 = -2;  // 2nd arg, low word: index in decoded r[1]
   static constexpr int8_t B1 = -4;  // 2nd arg, high word: index in decoded r[3]
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // Virtual register indexes used in microcode definitions
+  // Virtual macro registers used with macro definitions
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-  static constexpr int8_t P = -5;   // Macro parameter (word or dword)
-  static constexpr int8_t P0 = -5;  // Macro parameter, low word
-  static constexpr int8_t P1 = -6;  // Macro parameter, high word
+  static constexpr int8_t MP = -5;   // Macro parameter (word or dword)
+  static constexpr int8_t MP0 = -5;  // Macro parameter, low word
+  static constexpr int8_t MP1 = -6;  // Macro parameter, high word
+
+  static constexpr int8_t MR = -7;   // Macro return (word or dword)
+  static constexpr int8_t MR0 = -7;  // Macro return, low word
+  static constexpr int8_t MR1 = -8;  // Macro return, high word
+
+  static constexpr int8_t MM = -9;    // Macro register argument (word or dword)
+  static constexpr int8_t MM0 = -9;   // Macro register argument, low word
+  static constexpr int8_t MM1 = -10;  // Macro register argument, high word
+
+  static constexpr int8_t MI = -11;  // Macro immediate argument
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Constants for register index classes
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  static constexpr int8_t kMaxWordArgReg = A0;  // Min word register arg index
+  static constexpr int8_t kMinWordArgReg = B1;  // Max word register arg index
+
+  static constexpr int8_t kMaxDwordArgReg = A;  // Min dword register arg index
+  static constexpr int8_t kMinDwordArgReg = B;  // Max dword register arg index
+
+  static constexpr int8_t kMinArgReg =
+      std::min(kMinWordArgReg, kMinDwordArgReg);  // Min register arg index
+
+  static constexpr int8_t kMaxMacroReg = MP0;  // Min macro register index
+  static constexpr int8_t kMinMacroReg = MI;   // Max macro register index
+
+  static constexpr int8_t kMinVirtualReg = MI;  // Min virtual register index
+
+  static constexpr int8_t kInvalidReg = kMinVirtualReg - 1;
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Status flags in the ST register. The upper byte of the ST register is for
@@ -309,9 +341,21 @@ class CpuCore final : public ExecutionComponent {
   // if it is not a valid register.
   static std::string_view GetWordRegName(int reg);
 
-  // Returns the 16-bit register index for the specified register name, or -1 if
-  // the name is not a valid 16-bit register name.
+  // Returns the 16-bit register index for the specified register name, or
+  // kInvalidReg if the name is not a valid 16-bit register name.
   static int GetWordRegFromName(std::string_view name);
+
+  // Returns the standard name for the specified 16-bit register whether it is
+  // a physical register or a virtual register, or "invalid" if it is not a
+  // valid register at all. Note that virtual word registers for some values can
+  // have multiple names ("a" and "a0" for example). In these cases, both names
+  // are returned in the string ("a/a0" for instance).
+  static std::string_view GetVirtualWordRegName(int reg);
+
+  // Returns the 16-bit register index for the specified register name including
+  // virtual registers, or kInvalidReg if the name is not a valid 16-bit
+  // register or virtual register name.
+  static int GetVirtualWordRegFromName(std::string_view name);
 
   // Returns true if the index is a 32-bit register index.
   static bool IsDwordReg(int reg) {
@@ -328,6 +372,16 @@ class CpuCore final : public ExecutionComponent {
   // Returns the 32-bit register index for the specified register name, or -1 if
   // the name is not a valid 32-bit register name.
   static int GetDwordRegFromName(std::string_view name);
+
+  // Returns the standard name for the specified 32-bit register whether it is
+  // a physical register or a virtual register, or "invalid" if it is not a
+  // valid register at all.
+  static std::string_view GetVirtualDwordRegName(int reg);
+
+  // Returns the 32-bit register index for the specified register name including
+  // virtual registers, or kInvalidReg if the name is not a valid 32-bit
+  // register or virtual register name.
+  static int GetVirtualDwordRegFromName(std::string_view name);
 
   //----------------------------------------------------------------------------
   // Attributes

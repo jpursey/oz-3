@@ -410,24 +410,24 @@ bool InstructionSetAssembler::AssembleMacroCode(
     return ErrorAt(parsed_macro_code, "Macro code missing return value");
   } else if (macro_def.ret == ArgType::kWordReg) {
     if (macro_def.param == ArgType::kWordReg && ret == "p") {
-      macro_code_def.ret = CpuCore::P;
+      macro_code_def.ret = CpuCore::MP;
     } else if (macro_def.param == ArgType::kDwordReg && ret == "p0") {
-      macro_code_def.ret = CpuCore::P0;
+      macro_code_def.ret = CpuCore::MP0;
     } else if (macro_def.param == ArgType::kDwordReg && ret == "p1") {
-      macro_code_def.ret = CpuCore::P1;
+      macro_code_def.ret = CpuCore::MP1;
     } else {
       macro_code_def.ret = CpuCore::GetWordRegFromName(ret);
-      if (macro_code_def.ret < 0) {
+      if (macro_code_def.ret == CpuCore::kInvalidReg) {
         return ErrorAt(parsed_macro_code,
                        "Invalid macro code return word register: ", ret);
       }
     }
   } else if (macro_def.ret == ArgType::kDwordReg) {
     if (macro_def.param == ArgType::kDwordReg && ret == "P") {
-      macro_code_def.ret = CpuCore::P;
+      macro_code_def.ret = CpuCore::MP;
     } else {
       macro_code_def.ret = CpuCore::GetDwordRegFromName(ret);
-      if (macro_code_def.ret < 0) {
+      if (macro_code_def.ret == CpuCore::kInvalidReg) {
         return ErrorAt(parsed_macro_code,
                        "Invalid macro code return dword register: ", ret);
       }

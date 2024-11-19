@@ -605,7 +605,7 @@ TEST(InstructionAssemblerTest, MacroCodeRetParamValid) {
     auto macro = asm_set->GetInstructionSetDef().macros[0];
     ASSERT_EQ(macro.code.size(), 1) << test;
     auto code = macro.code[0];
-    EXPECT_EQ(code.ret, (test.ret == "p1" ? CpuCore::P1 : CpuCore::P0)) << test;
+    EXPECT_EQ(code.ret, (test.ret == "p1" ? CpuCore::MP1 : CpuCore::MP0)) << test;
   }
 }
 
