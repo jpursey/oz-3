@@ -1,4 +1,65 @@
 ################################################################################
+## Shared macros to fetch word and dword values
+################################################################################
+
+# Returns a word value as a register.
+#
+# Modifies register "C2" and returns result in register "r".
+macro(bits:5) GetWord:r {
+  code:m "$r"          { UL; }
+  code:C2 "($r)"       { UL; LKR(m); ADR(m); LD(C2); UL; }
+  code:C2 "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(C2); UL; }
+  code:C2 "(SP)"       { UL; LKR(SP); ADR(SP); LD(C2); UL; }
+  code:C2 "(SP + $v)"  { LD(C2); UL; ADD(C2,SP); LKR(SP); ADR(C2); LD(C2); UL; }
+  code:C2 "(FP)"       { UL; LKR(FP); ADR(FP); LD(C2); UL; }
+  code:C2 "(FP + $v)"  { LD(C2); UL; ADD(C2,FP); LKR(FP); ADR(C2); LD(C2); UL; }
+  code:C2 "$v"         { LD(C2); UL; }
+  code:C2 "S($v)"      { LD(C2); UL; LK(STACK); ADR(C2); LD(C2); UL; }
+  code:C2 "D($v)"      { LD(C2); UL; LK(DATA); ADR(C2); LD(C2); UL; }
+  code:C2 "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); LD(C2); UL; }
+}
+
+# Returns a dword value as a register.
+#
+# Modifies register "C0" and "C1" and returns result in register "R".
+macro(bits:5) GetDword:R {
+  code:M "$R" {
+    UL;
+  }
+  code:CD "[$r]" {
+    UL; LKR(m); ADR(m); LD(C0); LD(C1); UL;
+  }
+  code:CD "[$r + $v]" {
+    LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(C0); LD(C1); UL;
+  }
+  code:CD "[SP]" {
+    UL; LKR(SP); ADR(SP); LD(C0); LD(C1); UL;
+  }
+  code:CD "[SP + $v]" {
+    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(C0); LD(C1); UL;
+  }
+  code:CD "[FP]" {
+    UL; LKR(FP); ADR(FP); LD(C0); LD(C1); UL;
+  }
+  code:CD "[FP + $v]" {
+    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(C0); LD(C1); UL;
+  }
+  code:CD "$v" {
+    LD(C0); UL;
+  }
+  code:CD "S[$v]" {
+    LD(C0); UL; LK(STACK); ADR(C0); LD(C0); LD(C1); UL;
+  }
+  code:CD "D[$v]" {
+    LD(C0); UL; LK(DATA); ADR(C0); LD(C0); LD(C1); UL;
+  }
+  code:CD "E[$v]" {
+    LD(C0); UL; LK(EXTRA); ADR(C0); LD(C0); LD(C1); UL;
+  }
+}
+
+
+################################################################################
 ## NOP
 ##
 ## Cycles: 3
@@ -293,7 +354,7 @@ macro SwapDword(P) {
   }
   code "($r)" {
     UL;
-    MOV(C0,p0); MOV(C1,p1); 
+    MOV(C0,p0); MOV(C1,p1);
     LKR(m); ADR(m); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
   code "($r + $v)" {
@@ -370,11 +431,38 @@ instruction NEG.D "$R" {
   UL;
 
   # Proactively set zero bit here based on low-order result.
-  SUB(C0,a0); MSR(Z,Z); 
-  
+  SUB(C0,a0); MSR(Z,Z);
+
   # Clear the zero bit (but don't set it) based on high-order result.
   SBC(C1,a1); MSC(CO); MSR(ZSCO,_SCO);
-  
+
   # Copy result back to the register
   MOV(a0,C0); MOV(a1,C1);
+}
+
+################################################################################
+## ADD <register>, <value>
+##
+## Cycles:
+## ZSCO: XXXX
+##
+## Variants:
+##    ADD.W <reg>, <word-value>
+##    ADD.D <dreg>, <dword-value>
+##
+## Adds a value to the specified register.
+################################################################################
+
+instruction ADD.W "$r, $m" {
+  $GetWord;
+  ADD(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction ADD.D "$R, $m" {
+  $GetDword;
+  ADD(a0,r0);
+  MSR(Z,Z);
+  ADC(a1,r1);
+  MSR(ZSCO,_SCO);
 }
