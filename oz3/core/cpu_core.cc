@@ -68,12 +68,13 @@ static_assert(kVirtualWordRegNames[VRegToNameIndex(CpuCore::MI)] == "i");
 
 constexpr std::string_view kDwordRegNames[] = {
     "D0", "", "D1", "", "D2", "", "D3", "", "", "",
-    "",   "", "",   "", "",   "", "",   "", "", ""};
+    "",   "", "",   "", "",   "", "CD", "", "", ""};
 static_assert(ABSL_ARRAYSIZE(kDwordRegNames) == CpuCore::kRegisterCount);
 static_assert(kDwordRegNames[CpuCore::D0] == "D0");
 static_assert(kDwordRegNames[CpuCore::D1] == "D1");
 static_assert(kDwordRegNames[CpuCore::D2] == "D2");
 static_assert(kDwordRegNames[CpuCore::D3] == "D3");
+static_assert(kDwordRegNames[CpuCore::CD] == "CD");
 
 constexpr std::string_view kVirtualDwordRegNames[] = {
     "A", "B", "", "", "P", "", "R", "", "M", "", ""};
@@ -86,10 +87,7 @@ static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MR)] == "R");
 static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MM)] == "M");
 
 constexpr std::string_view kDwordRegNamesCompressed[] = {
-    "D0",
-    "D1",
-    "D2",
-    "D3",
+    "D0", "D1", "D2", "D3", "CD",
 };
 
 }  // namespace

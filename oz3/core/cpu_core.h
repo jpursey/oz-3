@@ -80,7 +80,8 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int C0 = 16;  // Cache register 0 (first arg or zero)
   static constexpr int C1 = 17;  // Cache register 1 (second arg or zero)
   static constexpr int C2 = 18;  // Cache register 2 (zero)
-
+  static constexpr int CD = C0;  // Cache 32-bit register (C0,C1)
+ 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Instruction argument register indexes from microcode
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -359,7 +360,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Returns true if the index is a 32-bit register index.
   static bool IsDwordReg(int reg) {
-    return reg == D0 || reg == D1 || reg == D2 || reg == D3;
+    return reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == CD;
   }
 
   // Returns all names for the 32-bit registers.
