@@ -493,3 +493,31 @@ instruction ADQ.D "$R, $#5" {
   ADC(a1,C2);
   MSR(ZSCO,_SCO);
 }
+
+################################################################################
+## ADC <register>, <value>
+##
+## Cycles: 4+
+## ZSCO: XXXX
+##
+## Variants:
+##    ADC.W <reg>, <word-value>
+##    ADC.D <dreg>, <dword-value>
+##
+## Adds a value to the specified register.
+################################################################################
+
+instruction ADC.W "$r, $m" {
+  $GetWord;
+  ADC(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction ADC.D "$R, $m" {
+  $GetDword;
+  ADC(a0,r0);
+  MSR(Z,Z);
+  ADC(a1,r1);
+  MSR(ZSCO,_SCO);
+}
+
