@@ -520,6 +520,18 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;ADD(a0,r0);MSR(Z,Z);ADC(a1,r1);MSR(ZSCO,_SCO);"},
+    {.op = 16,
+     .op_name = "ADQ.W",
+     .arg_source = "$r, $#5",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg2 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;ADD(a,C1);MSR(ZSCO,ZSCO);"},
+    {.op = 17,
+     .op_name = "ADQ.D",
+     .arg_source = "$R, $#5",
+     .arg1 = {oz3::ArgType::kDwordReg, 2},
+     .arg2 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;ADD(a0,C1);MSR(Z,Z);ADC(a1,C2);MSR(ZSCO,_SCO);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

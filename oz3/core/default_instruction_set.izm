@@ -443,7 +443,7 @@ instruction NEG.D "$R" {
 ################################################################################
 ## ADD <register>, <value>
 ##
-## Cycles:
+## Cycles: 4+
 ## ZSCO: XXXX
 ##
 ## Variants:
@@ -464,5 +464,32 @@ instruction ADD.D "$R, $m" {
   ADD(a0,r0);
   MSR(Z,Z);
   ADC(a1,r1);
+  MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## ADQ <register>, <value>
+##
+## Cycles: 4-5
+## ZSCO: XXXX
+##
+## Variants:
+##    ADD.W <reg>, <0..31>
+##    ADD.D <dreg>, <0..31>
+##
+## Adds a value to the specified register.
+################################################################################
+
+instruction ADQ.W "$r, $#5" {
+  UL;
+  ADD(a,C1);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction ADQ.D "$R, $#5" {
+  UL;
+  ADD(a0,C1);
+  MSR(Z,Z);
+  ADC(a1,C2);
   MSR(ZSCO,_SCO);
 }
