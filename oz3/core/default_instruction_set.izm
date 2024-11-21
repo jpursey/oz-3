@@ -612,17 +612,98 @@ instruction SBC.D "$R, $m" {
 ##    NOT.W <reg>
 ##    NOT.D <dreg>
 ##
-## Bitwise not of the value in the specified register.
+## Bitwise NOT of the value in the specified register.
 ################################################################################
 
 instruction NOT.W "$r" {
   UL;
-  NOT(a,a); MSC(CO); MSR(ZSCO,ZSCO);
+  NOT(a,a); MSR(ZSCO,ZSCO);
 }
 
 instruction NOT.D "$R" {
   UL;
   NOT(a0,a0); MSR(Z,Z);
-  NOT(a1,a1); MSC(CO); MSR(ZSCO,_SCO);
+  NOT(a1,a1); MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## AND <register>, <value>
+##
+## Cycles: 4+
+## ZSCO: XX00
+##
+## Variants:
+##    AND.W <reg>, <word-value>
+##    AND.D <dreg>, <dword-value>
+##
+## Bitwise AND a value to the specified register.
+################################################################################
+
+instruction AND.W "$r, $m" {
+  $GetWord;
+  AND(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction AND.D "$R, $m" {
+  $GetDword;
+  AND(a0,r0);
+  MSR(Z,Z);
+  AND(a1,r1);
+  MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## OR <register>, <value>
+##
+## Cycles: 4+
+## ZSCO: XX00
+##
+## Variants:
+##    OR.W <reg>, <word-value>
+##    OR.D <dreg>, <dword-value>
+##
+## Bitwise OR a value to the specified register.
+################################################################################
+
+instruction OR.W "$r, $m" {
+  $GetWord;
+  OR(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction OR.D "$R, $m" {
+  $GetDword;
+  OR(a0,r0);
+  MSR(Z,Z);
+  OR(a1,r1);
+  MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## XOR <register>, <value>
+##
+## Cycles: 4+
+## ZSCO: XX00
+##
+## Variants:
+##    XOR.W <reg>, <word-value>
+##    XOR.D <dreg>, <dword-value>
+##
+## Bitwise XOR a value to the specified register.
+################################################################################
+
+instruction XOR.W "$r, $m" {
+  $GetWord;
+  XOR(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction XOR.D "$R, $m" {
+  $GetDword;
+  XOR(a0,r0);
+  MSR(Z,Z);
+  XOR(a1,r1);
+  MSR(ZSCO,_SCO);
 }
 
