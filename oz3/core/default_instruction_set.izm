@@ -474,8 +474,8 @@ instruction ADD.D "$R, $m" {
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    ADD.W <reg>, <0..31>
-##    ADD.D <dreg>, <0..31>
+##    ADQ.W <reg>, <0..31>
+##    ADQ.D <dreg>, <0..31>
 ##
 ## Adds a value to the specified register.
 ################################################################################
@@ -518,6 +518,87 @@ instruction ADC.D "$R, $m" {
   ADC(a0,r0);
   MSR(Z,Z);
   ADC(a1,r1);
+  MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## SUB <register>, <value>
+##
+## Cycles: 4+
+## ZSCO: XXXX
+##
+## Variants:
+##    SUB.W <reg>, <word-value>
+##    SUB.D <dreg>, <dword-value>
+##
+## Subtracts a value to the specified register.
+################################################################################
+
+instruction SUB.W "$r, $m" {
+  $GetWord;
+  SUB(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction SUB.D "$R, $m" {
+  $GetDword;
+  SUB(a0,r0);
+  MSR(Z,Z);
+  SBC(a1,r1);
+  MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## SBQ <register>, <value>
+##
+## Cycles: 4-5
+## ZSCO: XXXX
+##
+## Variants:
+##    SBQ.W <reg>, <0..31>
+##    SBQ.D <dreg>, <0..31>
+##
+## Adds a value to the specified register.
+################################################################################
+
+instruction SBQ.W "$r, $#5" {
+  UL;
+  SUB(a,C1);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction SBQ.D "$R, $#5" {
+  UL;
+  SUB(a0,C1);
+  MSR(Z,Z);
+  SBC(a1,C2);
+  MSR(ZSCO,_SCO);
+}
+
+################################################################################
+## SBC <register>, <value>
+##
+## Cycles: 4+
+## ZSCO: XXXX
+##
+## Variants:
+##    SBC.W <reg>, <word-value>
+##    SBC.D <dreg>, <dword-value>
+##
+## Adds a value to the specified register.
+################################################################################
+
+instruction SBC.W "$r, $m" {
+  $GetWord;
+  SBC(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction SBC.D "$R, $m" {
+  $GetDword;
+  SBC(a0,r0);
+  MSR(Z,Z);
+  SBC(a1,r1);
   MSR(ZSCO,_SCO);
 }
 
