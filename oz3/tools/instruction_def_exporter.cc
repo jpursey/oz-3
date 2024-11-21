@@ -82,6 +82,15 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
       break;
   }
   if (!ret_name.empty()) {
+    // Macro registers may be returned, which need to have their name converted
+    // to the CpuCore enum name. These can be identified by the first letter.
+    std::string converted_ret_name;
+    if (absl::ascii_tolower(ret_name[0]) == 'p' ||
+        absl::ascii_tolower(ret_name[0]) == 'm' || ret_name[0] == 'i') {
+      converted_ret_name =
+          absl::StrCat("CpuCore::M", absl::AsciiStrToUpper(ret_name));
+      ret_name = converted_ret_name;
+    }
     absl::StrAppend(&result_, ",\n     .ret = CpuCore::", ret_name);
   }
   absl::StrAppend(&result_, ",\n     .code = ");
