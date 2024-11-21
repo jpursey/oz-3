@@ -602,3 +602,27 @@ instruction SBC.D "$R, $m" {
   MSR(ZSCO,_SCO);
 }
 
+################################################################################
+## NOT <register>
+##
+## Cycles: 5-9
+## ZSCO: XX00
+##
+## Variants:
+##    NOT.W <reg>
+##    NOT.D <dreg>
+##
+## Bitwise not of the value in the specified register.
+################################################################################
+
+instruction NOT.W "$r" {
+  UL;
+  NOT(a,a); MSC(CO); MSR(ZSCO,ZSCO);
+}
+
+instruction NOT.D "$R" {
+  UL;
+  NOT(a0,a0); MSR(Z,Z);
+  NOT(a1,a1); MSC(CO); MSR(ZSCO,_SCO);
+}
+
