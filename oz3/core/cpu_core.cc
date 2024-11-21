@@ -463,7 +463,7 @@ void CpuCore::RunInstruction() {
   const uint16_t a2 = (src);        \
   const uint16_t r = (func);        \
   const uint16_t rs = (r >> 15);
-#define OZ3_Z ((r >> ZShift) == 0)
+#define OZ3_Z ((r == 0) << ZShift)
 #define OZ3_S (rs << SShift)
 #define OZ3_C ((r < a1) << CShift)
 #define OZ3_O ((~((a1 >> 15) ^ (a2 >> 15)) & ((a1 >> 15) ^ rs)) << OShift)
