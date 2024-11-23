@@ -1024,3 +1024,31 @@ instruction TST.D "$m" {
   SBC(C2,r1);
   MSR(ZSCO,_SCO);
 }
+
+################################################################################
+## CMP <register> <value>
+##
+## Cycles: 5+
+## ZSCO: XXXX
+##
+## Variants:
+##    CMP.W <reg> <word-value>
+##    CMP.D <dreg> <dword-value>
+##
+## Subtracts <value> from <register> setting flags, but not updating <register>.
+################################################################################
+
+instruction CMP.W "$r, $m" {
+  $GetWord;
+  CMP(a,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction CMP.D "$R, $m" {
+  $GetDword;
+  CMP(a0,r0);
+  MSR(Z,Z);
+  MOV(C2,a1);
+  SBC(C2,r1);
+  MSR(ZSCO,_SCO);
+}
