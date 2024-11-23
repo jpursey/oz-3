@@ -905,6 +905,16 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .code = "$Get32BitMask;AND(r0,a0);MSR(Z,Z);AND(r1,a1);MSR(Z,_);"},
+    {.op = 42,
+     .op_name = "TST.W",
+     .arg_source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;CMP(C0,r);MSR(ZSCO,ZSCO);"},
+    {.op = 43,
+     .op_name = "TST.D",
+     .arg_source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetDword;CMP(C2,r0);MSR(Z,Z);SBC(C2,r1);MSR(ZSCO,_SCO);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

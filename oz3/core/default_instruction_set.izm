@@ -997,3 +997,30 @@ instruction TSTB.D "$R, $m" {
   AND(r1,a1);
   MSR(Z,_);
 }
+
+################################################################################
+## TST <value>
+##
+## Cycles: 5+
+## ZSCO: XXXX
+##
+## Variants:
+##    TST.W <word-value>
+##    TST.D <dword-value>
+##
+## Tests a value setting flags.
+################################################################################
+
+instruction TST.W "$m" {
+  $GetWord;
+  CMP(C0,r);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction TST.D "$m" {
+  $GetDword;
+  CMP(C2,r0);
+  MSR(Z,Z);
+  SBC(C2,r1);
+  MSR(ZSCO,_SCO);
+}
