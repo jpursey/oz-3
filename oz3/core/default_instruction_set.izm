@@ -4,7 +4,7 @@
 
 # Returns a word value as a register.
 #
-# Ends fetch phase. 
+# Ends fetch phase.
 # Modifies register "C2" and returns result in register "r".
 macro(bits:5) GetWord:r {
   code:m "$r"          { UL; }
@@ -22,7 +22,7 @@ macro(bits:5) GetWord:r {
 
 # Returns a dword value as a register.
 #
-# Ends fetch phase. 
+# Ends fetch phase.
 # Modifies register "C0" and "C1" and returns result in register "R".
 macro(bits:5) GetDword:R {
   code:M "$R" {
@@ -63,13 +63,13 @@ macro(bits:5) GetDword:R {
 # Returns a 16-bit mask for a specified bit position (0-15) otherwise
 # returns zero
 #
-# Ends fetch phase. 
+# Ends fetch phase.
 # Requires C1=0
 # Modifies C0, C2.
 macro(bits:5) Get16BitMask:r {
   code:C0 "$r" {
     UL;
-    MOV(C2,m); 
+    MOV(C2,m);
     MOVI(C0,1);
     CMP(C1,m);
     JC(Z,@done);
@@ -114,11 +114,11 @@ macro(bits:5) Get16BitMask:r {
     UL; MOVI(C0,0x40);
     SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
   }
-  code:C0 "14" { 
-    UL; MOVI(C0,0x40); 
+  code:C0 "14" {
+    UL; MOVI(C0,0x40);
     SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
   }
-  code:C0 "15" { 
+  code:C0 "15" {
     UL; MOVI(C0,0x40);
     SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
   }
@@ -127,7 +127,7 @@ macro(bits:5) Get16BitMask:r {
 # Returns a 32-bit mask for a specified bit position (0-31) otherwise
 # returns zero
 #
-# Ends fetch phase. 
+# Ends fetch phase.
 # Requires: C0=0 and C1=0
 # Modifies: C0, C1, C2
 macro(bits:6) Get32BitMask:R {
@@ -140,7 +140,7 @@ macro(bits:6) Get32BitMask:R {
     MOVI(C0,1);
     CMP(C1,m);
     JC(Z,@done);
-    MOV(C2,m); 
+    MOV(C2,m);
   @shift_lower:
     SL(C0);
     JD(C2,@shift_lower);
@@ -195,11 +195,11 @@ macro(bits:6) Get32BitMask:R {
     UL; MOVI(C0,0x0040);
     SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
   }
-  code:CD "14" { 
-    UL; MOVI(C0,0x0040); 
+  code:CD "14" {
+    UL; MOVI(C0,0x0040);
     SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
   }
-  code:CD "15" { 
+  code:CD "15" {
     UL; MOVI(C0,0x0040);
     SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
   }
@@ -238,11 +238,11 @@ macro(bits:6) Get32BitMask:R {
     UL; MOVI(C1,0x0040);
     SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
   }
-  code:CD "30" { 
-    UL; MOVI(C1,0x0040); 
+  code:CD "30" {
+    UL; MOVI(C1,0x0040);
     SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
   }
-  code:CD "31" { 
+  code:CD "31" {
     UL; MOVI(C1,0x0040);
     SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
   }
@@ -999,9 +999,71 @@ instruction TSTB.D "$R, $m" {
 }
 
 ################################################################################
+## CLRF <flags>
+##
+## Cycles: 3
+## ZSCO: ????
+##
+## Clears the specified status flags.
+################################################################################
+
+macro ClearFlag {
+  code "Z"    { MSC(Z);    MSR(Z,_); }
+  code "S"    { MSC(S);    MSR(S,_); }
+  code "ZS"   { MSC(ZS);   MSR(ZS,_); }
+  code "C"    { MSC(C);    MSR(C,_); }
+  code "ZC"   { MSC(ZC);   MSR(ZC,_); }
+  code "SC"   { MSC(SC);   MSR(SC,_); }
+  code "ZSC"  { MSC(ZSC);  MSR(ZSC,_); }
+  code "O"    { MSC(O);    MSR(O,_); }
+  code "ZO"   { MSC(ZO);   MSR(ZO,_); }
+  code "SO"   { MSC(SO);   MSR(SO,_); }
+  code "ZSO"  { MSC(ZSO);  MSR(ZSO,_); }
+  code "CO"   { MSC(CO);   MSR(CO,_); }
+  code "ZCO"  { MSC(ZCO);  MSR(ZCO,_); }
+  code "SCO"  { MSC(SCO);  MSR(SCO,_); }
+  code "ZSCO" { MSC(ZSCO); MSR(ZSCO,_); }
+}
+
+instruction CLRF "$m" {
+  $ClearFlag; UL;
+}
+
+################################################################################
+## SETF <flags>
+##
+## Cycles: 3
+## ZSCO: ????
+##
+## Sets the specified status flags.
+################################################################################
+
+macro SetFlag {
+  code "Z"    { MSS(Z);    MSR(_,Z); }
+  code "S"    { MSS(S);    MSR(_,S); }
+  code "ZS"   { MSS(ZS);   MSR(_,ZS); }
+  code "C"    { MSS(C);    MSR(_,C); }
+  code "ZC"   { MSS(ZC);   MSR(_,ZC); }
+  code "SC"   { MSS(SC);   MSR(_,SC); }
+  code "ZSC"  { MSS(ZSC);  MSR(_,ZSC); }
+  code "O"    { MSS(O);    MSR(_,O); }
+  code "ZO"   { MSS(ZO);   MSR(_,ZO); }
+  code "SO"   { MSS(SO);   MSR(_,SO); }
+  code "ZSO"  { MSS(ZSO);  MSR(_,ZSO); }
+  code "CO"   { MSS(CO);   MSR(_,CO); }
+  code "ZCO"  { MSS(ZCO);  MSR(_,ZCO); }
+  code "SCO"  { MSS(SCO);  MSR(_,SCO); }
+  code "ZSCO" { MSS(ZSCO); MSR(_,ZSCO); }
+}
+
+instruction SETF "$m" {
+  $SetFlag; UL;
+}
+
+################################################################################
 ## TST <value>
 ##
-## Cycles: 5+
+## Cycles: 4+
 ## ZSCO: XXXX
 ##
 ## Variants:
@@ -1028,7 +1090,7 @@ instruction TST.D "$m" {
 ################################################################################
 ## CMP <register> <value>
 ##
-## Cycles: 5+
+## Cycles: 4+
 ## ZSCO: XXXX
 ##
 ## Variants:
