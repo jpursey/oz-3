@@ -28,7 +28,7 @@ constexpr InstructionCodeDef kInstructionCode_HALT[] = {
 
 constexpr InstructionCodeDef kInstructionCode_WAIT[] = {
     {.source = "$r",
-     .prefix = {0, 8},
+     .prefix = {0, 5},
      .arg1 = {ArgType::kWordReg, 3},
      .code = "UL; WAIT a;"},
 };

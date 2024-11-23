@@ -767,19 +767,19 @@ constexpr oz3::MacroDef kMacros[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_NOP[] = {
     {.source = "",
-     .prefix = {0, 0},
+     .prefix = {0, 8},
      .code = "UL;"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_HALT[] = {
     {.source = "",
-     .prefix = {0, 0},
+     .prefix = {0, 8},
      .code = "UL;ADDI(IP,-1);HALT;"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_WAIT[] = {
     {.source = "$r",
-     .prefix = {0, 0},
+     .prefix = {0, 5},
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .code = "UL;WAIT(a);"},
 };
@@ -794,7 +794,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_MOV_LW[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_MOV_LD[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$LoadDword(A);"},
@@ -810,7 +810,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_MOV_SW[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_MOV_SD[] = {
     {.source = "$m, $R",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kMacro, 5},
      .arg2 = {oz3::ArgType::kDwordReg, 2},
      .code = "$StoreDword(B);"},
@@ -818,7 +818,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_MOV_SD[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_MOV_S[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kMacro, 7},
      .code = "$MoveSReg;"},
 };
@@ -833,7 +833,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_MVQ_LW[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_MVQ_LD[] = {
     {.source = "$R, $#5",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;MOV(a0,C1);MOVI(a1,0);"},
@@ -849,7 +849,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_SWP_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_SWP_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$SwapDword(A);"},
@@ -857,14 +857,14 @@ constexpr oz3::InstructionCodeDef kInstructionCode_SWP_D[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_NEG_W[] = {
     {.source = "$r",
-     .prefix = {0, 0},
+     .prefix = {0, 5},
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .code = "UL;SUB(C0,a);MSC(CO);MSR(ZSCO,ZSCO);MOV(a,C0);"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_NEG_D[] = {
     {.source = "$R",
-     .prefix = {0, 0},
+     .prefix = {0, 6},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .code = "UL;SUB(C0,a0);MSR(Z,Z);SBC(C1,a1);MSC(CO);MSR(ZSCO,_SCO);"
              "MOV(a0,C0);MOV(a1,C1);"},
@@ -880,7 +880,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_ADD_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_ADD_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;ADD(a0,r0);MSR(Z,Z);ADC(a1,r1);MSR(ZSCO,_SCO);"},
@@ -896,7 +896,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_ADQ_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_ADQ_D[] = {
     {.source = "$R, $#5",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;ADD(a0,C1);MSR(Z,Z);ADC(a1,C2);MSR(ZSCO,_SCO);"},
@@ -912,7 +912,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_ADC_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_ADC_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;ADC(a0,r0);MSR(Z,Z);ADC(a1,r1);MSR(ZSCO,_SCO);"},
@@ -928,7 +928,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_SUB_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_SUB_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;SUB(a0,r0);MSR(Z,Z);SBC(a1,r1);MSR(ZSCO,_SCO);"},
@@ -944,7 +944,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_SBQ_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_SBQ_D[] = {
     {.source = "$R, $#5",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;SUB(a0,C1);MSR(Z,Z);SBC(a1,C2);MSR(ZSCO,_SCO);"},
@@ -960,7 +960,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_SBC_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_SBC_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;SBC(a0,r0);MSR(Z,Z);SBC(a1,r1);MSR(ZSCO,_SCO);"},
@@ -968,14 +968,14 @@ constexpr oz3::InstructionCodeDef kInstructionCode_SBC_D[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_NOT_W[] = {
     {.source = "$r",
-     .prefix = {0, 0},
+     .prefix = {0, 5},
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .code = "UL;NOT(a,a);MSR(ZSCO,ZSCO);"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_NOT_D[] = {
     {.source = "$R",
-     .prefix = {0, 0},
+     .prefix = {0, 6},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .code = "UL;NOT(a0,a0);MSR(Z,Z);NOT(a1,a1);MSR(ZSCO,_SCO);"},
 };
@@ -990,7 +990,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_AND_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_AND_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;AND(a0,r0);MSR(Z,Z);AND(a1,r1);MSR(ZSCO,_SCO);"},
@@ -1006,7 +1006,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_OR_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_OR_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;OR(a0,r0);MSR(Z,Z);OR(a1,r1);MSR(ZSCO,_SCO);"},
@@ -1022,7 +1022,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_XOR_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_XOR_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;XOR(a0,r0);MSR(Z,Z);XOR(a1,r1);MSR(ZSCO,_SCO);"},
@@ -1094,28 +1094,28 @@ constexpr oz3::InstructionCodeDef kInstructionCode_TSTB_D[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_CLRF[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 4},
      .arg1 = {oz3::ArgType::kMacro, 4},
      .code = "$ClearFlag;UL;"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_SETF[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 4},
      .arg1 = {oz3::ArgType::kMacro, 4},
      .code = "$SetFlag;UL;"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_TST_W[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 3},
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;CMP(C0,r);MSR(ZSCO,ZSCO);"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_TST_D[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 3},
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;CMP(C2,r0);MSR(Z,Z);SBC(C2,r1);MSR(ZSCO,_SCO);"},
 };
@@ -1130,7 +1130,7 @@ constexpr oz3::InstructionCodeDef kInstructionCode_CMP_W[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_CMP_D[] = {
     {.source = "$R, $m",
-     .prefix = {0, 0},
+     .prefix = {0, 1},
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;CMP(a0,r0);MSR(Z,Z);MOV(C2,a1);SBC(C2,r1);"
@@ -1139,14 +1139,14 @@ constexpr oz3::InstructionCodeDef kInstructionCode_CMP_D[] = {
 
 constexpr oz3::InstructionCodeDef kInstructionCode_JP[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 3},
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;MOV(IP,r);"},
 };
 
 constexpr oz3::InstructionCodeDef kInstructionCode_JPR[] = {
     {.source = "$m",
-     .prefix = {0, 0},
+     .prefix = {0, 3},
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;ADD(IP,r);"},
 };

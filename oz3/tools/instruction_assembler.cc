@@ -542,6 +542,8 @@ bool InstructionSetAssembler::AssembleInstruction(
                          instruction_tokens.code, code_string, macro_arg)) {
     return false;
   }
+  instruction_code_def.prefix.size =
+      8 - instruction_code_def.arg1.size - instruction_code_def.arg2.size;
   instruction_code_def.code = AddString(code_string);
   return true;
 }

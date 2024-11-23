@@ -50,7 +50,8 @@ bool CompileForTest(
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
   // One instruction is required to create a valid instruction set. It is
   // unimportant, as this is only for compiling the macro.
-  const InstructionCodeDef instruction_code_defs[] = {{.code = "UL;"}};
+  const InstructionCodeDef instruction_code_defs[] = {
+      {.prefix = {.size = 8}, .code = "UL;"}};
   const InstructionDef instruction_def = {
       .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
   InstructionError instruction_error;
@@ -93,9 +94,9 @@ bool TestCompile(const MicrocodeDef& microcode_def,
   return CompileForTest(instruction, error, microcode_defs);
 }
 
-absl::Span<const InstructionCodeDef> MakeCodeDef(
-    const InstructionCodeDef& code) {
+absl::Span<const InstructionCodeDef> MakeCodeDef(InstructionCodeDef code) {
   static absl::NoDestructor<std::vector<InstructionCodeDef>> code_storage;
+  code.prefix.size = 8 - code.arg1.size - code.arg2.size;
   code_storage->push_back(code);
   return absl::MakeConstSpan(&code_storage->back(), 1);
 }
@@ -436,12 +437,10 @@ TEST(InstructionCompilerTest, MacroWordRegReturn) {
                               .ret = ArgType::kWordReg,
                               .size = 1,
                               .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
+  InstructionDef instruction_def;
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    const InstructionCodeDef code_defs[] = {
-        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
-    instruction_def.code = code_defs;
+    instruction_def = MakeDef({ArgType::kMacro, 1}, code);
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("UL;$Macro;MOV(R4,r);MOV(r,R5);"));
@@ -466,15 +465,13 @@ TEST(InstructionCompilerTest, MacroWordParamRegReturn) {
                         .ret = ArgType::kWordReg,
                         .size = 1,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
+  InstructionDef instruction_def = {};
   std::string error;
   auto TestCompile = [&](ArgType param_type, int8_t ret_value,
                          std::string_view code) {
     macro_code_defs[0].ret = ret_value;
     macro_def.param = param_type;
-    const InstructionCodeDef code_defs[] = {
-        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
-    instruction_def.code = code_defs;
+    instruction_def = MakeDef({ArgType::kMacro, 1}, code);
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile(ArgType::kWordReg, CpuCore::MP,
@@ -618,10 +615,7 @@ TEST(InstructionCompilerTest, MacroDwordRegArg) {
     };
     const MacroDef macro_def = {
         .name = "Macro", .size = 3, .code = macro_code_defs};
-    const InstructionCodeDef instruction_code_defs[] = {
-        {.arg1 = {ArgType::kMacro, 3}, .code = "UL;$Macro;"}};
-    const InstructionDef instruction_def = {
-        .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
+    const InstructionDef instruction_def = MakeDef({ArgType::kMacro, 3}, "UL;$Macro;");
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("TEST(D0,D1);"));
@@ -658,10 +652,8 @@ TEST(InstructionCompilerTest, MacroDwordRegParam) {
                                 .param = ArgType::kDwordReg,
                                 .size = 1,
                                 .code = macro_code_defs};
-    const InstructionCodeDef instruction_code_defs[] = {
-        {.arg1 = {ArgType::kMacro, 1}, .code = "UL;$Macro(D0);"}};
-    const InstructionDef instruction_def = {
-        .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
+    const InstructionDef instruction_def =
+        MakeDef({ArgType::kMacro, 1}, "UL;$Macro(D0);");
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("TEST(D0,D1);"));
@@ -689,12 +681,10 @@ TEST(InstructionCompilerTest, MacroDwordRegReturn) {
                               .ret = ArgType::kDwordReg,
                               .size = 1,
                               .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    const InstructionCodeDef code_defs[] = {
-        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
-    instruction_def.code = code_defs;
+    const InstructionDef instruction_def =
+        MakeDef({ArgType::kMacro, 1}, code);
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_FALSE(TestCompile("UL;$Macro;MOV(R4,r);"));
@@ -723,12 +713,9 @@ TEST(InstructionCompilerTest, MacroDwordParamRegReturn) {
                               .ret = ArgType::kDwordReg,
                               .size = 1,
                               .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    const InstructionCodeDef code_defs[] = {
-        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
-    instruction_def.code = code_defs;
+    InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, code);
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_FALSE(TestCompile("UL;$Macro(D0);MOV(R4,r);"));

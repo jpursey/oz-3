@@ -388,6 +388,11 @@ bool InstructionCompiler::CompileInstruction(
   if (!instruction.arg2.IsValid()) {
     return Error("Invalid second argument (size is probably invalid for type)");
   }
+  if (instruction.arg1.size + instruction.arg2.size +
+          instruction_def_->code[0].prefix.size !=
+      8) {
+    return Error("Prefix + argument sizes does not equal 8");
+  }
 
   state_.src_code = absl::StrSplit(instruction_def_->code[0].code, ';',
                                    absl::SkipWhitespace());

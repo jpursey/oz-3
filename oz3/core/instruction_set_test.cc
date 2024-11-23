@@ -30,8 +30,9 @@ constexpr uint8_t kMicro_TEST_NOP = 254;
 constexpr uint8_t kMicro_TEST = 255;
 
 absl::Span<const InstructionCodeDef> MakeCodeDef(
-    const InstructionCodeDef& code) {
+    InstructionCodeDef code) {
   static absl::NoDestructor<std::vector<InstructionCodeDef>> code_storage;
+  code.prefix.size = 8 - code.arg1.size - code.arg2.size;
   code_storage->push_back(code);
   return absl::MakeConstSpan(&code_storage->back(), 1);
 }

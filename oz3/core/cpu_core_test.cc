@@ -98,7 +98,11 @@ absl::Span<const InstructionCodeDef> MakeCode(Argument arg1, Argument arg2,
   static int op = 0;
   static InstructionCodeDef code_defs[kTestOpCount];
   CHECK(op < kTestOpCount);
-  code_defs[op] = {.arg1 = arg1, .arg2 = arg2, .code = code};
+  code_defs[op] = {
+      .prefix = {.size = static_cast<uint8_t>(8 - arg1.size - arg2.size)},
+      .arg1 = arg1,
+      .arg2 = arg2,
+      .code = code};
   auto result = absl::Span(code_defs + op, 1);
   ++op;
   return result;
