@@ -7,8 +7,8 @@
 
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_split.h"
 #include "absl/strings/str_replace.h"
+#include "absl/strings/str_split.h"
 #include "oz3/core/cpu_core.h"
 
 namespace oz3 {
@@ -128,9 +128,9 @@ void InstructionDefExporter::ExportInstructionCode(
 
 void InstructionDefExporter::ExportInstruction(
     const InstructionDef& instruction) {
-  absl::StrAppend(&result_, "    {.op = ", instruction.op,
-                  ",\n     .op_name = \"", instruction.op_name, "\"");
-  absl::StrAppend(&result_, ",\n     .code = kInstructionCode_",
+  absl::StrAppend(&result_, "    {.op = ", instruction.op, ", .op_name = \"",
+                  instruction.op_name, "\"");
+  absl::StrAppend(&result_, ", .code = kInstructionCode_",
                   absl::StrReplaceAll(instruction.op_name, {{".", "_"}}));
   absl::StrAppend(&result_, "},\n");
 }
@@ -171,6 +171,16 @@ std::string InstructionDefExporter::Export() {
   }
   const bool has_instructions = !instruction_set_.instructions.empty();
   if (has_instructions) {
+    for (const auto& instruction : instruction_set_.instructions) {
+      absl::StrAppend(&result_, "constexpr oz3::InstructionCodeDef ",
+                      const_prefix_, "InstructionCode_",
+                      absl::StrReplaceAll(instruction.op_name, {{".", "_"}}),
+                      "[] = {\n");
+      for (const auto& code : instruction.code) {
+        ExportInstructionCode(code);
+      }
+      absl::StrAppend(&result_, "};\n\n");
+    }
     absl::StrAppend(&result_, "constexpr oz3::InstructionDef ", const_prefix_,
                     "Instructions[] = {\n");
     for (const auto& instruction : instruction_set_.instructions) {

@@ -12,8 +12,12 @@ namespace oz3 {
 
 namespace {
 
-// #include "oz3/core/default_instruction_set.inc"
-
+// This switch is used so bugs can be fixed in the instruction set exporter.
+// Otherwise, it will fail to build if the instruction set was invalid (due to
+// a bug).
+#if 1
+#include "oz3/core/default_instruction_set.inc"
+#else
 constexpr InstructionCodeDef kInstructionCode_NOP[] = {
     {.prefix = {0, 8}, .code = "UL;"},
 };
@@ -38,7 +42,7 @@ constexpr InstructionDef kInstructions[] = {
 constexpr oz3::InstructionSetDef kInstructionSet = {
     .instructions = kInstructions,
 };
-
+#endif
 }  // namespace
 
 const InstructionSetDef& GetDefaultInstructionSetDef() {
