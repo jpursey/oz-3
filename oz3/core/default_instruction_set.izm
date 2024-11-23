@@ -1114,3 +1114,31 @@ instruction CMP.D "$R, $m" {
   SBC(C2,r1);
   MSR(ZSCO,_SCO);
 }
+
+################################################################################
+## JP <address>
+##
+## Cycles: 4
+## ZSCO: ----
+##
+## Sets IP to the specified address.
+################################################################################
+
+instruction JP "$m" {
+  $GetWord;
+  MOV(IP,r);
+}
+
+################################################################################
+## JPR <relative-address>
+##
+## Cycles: 4
+## ZSCO: ----
+##
+## Adds the specified relative address to IP.
+################################################################################
+
+instruction JPR "$m" {
+  $GetWord;
+  ADD(IP,r);
+}

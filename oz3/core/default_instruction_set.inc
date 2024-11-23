@@ -1040,6 +1040,16 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;CMP(a0,r0);MSR(Z,Z);MOV(C2,a1);SBC(C2,r1);"
              "MSR(ZSCO,_SCO);"},
+    {.op = 48,
+     .op_name = "JP",
+     .arg_source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;MOV(IP,r);"},
+    {.op = 49,
+     .op_name = "JPR",
+     .arg_source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;ADD(IP,r);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
