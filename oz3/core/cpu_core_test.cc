@@ -762,7 +762,7 @@ class MemAccessor {
         std::find_if(instructions.begin(), instructions.end(),
                      [op](const InstructionDef& def) { return def.op == op; });
     CHECK(it != instructions.end()) << "Unknown op: " << static_cast<int>(op);
-    mem_[address_++] = it->Encode(a, b);
+    mem_[address_++] = it->code[0].Encode(op, a, b);
     return *this;
   }
 

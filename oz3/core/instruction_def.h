@@ -241,12 +241,6 @@ struct InstructionCodeDef {
 
 // Represents the full source definition of an instruction in the OZ-3 CPU.
 struct InstructionDef {
-  // Encodes the instruction into a 16-bit instruction word.
-  //
-  // The parameters match the first and second parameters as specified in the
-  // decl.
-  uint16_t Encode(uint16_t a = 0, uint16_t b = 0) const;
-
   // The numeric operation code for the instruction (upper 8 bits of the 16-bit
   // instruction).
   uint8_t op;

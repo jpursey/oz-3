@@ -77,9 +77,4 @@ uint16_t InstructionCodeDef::Encode(uint16_t op, uint16_t a, uint16_t b) const {
   return encoded | args;
 }
 
-uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
-  // TODO: Deprecate this function.
-  return code[0].Encode(op, a, b);
-}
-
 }  // namespace oz3
