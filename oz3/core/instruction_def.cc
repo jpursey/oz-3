@@ -61,8 +61,8 @@ bool Argument::IsValid() const {
   }
 }
 
-uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
-  uint16_t code = static_cast<uint16_t>(op) << 8;
+uint16_t InstructionCodeDef::Encode(uint16_t op, uint16_t a, uint16_t b) const {
+  uint16_t encoded = op << 8;
   uint16_t args = 0;
   if (arg1.size > 0) {
     args = a & ((1 << arg1.size) - 1);
@@ -70,7 +70,16 @@ uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
   if (arg2.size > 0) {
     args |= (b & ((1 << arg2.size) - 1)) << arg1.size;
   }
-  return code | args;
+  if (prefix.size > 0) {
+    args |= (prefix.value & ((1 << prefix.size) - 1))
+            << (arg1.size + arg2.size);
+  }
+  return encoded | args;
+}
+
+uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {
+  // TODO: Deprecate this function.
+  return code[0].Encode(op, a, b);
 }
 
 }  // namespace oz3

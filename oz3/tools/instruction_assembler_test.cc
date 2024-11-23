@@ -37,10 +37,11 @@ TEST(InstructionAssemblerTest, BasicSuccess) {
   const auto& instruction = asm_set->GetInstructionSetDef().instructions[0];
   EXPECT_EQ(instruction.op, 0);
   EXPECT_EQ(instruction.op_name, "NOP");
-  EXPECT_EQ(instruction.arg_source, "");
-  EXPECT_EQ(instruction.arg1.type, ArgType::kNone);
-  EXPECT_EQ(instruction.arg2.type, ArgType::kNone);
-  EXPECT_EQ(instruction.code, "UL;");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].source, "");
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].code, "UL;");
 }
 
 TEST(InstructionAssemblerTest, BasicSuccessFromFile) {
@@ -62,10 +63,11 @@ TEST(InstructionAssemblerTest, BasicSuccessFromFile) {
   const auto& instruction = asm_set->GetInstructionSetDef().instructions[0];
   EXPECT_EQ(instruction.op, 0);
   EXPECT_EQ(instruction.op_name, "NOP");
-  EXPECT_EQ(instruction.arg_source, "");
-  EXPECT_EQ(instruction.arg1.type, ArgType::kNone);
-  EXPECT_EQ(instruction.arg2.type, ArgType::kNone);
-  EXPECT_EQ(instruction.code, "UL;");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].source, "");
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].code, "UL;");
 }
 
 TEST(InstructionAssemblerTest, FailToOpenFile) {
@@ -205,10 +207,11 @@ TEST(InstructionAssemblerTest, InstructionValidArgSource) {
   const auto& instruction = asm_set->GetInstructionSetDef().instructions[0];
   EXPECT_EQ(instruction.op, 0);
   EXPECT_EQ(instruction.op_name, "ALPHA");
-  EXPECT_EQ(instruction.arg_source, "$v");
-  EXPECT_EQ(instruction.arg1.type, ArgType::kNone);
-  EXPECT_EQ(instruction.arg2.type, ArgType::kNone);
-  EXPECT_EQ(instruction.code, "LD(R0);UL;");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].source, "$v");
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].code, "LD(R0);UL;");
 }
 
 TEST(InstructionAssemblerTest, InstructionInvalidArgSource) {
@@ -242,24 +245,29 @@ TEST(InstructionAssemblerTest, InstructionEmbeddedArgumentTypes) {
   ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
   ASSERT_NE(asm_set->GetInstructionSet(), nullptr);
   ASSERT_EQ(asm_set->GetInstructionSetDef().instructions.size(), 3);
-  const auto& instruction0 = asm_set->GetInstructionSetDef().instructions[0];
-  EXPECT_EQ(instruction0.op_name, "WORD");
-  EXPECT_EQ(instruction0.arg1.type, ArgType::kWordReg);
-  EXPECT_EQ(instruction0.arg1.size, GetDefaultArgTypeSize(ArgType::kWordReg));
-  EXPECT_EQ(instruction0.arg2.type, ArgType::kWordReg);
-  EXPECT_EQ(instruction0.arg2.size, 4);
-  const auto& instruction1 = asm_set->GetInstructionSetDef().instructions[1];
-  EXPECT_EQ(instruction1.op_name, "DWORD");
-  EXPECT_EQ(instruction1.arg1.type, ArgType::kDwordReg);
-  EXPECT_EQ(instruction1.arg1.size, GetDefaultArgTypeSize(ArgType::kDwordReg));
-  EXPECT_EQ(instruction1.arg2.type, ArgType::kDwordReg);
-  EXPECT_EQ(instruction1.arg2.size, 1);
-  const auto& instruction2 = asm_set->GetInstructionSetDef().instructions[2];
-  EXPECT_EQ(instruction2.op_name, "IMM");
-  EXPECT_EQ(instruction2.arg1.type, ArgType::kImmediate);
-  EXPECT_EQ(instruction2.arg1.size, 3);
-  EXPECT_EQ(instruction2.arg2.type, ArgType::kImmediate);
-  EXPECT_EQ(instruction2.arg2.size, 5);
+  auto instruction = asm_set->GetInstructionSetDef().instructions[0];
+  EXPECT_EQ(instruction.op_name, "WORD");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kWordReg);
+  EXPECT_EQ(instruction.code[0].arg1.size,
+            GetDefaultArgTypeSize(ArgType::kWordReg));
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kWordReg);
+  EXPECT_EQ(instruction.code[0].arg2.size, 4);
+  instruction = asm_set->GetInstructionSetDef().instructions[1];
+  EXPECT_EQ(instruction.op_name, "DWORD");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kDwordReg);
+  EXPECT_EQ(instruction.code[0].arg1.size,
+            GetDefaultArgTypeSize(ArgType::kDwordReg));
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kDwordReg);
+  EXPECT_EQ(instruction.code[0].arg2.size, 1);
+  instruction = asm_set->GetInstructionSetDef().instructions[2];
+  EXPECT_EQ(instruction.op_name, "IMM");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kImmediate);
+  EXPECT_EQ(instruction.code[0].arg1.size, 3);
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kImmediate);
+  EXPECT_EQ(instruction.code[0].arg2.size, 5);
 }
 
 TEST(InstructionAssemblerTest, InstructionTooManyEmbeddedArgTypes) {
@@ -290,10 +298,11 @@ TEST(InstructionAssemblerTest, OpcodeNameWithExtension) {
   const auto& instruction = asm_set->GetInstructionSetDef().instructions[0];
   EXPECT_EQ(instruction.op, 0);
   EXPECT_EQ(instruction.op_name, "ALPHA.BETA");
-  EXPECT_EQ(instruction.arg_source, "");
-  EXPECT_EQ(instruction.arg1.type, ArgType::kNone);
-  EXPECT_EQ(instruction.arg2.type, ArgType::kNone);
-  EXPECT_EQ(instruction.code, "UL;");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].source, "");
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kNone);
+  EXPECT_EQ(instruction.code[0].code, "UL;");
 }
 
 TEST(InstructionAssemblerTest, DuplicateOpcodeNames) {
@@ -369,9 +378,11 @@ TEST(InstructionAssemblerTest, InstructionFirstMacroArgument) {
   ASSERT_EQ(asm_set->GetInstructionSetDef().instructions.size(), 1);
   const auto& instruction = asm_set->GetInstructionSetDef().instructions[0];
   EXPECT_EQ(instruction.op_name, "TEST");
-  EXPECT_EQ(instruction.arg1.type, ArgType::kMacro);
-  EXPECT_EQ(instruction.arg1.size, GetDefaultArgTypeSize(ArgType::kWordReg));
-  EXPECT_EQ(instruction.code, "UL;$Macro;");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kMacro);
+  EXPECT_EQ(instruction.code[0].arg1.size,
+            GetDefaultArgTypeSize(ArgType::kWordReg));
+  EXPECT_EQ(instruction.code[0].code, "UL;$Macro;");
 }
 
 TEST(InstructionAssemblerTest, InstructionSecondMacroArgument) {
@@ -391,11 +402,14 @@ TEST(InstructionAssemblerTest, InstructionSecondMacroArgument) {
   ASSERT_EQ(asm_set->GetInstructionSetDef().instructions.size(), 1);
   const auto& instruction = asm_set->GetInstructionSetDef().instructions[0];
   EXPECT_EQ(instruction.op_name, "TEST");
-  EXPECT_EQ(instruction.arg1.type, ArgType::kWordReg);
-  EXPECT_EQ(instruction.arg1.size, GetDefaultArgTypeSize(ArgType::kWordReg));
-  EXPECT_EQ(instruction.arg2.type, ArgType::kMacro);
-  EXPECT_EQ(instruction.arg2.size, GetDefaultArgTypeSize(ArgType::kWordReg));
-  EXPECT_EQ(instruction.code, "UL;$Macro;");
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].arg1.type, ArgType::kWordReg);
+  EXPECT_EQ(instruction.code[0].arg1.size,
+            GetDefaultArgTypeSize(ArgType::kWordReg));
+  EXPECT_EQ(instruction.code[0].arg2.type, ArgType::kMacro);
+  EXPECT_EQ(instruction.code[0].arg2.size,
+            GetDefaultArgTypeSize(ArgType::kWordReg));
+  EXPECT_EQ(instruction.code[0].code, "UL;$Macro;");
 }
 
 TEST(InstructionAssemblerTest, InstructionTwoMacroArgumentsAreInvalid) {
@@ -616,15 +630,15 @@ TEST(InstructionAssemblerTest, MacroCodeRetParamValid) {
 
 TEST(InstructionAssemblerTest, MacroCodeRetParamInvalid) {
   const RetParamTest kTests[] = {
-      {"p", "r", "X", "P"},  {"p", "r", "X", "p0"},  {"p", "r", "X", "p1"},
-      {"p", "R", "X", "p"},  {"p", "R", "X", "P"},   {"p", "R", "X", "p0"},
-      {"p", "R", "X", "p1"}, {"P", "r", "X", "p"},   {"P", "r", "X", "P"},
-      {"P", "R", "X", "p"},  {"P", "R", "X", "p0"},  {"P", "R", "X", "p1"},
-      {"p", "r", "$r", "M"}, {"p", "r", "$r", "m0"}, {"p", "r", "$r", "m0"},
-      {"p", "r", "$R", "M"}, {"p", "R", "$r", "m"},  {"p", "R", "$r", "m0"},
-      {"p", "R", "$r", "m1"}, {"p", "R", "$r", "M"},  {"p", "R", "$R", "m"},
-      {"p", "R", "$R", "m0"}, {"p", "R", "$R", "m1"}, {"p", "r", "$r", "i"},
-      {"p", "r", "$R", "i"},  {"p", "R", "$#3", "i"}, {"p", "r", "$#3", "m"},
+      {"p", "r", "X", "P"},    {"p", "r", "X", "p0"},   {"p", "r", "X", "p1"},
+      {"p", "R", "X", "p"},    {"p", "R", "X", "P"},    {"p", "R", "X", "p0"},
+      {"p", "R", "X", "p1"},   {"P", "r", "X", "p"},    {"P", "r", "X", "P"},
+      {"P", "R", "X", "p"},    {"P", "R", "X", "p0"},   {"P", "R", "X", "p1"},
+      {"p", "r", "$r", "M"},   {"p", "r", "$r", "m0"},  {"p", "r", "$r", "m0"},
+      {"p", "r", "$R", "M"},   {"p", "R", "$r", "m"},   {"p", "R", "$r", "m0"},
+      {"p", "R", "$r", "m1"},  {"p", "R", "$r", "M"},   {"p", "R", "$R", "m"},
+      {"p", "R", "$R", "m0"},  {"p", "R", "$R", "m1"},  {"p", "r", "$r", "i"},
+      {"p", "r", "$R", "i"},   {"p", "R", "$#3", "i"},  {"p", "r", "$#3", "m"},
       {"p", "r", "$#3", "m0"}, {"p", "r", "$#3", "m1"}, {"p", "R", "$#3", "M"},
   };
   for (const auto& test : kTests) {
@@ -964,10 +978,11 @@ TEST(InstructionAssemblerTest, AllMicrocodeSyntaxValid) {
   ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
   ASSERT_EQ(asm_set->GetInstructionSetDef().instructions.size(), 2);
   auto instruction = asm_set->GetInstructionSetDef().instructions[0];
-  EXPECT_EQ(instruction.code,
+  ASSERT_EQ(instruction.code.size(), 1);
+  EXPECT_EQ(instruction.code[0].code,
             "LD(C0);UL;@label:ADDI(a,1);JC(NZ,@label);$NoArg;");
   instruction = asm_set->GetInstructionSetDef().instructions[1];
-  EXPECT_EQ(instruction.code, "UL;$WithArg(R0);");
+  EXPECT_EQ(instruction.code[0].code, "UL;$WithArg(R0);");
 }
 
 TEST(InstructionAssemblerTest, CallMacroInMacroInvalid) {

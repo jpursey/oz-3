@@ -7,7 +7,9 @@
 
 #include <ostream>
 #include <string>
+#include <vector>
 
+#include "absl/base/no_destructor.h"
 #include "absl/strings/substitute.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -23,9 +25,39 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 
-constexpr uint8_t kOp_TEST = 200;
+constexpr uint8_t kOp_TEST = 128;
 constexpr uint8_t kMicro_TEST_NOP = 254;
 constexpr uint8_t kMicro_TEST = 255;
+
+absl::Span<const InstructionCodeDef> MakeCodeDef(
+    const InstructionCodeDef& code) {
+  static absl::NoDestructor<std::vector<InstructionCodeDef>> code_storage;
+  code_storage->push_back(code);
+  return absl::MakeConstSpan(&code_storage->back(), 1);
+}
+
+InstructionDef MakeDef(const InstructionCodeDef& code_def) {
+  return InstructionDef{
+      .op = kOp_TEST, .op_name = "TEST", .code = MakeCodeDef(code_def)};
+}
+InstructionDef MakeDef(std::string_view code) {
+  return InstructionDef{
+      .op = kOp_TEST, .op_name = "TEST", .code = MakeCodeDef({.code = code})};
+}
+
+InstructionDef MakeDef(Argument arg1, std::string_view code = "UL;") {
+  return InstructionDef{.op = kOp_TEST,
+                        .op_name = "TEST",
+                        .code = MakeCodeDef({.arg1 = arg1, .code = code})};
+}
+
+InstructionDef MakeDef(Argument arg1, Argument arg2,
+                       std::string_view code = "UL;") {
+  return InstructionDef{
+      .op = kOp_TEST,
+      .op_name = "TEST",
+      .code = MakeCodeDef({.arg1 = arg1, .arg2 = arg2, .code = code})};
+}
 
 TEST(InstructionSetTest, InstructionNotFound) {
   InstructionSet codes;
@@ -48,7 +80,7 @@ TEST(InstructionSetTest, BankDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kBank},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .code = "UL;OP(CODE);OP(STACK);OP(DATA);OP(EXTRA)"},
+      MakeDef("UL;OP(CODE);OP(STACK);OP(DATA);OP(EXTRA)"),
   };
 
   InstructionError error;
@@ -79,13 +111,12 @@ TEST(InstructionSetTest, StatusDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kStatus},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .code = "UL;OP(_);"
-               "OP(Z);OP(S);OP(C);OP(O);"
-               "OP(Z___);OP(_S__);OP(__C_);OP(___O);"
-               "OP(ZS);OP(ZC);OP(ZO);OP(SC);OP(SO);OP(CO);"
-               "OP(ZSC);OP(ZSO);OP(ZCO);OP(SCO);"
-               "OP(ZSCO);OP(CCC_SSS_OZ_OZ_OZ);OP(I);"},
+      MakeDef("UL;OP(_);"
+              "OP(Z);OP(S);OP(C);OP(O);"
+              "OP(Z___);OP(_S__);OP(__C_);OP(___O);"
+              "OP(ZS);OP(ZC);OP(ZO);OP(SC);OP(SO);OP(CO);"
+              "OP(ZSC);OP(ZSO);OP(ZCO);OP(SCO);"
+              "OP(ZSCO);OP(CCC_SSS_OZ_OZ_OZ);OP(I);"),
   };
 
   InstructionError error;
@@ -138,11 +169,10 @@ TEST(InstructionSetTest, PortModeDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kPortMode},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .code = "UL;OP(_);"
-               "OP(T);OP(S);OP(A);"
-               "OP(TS);OP(TA);OP(SA);"
-               "OP(TSA);OP(STA);OP(T_A);"},
+      MakeDef("UL;OP(_);"
+              "OP(T);OP(S);OP(A);"
+              "OP(TS);OP(TA);OP(SA);"
+              "OP(TSA);OP(STA);OP(T_A);"),
   };
 
   InstructionError error;
@@ -179,7 +209,7 @@ TEST(InstructionSetTest, ConditionDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kCondition, MicroArgType::kCondition},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .code = "UL;OP(Z,NZ);OP(S,NS);OP(C,NC);OP(O,NO);"},
+      MakeDef("UL;OP(Z,NZ);OP(S,NS);OP(C,NC);OP(O,NO);"),
   };
 
   InstructionError error;
@@ -214,16 +244,13 @@ TEST(InstructionSetTest, AddressDecodedCorrecty) {
       {kMicro_TEST, "OP", MicroArgType::kAddress, MicroArgType::kAddress},
   };
   const InstructionDef instruction_defs[] = {
-      {
-          .op = kOp_TEST,
-          .code = "UL;"                    // 0
-                  "@start:OP(0,1);"        // 1
-                  "OP(-1,@end);"           // 2
-                  "OP(@start,@mid);"       // 3
-                  "@mid:NOP;"              // 4
-                  "NOP;"                   // 5
-                  "@end:OP(@start,@end);"  // 6
-      },
+      MakeDef("UL;"                     // 0
+              "@start:OP(0,1);"         // 1
+              "OP(-1,@end);"            // 2
+              "OP(@start,@mid);"        // 3
+              "@mid:NOP;"               // 4
+              "NOP;"                    // 5
+              "@end:OP(@start,@end);")  // 6
   };
 
   InstructionError error;
@@ -280,7 +307,7 @@ TEST(InstructionSetTest, AddressDecodedCorrectlyWithinMacro) {
   const MacroDef macro_defs[] = {
       {.name = "Macro", .size = 1, .code = macro_code_defs}};
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .arg1 = {ArgType::kMacro, 1}, .code = "NOP;$Macro;"}};
+      MakeDef({ArgType::kMacro, 1}, "NOP;$Macro;")};
   InstructionError error;
   auto codes = CompileInstructionSet(
       {.instructions = instruction_defs, .macros = macro_defs}, &error,
@@ -339,16 +366,15 @@ TEST(InstructionSetTest, AddressDecodedCorrectlyAcrossMacro) {
       {.source = "four", .prefix = {3, 2}, .code = "NOP;NOP;NOP;NOP;"},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = {ArgType::kMacro, 2},
-       .code = "UL;"
-               "@start:OP(0,1);"
-               "OP(@mid,-1);"
-               "OP(@start,@mid);"
-               "@macro:$Macro;"
-               "@mid:NOP;"
-               "OP(-1,@macro);"
-               "@end:OP(@start,@end);"},
+      MakeDef({ArgType::kMacro, 2},
+              "UL;"
+              "@start:OP(0,1);"
+              "OP(@mid,-1);"
+              "OP(@start,@mid);"
+              "@macro:$Macro;"
+              "@mid:NOP;"
+              "OP(-1,@macro);"
+              "@end:OP(@start,@end);"),
   };
   const MacroDef macro_defs[] = {
       {.name = "Macro", .size = 2, .code = macro_code_defs}};
@@ -406,7 +432,7 @@ TEST(InstructionSetTest, ImmArgsDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kValue, MicroArgType::kValue},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .code = "UL;OP(0,1);OP(127,-42);OP(-128,97)"},
+      MakeDef("UL;OP(0,1);OP(127,-42);OP(-128,97)"),
   };
 
   InstructionError error;
@@ -439,7 +465,7 @@ TEST(InstructionSetTest, WordRegArgsDecodedCorrectly) {
     std::string code =
         absl::Substitute("UL;OP($0,$0);", CpuCore::GetWordRegName(i));
     const InstructionDef instruction_defs[] = {
-        {.op = kOp_TEST, .code = code},
+        MakeDef(code),
     };
 
     InstructionError error;
@@ -475,7 +501,7 @@ TEST(InstructionSetTest, DwordRegArgsDecodedCorrectly) {
     std::string context = absl::StrCat("Context: ", reg_name);
     std::string code = absl::Substitute("UL;OP($0,$0);", reg_name);
     const InstructionDef instruction_defs[] = {
-        {.op = kOp_TEST, .code = code},
+        MakeDef(code),
     };
 
     InstructionError error;
@@ -504,10 +530,8 @@ TEST(InstructionSetTest, ImmOpArgDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = {ArgType::kImmediate, 3},
-       .arg2 = {ArgType::kImmediate, 5},
-       .code = "UL;OP(C0,C1)"},
+      MakeDef({ArgType::kImmediate, 3}, {ArgType::kImmediate, 5},
+              "UL;OP(C0,C1)"),
   };
 
   InstructionError error;
@@ -538,10 +562,7 @@ TEST(InstructionSetTest, WordOpArgDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = ArgType::kWordReg,
-       .arg2 = ArgType::kWordReg,
-       .code = "UL;OP(a,b);OP(b,a);"},
+      MakeDef(ArgType::kWordReg, ArgType::kWordReg, "UL;OP(a,b);OP(b,a);"),
   };
 
   InstructionError error;
@@ -573,10 +594,8 @@ TEST(InstructionSetTest, WordOpFromDwordArgDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kWordReg, MicroArgType::kWordReg},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = ArgType::kDwordReg,
-       .arg2 = ArgType::kDwordReg,
-       .code = "UL;OP(a0,b0);OP(b1,a1);"},
+      MakeDef(ArgType::kDwordReg, ArgType::kDwordReg,
+              "UL;OP(a0,b0);OP(b1,a1);"),
   };
 
   InstructionError error;
@@ -625,11 +644,9 @@ TEST(InstructionSetTest, MacroWordOpArgDecodedCorrectly) {
       {.name = "Macro", .size = 5, .code = macro_code_defs}};
   InstructionError error;
 
-  const InstructionDef macro_first[] = {{
-      .op = kOp_TEST,
-      .arg1 = {ArgType::kMacro, 5},
-      .code = "UL;$Macro",
-  }};
+  const InstructionDef macro_first[] = {
+      MakeDef({ArgType::kMacro, 5}, "UL;$Macro"),
+  };
   auto codes =
       CompileInstructionSet({macro_first, macro_defs}, &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
@@ -683,12 +700,9 @@ TEST(InstructionSetTest, MacroWordOpArgDecodedCorrectly) {
                                                   .arg1 = CpuCore::C0,
                                                   .arg2 = CpuCore::R1}));
 
-  const InstructionDef macro_second[] = {{
-      .op = kOp_TEST,
-      .arg1 = ArgType::kWordReg,
-      .arg2 = {ArgType::kMacro, 5},
-      .code = "UL;$Macro",
-  }};
+  const InstructionDef macro_second[] = {
+      MakeDef(ArgType::kWordReg, {ArgType::kMacro, 5}, "UL;$Macro"),
+  };
   codes = CompileInstructionSet({macro_second, macro_defs}, &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
   for (uint16_t i = 0; i < 8; ++i) {
@@ -755,16 +769,18 @@ TEST(InstructionSetTest, MacroWordParamDecodedCorrectly) {
                                   .param = ArgType::kWordReg,
                                   .size = 1,
                                   .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .arg1 = {ArgType::kMacro, 1}, .arg2 = ArgType::kWordReg},
-      {.op = kOp_TEST, .arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 1}},
+  InstructionCodeDef instruction_code_defs[] = {
+      {.arg1 = {ArgType::kMacro, 1}, .arg2 = ArgType::kWordReg},
+      {.arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 1}},
   };
+  InstructionDef instruction_def = {};
   std::string code;
   auto MakeInstructionSetDef = [&](int i,
                                    std::string_view reg) -> InstructionSetDef {
     code = absl::StrCat("UL;$Macro(", reg, ");");
-    instruction_defs[i].code = code;
-    return {absl::Span(&instruction_defs[i], 1), macro_defs};
+    instruction_code_defs[i].code = code;
+    instruction_def = MakeDef(instruction_code_defs[i]);
+    return {absl::Span(&instruction_def, 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -837,16 +853,13 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
                             .ret = ArgType::kWordReg,
                             .size = 2,
                             .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST, .arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 2}},
-      {.op = kOp_TEST, .arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kWordReg},
-      {.op = kOp_TEST,
-       .arg1 = ArgType::kDwordReg,
-       .arg2 = {ArgType::kMacro, 2}},
-      {.op = kOp_TEST,
-       .arg1 = {ArgType::kMacro, 2},
-       .arg2 = ArgType::kDwordReg},
+  InstructionCodeDef instruction_code_defs[] = {
+      {.arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 2}},
+      {.arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kWordReg},
+      {.arg1 = ArgType::kDwordReg, .arg2 = {ArgType::kMacro, 2}},
+      {.arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kDwordReg},
   };
+  InstructionDef instruction_def = {};
   auto MakeInstructionSetDef = [&](int i, ArgType param_type, ArgType arg_type,
                                    int ret_value,
                                    std::string_view code) -> InstructionSetDef {
@@ -857,8 +870,9 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
       macro_code_defs[0].prefix.size = 0;
     }
     macro_code_defs[0].ret = ret_value;
-    instruction_defs[i].code = code;
-    return {absl::Span(&instruction_defs[i], 1), macro_defs};
+    instruction_code_defs[i].code = code;
+    instruction_def = MakeDef(instruction_code_defs[i]);
+    return {absl::Span(&instruction_def, 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -1354,10 +1368,7 @@ TEST(InstructionSetTest, DwordOpArgDecodedCorrectly) {
       {kMicro_TEST, "OP", MicroArgType::kDwordReg, MicroArgType::kDwordReg},
   };
   const InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = ArgType::kDwordReg,
-       .arg2 = ArgType::kDwordReg,
-       .code = "UL;OP(A,B);OP(B,A)"},
+      MakeDef(ArgType::kDwordReg, ArgType::kDwordReg, "UL;OP(A,B);OP(B,A)"),
   };
 
   InstructionError error;
@@ -1400,9 +1411,7 @@ TEST(InstructionSetTest, MacroDwordOpArgDecodedCorrectly) {
   InstructionError error;
 
   const InstructionDef macro_first[] = {{
-      .op = kOp_TEST,
-      .arg1 = {ArgType::kMacro, 2},
-      .code = "UL;$Macro",
+      MakeDef({ArgType::kMacro, 2}, "UL;$Macro"),
   }};
   auto codes =
       CompileInstructionSet({macro_first, macro_defs}, &error, micro_defs);
@@ -1424,12 +1433,9 @@ TEST(InstructionSetTest, MacroDwordOpArgDecodedCorrectly) {
           Microcode{.op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = -1},
           Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = CpuCore::D1}));
 
-  const InstructionDef macro_second[] = {{
-      .op = kOp_TEST,
-      .arg1 = ArgType::kWordReg,
-      .arg2 = {ArgType::kMacro, 2},
-      .code = "UL;$Macro",
-  }};
+  const InstructionDef macro_second[] = {
+      MakeDef(ArgType::kWordReg, {ArgType::kMacro, 2}, "UL;$Macro"),
+  };
   codes = CompileInstructionSet({macro_second, macro_defs}, &error, micro_defs);
   EXPECT_THAT(error.message, IsEmpty());
   for (uint16_t i = 0; i < 4; ++i) {
@@ -1465,20 +1471,18 @@ TEST(InstructionSetTest, MacroDwordParamDecodedCorrectly) {
                                   .param = ArgType::kDwordReg,
                                   .size = 1,
                                   .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = {ArgType::kMacro, 1},
-       .arg2 = ArgType::kDwordReg},
-      {.op = kOp_TEST,
-       .arg1 = ArgType::kDwordReg,
-       .arg2 = {ArgType::kMacro, 1}},
+  InstructionCodeDef instruction_code_defs[] = {
+      {.arg1 = {ArgType::kMacro, 1}, .arg2 = ArgType::kDwordReg},
+      {.arg1 = ArgType::kDwordReg, .arg2 = {ArgType::kMacro, 1}},
   };
+  InstructionDef instruction_def;
   std::string code;
   auto MakeInstructionSetDef = [&](int i,
                                    std::string_view reg) -> InstructionSetDef {
     code = absl::StrCat("UL;$Macro(", reg, ");");
-    instruction_defs[i].code = code;
-    return {absl::Span(&instruction_defs[i], 1), macro_defs};
+    instruction_code_defs[i].code = code;
+    instruction_def = MakeDef(instruction_code_defs[i]);
+    return {absl::Span(&instruction_def, 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -1567,14 +1571,11 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
                             .ret = ArgType::kDwordReg,
                             .size = 2,
                             .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {
-      {.op = kOp_TEST,
-       .arg1 = ArgType::kDwordReg,
-       .arg2 = {ArgType::kMacro, 2}},
-      {.op = kOp_TEST,
-       .arg1 = {ArgType::kMacro, 2},
-       .arg2 = ArgType::kDwordReg},
+  InstructionCodeDef instruction_code_defs[] = {
+      {.arg1 = ArgType::kDwordReg, .arg2 = {ArgType::kMacro, 2}},
+      {.arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kDwordReg},
   };
+  InstructionDef instruction_def;
   auto MakeInstructionSetDef = [&](int i, ArgType param_type, ArgType arg_type,
                                    int ret_value,
                                    std::string_view code) -> InstructionSetDef {
@@ -1585,8 +1586,9 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
       macro_code_defs[0].prefix.size = 0;
     }
     macro_code_defs[0].ret = ret_value;
-    instruction_defs[i].code = code;
-    return {absl::Span(&instruction_defs[i], 1), macro_defs};
+    instruction_code_defs[i].code = code;
+    instruction_def = MakeDef(instruction_code_defs[i]);
+    return {absl::Span(&instruction_def, 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -1769,8 +1771,7 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
 }
 
 TEST(InstructionSetTest, DefaultCodeSizeIsOne) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   InstructionError error;
   auto codes =
       CompileInstructionSet({.instructions = {instruction_def}}, &error);
@@ -1781,8 +1782,7 @@ TEST(InstructionSetTest, DefaultCodeSizeIsOne) {
 }
 
 TEST(InstructionSetTest, LoadDuringFetchIncreasesCodeSize) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("LD(C0);UL;");
   InstructionError error;
   auto codes =
       CompileInstructionSet({.instructions = {instruction_def}}, &error);
@@ -1793,8 +1793,7 @@ TEST(InstructionSetTest, LoadDuringFetchIncreasesCodeSize) {
 }
 
 TEST(InstructionSetTest, TwoLoadsDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);LD(C1);UL;"};
+  InstructionDef instruction_def = MakeDef("LD(C0);LD(C1);UL;");
   InstructionError error;
   auto codes =
       CompileInstructionSet({.instructions = {instruction_def}}, &error);
@@ -1805,9 +1804,7 @@ TEST(InstructionSetTest, TwoLoadsDuringFetch) {
 }
 
 TEST(InstructionSetTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);ADR(C0);LD(C0);UL;");
   InstructionError error;
   auto codes =
       CompileInstructionSet({.instructions = {instruction_def}}, &error);
@@ -1818,8 +1815,7 @@ TEST(InstructionSetTest, LoadAfterFetchDoesNotIncreaseCodeSize) {
 }
 
 TEST(InstructionSetTest, LoadAfterAddressDuringFetchDoesNotIncreaseCodeSize) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "ADR(C0);LD(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("ADR(C0);LD(C0);UL;");
   InstructionError error;
   auto codes =
       CompileInstructionSet({.instructions = {instruction_def}}, &error);
@@ -1834,15 +1830,12 @@ TEST(InstructionSetTest, EmptyMacroCodeInInstruction) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = ""}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code =
-                                        "UL;"
-                                        "@Before:JC(NZ,@After);"
-                                        "@At:$Macro;"
-                                        "@After:JC(NS,@At);"
-                                        "JC(NC,@Before);"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1},
+                                           "UL;"
+                                           "@Before:JC(NZ,@After);"
+                                           "@At:$Macro;"
+                                           "@After:JC(NS,@At);"
+                                           "JC(NC,@Before);");
   InstructionError instruction_error;
   auto instruction_set = CompileInstructionSet({{instruction_def}, {macro_def}},
                                                &instruction_error);
@@ -1869,10 +1862,8 @@ TEST(InstructionSetTest, MacroChangesCodeSize) {
   };
   const MacroDef macro_defs[] = {
       {.name = "Macro", .size = 2, .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {{.op = kOp_TEST,
-                                        .op_name = "TEST",
-                                        .arg1 = {ArgType::kMacro, 2},
-                                        .code = "$Macro;UL;"}};
+  InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kMacro, 2}, "$Macro;UL;")};
   InstructionError error;
   auto codes = CompileInstructionSet({instruction_defs, macro_defs}, &error);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1891,10 +1882,8 @@ TEST(InstructionSetTest, UndefinedMacroOptionsResultInNop) {
   };
   const MacroDef macro_defs[] = {
       {.name = "Macro", .size = 2, .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {{.op = kOp_TEST,
-                                        .op_name = "TEST",
-                                        .arg1 = {ArgType::kMacro, 2},
-                                        .code = "UL;$Macro;"}};
+  InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kMacro, 2}, "UL;$Macro;")};
   InstructionError error;
   auto codes = CompileInstructionSet({instruction_defs, macro_defs}, &error);
   EXPECT_THAT(error.message, IsEmpty());
@@ -1916,10 +1905,8 @@ TEST(InstructionSetTest, MacroArgumentsShareSubInstructions) {
   };
   const MacroDef macro_defs[] = {
       {.name = "Macro", .size = 3, .code = macro_code_defs}};
-  InstructionDef instruction_defs[] = {{.op = kOp_TEST,
-                                        .op_name = "TEST",
-                                        .arg1 = {ArgType::kMacro, 3},
-                                        .code = "UL;$Macro;"}};
+  InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kMacro, 3}, "UL;$Macro;")};
   InstructionError error;
   auto codes = CompileInstructionSet({instruction_defs, macro_defs}, &error);
   EXPECT_THAT(error.message, IsEmpty());

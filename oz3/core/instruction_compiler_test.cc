@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "absl/base/no_destructor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/substitute.h"
@@ -24,7 +25,7 @@ using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
 
-constexpr uint8_t kOp_TEST = 200;
+constexpr uint8_t kOp_TEST = 128;
 constexpr uint8_t kMicro_TEST_NOP = 254;
 constexpr uint8_t kMicro_TEST = 255;
 
@@ -49,8 +50,9 @@ bool CompileForTest(
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
   // One instruction is required to create a valid instruction set. It is
   // unimportant, as this is only for compiling the macro.
+  const InstructionCodeDef instruction_code_defs[] = {{.code = "UL;"}};
   const InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+      .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
   InstructionError instruction_error;
   if (CompileInstructionSet({{instruction_def}, {macro_def}},
                             &instruction_error, microcode_defs)
@@ -81,29 +83,40 @@ bool TestCompile(const MicrocodeDef& microcode_def,
                  const InstructionDef& instruction_def, std::string& error) {
   MicrocodeDef microcode_defs[] = {
       {kMicro_UL, "UL"}, {kMicro_LK, "LK", MicroArgType::kBank}, microcode_def};
-  std::string new_code = absl::StrCat("UL;", instruction_def.code);
+  CHECK(instruction_def.code.size() == 1);
+  std::string new_code = absl::StrCat("UL;", instruction_def.code[0].code);
+  InstructionCodeDef new_code_defs[] = {instruction_def.code[0]};
+  new_code_defs[0].code = new_code;
   InstructionDef instruction = instruction_def;
-  instruction.code = new_code;
+  instruction.code = new_code_defs;
   instruction.op_name = "TEST";
   return CompileForTest(instruction, error, microcode_defs);
 }
 
+absl::Span<const InstructionCodeDef> MakeCodeDef(
+    const InstructionCodeDef& code) {
+  static absl::NoDestructor<std::vector<InstructionCodeDef>> code_storage;
+  code_storage->push_back(code);
+  return absl::MakeConstSpan(&code_storage->back(), 1);
+}
+
 InstructionDef MakeDef(std::string_view code) {
-  return InstructionDef{.op = kOp_TEST, .op_name = "TEST", .code = code};
+  return InstructionDef{
+      .op = kOp_TEST, .op_name = "TEST", .code = MakeCodeDef({.code = code})};
 }
 
 InstructionDef MakeDef(Argument arg1, std::string_view code = "UL;") {
-  return InstructionDef{
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = arg1, .code = code};
+  return InstructionDef{.op = kOp_TEST,
+                        .op_name = "TEST",
+                        .code = MakeCodeDef({.arg1 = arg1, .code = code})};
 }
 
 InstructionDef MakeDef(Argument arg1, Argument arg2,
                        std::string_view code = "UL;") {
-  return InstructionDef{.op = kOp_TEST,
-                        .op_name = "TEST",
-                        .arg1 = arg1,
-                        .arg2 = arg2,
-                        .code = code};
+  return InstructionDef{
+      .op = kOp_TEST,
+      .op_name = "TEST",
+      .code = MakeCodeDef({.arg1 = arg1, .arg2 = arg2, .code = code})};
 }
 
 TEST(InstructionCompilerTest, InvalidFirstArg) {
@@ -334,10 +347,8 @@ TEST(InstructionCompilerTest, MacroWordRegArg) {
     };
     const MacroDef macro_def = {
         .name = "Macro", .size = 5, .code = macro_code_defs};
-    const InstructionDef instruction_def = {.op = kOp_TEST,
-                                            .op_name = "TEST",
-                                            .arg1 = {ArgType::kMacro, 5},
-                                            .code = "UL;$Macro;"};
+    const InstructionDef instruction_def =
+        MakeDef({ArgType::kMacro, 5}, "UL;$Macro;");
     return CompileForTest(instruction_def, macro_def, error);
   };
   EXPECT_TRUE(TestCompile("MOV(R0,R1);"));
@@ -394,10 +405,8 @@ TEST(InstructionCompilerTest, MacroWordRegParam) {
                                 .param = ArgType::kWordReg,
                                 .size = 1,
                                 .code = macro_code_defs};
-    const InstructionDef instruction_def = {.op = kOp_TEST,
-                                            .op_name = "TEST",
-                                            .arg1 = {ArgType::kMacro, 1},
-                                            .code = "UL;$Macro(R0);"};
+    const InstructionDef instruction_def =
+        MakeDef({ArgType::kMacro, 1}, "UL;$Macro(R0);");
     return CompileForTest(instruction_def, macro_def, error);
   };
   EXPECT_TRUE(TestCompile("MOV(R0,R1);"));
@@ -427,11 +436,12 @@ TEST(InstructionCompilerTest, MacroWordRegReturn) {
                               .ret = ArgType::kWordReg,
                               .size = 1,
                               .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    instruction_def.code = code;
+    const InstructionCodeDef code_defs[] = {
+        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
+    instruction_def.code = code_defs;
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("UL;$Macro;MOV(R4,r);MOV(r,R5);"));
@@ -456,14 +466,15 @@ TEST(InstructionCompilerTest, MacroWordParamRegReturn) {
                         .ret = ArgType::kWordReg,
                         .size = 1,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
   std::string error;
   auto TestCompile = [&](ArgType param_type, int8_t ret_value,
                          std::string_view code) {
     macro_code_defs[0].ret = ret_value;
     macro_def.param = param_type;
-    instruction_def.code = code;
+    const InstructionCodeDef code_defs[] = {
+        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
+    instruction_def.code = code_defs;
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile(ArgType::kWordReg, CpuCore::MP,
@@ -607,10 +618,10 @@ TEST(InstructionCompilerTest, MacroDwordRegArg) {
     };
     const MacroDef macro_def = {
         .name = "Macro", .size = 3, .code = macro_code_defs};
-    const InstructionDef instruction_def = {.op = kOp_TEST,
-                                            .op_name = "TEST",
-                                            .arg1 = {ArgType::kMacro, 3},
-                                            .code = "UL;$Macro;"};
+    const InstructionCodeDef instruction_code_defs[] = {
+        {.arg1 = {ArgType::kMacro, 3}, .code = "UL;$Macro;"}};
+    const InstructionDef instruction_def = {
+        .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("TEST(D0,D1);"));
@@ -647,10 +658,10 @@ TEST(InstructionCompilerTest, MacroDwordRegParam) {
                                 .param = ArgType::kDwordReg,
                                 .size = 1,
                                 .code = macro_code_defs};
-    const InstructionDef instruction_def = {.op = kOp_TEST,
-                                            .op_name = "TEST",
-                                            .arg1 = {ArgType::kMacro, 1},
-                                            .code = "UL;$Macro(D0);"};
+    const InstructionCodeDef instruction_code_defs[] = {
+        {.arg1 = {ArgType::kMacro, 1}, .code = "UL;$Macro(D0);"}};
+    const InstructionDef instruction_def = {
+        .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("TEST(D0,D1);"));
@@ -678,11 +689,12 @@ TEST(InstructionCompilerTest, MacroDwordRegReturn) {
                               .ret = ArgType::kDwordReg,
                               .size = 1,
                               .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    instruction_def.code = code;
+    const InstructionCodeDef code_defs[] = {
+        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
+    instruction_def.code = code_defs;
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_FALSE(TestCompile("UL;$Macro;MOV(R4,r);"));
@@ -711,11 +723,12 @@ TEST(InstructionCompilerTest, MacroDwordParamRegReturn) {
                               .ret = ArgType::kDwordReg,
                               .size = 1,
                               .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
+  InstructionDef instruction_def = {.op = kOp_TEST, .op_name = "TEST"};
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    instruction_def.code = code;
+    const InstructionCodeDef code_defs[] = {
+        {.arg1 = {ArgType::kMacro, 1}, .code = code}};
+    instruction_def.code = code_defs;
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_FALSE(TestCompile("UL;$Macro(D0);MOV(R4,r);"));
@@ -877,157 +890,132 @@ TEST(InstructionCompilerTest, AddressArg) {
       {kMicro_TEST, "TEST", MicroArgType::kAddress},
   };
   std::string error;
-  EXPECT_TRUE(CompileForTest(InstructionDef{.code = "UL;TEST(-1);"}, error,
-                             microcode_defs));
+  EXPECT_TRUE(CompileForTest(MakeDef("UL;TEST(-1);"), error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(InstructionDef{.code = "UL;TEST(-2);"}, error,
-                              microcode_defs));
+  EXPECT_FALSE(CompileForTest(MakeDef("UL;TEST(-2);"), error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(InstructionDef{.code = "UL;TEST(-3);"}, error,
-                              microcode_defs));
+  EXPECT_FALSE(CompileForTest(MakeDef("UL;TEST(-3);"), error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(InstructionDef{.code = "UL;TEST(0);"}, error,
-                             microcode_defs));
+  EXPECT_TRUE(CompileForTest(MakeDef("UL;TEST(0);"), error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(InstructionDef{.code = "UL;TEST(1);"}, error,
-                              microcode_defs));
+  EXPECT_FALSE(CompileForTest(MakeDef("UL;TEST(1);"), error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(InstructionDef{.code = "TEST(0);UL;"}, error,
-                             microcode_defs));
+  EXPECT_TRUE(CompileForTest(MakeDef("TEST(0);UL;"), error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(CompileForTest(InstructionDef{.code = "NOP;TEST(-2);UL;"}, error,
-                             microcode_defs));
+  EXPECT_TRUE(
+      CompileForTest(MakeDef("NOP;TEST(-2);UL;"), error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(InstructionDef{.code = "TEST(1);UL;"}, error,
-                              microcode_defs));
+  EXPECT_FALSE(CompileForTest(MakeDef("TEST(1);UL;"), error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "TEST(2);UL;NOP;LK(CODE);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "TEST(3);UL;NOP;LK(CODE);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "TEST(4);UL;NOP;LK(CODE);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "TEST(5);UL;NOP;LK(CODE);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;TEST(4);NOP;LK(CODE);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "TEST(3);UL;NOP;LK(STACK);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "TEST(3);UL;NOP;LK(DATA);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "TEST(3);UL;NOP;LK(EXTRA);NOP;UL;NOP;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code =
-                         "@label:NOP;TEST(@label);UL;NOP;LK(DATA);NOP;UL;NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code =
-                         "NOP;TEST(@label);@label:UL;NOP;LK(DATA);NOP;UL;NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(
-
-      InstructionDef{.code =
-                         "NOP;TEST(@label);UL;@label:NOP;LK(DATA);NOP;UL;NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code =
-                         "NOP;UL;TEST(@label);NOP;@label:LK(DATA);NOP;UL;NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(
-
-      InstructionDef{.code =
-                         "NOP;UL;TEST(@label);NOP;LK(DATA);@label:NOP;UL;NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code =
-                         "NOP;UL;TEST(@label);NOP;LK(DATA);NOP;UL;@label:NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(InstructionDef{.code = "UL;TEST(@missing);"},
+  EXPECT_FALSE(CompileForTest(MakeDef("TEST(2);UL;NOP;LK(CODE);NOP;UL;NOP;"),
                               error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(CompileForTest(MakeDef("TEST(3);UL;NOP;LK(CODE);NOP;UL;NOP;"),
+                             error, microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(CompileForTest(MakeDef("TEST(4);UL;NOP;LK(CODE);NOP;UL;NOP;"),
+                             error, microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(MakeDef("TEST(5);UL;NOP;LK(CODE);NOP;UL;NOP;"),
+                              error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(CompileForTest(MakeDef("UL;TEST(4);NOP;LK(CODE);NOP;UL;NOP;"),
+                             error, microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(MakeDef("TEST(3);UL;NOP;LK(STACK);NOP;UL;NOP;"),
+                              error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(MakeDef("TEST(3);UL;NOP;LK(DATA);NOP;UL;NOP;"),
+                              error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(MakeDef("TEST(3);UL;NOP;LK(EXTRA);NOP;UL;NOP;"),
+                              error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(CompileForTest(
+      MakeDef("@label:NOP;TEST(@label);UL;NOP;LK(DATA);NOP;UL;NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(CompileForTest(
+      MakeDef("NOP;TEST(@label);@label:UL;NOP;LK(DATA);NOP;UL;NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(
+      MakeDef("NOP;TEST(@label);UL;@label:NOP;LK(DATA);NOP;UL;NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(CompileForTest(
+      MakeDef("NOP;UL;TEST(@label);NOP;@label:LK(DATA);NOP;UL;NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(
+      MakeDef("NOP;UL;TEST(@label);NOP;LK(DATA);@label:NOP;UL;NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(CompileForTest(
+      MakeDef("NOP;UL;TEST(@label);NOP;LK(DATA);NOP;UL;@label:NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(
-      CompileForTest(InstructionDef{.code = "UL;TEST(invalid);@invalid:NOP;"},
+      CompileForTest(MakeDef("UL;TEST(@missing);"), error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(MakeDef("UL;TEST(invalid);@invalid:NOP;"), error,
+                              microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      CompileForTest(MakeDef("UL;TEST(@label);PLK(C0);@label:NOP;PUL;"), error,
+                     microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(
+
+      MakeDef("UL;PLK(C0);NOP;TEST(@label);PUL;@label:NOP;"), error,
+      microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(CompileForTest(
+
+      MakeDef("UL;PLK(C0);NOP;TEST(@label);PUL;NOP;PLK(C0);@"
+              "label:NOP;PUL;"),
+      error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(
+      CompileForTest(MakeDef("UL;PLK(C0);NOP;TEST(@label);NOP;@label:NOP;PUL;"),
                      error, microcode_defs));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(CompileForTest(
+
+      MakeDef("UL;LK(DATA);NOP;TEST(@label);UL;NOP;PLK(C0);@"
+              "label:NOP;PUL;"),
+      error, microcode_defs));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      CompileForTest(MakeDef("UL;TEST(@label);CLK(C0);@label:NOP;CUL;"), error,
+                     microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "UL;TEST(@label);PLK(C0);@label:NOP;PUL;"}, error,
+
+      MakeDef("UL;CLK(C0);NOP;TEST(@label);CUL;@label:NOP;"), error,
       microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(CompileForTest(
 
-      InstructionDef{.code = "UL;PLK(C0);NOP;TEST(@label);PUL;@label:NOP;"},
+      MakeDef("UL;CLK(C0);NOP;TEST(@label);CUL;NOP;CLK(C0);@"
+              "label:NOP;CUL;"),
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-
-      InstructionDef{.code = "UL;PLK(C0);NOP;TEST(@label);PUL;NOP;PLK(C0);@"
-                             "label:NOP;PUL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;PLK(C0);NOP;TEST(@label);NOP;@label:NOP;PUL;"},
-      error, microcode_defs));
+  EXPECT_TRUE(
+      CompileForTest(MakeDef("UL;CLK(C0);NOP;TEST(@label);NOP;@label:NOP;CUL;"),
+                     error, microcode_defs));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(CompileForTest(
 
-      InstructionDef{.code = "UL;LK(DATA);NOP;TEST(@label);UL;NOP;PLK(C0);@"
-                             "label:NOP;PUL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-      InstructionDef{.code = "UL;TEST(@label);CLK(C0);@label:NOP;CUL;"}, error,
-      microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-
-      InstructionDef{.code = "UL;CLK(C0);NOP;TEST(@label);CUL;@label:NOP;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_FALSE(CompileForTest(
-
-      InstructionDef{.code = "UL;CLK(C0);NOP;TEST(@label);CUL;NOP;CLK(C0);@"
-                             "label:NOP;CUL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, Not(IsEmpty()));
-  EXPECT_TRUE(CompileForTest(
-      InstructionDef{.code = "UL;CLK(C0);NOP;TEST(@label);NOP;@label:NOP;CUL;"},
-      error, microcode_defs));
-  EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(CompileForTest(
-
-      InstructionDef{.code = "UL;LK(DATA);NOP;TEST(@label);UL;NOP;CLK(C0);@"
-                             "label:NOP;CUL;"},
+      MakeDef("UL;LK(DATA);NOP;TEST(@label);UL;NOP;CLK(C0);@"
+              "label:NOP;CUL;"),
       error, microcode_defs));
   EXPECT_THAT(error, Not(IsEmpty()));
   for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
     std::string context = absl::StrCat("Context: ", reg_name);
     std::string code = absl::Substitute(
         "UL;LKR($0);TEST(2);UL;LKR($0);TEST(-4);UL;", reg_name);
-    EXPECT_TRUE(
-        CompileForTest(InstructionDef{.code = code}, error, microcode_defs))
+    EXPECT_TRUE(CompileForTest(MakeDef(code), error, microcode_defs))
         << context;
     EXPECT_THAT(error, IsEmpty()) << context;
   }
@@ -1038,8 +1026,7 @@ TEST(InstructionCompilerTest, AddressArg) {
     std::string code = absl::Substitute(
         "UL;LKR($0);TEST(2);UL;LKR($1);TEST(-4);UL;",
         CpuCore::GetWordRegName(i), CpuCore::GetWordRegName(j));
-    EXPECT_FALSE(
-        CompileForTest(InstructionDef{.code = code}, error, microcode_defs))
+    EXPECT_FALSE(CompileForTest(MakeDef(code), error, microcode_defs))
         << context;
     EXPECT_THAT(error, Not(IsEmpty())) << context;
   }
@@ -1058,155 +1045,133 @@ TEST(InstructionCompilerTest, ProvideExtraArg) {
 }
 
 TEST(InstructionCompilerTest, MemoryLockDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "LK(STACK);UL;UL;"};
+  InstructionDef instruction_def = MakeDef("LK(STACK);UL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, RegisterMemoryLockDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "LKR(R7);UL;UL;"};
+  InstructionDef instruction_def = MakeDef("LKR(R7);UL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortLockDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "PLK(C0);PUL;UL;"};
+  InstructionDef instruction_def = MakeDef("PLK(C0);PUL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, CoreLockDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "CLK(C0);CUL;UL;"};
+  InstructionDef instruction_def = MakeDef("CLK(C0);CUL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, MemoryLockAfterPriorMemoryLock) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;LK(DATA);LK(STACK);UL;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);LK(STACK);UL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, MemoryLockAfterPriorPortLock) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;PLK(C0);LK(STACK);UL;PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);LK(STACK);UL;PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, MemoryLockAfterPriorCoreLock) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;CLK(C0);LK(STACK);UL;CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);LK(STACK);UL;CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, RegisterMemoryLockAfterPriorMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);LKR(R7);UL;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);LKR(R7);UL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortLockAfterPriorMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);PLK(C0);PUL;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);PLK(C0);PUL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, CoreLockAfterPriorMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);CLK(C0);CUL;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);CLK(C0);CUL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, MemoryUnlockWhenMemoryLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, MemoryUnlockWhenNotLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, MemoryUnlockWhenPortLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortUnlockWhenPortLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);PUL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, PortUnlockWhenNotLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortUnlockWhenMemoryLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, CoreUnlockWhenCoreLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CLK(C0);CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);CUL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, CoreUnlockWhenNotLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, CoreUnlockWhenMemoryLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -1227,8 +1192,7 @@ TEST(InstructionCompilerTest, MaxLocks) {
         break;
     }
   }
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = code};
+  InstructionDef instruction_def = MakeDef(code);
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
@@ -1249,347 +1213,301 @@ TEST(InstructionCompilerTest, TooManyLocks) {
         break;
     }
   }
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = code};
+  InstructionDef instruction_def = MakeDef(code);
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, AddressWhenNotLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;ADR(C0);"};
+  InstructionDef instruction_def = MakeDef("UL;ADR(C0);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, AddressWhenPortLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);ADR(C0);"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);ADR(C0);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, AddressDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "ADR(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("ADR(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, AddressWhenMemoryLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);ADR(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);ADR(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, LoadDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "LD(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("LD(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, LoadBeforeAddress) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);LD(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);LD(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, LoadAfterAddress) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;LK(DATA);ADR(C0);LD(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);ADR(C0);LD(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, StoreDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "ST(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("ST(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, StoreAfterAddressDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "ADR(C0);ST(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("ADR(C0);ST(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, StoreBeforeAddress) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);ST(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);ST(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, StoreAfterAddress) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;LK(DATA);ADR(C0);ST(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);ADR(C0);ST(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, StorePushDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "STP(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("STP(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, StorePushAfterAddressDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "ADR(C0);STP(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("ADR(C0);STP(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, StorePushBeforeAddress) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);STP(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);STP(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, StorePushAfterAddress) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .code = "UL;LK(DATA);ADR(C0);STP(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);ADR(C0);STP(C0);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, PortLoadWhenUnlocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLD(_,C1);"};
+  InstructionDef instruction_def = MakeDef("UL;PLD(_,C1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortLoadWhenMemoryLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);PLD(_,C1);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);PLD(_,C1);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortLoadWhenPortLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);PLD(_,C1);PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);PLD(_,C1);PUL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, PortStoreWhenUnlocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PST(_,C1);"};
+  InstructionDef instruction_def = MakeDef("UL;PST(_,C1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortStoreWhenMemoryLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);PST(_,C1);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);PST(_,C1);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, PortStoreWhenPortLocked) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);PST(_,C1);PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);PST(_,C1);PUL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
 TEST(InstructionCompilerTest, NoFetchUnlock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "MOV(R0,R1);"};
+  InstructionDef instruction_def = MakeDef("MOV(R0,R1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, NoMemoryUnlock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);MOV(R0,R1);"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);MOV(R0,R1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, NoPortUnlock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);MOV(R0,R1);"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);MOV(R0,R1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, NoCoreUnlock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CLK(C0);MOV(R0,R1);"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);MOV(R0,R1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, WaitDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "WAIT(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("WAIT(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, WaitWithinMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);WAIT(C0);UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);WAIT(C0);UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, WaitWithinPortLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);WAIT(C0);PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);WAIT(C0);PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, WaitWithinCoreLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CLK(C0);WAIT(C0);CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);WAIT(C0);CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, HaltDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "HALT;UL;"};
+  InstructionDef instruction_def = MakeDef("HALT;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, HaltWithinMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);HALT;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);HALT;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, HaltWithinPortLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);HALT;PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);HALT;PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, HaltWithinCoreLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CLK(C0);HALT;CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);HALT;CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, IrtDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "IRT;UL;"};
+  InstructionDef instruction_def = MakeDef("IRT;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, IrtWithinMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);IRT;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);IRT;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, IrtWithinPortLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);IRT;PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);IRT;PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, IrtWithinCoreLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CLK(C0);IRT;CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);IRT;CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, EndDuringFetch) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "END;UL;"};
+  InstructionDef instruction_def = MakeDef("END;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, EndWithinMemoryLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;LK(DATA);END;UL;"};
+  InstructionDef instruction_def = MakeDef("UL;LK(DATA);END;UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, EndWithinPortLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;PLK(C0);END;PUL;"};
+  InstructionDef instruction_def = MakeDef("UL;PLK(C0);END;PUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, EndWithinCoreLock) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;CLK(C0);END;CUL;"};
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);END;CUL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
 TEST(InstructionCompilerTest, LabelMissingColon) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;@start;MOV(C0,C1);"};
+  InstructionDef instruction_def = MakeDef("UL;@start;MOV(C0,C1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -1599,8 +1517,7 @@ TEST(InstructionCompilerTest, InvalidLabelCharacter) {
   // Just test the printable ASCII characters.
   for (char ch = 33; absl::ascii_isgraph(ch); ++ch) {
     std::string code = absl::StrCat("UL;@", std::string(1, ch), ":MOV(C0,C1);");
-    InstructionDef instruction_def = {
-        .op = kOp_TEST, .op_name = "TEST", .code = code};
+    InstructionDef instruction_def = MakeDef(code);
     std::string error;
     if (!absl::ascii_isalnum(ch) && ch != '_') {
       EXPECT_FALSE(CompileForTest(instruction_def, error));
@@ -1613,10 +1530,8 @@ TEST(InstructionCompilerTest, InvalidLabelCharacter) {
 }
 
 TEST(InstructionCompilerTest, DuplicateLabel) {
-  InstructionDef instruction_def = {
-      .op = kOp_TEST,
-      .op_name = "TEST",
-      .code = "UL;@start:MOV(C0,C1);@start:MOV(C1,C0);"};
+  InstructionDef instruction_def =
+      MakeDef("UL;@start:MOV(C0,C1);@start:MOV(C1,C0);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(error, Not(IsEmpty()));
@@ -1627,8 +1542,7 @@ TEST(InstructionCompilerTest, MacroWithMissingName) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro name"));
@@ -1640,8 +1554,7 @@ TEST(InstructionCompilerTest, MacroWithInvalidCharacter) {
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   char name[] = "IsValidX";
   MacroDef macro_def = {.name = name, .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   for (char ch = 32; absl::ascii_isprint(ch); ++ch) {
     name[7] = ch;
@@ -1662,8 +1575,7 @@ TEST(InstructionCompilerTest, MacroWithInvalidCharacter) {
 
 TEST(InstructionCompilerTest, MacroWithZeroSize) {
   MacroDef macro_def = {.name = "Macro", .size = 0};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1679,10 +1591,7 @@ TEST(InstructionSetTest, MacroWithSize8) {
                           .code = "MOV(R0,C0);"};
   }
   MacroDef macro_def = {.name = "Macro", .size = 8, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 8},
-                                    .code = "UL;$Macro"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 8}, "UL;$Macro");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(error, IsEmpty());
@@ -1698,8 +1607,7 @@ TEST(InstructionSetTest, MacroWithSize9) {
                           .code = "MOV(R0,C0);"};
   }
   MacroDef macro_def = {.name = "Macro", .size = 9, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1710,8 +1618,7 @@ TEST(InstructionCompilerTest, MacroWithInvalidPrefixSize) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 2}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1722,8 +1629,7 @@ TEST(InstructionCompilerTest, MacroWithInvalidArgumentSize) {
   MacroCodeDef macro_code_defs[] = {
       {.source = "R0", .arg = {ArgType::kImmediate, 2}, .code = "MOV(R0,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1740,8 +1646,7 @@ TEST(InstructionCompilerTest, MacroWithInvalidArgumentPlusPrefixSize) {
                                      .arg = {ArgType::kImmediate, 1},
                                      .code = "MOV(R1,C0;"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1754,8 +1659,7 @@ TEST(InstructionCompilerTest, MacroWithPrefixValueOutOfRange) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R2", .prefix = {2, 1}, .code = "MOV(R2,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("prefix value"));
@@ -1766,8 +1670,7 @@ TEST(InstructionCompilerTest, MacroWithInvalidLabel) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "@NoColon-MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("label"));
@@ -1782,8 +1685,7 @@ TEST(InstructionCompilerTest, MacroWithTooMuchCode) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("microcode"));
@@ -1794,8 +1696,7 @@ TEST(InstructionCompilerTest, MacroWithNoCode) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = ""}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(error, IsEmpty());
@@ -1810,10 +1711,7 @@ TEST(InstructionCompilerTest, MacroWithMaxCode) {
       {.source = "R0", .prefix = {0, 1}, .code = "UL;"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "$Macro;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, "$Macro;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(error, IsEmpty());
@@ -1828,10 +1726,7 @@ TEST(InstructionCompilerTest, MacroPlusInstructionOverMaxCode) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, "UL;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("microcode"));
@@ -1846,10 +1741,7 @@ TEST(InstructionCompilerTest, MacroPlusInstructionAtMaxCode) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, "UL;$Macro;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(error, IsEmpty());
@@ -1860,10 +1752,8 @@ TEST(InstructionCompilerTest, InvalidMicrocodeInMacro) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro;$Macro;"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;$Macro;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("multiple macros"));
@@ -1874,8 +1764,7 @@ TEST(InstructionCompilerTest, MultipleMacrosInInstruction) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
+  InstructionDef instruction_def = MakeDef("UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("not found"));
@@ -1886,10 +1775,7 @@ TEST(InstructionCompilerTest, MacroArgumentWithoutMacroUseInInstruction) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, "UL;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro argument"));
@@ -1900,8 +1786,7 @@ TEST(InstructionCompilerTest, MacroInInstructionWithoutArgument) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;$Macro;"};
+  InstructionDef instruction_def = MakeDef("UL;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro argument"));
@@ -1912,21 +1797,16 @@ TEST(InstructionCompilerTest, TooManyMacroArgumentsInInstruction) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .arg2 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro;"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, {ArgType::kMacro, 1}, "UL;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro arguments"));
 }
 
 TEST(InstructionCompilerTest, UnknownMacroInInstruction) {
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$UndefinedMacro;"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;$UndefinedMacro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("unknown macro"));
@@ -1938,10 +1818,7 @@ TEST(InstructionCompilerTest, MacroSmallerThanInstructionSpec) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 2},
-                                    .code = "UL;$Macro;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 2}, "UL;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1956,10 +1833,7 @@ TEST(InstructionCompilerTest, MacroBiggerThanInstructionSpec) {
       {.source = "R3", .prefix = {3, 2}, .code = "MOV(R3,C0);"},
   };
   MacroDef macro_def = {.name = "Macro", .size = 2, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, "UL;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("macro size"));
@@ -1981,10 +1855,8 @@ TEST(InstructionCompilerTest, MacroMakesArg1AddressTooBig) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;TEST(@end,0);$Macro;@end:NOP"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;TEST(@end,0);$Macro;@end:NOP");
   std::string error;
   EXPECT_FALSE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2008,10 +1880,8 @@ TEST(InstructionCompilerTest, MacroMakesArg1AddressMax) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;TEST(@end,0);$Macro;@end:NOP"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;TEST(@end,0);$Macro;@end:NOP");
   std::string error;
   EXPECT_TRUE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2033,10 +1903,8 @@ TEST(InstructionCompilerTest, MacroMakesArg2AddressTooBig) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;TEST(0,@end);$Macro;@end:NOP"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;TEST(0,@end);$Macro;@end:NOP");
   std::string error;
   EXPECT_FALSE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2060,10 +1928,8 @@ TEST(InstructionCompilerTest, MacroMakesArg2AddressMax) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;TEST(0,@end);$Macro;@end:NOP"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;TEST(0,@end);$Macro;@end:NOP");
   std::string error;
   EXPECT_TRUE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2085,10 +1951,8 @@ TEST(InstructionCompilerTest, MacroMakesArg1AddressTooSmall) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;@start:$Macro;TEST(@start,0);"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;@start:$Macro;TEST(@start,0);");
   std::string error;
   EXPECT_FALSE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2112,10 +1976,8 @@ TEST(InstructionCompilerTest, MacroMakesArg1AddressMin) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;@start:$Macro;TEST(@start,0);"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;@start:$Macro;TEST(@start,0);");
   std::string error;
   EXPECT_TRUE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2137,10 +1999,8 @@ TEST(InstructionCompilerTest, MacroMakesArg2AddressTooSmall) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;@start:$Macro;TEST(0,@start);"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;@start:$Macro;TEST(0,@start);");
   std::string error;
   EXPECT_FALSE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2164,10 +2024,8 @@ TEST(InstructionCompilerTest, MacroMakesArg2AddressMin) {
       {.source = "R0", .prefix = {0, 1}, .code = "MOV(R0,C0);"},
       {.source = "R1", .prefix = {1, 1}, .code = code}};
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;@start:$Macro;TEST(0,@start);"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;@start:$Macro;TEST(0,@start);");
   std::string error;
   EXPECT_TRUE(
       CompileForTest(instruction_def, macro_def, error, microcode_defs));
@@ -2180,13 +2038,8 @@ TEST(InstrctuionCompilerTest, CallMacroWithExtraFirstParameter) {
       {.source = "R1", .prefix = {1, 1}, .code = "MOV(R1,C0);"},
   };
   MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST,
-      .op_name = "TEST",
-      .arg1 = {ArgType::kMacro, 1},
-      .arg2 = ArgType::kWordReg,
-      .code = "UL;$Macro(R2);",
-  };
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, ArgType::kWordReg, "UL;$Macro(R2);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error),
@@ -2201,11 +2054,8 @@ TEST(InstructionCompilerTest, CallMacroWithNoParameters) {
       {.source = "EXTRA", .prefix = {3, 2}, .code = "LK(EXTRA);"},
   };
   MacroDef macro_def = {.name = "Lk", .size = 2, .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 2},
-                                    .arg2 = ArgType::kWordReg,
-                                    .code = "UL;$Lk;ADR(b);LD(b);UL;"};
+  InstructionDef instruction_def = MakeDef(
+      {ArgType::kMacro, 2}, ArgType::kWordReg, "UL;$Lk;ADR(b);LD(b);UL;");
   std::string error;
   EXPECT_TRUE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(error, IsEmpty());
@@ -2264,10 +2114,7 @@ TEST(InstructionCompilerTest, CallMacroMissingFirstParameter) {
                         .param = ArgType::kWordReg,
                         .size = 1,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro;"};
+  InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, "UL;$Macro;");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error),
@@ -2283,10 +2130,8 @@ TEST(InstructionCompilerTest, CallMacroWithExtraSecondParameter) {
                         .param = ArgType::kWordReg,
                         .size = 1,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {.op = kOp_TEST,
-                                    .op_name = "TEST",
-                                    .arg1 = {ArgType::kMacro, 1},
-                                    .code = "UL;$Macro(R0,R1);"};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1}, "UL;$Macro(R0,R1);");
   std::string error;
   EXPECT_FALSE(CompileForTest(instruction_def, macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error),
@@ -2302,22 +2147,15 @@ TEST(InstructionCompilerTest, CallMacroWithWordParameter) {
                         .param = ArgType::kWordReg,
                         .size = 1,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
-  auto InstructionWithCode =
-      [&](std::string_view code) -> const InstructionDef& {
-    instruction_def.code = code;
-    return instruction_def;
-  };
   std::string error;
-  EXPECT_FALSE(
-      CompileForTest(InstructionWithCode("UL;$Macro(1);"), macro_def, error));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(1);"),
+                              macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("argument"));
-  EXPECT_TRUE(
-      CompileForTest(InstructionWithCode("UL;$Macro(R0);"), macro_def, error));
+  EXPECT_TRUE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(R0);"),
+                             macro_def, error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(
-      CompileForTest(InstructionWithCode("UL;$Macro(D0);"), macro_def, error));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(D0);"),
+                              macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("argument"));
 }
 
@@ -2330,22 +2168,15 @@ TEST(InstructionCompilerTest, CallMacroWithDwordParameter) {
                         .param = ArgType::kDwordReg,
                         .size = 1,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
-  auto InstructionWithCode =
-      [&](std::string_view code) -> const InstructionDef& {
-    instruction_def.code = code;
-    return instruction_def;
-  };
   std::string error;
-  EXPECT_FALSE(
-      CompileForTest(InstructionWithCode("UL;$Macro(1);"), macro_def, error));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(1);"),
+                              macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("argument"));
-  EXPECT_FALSE(
-      CompileForTest(InstructionWithCode("UL;$Macro(R0);"), macro_def, error));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(R0);"),
+                              macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("argument"));
-  EXPECT_TRUE(
-      CompileForTest(InstructionWithCode("UL;$Macro(D0);"), macro_def, error));
+  EXPECT_TRUE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(D0);"),
+                             macro_def, error));
   EXPECT_THAT(error, IsEmpty());
 }
 
@@ -2381,16 +2212,9 @@ TEST(InstructionCompilerTest, MacroWithConflictingArgAndPrefix) {
                         .param = ArgType::kDwordReg,
                         .size = 3,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
-  auto InstructionWithCode =
-      [&](std::string_view code) -> const InstructionDef& {
-    instruction_def.code = code;
-    return instruction_def;
-  };
   std::string error;
-  EXPECT_FALSE(
-      CompileForTest(InstructionWithCode("UL;$Macro(2);"), macro_def, error));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(2);"),
+                              macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error),
               AllOf(HasSubstr("duplicate macro"), HasSubstr(" 000 ")));
 }
@@ -2419,16 +2243,9 @@ TEST(InstructionCompilerTest, MacroWithConflictingArgPrefixCombos) {
                         .param = ArgType::kDwordReg,
                         .size = 5,
                         .code = macro_code_defs};
-  InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .arg1 = {ArgType::kMacro, 1}};
-  auto InstructionWithCode =
-      [&](std::string_view code) -> const InstructionDef& {
-    instruction_def.code = code;
-    return instruction_def;
-  };
   std::string error;
-  EXPECT_FALSE(
-      CompileForTest(InstructionWithCode("UL;$Macro(2);"), macro_def, error));
+  EXPECT_FALSE(CompileForTest(MakeDef({ArgType::kMacro, 1}, "UL;$Macro(2);"),
+                              macro_def, error));
   EXPECT_THAT(absl::AsciiStrToLower(error),
               AllOf(HasSubstr("duplicate macro"), HasSubstr("test0"),
                     HasSubstr("test2"), HasSubstr(" 11001 ")));

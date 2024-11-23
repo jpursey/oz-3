@@ -373,9 +373,12 @@ bool InstructionCompiler::CompileInstruction(
   if (instructions_.size() <= op_index) {
     instructions_.resize(op_index + 1);
   }
+  if (instruction_def_->code.size() != 1) {
+    return Error("Instruction code must have exactly one entry");
+  }
   Instruction& instruction = instructions_[op_index];
-  instruction.arg1 = instruction_def_->arg1;
-  instruction.arg2 = instruction_def_->arg2;
+  instruction.arg1 = instruction_def_->code[0].arg1;
+  instruction.arg2 = instruction_def_->code[0].arg2;
   state_.arg1 = &instruction.arg1;
   state_.arg2 = &instruction.arg2;
 
@@ -386,8 +389,8 @@ bool InstructionCompiler::CompileInstruction(
     return Error("Invalid second argument (size is probably invalid for type)");
   }
 
-  state_.src_code =
-      absl::StrSplit(instruction_def_->code, ';', absl::SkipWhitespace());
+  state_.src_code = absl::StrSplit(instruction_def_->code[0].code, ';',
+                                   absl::SkipWhitespace());
   if (!ExtractLabels()) {
     return false;
   }
@@ -682,7 +685,7 @@ bool InstructionCompiler::CompileSubInstruction() {
   const int macro_size_increase = macro_code_size - 1;
 
   const int8_t arg_offset =
-      (instruction_def_->arg1.type == ArgType::kMacro ? 0 : 1);
+      (instruction_def_->code[0].arg1.type == ArgType::kMacro ? 0 : 1);
 
   const int8_t macro_param0 = state_.macro_param;
   const int8_t macro_param1 =

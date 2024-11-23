@@ -8,6 +8,7 @@
 #include "absl/log/log.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
+#include "absl/strings/str_replace.h"
 #include "oz3/core/cpu_core.h"
 
 namespace oz3 {
@@ -43,6 +44,7 @@ class InstructionDefExporter {
   void ExportArgumentField(std::string field_name, const Argument& arg);
   void ExportMacroCode(const MacroDef& macro, const MacroCodeDef& code);
   void ExportMacro(const MacroDef& macro);
+  void ExportInstructionCode(const InstructionCodeDef& code);
   void ExportInstruction(const InstructionDef& instruction);
   void ExportMicrocode(std::string_view code);
 
@@ -112,18 +114,24 @@ void InstructionDefExporter::ExportMacro(const MacroDef& macro) {
                   "},\n");
 }
 
+void InstructionDefExporter::ExportInstructionCode(
+    const InstructionCodeDef& code) {
+  absl::StrAppend(&result_, "    {.source = \"", code.source,
+                  "\",\n     .prefix = {", code.prefix.value, ", ",
+                  code.prefix.size, "}");
+  ExportArgumentField("arg1", code.arg1);
+  ExportArgumentField("arg2", code.arg2);
+  absl::StrAppend(&result_, ",\n     .code = ");
+  ExportMicrocode(code.code);
+  absl::StrAppend(&result_, "},\n");
+}
+
 void InstructionDefExporter::ExportInstruction(
     const InstructionDef& instruction) {
   absl::StrAppend(&result_, "    {.op = ", instruction.op,
                   ",\n     .op_name = \"", instruction.op_name, "\"");
-  if (!instruction.arg_source.empty()) {
-    absl::StrAppend(&result_, ",\n     .arg_source = \"",
-                    instruction.arg_source, "\"");
-  }
-  ExportArgumentField("arg1", instruction.arg1);
-  ExportArgumentField("arg2", instruction.arg2);
-  absl::StrAppend(&result_, ",\n     .code = ");
-  ExportMicrocode(instruction.code);
+  absl::StrAppend(&result_, ",\n     .code = kInstructionCode_",
+                  absl::StrReplaceAll(instruction.op_name, {{".", "_"}}));
   absl::StrAppend(&result_, "},\n");
 }
 
