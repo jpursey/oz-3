@@ -4,6 +4,7 @@
 
 # Returns a word value as a register.
 #
+# Ends fetch phase. 
 # Modifies register "C2" and returns result in register "r".
 macro(bits:5) GetWord:r {
   code:m "$r"          { UL; }
@@ -21,6 +22,7 @@ macro(bits:5) GetWord:r {
 
 # Returns a dword value as a register.
 #
+# Ends fetch phase. 
 # Modifies register "C0" and "C1" and returns result in register "R".
 macro(bits:5) GetDword:R {
   code:M "$R" {
@@ -58,6 +60,193 @@ macro(bits:5) GetDword:R {
   }
 }
 
+# Returns a 16-bit mask for a specified bit position (0-15) otherwise
+# returns zero
+#
+# Ends fetch phase. 
+# Requires C1=0
+# Modifies C0, C2.
+macro(bits:5) Get16BitMask:r {
+  code:C0 "$r" {
+    UL;
+    MOV(C2,m); 
+    MOVI(C0,1);
+    CMP(C1,m);
+    JC(Z,@done);
+  @shift:
+    SL(C0);
+    JD(C2,@shift);
+  @done: MSS(_);
+  }
+
+  code:C0 "0"  { UL; MOVI(C0,0x01); }
+  code:C0 "1"  { UL; MOVI(C0,0x02); }
+  code:C0 "2"  { UL; MOVI(C0,0x04); }
+  code:C0 "3"  { UL; MOVI(C0,0x08); }
+  code:C0 "4"  { UL; MOVI(C0,0x10); }
+  code:C0 "5"  { UL; MOVI(C0,0x20); }
+  code:C0 "6"  { UL; MOVI(C0,0x40); }
+  code:C0 "7"  {
+    UL; MOVI(C0,0x40);
+    SL(C0);
+  }
+  code:C0 "8"  {
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0);
+  }
+  code:C0 "9"  {
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0); SL(C0);
+  }
+  code:C0 "10" {
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:C0 "11" {
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:C0 "12" {
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:C0 "13" {
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:C0 "14" { 
+    UL; MOVI(C0,0x40); 
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:C0 "15" { 
+    UL; MOVI(C0,0x40);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+}
+
+# Returns a 32-bit mask for a specified bit position (0-31) otherwise
+# returns zero
+#
+# Ends fetch phase. 
+# Requires: C0=0 and C1=0
+# Modifies: C0, C1, C2
+macro(bits:6) Get32BitMask:R {
+  code:CD "$r" {
+    UL;
+    MOVI(C2,16);
+    CMP(C2,m);
+    JC(S,@upper);
+    JC(Z,@sixteen);
+    MOVI(C0,1);
+    CMP(C1,m);
+    JC(Z,@done);
+    MOV(C2,m); 
+  @shift_lower:
+    SL(C0);
+    JD(C2,@shift_lower);
+    JP(@done);
+  @sixteen:
+    MOVI(C1,1);
+    JP(@done);
+  @upper:
+    MOV(C2,m);
+    ADDI(C2,-16);
+    MOVI(C1,1);
+    CMP(C0,C2);
+    JC(Z,@done);
+  @shift_upper:
+    SL(C1);
+    JD(C2,@shift_upper);
+  @done: MSS(_);
+  }
+
+  code:CD "0"  { UL; MOVI(C0,0x0001); }
+  code:CD "1"  { UL; MOVI(C0,0x0002); }
+  code:CD "2"  { UL; MOVI(C0,0x0004); }
+  code:CD "3"  { UL; MOVI(C0,0x0008); }
+  code:CD "4"  { UL; MOVI(C0,0x0010); }
+  code:CD "5"  { UL; MOVI(C0,0x0020); }
+  code:CD "6"  { UL; MOVI(C0,0x0040); }
+  code:CD "7"  {
+    UL; MOVI(C0,0x0040);
+    SL(C0);
+  }
+  code:CD "8"  {
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0);
+  }
+  code:CD "9"  {
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "10" {
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "11" {
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "12" {
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "13" {
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "14" { 
+    UL; MOVI(C0,0x0040); 
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "15" { 
+    UL; MOVI(C0,0x0040);
+    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
+  }
+  code:CD "16"  { UL; MOVI(C1,0x0001); }
+  code:CD "17"  { UL; MOVI(C1,0x0002); }
+  code:CD "18"  { UL; MOVI(C1,0x0004); }
+  code:CD "19"  { UL; MOVI(C1,0x0008); }
+  code:CD "20"  { UL; MOVI(C1,0x0010); }
+  code:CD "21"  { UL; MOVI(C1,0x0020); }
+  code:CD "22"  { UL; MOVI(C1,0x0040); }
+  code:CD "23"  {
+    UL; MOVI(C1,0x0040);
+    SL(C1);
+  }
+  code:CD "24"  {
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1);
+  }
+  code:CD "25"  {
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1); SL(C1);
+  }
+  code:CD "26" {
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1); SL(C1); SL(C1);
+  }
+  code:CD "27" {
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
+  }
+  code:CD "28" {
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
+  }
+  code:CD "29" {
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
+  }
+  code:CD "30" { 
+    UL; MOVI(C1,0x0040); 
+    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
+  }
+  code:CD "31" { 
+    UL; MOVI(C1,0x0040);
+    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
+  }
+}
 
 ################################################################################
 ## NOP
@@ -707,3 +896,104 @@ instruction XOR.D "$R, $m" {
   MSR(ZSCO,_SCO);
 }
 
+################################################################################
+## CLRB <register>, <bit-position>
+##
+## Cycles: 6+
+## ZSCO: ----
+##
+## Variants:
+##    CLRB.W <reg>, <word-value>
+##    CLRB.D <dreg>, <dword-value>
+##
+## Clears bit in the specified register.
+################################################################################
+
+instruction CLRB.W "$r, $m" {
+  $Get16BitMask;
+  NOT(r,r);
+  AND(a,r);
+}
+
+instruction CLRB.D "$R, $m" {
+  $Get32BitMask;
+  NOT(r0,r0);
+  NOT(r1,r1);
+  AND(a0,r0);
+  AND(a1,r1);
+}
+
+################################################################################
+## SETB <register>, <bit-position>
+##
+## Cycles: 5+
+## ZSCO: ----
+##
+## Variants:
+##    SETB.W <reg>, <word-value>
+##    SETB.D <dreg>, <dword-value>
+##
+## Sets bit in the specified register.
+################################################################################
+
+instruction SETB.W "$r, $m" {
+  $Get16BitMask;
+  OR(a,r);
+}
+
+instruction SETB.D "$R, $m" {
+  $Get32BitMask;
+  OR(a0,r0);
+  OR(a1,r1);
+}
+
+################################################################################
+## XORB <register>, <bit-position>
+##
+## Cycles: 5+
+## ZSCO: ----
+##
+## Variants:
+##    XORB.W <reg>, <word-value>
+##    XORB.D <dreg>, <dword-value>
+##
+## Toggles bit in the specified register.
+################################################################################
+
+instruction XORB.W "$r, $m" {
+  $Get16BitMask;
+  XOR(a,r);
+}
+
+instruction XORB.D "$R, $m" {
+  $Get32BitMask;
+  XOR(a0,r0);
+  XOR(a1,r1);
+}
+
+################################################################################
+## TSTB <register>, <bit-position>
+##
+## Cycles: 5+
+## ZSCO: X---
+##
+## Variants:
+##    TSTB.W <reg>, <word-value>
+##    TSTB.D <dreg>, <dword-value>
+##
+## Tests a bit in the specified register, setting Z if it is zero.
+################################################################################
+
+instruction TSTB.W "$r, $m" {
+  $Get16BitMask;
+  AND(r,a);
+  MSR(Z,Z);
+}
+
+instruction TSTB.D "$R, $m" {
+  $Get32BitMask;
+  AND(r0,a0);
+  MSR(Z,Z);
+  AND(r1,a1);
+  MSR(Z,_);
+}
