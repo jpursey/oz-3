@@ -769,6 +769,15 @@ bool InstructionCompiler::CompileSubInstruction() {
         LOG(DFATAL) << "Unhandled register: " << arg1;
       }
     }
+    if (def->arg1 == MicroArgType::kStatus &&
+        state_.microcode->arg1 < CpuCore::kMinArgReg) {
+      int8_t& arg1 = state_.microcode->arg1;
+      if (arg1 == CpuCore::MM0) {
+        arg1 = CpuCore::A0 - arg_offset;
+      } else {
+        LOG(DFATAL) << "Unhandled register: " << arg1;
+      }
+    }
     if (((def->arg2 == MicroArgType::kWordReg) ||
          (def->arg2 == MicroArgType::kDwordReg)) &&
         state_.microcode->arg2 < CpuCore::kMinArgReg) {
@@ -783,6 +792,15 @@ bool InstructionCompiler::CompileSubInstruction() {
         arg2 = CpuCore::A0 - arg_offset;
       } else if (arg2 == CpuCore::MM1) {
         arg2 = CpuCore::A1 - arg_offset;
+      } else {
+        LOG(DFATAL) << "Unhandled register: " << arg2;
+      }
+    }
+    if (def->arg2 == MicroArgType::kStatus &&
+        state_.microcode->arg2 < CpuCore::kMinArgReg) {
+      int8_t& arg2 = state_.microcode->arg2;
+      if (arg2 == CpuCore::MM0) {
+        arg2 = CpuCore::A0 - arg_offset;
       } else {
         LOG(DFATAL) << "Unhandled register: " << arg2;
       }
@@ -935,19 +953,54 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       return true;
     } break;
     case MicroArgType::kStatus: {
-      for (char c : arg_name) {
-        if (c == 'Z') {
-          arg |= CpuCore::Z;
-        } else if (c == 'S') {
-          arg |= CpuCore::S;
-        } else if (c == 'C') {
-          arg |= CpuCore::C;
-        } else if (c == 'O') {
-          arg |= CpuCore::O;
-        } else if (c == 'I') {
-          arg |= CpuCore::I;
-        } else if (c != '_') {
-          return Error("Invalid status flags: ", arg_name);
+      if (arg_name == "a") {
+        if (state_.macro_code_def != nullptr) {
+          return Error(
+              "Macro code cannot reference instruction arguments (use \"m\" or "
+              "\"i\" for macro arguments)");
+        }
+        if (state_.arg1->type != ArgType::kImmediate) {
+          return Error("\"", arg_name,
+                       "\" is not an immediate value. Argument is ",
+                       ArgTypeToString(state_.arg1->type));
+        }
+        arg = CpuCore::A;
+      } else if (arg_name == "b") {
+        if (state_.macro_code_def != nullptr) {
+          return Error(
+              "Macro code cannot reference instruction arguments (use \"m\" or "
+              "\"i\" for macro arguments)");
+        }
+        if (state_.arg2->type != ArgType::kImmediate) {
+          return Error("\"", arg_name,
+                       "\" is not an immediate value. Argument is ",
+                       ArgTypeToString(state_.arg2->type));
+        }
+        arg = CpuCore::B;
+      } else if (arg_name == "m") {
+        if (state_.macro_code_def == nullptr) {
+          return Error("Instruction code cannot reference macro arguments");
+        }
+        if (state_.macro_code_def->arg.type != ArgType::kImmediate) {
+          return Error("Macro argument is not an immediate value. Argument is ",
+                       ArgTypeToString(state_.macro_code_def->arg.type));
+        }
+        arg = CpuCore::MM;
+      } else {
+        for (char c : arg_name) {
+          if (c == 'Z') {
+            arg |= CpuCore::Z;
+          } else if (c == 'S') {
+            arg |= CpuCore::S;
+          } else if (c == 'C') {
+            arg |= CpuCore::C;
+          } else if (c == 'O') {
+            arg |= CpuCore::O;
+          } else if (c == 'I') {
+            arg |= CpuCore::I;
+          } else if (c != '_') {
+            return Error("Invalid status flags: ", arg_name);
+          }
         }
       }
       return true;
@@ -1031,11 +1084,12 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       if (arg_name == "a") {
         if (state_.macro_code_def != nullptr) {
           return Error(
-              "Macro code cannot reference instruction arguments (use \"m\" "
-              "for macro arguments)");
+              "Macro code cannot reference instruction arguments (use \"m\" or "
+              "\"i\" for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kWordReg) {
-          return Error("First argument is not a word register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a word register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = CpuCore::A;
@@ -1046,7 +1100,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("First argument is not a dwrod register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a dwrod register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = CpuCore::A0;
@@ -1057,18 +1112,20 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("First argument is not a dwrod register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a dwrod register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = CpuCore::A1;
       } else if (arg_name == "b") {
         if (state_.macro_code_def != nullptr) {
           return Error(
-              "Macro code cannot reference instruction arguments (use \"m\" "
-              "for macro arguments)");
+              "Macro code cannot reference instruction arguments (use \"m\" or "
+              "\"i\" for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kWordReg) {
-          return Error("Second argument is not a word register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a word register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = CpuCore::B;
@@ -1079,7 +1136,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("Second argument is not a dword register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a dword register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = CpuCore::B0;
@@ -1090,7 +1148,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("Second argument is not a dword register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a dword register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = CpuCore::B1;
@@ -1220,7 +1279,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("First argument is not a dwrod register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a dwrod register. Argument is ",
                        ArgTypeToString(state_.arg1->type));
         }
         arg = CpuCore::A;
@@ -1231,7 +1291,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
               "for macro arguments)");
         }
         if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("Second argument is not a dword register. Argument is ",
+          return Error("\"", arg_name,
+                       "\" is not a dword register. Argument is ",
                        ArgTypeToString(state_.arg2->type));
         }
         arg = CpuCore::B;

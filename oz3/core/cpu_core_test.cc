@@ -23,6 +23,10 @@ using ::testing::IsEmpty;
 enum MicroTestOp : uint8_t {
   kTestOp_NOP,
   kTestOp_ZSCO,
+  kTestOp_SETF,
+  kTestOp_CLRF,
+  kTestOp_XORF,
+  kTestOp_MOVF,
   kTestOp_EI,
   kTestOp_DI,
   kTestOp_WAIT,
@@ -99,6 +103,38 @@ const InstructionDef kMicroTestInstructions[] = {
      .code = "UL;"
              "MSM(ZSCO,C0);"
              "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_SETF,
+     .op_name = "SETF",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSS(a);"
+             "MSR(_,a);"
+             "MOV(b,ST);"},
+    {.op = kTestOp_CLRF,
+     .op_name = "CLRF",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSC(a);"
+             "MSR(a,_);"
+             "MOV(b,ST);"},
+    {.op = kTestOp_XORF,
+     .op_name = "CLRF",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSX(a);"
+             "MSR(a,a);"
+             "MOV(b,ST);"},
+    {.op = kTestOp_MOVF,
+     .op_name = "MOVF",
+     .arg1 = {ArgType::kImmediate, 5},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSM(a,FP);"
+             "MSR(a,a);"
+             "MOV(b,ST);"},
     {.op = kTestOp_EI,
      .op_name = "EI",
      .code = "UL;"
@@ -258,8 +294,8 @@ const InstructionDef kMicroTestInstructions[] = {
              "MOVI(a,42);"},
     {.op = kTestOp_MOV,
      .op_name = "MOV",
-     .arg1 = ArgType::kWordReg,
-     .arg2 = ArgType::kWordReg,
+     .arg1 = {ArgType::kWordReg, 4},
+     .arg2 = {ArgType::kWordReg, 4},
      .code = "UL;"
              "MOV(a,b);"},
     {.op = kTestOp_LV,
@@ -1811,6 +1847,97 @@ TEST(CpuCoreTest, MstiOp) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, SetClrFOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_SETF, CpuCore::Z | CpuCore::C, CpuCore::R0);
+  mem.AddCode(kTestOp_SETF, CpuCore::S | CpuCore::O, CpuCore::R1);
+  mem.AddCode(kTestOp_SETF, CpuCore::I, CpuCore::R2);
+  mem.AddCode(kTestOp_CLRF, CpuCore::I, CpuCore::R3);
+  mem.AddCode(kTestOp_CLRF, CpuCore::Z | CpuCore::O, CpuCore::R4);
+  mem.AddCode(kTestOp_CLRF, CpuCore::S | CpuCore::C, CpuCore::R5);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute instructions.
+  ExecuteUntilHalt(processor, state);
+  state.Update();
+  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.r0, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.r1, CpuCore::ZSCO);
+  EXPECT_EQ(state.r2, CpuCore::ZSCOI);
+  EXPECT_EQ(state.r3, CpuCore::ZSCO);
+  EXPECT_EQ(state.r4, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.r5, 0);
+  EXPECT_EQ(state.r6, 0);
+  EXPECT_EQ(state.r7, 0);
+}
+
+TEST(CpuCoreTest, XorFOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_XORF, CpuCore::Z | CpuCore::C, CpuCore::R0);
+  mem.AddCode(kTestOp_XORF, CpuCore::S | CpuCore::O, CpuCore::R1);
+  mem.AddCode(kTestOp_XORF, CpuCore::I, CpuCore::R2);
+  mem.AddCode(kTestOp_XORF, CpuCore::I, CpuCore::R3);
+  mem.AddCode(kTestOp_XORF, CpuCore::Z | CpuCore::O, CpuCore::R4);
+  mem.AddCode(kTestOp_XORF, CpuCore::S | CpuCore::C, CpuCore::R5);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute instructions.
+  ExecuteUntilHalt(processor, state);
+  state.Update();
+  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.r0, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.r1, CpuCore::ZSCO);
+  EXPECT_EQ(state.r2, CpuCore::ZSCOI);
+  EXPECT_EQ(state.r3, CpuCore::ZSCO);
+  EXPECT_EQ(state.r4, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.r5, 0);
+  EXPECT_EQ(state.r6, 0);
+  EXPECT_EQ(state.r7, 0);
+}
+
+TEST(CpuCoreTest, MovFOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R6, CpuCore::ZSCOI);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MOV, CpuCore::FP, CpuCore::R6);
+  mem.AddCode(kTestOp_MOVF, CpuCore::Z | CpuCore::C, CpuCore::R0);
+  mem.AddCode(kTestOp_MOVF, CpuCore::S | CpuCore::O, CpuCore::R1);
+  mem.AddCode(kTestOp_MOVF, CpuCore::I, CpuCore::R2);
+  mem.AddCode(kTestOp_MOV, CpuCore::FP, CpuCore::R7);
+  mem.AddCode(kTestOp_MOVF, CpuCore::I, CpuCore::R3);
+  mem.AddCode(kTestOp_MOVF, CpuCore::Z | CpuCore::O, CpuCore::R4);
+  mem.AddCode(kTestOp_MOVF, CpuCore::S | CpuCore::C, CpuCore::R5);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute instructions.
+  ExecuteUntilHalt(processor, state);
+  state.Update();
+  EXPECT_EQ(state.pc, 9);
+  EXPECT_EQ(state.r0, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.r1, CpuCore::ZSCO);
+  EXPECT_EQ(state.r2, CpuCore::ZSCOI);
+  EXPECT_EQ(state.r3, CpuCore::ZSCO);
+  EXPECT_EQ(state.r4, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.r5, 0);
+  EXPECT_EQ(state.r6, CpuCore::ZSCOI);
+  EXPECT_EQ(state.r7, 0);
 }
 
 TEST(CpuCoreTest, MstrOp) {

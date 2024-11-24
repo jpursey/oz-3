@@ -452,6 +452,14 @@ void CpuCore::RunInstruction() {
   }
 }
 
+#define OZ3_INIT_VAL1(BITS)                                               \
+  const uint16_t val1 =                                                   \
+      (code.arg1 < 0 ? instruction_.c[-code.arg1 - 1] & ((1 << BITS) - 1) \
+                     : code.arg1)
+#define OZ3_INIT_VAL2(BITS)                                               \
+  const uint16_t val2 =                                                   \
+      (code.arg2 < 0 ? instruction_.c[-code.arg2 - 1] & ((1 << BITS) - 1) \
+                     : code.arg2)
 #define OZ3_INIT_REG1   \
   const uint16_t reg1 = \
       (code.arg1 < 0 ? instruction_.r[-code.arg1 - 1] : code.arg1)
@@ -472,26 +480,31 @@ void CpuCore::RunInstructionLoop() {
     const Microcode code = instruction_.code[mip_++];
     switch (code.op) {
       case kMicro_MSC: {
-        mst_ &= ~static_cast<uint16_t>(code.arg1);
+        OZ3_INIT_VAL1(5);
+        mst_ &= ~val1;
         exec_cycles_ += kCpuCoreCycles_MSC;
       } break;
       case kMicro_MSS: {
-        mst_ |= static_cast<uint16_t>(code.arg1);
+        OZ3_INIT_VAL1(5);
+        mst_ |= val1;
         exec_cycles_ += kCpuCoreCycles_MSS;
       } break;
       case kMicro_MSX: {
-        mst_ ^= static_cast<uint16_t>(code.arg1);
+        OZ3_INIT_VAL1(5);
+        mst_ ^= val1;
         exec_cycles_ += kCpuCoreCycles_MSX;
       } break;
       case kMicro_MSM: {
+        OZ3_INIT_VAL1(5);
         OZ3_INIT_REG2;
-        const uint16_t mask = static_cast<uint16_t>(code.arg1);
-        mst_ = (mst_ & ~mask) | r_[reg2] & mask;
+        mst_ = (mst_ & ~val1) | r_[reg2] & val1;
         exec_cycles_ += kCpuCoreCycles_MSM;
       } break;
       case kMicro_MSR: {
-        msr_ &= mst_ | ~static_cast<uint16_t>(code.arg1);
-        msr_ |= mst_ & static_cast<uint16_t>(code.arg2);
+        OZ3_INIT_VAL1(5);
+        OZ3_INIT_VAL2(5);
+        msr_ &= mst_ | ~val1;
+        msr_ |= mst_ & val2;
         r_[ST] = msr_;
         exec_cycles_ += kCpuCoreCycles_MSR;
       } break;
