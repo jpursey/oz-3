@@ -960,6 +960,16 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kImmediate, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;JC(a,@jump);END;@jump:ADD(IP,r);"},
+    {.op = 52,
+     .op_name = "CALL",
+     .source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;LK(STACK);ADR(SP);STP(IP);UL;MOV(IP,r);"},
+    {.op = 53,
+     .op_name = "CALLR",
+     .source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;LK(STACK);ADR(SP);STP(IP);UL;ADD(IP,r);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

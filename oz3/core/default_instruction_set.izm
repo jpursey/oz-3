@@ -1140,3 +1140,33 @@ instruction JCR "$#3, $m" {
 @jump:
   ADD(IP,r);
 }
+
+################################################################################
+## CALL <address>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Pushes IP onto the stack and sets IP to the specified address.
+################################################################################
+
+instruction CALL "$m" {
+  $GetWord;
+  LK(STACK); ADR(SP); STP(IP); UL;
+  MOV(IP,r);
+}
+
+################################################################################
+## CALLR <relative-address>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Pushes IP onto the stack and adds the specified relative address to IP.
+################################################################################
+
+instruction CALLR "$m" {
+  $GetWord;
+  LK(STACK); ADR(SP); STP(IP); UL;
+  ADD(IP,r);
+}
