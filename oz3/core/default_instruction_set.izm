@@ -1458,3 +1458,64 @@ instruction RETC.A "$#3, $#5" {
   LK(STACK); ADR(SP); LD(IP); LAD(SP); UL;
 }
 
+################################################################################
+## IRT
+## IRT <size>
+##
+## Cycles: 5-6
+## ZSCO: ----
+##
+## Variants:
+##   IRT
+##   IRT.A <size>
+##
+## Pops 0-31 words from the stack, then pops ST and IP from the stack.
+################################################################################
+
+instruction IRT {
+  UL;
+  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
+  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+}
+
+instruction IRT.A "$#5" {
+  UL;
+  ADD(SP,C0);
+  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
+  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+}
+
+################################################################################
+## IRTC <condition>
+## IRTC <condition> <size>
+##
+## Cycles: 3-7
+## ZSCO: ----
+##
+## Variants:
+##   IRTC   <condition>
+##   IRTC.A <condition> <size>
+##
+## If the specified condition is true, optionally pops 0-31 words from the
+## stack, then pops ST and IP from the stack.
+################################################################################
+
+instruction IRTC "$#3" {
+  UL;
+  JC(a,@return);
+  END;
+@return:
+  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
+  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+}
+
+instruction IRTC.A "$#3, $#5" {
+  UL;
+  JC(a,@return);
+  END;
+@return:
+  ADD(SP,C1);
+  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
+  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+}
+

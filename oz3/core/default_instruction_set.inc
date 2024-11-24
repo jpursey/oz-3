@@ -1129,6 +1129,29 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;JC(a,@return);END;@return:ADD(SP,C1);LK(STACK);ADR(SP);"
              "LD(IP);LAD(SP);UL;"},
+    {.op = 68,
+     .op_name = "IRT",
+     .code = "UL;LK(STACK);ADR(SP);LD(ST);LD(IP);LAD(SP);UL;MSM(ZSCOI,ST);"
+             "MSR(ZSCOI,ZSCOI);"},
+    {.op = 69,
+     .op_name = "IRT.A",
+     .source = "$#5",
+     .arg1 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;ADD(SP,C0);LK(STACK);ADR(SP);LD(ST);LD(IP);LAD(SP);UL;"
+             "MSM(ZSCOI,ST);MSR(ZSCOI,ZSCOI);"},
+    {.op = 70,
+     .op_name = "IRTC",
+     .source = "$#3",
+     .arg1 = {oz3::ArgType::kImmediate, 3},
+     .code = "UL;JC(a,@return);END;@return:LK(STACK);ADR(SP);LD(ST);LD(IP);"
+             "LAD(SP);UL;MSM(ZSCOI,ST);MSR(ZSCOI,ZSCOI);"},
+    {.op = 71,
+     .op_name = "IRTC.A",
+     .source = "$#3, $#5",
+     .arg1 = {oz3::ArgType::kImmediate, 3},
+     .arg2 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;JC(a,@return);END;@return:ADD(SP,C1);LK(STACK);ADR(SP);"
+             "LD(ST);LD(IP);LAD(SP);UL;MSM(ZSCOI,ST);MSR(ZSCOI,ZSCOI);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
