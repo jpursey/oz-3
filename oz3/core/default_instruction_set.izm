@@ -1113,7 +1113,7 @@ instruction JPR "$m" {
 ## Cycles: 3+
 ## ZSCO: ----
 ##
-## Sets IP to the specified address.
+## Sets IP to the specified address if the specified condition is true.
 ################################################################################
 
 instruction JC "$#3, $m" {
@@ -1130,7 +1130,7 @@ instruction JC "$#3, $m" {
 ## Cycles: 3+
 ## ZSCO: ----
 ##
-## Adds the specified relative address to IP.
+## Adds the specified relative address to IP if the specified condition is true.
 ################################################################################
 
 instruction JCR "$#3, $m" {
@@ -1170,3 +1170,34 @@ instruction CALLR "$m" {
   LK(STACK); ADR(SP); STP(IP); UL;
   ADD(IP,r);
 }
+
+################################################################################
+## FBGN
+##
+## Cycles: 5
+## ZSCO: ----
+##
+## Pushes FP onto the stack and sets it to SP.
+################################################################################
+
+instruction FBGN {
+  UL;
+  LK(STACK); ADR(SP); STP(FP); LAD(SP); UL;
+  MOV(FP,SP);
+}
+
+################################################################################
+## FEND
+##
+## Cycles: 5
+## ZSCO: ----
+##
+## Restores SP from FP and removes FP from the stack
+################################################################################
+
+instruction FEND {
+  UL;
+  MOV(SP,FP);
+  LK(STACK); ADR(SP); LD(FP); LAD(SP); UL; 
+}
+

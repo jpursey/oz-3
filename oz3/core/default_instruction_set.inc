@@ -970,6 +970,12 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;LK(STACK);ADR(SP);STP(IP);UL;ADD(IP,r);"},
+    {.op = 54,
+     .op_name = "FBGN",
+     .code = "UL;LK(STACK);ADR(SP);STP(FP);LAD(SP);UL;MOV(FP,SP);"},
+    {.op = 55,
+     .op_name = "FEND",
+     .code = "UL;MOV(SP,FP);LK(STACK);ADR(SP);LD(FP);LAD(SP);UL;"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
