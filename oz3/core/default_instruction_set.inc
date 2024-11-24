@@ -1152,6 +1152,12 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;JC(a,@return);END;@return:ADD(SP,C1);LK(STACK);ADR(SP);"
              "LD(ST);LD(IP);LAD(SP);UL;MSM(ZSCOI,ST);MSR(ZSCOI,ZSCOI);"},
+    {.op = 72,
+     .op_name = "EI",
+     .code = "UL;MSS(I);MSR(_,I);"},
+    {.op = 73,
+     .op_name = "DI",
+     .code = "UL;MSC(I);MSR(I,_);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
