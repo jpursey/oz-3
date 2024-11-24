@@ -18,7 +18,7 @@ const DecodedInstruction kNopDecoded = {.code = kNopMicroCode, .size = 1};
 
 }  // namespace
 
-inline const microcode_internal::Instruction* InstructionSet::GetInstruction(
+inline const InstructionSet::Instruction* InstructionSet::GetInstruction(
     int op) const {
   if (op >= 0 && op < instructions_.size()) {
     return &instructions_[op];

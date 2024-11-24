@@ -143,39 +143,6 @@ inline void PrintTo(const Microcode& microcode, std::ostream* os) {
 // Returns the microcode definitions for the OZ-3 CPU.
 absl::Span<const MicrocodeDef> GetMicrocodeDefs();
 
-// Internal structures used for compiling and decoding microcode.
-namespace microcode_internal {
-
-struct InstructionCode {
-  uint16_t code_start = 0;  // Start index in microcode
-  uint8_t code_size = 0;    // Number of microcodes
-  uint8_t pc_size = 0;      // Size of the instruction for the program counter
-};
-static_assert(sizeof(InstructionCode) == 4);
-static_assert(
-    kMaxInstructionSetMicrocodes <=
-    std::numeric_limits<decltype(InstructionCode::code_start)>::max());
-static_assert(kMaxInstructionMicrocodes <=
-              std::numeric_limits<decltype(InstructionCode::code_size)>::max());
-
-struct SubInstruction {
-  InstructionCode code;
-  Argument arg;  // Argument (if any for the sub instruction)
-};
-static_assert(sizeof(SubInstruction) == 6);
-
-struct Instruction {
-  InstructionCode code;    // Simple arguments (no sub argument)
-  uint16_t sub_index = 0;  // Index where sub instructions start.
-  Argument arg1;
-  Argument arg2;
-};
-static_assert(sizeof(Instruction) == 10);
-static constexpr size_t kMaxSubInstructions =
-    std::numeric_limits<decltype(Instruction::sub_index)>::max();
-
-}  // namespace microcode_internal
-
 }  // namespace oz3
 
 #endif  // OZ3_CORE_MICROCODE_H_

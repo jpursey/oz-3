@@ -34,11 +34,6 @@ static_assert(CpuCore::B == CpuCore::A - 1,
 constexpr int kFirstRegisterLock = 10;
 constexpr int kFirstPortLock = 100;
 constexpr int kFirstCoreLock = 200;
-constexpr int kMaxSubInstructions =
-    static_cast<int>(
-        std::numeric_limits<
-            decltype(microcode_internal::Instruction::sub_index)>::max()) +
-    1;
 const Argument kNoArgument;
 
 std::string LockName(int lock) {
@@ -127,9 +122,15 @@ class InstructionCompiler {
 
   using MacrosMap = absl::flat_hash_map<std::string, Macro>;
 
-  using Instruction = microcode_internal::Instruction;
-  using SubInstruction = microcode_internal::SubInstruction;
-  using InstructionCode = microcode_internal::InstructionCode;
+  using Instruction = InstructionSet::Instruction;
+  using SubInstruction = InstructionSet::SubInstruction;
+  using InstructionCode = InstructionSet::InstructionCode;
+
+  static constexpr int kMaxSubInstructions =
+      static_cast<int>(
+          std::numeric_limits<
+              decltype(InstructionSet::Instruction::sub_index)>::max()) +
+      1;
 
   template <typename... Args>
   bool Error(Args&&... args) {
