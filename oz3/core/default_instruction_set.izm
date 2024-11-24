@@ -7,17 +7,39 @@
 # Ends fetch phase.
 # Modifies register "C2" and returns result in register "r".
 macro(bits:5) GetWord:r {
-  code:m "$r"          { UL; }
-  code:C2 "($r)"       { UL; LKR(m); ADR(m); LD(C2); UL; }
-  code:C2 "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(C2); UL; }
-  code:C2 "(SP)"       { UL; LKR(SP); ADR(SP); LD(C2); UL; }
-  code:C2 "(SP + $v)"  { LD(C2); UL; ADD(C2,SP); LKR(SP); ADR(C2); LD(C2); UL; }
-  code:C2 "(FP)"       { UL; LKR(FP); ADR(FP); LD(C2); UL; }
-  code:C2 "(FP + $v)"  { LD(C2); UL; ADD(C2,FP); LKR(FP); ADR(C2); LD(C2); UL; }
-  code:C2 "$v"         { LD(C2); UL; }
-  code:C2 "S($v)"      { LD(C2); UL; LK(STACK); ADR(C2); LD(C2); UL; }
-  code:C2 "D($v)"      { LD(C2); UL; LK(DATA); ADR(C2); LD(C2); UL; }
-  code:C2 "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); LD(C2); UL; }
+  code:m "$r" {
+    UL;
+  }
+  code:C2 "($r)" {
+    UL; LKR(m); ADR(m); LD(C2); UL;
+  }
+  code:C2 "($r + $v)" {
+    LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(C2); UL;
+  }
+  code:C2 "(SP)" {
+    UL; LK(STACK); ADR(SP); LD(C2); UL;
+  }
+  code:C2 "(SP + $v)" {
+    LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); LD(C2); UL;
+  }
+  code:C2 "(FP)" {
+    UL; LK(STACK); ADR(FP); LD(C2); UL;
+  }
+  code:C2 "(FP + $v)" {
+    LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); LD(C2); UL;
+  }
+  code:C2 "$v" {
+    LD(C2); UL;
+  }
+  code:C2 "S($v)" {
+    LD(C2); UL; LK(STACK); ADR(C2); LD(C2); UL;
+  }
+  code:C2 "D($v)" {
+    LD(C2); UL; LK(DATA); ADR(C2); LD(C2); UL;
+  }
+  code:C2 "E($v)" {
+    LD(C2); UL; LK(EXTRA); ADR(C2); LD(C2); UL;
+  }
 }
 
 # Returns a dword value as a register.
@@ -35,16 +57,16 @@ macro(bits:5) GetDword:R {
     LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(C0); LD(C1); UL;
   }
   code:CD "[SP]" {
-    UL; LKR(SP); ADR(SP); LD(C0); LD(C1); UL;
+    UL; LK(STACK); ADR(SP); LD(C0); LD(C1); UL;
   }
   code:CD "[SP + $v]" {
-    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(C0); LD(C1); UL;
+    LD(C0); UL; ADD(C0,SP); LK(STACK); ADR(C0); LD(C0); LD(C1); UL;
   }
   code:CD "[FP]" {
-    UL; LKR(FP); ADR(FP); LD(C0); LD(C1); UL;
+    UL; LK(STACK); ADR(FP); LD(C0); LD(C1); UL;
   }
   code:CD "[FP + $v]" {
-    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(C0); LD(C1); UL;
+    LD(C0); UL; ADD(C0,FP); LK(STACK); ADR(C0); LD(C0); LD(C1); UL;
   }
   code:CD "$v" {
     LD(C0); UL;
@@ -321,15 +343,15 @@ instruction WAIT "$r" {
 macro(bits:5) LoadWord(p) {
   code "$r"         { UL; MOV(p,m); }
   code "($r)"       { UL; LKR(m); ADR(m); LD(p); UL; }
-  code "($r + $v)"  { LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(p); UL; }
-  code "(SP)"       { UL; LKR(SP); ADR(SP); LD(p); UL; }
-  code "(SP + $v)"  { LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(p); UL; }
-  code "(FP)"       { UL; LKR(FP); ADR(FP); LD(p); UL; }
-  code "(FP + $v)"  { LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(p); UL; }
+  code "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(p); UL; }
+  code "(SP)"       { UL; LK(STACK); ADR(SP); LD(p); UL; }
+  code "(SP + $v)"  { LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); LD(p); UL; }
+  code "(FP)"       { UL; LK(STACK); ADR(FP); LD(p); UL; }
+  code "(FP + $v)"  { LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); LD(p); UL; }
   code "$v"         { LD(p); UL; }
-  code "S($v)"      { LD(C0); UL; LK(STACK); ADR(C0); LD(p); UL; }
-  code "D($v)"      { LD(C0); UL; LK(DATA); ADR(C0); LD(p); UL; }
-  code "E($v)"      { LD(C0); UL; LK(EXTRA); ADR(C0); LD(p); UL; }
+  code "S($v)"      { LD(C2); UL; LK(STACK); ADR(C2); LD(p); UL; }
+  code "D($v)"      { LD(C2); UL; LK(DATA); ADR(C2); LD(p); UL; }
+  code "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); LD(p); UL; }
 }
 
 instruction MOV.LW "$r, $m" {
@@ -344,31 +366,31 @@ macro(bits:5) LoadDword(P) {
     UL; LKR(m); ADR(m); LD(p0); LD(p1); UL;
   }
   code "[$r + $v]" {
-    LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); LD(p0); LD(p1); UL;
+    LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(p0); LD(p1); UL;
   }
   code "[SP]" {
-    UL; LKR(SP); ADR(SP); LD(p0); LD(p1); UL;
+    UL; LK(STACK); ADR(SP); LD(p0); LD(p1); UL;
   }
   code "[SP + $v]" {
-    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); LD(p0); LD(p1); UL;
+    LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); LD(p0); LD(p1); UL;
   }
   code "[FP]" {
-    UL; LKR(FP); ADR(FP); LD(p0); LD(p1); UL;
+    UL; LK(STACK); ADR(FP); LD(p0); LD(p1); UL;
   }
   code "[FP + $v]" {
-    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); LD(p0); LD(p1); UL;
+    LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); LD(p0); LD(p1); UL;
   }
   code "$V" {
     LD(p0); LD(p1); UL;
   }
   code "S[$v]" {
-    LD(C0); UL; LK(STACK); ADR(C0); LD(p0); LD(p1); UL;
+    LD(C2); UL; LK(STACK); ADR(C2); LD(p0); LD(p1); UL;
   }
   code "D[$v]" {
-    LD(C0); UL; LK(DATA); ADR(C0); LD(p0); LD(p1); UL;
+    LD(C2); UL; LK(DATA); ADR(C2); LD(p0); LD(p1); UL;
   }
   code "E[$v]" {
-    LD(C0); UL; LK(EXTRA); ADR(C0); LD(p0); LD(p1); UL;
+    LD(C2); UL; LK(EXTRA); ADR(C2); LD(p0); LD(p1); UL;
   }
 }
 
@@ -378,14 +400,14 @@ instruction MOV.LD "$R, $m" {
 
 macro(bits:5) StoreWord(p) {
   code "($r)"       { UL; LKR(m); ADR(m); ST(p); UL; }
-  code "($r + $v)"  { LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); ST(p); UL; }
-  code "(SP)"       { UL; LKR(SP); ADR(SP); ST(p); UL; }
-  code "(SP + $v)"  { LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); ST(p); UL; }
-  code "(FP)"       { UL; LKR(FP); ADR(FP); ST(p); UL; }
-  code "(FP + $v)"  { LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p); UL; }
-  code "S($v)"      { LD(C0); UL; LK(STACK); ADR(C0); ST(p); UL; }
-  code "D($v)"      { LD(C0); UL; LK(DATA); ADR(C0); ST(p); UL; }
-  code "E($v)"      { LD(C0); UL; LK(EXTRA); ADR(C0); ST(p); UL; }
+  code "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); ST(p); UL; }
+  code "(SP)"       { UL; LK(STACK); ADR(SP); ST(p); UL; }
+  code "(SP + $v)"  { LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(p); UL; }
+  code "(FP)"       { UL; LK(STACK); ADR(FP); ST(p); UL; }
+  code "(FP + $v)"  { LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(p); UL; }
+  code "S($v)"      { LD(C2); UL; LK(STACK); ADR(C2); ST(p); UL; }
+  code "D($v)"      { LD(C2); UL; LK(DATA); ADR(C2); ST(p); UL; }
+  code "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); ST(p); UL; }
 }
 
 instruction MOV.SW "$m, $r" {
@@ -397,28 +419,28 @@ macro(bits:5) StoreDword(P) {
     UL; LKR(m); ADR(m); ST(p0); ST(p1); UL;
   }
   code "[$r + $v]" {
-    LD(C0); UL; ADD(C0,m); LKR(m); ADR(C0); ST(p0); ST(p1); UL;
+    LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); ST(p0); ST(p1); UL;
   }
   code "[SP]" {
-    UL; LKR(SP); ADR(SP); ST(p0); ST(p1); UL;
+    UL; LK(STACK); ADR(SP); ST(p0); ST(p1); UL;
   }
   code "[SP + $v]" {
-    LD(C0); UL; ADD(C0,SP); LKR(SP); ADR(C0); ST(p0); ST(p1); UL;
+    LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(p0); ST(p1); UL;
   }
   code "[FP]" {
-    UL; LKR(FP); ADR(FP); ST(p0); ST(p1); UL;
+    UL; LK(STACK); ADR(FP); ST(p0); ST(p1); UL;
   }
   code "[FP + $v]" {
-    LD(C0); UL; ADD(C0,FP); LKR(FP); ADR(C0); ST(p0); ST(p1); UL;
+    LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(p0); ST(p1); UL;
   }
   code "S[$v]" {
-    LD(C0); UL; LK(STACK); ADR(C0); ST(p0); ST(p1); UL;
+    LD(C2); UL; LK(STACK); ADR(C2); ST(p0); ST(p1); UL;
   }
   code "D[$v]" {
-    LD(C0); UL; LK(DATA); ADR(C0); ST(p0); ST(p1); UL;
+    LD(C2); UL; LK(DATA); ADR(C2); ST(p0); ST(p1); UL;
   }
   code "E[$v]" {
-    LD(C0); UL; LK(EXTRA); ADR(C0); ST(p0); ST(p1); UL;
+    LD(C2); UL; LK(EXTRA); ADR(C2); ST(p0); ST(p1); UL;
   }
 }
 
@@ -675,19 +697,19 @@ macro SwapWord(p) {
   }
   code "(SP)" {
     UL;
-    MOV(C0,p); LKR(SP); ADR(SP); LD(p); STP(C0); UL;
+    MOV(C0,p); LK(STACK); ADR(SP); LD(p); STP(C0); UL;
   }
   code "(SP + $v)" {
     LD(C2); UL; ADD(C2,SP);
-    MOV(C0,p); LKR(SP); ADR(C2); LD(p); STP(C0); UL;
+    MOV(C0,p); LK(STACK); ADR(C2); LD(p); STP(C0); UL;
   }
   code "(FP)" {
     UL;
-    MOV(C0,p); LKR(FP); ADR(FP); LD(p); STP(C0); UL;
+    MOV(C0,p); LK(STACK); ADR(FP); LD(p); STP(C0); UL;
   }
   code "(FP + $v)" {
     LD(C2); UL; ADD(C2,FP);
-    MOV(C0,p); LKR(FP); ADR(C2); LD(p); STP(C0); UL;
+    MOV(C0,p); LK(STACK); ADR(C2); LD(p); STP(C0); UL;
   }
   code "S($v)" {
     LD(C2); UL;
@@ -726,22 +748,22 @@ macro SwapDword(P) {
   code "(SP)" {
     UL;
     MOV(C0,p0); MOV(C1,p1);
-    LKR(SP); ADR(SP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+    LK(STACK); ADR(SP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
   code "(SP + $v)" {
     LD(C2); UL; ADD(C2,SP);
     MOV(C0,p0); MOV(C1,p1);
-    LKR(SP); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+    LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
   code "(FP)" {
     UL;
     MOV(C0,p0); MOV(C1,p1);
-    LKR(FP); ADR(FP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+    LK(STACK); ADR(FP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
   code "(FP + $v)" {
     LD(C2); UL; ADD(C2,FP);
     MOV(C0,p0); MOV(C1,p1);
-    LKR(FP); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
+    LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
   code "S($v)" {
     LD(C2); UL;
@@ -1602,4 +1624,146 @@ instruction SETI "$m, $r" {
 instruction INT "$m" {
   $GetWord;
   INT(r);
+}
+
+################################################################################
+## IN <port> <register>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Variants:
+##    IN.RW <reg>    <reg>
+##    IN.RW <reg>    <word-address>
+##    IN.IW <0..255> <reg>
+##    IN.IW <0..255> <word-address>
+##    IN.RD <reg>    <dreg>
+##    IN.RD <reg>    <dword-address>
+##    IN.ID <0..255> <dreg>
+##    IN.ID <0..255> <dword-address>
+##
+## Unconditionally reads from the specified port and writes to the specified
+## register or memory address.
+################################################################################
+
+macro(bits:5) ReadPortWord(p) {
+  code "$r" {   
+    UL; 
+    PLK(p); PLD(S,m); PUL; 
+  }
+  code "($r)" {
+    UL;
+    PLK(p); PLD(S,C0); PUL;
+    LKR(m); ADR(m); ST(C0); UL;
+  }
+  code "($r + $v)" {
+    LD(C2); UL; ADD(C2,m); 
+    PLK(p); PLD(S,C0); PUL;
+    LKR(m); ADR(C2); ST(C0); UL;
+  }
+  code "(SP)" {
+    UL;
+    PLK(p); PLD(S,C0); PUL;
+    LK(STACK); ADR(SP); ST(C0); UL;
+  }
+  code "(SP + $v)" {
+    LD(C2); UL; ADD(C2,SP);
+    PLK(p); PLD(S,C0); PUL;
+    LK(STACK); ADR(C2); ST(C0); UL;
+  }
+  code "(FP)" {
+    UL;
+    PLK(p); PLD(S,C0); PUL;
+    LK(STACK); ADR(FP); ST(C0); UL;
+  }
+  code "(FP + $v)" {
+    LD(C2); UL; ADD(C2,FP);
+    PLK(p); PLD(S,C0); PUL;
+    LK(STACK); ADR(C2); ST(C0); UL;
+  }
+  code "S($v)" {
+    LD(C2); UL;
+    PLK(p); PLD(S,C0); PUL;
+    LK(STACK); ADR(C2); ST(C0); UL;
+  }
+  code "D($v)" {
+    LD(C2); UL;
+    PLK(p); PLD(S,C0); PUL;
+    LK(DATA); ADR(C2); ST(C0); UL;
+  }
+  code "E($v)" {
+    LD(C2); UL;
+    PLK(p); PLD(S,C0); PUL;
+    LK(EXTRA); ADR(C2); ST(C0); UL;
+  }
+}
+
+instruction IN.RW "$r, $m" {
+  $ReadPortWord(a);
+}
+
+instruction IN.IW "$v, $m" {
+  LD(MB);
+  $ReadPortWord(MB);
+}
+
+macro(bits:5) ReadPortDword(p) {
+  code "$R" {   
+    UL; 
+    PLK(p); PLD(A,m0); PLD(S,m1); PUL; 
+  }
+  code "($r)" {
+    UL;
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL; 
+    LKR(m); ADR(m); ST(C0); ST(C1); UL;
+  }
+  code "($r + $v)" {
+    LD(C2); UL; ADD(C2,m); 
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LKR(m); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "(SP)" {
+    UL;
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(STACK); ADR(SP); ST(C0); ST(C1); UL;
+  }
+  code "(SP + $v)" {
+    LD(C2); UL; ADD(C2,SP);
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "(FP)" {
+    UL;
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(STACK); ADR(FP); ST(C0); ST(C1); UL;
+  }
+  code "(FP + $v)" {
+    LD(C2); UL; ADD(C2,FP);
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "S($v)" {
+    LD(C2); UL;
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "D($v)" {
+    LD(C2); UL;
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "E($v)" {
+    LD(C2); UL;
+    PLK(p); PLD(A,C0); PLD(S,C1); PUL;
+    LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
+  }
+}
+
+instruction IN.RD "$r, $m" {
+  $ReadPortDword(a);
+}
+
+instruction IN.ID "$v, $m" {
+  LD(MB);
+  $ReadPortDword(MB);
 }
