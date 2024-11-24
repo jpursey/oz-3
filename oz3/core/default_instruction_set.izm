@@ -1007,26 +1007,8 @@ instruction TSTB.D "$R, $m" {
 ## Clears the specified status flags.
 ################################################################################
 
-macro ClearFlag {
-  code "Z"    { MSC(Z);    MSR(Z,_); }
-  code "S"    { MSC(S);    MSR(S,_); }
-  code "ZS"   { MSC(ZS);   MSR(ZS,_); }
-  code "C"    { MSC(C);    MSR(C,_); }
-  code "ZC"   { MSC(ZC);   MSR(ZC,_); }
-  code "SC"   { MSC(SC);   MSR(SC,_); }
-  code "ZSC"  { MSC(ZSC);  MSR(ZSC,_); }
-  code "O"    { MSC(O);    MSR(O,_); }
-  code "ZO"   { MSC(ZO);   MSR(ZO,_); }
-  code "SO"   { MSC(SO);   MSR(SO,_); }
-  code "ZSO"  { MSC(ZSO);  MSR(ZSO,_); }
-  code "CO"   { MSC(CO);   MSR(CO,_); }
-  code "ZCO"  { MSC(ZCO);  MSR(ZCO,_); }
-  code "SCO"  { MSC(SCO);  MSR(SCO,_); }
-  code "ZSCO" { MSC(ZSCO); MSR(ZSCO,_); }
-}
-
-instruction CLRF "$m" {
-  $ClearFlag; UL;
+instruction CLRF "$#4" {
+  MSC(a); MSR(a,_); UL;
 }
 
 ################################################################################
@@ -1038,26 +1020,8 @@ instruction CLRF "$m" {
 ## Sets the specified status flags.
 ################################################################################
 
-macro SetFlag {
-  code "Z"    { MSS(Z);    MSR(_,Z); }
-  code "S"    { MSS(S);    MSR(_,S); }
-  code "ZS"   { MSS(ZS);   MSR(_,ZS); }
-  code "C"    { MSS(C);    MSR(_,C); }
-  code "ZC"   { MSS(ZC);   MSR(_,ZC); }
-  code "SC"   { MSS(SC);   MSR(_,SC); }
-  code "ZSC"  { MSS(ZSC);  MSR(_,ZSC); }
-  code "O"    { MSS(O);    MSR(_,O); }
-  code "ZO"   { MSS(ZO);   MSR(_,ZO); }
-  code "SO"   { MSS(SO);   MSR(_,SO); }
-  code "ZSO"  { MSS(ZSO);  MSR(_,ZSO); }
-  code "CO"   { MSS(CO);   MSR(_,CO); }
-  code "ZCO"  { MSS(ZCO);  MSR(_,ZCO); }
-  code "SCO"  { MSS(SCO);  MSR(_,SCO); }
-  code "ZSCO" { MSS(ZSCO); MSR(_,ZSCO); }
-}
-
-instruction SETF "$m" {
-  $SetFlag; UL;
+instruction SETF "$#4" {
+  MSS(a); MSR(_,a); UL;
 }
 
 ################################################################################
