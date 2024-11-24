@@ -76,6 +76,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_RRC,
   kTestOp_MATHI,
   kTestOp_JC,
+  kTestOp_JCR,
   kTestOp_JD,
   kTestOp_JMP,
   kTestOp_INT,
@@ -533,6 +534,15 @@ const InstructionDef kMicroTestInstructions[] = {
              "@NC:MOV(R5,C0);JP(@6);"
              "@O:MOV(R6,C0);JP(@7);"
              "@NO:MOV(R7,C0);"},
+    {.op = kTestOp_JCR,
+     .op_name = "JCR",
+     .arg1 = {ArgType::kImmediate, 3},
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "JC(a,@TRUE);"
+             "MOVI(b,1);"
+             "END;"
+             "@TRUE:MOVI(b,2);"},
     {.op = kTestOp_JD,
      .op_name = "JD",
      .arg1 = {ArgType::kImmediate, 8},
@@ -3684,6 +3694,82 @@ TEST(CpuCoreTest, JcJpEndOps) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, JcOpWithRegTrue) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::Z);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::ZShift, CpuCore::R0);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::S);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::SShift, CpuCore::R1);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::CShift, CpuCore::R2);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::O);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::OShift, CpuCore::R3);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_JCR, CpuCore::ZShift, CpuCore::R4);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_JCR, CpuCore::SShift, CpuCore::R5);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_JCR, CpuCore::CShift, CpuCore::R6);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::O);
+  mem.AddCode(kTestOp_JCR, CpuCore::OShift, CpuCore::R7);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the HALT instruction.
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, 17);
+  EXPECT_EQ(state.r0, 2);
+  EXPECT_EQ(state.r1, 2);
+  EXPECT_EQ(state.r2, 2);
+  EXPECT_EQ(state.r3, 2);
+  EXPECT_EQ(state.r4, 2);
+  EXPECT_EQ(state.r5, 2);
+  EXPECT_EQ(state.r6, 2);
+  EXPECT_EQ(state.r7, 2);
+}
+
+TEST(CpuCoreTest, JcOpWithRegFalse) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::ZShift, CpuCore::R0);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::SShift, CpuCore::R1);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::CShift, CpuCore::R2);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::O);
+  mem.AddCode(kTestOp_JCR, 4 | CpuCore::OShift, CpuCore::R3);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::Z);
+  mem.AddCode(kTestOp_JCR, CpuCore::ZShift, CpuCore::R4);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::S);
+  mem.AddCode(kTestOp_JCR, CpuCore::SShift, CpuCore::R5);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::C);
+  mem.AddCode(kTestOp_JCR, CpuCore::CShift, CpuCore::R6);
+  mem.AddCode(kTestOp_ZSCO, CpuCore::O);
+  mem.AddCode(kTestOp_JCR, CpuCore::OShift, CpuCore::R7);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute the HALT instruction.
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.pc, 17);
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.r1, 1);
+  EXPECT_EQ(state.r2, 1);
+  EXPECT_EQ(state.r3, 1);
+  EXPECT_EQ(state.r4, 1);
+  EXPECT_EQ(state.r5, 1);
+  EXPECT_EQ(state.r6, 1);
+  EXPECT_EQ(state.r7, 1);
 }
 
 TEST(CpuCoreTest, JdOp) {

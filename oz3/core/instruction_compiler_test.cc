@@ -919,6 +919,83 @@ TEST(InstructionCompilerTest, ConditionArg) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
+TEST(InstructionCompilerTest, InstructionArgAsCondition) {
+  const MicrocodeDef kMicroConditionArgs = {
+      kMicro_TEST, "TEST", MicroArgType::kCondition, MicroArgType::kCondition};
+  std::string error;
+  EXPECT_TRUE(TestCompile(
+      kMicroConditionArgs,
+      MakeDef({ArgType::kImmediate, 3}, {ArgType::kImmediate, 3}, "TEST(a,b)"),
+      error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroConditionArgs,
+                           MakeDef(ArgType::kWordReg, "TEST(a,a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroConditionArgs,
+                           MakeDef(ArgType::kDwordReg, "TEST(a,a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroConditionArgs, MakeDef("TEST(a,a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(
+      kMicroConditionArgs,
+      MakeDef({ArgType::kImmediate, 3}, ArgType::kWordReg, "TEST(b,b)"),
+      error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(
+      kMicroConditionArgs,
+      MakeDef({ArgType::kImmediate, 3}, ArgType::kDwordReg, "TEST(b,b)"),
+      error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroConditionArgs, MakeDef("TEST(b,b)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(
+      kMicroConditionArgs,
+      MakeDef({ArgType::kImmediate, 3}, {ArgType::kImmediate, 3}, "TEST(m,m)"),
+      error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(
+      kMicroConditionArgs,
+      MakeDef({ArgType::kImmediate, 3}, {ArgType::kImmediate, 3}, "TEST(i,i)"),
+      error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(InstructionCompilerTest, MacroArgAsCondition) {
+  const MicrocodeDef kMicroConditionArgs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "TEST", MicroArgType::kCondition,
+       MicroArgType::kCondition}};
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "CONST",
+       .prefix = {0, 4},
+       .code = "TEST(Z,NZ);TEST(S,NS);TEST(C,NC);TEST(O,NO);"},
+      {.source = "$#3", .prefix = {1, 1}},
+  };
+  std::string error;
+  auto TestCompile = [&](std::string_view code, Argument arg) {
+    macro_code_defs[1].code = code;
+    macro_code_defs[1].arg = arg;
+    const MacroDef macro_def = {
+        .name = "Macro", .size = 4, .code = macro_code_defs};
+    const InstructionDef instruction_def =
+        MakeDef({ArgType::kMacro, 4}, "UL;$Macro;");
+    return CompileForTest(instruction_def, macro_def, error,
+                          kMicroConditionArgs);
+  };
+  EXPECT_TRUE(TestCompile("TEST(Z,NZ);", {ArgType::kImmediate, 3}));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile("TEST(m,m);", {ArgType::kImmediate, 3}));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile("TEST(i,i);", {ArgType::kImmediate, 3}));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile("TEST(a,a);", {ArgType::kImmediate, 3}));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile("TEST(b,b);", {ArgType::kImmediate, 3}));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile("TEST(m,m);", {ArgType::kWordReg, 3}));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
 TEST(InstructionCompilerTest, AddressArg) {
   MicrocodeDef microcode_defs[] = {
       {kMicro_UL, "UL"},

@@ -760,7 +760,8 @@ void CpuCore::RunInstructionLoop() {
         exec_cycles_ += kCpuCoreCycles_JP;
       } break;
       case kMicro_JC: {
-        if (((mst_ >> (code.arg1 & 3)) & 1) == (code.arg1 >> 2)) {
+        OZ3_INIT_VAL1(4);
+        if (((mst_ >> (val1 & 3)) & 1) == (val1 >> 2)) {
           mip_ = std::max(0, mip_ + code.arg2);
           exec_cycles_ += kCpuCoreCycles_JC_True;
         } else {

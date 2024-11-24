@@ -761,7 +761,7 @@ bool InstructionCompiler::CompileSubInstruction() {
         arg1 = macro_param0;
       } else if (arg1 == CpuCore::MP1) {
         arg1 = macro_param1;
-      } else if (arg1 == CpuCore::MM0) {
+      } else if (arg1 == CpuCore::MM0) {  // Also matches CpuCore::MM
         arg1 = CpuCore::A0 - arg_offset;
       } else if (arg1 == CpuCore::MM1) {
         arg1 = CpuCore::A1 - arg_offset;
@@ -769,10 +769,11 @@ bool InstructionCompiler::CompileSubInstruction() {
         LOG(DFATAL) << "Unhandled register: " << arg1;
       }
     }
-    if (def->arg1 == MicroArgType::kStatus &&
+    if ((def->arg1 == MicroArgType::kStatus ||
+         def->arg1 == MicroArgType::kCondition) &&
         state_.microcode->arg1 < CpuCore::kMinArgReg) {
       int8_t& arg1 = state_.microcode->arg1;
-      if (arg1 == CpuCore::MM0) {
+      if (arg1 == CpuCore::MM) {
         arg1 = CpuCore::A0 - arg_offset;
       } else {
         LOG(DFATAL) << "Unhandled register: " << arg1;
@@ -788,7 +789,7 @@ bool InstructionCompiler::CompileSubInstruction() {
         arg2 = macro_param0;
       } else if (arg2 == CpuCore::MP1) {
         arg2 = macro_param1;
-      } else if (arg2 == CpuCore::MM0) {
+      } else if (arg2 == CpuCore::MM0) {  // Also matches CpuCore::MM
         arg2 = CpuCore::A0 - arg_offset;
       } else if (arg2 == CpuCore::MM1) {
         arg2 = CpuCore::A1 - arg_offset;
@@ -796,10 +797,11 @@ bool InstructionCompiler::CompileSubInstruction() {
         LOG(DFATAL) << "Unhandled register: " << arg2;
       }
     }
-    if (def->arg2 == MicroArgType::kStatus &&
+    if ((def->arg2 == MicroArgType::kStatus ||
+         def->arg2 == MicroArgType::kCondition) &&
         state_.microcode->arg2 < CpuCore::kMinArgReg) {
       int8_t& arg2 = state_.microcode->arg2;
-      if (arg2 == CpuCore::MM0) {
+      if (arg2 == CpuCore::MM) {
         arg2 = CpuCore::A0 - arg_offset;
       } else {
         LOG(DFATAL) << "Unhandled register: " << arg2;
@@ -1020,7 +1022,40 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       return true;
     } break;
     case MicroArgType::kCondition: {
-      if (arg_name == "Z") {
+      if (arg_name == "a") {
+        if (state_.macro_code_def != nullptr) {
+          return Error(
+              "Macro code cannot reference instruction arguments (use \"m\" or "
+              "\"i\" for macro arguments)");
+        }
+        if (state_.arg1->type != ArgType::kImmediate) {
+          return Error("\"", arg_name,
+                       "\" is not an immediate value. Argument is ",
+                       ArgTypeToString(state_.arg1->type));
+        }
+        arg = CpuCore::A;
+      } else if (arg_name == "b") {
+        if (state_.macro_code_def != nullptr) {
+          return Error(
+              "Macro code cannot reference instruction arguments (use \"m\" or "
+              "\"i\" for macro arguments)");
+        }
+        if (state_.arg2->type != ArgType::kImmediate) {
+          return Error("\"", arg_name,
+                       "\" is not an immediate value. Argument is ",
+                       ArgTypeToString(state_.arg2->type));
+        }
+        arg = CpuCore::B;
+      } else if (arg_name == "m") {
+        if (state_.macro_code_def == nullptr) {
+          return Error("Instruction code cannot reference macro arguments");
+        }
+        if (state_.macro_code_def->arg.type != ArgType::kImmediate) {
+          return Error("Macro argument is not an immediate value. Argument is ",
+                       ArgTypeToString(state_.macro_code_def->arg.type));
+        }
+        arg = CpuCore::MM;
+      } else if (arg_name == "Z") {
         arg = CpuCore::ZShift | 4;
       } else if (arg_name == "NZ") {
         arg = CpuCore::ZShift;

@@ -334,6 +334,115 @@ TEST(InstructionSetTest, ConditionDecodedCorrectly) {
                           Microcode{.op = kMicro_TEST, .arg1 = 7, .arg2 = 3}));
 }
 
+TEST(InstructionSetTest, ConditionOpArgDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kCondition, MicroArgType::kCondition},
+  };
+  const InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kImmediate, 4}, {ArgType::kImmediate, 4},
+              "UL;OP(a,b);OP(b,a);"),
+  };
+  InstructionError error;
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
+  EXPECT_THAT(error.message, IsEmpty());
+  DecodedInstruction decoded;
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 0x34), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 4);
+  EXPECT_EQ(decoded.c[1], 3);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = -2},
+                  Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = -1}));
+}
+
+TEST(InstructionSetTest, ConditionOpMacroArgDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kCondition, MicroArgType::kCondition},
+  };
+  const MacroCodeDef macro_code_defs[] = {
+      {.prefix = {0, 1}, .arg = {ArgType::kImmediate, 3}, .code = "OP(m,Z);"},
+      {.prefix = {1, 1}, .arg = {ArgType::kImmediate, 3}, .code = "OP(Z,m);"},
+  };
+  const MacroDef macro_defs[] = {
+      {.name = "Macro", .size = 4, .code = macro_code_defs}};
+  const InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kMacro, 4}, "UL;$Macro;"),
+      MakeDef({ArgType::kWordReg, 4}, {ArgType::kMacro, 4}, "UL;$Macro;"),
+  };
+  InstructionError error;
+  DecodedInstruction decoded;
+  std::shared_ptr<const InstructionSet> codes;
+
+  codes = CompileInstructionSet(
+      {.instructions = absl::Span(&instruction_defs[0], 1),
+       .macros = macro_defs},
+      &error, micro_defs);
+  EXPECT_THAT(error.message, IsEmpty());
+
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 0x03), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 3);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(decoded.code,
+              ElementsAre(Microcode{.op = kMicro_UL},
+                          Microcode{.op = kMicro_TEST, .arg1 = -1, .arg2 = 4}));
+
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 0x0B), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 3);
+  EXPECT_EQ(decoded.c[1], 0);
+  EXPECT_EQ(decoded.r[0], 0);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+
+  EXPECT_THAT(decoded.code,
+              ElementsAre(Microcode{.op = kMicro_UL},
+                          Microcode{.op = kMicro_TEST, .arg1 = 4, .arg2 = -1}));
+  codes = CompileInstructionSet(
+      {.instructions = absl::Span(&instruction_defs[1], 1),
+       .macros = macro_defs},
+      &error, micro_defs);
+  EXPECT_THAT(error.message, IsEmpty());
+
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 0x23), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 2);
+  EXPECT_EQ(decoded.r[0], 3);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(decoded.code,
+              ElementsAre(Microcode{.op = kMicro_UL},
+                          Microcode{.op = kMicro_TEST, .arg1 = -2, .arg2 = 4}));
+
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST, 0xA3), decoded));
+  EXPECT_EQ(decoded.size, 1);
+  EXPECT_EQ(decoded.c[0], 0);
+  EXPECT_EQ(decoded.c[1], 2);
+  EXPECT_EQ(decoded.r[0], 3);
+  EXPECT_EQ(decoded.r[1], 0);
+  EXPECT_EQ(decoded.r[2], 0);
+  EXPECT_EQ(decoded.r[3], 0);
+  EXPECT_THAT(decoded.code,
+              ElementsAre(Microcode{.op = kMicro_UL},
+                          Microcode{.op = kMicro_TEST, .arg1 = 4, .arg2 = -2}));
+}
+
 TEST(InstructionSetTest, AddressDecodedCorrecty) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},
