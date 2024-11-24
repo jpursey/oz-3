@@ -1791,11 +1791,7 @@ instruction IN.ID "$v, $m" {
 macro(bits:5) ReadPortWordIfReady(p) {
   code "$r" {
     UL;
-    PLK(p); PLD(TS,C0); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
-    MOV(m,C0);
+    PLK(p); PLD(TS,m); PUL;
   }
   code "($r)" {
     UL;
@@ -1886,11 +1882,7 @@ instruction INS.IW "$v, $m" {
 macro(bits:5) ReadPortDwordIfReady(p) {
   code "$R" {
     UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
-    MOV(m0,C0); MOV(m1,C1);
+    PLK(p); PLD(TA,m0); PLD(TS,m1); PUL;
   }
   code "($r)" {
     UL;
