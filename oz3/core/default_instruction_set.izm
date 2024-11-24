@@ -1082,7 +1082,7 @@ instruction CMP.D "$R, $m" {
 ################################################################################
 ## JP <address>
 ##
-## Cycles: 4
+## Cycles: 4+
 ## ZSCO: ----
 ##
 ## Sets IP to the specified address.
@@ -1096,7 +1096,7 @@ instruction JP "$m" {
 ################################################################################
 ## JPR <relative-address>
 ##
-## Cycles: 4
+## Cycles: 4+
 ## ZSCO: ----
 ##
 ## Adds the specified relative address to IP.
@@ -1104,5 +1104,39 @@ instruction JP "$m" {
 
 instruction JPR "$m" {
   $GetWord;
+  ADD(IP,r);
+}
+
+################################################################################
+## JC <condition> <address>
+##
+## Cycles: 3+
+## ZSCO: ----
+##
+## Sets IP to the specified address.
+################################################################################
+
+instruction JC "$#3, $m" {
+  $GetWord;
+  JC(a,@jump);
+  END;
+@jump:
+  MOV(IP,r);
+}
+
+################################################################################
+## JCR <condition> <relative-address>
+##
+## Cycles: 3+
+## ZSCO: ----
+##
+## Adds the specified relative address to IP.
+################################################################################
+
+instruction JCR "$#3, $m" {
+  $GetWord;
+  JC(a,@jump);
+  END;
+@jump:
   ADD(IP,r);
 }

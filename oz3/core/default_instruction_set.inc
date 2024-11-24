@@ -948,6 +948,18 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;ADD(IP,r);"},
+    {.op = 50,
+     .op_name = "JC",
+     .source = "$#3, $m",
+     .arg1 = {oz3::ArgType::kImmediate, 3},
+     .arg2 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;JC(a,@jump);END;@jump:MOV(IP,r);"},
+    {.op = 51,
+     .op_name = "JCR",
+     .source = "$#3, $m",
+     .arg1 = {oz3::ArgType::kImmediate, 3},
+     .arg2 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;JC(a,@jump);END;@jump:ADD(IP,r);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
