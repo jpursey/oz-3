@@ -131,14 +131,13 @@ struct Microcode {
   int8_t arg2;
 
   auto operator<=>(const Microcode&) const = default;
-};
 
-// Debug printer tests.
-inline void PrintTo(const Microcode& microcode, std::ostream* os) {
-  *os << "Microcode{op=" << static_cast<int>(microcode.op)
-      << ", arg1=" << static_cast<int>(microcode.arg1)
-      << ", arg2=" << static_cast<int>(microcode.arg2) << "}";
-}
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const Microcode& microcode) {
+    absl::Format(&sink, "Microcode{op=%d, arg1=%d, arg=%d}", microcode.op,
+                 microcode.arg1, microcode.arg2);
+  }
+};
 
 // Returns the microcode definitions for the OZ-3 CPU.
 absl::Span<const MicrocodeDef> GetMicrocodeDefs();
