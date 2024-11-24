@@ -1576,3 +1576,17 @@ instruction SETI "$m, $r" {
   $GetWord;
   IST(r,b);
 }
+
+################################################################################
+## INT <interrupt>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Triggers the specified interrupt.
+################################################################################
+
+instruction INT "$m" {
+  $GetWord;
+  INT(r);
+}

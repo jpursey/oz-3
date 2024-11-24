@@ -1170,6 +1170,11 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kMacro, 5},
      .arg2 = {oz3::ArgType::kWordReg, 3},
      .code = "$GetWord;IST(r,b);"},
+    {.op = 76,
+     .op_name = "INT",
+     .source = "$m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "$GetWord;INT(r);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
