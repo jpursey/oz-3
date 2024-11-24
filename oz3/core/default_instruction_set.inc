@@ -765,443 +765,291 @@ constexpr oz3::MacroDef kMacros[] = {
      .code = kMacroCode_SetFlag},
 };
 
-constexpr oz3::InstructionCodeDef kInstructionCode_NOP[] = {
-    {.source = "",
-     .prefix = {0, 8},
+constexpr oz3::InstructionDef kInstructions[] = {
+    {.op = 0,
+     .op_name = "NOP",
      .code = "UL;"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_HALT[] = {
-    {.source = "",
-     .prefix = {0, 8},
+    {.op = 1,
+     .op_name = "HALT",
      .code = "UL;ADDI(IP,-1);HALT;"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_WAIT[] = {
-    {.source = "$r",
-     .prefix = {0, 5},
+    {.op = 2,
+     .op_name = "WAIT",
+     .source = "$r",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .code = "UL;WAIT(a);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MOV_LW[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 3,
+     .op_name = "MOV.LW",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$LoadWord(a);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MOV_LD[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 4,
+     .op_name = "MOV.LD",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$LoadDword(A);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MOV_SW[] = {
-    {.source = "$m, $r",
-     .prefix = {0, 0},
+    {.op = 5,
+     .op_name = "MOV.SW",
+     .source = "$m, $r",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .arg2 = {oz3::ArgType::kWordReg, 3},
      .code = "$StoreWord(b);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MOV_SD[] = {
-    {.source = "$m, $R",
-     .prefix = {0, 1},
+    {.op = 6,
+     .op_name = "MOV.SD",
+     .source = "$m, $R",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .arg2 = {oz3::ArgType::kDwordReg, 2},
      .code = "$StoreDword(B);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MOV_S[] = {
-    {.source = "$m",
-     .prefix = {0, 1},
+    {.op = 7,
+     .op_name = "MOV.S",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 7},
      .code = "$MoveSReg;"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MVQ_LW[] = {
-    {.source = "$r, $#5",
-     .prefix = {0, 0},
+    {.op = 8,
+     .op_name = "MVQ.LW",
+     .source = "$r, $#5",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;MOV(a,C1);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_MVQ_LD[] = {
-    {.source = "$R, $#5",
-     .prefix = {0, 1},
+    {.op = 9,
+     .op_name = "MVQ.LD",
+     .source = "$R, $#5",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;MOV(a0,C1);MOVI(a1,0);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SWP_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 10,
+     .op_name = "SWP.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$SwapWord(a);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SWP_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 11,
+     .op_name = "SWP.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$SwapDword(A);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_NEG_W[] = {
-    {.source = "$r",
-     .prefix = {0, 5},
+    {.op = 12,
+     .op_name = "NEG.W",
+     .source = "$r",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .code = "UL;SUB(C0,a);MSC(CO);MSR(ZSCO,ZSCO);MOV(a,C0);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_NEG_D[] = {
-    {.source = "$R",
-     .prefix = {0, 6},
+    {.op = 13,
+     .op_name = "NEG.D",
+     .source = "$R",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .code = "UL;SUB(C0,a0);MSR(Z,Z);SBC(C1,a1);MSC(CO);MSR(ZSCO,_SCO);"
              "MOV(a0,C0);MOV(a1,C1);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_ADD_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 14,
+     .op_name = "ADD.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;ADD(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_ADD_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 15,
+     .op_name = "ADD.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;ADD(a0,r0);MSR(Z,Z);ADC(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_ADQ_W[] = {
-    {.source = "$r, $#5",
-     .prefix = {0, 0},
+    {.op = 16,
+     .op_name = "ADQ.W",
+     .source = "$r, $#5",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;ADD(a,C1);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_ADQ_D[] = {
-    {.source = "$R, $#5",
-     .prefix = {0, 1},
+    {.op = 17,
+     .op_name = "ADQ.D",
+     .source = "$R, $#5",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;ADD(a0,C1);MSR(Z,Z);ADC(a1,C2);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_ADC_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 18,
+     .op_name = "ADC.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;ADC(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_ADC_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 19,
+     .op_name = "ADC.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;ADC(a0,r0);MSR(Z,Z);ADC(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SUB_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 20,
+     .op_name = "SUB.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;SUB(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SUB_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 21,
+     .op_name = "SUB.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;SUB(a0,r0);MSR(Z,Z);SBC(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SBQ_W[] = {
-    {.source = "$r, $#5",
-     .prefix = {0, 0},
+    {.op = 22,
+     .op_name = "SBQ.W",
+     .source = "$r, $#5",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;SUB(a,C1);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SBQ_D[] = {
-    {.source = "$R, $#5",
-     .prefix = {0, 1},
+    {.op = 23,
+     .op_name = "SBQ.D",
+     .source = "$R, $#5",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kImmediate, 5},
      .code = "UL;SUB(a0,C1);MSR(Z,Z);SBC(a1,C2);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SBC_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 24,
+     .op_name = "SBC.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;SBC(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SBC_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 25,
+     .op_name = "SBC.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;SBC(a0,r0);MSR(Z,Z);SBC(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_NOT_W[] = {
-    {.source = "$r",
-     .prefix = {0, 5},
+    {.op = 26,
+     .op_name = "NOT.W",
+     .source = "$r",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .code = "UL;NOT(a,a);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_NOT_D[] = {
-    {.source = "$R",
-     .prefix = {0, 6},
+    {.op = 27,
+     .op_name = "NOT.D",
+     .source = "$R",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .code = "UL;NOT(a0,a0);MSR(Z,Z);NOT(a1,a1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_AND_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 28,
+     .op_name = "AND.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;AND(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_AND_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 29,
+     .op_name = "AND.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;AND(a0,r0);MSR(Z,Z);AND(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_OR_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 30,
+     .op_name = "OR.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;OR(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_OR_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 31,
+     .op_name = "OR.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;OR(a0,r0);MSR(Z,Z);OR(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_XOR_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 32,
+     .op_name = "XOR.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;XOR(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_XOR_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 33,
+     .op_name = "XOR.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;XOR(a0,r0);MSR(Z,Z);XOR(a1,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_CLRB_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 34,
+     .op_name = "CLRB.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$Get16BitMask;NOT(r,r);AND(a,r);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_CLRB_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 0},
+    {.op = 35,
+     .op_name = "CLRB.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .code = "$Get32BitMask;NOT(r0,r0);NOT(r1,r1);AND(a0,r0);AND(a1,r1);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SETB_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 36,
+     .op_name = "SETB.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$Get16BitMask;OR(a,r);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SETB_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 0},
+    {.op = 37,
+     .op_name = "SETB.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .code = "$Get32BitMask;OR(a0,r0);OR(a1,r1);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_XORB_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 38,
+     .op_name = "XORB.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$Get16BitMask;XOR(a,r);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_XORB_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 0},
+    {.op = 39,
+     .op_name = "XORB.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .code = "$Get32BitMask;XOR(a0,r0);XOR(a1,r1);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_TSTB_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 40,
+     .op_name = "TSTB.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$Get16BitMask;AND(r,a);MSR(Z,Z);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_TSTB_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 0},
+    {.op = 41,
+     .op_name = "TSTB.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .code = "$Get32BitMask;AND(r0,a0);MSR(Z,Z);AND(r1,a1);MSR(Z,_);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_CLRF[] = {
-    {.source = "$m",
-     .prefix = {0, 4},
+    {.op = 42,
+     .op_name = "CLRF",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 4},
      .code = "$ClearFlag;UL;"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_SETF[] = {
-    {.source = "$m",
-     .prefix = {0, 4},
+    {.op = 43,
+     .op_name = "SETF",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 4},
      .code = "$SetFlag;UL;"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_TST_W[] = {
-    {.source = "$m",
-     .prefix = {0, 3},
+    {.op = 44,
+     .op_name = "TST.W",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;CMP(C0,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_TST_D[] = {
-    {.source = "$m",
-     .prefix = {0, 3},
+    {.op = 45,
+     .op_name = "TST.D",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;CMP(C2,r0);MSR(Z,Z);SBC(C2,r1);MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_CMP_W[] = {
-    {.source = "$r, $m",
-     .prefix = {0, 0},
+    {.op = 46,
+     .op_name = "CMP.W",
+     .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;CMP(a,r);MSR(ZSCO,ZSCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_CMP_D[] = {
-    {.source = "$R, $m",
-     .prefix = {0, 1},
+    {.op = 47,
+     .op_name = "CMP.D",
+     .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$GetDword;CMP(a0,r0);MSR(Z,Z);MOV(C2,a1);SBC(C2,r1);"
              "MSR(ZSCO,_SCO);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_JP[] = {
-    {.source = "$m",
-     .prefix = {0, 3},
+    {.op = 48,
+     .op_name = "JP",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;MOV(IP,r);"},
-};
-
-constexpr oz3::InstructionCodeDef kInstructionCode_JPR[] = {
-    {.source = "$m",
-     .prefix = {0, 3},
+    {.op = 49,
+     .op_name = "JPR",
+     .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "$GetWord;ADD(IP,r);"},
-};
-
-constexpr oz3::InstructionDef kInstructions[] = {
-    {.op = 0, .op_name = "NOP", .code = kInstructionCode_NOP},
-    {.op = 1, .op_name = "HALT", .code = kInstructionCode_HALT},
-    {.op = 2, .op_name = "WAIT", .code = kInstructionCode_WAIT},
-    {.op = 3, .op_name = "MOV.LW", .code = kInstructionCode_MOV_LW},
-    {.op = 4, .op_name = "MOV.LD", .code = kInstructionCode_MOV_LD},
-    {.op = 5, .op_name = "MOV.SW", .code = kInstructionCode_MOV_SW},
-    {.op = 6, .op_name = "MOV.SD", .code = kInstructionCode_MOV_SD},
-    {.op = 7, .op_name = "MOV.S", .code = kInstructionCode_MOV_S},
-    {.op = 8, .op_name = "MVQ.LW", .code = kInstructionCode_MVQ_LW},
-    {.op = 9, .op_name = "MVQ.LD", .code = kInstructionCode_MVQ_LD},
-    {.op = 10, .op_name = "SWP.W", .code = kInstructionCode_SWP_W},
-    {.op = 11, .op_name = "SWP.D", .code = kInstructionCode_SWP_D},
-    {.op = 12, .op_name = "NEG.W", .code = kInstructionCode_NEG_W},
-    {.op = 13, .op_name = "NEG.D", .code = kInstructionCode_NEG_D},
-    {.op = 14, .op_name = "ADD.W", .code = kInstructionCode_ADD_W},
-    {.op = 15, .op_name = "ADD.D", .code = kInstructionCode_ADD_D},
-    {.op = 16, .op_name = "ADQ.W", .code = kInstructionCode_ADQ_W},
-    {.op = 17, .op_name = "ADQ.D", .code = kInstructionCode_ADQ_D},
-    {.op = 18, .op_name = "ADC.W", .code = kInstructionCode_ADC_W},
-    {.op = 19, .op_name = "ADC.D", .code = kInstructionCode_ADC_D},
-    {.op = 20, .op_name = "SUB.W", .code = kInstructionCode_SUB_W},
-    {.op = 21, .op_name = "SUB.D", .code = kInstructionCode_SUB_D},
-    {.op = 22, .op_name = "SBQ.W", .code = kInstructionCode_SBQ_W},
-    {.op = 23, .op_name = "SBQ.D", .code = kInstructionCode_SBQ_D},
-    {.op = 24, .op_name = "SBC.W", .code = kInstructionCode_SBC_W},
-    {.op = 25, .op_name = "SBC.D", .code = kInstructionCode_SBC_D},
-    {.op = 26, .op_name = "NOT.W", .code = kInstructionCode_NOT_W},
-    {.op = 27, .op_name = "NOT.D", .code = kInstructionCode_NOT_D},
-    {.op = 28, .op_name = "AND.W", .code = kInstructionCode_AND_W},
-    {.op = 29, .op_name = "AND.D", .code = kInstructionCode_AND_D},
-    {.op = 30, .op_name = "OR.W", .code = kInstructionCode_OR_W},
-    {.op = 31, .op_name = "OR.D", .code = kInstructionCode_OR_D},
-    {.op = 32, .op_name = "XOR.W", .code = kInstructionCode_XOR_W},
-    {.op = 33, .op_name = "XOR.D", .code = kInstructionCode_XOR_D},
-    {.op = 34, .op_name = "CLRB.W", .code = kInstructionCode_CLRB_W},
-    {.op = 35, .op_name = "CLRB.D", .code = kInstructionCode_CLRB_D},
-    {.op = 36, .op_name = "SETB.W", .code = kInstructionCode_SETB_W},
-    {.op = 37, .op_name = "SETB.D", .code = kInstructionCode_SETB_D},
-    {.op = 38, .op_name = "XORB.W", .code = kInstructionCode_XORB_W},
-    {.op = 39, .op_name = "XORB.D", .code = kInstructionCode_XORB_D},
-    {.op = 40, .op_name = "TSTB.W", .code = kInstructionCode_TSTB_W},
-    {.op = 41, .op_name = "TSTB.D", .code = kInstructionCode_TSTB_D},
-    {.op = 42, .op_name = "CLRF", .code = kInstructionCode_CLRF},
-    {.op = 43, .op_name = "SETF", .code = kInstructionCode_SETF},
-    {.op = 44, .op_name = "TST.W", .code = kInstructionCode_TST_W},
-    {.op = 45, .op_name = "TST.D", .code = kInstructionCode_TST_D},
-    {.op = 46, .op_name = "CMP.W", .code = kInstructionCode_CMP_W},
-    {.op = 47, .op_name = "CMP.D", .code = kInstructionCode_CMP_D},
-    {.op = 48, .op_name = "JP", .code = kInstructionCode_JP},
-    {.op = 49, .op_name = "JPR", .code = kInstructionCode_JPR},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

@@ -131,7 +131,6 @@ class InstructionCompiler {
           std::numeric_limits<
               decltype(InstructionSet::Instruction::sub_index)>::max()) +
       1;
-
   template <typename... Args>
   bool Error(Args&&... args) {
     if (error_ == nullptr) {
@@ -374,12 +373,9 @@ bool InstructionCompiler::CompileInstruction(
   if (instructions_.size() <= op_index) {
     instructions_.resize(op_index + 1);
   }
-  if (instruction_def_->code.size() != 1) {
-    return Error("Instruction code must have exactly one entry");
-  }
   Instruction& instruction = instructions_[op_index];
-  instruction.arg1 = instruction_def_->code[0].arg1;
-  instruction.arg2 = instruction_def_->code[0].arg2;
+  instruction.arg1 = instruction_def_->arg1;
+  instruction.arg2 = instruction_def_->arg2;
   state_.arg1 = &instruction.arg1;
   state_.arg2 = &instruction.arg2;
 
@@ -389,14 +385,9 @@ bool InstructionCompiler::CompileInstruction(
   if (!instruction.arg2.IsValid()) {
     return Error("Invalid second argument (size is probably invalid for type)");
   }
-  if (instruction.arg1.size + instruction.arg2.size +
-          instruction_def_->code[0].prefix.size !=
-      8) {
-    return Error("Prefix + argument sizes does not equal 8");
-  }
 
-  state_.src_code = absl::StrSplit(instruction_def_->code[0].code, ';',
-                                   absl::SkipWhitespace());
+  state_.src_code =
+      absl::StrSplit(instruction_def_->code, ';', absl::SkipWhitespace());
   if (!ExtractLabels()) {
     return false;
   }
@@ -691,7 +682,7 @@ bool InstructionCompiler::CompileSubInstruction() {
   const int macro_size_increase = macro_code_size - 1;
 
   const int8_t arg_offset =
-      (instruction_def_->code[0].arg1.type == ArgType::kMacro ? 0 : 1);
+      (instruction_def_->arg1.type == ArgType::kMacro ? 0 : 1);
 
   const int8_t macro_param0 = state_.macro_param;
   const int8_t macro_param1 =

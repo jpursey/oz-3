@@ -97,23 +97,18 @@ struct Argument {
 static_assert(sizeof(Argument) == 2);
 
 //------------------------------------------------------------------------------
-// Code prefix definition for macros and instructions.
+// Macro declarations and definitions.
 //------------------------------------------------------------------------------
 
-// Prefix bits for macro or instruction code. These are used to match a macro or
-// instruction code to an assembly source. The prefix must be unique within the
-// set of macro or instruction code.
-struct CodeDefPrefix {
+// Prefix bits for macro argument. These are used to uniquely a MacroCodeDef
+// with a macro. The prefix must be unique within the set of macro code.
+struct MacroPrefix {
   // Value of the prefix bits.
   uint8_t value = 0;
 
   // Number of bits in the prefix.
   uint8_t size = 0;
 };
-
-//------------------------------------------------------------------------------
-// Macro declarations and definitions.
-//------------------------------------------------------------------------------
 
 // Definition of one of the code options for a macro.
 struct MacroCodeDef {
@@ -139,11 +134,11 @@ struct MacroCodeDef {
   // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
 
-  // A string of prefix bits which uniquely identify the macro. This is used to
-  // match the macro to the assembly source. The prefix must be unique within
-  // the set of macros. In addition prefix.size + arg.size must equal the
+  // A string of prefix bits which uniquely identify the macro code. This is
+  // used to determine which MacroCoedeDef to use. The prefix must be unique
+  // within the MacroDef. In addition prefix.size + arg.size must equal the
   // MacroDef size.
-  CodeDefPrefix prefix;
+  MacroPrefix prefix;
 
   // Argument contained within the macro itself. This is used to specify the
   // number of bits the macro argument takes. The argument is referred to as
@@ -194,12 +189,26 @@ struct MacroDef {
 // Instruction declarations and definitions.
 //------------------------------------------------------------------------------
 
-struct InstructionCodeDef {
+// Represents the full source definition of an instruction in the OZ-3 CPU.
+struct InstructionDef {
   // Encodes the instruction for this code into a 16-bit instruction word.
   //
   // The parameters match the first and second parameters as specified in the
   // decl.
-  uint16_t Encode(uint16_t op, uint16_t a = 0, uint16_t b = 0) const;
+  uint16_t Encode(uint16_t a = 0, uint16_t b = 0) const;
+
+  // The numeric operation code for the instruction (upper 8 bits of the 16-bit
+  // instruction).
+  uint8_t op;
+
+  // OZ-3 assembly operation name of the form "name.ext" where name is any valid
+  // C identifier and ext is any valid c identifier. Typically, these would be
+  // all upper case and alpha characters only, but that is not required. This
+  // must be unique across instructions in an instruction set. Multiple
+  // instructions can use the same root name like "MOV" as long as the
+  // extensions ensure the full name is unique. The asseumbler will accept just
+  // the root name if argument types are sufficient to disambiguate them.
+  std::string_view op_name;
 
   // String defining the source arguments as it appears for the assembler.
   //
@@ -223,12 +232,6 @@ struct InstructionCodeDef {
   // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
 
-  // Prefix bits which uniquely identify the instruction. This is used to match
-  // the instruction to the assembly source. The prefix must be unique within
-  // the set of instructions. In addition prefix.size + arg1.size + arg2.size
-  // must equal 8.
-  CodeDefPrefix prefix;
-
   // The argument definitions for the instruction that are encoded in the lower
   // byte of the instruction word. The total number of bits required must not
   // exceed a byte (8 bits).
@@ -237,25 +240,6 @@ struct InstructionCodeDef {
 
   // The microcode source for the instruction.
   std::string_view code;
-};
-
-// Represents the full source definition of an instruction in the OZ-3 CPU.
-struct InstructionDef {
-  // The numeric operation code for the instruction (upper 8 bits of the 16-bit
-  // instruction).
-  uint8_t op;
-
-  // OZ-3 assembly operation name of the form "name.ext" where name is any valid
-  // C identifier and ext is any valid c identifier. Typically, these would be
-  // all upper case and alpha characters only, but that is not required. This
-  // must be unique across instructions in an instruction set. Multiple
-  // instructions can use the same root name like "MOV" as long as the
-  // extensions ensure the full name is unique. The asseumbler will accept just
-  // the root name if argument types are sufficient to disambiguate them.
-  std::string_view op_name;
-
-  // The source code for the instruction (up to 256 entries).
-  absl::Span<const InstructionCodeDef> code;
 };
 
 //------------------------------------------------------------------------------

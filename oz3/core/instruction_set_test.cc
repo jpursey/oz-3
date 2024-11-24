@@ -29,34 +29,22 @@ constexpr uint8_t kOp_TEST = 128;
 constexpr uint8_t kMicro_TEST_NOP = 254;
 constexpr uint8_t kMicro_TEST = 255;
 
-absl::Span<const InstructionCodeDef> MakeCodeDef(InstructionCodeDef code) {
-  static absl::NoDestructor<std::vector<InstructionCodeDef>> code_storage;
-  code.prefix.size = 8 - code.arg1.size - code.arg2.size;
-  code_storage->push_back(code);
-  return absl::MakeConstSpan(&code_storage->back(), 1);
-}
-
-InstructionDef MakeDef(const InstructionCodeDef& code_def) {
-  return InstructionDef{
-      .op = kOp_TEST, .op_name = "TEST", .code = MakeCodeDef(code_def)};
-}
 InstructionDef MakeDef(std::string_view code) {
-  return InstructionDef{
-      .op = kOp_TEST, .op_name = "TEST", .code = MakeCodeDef({.code = code})};
+  return InstructionDef{.op = kOp_TEST, .op_name = "TEST", .code = code};
 }
 
 InstructionDef MakeDef(Argument arg1, std::string_view code = "UL;") {
-  return InstructionDef{.op = kOp_TEST,
-                        .op_name = "TEST",
-                        .code = MakeCodeDef({.arg1 = arg1, .code = code})};
+  return InstructionDef{
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = arg1, .code = code};
 }
 
 InstructionDef MakeDef(Argument arg1, Argument arg2,
                        std::string_view code = "UL;") {
-  return InstructionDef{
-      .op = kOp_TEST,
-      .op_name = "TEST",
-      .code = MakeCodeDef({.arg1 = arg1, .arg2 = arg2, .code = code})};
+  return InstructionDef{.op = kOp_TEST,
+                        .op_name = "TEST",
+                        .arg1 = arg1,
+                        .arg2 = arg2,
+                        .code = code};
 }
 
 TEST(InstructionSetTest, InstructionNotFound) {
@@ -769,18 +757,16 @@ TEST(InstructionSetTest, MacroWordParamDecodedCorrectly) {
                                   .param = ArgType::kWordReg,
                                   .size = 1,
                                   .code = macro_code_defs}};
-  InstructionCodeDef instruction_code_defs[] = {
-      {.arg1 = {ArgType::kMacro, 1}, .arg2 = ArgType::kWordReg},
-      {.arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 1}},
+  InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kMacro, 1}, ArgType::kWordReg),
+      MakeDef(ArgType::kWordReg, {ArgType::kMacro, 1}),
   };
-  InstructionDef instruction_def = {};
   std::string code;
   auto MakeInstructionSetDef = [&](int i,
                                    std::string_view reg) -> InstructionSetDef {
     code = absl::StrCat("UL;$Macro(", reg, ");");
-    instruction_code_defs[i].code = code;
-    instruction_def = MakeDef(instruction_code_defs[i]);
-    return {absl::Span(&instruction_def, 1), macro_defs};
+    instruction_defs[i].code = code;
+    return {absl::Span(&instruction_defs[i], 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -853,13 +839,12 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
                             .ret = ArgType::kWordReg,
                             .size = 2,
                             .code = macro_code_defs}};
-  InstructionCodeDef instruction_code_defs[] = {
-      {.arg1 = ArgType::kWordReg, .arg2 = {ArgType::kMacro, 2}},
-      {.arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kWordReg},
-      {.arg1 = ArgType::kDwordReg, .arg2 = {ArgType::kMacro, 2}},
-      {.arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kDwordReg},
+  InstructionDef instruction_defs[] = {
+      MakeDef(ArgType::kWordReg, {ArgType::kMacro, 2}),
+      MakeDef({ArgType::kMacro, 2}, ArgType::kWordReg),
+      MakeDef(ArgType::kDwordReg, {ArgType::kMacro, 2}),
+      MakeDef({ArgType::kMacro, 2}, ArgType::kDwordReg),
   };
-  InstructionDef instruction_def = {};
   auto MakeInstructionSetDef = [&](int i, ArgType param_type, ArgType arg_type,
                                    int ret_value,
                                    std::string_view code) -> InstructionSetDef {
@@ -870,9 +855,8 @@ TEST(InstructionSetTest, MacroWordReturnDecodedCorrectly) {
       macro_code_defs[0].prefix.size = 0;
     }
     macro_code_defs[0].ret = ret_value;
-    instruction_code_defs[i].code = code;
-    instruction_def = MakeDef(instruction_code_defs[i]);
-    return {absl::Span(&instruction_def, 1), macro_defs};
+    instruction_defs[i].code = code;
+    return {absl::Span(&instruction_defs[i], 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -1471,18 +1455,16 @@ TEST(InstructionSetTest, MacroDwordParamDecodedCorrectly) {
                                   .param = ArgType::kDwordReg,
                                   .size = 1,
                                   .code = macro_code_defs}};
-  InstructionCodeDef instruction_code_defs[] = {
-      {.arg1 = {ArgType::kMacro, 1}, .arg2 = ArgType::kDwordReg},
-      {.arg1 = ArgType::kDwordReg, .arg2 = {ArgType::kMacro, 1}},
+  InstructionDef instruction_defs[] = {
+      MakeDef({ArgType::kMacro, 1}, ArgType::kDwordReg),
+      MakeDef(ArgType::kDwordReg, {ArgType::kMacro, 1}),
   };
-  InstructionDef instruction_def;
   std::string code;
   auto MakeInstructionSetDef = [&](int i,
                                    std::string_view reg) -> InstructionSetDef {
     code = absl::StrCat("UL;$Macro(", reg, ");");
-    instruction_code_defs[i].code = code;
-    instruction_def = MakeDef(instruction_code_defs[i]);
-    return {absl::Span(&instruction_def, 1), macro_defs};
+    instruction_defs[i].code = code;
+    return {absl::Span(&instruction_defs[i], 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -1571,11 +1553,10 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
                             .ret = ArgType::kDwordReg,
                             .size = 2,
                             .code = macro_code_defs}};
-  InstructionCodeDef instruction_code_defs[] = {
-      {.arg1 = ArgType::kDwordReg, .arg2 = {ArgType::kMacro, 2}},
-      {.arg1 = {ArgType::kMacro, 2}, .arg2 = ArgType::kDwordReg},
+  InstructionDef instruction_defs[] = {
+      MakeDef(ArgType::kDwordReg, {ArgType::kMacro, 2}),
+      MakeDef({ArgType::kMacro, 2}, ArgType::kDwordReg),
   };
-  InstructionDef instruction_def;
   auto MakeInstructionSetDef = [&](int i, ArgType param_type, ArgType arg_type,
                                    int ret_value,
                                    std::string_view code) -> InstructionSetDef {
@@ -1586,9 +1567,8 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
       macro_code_defs[0].prefix.size = 0;
     }
     macro_code_defs[0].ret = ret_value;
-    instruction_code_defs[i].code = code;
-    instruction_def = MakeDef(instruction_code_defs[i]);
-    return {absl::Span(&instruction_def, 1), macro_defs};
+    instruction_defs[i].code = code;
+    return {absl::Span(&instruction_defs[i], 1), macro_defs};
   };
   InstructionError error;
   std::shared_ptr<const InstructionSet> codes;
@@ -1841,8 +1821,8 @@ TEST(InstructionSetTest, EmptyMacroCodeInInstruction) {
                                                &instruction_error);
   ASSERT_EQ(instruction_error.message, "");
   DecodedInstruction decoded;
-  EXPECT_TRUE(instruction_set->Decode(
-      instruction_def.code[0].Encode(kOp_TEST, 1), decoded));
+  EXPECT_TRUE(
+      instruction_set->Decode(instruction_def.Encode(1), decoded));
   EXPECT_THAT(
       decoded.code,
       ElementsAre(

@@ -223,7 +223,7 @@ class InstructionSetAssembler {
   bool AssembleInstruction(const gb::ParsedItem& parsed_instruction);
   bool AssembleInstructionCodeSource(const gb::ParsedItem& parsed_instruction,
                                      std::string_view source,
-                                     InstructionCodeDef& instruction_code_def);
+                                     InstructionDef& instruction_def);
   void AssembleArgument(std::string_view parsed_arg_type, Argument& argument);
   bool AssembleMicrocode(absl::Span<const gb::ParsedItem> parsed_micro_codes,
                          CodeTokens& code_tokens, std::string& code_string,
@@ -491,9 +491,6 @@ bool InstructionSetAssembler::AssembleInstruction(
     const gb::ParsedItem& parsed_instruction) {
   const int instruction_index = result_->instruction_defs_.size();
   auto& instruction_def = result_->instruction_defs_.emplace_back();
-  auto& instruction_code_def =
-      result_->instruction_code_defs_.emplace_back().emplace_back();
-  instruction_def.code = result_->instruction_code_defs_.back();
 
   const gb::ParsedItem* parsed_opcode = parsed_instruction.GetItem("opcode");
   if (parsed_opcode == nullptr) {
@@ -524,33 +521,29 @@ bool InstructionSetAssembler::AssembleInstruction(
       instruction_token_map_[instruction_def.op_name];
   instruction_tokens.def = parsed_instruction.GetToken().GetTokenIndex();
 
-  instruction_code_def.source =
-      AddString(parsed_instruction.GetString("source"));
-  if (!AssembleInstructionCodeSource(parsed_instruction,
-                                     instruction_code_def.source,
-                                     instruction_code_def)) {
+  instruction_def.source = AddString(parsed_instruction.GetString("source"));
+  if (!AssembleInstructionCodeSource(parsed_instruction, instruction_def.source,
+                                     instruction_def)) {
     return false;
   }
   Argument* macro_arg = nullptr;
-  if (instruction_code_def.arg1.type == ArgType::kMacro) {
-    macro_arg = &instruction_code_def.arg1;
-  } else if (instruction_code_def.arg2.type == ArgType::kMacro) {
-    macro_arg = &instruction_code_def.arg2;
+  if (instruction_def.arg1.type == ArgType::kMacro) {
+    macro_arg = &instruction_def.arg1;
+  } else if (instruction_def.arg2.type == ArgType::kMacro) {
+    macro_arg = &instruction_def.arg2;
   }
   std::string code_string;
   if (!AssembleMicrocode(parsed_instruction.GetItems("code"),
                          instruction_tokens.code, code_string, macro_arg)) {
     return false;
   }
-  instruction_code_def.prefix.size =
-      8 - instruction_code_def.arg1.size - instruction_code_def.arg2.size;
-  instruction_code_def.code = AddString(code_string);
+  instruction_def.code = AddString(code_string);
   return true;
 }
 
 bool InstructionSetAssembler::AssembleInstructionCodeSource(
     const gb::ParsedItem& parsed_instruction, std::string_view source,
-    InstructionCodeDef& instruction_code_def) {
+    InstructionDef& instruction_def) {
   auto parser = gb::Parser::Create(GetSourceParserProgram());
   if (parser == nullptr) {
     return Error("Internal error: Invalid parser or lexer program");
@@ -592,9 +585,9 @@ bool InstructionSetAssembler::AssembleInstructionCodeSource(
         }
         has_macro_arg = true;
       }
-      AssembleArgument(type.GetToken().GetString(),
-                       instruction_arg_count == 1 ? instruction_code_def.arg1
-                                                  : instruction_code_def.arg2);
+      AssembleArgument(type.GetToken().GetString(), instruction_arg_count == 1
+                                                        ? instruction_def.arg1
+                                                        : instruction_def.arg2);
     }
   }
   return true;

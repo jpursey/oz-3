@@ -50,10 +50,8 @@ bool CompileForTest(
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
   // One instruction is required to create a valid instruction set. It is
   // unimportant, as this is only for compiling the macro.
-  const InstructionCodeDef instruction_code_defs[] = {
-      {.prefix = {.size = 8}, .code = "UL;"}};
   const InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = instruction_code_defs};
+      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
   InstructionError instruction_error;
   if (CompileInstructionSet({{instruction_def}, {macro_def}},
                             &instruction_error, microcode_defs)
@@ -84,40 +82,29 @@ bool TestCompile(const MicrocodeDef& microcode_def,
                  const InstructionDef& instruction_def, std::string& error) {
   MicrocodeDef microcode_defs[] = {
       {kMicro_UL, "UL"}, {kMicro_LK, "LK", MicroArgType::kBank}, microcode_def};
-  CHECK(instruction_def.code.size() == 1);
-  std::string new_code = absl::StrCat("UL;", instruction_def.code[0].code);
-  InstructionCodeDef new_code_defs[] = {instruction_def.code[0]};
-  new_code_defs[0].code = new_code;
+  std::string new_code = absl::StrCat("UL;", instruction_def.code);
   InstructionDef instruction = instruction_def;
-  instruction.code = new_code_defs;
+  instruction.code = new_code;
   instruction.op_name = "TEST";
   return CompileForTest(instruction, error, microcode_defs);
 }
 
-absl::Span<const InstructionCodeDef> MakeCodeDef(InstructionCodeDef code) {
-  static absl::NoDestructor<std::vector<InstructionCodeDef>> code_storage;
-  code.prefix.size = 8 - code.arg1.size - code.arg2.size;
-  code_storage->push_back(code);
-  return absl::MakeConstSpan(&code_storage->back(), 1);
-}
-
 InstructionDef MakeDef(std::string_view code) {
-  return InstructionDef{
-      .op = kOp_TEST, .op_name = "TEST", .code = MakeCodeDef({.code = code})};
+  return InstructionDef{.op = kOp_TEST, .op_name = "TEST", .code = code};
 }
 
 InstructionDef MakeDef(Argument arg1, std::string_view code = "UL;") {
-  return InstructionDef{.op = kOp_TEST,
-                        .op_name = "TEST",
-                        .code = MakeCodeDef({.arg1 = arg1, .code = code})};
+  return InstructionDef{
+      .op = kOp_TEST, .op_name = "TEST", .arg1 = arg1, .code = code};
 }
 
 InstructionDef MakeDef(Argument arg1, Argument arg2,
                        std::string_view code = "UL;") {
-  return InstructionDef{
-      .op = kOp_TEST,
-      .op_name = "TEST",
-      .code = MakeCodeDef({.arg1 = arg1, .arg2 = arg2, .code = code})};
+  return InstructionDef{.op = kOp_TEST,
+                        .op_name = "TEST",
+                        .arg1 = arg1,
+                        .arg2 = arg2,
+                        .code = code};
 }
 
 TEST(InstructionCompilerTest, InvalidFirstArg) {
@@ -615,7 +602,8 @@ TEST(InstructionCompilerTest, MacroDwordRegArg) {
     };
     const MacroDef macro_def = {
         .name = "Macro", .size = 3, .code = macro_code_defs};
-    const InstructionDef instruction_def = MakeDef({ArgType::kMacro, 3}, "UL;$Macro;");
+    const InstructionDef instruction_def =
+        MakeDef({ArgType::kMacro, 3}, "UL;$Macro;");
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_TRUE(TestCompile("TEST(D0,D1);"));
@@ -683,8 +671,7 @@ TEST(InstructionCompilerTest, MacroDwordRegReturn) {
                               .code = macro_code_defs};
   std::string error;
   auto TestCompile = [&](std::string_view code) {
-    const InstructionDef instruction_def =
-        MakeDef({ArgType::kMacro, 1}, code);
+    const InstructionDef instruction_def = MakeDef({ArgType::kMacro, 1}, code);
     return CompileForTest(instruction_def, macro_def, error, microcode_defs);
   };
   EXPECT_FALSE(TestCompile("UL;$Macro;MOV(R4,r);"));

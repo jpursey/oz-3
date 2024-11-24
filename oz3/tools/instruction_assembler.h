@@ -46,7 +46,6 @@ class AsmInstructionSet final {
   InstructionSetDef instruction_set_def_;
   std::vector<std::unique_ptr<std::string>> strings_;
   std::vector<std::vector<MacroCodeDef>> macro_code_defs_;
-  std::vector<std::vector<InstructionCodeDef>> instruction_code_defs_;
   std::vector<MacroDef> macro_defs_;
   std::vector<InstructionDef> instruction_defs_;
 };
