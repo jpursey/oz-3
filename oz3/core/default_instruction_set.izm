@@ -473,6 +473,178 @@ instruction MVQ.LD "$R, $#5" {
 }
 
 ################################################################################
+## PUSH <src>
+##
+## Cycles: 5+
+## ZSCO: ----
+##
+## Variants:
+##    PUSH.W <word-value>
+##    PUSH.D <dword-value>
+##
+## Pushes the value onto the stack, updating SP.
+################################################################################
+
+instruction PUSH.W "$m" {
+  $GetWord;
+  LK(STACK); ADR(SP); STP(C2); LAD(SP); UL;
+}
+
+instruction PUSH.D "$m" {
+  $GetDword;
+  LK(STACK); ADR(SP); STP(C1); STP(C0); LAD(SP); UL;
+}
+
+################################################################################
+## POP <dst>
+##
+## Cycles: 5+
+## ZSCO: ----
+##
+## Variants:
+##    POP.W <reg>
+##    POP.W <word-address>
+##    POP.D <dreg>
+##    POP.D <dword-address>
+##
+## Pops the value from the stack, updating SP. The destination address is
+## determined *after* the the value is popped, which affects addresses using an
+## offset from SP.
+################################################################################
+
+macro PopWord {
+  code "$r" {
+    UL;
+    LK(STACK); ADR(SP); LD(m); LAD(SP); UL;
+  }
+  code "($r)" {
+    UL;
+    LK(STACK); ADR(SP); LD(C2); LAD(SP); UL;
+    LKR(m); ADR(m); ST(C2); UL;
+  }
+  code "($r + $v)" {
+    LD(C0); UL;
+    LK(STACK); ADR(SP); LD(C2); LAD(SP); UL;
+    ADD(C0,m); LKR(m); ADR(C0); ST(C2); UL;
+  }
+  code "(SP)" {
+    UL;
+    LK(STACK);
+      ADR(SP); LD(C2); LAD(SP);
+      ST(C2);
+    UL;
+  }
+  code "(SP + $v)" {
+    LD(C0); UL;
+    LK(STACK);
+      ADR(SP); LD(C2); LAD(SP);
+      ADD(C0,SP); ADR(C0); ST(C2);
+    UL;
+  }
+  code "(FP)" {
+    UL;
+    LK(STACK);
+      ADR(SP); LD(C2); LAD(SP);
+      ADR(FP); ST(C2);
+    UL;
+  }
+  code "(FP + $v)" {
+    LD(C0); UL;
+    LK(STACK);
+      ADR(SP); LD(C2); LAD(SP);
+      ADD(C0,FP); ADR(C0); ST(C2);
+    UL;
+  }
+  code "S($v)" {
+    LD(C0); UL;
+    LK(STACK);
+      ADR(SP); LD(C2); LAD(SP);
+      ADR(C0); ST(C2);
+    UL;
+  }
+  code "D($v)" {
+    LD(C0); UL;
+    LK(STACK); ADR(SP); LD(C2); LAD(SP); UL;
+    LK(DATA); ADR(C0); ST(C2); UL;
+  }
+  code "E($v)" {
+    LD(C0); UL;
+    LK(STACK); ADR(SP); LD(C2); LAD(SP); UL;
+    LK(EXTRA); ADR(C0); ST(C2); UL;
+  }
+}
+
+instruction POP.W "$m" {
+  $PopWord;
+}
+
+macro PopDword {
+  code "$R" {
+    UL;
+    LK(STACK); ADR(SP); LD(m0); LD(m1); LAD(SP); UL;
+  }
+  code "[$r]" {
+    UL;
+    LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(SP); UL;
+    LKR(m); ADR(m); ST(C0); ST(C1); UL;
+  }
+  code "[$r + $v]" {
+    LD(C2); UL;
+    LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(SP); UL;
+    ADD(C2,m); LKR(m); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "[SP]" {
+    UL;
+    LK(STACK);
+      ADR(SP); LD(C0); LD(C1); LAD(SP);
+      ST(C0); ST(C1);
+    UL;
+  }
+  code "[SP + $v]" {
+    LD(C2); UL;
+    LK(STACK);
+      ADR(SP); LD(C0); LD(C1); LAD(SP);
+      ADD(C2,SP); ADR(C2); ST(C0); ST(C1);
+    UL;
+  }
+  code "[FP]" {
+    UL;
+    LK(STACK);
+      ADR(SP); LD(C0); LD(C1); LAD(SP);
+      ADR(FP); ST(C0); ST(C1);
+    UL;
+  }
+  code "[FP + $v]" {
+    LD(C2); UL;
+    LK(STACK);
+      ADR(SP); LD(C0); LD(C1); LAD(SP);
+      ADD(C2,FP); ADR(C2); ST(C0); ST(C1);
+    UL;
+  }
+  code "S[$v]" {
+    LD(C2); UL;
+    LK(STACK);
+      ADR(SP); LD(C0); LD(C1); LAD(SP);
+      ADR(C2); ST(C0); ST(C1);
+    UL;
+  }
+  code "D[$v]" {
+    LD(C2); UL;
+    LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(SP); UL;
+    LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "E[$v]" {
+    LD(C2); UL;
+    LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(SP); UL;
+    LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
+  }
+}
+
+instruction POP.D "$m" {
+  $PopDword;
+}
+
+################################################################################
 ## SWP <a> <b>
 ##
 ## Cycles: 6+
@@ -1198,7 +1370,7 @@ instruction FBGN {
 instruction FEND {
   UL;
   MOV(SP,FP);
-  LK(STACK); ADR(SP); LD(FP); LAD(SP); UL; 
+  LK(STACK); ADR(SP); LD(FP); LAD(SP); UL;
 }
 
 ################################################################################
