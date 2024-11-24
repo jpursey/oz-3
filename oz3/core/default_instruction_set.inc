@@ -976,6 +976,27 @@ constexpr oz3::InstructionDef kInstructions[] = {
     {.op = 55,
      .op_name = "FEND",
      .code = "UL;MOV(SP,FP);LK(STACK);ADR(SP);LD(FP);LAD(SP);UL;"},
+    {.op = 56,
+     .op_name = "RET",
+     .code = "UL;LK(STACK);ADR(SP);LD(IP);LAD(SP);UL;"},
+    {.op = 57,
+     .op_name = "RET.A",
+     .source = "$#5",
+     .arg1 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;ADD(SP,C0);LK(STACK);ADR(SP);LD(IP);LAD(SP);UL;"},
+    {.op = 58,
+     .op_name = "RETC",
+     .source = "$#3",
+     .arg1 = {oz3::ArgType::kImmediate, 3},
+     .code = "UL;JC(a,@return);END;@return:LK(STACK);ADR(SP);LD(IP);"
+             "LAD(SP);UL;"},
+    {.op = 59,
+     .op_name = "RETC.A",
+     .source = "$#3, $#5",
+     .arg1 = {oz3::ArgType::kImmediate, 3},
+     .arg2 = {oz3::ArgType::kImmediate, 5},
+     .code = "UL;JC(a,@return);END;@return:ADD(SP,C1);LK(STACK);ADR(SP);"
+             "LD(IP);LAD(SP);UL;"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

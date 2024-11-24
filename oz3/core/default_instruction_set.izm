@@ -1144,7 +1144,7 @@ instruction JCR "$#3, $m" {
 ################################################################################
 ## CALL <address>
 ##
-## Cycles: 4+
+## Cycles: 6+
 ## ZSCO: ----
 ##
 ## Pushes IP onto the stack and sets IP to the specified address.
@@ -1159,7 +1159,7 @@ instruction CALL "$m" {
 ################################################################################
 ## CALLR <relative-address>
 ##
-## Cycles: 4+
+## Cycles: 6+
 ## ZSCO: ----
 ##
 ## Pushes IP onto the stack and adds the specified relative address to IP.
@@ -1174,7 +1174,7 @@ instruction CALLR "$m" {
 ################################################################################
 ## FBGN
 ##
-## Cycles: 5
+## Cycles: 6
 ## ZSCO: ----
 ##
 ## Pushes FP onto the stack and sets it to SP.
@@ -1189,7 +1189,7 @@ instruction FBGN {
 ################################################################################
 ## FEND
 ##
-## Cycles: 5
+## Cycles: 6
 ## ZSCO: ----
 ##
 ## Restores SP from FP and removes FP from the stack
@@ -1199,5 +1199,62 @@ instruction FEND {
   UL;
   MOV(SP,FP);
   LK(STACK); ADR(SP); LD(FP); LAD(SP); UL; 
+}
+
+################################################################################
+## RET
+## RET <size>
+##
+## Cycles: 5-6
+## ZSCO: ----
+##
+## Variants:
+##   RET
+##   RET.A <size>
+##
+## Pops 0-31 words from the stack, then pops IP from the stack.
+################################################################################
+
+instruction RET {
+  UL;
+  LK(STACK); ADR(SP); LD(IP); LAD(SP); UL;
+}
+
+instruction RET.A "$#5" {
+  UL;
+  ADD(SP,C0);
+  LK(STACK); ADR(SP); LD(IP); LAD(SP); UL;
+}
+
+################################################################################
+## RETC <condition>
+## RETC <condition> <size>
+##
+## Cycles: 3-7
+## ZSCO: ----
+##
+## Variants:
+##   RETC   <condition>
+##   RETC.A <condition> <size>
+##
+## If the specified condition is true, optionally pops 0-31 words from the
+## stack, then pops IP from the stack.
+################################################################################
+
+instruction RETC "$#3" {
+  UL;
+  JC(a,@return);
+  END;
+@return:
+  LK(STACK); ADR(SP); LD(IP); LAD(SP); UL;
+}
+
+instruction RETC.A "$#3, $#5" {
+  UL;
+  JC(a,@return);
+  END;
+@return:
+  ADD(SP,C1);
+  LK(STACK); ADR(SP); LD(IP); LAD(SP); UL;
 }
 
