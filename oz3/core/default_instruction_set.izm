@@ -810,6 +810,7 @@ instruction NEG.D "$R" {
 ## Variants:
 ##    ADD.W <reg>, <word-value>
 ##    ADD.D <dreg>, <dword-value>
+##    ADD.S SP, <word-value>
 ##
 ## Adds a value to the specified register.
 ################################################################################
@@ -828,6 +829,12 @@ instruction ADD.D "$R, $m" {
   MSR(ZSCO,_SCO);
 }
 
+instruction ADD.S "SP, $m" {
+  $GetWord;
+  ADD(SP,r);
+  MSR(ZSCO,ZSCO);
+}
+
 ################################################################################
 ## ADQ <register>, <value>
 ##
@@ -837,8 +844,9 @@ instruction ADD.D "$R, $m" {
 ## Variants:
 ##    ADQ.W <reg>, <0..31>
 ##    ADQ.D <dreg>, <0..31>
+##    ADQ.S SP, <0..31>
 ##
-## Adds a value to the specified register.
+## Adds an immediate value to the specified register.
 ################################################################################
 
 instruction ADQ.W "$r, $#5" {
@@ -853,6 +861,12 @@ instruction ADQ.D "$R, $#5" {
   MSR(Z,Z);
   ADC(a1,C2);
   MSR(ZSCO,_SCO);
+}
+
+instruction ADQ.S "SP, $#5" {
+  UL;
+  ADD(SP,C1);
+  MSR(ZSCO,ZSCO);
 }
 
 ################################################################################
@@ -891,6 +905,7 @@ instruction ADC.D "$R, $m" {
 ## Variants:
 ##    SUB.W <reg>, <word-value>
 ##    SUB.D <dreg>, <dword-value>
+##    SUB.S SP, <word-value>
 ##
 ## Subtracts a value to the specified register.
 ################################################################################
@@ -909,6 +924,12 @@ instruction SUB.D "$R, $m" {
   MSR(ZSCO,_SCO);
 }
 
+instruction SUB.S "SP, $m" {
+  $GetWord;
+  SUB(SP,r);
+  MSR(ZSCO,ZSCO);
+}
+
 ################################################################################
 ## SBQ <register>, <value>
 ##
@@ -918,8 +939,9 @@ instruction SUB.D "$R, $m" {
 ## Variants:
 ##    SBQ.W <reg>, <0..31>
 ##    SBQ.D <dreg>, <0..31>
+##    SBQ.S SP, <0..31>
 ##
-## Adds a value to the specified register.
+## Subtracts an immediate value to the specified register.
 ################################################################################
 
 instruction SBQ.W "$r, $#5" {
@@ -934,6 +956,12 @@ instruction SBQ.D "$R, $#5" {
   MSR(Z,Z);
   SBC(a1,C2);
   MSR(ZSCO,_SCO);
+}
+
+instruction SBQ.S "SP, $#5" {
+  UL;
+  SUB(SP,C1);
+  MSR(ZSCO,ZSCO);
 }
 
 ################################################################################
