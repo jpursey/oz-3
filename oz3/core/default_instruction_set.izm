@@ -1548,3 +1548,31 @@ instruction DI {
   MSC(I);
   MSR(I,_);
 }
+
+################################################################################
+## GETI <interrupt> <register>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Retrieves the address of the specified interrupt and assigns to a register.
+################################################################################
+
+instruction GETI "$m, $r" {
+  $GetWord;
+  ILD(r,b);
+}
+
+################################################################################
+## SETI <interrupt> <register>
+##
+## Cycles: 4+
+## ZSCO: ----
+##
+## Sets the address of the specified interrupt from a register.
+################################################################################
+
+instruction SETI "$m, $r" {
+  $GetWord;
+  IST(r,b);
+}

@@ -1158,6 +1158,18 @@ constexpr oz3::InstructionDef kInstructions[] = {
     {.op = 73,
      .op_name = "DI",
      .code = "UL;MSC(I);MSR(I,_);"},
+    {.op = 74,
+     .op_name = "GETI",
+     .source = "$m, $r",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .arg2 = {oz3::ArgType::kWordReg, 3},
+     .code = "$GetWord;ILD(r,b);"},
+    {.op = 75,
+     .op_name = "SETI",
+     .source = "$m, $r",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .arg2 = {oz3::ArgType::kWordReg, 3},
+     .code = "$GetWord;IST(r,b);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
