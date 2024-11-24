@@ -1486,13 +1486,13 @@ std::shared_ptr<const InstructionSet> CompileInstructionSet(
   InstructionCompiler compiler(microcode_defs);
   for (const MacroDef& macro_def : instruction_set_def.macros) {
     if (!compiler.CompileMacro(macro_def, error)) {
-      return std::make_shared<InstructionSet>();
+      return nullptr;
     }
   }
   for (const InstructionDef& instruction_def :
        instruction_set_def.instructions) {
     if (!compiler.CompileInstruction(instruction_def, error)) {
-      return std::make_shared<InstructionSet>();
+      return nullptr;
     }
   }
   return std::make_shared<const InstructionSet>(

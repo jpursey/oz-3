@@ -17,6 +17,7 @@ CpuCoreConfig::CpuCoreConfig() : instructions_(GetDefaultInstructionSet()) {}
 
 CpuCoreConfig& CpuCoreConfig::SetInstructionSet(
     std::shared_ptr<const InstructionSet> instructions) {
+  DCHECK(instructions != nullptr);
   instructions_ = instructions;
   return *this;
 }

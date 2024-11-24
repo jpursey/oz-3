@@ -21,11 +21,11 @@ namespace {
 constexpr InstructionDef kInstructions[] = {
     {.op = 0, .op_name = "NOP", .code = "UL;"},
 };
-
 constexpr oz3::InstructionSetDef kInstructionSet = {
     .instructions = kInstructions,
 };
 #endif
+
 }  // namespace
 
 const InstructionSetDef& GetDefaultInstructionSetDef() {

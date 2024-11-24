@@ -36,8 +36,7 @@ bool CompileForTest(
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
   InstructionError instruction_error;
   if (CompileInstructionSet({.instructions = {instruction_def}},
-                            &instruction_error, microcode_defs)
-          ->IsEmpty()) {
+                            &instruction_error, microcode_defs) == nullptr) {
     error = instruction_error.message;
     return false;
   }
@@ -48,14 +47,9 @@ bool CompileForTest(
 bool CompileForTest(
     const MacroDef& macro_def, std::string& error,
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
-  // One instruction is required to create a valid instruction set. It is
-  // unimportant, as this is only for compiling the macro.
-  const InstructionDef instruction_def = {
-      .op = kOp_TEST, .op_name = "TEST", .code = "UL;"};
   InstructionError instruction_error;
-  if (CompileInstructionSet({{instruction_def}, {macro_def}},
-                            &instruction_error, microcode_defs)
-          ->IsEmpty()) {
+  if (CompileInstructionSet({.macros = {macro_def}}, &instruction_error,
+                            microcode_defs) == nullptr) {
     error = instruction_error.message;
     return false;
   }
@@ -69,8 +63,7 @@ bool CompileForTest(
     absl::Span<const MicrocodeDef> microcode_defs = GetMicrocodeDefs()) {
   InstructionError instruction_error;
   if (CompileInstructionSet({{instruction_def}, {macro_def}},
-                            &instruction_error, microcode_defs)
-          ->IsEmpty()) {
+                            &instruction_error, microcode_defs) == nullptr) {
     error = instruction_error.message;
     return false;
   }

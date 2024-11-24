@@ -58,16 +58,8 @@ class InstructionSet {
   // Properties
   //----------------------------------------------------------------------------
 
-  // Returns true if the instruction set is empty.
-  //
-  // This occurs if the instruction set was default constructed, or if
-  // CompileInstructionSet failed.
-  bool IsEmpty() const { return instructions_.empty(); }
-
   // Returns the number of instructions in the instruction set.
-  int GetInstructionCount() const {
-    return static_cast<int>(instructions_.size());
-  }
+  int GetInstructionCount() const { return instructions_.size(); }
 
   // Returns the total size in bytes the instruction set consumes.
   int GetTotalSizeInBytes() const;
