@@ -1089,6 +1089,103 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortDword[] = {
              "PST(A,C0);PST(S,C1);PUL;MSS(S);MSR(_,S);"},
 };
 
+constexpr oz3::MacroCodeDef kMacroCode_WritePortWordIfReady[] = {
+    {.source = "$r",
+     .prefix = {0, 2},
+     .arg = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;PLK(p);PST(TS,m);PUL;MSX(S);MSR(S,S);"},
+    {.source = "($r)",
+     .prefix = {1, 2},
+     .arg = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;LKR(m);ADR(m);LD(C0);UL;PLK(p);PST(TS,C0);PUL;MSX(S);"
+             "MSR(S,S);"},
+    {.source = "($r + $v)",
+     .prefix = {2, 2},
+     .arg = {oz3::ArgType::kWordReg, 3},
+     .code = "LD(C2);UL;ADD(C2,m);LKR(m);ADR(C2);LD(C0);UL;PLK(p);"
+             "PST(TS,C0);PUL;"},
+    {.source = "(SP)",
+     .prefix = {24, 5},
+     .code = "UL;LK(STACK);ADR(SP);LD(C0);UL;PLK(p);PST(TS,C0);PUL;MSX(S);"
+             "MSR(S,S);"},
+    {.source = "(SP + $v)",
+     .prefix = {25, 5},
+     .code = "LD(C2);UL;ADD(C2,SP);LK(STACK);ADR(C2);LD(C0);UL;PLK(p);"
+             "PST(TS,C0);PUL;MSX(S);MSR(S,S);"},
+    {.source = "(FP)",
+     .prefix = {26, 5},
+     .code = "UL;LK(STACK);ADR(FP);LD(C0);UL;PLK(p);PST(TS,C0);PUL;MSX(S);"
+             "MSR(S,S);"},
+    {.source = "(FP + $v)",
+     .prefix = {27, 5},
+     .code = "LD(C2);UL;ADD(C2,FP);LK(STACK);ADR(C2);LD(C0);UL;PLK(p);"
+             "PST(TS,C0);PUL;MSX(S);MSR(S,S);"},
+    {.source = "$v",
+     .prefix = {28, 5},
+     .code = "LD(C0);UL;PLK(p);PST(TS,C0);PUL;MSX(S);MSR(S,S);"},
+    {.source = "S($v)",
+     .prefix = {29, 5},
+     .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C0);UL;PLK(p);PST(TS,C0);PUL;"
+             "MSX(S);MSR(S,S);"},
+    {.source = "D($v)",
+     .prefix = {30, 5},
+     .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C0);UL;PLK(p);PST(TS,C0);PUL;"
+             "MSX(S);MSR(S,S);"},
+    {.source = "E($v)",
+     .prefix = {31, 5},
+     .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C0);UL;PLK(p);PST(TS,C0);PUL;"
+             "MSX(S);MSR(S,S);"},
+};
+
+constexpr oz3::MacroCodeDef kMacroCode_WritePortDwordIfReady[] = {
+    {.source = "($r)",
+     .prefix = {0, 2},
+     .arg = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;LKR(m);ADR(m);LD(C0);LD(C1);UL;PLK(p);PST(TA,C0);"
+             "PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "($r + $v)",
+     .prefix = {1, 2},
+     .arg = {oz3::ArgType::kWordReg, 3},
+     .code = "LD(C2);UL;ADD(C2,m);LKR(m);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
+             "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "$R",
+     .prefix = {4, 3},
+     .arg = {oz3::ArgType::kDwordReg, 2},
+     .code = "UL;PLK(p);PST(A,m0);PST(S,m1);PUL;"},
+    {.source = "(SP)",
+     .prefix = {20, 5},
+     .code = "UL;LK(STACK);ADR(SP);LD(C0);LD(C1);UL;PLK(p);PST(TA,C0);"
+             "PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "(SP + $v)",
+     .prefix = {21, 5},
+     .code = "LD(C2);UL;ADD(C2,SP);LK(STACK);ADR(C2);LD(C0);LD(C1);UL;"
+             "PLK(p);PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "(FP)",
+     .prefix = {22, 5},
+     .code = "UL;LK(STACK);ADR(FP);LD(C0);LD(C1);UL;PLK(p);PST(TA,C0);"
+             "PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "(FP + $v)",
+     .prefix = {23, 5},
+     .code = "LD(C2);UL;ADD(C2,FP);LK(STACK);ADR(C2);LD(C0);LD(C1);UL;"
+             "PLK(p);PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "$V",
+     .prefix = {24, 5},
+     .code = "LD(C0);LD(C1);UL;PLK(p);PST(TA,C0);PST(TS,C1);PUL;MSX(S);"
+             "MSR(S,S);"},
+    {.source = "S($v)",
+     .prefix = {25, 5},
+     .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
+             "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "D($v)",
+     .prefix = {26, 5},
+     .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
+             "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+    {.source = "E($v)",
+     .prefix = {27, 5},
+     .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
+             "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
+};
+
 constexpr oz3::MacroDef kMacros[] = {
     {.name = "GetWord",
      .ret = oz3::ArgType::kWordReg,
@@ -1171,6 +1268,14 @@ constexpr oz3::MacroDef kMacros[] = {
      .param = oz3::ArgType::kWordReg,
      .size = 5,
      .code = kMacroCode_WritePortDword},
+    {.name = "WritePortWordIfReady",
+     .param = oz3::ArgType::kWordReg,
+     .size = 5,
+     .code = kMacroCode_WritePortWordIfReady},
+    {.name = "WritePortDwordIfReady",
+     .param = oz3::ArgType::kWordReg,
+     .size = 5,
+     .code = kMacroCode_WritePortDwordIfReady},
 };
 
 constexpr oz3::InstructionDef kInstructions[] = {
@@ -1686,6 +1791,28 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$v, $m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "LD(MB);$WritePortDword(MB);"},
+    {.op = 94,
+     .op_name = "OUTS.RW",
+     .source = "$r, $m",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg2 = {oz3::ArgType::kMacro, 5},
+     .code = "$WritePortWordIfReady(a);"},
+    {.op = 95,
+     .op_name = "OUTS.IW",
+     .source = "$v, $m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "LD(MB);$WritePortWordIfReady(MB);"},
+    {.op = 96,
+     .op_name = "OUTS.RD",
+     .source = "$r, $m",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg2 = {oz3::ArgType::kMacro, 5},
+     .code = "$WritePortDwordIfReady(a);"},
+    {.op = 97,
+     .op_name = "OUTS.ID",
+     .source = "$v, $m",
+     .arg1 = {oz3::ArgType::kMacro, 5},
+     .code = "LD(MB);$WritePortDwordIfReady(MB);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {
