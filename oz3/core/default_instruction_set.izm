@@ -1630,7 +1630,7 @@ instruction INT "$m" {
 ## IN <port> <register>
 ##
 ## Cycles: 4+
-## ZSCO: ----
+## ZSCO: -X--
 ##
 ## Variants:
 ##    IN.RW <reg>    <reg>
@@ -1643,7 +1643,8 @@ instruction INT "$m" {
 ##    IN.ID <0..255> <dword-address>
 ##
 ## Unconditionally reads from the specified port and writes to the specified
-## register or memory address.
+## register or memory address. "S" flag is set if a word was read, otherwise
+## it is cleared.
 ################################################################################
 
 macro(bits:5) ReadPortWord(p) {
@@ -1772,7 +1773,7 @@ instruction IN.ID "$v, $m" {
 ## INS <port> <register>
 ##
 ## Cycles: 4+
-## ZSCO: ----
+## ZSCO: -X--
 ##
 ## Variants:
 ##    INS.RW <reg>    <reg>
@@ -1785,17 +1786,18 @@ instruction IN.ID "$v, $m" {
 ##    INS.ID <0..255> <dword-address>
 ##
 ## Reads from the specified port if the port status is set and writes to the
-## specified register or memory address.
+## specified register or memory address. "S" flag is set if a word was read,
+## otherwise it is cleared.
 ################################################################################
 
 macro(bits:5) ReadPortWordIfReady(p) {
   code "$r" {
     UL;
-    PLK(p); PLD(TS,m); PUL;
+    PLK(p); PLD(TS,m); MSR(S,S); PUL;
   }
   code "($r)" {
     UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1803,7 +1805,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "($r + $v)" {
     LD(C2); UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1812,7 +1814,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "(SP)" {
     UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1820,7 +1822,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "(SP + $v)" {
     LD(C2); UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1829,7 +1831,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "(FP)" {
     UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1837,7 +1839,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "(FP + $v)" {
     LD(C2); UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1846,7 +1848,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "S($v)" {
     LD(C2); UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1854,7 +1856,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "D($v)" {
     LD(C2); UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1862,7 +1864,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   }
   code "E($v)" {
     LD(C2); UL;
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1882,11 +1884,11 @@ instruction INS.IW "$v, $m" {
 macro(bits:5) ReadPortDwordIfReady(p) {
   code "$R" {
     UL;
-    PLK(p); PLD(TA,m0); PLD(TS,m1); PUL;
+    PLK(p); PLD(TA,m0); PLD(TS,m1); MSR(S,S); PUL;
   }
   code "($r)" {
     UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1894,7 +1896,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "($r + $v)" {
     LD(C2); UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1903,7 +1905,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "(SP)" {
     UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1911,7 +1913,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "(SP + $v)" {
     LD(C2); UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1920,7 +1922,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "(FP)" {
     UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1928,7 +1930,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "(FP + $v)" {
     LD(C2); UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1937,7 +1939,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "S($v)" {
     LD(C2); UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1945,7 +1947,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "D($v)" {
     LD(C2); UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1953,7 +1955,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   }
   code "E($v)" {
     LD(C2); UL;
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(S,@ready);
     END;
   @ready:
@@ -1974,7 +1976,7 @@ instruction INS.ID "$v, $m" {
 ## INR <port> <register>
 ##
 ## Cycles: 6+
-## ZSCO: ----
+## ZSCO: -X--
 ##
 ## Variants:
 ##    INR.RW <reg>    <word-address>
@@ -1984,7 +1986,8 @@ instruction INS.ID "$v, $m" {
 ##
 ## Reads up to R7 words from the specified port as long as port status is set
 ## before each read and writes sequentially starting at the specified memory
-## address. R7 is set to the number of words *not* read.
+## address. R7 is set to the number of words *not* read. The "S" flag is set
+## if all words/dwords were read (R7 == 0), otherwise it is cleared.
 ################################################################################
 
 macro(bits:5) ReadPortWordRepeat(p) {
@@ -1994,7 +1997,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     JC(Z,@done);
     MOV(C2,m);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LKR(m); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2007,7 +2010,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     JC(Z,@done);
     ADD(C2,m);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LKR(m); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2020,7 +2023,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     JC(Z,@done);
     MOV(C2,SP);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2033,7 +2036,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     JC(Z,@done);
     ADD(C2,SP);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2046,7 +2049,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     JC(Z,@done);
     MOV(C2,FP);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2059,7 +2062,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     JC(Z,@done);
     ADD(C2,FP);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2071,7 +2074,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     CMP(C0,R7);
     JC(Z,@done);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2083,7 +2086,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     CMP(C0,R7);
     JC(Z,@done);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(DATA); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2095,7 +2098,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
     CMP(C0,R7);
     JC(Z,@done);
   @read:
-    PLK(p); PLD(TS,C0); PUL;
+    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
     LK(EXTRA); ADR(C2); ST(C0); LAD(C2); UL;
     JD(R7,@read);
@@ -2120,7 +2123,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     JC(Z,@done);
     MOV(C2,m);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LKR(m); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2133,7 +2136,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     JC(Z,@done);
     ADD(C2,m);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LKR(m); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2146,7 +2149,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     JC(Z,@done);
     MOV(C2,SP);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2159,7 +2162,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     JC(Z,@done);
     ADD(C2,SP);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2172,7 +2175,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     JC(Z,@done);
     MOV(C2,FP);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2185,7 +2188,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     JC(Z,@done);
     ADD(C2,FP);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2197,7 +2200,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     CMP(C0,R7);
     JC(Z,@done);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2209,7 +2212,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     CMP(C0,R7);
     JC(Z,@done);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(DATA); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
@@ -2221,7 +2224,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
     CMP(C0,R7);
     JC(Z,@done);
   @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
     JD(R7,@read);
