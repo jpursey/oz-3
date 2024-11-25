@@ -91,6 +91,12 @@ macro(bits:5) GetDword:R {
 macro(bits:5) Get16BitMask:r {
   code:C0 "$r" {
     UL;
+    MOVI(C2,15);
+    CMP(C2,m);
+    JC(NS,@start);
+    MOVI(C0,0);
+    JP(@done);
+  @start:
     MOV(C2,m);
     MOVI(C0,1);
     CMP(m,C1);
@@ -171,6 +177,12 @@ macro(bits:6) Get32BitMask:R {
     MOVI(C1,1);
     JP(@done);
   @upper:
+    MOVI(C2,31);
+    CMP(C2,m);
+    JC(NS,@start_upper);
+    MOVI(C0,0);
+    JP(@done);
+  @start_upper:
     MOV(C2,m);
     ADDI(C2,-16);
     MOVI(C1,1);
@@ -1170,24 +1182,24 @@ instruction SETB.D "$R, $m" {
 }
 
 ################################################################################
-## XORB <register>, <bit-position>
+## NOTB <register>, <bit-position>
 ##
 ## Cycles: 5+
 ## ZSCO: ----
 ##
 ## Variants:
-##    XORB.W <reg>, <word-value>
-##    XORB.D <dreg>, <dword-value>
+##    NOTB.W <reg>, <word-value>
+##    NOTB.D <dreg>, <dword-value>
 ##
 ## Toggles bit in the specified register.
 ################################################################################
 
-instruction XORB.W "$r, $m" {
+instruction NOTB.W "$r, $m" {
   $Get16BitMask;
   XOR(a,r);
 }
 
-instruction XORB.D "$R, $m" {
+instruction NOTB.D "$R, $m" {
   $Get32BitMask;
   XOR(a0,r0);
   XOR(a1,r1);

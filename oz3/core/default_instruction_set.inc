@@ -103,8 +103,9 @@ constexpr oz3::MacroCodeDef kMacroCode_Get16BitMask[] = {
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
      .ret = CpuCore::C0,
-     .code = "UL;MOV(C2,m);MOVI(C0,1);CMP(m,C1);JC(Z,@done);@shift:SL(C0);"
-             "JD(C2,@shift);@done:MSS(_);"},
+     .code = "UL;MOVI(C2,15);CMP(C2,m);JC(NS,@start);MOVI(C0,0);JP(@done);"
+             "@start:MOV(C2,m);MOVI(C0,1);CMP(m,C1);JC(Z,@done);"
+             "@shift:SL(C0);JD(C2,@shift);@done:MSS(_);"},
     {.source = "0",
      .prefix = {8, 5},
      .ret = CpuCore::C0,
@@ -182,9 +183,11 @@ constexpr oz3::MacroCodeDef kMacroCode_Get32BitMask[] = {
      .code = "UL;MOVI(C2,16);CMP(C2,m);JC(S,@upper);JC(Z,@sixteen);"
              "MOVI(C0,1);CMP(m,C1);JC(Z,@done);MOV(C2,m);"
              "@shift_lower:SL(C0);JD(C2,@shift_lower);JP(@done);"
-             "@sixteen:MOVI(C1,1);JP(@done);@upper:MOV(C2,m);ADDI(C2,-16);"
-             "MOVI(C1,1);CMP(C2,C0);JC(Z,@done);@shift_upper:SL(C1);"
-             "JD(C2,@shift_upper);@done:MSS(_);"},
+             "@sixteen:MOVI(C1,1);JP(@done);@upper:MOVI(C2,31);CMP(C2,m);"
+             "JC(NS,@start_upper);MOVI(C0,0);JP(@done);"
+             "@start_upper:MOV(C2,m);ADDI(C2,-16);MOVI(C1,1);CMP(C2,C0);"
+             "JC(Z,@done);@shift_upper:SL(C1);JD(C2,@shift_upper);"
+             "@done:MSS(_);"},
     {.source = "0",
      .prefix = {8, 6},
      .ret = CpuCore::CD,
@@ -1654,13 +1657,13 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg2 = {oz3::ArgType::kMacro, 6},
      .code = "$Get32BitMask;OR(a0,r0);OR(a1,r1);"},
     {.op = 46,
-     .op_name = "XORB.W",
+     .op_name = "NOTB.W",
      .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .code = "$Get16BitMask;XOR(a,r);"},
     {.op = 47,
-     .op_name = "XORB.D",
+     .op_name = "NOTB.D",
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
