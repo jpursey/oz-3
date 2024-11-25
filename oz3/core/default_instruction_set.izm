@@ -1280,9 +1280,9 @@ instruction TST.W "$m" {
 
 instruction TST.D "$m" {
   $GetDword;
-  CMP(r0,0);
+  CMP(r0,C2);
   MSR(Z,Z);
-  CMP(r1,0);
+  CMP(r1,C2);
   MSR(ZSCO,_SCO);
 }
 
