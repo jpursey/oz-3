@@ -1784,8 +1784,8 @@ instruction IN.ID "$v, $m" {
 ##    INS.ID <0..255> <dreg>
 ##    INS.ID <0..255> <dword-address>
 ##
-## Unconditionally reads from the specified port and writes to the specified
-## register or memory address.
+## Reads from the specified port if the port status is set and writes to the
+## specified register or memory address.
 ################################################################################
 
 macro(bits:5) ReadPortWordIfReady(p) {
@@ -1968,4 +1968,273 @@ instruction INS.RD "$r, $m" {
 instruction INS.ID "$v, $m" {
   LD(MB);
   $ReadPortDwordIfReady(MB);
+}
+
+################################################################################
+## INR <port> <register>
+##
+## Cycles: 6+
+## ZSCO: ----
+##
+## Variants:
+##    INR.RW <reg>    <word-address>
+##    INR.IW <0..255> <word-address>
+##    INR.RD <reg>    <dword-address>
+##    INR.ID <0..255> <dword-address>
+##
+## Reads up to R7 words from the specified port as long as port status is set
+## before each read and writes sequentially starting at the specified memory
+## address. R7 is set to the number of words *not* read.
+################################################################################
+
+macro(bits:5) ReadPortWordRepeat(p) {
+  code "($r)" {
+    UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    MOV(C2,m);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LKR(m); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "($r + $v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    ADD(C2,m);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LKR(m); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(SP)" {
+    UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    MOV(C2,SP);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(SP + $v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    ADD(C2,SP);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(FP)" {
+    UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    MOV(C2,FP);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(FP + $v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    ADD(C2,FP);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "S($v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "D($v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(DATA); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "E($v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+  @read:
+    PLK(p); PLD(TS,C0); PUL;
+    JC(NS,@done);
+    LK(EXTRA); ADR(C2); ST(C0); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+}
+
+instruction INR.RW "$r, $m" {
+  $ReadPortWordRepeat(a);
+}
+
+instruction INR.IW "$v, $m" {
+  LD(MB);
+  $ReadPortWordRepeat(MB);
+}
+
+macro(bits:5) ReadPortDwordRepeat(p) {
+  code "($r)" {
+    UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    MOV(C2,m);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LKR(m); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "($r + $v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    ADD(C2,m);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LKR(m); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(SP)" {
+    UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    MOV(C2,SP);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(SP + $v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    ADD(C2,SP);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(FP)" {
+    UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    MOV(C2,FP);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "(FP + $v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+    ADD(C2,FP);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "S($v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "D($v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(DATA); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+  code "E($v)" {
+    LD(C2); UL;
+    CMP(C0,R7);
+    JC(Z,@done);
+  @read:
+    PLK(p); PLD(TA,C0); PLD(TS,C1); PUL;
+    JC(NS,@done);
+    LK(EXTRA); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
+    JD(R7,@read);
+  @done:
+    END;
+  }
+}
+
+instruction INR.RD "$r, $m" {
+  $ReadPortDwordRepeat(a);
+}
+
+instruction INR.ID "$v, $m" {
+  LD(MB);
+  $ReadPortDwordRepeat(MB);
 }
