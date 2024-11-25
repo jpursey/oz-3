@@ -711,69 +711,65 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft16[] = {
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
      .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
-             "MOV(C2,m);@shift:SL(p);JD(C2,@shift);MSR(C,C);CMP(p,C0);"
-             "MSR(ZSO,ZSO);END;@max:MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);"
-             "END;@zero:CMP(p,C0);MSR(ZSCO,ZSCO);END;"},
+             "MOV(C2,m);@shift:SL(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;"
+             "@max:MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;"
+             "@zero:CMP(p,C0);MSR(ZSCO,ZSCO);END;"},
     {.source = "1",
      .prefix = {8, 5},
-     .code = "SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "2",
      .prefix = {9, 5},
-     .code = "SL(p);SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "3",
      .prefix = {10, 5},
-     .code = "SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "4",
      .prefix = {11, 5},
-     .code = "SL(p);SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "5",
      .prefix = {12, 5},
-     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "6",
      .prefix = {13, 5},
-     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "7",
      .prefix = {14, 5},
-     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "8",
      .prefix = {15, 5},
-     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);MSR(C,C);"
-             "CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
+             "MSR(ZSCO,ZSCO);"},
     {.source = "9",
      .prefix = {16, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+             "MSR(ZSCO,ZSCO);"},
     {.source = "10",
      .prefix = {17, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+             "MSR(ZSCO,ZSCO);"},
     {.source = "11",
      .prefix = {18, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+             "SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "12",
      .prefix = {19, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "SL(p);SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+             "SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "13",
      .prefix = {20, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+             "SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "14",
      .prefix = {21, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "SL(p);SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+             "SL(p);SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "15",
      .prefix = {22, 5},
      .code = "SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);SL(p);"
-             "SL(p);SL(p);SL(p);SL(p);SL(p);MSR(C,C);CMP(p,C0);"
-             "MSR(ZSO,ZSO);"},
+             "SL(p);SL(p);SL(p);SL(p);SL(p);MSR(ZSCO,ZSCO);"},
     {.source = "16",
      .prefix = {23, 5},
-     .code = "SR(p);MOVI(p,0);MSS(Z);MSC(SO);MSR(ZSCO,ZSCO);"},
+     .code = "SR(p);MOVI(p,0);MSS(Z);MSR(ZSCO,ZSCO);"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft32[] = {
@@ -781,161 +777,147 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft32[] = {
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
      .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
-             "MOV(C2,m);@shift:SL(p0);RLC(p1);JD(C2,@shift);MSR(C,C);"
-             "CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);END;"
-             "@max:MOVI(p0,0);MOVI(p1,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;"
-             "@zero:CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZCSO,CSO);END;"},
+             "MOV(C2,m);@shift:SL(p0);MSR(Z,Z);RLC(p1);JD(C2,@shift);"
+             "MSR(C,C);MSR(ZSCO,SCO);END;@max:MOVI(p0,0);MOVI(p1,0);"
+             "MSC(SCO);MSS(Z);MSR(SCO,Z);END;@zero:CMP(p0,C0);MSR(Z,Z);"
+             "CMP(p1,C0);MSR(ZCSO,CSO);END;"},
     {.source = "1",
      .prefix = {8, 6},
-     .code = "SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZSO,SO);"},
+     .code = "SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "2",
      .prefix = {9, 6},
-     .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);"
-             "CMP(p1,C0);MSR(ZSO,SO);"},
+     .code = "SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "3",
      .prefix = {10, 6},
-     .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);"
-             "CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+     .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);"
+             "MSR(ZSCO,SCO);"},
     {.source = "4",
      .prefix = {11, 6},
-     .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+     .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);"
+             "RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "5",
      .prefix = {12, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZSO,SO);"},
+             "SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "6",
      .prefix = {13, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);"
-             "CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "7",
      .prefix = {14, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);"
-             "CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);"
+             "MSR(ZSCO,SCO);"},
     {.source = "8",
      .prefix = {15, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);"
+             "RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "9",
      .prefix = {16, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZSO,SO);"},
+             "SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "10",
      .prefix = {17, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);"
-             "CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "11",
      .prefix = {18, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);"
-             "CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);"
+             "MSR(ZSCO,SCO);"},
     {.source = "12",
      .prefix = {19, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);"
+             "RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "13",
      .prefix = {20, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZSO,SO);"},
+             "SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "14",
      .prefix = {21, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);CMP(p0,C0);MSR(Z,Z);"
-             "CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
     {.source = "15",
      .prefix = {22, 6},
      .code = "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
              "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);"
-             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);RLC(p1);MSR(C,C);"
-             "CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);MSR(ZSO,SO);"},
+             "SL(p0);RLC(p1);SL(p0);RLC(p1);SL(p0);MSR(Z,Z);RLC(p1);"
+             "MSR(ZSCO,SCO);"},
     {.source = "16",
      .prefix = {23, 6},
-     .code = "SR(p1);MOV(p1,p0);MOVI(p0,0);MSR(C,C);CMP(p1,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "SR(p1);MOV(p1,p0);MOVI(p0,0);MSR(ZSCO,ZSCO);"},
     {.source = "17",
      .prefix = {24, 6},
-     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);MSR(C,C);CMP(p1,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "18",
      .prefix = {25, 6},
-     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);MSR(C,C);CMP(p1,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "19",
      .prefix = {26, 6},
-     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);MSR(C,C);"
-             "CMP(p1,C0);MSR(ZSO,ZSO);"},
+     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "20",
      .prefix = {27, 6},
-     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);MSR(C,C);"
-             "CMP(p1,C0);MSR(ZSO,ZSO);"},
+     .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);"
+             "MSR(ZSCO,ZSCO);"},
     {.source = "21",
      .prefix = {28, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "MSR(ZSCO,ZSCO);"},
     {.source = "22",
      .prefix = {29, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "23",
      .prefix = {30, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "24",
      .prefix = {31, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);SL(p1);MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "25",
      .prefix = {32, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);SL(p1);SL(p1);MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "26",
      .prefix = {33, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);MSR(C,C);CMP(p1,C0);"
-             "MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "27",
      .prefix = {34, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);MSR(C,C);"
-             "CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "28",
      .prefix = {35, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);MSR(C,C);"
-             "CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
+             "MSR(ZSCO,ZSCO);"},
     {.source = "29",
      .prefix = {36, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
              "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "MSR(ZSCO,ZSCO);"},
     {.source = "30",
      .prefix = {37, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
              "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "31",
      .prefix = {38, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
              "SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);SL(p1);"
-             "SL(p1);SL(p1);MSR(C,C);CMP(p1,C0);MSR(ZSO,ZSO);"},
+             "SL(p1);SL(p1);MSR(ZSCO,ZSCO);"},
     {.source = "32",
      .prefix = {39, 6},
      .code = "SR(p0);MOVI(p0,0);MOVI(p1,0);MSS(Z);MSC(SO);MSR(ZSCO,ZSCO);"},

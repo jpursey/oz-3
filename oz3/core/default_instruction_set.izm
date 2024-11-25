@@ -1161,7 +1161,7 @@ macro(bits:5) LogicalShiftLeft16(p) {
   @shift:
     SL(p);
     JD(C2,@shift);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
     END;
 
   @max:
@@ -1176,74 +1176,74 @@ macro(bits:5) LogicalShiftLeft16(p) {
 
   code "1" {
     SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "2" {
     SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "3" {
     SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "4" {
     SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "5" {
     SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "6" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "7" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "8" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "9" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "10" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "11" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "12" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "13" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "14" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "15" {
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
     SL(p); SL(p); SL(p); SL(p); SL(p); SL(p); SL(p);
-    MSR(C,C); CMP(p,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "16" {
     SR(p); MOVI(p,0);
-    MSS(Z); MSC(SO); MSR(ZSCO,ZSCO);
+    MSS(Z); MSR(ZSCO,ZSCO);
   }
 }
 
@@ -1265,9 +1265,9 @@ macro(bits:6) LogicalShiftLeft32(P) {
     # Shift 1-32 bits
     MOV(C2,m);
   @shift:
-    SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
     JD(C2,@shift);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    MSR(C,C); MSR(ZSCO,SCO);
     END;
 
   @max:
@@ -1281,171 +1281,185 @@ macro(bits:6) LogicalShiftLeft32(P) {
   }
 
   code "1" {
-    SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "2" {
-    SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "3" {
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "4" {
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "5" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+   
+   SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "6" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "7" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "8" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "9" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+   
+   SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "10" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "11" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "12" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "13" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+   
+   SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "14" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "15" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-    MSR(C,C); CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZSO,SO);
+    SL(p0); RLC(p1); SL(p0); RLC(p1);
+    SL(p0); MSR(Z,Z); RLC(p1);
+    MSR(ZSCO,SCO);
   }
   code "16" {
     SR(p1); MOV(p1,p0); MOVI(p0,0);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "17" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "18" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "19" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "20" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "21" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "22" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "23" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "24" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "25" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "26" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "27" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "28" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "29" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "30" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "31" {
     MOV(p1,p0); MOVI(p0,0);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
     SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1); SL(p1);
-    MSR(C,C); CMP(p1,C0); MSR(ZSO,ZSO);
+    MSR(ZSCO,ZSCO);
   }
   code "32" {
     SR(p0); MOVI(p0,0); MOVI(p1,0);
