@@ -93,7 +93,7 @@ macro(bits:5) Get16BitMask:r {
     UL;
     MOV(C2,m);
     MOVI(C0,1);
-    CMP(C1,m);
+    CMP(m,C1);
     JC(Z,@done);
   @shift:
     SL(C0);
@@ -160,7 +160,7 @@ macro(bits:6) Get32BitMask:R {
     JC(S,@upper);
     JC(Z,@sixteen);
     MOVI(C0,1);
-    CMP(C1,m);
+    CMP(m,C1);
     JC(Z,@done);
     MOV(C2,m);
   @shift_lower:
@@ -174,7 +174,7 @@ macro(bits:6) Get32BitMask:R {
     MOV(C2,m);
     ADDI(C2,-16);
     MOVI(C1,1);
-    CMP(C0,C2);
+    CMP(C2,C0);
     JC(Z,@done);
   @shift_upper:
     SL(C1);
@@ -1263,7 +1263,7 @@ instruction NOTF "$#4" {
 ## TST <value>
 ##
 ## Cycles: 4+
-## ZSCO: XXXX
+## ZSCO: XX00
 ##
 ## Variants:
 ##    TST.W <word-value>
@@ -1274,15 +1274,15 @@ instruction NOTF "$#4" {
 
 instruction TST.W "$m" {
   $GetWord;
-  CMP(C0,r);
+  CMP(r,C0);
   MSR(ZSCO,ZSCO);
 }
 
 instruction TST.D "$m" {
   $GetDword;
-  CMP(C2,r0);
+  CMP(r0,0);
   MSR(Z,Z);
-  SBC(C2,r1);
+  CMP(r1,0);
   MSR(ZSCO,_SCO);
 }
 
@@ -1994,7 +1994,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "($r)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,m);
   @read:
@@ -2008,7 +2008,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "($r + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,m);
   @read:
@@ -2022,7 +2022,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(SP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,SP);
   @read:
@@ -2036,7 +2036,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(SP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,SP);
   @read:
@@ -2050,7 +2050,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(FP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,FP);
   @read:
@@ -2064,7 +2064,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(FP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,FP);
   @read:
@@ -2078,7 +2078,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "S($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
@@ -2091,7 +2091,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "D($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
@@ -2104,7 +2104,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "E($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
@@ -2129,7 +2129,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[$r]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,m);
   @read:
@@ -2143,7 +2143,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[$r + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,m);
   @read:
@@ -2157,7 +2157,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[SP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,SP);
   @read:
@@ -2171,7 +2171,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[SP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,SP);
   @read:
@@ -2185,7 +2185,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[FP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,FP);
   @read:
@@ -2199,7 +2199,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[FP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,FP);
   @read:
@@ -2213,7 +2213,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "S[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
@@ -2226,7 +2226,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "D[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
@@ -2239,7 +2239,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "E[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
@@ -2614,7 +2614,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "($r)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,m);
   @write:
@@ -2628,7 +2628,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "($r + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,m);
   @write:
@@ -2642,7 +2642,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(SP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,SP);
   @write:
@@ -2656,7 +2656,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(SP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,SP);
   @write:
@@ -2670,7 +2670,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(FP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,FP);
   @write:
@@ -2684,7 +2684,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(FP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,FP);
   @write:
@@ -2698,7 +2698,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "S($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @write:
     LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
@@ -2711,7 +2711,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "D($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @write:
     LK(DATA); ADR(C2); LD(C0); LAD(C2); UL;
@@ -2724,7 +2724,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "E($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @write:
     LK(EXTRA); ADR(C2); LD(C0); LAD(C2); UL;
@@ -2749,7 +2749,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[$r]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,m);
   @write:
@@ -2763,7 +2763,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[$r + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,m);
   @write:
@@ -2777,7 +2777,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[SP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,SP);
   @write:
@@ -2791,7 +2791,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[SP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,SP);
   @write:
@@ -2805,7 +2805,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[FP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     MOV(C2,FP);
   @write:
@@ -2819,7 +2819,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[FP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
     ADD(C2,FP);
   @write:
@@ -2833,7 +2833,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "S[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @write:
     LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
@@ -2846,7 +2846,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "D[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @write:
     LK(DATA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
@@ -2859,7 +2859,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "E[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(C0,R7);
+    CMP(R7,C0);
     JC(Z,@done);
   @write:
     LK(EXTRA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
