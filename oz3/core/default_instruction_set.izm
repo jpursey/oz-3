@@ -2476,6 +2476,162 @@ instruction ROL.D "$R, $m" {
 }
 
 ################################################################################
+## ROR <register>, <value>
+##
+## Cycles: 5+
+## ZSCO: XXX0
+##
+## Variants:
+##    ROR.W <reg>, <reg>
+##    ROR.W <reg>, <1..16>
+##    ROR.D <dreg>, <reg>
+##    ROR.D <dreg>, <1..32>
+##
+## Rotate left of the register by the specified number of bits. The last bit
+## shifted sets the value of the "C" flag.
+################################################################################
+
+macro(bits:5) RotateRight16(p) {
+  code "$r" {
+    # Rotate zero bits?
+    CMP(m,C0);
+    JC(Z,@zero);
+
+    # Rotate modulo 16 bits?
+    MOVI(C2,15);
+    AND(C2,m);
+    JC(Z,@sixteen);
+
+    # Rotate 1-15 bits
+  @shift:
+    RR(p);
+    JD(C2,@shift);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @sixteen:
+    MOV(C2,p);
+    SL(C2); MSR(C,C);
+    CMP(p,C0);
+    MSR(ZSO,ZSO);
+    END;
+
+  @zero:
+    CMP(p,C0); MSR(ZSCO,ZSCO);
+  }
+
+  code "1" {
+    RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "2" {
+    RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "3" {
+    RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "4" {
+    RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "5" {
+    RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "6" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "7" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "8" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "9" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "10" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "11" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "12" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "13" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "14" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "15" {
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    RR(p); RR(p); RR(p); RR(p); RR(p); RR(p); RR(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "16" {
+    MOV(C2,p);
+    SR(C2); MSR(C,C);
+    CMP(p,C0);
+    MSR(ZSO,ZSO);
+  }
+}
+
+instruction ROR.W "$r, $m" {
+  UL; $RotateRight16(a);
+}
+
+instruction ROR.D "$R, $m" {
+  UL;
+  $GetRotateCount32;
+
+  # Rotate zero bits?
+  CMP(r,C0);
+  JC(Z,@zero);
+
+  # Rotate modulo 32 bits?
+  MOVI(C2,31);
+  AND(C2,r);
+  JC(Z,@thirtytwo);
+
+  # Rotate 1-31 bits
+@shift:
+  MOVI(C0,1); AND(C0,a0); RR(C0);
+  RRC(a1); MSR(ZS,ZS); RRC(a0);
+  JD(C2,@shift);
+  MSR(ZCO,CO);
+  END;
+
+@thirtytwo:
+  MOV(C2,a0);
+  SR(C2); MSR(C,C);
+  CMP(a0,C0); MSR(Z,Z);
+  CMP(a1,C0); MSR(ZSO,SO);
+  END;
+
+@zero:
+  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+}
+
+################################################################################
 ## CLRB <register>, <bit-position>
 ##
 ## Cycles: 6+
