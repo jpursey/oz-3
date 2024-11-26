@@ -1174,7 +1174,6 @@ macro(bits:5) LogicalShiftLeft16(p) {
 
   @zero:
     CMP(p,C0); MSR(ZSCO,ZSCO);
-    END;
   }
 
   code "1" {
@@ -1280,7 +1279,6 @@ macro(bits:6) LogicalShiftLeft32(P) {
 
   @zero:
     CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZCSO,CSO);
-    END;
   }
 
   code "1" {
@@ -1516,7 +1514,6 @@ macro(bits:5) LogicalShiftRight16(p) {
 
   @zero:
     CMP(p,C0); MSR(ZSCO,ZSCO);
-    END;
   }
 
   code "1" {
@@ -1622,7 +1619,6 @@ macro(bits:6) LogicalShiftRight32(P) {
 
   @zero:
     CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZCSO,CSO);
-    END;
   }
 
   code "1" {
@@ -1865,7 +1861,6 @@ macro(bits:5) ArithmeticShiftRight16(p) {
 
   @zero:
     CMP(p,C0); MSR(ZSCO,ZSCO);
-    END;
   }
 
   code "1" {
@@ -1984,7 +1979,6 @@ macro(bits:6) ArithmeticShiftRight32(P) {
 
   @zero:
     CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZCSO,CSO);
-    END;
   }
 
   code "1" {
@@ -2286,6 +2280,199 @@ macro(bits:6) ArithmeticShiftRight32(P) {
 
 instruction SRA.D "$R, $m" {
   UL; $ArithmeticShiftRight32(A);
+}
+
+################################################################################
+## ROL <register>, <value>
+##
+## Cycles: 5+
+## ZSCO: XXX0
+##
+## Variants:
+##    ROL.W <reg>, <reg>
+##    ROL.W <reg>, <1..16>
+##    ROL.D <dreg>, <reg>
+##    ROL.D <dreg>, <1..32>
+##
+## Rotate left of the register by the specified number of bits. The last bit
+## shifted sets the value of the "C" flag.
+################################################################################
+
+macro(bits:5) RotateLeft16(p) {
+  code "$r" {
+    # Rotate zero bits?
+    CMP(m,C0);
+    JC(Z,@zero);
+
+    # Rotate modulo 16 bits?
+    MOVI(C2,15);
+    AND(C2,m);
+    JC(Z,@sixteen);
+
+    # Rotate 1-15 bits
+  @shift:
+    RL(p);
+    JD(C2,@shift);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @sixteen:
+    MOV(C2,p);
+    SR(C2); MSR(C,C);
+    CMP(p,C0);
+    MSR(ZSO,ZSO);
+    END;
+
+  @zero:
+    CMP(p,C0); MSR(ZSCO,ZSCO);
+  }
+
+  code "1" {
+    RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "2" {
+    RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "3" {
+    RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "4" {
+    RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "5" {
+    RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "6" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "7" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "8" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "9" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "10" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "11" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "12" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "13" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "14" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "15" {
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    RL(p); RL(p); RL(p); RL(p); RL(p); RL(p); RL(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "16" {
+    MOV(C2,p);
+    SR(C2); MSR(C,C);
+    CMP(p,C0);
+    MSR(ZSO,ZSO);
+  }
+}
+
+instruction ROL.W "$r, $m" {
+  UL; $RotateLeft16(a);
+}
+
+macro(bits:6) GetRotateCount32:r {
+  code:m "$r" {}
+  code:C1 "1" { MOVI(C1,1); }
+  code:C1 "2" { MOVI(C1,2); }
+  code:C1 "3" { MOVI(C1,3); }
+  code:C1 "4" { MOVI(C1,4); }
+  code:C1 "5" { MOVI(C1,5); }
+  code:C1 "6" { MOVI(C1,6); }
+  code:C1 "7" { MOVI(C1,7); }
+  code:C1 "8" { MOVI(C1,8); }
+  code:C1 "9" { MOVI(C1,9); }
+  code:C1 "10" { MOVI(C1,10); }
+  code:C1 "11" { MOVI(C1,11); }
+  code:C1 "12" { MOVI(C1,12); }
+  code:C1 "13" { MOVI(C1,13); }
+  code:C1 "14" { MOVI(C1,14); }
+  code:C1 "15" { MOVI(C1,15); }
+  code:C1 "16" { MOVI(C1,16); }
+  code:C1 "17" { MOVI(C1,17); }
+  code:C1 "18" { MOVI(C1,18); }
+  code:C1 "19" { MOVI(C1,19); }
+  code:C1 "20" { MOVI(C1,20); }
+  code:C1 "21" { MOVI(C1,21); }
+  code:C1 "22" { MOVI(C1,22); }
+  code:C1 "23" { MOVI(C1,23); }
+  code:C1 "24" { MOVI(C1,24); }
+  code:C1 "25" { MOVI(C1,25); }
+  code:C1 "26" { MOVI(C1,26); }
+  code:C1 "27" { MOVI(C1,27); }
+  code:C1 "28" { MOVI(C1,28); }
+  code:C1 "29" { MOVI(C1,29); }
+  code:C1 "30" { MOVI(C1,30); }
+  code:C1 "31" { MOVI(C1,31); }
+  code:C1 "32" { MOVI(C1,32); }
+}
+
+instruction ROL.D "$R, $m" {
+  UL;
+  $GetRotateCount32;
+
+  # Rotate zero bits?
+  CMP(r,C0);
+  JC(Z,@zero);
+
+  # Rotate modulo 32 bits?
+  MOVI(C2,31);
+  AND(C2,r);
+  JC(Z,@thirtytwo);
+
+  # Rotate 1-31 bits
+  MOVI(C1,1); RR(C1); 
+@shift:
+  MOV(C0,C1); AND(C0,a1); RL(C0);
+  RLC(a0); MSR(Z,Z); RLC(a1);
+  JD(C2,@shift);
+  MSR(ZSCO,SCO);
+  END;
+
+@thirtytwo:
+  MOV(C2,a0);
+  SR(C2); MSR(C,C);
+  CMP(a0,C0); MSR(Z,Z);
+  CMP(a1,C0); MSR(ZSO,SO);
+  END;
+
+@zero:
+  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
 }
 
 ################################################################################
