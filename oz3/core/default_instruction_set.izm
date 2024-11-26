@@ -2487,7 +2487,7 @@ instruction ROL.D "$R, $m" {
 ##    ROR.D <dreg>, <reg>
 ##    ROR.D <dreg>, <1..32>
 ##
-## Rotate left of the register by the specified number of bits. The last bit
+## Rotate right of the register by the specified number of bits. The last bit
 ## shifted sets the value of the "C" flag.
 ################################################################################
 
@@ -2625,6 +2625,310 @@ instruction ROR.D "$R, $m" {
   SR(C2); MSR(C,C);
   CMP(a0,C0); MSR(Z,Z);
   CMP(a1,C0); MSR(ZSO,SO);
+  END;
+
+@zero:
+  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+}
+
+################################################################################
+## RLC <register>, <value>
+##
+## Cycles: 5+
+## ZSCO: XXX0
+##
+## Variants:
+##    RLC.W <reg>, <reg>
+##    RLC.W <reg>, <1..16>
+##    RLC.D <dreg>, <reg>
+##    RLC.D <dreg>, <1..32>
+##
+## Rotate left of the register through the "C" flag by the specified number of
+## bits. The last bit shifted sets the value of the "C" flag.
+################################################################################
+
+macro(bits:5) RotateLeft16ThroughCarry(p) {
+  code "$r" {
+    # Rotate zero bits?
+    CMP(m,C0);
+    JC(Z,@zero);
+
+    # TODO: Modulo rotate 17 if it is too big.
+
+    # Rotate 1+ bits
+  @shift:
+    RLC(p);
+    JD(C2,@shift);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @zero:
+    CMP(p,C0); MSR(ZSCO,ZSCO);
+  }
+
+  code "1" {
+    RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "2" {
+    RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "3" {
+    RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "4" {
+    RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "5" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "6" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "7" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "8" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "9" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "10" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "11" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "12" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "13" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "14" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "15" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "16" {
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p); RLC(p);
+    MSR(ZSCO,ZSCO);
+  }
+}
+
+instruction RLC.W "$r, $m" {
+  UL; $RotateLeft16ThroughCarry(a);
+}
+
+macro(bits:6) GetRotateCount32ThroughCarry:r {
+  code:m "$r" {}
+  code:C1 "1" { MOVI(C1,1); }
+  code:C1 "2" { MOVI(C1,2); }
+  code:C1 "3" { MOVI(C1,3); }
+  code:C1 "4" { MOVI(C1,4); }
+  code:C1 "5" { MOVI(C1,5); }
+  code:C1 "6" { MOVI(C1,6); }
+  code:C1 "7" { MOVI(C1,7); }
+  code:C1 "8" { MOVI(C1,8); }
+  code:C1 "9" { MOVI(C1,9); }
+  code:C1 "10" { MOVI(C1,10); }
+  code:C1 "11" { MOVI(C1,11); }
+  code:C1 "12" { MOVI(C1,12); }
+  code:C1 "13" { MOVI(C1,13); }
+  code:C1 "14" { MOVI(C1,14); }
+  code:C1 "15" { MOVI(C1,15); }
+  code:C1 "16" { MOVI(C1,16); }
+  code:C1 "17" { MOVI(C1,17); }
+  code:C1 "18" { MOVI(C1,18); }
+  code:C1 "19" { MOVI(C1,19); }
+  code:C1 "20" { MOVI(C1,20); }
+  code:C1 "21" { MOVI(C1,21); }
+  code:C1 "22" { MOVI(C1,22); }
+  code:C1 "23" { MOVI(C1,23); }
+  code:C1 "24" { MOVI(C1,24); }
+  code:C1 "25" { MOVI(C1,25); }
+  code:C1 "26" { MOVI(C1,26); }
+  code:C1 "27" { MOVI(C1,27); }
+  code:C1 "28" { MOVI(C1,28); }
+  code:C1 "29" { MOVI(C1,29); }
+  code:C1 "30" { MOVI(C1,30); }
+  code:C1 "31" { MOVI(C1,31); }
+  code:C1 "32" { MOVI(C1,32); }
+}
+
+instruction RLC.D "$R, $m" {
+  UL;
+  $GetRotateCount32ThroughCarry;
+
+  # Rotate zero bits?
+  CMP(r,C0);
+  JC(Z,@zero);
+
+  # TODO: Modulo rotate 33 if it is too big.
+
+  # Rotate 1+ bits
+@shift:
+  RLC(a0); MSR(Z,Z); RLC(a1);
+  JD(C2,@shift);
+  MSR(ZSCO,SCO);
+  END;
+
+@zero:
+  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+}
+
+################################################################################
+## RRC <register>, <value>
+##
+## Cycles: 5+
+## ZSCO: XXX0
+##
+## Variants:
+##    RRC.W <reg>, <reg>
+##    RRC.W <reg>, <1..16>
+##    RRC.D <dreg>, <reg>
+##    RRC.D <dreg>, <1..32>
+##
+## Rotate right of the register through the "C" flag by the specified number of
+## bits. The last bit shifted sets the value of the "C" flag.
+################################################################################
+
+macro(bits:5) RotateRight16ThroughCarry(p) {
+  code "$r" {
+    # Rotate zero bits?
+    CMP(m,C0);
+    JC(Z,@zero);
+
+    # TODO: Modulo rotate 17 if it is too big.
+
+    # Rotate 1+ bits
+  @shift:
+    RRC(p);
+    JD(C2,@shift);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @zero:
+    CMP(p,C0); MSR(ZSCO,ZSCO);
+  }
+
+  code "1" {
+    RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "2" {
+    RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "3" {
+    RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "4" {
+    RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "5" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "6" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "7" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "8" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "9" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "10" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "11" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "12" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "13" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "14" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "15" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+  code "16" {
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p); RRC(p);
+    MSR(ZSCO,ZSCO);
+  }
+}
+
+instruction RRC.W "$r, $m" {
+  UL; $RotateRight16ThroughCarry(a);
+}
+
+instruction RRC.D "$R, $m" {
+  UL;
+  $GetRotateCount32ThroughCarry;
+
+  # Rotate zero bits?
+  CMP(r,C0);
+  JC(Z,@zero);
+
+  # TODO: Modulo rotate 33 if it is too big.
+
+  # Rotate 1+ bits
+@shift:
+  RRC(a1); MSR(ZS,ZS); RRC(a0);
+  JD(C2,@shift);
+  MSR(ZCO,CO);
   END;
 
 @zero:
