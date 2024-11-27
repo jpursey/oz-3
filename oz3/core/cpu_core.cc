@@ -874,6 +874,9 @@ void CpuCore::RunInstructionLoop() {
         DCHECK(lock_ == nullptr && locked_core_ == this);
         OZ3_INIT_REG1;
         const int core_index = r_[reg1];
+        if (core_index == 0xFFFF) {
+          break;
+        }
         if (core_index >= processor_->GetNumCores()) {
           locked_core_ = nullptr;
           break;

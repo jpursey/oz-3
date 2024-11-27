@@ -651,8 +651,7 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg1 = {ArgType::kImmediate, 2},
      .arg2 = {ArgType::kImmediate, 6},
      .code = "UL;"
-             "MOVI(R7,1);"
-             "CLK(R7);"
+             "CLK(R6);"
              "MOVI(R7,0);CMP(C0,R7);JC(Z,@code);"
              "MOVI(R7,1);CMP(C0,R7);JC(Z,@stack);"
              "MOVI(R7,2);CMP(C0,R7);JC(Z,@data);"
@@ -673,8 +672,7 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg1 = ArgType::kWordReg,
      .arg2 = ArgType::kWordReg,
      .code = "UL;"
-             "MOVI(C0,1);"
-             "CLK(C0);"
+             "CLK(R6);"
              "CLD(a,b);"
              "CUL;"},
     {.op = kTestOp_CST,
@@ -682,8 +680,7 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg1 = ArgType::kWordReg,
      .arg2 = ArgType::kWordReg,
      .code = "UL;"
-             "MOVI(C0,1);"
-             "CLK(C0);"
+             "CLK(R6);"
              "CST(a,b);"
              "CUL;"},
     {.op = kTestOp_CINT,
@@ -5075,6 +5072,7 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   core0.SetWordRegister(*lock, CpuCore::R1, 1001);
   core0.SetWordRegister(*lock, CpuCore::R2, 1002);
   core0.SetWordRegister(*lock, CpuCore::R3, 1003);
+  core0.SetWordRegister(*lock, CpuCore::R6, 1);
   lock = core1.RequestLock();
   core1.SetWordRegister(*lock, CpuCore::R0, 2000);
   core1.SetWordRegister(*lock, CpuCore::R1, 2001);
@@ -5113,6 +5111,42 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   EXPECT_EQ(state1.r1, 1003);
   EXPECT_EQ(state1.r2, 2002);
   EXPECT_EQ(state1.r3, 2003);
+}
+
+TEST(CpuCoreTest, ModifySelfWithCbk) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet())
+                          .SetMemoryBank(1, MemoryBankConfig::MaxRam()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+  MemAccessor mem(*processor.GetMemory(0));
+
+  // Initlaize processor
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 1000);
+  core.SetWordRegister(*lock, CpuCore::R1, 1001);
+  core.SetWordRegister(*lock, CpuCore::R2, 1002);
+  core.SetWordRegister(*lock, CpuCore::R3, 1003);
+  core.SetWordRegister(*lock, CpuCore::R6, -1);
+  lock.reset();
+
+  // Main program
+  mem.AddCode(kTestOp_CLD, CpuCore::R0, CpuCore::R2);
+  mem.AddCode(kTestOp_CST, CpuCore::R1, CpuCore::R3);
+  mem.AddCode(kTestOp_CBK, CpuCore::STACK, 3);
+  mem.AddCode(kTestOp_CBK, CpuCore::DATA, 4);
+  mem.AddCode(kTestOp_CBK, CpuCore::EXTRA, 5);
+  mem.AddCode(kTestOp_HALT);
+
+  // Execute code
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(
+      state.mb,
+      CpuCore::Banks().SetCode(0).SetStack(3).SetData(4).SetExtra(5).ToWord());
+  EXPECT_EQ(state.r0, 1000);
+  EXPECT_EQ(state.r1, 1003);
+  EXPECT_EQ(state.r2, 1000);
+  EXPECT_EQ(state.r3, 1003);
 }
 
 TEST(CpuCoreTest, SelfCoreInterrupt) {
@@ -5190,7 +5224,9 @@ TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {
   MemAccessor mem2(*processor.GetMemory(2));
 
   // Initlaize processor
-  auto lock = core1.RequestLock();
+  auto lock = core0.RequestLock();
+  core0.SetWordRegister(*lock, CpuCore::R6, 1);
+  lock = core1.RequestLock();
   core1.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
   core1.SetWordRegister(*lock, CpuCore::R0, 2000);
   lock.reset();
@@ -5336,6 +5372,11 @@ TEST(CpuCoreTest, CoreLockBlocks) {
   MemAccessor mem0(*processor.GetMemory(0));
   MemAccessor mem1(*processor.GetMemory(1));
 
+  // Initlaize processor
+  auto lock = core0.RequestLock();
+  core0.SetWordRegister(*lock, CpuCore::R6, 1);
+  lock.reset();
+
   // Main program
   mem0.AddCode(kTestOp_CBK, CpuCore::DATA, 1);
   const uint16_t blocked_pc0 = mem0.GetAddress();
@@ -5346,7 +5387,7 @@ TEST(CpuCoreTest, CoreLockBlocks) {
   const uint16_t end_pc1 = mem1.GetAddress();
 
   // Start with core 1 locked, to block execution on core 0
-  auto lock = core1.RequestLock();
+  lock = core1.RequestLock();
 
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state0,
