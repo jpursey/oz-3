@@ -2543,6 +2543,19 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortDwordRepeat[] = {
              "@done:END;"},
 };
 
+constexpr oz3::MacroCodeDef kMacroCode_LockCore[] = {
+    {.source = "$#3",
+     .prefix = {0, 1},
+     .arg = {oz3::ArgType::kImmediate, 3},
+     .code = "CLK(i);"},
+    {.source = "R2",
+     .prefix = {8, 4},
+     .code = "CLK(R2);"},
+    {.source = "SELF",
+     .prefix = {9, 4},
+     .code = "MOVI(C2,-1);CLK(C2);"},
+};
+
 constexpr oz3::MacroDef kMacros[] = {
     {.name = "GetWord",
      .ret = oz3::ArgType::kWordReg,
@@ -2689,6 +2702,9 @@ constexpr oz3::MacroDef kMacros[] = {
      .param = oz3::ArgType::kWordReg,
      .size = 5,
      .code = kMacroCode_WritePortDwordRepeat},
+    {.name = "LockCore",
+     .size = 4,
+     .code = kMacroCode_LockCore},
 };
 
 constexpr oz3::InstructionDef kInstructions[] = {
@@ -3346,6 +3362,21 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$v, $m",
      .arg1 = {oz3::ArgType::kMacro, 5},
      .code = "LD(MB);$WritePortDwordRepeat(MB);"},
+    {.op = 116,
+     .op_name = "RST",
+     .source = "$m, $#4",
+     .arg1 = {oz3::ArgType::kMacro, 4},
+     .arg2 = {oz3::ArgType::kImmediate, 4},
+     .code = "UL;$LockCore;MOV(MB,R3);MOVI(C2,1);CMP(C1,C2);JC(Z,@stack);"
+             "MOVI(C0,15);AND(C0,MB);CBK(CODE,C0);CST(BC,R4);MOVI(C0,0);"
+             "CST(IP,C0);CST(R0,R0);CST(R1,R1);@stack:SL(C2);SR(MB);SR(MB);"
+             "SR(MB);SR(MB);CMP(C1,C2);JC(Z,@data);MOVI(C0,15);AND(C0,MB);"
+             "CBK(STACK,C0);CST(BS,R5);MOVI(C0,0);CST(SP,C0);CST(FP,C0);"
+             "@data:SL(C2);SR(MB);SR(MB);SR(MB);SR(MB);CMP(C1,C2);"
+             "JC(Z,@data);MOVI(C0,15);AND(C0,MB);CBK(DATA,C0);CST(BD,R6);"
+             "@extra:SL(C2);CMP(C1,C2);JC(Z,@end);MOVI(C0,15);SR(MB);"
+             "SR(MB);SR(MB);SR(MB);AND(C0,MB);CBK(EXTRA,C0);CST(BE,R7);"
+             "@end:CUL;"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

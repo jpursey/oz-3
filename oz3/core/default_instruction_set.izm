@@ -4697,3 +4697,103 @@ instruction OUTR.ID "$v, $m" {
   $WritePortDwordRepeat(MB);
 }
 
+################################################################################
+## RST <core-index> <bank-mask>
+##
+## Cycles: ...
+## ZSCO: ----
+##
+## The core to reset may be specified as an immediate value 0-7 or the special
+## keyword SELF (to reset the running core), or specified by register R2 (0..7,
+## or -1 to indiciate self).
+##
+## The core's memory banks are specified in R3 in the same configuration as in
+## the MB register, depending on the bank mask:
+##   Bit 0: CODE 
+##     The core's BC register is set to this cores R4 register.
+##     The core's IP register is set to zero.
+##     The core's R0 and R1 registers are copied from this core.
+##   Bit 1: STACK
+##     The core's BS register is set to this cores R5 register.
+##     The core's FP and SP registers are set to zero.
+##   Bit 2: DATA
+##     The core's BD register is set to this cores R6 register.
+##   Bit 3: EXTRA
+##     The core's BE register is set to this cores Ry register.
+################################################################################
+
+macro LockCore {
+  code "$#3" { CLK(i); }
+  code "R2" { CLK(R2); }
+  code "SELF" { MOVI(C2,-1); CLK(C2); }
+}
+
+instruction RST "$m, $#4" {
+  UL;
+  $LockCore;
+
+  MOV(MB,R3);  # Store memory banks, low four bits are next bank. 
+  MOVI(C2,1);  # C2: Bit mask for testing bank mask
+
+  # Test if code is set
+  CMP(C1,C2);
+  JC(Z, @stack);
+
+  # Update code registers
+  MOVI(C0,15);
+  AND(C0,MB);
+  CBK(CODE,C0);
+  CST(BC,R4);
+  MOVI(C0,0);
+  CST(IP,C0);
+  CST(R0,R0);
+  CST(R1,R1);
+
+@stack:
+  SL(C2);
+  SR(MB); SR(MB); SR(MB); SR(MB);
+
+  # Test if stack is set
+  CMP(C1,C2);
+  JC(Z, @data);
+
+  # Update stack registers
+  MOVI(C0,15); 
+  AND(C0,MB);
+  CBK(STACK,C0);
+  CST(BS,R5);
+  MOVI(C0,0);
+  CST(SP,C0);
+  CST(FP,C0);
+
+@data:
+  SL(C2);
+  SR(MB); SR(MB); SR(MB); SR(MB);
+
+  # Test if data is set
+  CMP(C1,C2);
+  JC(Z, @data);
+
+  # Update data registers
+  MOVI(C0,15); 
+  AND(C0,MB);
+  CBK(DATA,C0);
+  CST(BD,R6);
+
+@extra:
+  SL(C2);
+
+  # Test if data is set
+  CMP(C1,C2);
+  JC(Z, @end);
+
+  # Update extra registers
+  MOVI(C0,15); 
+  SR(MB); SR(MB); SR(MB); SR(MB);
+  AND(C0,MB);
+  CBK(EXTRA,C0);
+  CST(BE,R7);
+
+@end:
+  CUL;
+}
