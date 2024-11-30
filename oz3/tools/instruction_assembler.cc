@@ -91,7 +91,7 @@ constexpr std::string_view kParserProgram = R"---(
   }
 
   MicroArg {
-    $reg=%ident;
+    $reg=%ident [':' $mask=('0' | '1' | '2' | '3' | 'h' | 'H' | 'l' | 'L')];
     $imm=%int;
     $label=%label;
   }
@@ -664,9 +664,18 @@ bool InstructionSetAssembler::AssembleMicrocode(
       if (const auto& arg1 = parsed_micro_code.GetToken("arg1").ToString();
           !arg1.empty()) {
         absl::StrAppend(&code_string, "(", arg1);
+        const auto& mask1 = parsed_micro_code.GetToken("arg1.mask").ToString();
+        if (!mask1.empty()) {
+          absl::StrAppend(&code_string, ":", mask1);
+        }
         if (const auto& arg2 = parsed_micro_code.GetToken("arg2").ToString();
             !arg2.empty()) {
           absl::StrAppend(&code_string, ",", arg2);
+          const auto& mask2 =
+              parsed_micro_code.GetToken("arg2.mask").ToString();
+          if (!mask2.empty()) {
+            absl::StrAppend(&code_string, ":", mask2);
+          }
         }
         absl::StrAppend(&code_string, ")");
       }
