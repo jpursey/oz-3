@@ -67,7 +67,11 @@ enum MicroTestOp : uint8_t {
   kTestOp_SBC,
   kTestOp_NEG,
   kTestOp_TST,
+  kTestOp_CMPI,
   kTestOp_CMP,
+  kTestOp_MSKI,
+  kTestOp_MSKI2,
+  kTestOp_MSK,
   kTestOp_NOT,
   kTestOp_AND,
   kTestOp_OR,
@@ -461,12 +465,37 @@ const InstructionDef kMicroTestInstructions[] = {
      .code = "UL;"
              "TST(a);"
              "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_CMPI,
+     .op_name = "CMPI",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "CMPI(a,16);"
+             "MSR(ZSCO,ZSCO);"},
     {.op = kTestOp_CMP,
      .op_name = "CMP",
      .arg1 = ArgType::kWordReg,
      .arg2 = ArgType::kWordReg,
      .code = "UL;"
              "CMP(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_MSKI,
+     .op_name = "MSKI",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSKI(a,12);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_MSKI2,
+     .op_name = "MSKI2",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSKI(a,-128);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_MSK,
+     .op_name = "MSK",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "UL;"
+             "MSK(a,b);"
              "MSR(ZSCO,ZSCO);"},
     {.op = kTestOp_NOT,
      .op_name = "NOT",
@@ -2942,6 +2971,46 @@ TEST(CpuCoreTest, TstOp) {
   EXPECT_EQ(state.st, CpuCore::S);
 }
 
+TEST(CpuCoreTest, CmpiOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 15);
+  core.SetWordRegister(*lock, CpuCore::R1, 16);
+  core.SetWordRegister(*lock, CpuCore::R2, 17);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x8000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_CMPI, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z - CpuCore::C);
+  mem.AddCode(kTestOp_CMPI, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C);
+  mem.AddCode(kTestOp_CMPI, CpuCore::R2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::C - CpuCore::O);
+  mem.AddCode(kTestOp_CMPI, CpuCore::R3);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&] { return state.ip == ip1; });
+  EXPECT_EQ(state.st, CpuCore::S);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip2; });
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip3; });
+  EXPECT_EQ(state.st, CpuCore::C);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.st, CpuCore::C | CpuCore::O);
+}
+
 TEST(CpuCoreTest, CmpOp) {
   Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
   CpuCore& core = *processor.GetCore(0);
@@ -3008,6 +3077,130 @@ TEST(CpuCoreTest, CmpOp) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, MskiOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, ~12);
+  core.SetWordRegister(*lock, CpuCore::R1, 12);
+  core.SetWordRegister(*lock, CpuCore::R2, 8);
+  core.SetWordRegister(*lock, CpuCore::R3, 4);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_MSKI, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_MSKI, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_MSKI, CpuCore::R2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_MSKI, CpuCore::R3);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&] { return state.ip == ip1; });
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip2; });
+  EXPECT_EQ(state.st, 0);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip3; });
+  EXPECT_EQ(state.st, 0);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.st, 0);
+}
+
+TEST(CpuCoreTest, Mski2Op) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x007F);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0080);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_MSKI2, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_MSKI2, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_MSKI2, CpuCore::R2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_MSKI2, CpuCore::R3);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&] { return state.ip == ip1; });
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip2; });
+  EXPECT_EQ(state.st, 0);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip3; });
+  EXPECT_EQ(state.st, CpuCore::S);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.st, CpuCore::S);
+}
+
+TEST(CpuCoreTest, MskOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0xAAAA);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x5555);
+  core.SetWordRegister(*lock, CpuCore::R2, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x7FFF);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R5, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R6, 0xFFFF);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x0000);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_MSK, CpuCore::R0, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_MSK, CpuCore::R2, CpuCore::R3);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_MSK, CpuCore::R4, CpuCore::R5);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_MSK, CpuCore::R6, CpuCore::R7);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&] { return state.ip == ip1; });
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip2; });
+  EXPECT_EQ(state.st, 0);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip3; });
+  EXPECT_EQ(state.st, CpuCore::S);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.st, CpuCore::Z);
 }
 
 TEST(CpuCoreTest, NotOp) {

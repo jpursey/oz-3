@@ -724,12 +724,31 @@ void CpuCore::RunInstructionLoop() {
         mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
         exec_cycles_ += kCpuCoreCycles_TST;
       } break;
+      case kMicro_CMPI: {
+        OZ3_INIT_REG1;
+        OZ3_MATH_OP(r_[reg1], -code.arg2, a1 + a2);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        exec_cycles_ += kCpuCoreCycles_CMPI;
+      } break;
       case kMicro_CMP: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
         mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_CMP;
+      } break;
+      case kMicro_MSKI: {
+        OZ3_INIT_REG1;
+        OZ3_MATH_OP(r_[reg1], code.arg2, a1 & a2);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_MSKI;
+      } break;
+      case kMicro_MSK: {
+        OZ3_INIT_REG1;
+        OZ3_INIT_REG2;
+        OZ3_MATH_OP(r_[reg1], r_[reg2], a1 & a2);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_MSK;
       } break;
       case kMicro_NOT: {
         OZ3_INIT_REG1;
