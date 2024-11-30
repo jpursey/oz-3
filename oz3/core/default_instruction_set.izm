@@ -86,6 +86,7 @@ macro(bits:5) GetDword:R {
 # returns zero
 #
 # Ends fetch phase.
+# Requires C0 is zero.
 # Modifies C0, C2.
 macro(bits:5) Get16BitMask:r {
   code:C0 "$r" {
@@ -107,55 +108,29 @@ macro(bits:5) Get16BitMask:r {
     MSS(_);
   }
 
-  code:C0 "0"  { UL; MOVI(C0,0x01); }
-  code:C0 "1"  { UL; MOVI(C0,0x02); }
-  code:C0 "2"  { UL; MOVI(C0,0x04); }
-  code:C0 "3"  { UL; MOVI(C0,0x08); }
-  code:C0 "4"  { UL; MOVI(C0,0x10); }
-  code:C0 "5"  { UL; MOVI(C0,0x20); }
-  code:C0 "6"  { UL; MOVI(C0,0x40); }
-  code:C0 "7"  {
-    UL; MOVI(C0,0x40);
-    SL(C0);
-  }
-  code:C0 "8"  {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0);
-  }
-  code:C0 "9"  {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0);
-  }
-  code:C0 "10" {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:C0 "11" {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:C0 "12" {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:C0 "13" {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:C0 "14" {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:C0 "15" {
-    UL; MOVI(C0,0x40);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
+  code:C0 "0"  { UL; MVBI(C0:L,0x01); }
+  code:C0 "1"  { UL; MVBI(C0:L,0x02); }
+  code:C0 "2"  { UL; MVBI(C0:L,0x04); }
+  code:C0 "3"  { UL; MVBI(C0:L,0x08); }
+  code:C0 "4"  { UL; MVBI(C0:L,0x10); }
+  code:C0 "5"  { UL; MVBI(C0:L,0x20); }
+  code:C0 "6"  { UL; MVBI(C0:L,0x40); }
+  code:C0 "7"  { UL; MVBI(C0:L,0x80); }
+  code:C0 "8"  { UL; MVBI(C0:H,0x01); }
+  code:C0 "9"  { UL; MVBI(C0:H,0x02); }
+  code:C0 "10"  { UL; MVBI(C0:H,0x04); }
+  code:C0 "11"  { UL; MVBI(C0:H,0x08); }
+  code:C0 "12"  { UL; MVBI(C0:H,0x10); }
+  code:C0 "13"  { UL; MVBI(C0:H,0x20); }
+  code:C0 "14"  { UL; MVBI(C0:H,0x40); }
+  code:C0 "15"  { UL; MVBI(C0:H,0x80); }
 }
 
 # Returns a 32-bit mask for a specified bit position (0-31) otherwise
 # returns zero
 #
 # Ends fetch phase.
+# Requires: C0 and C1 are zero
 # Modifies: C0, C1, C2
 macro(bits:6) Get32BitMask:R {
   code:CD "$r" {
@@ -194,92 +169,38 @@ macro(bits:6) Get32BitMask:R {
     MSS(_);
   }
 
-  code:CD "0"  { UL; MOVI(C0,0x0001); }
-  code:CD "1"  { UL; MOVI(C0,0x0002); }
-  code:CD "2"  { UL; MOVI(C0,0x0004); }
-  code:CD "3"  { UL; MOVI(C0,0x0008); }
-  code:CD "4"  { UL; MOVI(C0,0x0010); }
-  code:CD "5"  { UL; MOVI(C0,0x0020); }
-  code:CD "6"  { UL; MOVI(C0,0x0040); }
-  code:CD "7"  {
-    UL; MOVI(C0,0x0040);
-    SL(C0);
-  }
-  code:CD "8"  {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0);
-  }
-  code:CD "9"  {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "10" {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "11" {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "12" {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "13" {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "14" {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "15" {
-    UL; MOVI(C0,0x0040);
-    SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0); SL(C0);
-  }
-  code:CD "16"  { UL; MOVI(C1,0x0001); }
-  code:CD "17"  { UL; MOVI(C1,0x0002); }
-  code:CD "18"  { UL; MOVI(C1,0x0004); }
-  code:CD "19"  { UL; MOVI(C1,0x0008); }
-  code:CD "20"  { UL; MOVI(C1,0x0010); }
-  code:CD "21"  { UL; MOVI(C1,0x0020); }
-  code:CD "22"  { UL; MOVI(C1,0x0040); }
-  code:CD "23"  {
-    UL; MOVI(C1,0x0040);
-    SL(C1);
-  }
-  code:CD "24"  {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1);
-  }
-  code:CD "25"  {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1);
-  }
-  code:CD "26" {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1); SL(C1);
-  }
-  code:CD "27" {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
-  }
-  code:CD "28" {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
-  }
-  code:CD "29" {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
-  }
-  code:CD "30" {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
-  }
-  code:CD "31" {
-    UL; MOVI(C1,0x0040);
-    SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1); SL(C1);
-  }
+  code:CD "0"  { UL; MVBI(C0:L,0x01); }
+  code:CD "1"  { UL; MVBI(C0:L,0x02); }
+  code:CD "2"  { UL; MVBI(C0:L,0x04); }
+  code:CD "3"  { UL; MVBI(C0:L,0x08); }
+  code:CD "4"  { UL; MVBI(C0:L,0x10); }
+  code:CD "5"  { UL; MVBI(C0:L,0x20); }
+  code:CD "6"  { UL; MVBI(C0:L,0x40); }
+  code:CD "7"  { UL; MVBI(C0:L,0x80); }
+  code:CD "8"  { UL; MVBI(C0:H,0x01); }
+  code:CD "9"  { UL; MVBI(C0:H,0x02); }
+  code:CD "10"  { UL; MVBI(C0:H,0x04); }
+  code:CD "11"  { UL; MVBI(C0:H,0x08); }
+  code:CD "12"  { UL; MVBI(C0:H,0x10); }
+  code:CD "13"  { UL; MVBI(C0:H,0x20); }
+  code:CD "14"  { UL; MVBI(C0:H,0x40); }
+  code:CD "15"  { UL; MVBI(C0:H,0x80); }
+  code:CD "16"  { UL; MVBI(C1:L,0x01); }
+  code:CD "17"  { UL; MVBI(C1:L,0x02); }
+  code:CD "18"  { UL; MVBI(C1:L,0x04); }
+  code:CD "19"  { UL; MVBI(C1:L,0x08); }
+  code:CD "20"  { UL; MVBI(C1:L,0x10); }
+  code:CD "21"  { UL; MVBI(C1:L,0x20); }
+  code:CD "22"  { UL; MVBI(C1:L,0x40); }
+  code:CD "23"  { UL; MVBI(C1:L,0x80); }
+  code:CD "24"  { UL; MVBI(C1:H,0x01); }
+  code:CD "25"  { UL; MVBI(C1:H,0x02); }
+  code:CD "26"  { UL; MVBI(C1:H,0x04); }
+  code:CD "27"  { UL; MVBI(C1:H,0x08); }
+  code:CD "28"  { UL; MVBI(C1:H,0x10); }
+  code:CD "29"  { UL; MVBI(C1:H,0x20); }
+  code:CD "30"  { UL; MVBI(C1:H,0x40); }
+  code:CD "31"  { UL; MVBI(C1:H,0x80); }
 }
 
 ################################################################################
@@ -4730,16 +4651,14 @@ instruction RST "$m, $#4" {
   UL;
   $LockCore;
 
-  MOV(MB,R3);  # Store memory banks, low four bits are next bank. 
-  MOVI(C2,1);  # C2: Bit mask for testing bank mask
-
+@code:
   # Test if code is set
-  CMP(C1,C2);
+  MOVI(C2,1);
+  AND(C2,C1);
   JC(Z, @stack);
 
   # Update code registers
-  MOVI(C0,15);
-  AND(C0,MB);
+  MVN(C0:0,R3:0);
   CBK(CODE,C0);
   CST(BC,R4);
   MOVI(C0,0);
@@ -4748,16 +4667,13 @@ instruction RST "$m, $#4" {
   CST(R1,R1);
 
 @stack:
-  SL(C2);
-  SR(MB); SR(MB); SR(MB); SR(MB);
-
   # Test if stack is set
-  CMP(C1,C2);
+  MOVI(C2,2);
+  AND(C2,C1);
   JC(Z, @data);
 
   # Update stack registers
-  MOVI(C0,15); 
-  AND(C0,MB);
+  MVN(C0:0,R3:1);
   CBK(STACK,C0);
   CST(BS,R5);
   MOVI(C0,0);
@@ -4765,30 +4681,26 @@ instruction RST "$m, $#4" {
   CST(FP,C0);
 
 @data:
-  SL(C2);
   SR(MB); SR(MB); SR(MB); SR(MB);
 
   # Test if data is set
-  CMP(C1,C2);
+  MOVI(C2,4);
+  AND(C2,C1);
   JC(Z, @data);
 
   # Update data registers
-  MOVI(C0,15); 
-  AND(C0,MB);
+  MVN(C0:0,R3:2);
   CBK(DATA,C0);
   CST(BD,R6);
 
 @extra:
-  SL(C2);
-
-  # Test if data is set
-  CMP(C1,C2);
+  # Test if extra is set
+  MOVI(C2,8);
+  AND(C2,C1);
   JC(Z, @end);
 
   # Update extra registers
-  MOVI(C0,15); 
-  SR(MB); SR(MB); SR(MB); SR(MB);
-  AND(C0,MB);
+  MVN(C0:0,R3:3);
   CBK(EXTRA,C0);
   CST(BE,R7);
 
