@@ -821,8 +821,8 @@ struct CoreState {
   const uint16_t& bd = r[CpuCore::BD];
   const uint16_t& be = r[CpuCore::BE];
   const uint16_t& mb = r[CpuCore::MB];
-  const uint16_t& pc = r[CpuCore::IP];
-  const uint16_t& bp = r[CpuCore::FP];
+  const uint16_t& ip = r[CpuCore::IP];
+  const uint16_t& fp = r[CpuCore::FP];
   const uint16_t& sp = r[CpuCore::SP];
 
   const uint16_t& st = r[CpuCore::ST];
@@ -880,7 +880,7 @@ bool ExecuteUntil(Processor& processor, CoreState& state,
       return false;
     }
     state.Update();
-    if (state.pc > 1000) {
+    if (state.ip > 1000) {
       return false;
     }
   } while (!condition());
@@ -953,9 +953,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 5);
-  EXPECT_EQ(state.pc, 0);
+  EXPECT_EQ(state.ip, 0);
   EXPECT_EQ(state.bs, 6);
-  EXPECT_EQ(state.bp, 0);
+  EXPECT_EQ(state.fp, 0);
   EXPECT_EQ(state.sp, 0);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -977,9 +977,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.SetCode(15).ToWord());
   EXPECT_EQ(state.bc, 5);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 6);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -1001,9 +1001,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.SetStack(14).ToWord());
   EXPECT_EQ(state.bc, 5);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 6);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -1025,9 +1025,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.SetData(13).ToWord());
   EXPECT_EQ(state.bc, 5);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 6);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -1049,9 +1049,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.SetExtra(12).ToWord());
   EXPECT_EQ(state.bc, 5);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 6);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -1072,9 +1072,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
-  EXPECT_EQ(state.pc, 0);
+  EXPECT_EQ(state.ip, 0);
   EXPECT_EQ(state.bs, 6);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -1095,9 +1095,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 9);
-  EXPECT_EQ(state.bp, 0);
+  EXPECT_EQ(state.fp, 0);
   EXPECT_EQ(state.sp, 0);
   EXPECT_EQ(state.bd, 7);
   EXPECT_EQ(state.be, 8);
@@ -1118,9 +1118,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 9);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 8);
   EXPECT_EQ(state.be, 8);
@@ -1135,9 +1135,9 @@ TEST(CpuCoreTest, ResetWithSetRegisters) {
   state.Update();
   EXPECT_EQ(state.mb, banks.ToWord());
   EXPECT_EQ(state.bc, 10);
-  EXPECT_EQ(state.pc, 100);
+  EXPECT_EQ(state.ip, 100);
   EXPECT_EQ(state.bs, 9);
-  EXPECT_EQ(state.bp, 200);
+  EXPECT_EQ(state.fp, 200);
   EXPECT_EQ(state.sp, 300);
   EXPECT_EQ(state.bd, 8);
   EXPECT_EQ(state.be, 7);
@@ -1161,7 +1161,7 @@ TEST(CpuCoreTest, RunsAfterReset) {
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_TRUE(memory_bank.IsLocked());
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
 
   // The processor has only advanced one cycle
   EXPECT_EQ(processor.GetCycles(), 1);
@@ -1185,7 +1185,7 @@ TEST(CpuCoreTest, RunsAfterReset) {
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2);
   EXPECT_TRUE(memory_bank.IsLocked());
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
 }
 
 TEST(CpuCoreTest, CoreLockPreventsExecution) {
@@ -1233,7 +1233,7 @@ TEST(CpuCoreTest, CoreLockDeferredUntilEndOfInstruction) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kStartInstruction);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_TRUE(lock->IsLocked());
 }
 
@@ -1286,15 +1286,15 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // memory bank.
   processor.Execute(kCpuCoreFetchAndDecodeCycles);
   state0.Update();
-  EXPECT_EQ(state0.pc, 11);
+  EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kRunInstruction);
   state1.Update();
-  EXPECT_EQ(state1.pc, 20);
+  EXPECT_EQ(state1.ip, 20);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
   state2.Update();
-  EXPECT_EQ(state2.pc, 30);
+  EXPECT_EQ(state2.ip, 30);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
 
@@ -1303,15 +1303,15 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // first NOP. This blocks the first core from fetching the next instruction.
   processor.Execute(1);
   state0.Update();
-  EXPECT_EQ(state0.pc, 11);
+  EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kFetchInstruction);
   state1.Update();
-  EXPECT_EQ(state1.pc, 21);
+  EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kRunInstruction);
   state2.Update();
-  EXPECT_EQ(state2.pc, 30);
+  EXPECT_EQ(state2.ip, 30);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
 
@@ -1321,15 +1321,15 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles);
   state0.Update();
-  EXPECT_EQ(state0.pc, 11);
+  EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kFetchInstruction);
   state1.Update();
-  EXPECT_EQ(state1.pc, 21);
+  EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 1);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
   state2.Update();
-  EXPECT_EQ(state2.pc, 31);
+  EXPECT_EQ(state2.ip, 31);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kRunInstruction);
 
@@ -1337,15 +1337,15 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // core executed first, it needs to wait another cycle to gain the lock.
   processor.Execute(kCpuCoreFetchAndDecodeCycles);
   state0.Update();
-  EXPECT_EQ(state0.pc, 11);
+  EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kFetchInstruction);
   state1.Update();
-  EXPECT_EQ(state1.pc, 21);
+  EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 1);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
   state2.Update();
-  EXPECT_EQ(state2.pc, 31);
+  EXPECT_EQ(state2.ip, 31);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 1);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
 
@@ -1353,15 +1353,15 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // instruction.
   processor.Execute(1);
   state0.Update();
-  EXPECT_EQ(state0.pc, 12);
+  EXPECT_EQ(state0.ip, 12);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kRunInstruction);
   state1.Update();
-  EXPECT_EQ(state1.pc, 21);
+  EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 2);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
   state2.Update();
-  EXPECT_EQ(state2.pc, 31);
+  EXPECT_EQ(state2.ip, 31);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 2);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
 
@@ -1381,15 +1381,15 @@ TEST(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   const int round_cycles = kCpuCoreFetchAndDecodeCycles * 3 + 1;
   processor.Execute(round_cycles * 5);
   state0.Update();
-  EXPECT_EQ(state0.pc, 17);
+  EXPECT_EQ(state0.ip, 17);
   EXPECT_EQ(state0.core.GetCycles(), start_cycles + round_cycles * 5);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kRunInstruction);
   state1.Update();
-  EXPECT_EQ(state1.pc, 26);
+  EXPECT_EQ(state1.ip, 26);
   EXPECT_EQ(state1.core.GetCycles(), start_cycles + round_cycles * 5);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
   state2.Update();
-  EXPECT_EQ(state2.pc, 36);
+  EXPECT_EQ(state2.ip, 36);
   EXPECT_EQ(state2.core.GetCycles(), start_cycles + round_cycles * 5);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
 }
@@ -1420,7 +1420,7 @@ TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
   // well.
   processor.Execute(1);
   state.Update();
-  EXPECT_EQ(state.pc, 2);  // Advances 2 due to LD
+  EXPECT_EQ(state.ip, 2);  // Advances 2 due to LD
   EXPECT_EQ(state.r0, 42);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
@@ -1430,7 +1430,7 @@ TEST(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
   // well.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 5);  // Advances 3 due to two LDs
+  EXPECT_EQ(state.ip, 5);  // Advances 3 due to two LDs
   EXPECT_EQ(state.d0(), 0x10000);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 3);
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
@@ -1454,14 +1454,14 @@ TEST(CpuCoreTest, HaltOp) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
 
   // The core should not execute any more instructions.
   processor.Execute(100);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 101);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
 }
 
 TEST(CpuCoreTest, WaitOp) {
@@ -1492,7 +1492,7 @@ TEST(CpuCoreTest, WaitOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 4);
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r0, 3);  // Ran 3 cycles longer than requested
   EXPECT_EQ(state.r1, 2);  // Ran 2 cycles longer than requested
   EXPECT_EQ(state.r2, 0);  // Ran exactly the requested number of cycles
@@ -1503,7 +1503,7 @@ TEST(CpuCoreTest, WaitOp) {
   processor.Execute(1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kStartInstruction);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 1);
   EXPECT_EQ(state.r3, 0);
 
@@ -1512,7 +1512,7 @@ TEST(CpuCoreTest, WaitOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kWaiting);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 2);
 
   // The final cycle of waiting will return the CPU to the kStartInstruction
@@ -1520,7 +1520,7 @@ TEST(CpuCoreTest, WaitOp) {
   processor.Execute(1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kStartInstruction);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 3);
   EXPECT_EQ(state.r4, 0);
 
@@ -1528,7 +1528,7 @@ TEST(CpuCoreTest, WaitOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 4);
 }
 
@@ -1576,84 +1576,84 @@ TEST(CpuCoreTest, AdrLdStOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x1234);
 
   // Execute the LSTACK instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x5678);
 
   // Execute the LDATA instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x9abc);
 
   // Execute the LEXTRA instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xdef0);
 
   // Execute the SCODE instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(code_mem.SetAddress(20).GetValue(), 0x5678);
 
   // Execute the SSTACK instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(stack_mem.SetAddress(20).GetValue(), 0x9abc);
 
   // Execute the SDATA instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 14);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(data_mem.SetAddress(20).GetValue(), 0xdef0);
 
   // Execute the SEXTRA instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 16);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(extra_mem.SetAddress(20).GetValue(), 0x1234);
 
   // Execute the PCODE instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 9 + 18);
   state.Update();
-  EXPECT_EQ(state.pc, 9);
+  EXPECT_EQ(state.ip, 9);
   EXPECT_EQ(code_mem.SetAddress(24).GetValue(), 0x5678);
 
   // Execute the PSTACK instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 20);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(stack_mem.SetAddress(24).GetValue(), 0x9abc);
 
   // Execute the PDATA instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 11 + 22);
   state.Update();
-  EXPECT_EQ(state.pc, 11);
+  EXPECT_EQ(state.ip, 11);
   EXPECT_EQ(data_mem.SetAddress(24).GetValue(), 0xdef0);
 
   // Execute the PEXTRA instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 24);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(extra_mem.SetAddress(24).GetValue(), 0x1234);
 
   // Execute the HALT instruction.
@@ -1693,10 +1693,10 @@ TEST(CpuCoreTest, RegisterMemoryStore) {
   code_mem.AddCode(kTestOp_SREG, CpuCore::R6, CpuCore::R0);
   code_mem.AddCode(kTestOp_SREG, CpuCore::R7, CpuCore::R0);
   code_mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = code_mem.GetAddress();
+  const uint16_t end_ip = code_mem.GetAddress();
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
   EXPECT_EQ(data_mem.SetAddress(1000).GetValue(), 1000);
   EXPECT_EQ(data_mem.SetAddress(1001).GetValue(), 1001);
   EXPECT_EQ(data_mem.SetAddress(1002).GetValue(), 1002);
@@ -1732,7 +1732,7 @@ TEST(CpuCoreTest, LkWhenLocked) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 10);
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0);
 
   // Unlock the memory bank, which will allow the core to run
@@ -1740,7 +1740,7 @@ TEST(CpuCoreTest, LkWhenLocked) {
   processor.Execute(2);  // ADR, LD, UL
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x1234);
 
   // Execute the HALT instruction.
@@ -1775,7 +1775,7 @@ TEST(CpuCoreTest, MovStOp) {
   EXPECT_EQ(core.GetState(), CpuCore::State::kRunInstruction);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_FALSE(data_bank.IsLocked());
 
   // Execute the LK instruction, and everything up to the UL.
@@ -1810,7 +1810,7 @@ TEST(CpuCoreTest, MoviOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r3, 42);
 
   // Execute the HALT instruction.
@@ -1839,7 +1839,7 @@ TEST(CpuCoreTest, MvbiOp) {
   mem.AddCode(kTestOp_MVBI, CpuCore::R3, CpuCore::R4).AddValue(1);
   mem.AddCode(kTestOp_HALT);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip1; });
   EXPECT_EQ(state.r1, 0x118E);
   EXPECT_EQ(state.r2, 0x228E);
   EXPECT_EQ(state.sp, 0xAA8E);
@@ -1872,7 +1872,7 @@ TEST(CpuCoreTest, MvbOp) {
   mem.AddCode(kTestOp_MVB, CpuCore::R3, CpuCore::R4).AddValue(1);
   mem.AddCode(kTestOp_HALT);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip1; });
   EXPECT_EQ(state.r1, 0x1133);
   EXPECT_EQ(state.sp, 0xEEAA);
 
@@ -1912,17 +1912,17 @@ TEST(CpuCoreTest, MvniOp) {
   mem.AddCode(kTestOp_MVNI, CpuCore::R6, CpuCore::R7).AddValue(3);
   mem.AddCode(kTestOp_HALT);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip1; });
   EXPECT_EQ(state.r0, 0x1119);
   EXPECT_EQ(state.r1, 0x2229);
   EXPECT_EQ(state.sp, 0xAAA9);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip2; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip2; });
   EXPECT_EQ(state.r2, 0x3393);
   EXPECT_EQ(state.r3, 0x4494);
   EXPECT_EQ(state.sp, 0xAA99);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip3; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip3; });
   EXPECT_EQ(state.r4, 0x5955);
   EXPECT_EQ(state.r5, 0x6966);
   EXPECT_EQ(state.sp, 0xA999);
@@ -1965,15 +1965,15 @@ TEST(CpuCoreTest, MvnOp) {
   mem.AddCode(kTestOp_MVN, CpuCore::R6, CpuCore::R7).AddValue(3);
   mem.AddCode(kTestOp_HALT);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip1; });
   EXPECT_EQ(state.r0, 0x1235);
   EXPECT_EQ(state.sp, 0xEEEA);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip2; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip2; });
   EXPECT_EQ(state.r2, 0x9AEC);
   EXPECT_EQ(state.sp, 0xEEBA);
 
-  ExecuteUntil(processor, state, [&]() { return state.pc == ip3; });
+  ExecuteUntil(processor, state, [&]() { return state.ip == ip3; });
   EXPECT_EQ(state.r4, 0x1734);
   EXPECT_EQ(state.sp, 0xECBA);
 
@@ -1996,7 +1996,7 @@ TEST(CpuCoreTest, MstsMstcOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, CpuCore::Z);
   EXPECT_EQ(state.r1, CpuCore::Z | CpuCore::S);
   EXPECT_EQ(state.r2, CpuCore::Z | CpuCore::S | CpuCore::C);
@@ -2025,7 +2025,7 @@ TEST(CpuCoreTest, MstxOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, CpuCore::Z);
   EXPECT_EQ(state.r1, CpuCore::Z | CpuCore::S);
   EXPECT_EQ(state.r2, CpuCore::Z | CpuCore::S | CpuCore::C);
@@ -2054,7 +2054,7 @@ TEST(CpuCoreTest, MstiOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 4);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, CpuCore::I);
   EXPECT_EQ(state.r1, 0);
   EXPECT_EQ(state.r2, CpuCore::I);
@@ -2082,7 +2082,7 @@ TEST(CpuCoreTest, SetClrFOp) {
   // Execute instructions.
   ExecuteUntilHalt(processor, state);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r0, CpuCore::Z | CpuCore::C);
   EXPECT_EQ(state.r1, CpuCore::ZSCO);
   EXPECT_EQ(state.r2, CpuCore::ZSCOI);
@@ -2110,7 +2110,7 @@ TEST(CpuCoreTest, XorFOp) {
   // Execute instructions.
   ExecuteUntilHalt(processor, state);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r0, CpuCore::Z | CpuCore::C);
   EXPECT_EQ(state.r1, CpuCore::ZSCO);
   EXPECT_EQ(state.r2, CpuCore::ZSCOI);
@@ -2145,7 +2145,7 @@ TEST(CpuCoreTest, MovFOp) {
   // Execute instructions.
   ExecuteUntilHalt(processor, state);
   state.Update();
-  EXPECT_EQ(state.pc, 9);
+  EXPECT_EQ(state.ip, 9);
   EXPECT_EQ(state.r0, CpuCore::Z | CpuCore::C);
   EXPECT_EQ(state.r1, CpuCore::ZSCO);
   EXPECT_EQ(state.r2, CpuCore::ZSCOI);
@@ -2171,7 +2171,7 @@ TEST(CpuCoreTest, MstrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 1 | CpuCore::I);
   EXPECT_EQ(state.r1, 3 | CpuCore::I);
   EXPECT_EQ(state.r2, 7 | CpuCore::I);
@@ -2185,7 +2185,7 @@ TEST(CpuCoreTest, MstrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 8);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 16);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0);
   EXPECT_EQ(state.r1, 0);
   EXPECT_EQ(state.r2, 0);
@@ -2226,7 +2226,7 @@ TEST(CpuCoreTest, AddiOp1) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2234,7 +2234,7 @@ TEST(CpuCoreTest, AddiOp1) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2242,7 +2242,7 @@ TEST(CpuCoreTest, AddiOp1) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2250,7 +2250,7 @@ TEST(CpuCoreTest, AddiOp1) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2258,7 +2258,7 @@ TEST(CpuCoreTest, AddiOp1) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
 
@@ -2293,7 +2293,7 @@ TEST(CpuCoreTest, AddiOp2) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2301,7 +2301,7 @@ TEST(CpuCoreTest, AddiOp2) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2309,7 +2309,7 @@ TEST(CpuCoreTest, AddiOp2) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -2317,7 +2317,7 @@ TEST(CpuCoreTest, AddiOp2) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xFFFE);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -2325,7 +2325,7 @@ TEST(CpuCoreTest, AddiOp2) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x7FFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
@@ -2361,7 +2361,7 @@ TEST(CpuCoreTest, AddOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2369,7 +2369,7 @@ TEST(CpuCoreTest, AddOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2377,7 +2377,7 @@ TEST(CpuCoreTest, AddOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2385,7 +2385,7 @@ TEST(CpuCoreTest, AddOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2393,7 +2393,7 @@ TEST(CpuCoreTest, AddOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
 
@@ -2429,7 +2429,7 @@ TEST(CpuCoreTest, SubOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2437,7 +2437,7 @@ TEST(CpuCoreTest, SubOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2445,7 +2445,7 @@ TEST(CpuCoreTest, SubOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -2453,7 +2453,7 @@ TEST(CpuCoreTest, SubOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xFFFE);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -2461,7 +2461,7 @@ TEST(CpuCoreTest, SubOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x7FFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
@@ -2508,7 +2508,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2516,7 +2516,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r1, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2524,7 +2524,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r2, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2532,7 +2532,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r3, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2540,7 +2540,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
 
@@ -2548,7 +2548,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r5, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2556,7 +2556,7 @@ TEST(CpuCoreTest, AdcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 14 + 14);
   state.Update();
-  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.ip, 14);
   EXPECT_EQ(state.r5, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -2603,7 +2603,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -2611,7 +2611,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r1, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2619,7 +2619,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r2, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2627,7 +2627,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r3, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2635,7 +2635,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
 
@@ -2643,7 +2643,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r5, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2651,7 +2651,7 @@ TEST(CpuCoreTest, AdcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 14 + 14);
   state.Update();
-  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.ip, 14);
   EXPECT_EQ(state.r5, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2694,7 +2694,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2702,7 +2702,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r1, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2710,7 +2710,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r2, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -2718,7 +2718,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r3, 0xFFFE);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -2726,7 +2726,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r4, 0x7FFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
@@ -2734,7 +2734,7 @@ TEST(CpuCoreTest, SbcOpNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r1, 0);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -2779,7 +2779,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0xFFFE);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2787,7 +2787,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r1, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2795,7 +2795,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r2, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2803,7 +2803,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r3, 0xFFFD);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -2811,7 +2811,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r4, 0x7FFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
@@ -2819,7 +2819,7 @@ TEST(CpuCoreTest, SbcOpWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r5, 0);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2854,7 +2854,7 @@ TEST(CpuCoreTest, NegOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r7, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -2862,7 +2862,7 @@ TEST(CpuCoreTest, NegOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r7, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2870,7 +2870,7 @@ TEST(CpuCoreTest, NegOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r7, 0xFFFE);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2878,7 +2878,7 @@ TEST(CpuCoreTest, NegOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r7, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -2886,7 +2886,7 @@ TEST(CpuCoreTest, NegOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r7, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::O);
 
@@ -2922,7 +2922,7 @@ TEST(CpuCoreTest, CmpOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2930,7 +2930,7 @@ TEST(CpuCoreTest, CmpOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -2938,7 +2938,7 @@ TEST(CpuCoreTest, CmpOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -2946,7 +2946,7 @@ TEST(CpuCoreTest, CmpOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -2954,7 +2954,7 @@ TEST(CpuCoreTest, CmpOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
 
@@ -2991,7 +2991,7 @@ TEST(CpuCoreTest, NotOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r7, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -2999,7 +2999,7 @@ TEST(CpuCoreTest, NotOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r7, 0xEDCB);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3007,7 +3007,7 @@ TEST(CpuCoreTest, NotOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r7, 0xA987);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3015,7 +3015,7 @@ TEST(CpuCoreTest, NotOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r7, 0x6543);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3023,7 +3023,7 @@ TEST(CpuCoreTest, NotOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r7, 0x210F);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3031,7 +3031,7 @@ TEST(CpuCoreTest, NotOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r7, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3072,7 +3072,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3080,7 +3080,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x1234);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3088,7 +3088,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x5238);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3096,7 +3096,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0x1A3C);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3104,7 +3104,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x5A30);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3112,7 +3112,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r5, 0xA5C3);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3120,7 +3120,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 7);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r5, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3128,7 +3128,7 @@ TEST(CpuCoreTest, AndOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r6, 0x5A3C);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3169,7 +3169,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3177,7 +3177,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x5A3C);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3185,7 +3185,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x5E7C);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3193,7 +3193,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xDABC);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3201,7 +3201,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0xDEFC);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3209,7 +3209,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r5, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3217,7 +3217,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 7);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r5, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3225,7 +3225,7 @@ TEST(CpuCoreTest, OrOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r6, 0xFFFF);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3266,7 +3266,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3274,7 +3274,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3282,7 +3282,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x0C44);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3290,7 +3290,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xC080);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3298,7 +3298,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x84CC);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3306,7 +3306,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r5, 0x5A3C);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3314,7 +3314,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 7);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r5, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3322,7 +3322,7 @@ TEST(CpuCoreTest, XorOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r6, 0xA5C3);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3363,7 +3363,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3371,7 +3371,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -3379,7 +3379,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3387,7 +3387,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0x4000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3395,7 +3395,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -3403,7 +3403,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r5, 0xC000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3411,7 +3411,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 7);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r6, 0x2000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -3419,7 +3419,7 @@ TEST(CpuCoreTest, SlSrSraOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r7, 0xC000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3459,7 +3459,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3467,7 +3467,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -3475,7 +3475,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 3);
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x8001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3483,7 +3483,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0x4000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3491,7 +3491,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 5);
   state.Update();
-  EXPECT_EQ(state.pc, 5);
+  EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3499,7 +3499,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r5, 0xC000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3507,7 +3507,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 7);
   state.Update();
-  EXPECT_EQ(state.pc, 7);
+  EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.r6, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3515,7 +3515,7 @@ TEST(CpuCoreTest, RlRrOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r6, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3564,7 +3564,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0x0002);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3572,7 +3572,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r1, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -3580,7 +3580,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r2, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3588,7 +3588,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r3, 0x4000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3596,7 +3596,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r4, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
 
@@ -3604,7 +3604,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r5, 0x4000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -3612,7 +3612,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 14 + 14);
   state.Update();
-  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.ip, 14);
   EXPECT_EQ(state.r6, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3620,7 +3620,7 @@ TEST(CpuCoreTest, RlcRrcOpsNoCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 16 + 16);
   state.Update();
-  EXPECT_EQ(state.pc, 16);
+  EXPECT_EQ(state.ip, 16);
   EXPECT_EQ(state.r7, 0x0000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
@@ -3669,7 +3669,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 2);
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0x0003);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3677,7 +3677,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 4);
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r1, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
 
@@ -3685,7 +3685,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 6);
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r2, 0x8001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3693,7 +3693,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 8);
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r3, 0xC000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3701,7 +3701,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 10);
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r4, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3709,7 +3709,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 12);
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r5, 0xC000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
@@ -3717,7 +3717,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 14 + 14);
   state.Update();
-  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.ip, 14);
   EXPECT_EQ(state.r6, 0x0001);
   EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
@@ -3725,7 +3725,7 @@ TEST(CpuCoreTest, RlcRrcOpsWithCarry) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 2);
   EXPECT_EQ(core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 16 + 16);
   state.Update();
-  EXPECT_EQ(state.pc, 16);
+  EXPECT_EQ(state.ip, 16);
   EXPECT_EQ(state.r7, 0x8000);
   EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
@@ -3752,7 +3752,7 @@ TEST(CpuCoreTest, MathOpsLeaveInterruptFlagAlone) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 18);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.st & CpuCore::I, CpuCore::I);
 
   // Execute the HALT instruction.
@@ -3789,7 +3789,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, 0);
   EXPECT_EQ(state.r1, 1);
   EXPECT_EQ(state.r2, 0);
@@ -3803,7 +3803,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 4);
+  EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r0, 2);
   EXPECT_EQ(state.r1, 1);
   EXPECT_EQ(state.r2, 0);
@@ -3817,7 +3817,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 6);
+  EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.r0, 2);
   EXPECT_EQ(state.r1, 3);
   EXPECT_EQ(state.r2, 3);
@@ -3831,7 +3831,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 8);
+  EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.r0, 2);
   EXPECT_EQ(state.r1, 4);
   EXPECT_EQ(state.r2, 3);
@@ -3845,7 +3845,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 10);
+  EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.r0, 2);
   EXPECT_EQ(state.r1, 5);
   EXPECT_EQ(state.r2, 3);
@@ -3859,7 +3859,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 12);
+  EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.r0, 6);
   EXPECT_EQ(state.r1, 5);
   EXPECT_EQ(state.r2, 3);
@@ -3873,7 +3873,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 14);
+  EXPECT_EQ(state.ip, 14);
   EXPECT_EQ(state.r0, 6);
   EXPECT_EQ(state.r1, 7);
   EXPECT_EQ(state.r2, 7);
@@ -3887,7 +3887,7 @@ TEST(CpuCoreTest, JcJpEndOps) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles * 2 + 9);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 16);
+  EXPECT_EQ(state.ip, 16);
   EXPECT_EQ(state.r0, 8);
   EXPECT_EQ(state.r1, 7);
   EXPECT_EQ(state.r2, 8);
@@ -3929,7 +3929,7 @@ TEST(CpuCoreTest, JcOpWithRegTrue) {
 
   // Execute the HALT instruction.
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, 17);
+  EXPECT_EQ(state.ip, 17);
   EXPECT_EQ(state.r0, 2);
   EXPECT_EQ(state.r1, 2);
   EXPECT_EQ(state.r2, 2);
@@ -3967,7 +3967,7 @@ TEST(CpuCoreTest, JcOpWithRegFalse) {
 
   // Execute the HALT instruction.
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, 17);
+  EXPECT_EQ(state.ip, 17);
   EXPECT_EQ(state.r0, 1);
   EXPECT_EQ(state.r1, 1);
   EXPECT_EQ(state.r2, 1);
@@ -3994,21 +3994,21 @@ TEST(CpuCoreTest, JdOp) {
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 1);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 1);
+  EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r7, 1);
 
   // Execute the JD instruction, loop 10 times
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 10);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 2);
+  EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r7, 10);
 
   // Execute the JD instruction, loop 65536 times
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 65536);
   EXPECT_EQ(core.GetCycles(), processor.GetCycles());
   state.Update();
-  EXPECT_EQ(state.pc, 3);
+  EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r7, 0);
 
   // Execute the HALT instruction.
@@ -4030,10 +4030,10 @@ TEST(CpuCoreTest, InterruptDuringExecution) {
   mem.AddCode(kTestOp_ZSCO, CpuCore::Z | CpuCore::O);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(2);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4042,26 +4042,26 @@ TEST(CpuCoreTest, InterruptDuringExecution) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until R2 is being set to 2 and before it is set to 3
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
 
   // Trigger interrupt 1
   core.RaiseInterrupt(1);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == 100; }));
   EXPECT_EQ(state.r2, 2);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(state.sp, 0xFFFE);
   mem.SetAddress(state.sp);
   EXPECT_EQ(mem.GetValue(), CpuCore::I | CpuCore::Z | CpuCore::O);
-  EXPECT_EQ(mem.GetValue(), pc1);
+  EXPECT_EQ(mem.GetValue(), ip1);
 
   // Execute the interrupt through the IRET instruction
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r3, 42);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::O);
 
   // Execute through the HALT instruction
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r2, 3);
 }
 
@@ -4080,17 +4080,17 @@ TEST(CpuCoreTest, InterruptDuringWait) {
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(1000);
   mem.AddCode(kTestOp_WAIT, CpuCore::R3);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
   mem.AddCode(kTestOp_LV, CpuCore::R3).AddValue(5000);
   mem.AddCode(kTestOp_WAIT, CpuCore::R3);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc3 = mem.GetAddress();
+  const uint16_t ip3 = mem.GetAddress();
   mem.AddCode(kTestOp_IRET);
   mem.AddCode(kTestOp_HALT);
 
@@ -4098,7 +4098,7 @@ TEST(CpuCoreTest, InterruptDuringWait) {
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
     return core.GetState() == CpuCore::State::kWaiting;
   }));
-  EXPECT_EQ(state.pc, pc1);
+  EXPECT_EQ(state.ip, ip1);
   const Cycles wait_start =
       core.GetCycles() - (kCpuCoreFetchAndDecodeCycles + 1);
 
@@ -4107,12 +4107,12 @@ TEST(CpuCoreTest, InterruptDuringWait) {
 
   // Execute interrupt 1
   core.RaiseInterrupt(1);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip3; }));
   EXPECT_EQ(state.st, CpuCore::W | CpuCore::O);
   EXPECT_EQ(state.r3, 5000);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, CpuCore::W | CpuCore::I | CpuCore::Z);
-  EXPECT_EQ(state.pc, pc1);
+  EXPECT_EQ(state.ip, ip1);
 
   // Execute until waiting again
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
@@ -4128,7 +4128,7 @@ TEST(CpuCoreTest, InterruptDuringWait) {
 
   // Execute through the HALT instruction
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r2, 3);
 }
 
@@ -4145,10 +4145,10 @@ TEST(CpuCoreTest, InterruptDuringHalt) {
   mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4157,17 +4157,17 @@ TEST(CpuCoreTest, InterruptDuringHalt) {
 
   // Execute until halting the first time
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc1);
+  EXPECT_EQ(state.ip, ip1);
   EXPECT_EQ(state.r2, 0);
 
   // Execute interrupt 1
   core.RaiseInterrupt(1);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
 
   // Execute through the HALT instruction
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r2, 3);
 }
 
@@ -4184,10 +4184,10 @@ TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
   mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4196,7 +4196,7 @@ TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until halting the first time
-  ExecuteUntil(processor, state, [&] { return state.pc == pc1; });
+  ExecuteUntil(processor, state, [&] { return state.ip == ip1; });
   EXPECT_EQ(state.r2, 1);
 
   // Execute interrupt 1
@@ -4204,7 +4204,7 @@ TEST(CpuCoreTest, RaiseInterruptWhileDisabled) {
 
   // Execute through the HALT instruction
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r3, 0);
   EXPECT_EQ(state.r2, 3);
 }
@@ -4222,10 +4222,10 @@ TEST(CpuCoreTest, EnableInterruptAfterRaise) {
   mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);  // Interrupt 1 to 100
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(2);
   mem.AddCode(kTestOp_EI);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4234,15 +4234,15 @@ TEST(CpuCoreTest, EnableInterruptAfterRaise) {
   mem.AddCode(kTestOp_HALT);
 
   core.RaiseInterrupt(1);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == 100; }));
   EXPECT_EQ(state.r2, 2);
   mem.SetAddress(state.sp);
   EXPECT_EQ(mem.GetValue(), CpuCore::I);
-  EXPECT_EQ(mem.GetValue(), pc1);
+  EXPECT_EQ(mem.GetValue(), ip1);
 
   // Execute through the HALT instruction
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r2, 3);
 }
 
@@ -4267,7 +4267,7 @@ TEST(CpuCoreTest, InterruptInInterrupt) {
   mem.AddCode(kTestOp_INT, 1);
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4291,16 +4291,16 @@ TEST(CpuCoreTest, InterruptInInterrupt) {
   mem.AddCode(kTestOp_IRET);
   mem.AddCode(kTestOp_HALT);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 100; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == 100; }));
   EXPECT_EQ(state.r3, 0);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 200; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == 200; }));
   EXPECT_EQ(state.r3, 42);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == 300; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == 300; }));
   EXPECT_EQ(state.r3, 42);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc < 300; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip < 300; }));
   EXPECT_EQ(state.r3, 100);
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc1);
+  EXPECT_EQ(state.ip, ip1);
   EXPECT_EQ(state.r2, 3);
   EXPECT_EQ(state.r3, 24);
   EXPECT_EQ(state.r4, 321);
@@ -4319,10 +4319,10 @@ TEST(CpuCoreTest, LockCoreDuringInterrupt) {
   mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4331,7 +4331,7 @@ TEST(CpuCoreTest, LockCoreDuringInterrupt) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until after interrupts are enabled.
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r2, 0);
   EXPECT_EQ(state.st, CpuCore::I);
 
@@ -4351,7 +4351,7 @@ TEST(CpuCoreTest, LockCoreDuringInterrupt) {
   // Release the lock and finish execution
   lock = nullptr;
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r3, 42);
   EXPECT_EQ(state.r2, 3);
 }
@@ -4370,10 +4370,10 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
   mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4382,7 +4382,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until after interrupts are enabled.
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r2, 0);
   EXPECT_EQ(state.st, CpuCore::I);
 
@@ -4413,7 +4413,7 @@ TEST(CpuCoreTest, LockMemoryDuringInterrupt) {
   // Release the code memory lock and complete the program.
   lock = nullptr;
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc2);
+  EXPECT_EQ(state.ip, ip2);
   EXPECT_EQ(state.r3, 42);
   EXPECT_EQ(state.r2, 3);
 }
@@ -4428,17 +4428,17 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   // Main program
   mem.AddCode(kTestOp_EI);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(1);
   mem.AddCode(kTestOp_LV, CpuCore::R1).AddValue(100);
   mem.AddCode(kTestOp_IST, CpuCore::R0, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc3 = mem.GetAddress();
+  const uint16_t ip3 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(3);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t pc4 = mem.GetAddress();
+  const uint16_t ip4 = mem.GetAddress();
 
   // Interrupt 1
   mem.SetAddress(100);
@@ -4447,7 +4447,7 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   mem.AddCode(kTestOp_HALT);
 
   // Execute until after interrupts are enabled.
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r2, 0);
   EXPECT_EQ(state.r3, 0);
   EXPECT_EQ(state.st, CpuCore::I);
@@ -4458,7 +4458,7 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   }
 
   // Run to the next instruction, and verify that no interrupt fired.
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r2, 0);
   EXPECT_EQ(state.r3, 0);
 
@@ -4468,13 +4468,13 @@ TEST(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   }
 
   // Run to the next instruction, and this time the interrupt fired.
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip3; }));
   EXPECT_EQ(state.r2, 0);
   EXPECT_EQ(state.r3, 42);
 
   // Finish execution, and no interrupt is fired
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, pc4);
+  EXPECT_EQ(state.ip, ip4);
   EXPECT_EQ(state.r2, 3);
   EXPECT_EQ(state.r3, 42);
 }
@@ -4496,15 +4496,15 @@ TEST(CpuCoreTest, LoadFromInvalidPort) {
   // Main program
   mem.AddCode(kTestOp_PLDS, 10, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_PLDS, 11, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 42);
   EXPECT_EQ(state.st, 0);
 
@@ -4515,12 +4515,12 @@ TEST(CpuCoreTest, LoadFromInvalidPort) {
   core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
   lock.reset();
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 24);
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LoadFromPortOnlyChangesFlagS) {
@@ -4547,15 +4547,15 @@ TEST(CpuCoreTest, LoadFromPortOnlyChangesFlagS) {
   // Main program
   mem.AddCode(kTestOp_PLDS, 0, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_PLDS, 1, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 42);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::C | CpuCore::O);
 
@@ -4566,12 +4566,12 @@ TEST(CpuCoreTest, LoadFromPortOnlyChangesFlagS) {
   core.SetWordRegister(*lock, CpuCore::ST, 0);
   lock.reset();
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 24);
   EXPECT_EQ(state.st, CpuCore::S);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LoadWordFromPortMode0) {
@@ -4595,29 +4595,29 @@ TEST(CpuCoreTest, LoadWordFromPortMode0) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PLD, 0, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PLD, 0, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 1);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 0xFFFF);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LoadWordFromPortModeS) {
@@ -4641,29 +4641,29 @@ TEST(CpuCoreTest, LoadWordFromPortModeS) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PLD, Port::S, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PLD, Port::S, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 1);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 0xFFFF);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 0);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LoadWordFromPortModeA) {
@@ -4687,29 +4687,29 @@ TEST(CpuCoreTest, LoadWordFromPortModeA) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PLD, Port::A, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PLD, Port::A, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 1);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 0xFFFF);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LoadWordFromPortModeT) {
@@ -4733,29 +4733,29 @@ TEST(CpuCoreTest, LoadWordFromPortModeT) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PLD, Port::T, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PLD, Port::T, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 0);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 0xFFFF);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LoadWordFromPortModeTSA) {
@@ -4782,39 +4782,39 @@ TEST(CpuCoreTest, LoadWordFromPortModeTSA) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PLD, Port::T | Port::S | Port::A, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PLD, Port::T | Port::S | Port::A, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(2);
   mem.AddCode(kTestOp_PLD, Port::T | Port::S | Port::A, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc3 = mem.GetAddress();
+  const uint16_t ip3 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.r0, 0);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.r1, 0xFFFF);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 0);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip3; }));
   EXPECT_EQ(state.r1, 42);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 0);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreToInvalidPort) {
@@ -4828,15 +4828,15 @@ TEST(CpuCoreTest, StoreToInvalidPort) {
   // Main program
   mem.AddCode(kTestOp_PSTS, 10, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_PSTS, 11, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
 
   auto lock = core.RequestLock();
@@ -4846,11 +4846,11 @@ TEST(CpuCoreTest, StoreToInvalidPort) {
   core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
   lock.reset();
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreToPortOnlyChangesFlagS) {
@@ -4877,15 +4877,15 @@ TEST(CpuCoreTest, StoreToPortOnlyChangesFlagS) {
   // Main program
   mem.AddCode(kTestOp_PSTS, 0, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_PSTS, 1, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::Z | CpuCore::C | CpuCore::O);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 42);
@@ -4897,13 +4897,13 @@ TEST(CpuCoreTest, StoreToPortOnlyChangesFlagS) {
   core.SetWordRegister(*lock, CpuCore::ST, 0);
   lock.reset();
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 24);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreWordToPortMode0) {
@@ -4930,29 +4930,29 @@ TEST(CpuCoreTest, StoreWordToPortMode0) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PST, 0, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PST, 0, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 0xFFFF);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreWordToPortModeA) {
@@ -4979,29 +4979,29 @@ TEST(CpuCoreTest, StoreWordToPortModeA) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PST, Port::A, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PST, Port::A, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 0xFFFF);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreWordToPortModeS) {
@@ -5028,29 +5028,29 @@ TEST(CpuCoreTest, StoreWordToPortModeS) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PST, Port::S, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PST, Port::S, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 0xFFFF);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreWordToPortModeT) {
@@ -5077,29 +5077,29 @@ TEST(CpuCoreTest, StoreWordToPortModeT) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PST, Port::T, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PST, Port::T, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 0);
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, StoreWordToPortModeTSA) {
@@ -5130,39 +5130,39 @@ TEST(CpuCoreTest, StoreWordToPortModeTSA) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0);
   mem.AddCode(kTestOp_PST, Port::T | Port::S | Port::A, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(1);
   mem.AddCode(kTestOp_PST, Port::T | Port::S | Port::A, CpuCore::R1);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(2);
   mem.AddCode(kTestOp_PST, Port::T | Port::S | Port::A, CpuCore::R2);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc3 = mem.GetAddress();
+  const uint16_t ip3 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(0).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(0).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 1);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_EQ(processor.GetPort(1).GetAddress(), 0);
   EXPECT_EQ(processor.GetPort(1).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc3; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip3; }));
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(processor.GetPort(2).GetAddress(), 1);
   EXPECT_EQ(processor.GetPort(2).GetStatus(), 1);
   EXPECT_EQ(processor.GetPort(2).GetValue(0), 42);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, LockPortBlocksCpuCore) {
@@ -5186,39 +5186,39 @@ TEST(CpuCoreTest, LockPortBlocksCpuCore) {
   // Main program
   mem.AddCode(kTestOp_PSTS, 0, CpuCore::R0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_PSTS, 1, CpuCore::R1);
-  const uint16_t blocked_pc = mem.GetAddress();
+  const uint16_t blocked_ip = mem.GetAddress();
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc2 = mem.GetAddress();
+  const uint16_t ip2 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Lock port 1, which should not effect writing to port 0
   lock = processor.LockPort(1);
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(processor.GetPort(0).GetValue(0), 42);
 
   ASSERT_TRUE(
-      ExecuteUntil(processor, state, [&] { return state.pc == blocked_pc; }));
+      ExecuteUntil(processor, state, [&] { return state.ip == blocked_ip; }));
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
   for (int i = 0; i < 10; ++i) {
     processor.Execute(1);
   }
   state.Update();
-  EXPECT_EQ(state.pc, blocked_pc);
+  EXPECT_EQ(state.ip, blocked_ip);
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 100);
 
   // Reset port 1 lock, which allows the CpuCore to continue
   lock.reset();
 
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc2; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip2; }));
   EXPECT_EQ(processor.GetPort(1).GetValue(0), 24);
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, SelfCoreOp) {
@@ -5243,12 +5243,12 @@ TEST(CpuCoreTest, SelfCoreOp) {
   // Main program
   mem.AddCode(kTestOp_CSELF);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.mb, CpuCore::Banks().SetData(1).SetExtra(2).ToWord());
   EXPECT_EQ(state.r0, 1000);
   EXPECT_EQ(state.r1, 1005);
@@ -5259,7 +5259,7 @@ TEST(CpuCoreTest, SelfCoreOp) {
   EXPECT_EQ(state.r6, 1002);
   EXPECT_EQ(state.r7, 1007);
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
 }
 
 TEST(CpuCoreTest, ModifyOtherCore) {
@@ -5298,21 +5298,21 @@ TEST(CpuCoreTest, ModifyOtherCore) {
   mem0.AddCode(kTestOp_CBK, CpuCore::EXTRA, 5);
   mem0.AddCode(kTestOp_CBK, CpuCore::EXTRA, 16);
   mem0.AddCode(kTestOp_HALT);
-  const uint16_t end_pc0 = mem0.GetAddress();
+  const uint16_t end_ip0 = mem0.GetAddress();
 
   mem1.AddCode(kTestOp_HALT);
-  const uint16_t end_pc1 = mem1.GetAddress();
+  const uint16_t end_ip1 = mem1.GetAddress();
 
   // Execute code
   ExecuteUntilHalt(processor, state0);
   state1.Update();
-  EXPECT_EQ(state0.pc, end_pc0);
+  EXPECT_EQ(state0.ip, end_ip0);
   EXPECT_EQ(state0.mb, 0);
   EXPECT_EQ(state0.r0, 1000);
   EXPECT_EQ(state0.r1, 1001);
   EXPECT_EQ(state0.r2, 2000);
   EXPECT_EQ(state0.r3, 1003);
-  EXPECT_EQ(state1.pc, end_pc1);
+  EXPECT_EQ(state1.ip, end_ip1);
   EXPECT_EQ(
       state1.mb,
       CpuCore::Banks().SetCode(2).SetStack(3).SetData(4).SetExtra(5).ToWord());
@@ -5369,11 +5369,11 @@ TEST(CpuCoreTest, SelfCoreInterrupt) {
   mem.AddCode(kTestOp_LV, CpuCore::R0).AddValue(100);
   mem.AddCode(kTestOp_CINT, CpuCore::R0, CpuCore::R1).AddValue(0).AddValue(7);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
   EXPECT_EQ(core.GetInterrupts(), 1 << 7);
   EXPECT_EQ(core.GetInterruptAddress(7), 100);
   EXPECT_EQ(state.r1, 100);
@@ -5399,18 +5399,18 @@ TEST(CpuCoreTest, OtherCoreInterrupt) {
   mem.AddCode(kTestOp_LV, CpuCore::R2).AddValue(200);
   mem.AddCode(kTestOp_CINT, CpuCore::R2, CpuCore::R3).AddValue(2).AddValue(8);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc0 = mem.GetAddress();
+  const uint16_t end_ip0 = mem.GetAddress();
 
   // Core 1 program
   mem.SetAddress(100);
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc1 = mem.GetAddress();
+  const uint16_t end_ip1 = mem.GetAddress();
 
   // Execute code
   ExecuteUntilHalt(processor, state0);
   state1.Update();
-  EXPECT_EQ(state1.pc, end_pc1);
-  EXPECT_EQ(state0.pc, end_pc0);
+  EXPECT_EQ(state1.ip, end_ip1);
+  EXPECT_EQ(state0.ip, end_ip0);
   EXPECT_EQ(core1.GetInterrupts(), 1 << 7);
   EXPECT_EQ(core1.GetInterruptAddress(7), 100);
   EXPECT_EQ(state0.r1, 100);
@@ -5444,44 +5444,44 @@ TEST(CpuCoreTest, CbkResetsWaitOnOtherCore) {
   mem0.AddCode(kTestOp_NOP);
   mem0.AddCode(kTestOp_NOP);
   mem0.AddCode(kTestOp_NOP);
-  const uint16_t blocked_pc0 = mem0.GetAddress();
+  const uint16_t blocked_ip0 = mem0.GetAddress();
   mem0.AddCode(kTestOp_CBK, CpuCore::CODE, 2);
   mem0.AddCode(kTestOp_NOP);
-  const uint16_t nop_pc0 = mem0.GetAddress();
+  const uint16_t nop_ip0 = mem0.GetAddress();
   mem0.AddCode(kTestOp_NOP);
   mem0.AddCode(kTestOp_HALT);
-  const uint16_t end_pc0 = mem0.GetAddress();
+  const uint16_t end_ip0 = mem0.GetAddress();
 
   mem1.AddCode(kTestOp_WAIT, CpuCore::R0);
   mem1.AddCode(kTestOp_HALT);
-  const uint16_t end_pc1 = mem1.GetAddress();
+  const uint16_t end_ip1 = mem1.GetAddress();
 
   mem2.AddCode(kTestOp_WAIT, CpuCore::R0);
   mem2.AddCode(kTestOp_NOP);
   mem2.AddCode(kTestOp_HALT);
-  const uint16_t end_pc2 = mem2.GetAddress();
-  ASSERT_NE(end_pc1, end_pc2);
+  const uint16_t end_ip2 = mem2.GetAddress();
+  ASSERT_NE(end_ip1, end_ip2);
 
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state0,
-                           [&] { return state0.pc == blocked_pc0; }));
+                           [&] { return state0.ip == blocked_ip0; }));
   state1.Update();
   EXPECT_NE(core0.GetState(), CpuCore::State::kWaiting);
-  EXPECT_EQ(state0.pc, blocked_pc0);
+  EXPECT_EQ(state0.ip, blocked_ip0);
   EXPECT_EQ(core1.GetState(), CpuCore::State::kWaiting);
   EXPECT_EQ(state1.st, CpuCore::W | CpuCore::Z | CpuCore::S | CpuCore::C);
 
   ASSERT_TRUE(
-      ExecuteUntil(processor, state0, [&] { return state0.pc == nop_pc0; }));
+      ExecuteUntil(processor, state0, [&] { return state0.ip == nop_ip0; }));
   state1.Update();
-  EXPECT_EQ(state0.pc, nop_pc0);
+  EXPECT_EQ(state0.ip, nop_ip0);
   EXPECT_NE(core1.GetState(), CpuCore::State::kWaiting);
   EXPECT_EQ(state1.st, CpuCore::Z | CpuCore::S | CpuCore::C);
 
   ExecuteUntilHalt(processor, state0);
   state1.Update();
-  EXPECT_EQ(state0.pc, end_pc0);
-  EXPECT_EQ(state1.pc, end_pc2);
+  EXPECT_EQ(state0.ip, end_ip0);
+  EXPECT_EQ(state1.ip, end_ip2);
 }
 
 TEST(CpuCoreTest, CbkResetsWaitOnSelf) {
@@ -5501,14 +5501,14 @@ TEST(CpuCoreTest, CbkResetsWaitOnSelf) {
   // Main program
   mem.AddCode(kTestOp_IST, CpuCore::R7, CpuCore::R2);
   mem.AddCode(kTestOp_WAIT, CpuCore::R0);
-  const uint16_t pc0 = mem.GetAddress();
+  const uint16_t ip0 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   mem.SetAddress(100);
   mem.AddCode(kTestOp_CBKS, 0);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_IRET);
   mem.AddCode(kTestOp_HALT);
 
@@ -5516,15 +5516,15 @@ TEST(CpuCoreTest, CbkResetsWaitOnSelf) {
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
     return core.GetState() == CpuCore::State::kWaiting;
   }));
-  EXPECT_EQ(state.pc, pc0);
+  EXPECT_EQ(state.ip, ip0);
   EXPECT_EQ(state.st, CpuCore::W | CpuCore::I | CpuCore::S);
   core.RaiseInterrupt(0);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0);
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc0; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip0; }));
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
   EXPECT_LT(core.GetCycles(), 1000);
 }
@@ -5544,17 +5544,17 @@ TEST(CpuCoreTest, ResetDuringWait) {
 
   // Main program
   mem.AddCode(kTestOp_WAIT, CpuCore::R0);
-  const uint16_t pc0 = mem.GetAddress();
+  const uint16_t ip0 = mem.GetAddress();
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state, [&] {
     return core.GetState() == CpuCore::State::kWaiting;
   }));
-  EXPECT_EQ(state.pc, pc0);
+  EXPECT_EQ(state.ip, ip0);
   EXPECT_EQ(state.st, CpuCore::W | CpuCore::S);
 
   lock = core.RequestLock();
@@ -5563,7 +5563,7 @@ TEST(CpuCoreTest, ResetDuringWait) {
   lock.reset();
 
   ExecuteUntilHalt(processor, state);
-  EXPECT_EQ(state.pc, end_pc);
+  EXPECT_EQ(state.ip, end_ip);
   EXPECT_EQ(state.st, CpuCore::S);
   EXPECT_LT(core.GetCycles(), 1000);
 }
@@ -5588,26 +5588,26 @@ TEST(CpuCoreTest, CoreLockBlocks) {
 
   // Main program
   mem0.AddCode(kTestOp_CBK, CpuCore::DATA, 1);
-  const uint16_t blocked_pc0 = mem0.GetAddress();
+  const uint16_t blocked_ip0 = mem0.GetAddress();
   mem0.AddCode(kTestOp_HALT);
-  const uint16_t end_pc0 = mem0.GetAddress();
+  const uint16_t end_ip0 = mem0.GetAddress();
 
   mem1.AddCode(kTestOp_HALT);
-  const uint16_t end_pc1 = mem1.GetAddress();
+  const uint16_t end_ip1 = mem1.GetAddress();
 
   // Start with core 1 locked, to block execution on core 0
   lock = core1.RequestLock();
 
   // Execute code
   ASSERT_TRUE(ExecuteUntil(processor, state0,
-                           [&] { return state0.pc == blocked_pc0; }));
+                           [&] { return state0.ip == blocked_ip0; }));
   state1.Update();
   EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
   for (int i = 0; i < 10; ++i) {
     processor.Execute(1);
   }
   state0.Update();
-  EXPECT_EQ(state0.pc, blocked_pc0);
+  EXPECT_EQ(state0.ip, blocked_ip0);
   EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
 
   // Unblock execution of core 0 by releasing the lock.
@@ -5615,9 +5615,9 @@ TEST(CpuCoreTest, CoreLockBlocks) {
 
   ExecuteUntilHalt(processor, state0);
   state1.Update();
-  EXPECT_EQ(state0.pc, end_pc0);
+  EXPECT_EQ(state0.ip, end_ip0);
   EXPECT_EQ(state0.mb, 0);
-  EXPECT_EQ(state1.pc, end_pc1);
+  EXPECT_EQ(state1.ip, end_ip1);
   EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).SetData(1).ToWord());
 }
 
@@ -5632,12 +5632,12 @@ TEST(CpuCoreTest, ReadOnlyRegisters) {
   mem.AddCode(kTestOp_LV, CpuCore::R7).AddValue(0xFFFF);
   mem.AddCode(kTestOp_ROREG, CpuCore::R7);
   mem.AddCode(kTestOp_NOP);
-  const uint16_t pc1 = mem.GetAddress();
+  const uint16_t ip1 = mem.GetAddress();
   mem.AddCode(kTestOp_HALT);
-  const uint16_t end_pc = mem.GetAddress();
+  const uint16_t end_ip = mem.GetAddress();
 
   // Execute code
-  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.pc == pc1; }));
+  ASSERT_TRUE(ExecuteUntil(processor, state, [&] { return state.ip == ip1; }));
   EXPECT_EQ(state.st, 0x0000);
   EXPECT_EQ(state.mb, 0x0000);
 }
