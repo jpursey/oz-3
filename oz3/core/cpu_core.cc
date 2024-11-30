@@ -466,11 +466,37 @@ void CpuCore::RunInstruction() {
 #define OZ3_INIT_REG2   \
   const uint16_t reg2 = \
       (code.arg2 < 0 ? instruction_.r[-code.arg2 - 1] : code.arg2)
+#define OZ3_INIT_REG_BYTE_MASK1                                               \
+  const uint16_t reg1 =                                                       \
+      (code.arg1 < 0 ? instruction_.r[-(code.arg1 | kRegMaskBytes) - 1]       \
+                     : code.arg1 & ((1 << kRegMaskShift) - 1));               \
+  const uint16_t shift1 = (code.arg1 & kRegMaskBytes) >> (kRegMaskShift - 3); \
+  const uint16_t mask1 = 0xFF << shift1
+#define OZ3_INIT_REG_BYTE_MASK2                                               \
+  const uint16_t reg2 =                                                       \
+      (code.arg2 < 0 ? instruction_.r[-(code.arg2 | kRegMaskBytes) - 1]       \
+                     : code.arg2 & ((1 << kRegMaskShift) - 1));               \
+  const uint16_t shift2 = (code.arg2 & kRegMaskBytes) >> (kRegMaskShift - 3); \
+  const uint16_t mask2 = 0xFF << shift2
+#define OZ3_INIT_REG_NIBBLE_MASK1                                         \
+  const uint16_t reg1 =                                                   \
+      (code.arg1 < 0 ? instruction_.r[-(code.arg1 | kRegMaskNibbles) - 1] \
+                     : code.arg1 & ((1 << kRegMaskShift) - 1));           \
+  const uint16_t shift1 =                                                 \
+      (code.arg1 & kRegMaskNibbles) >> (kRegMaskShift - 2);               \
+  const uint16_t mask1 = 0xF << shift1
+#define OZ3_INIT_REG_NIBBLE_MASK2                                         \
+  const uint16_t reg2 =                                                   \
+      (code.arg2 < 0 ? instruction_.r[-(code.arg2 | kRegMaskNibbles) - 1] \
+                     : code.arg2 & ((1 << kRegMaskShift) - 1));           \
+  const uint16_t shift2 =                                                 \
+      (code.arg2 & kRegMaskNibbles) >> (kRegMaskShift - 2);               \
+  const uint16_t mask2 = 0xF << shift2
 #define OZ3_MATH_OP(dst, src, func) \
   const uint16_t a1 = (dst);        \
   const uint16_t a2 = (src);        \
   const uint16_t r = (func);        \
-  const uint16_t rs = (r >> 15);
+  const uint16_t rs = (r >> 15)
 #define OZ3_Z ((r == 0) << ZShift)
 #define OZ3_S (rs << SShift)
 #define OZ3_C ((r < a1) << CShift)
@@ -617,6 +643,30 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG2;
         r_[reg1] = r_[reg2];
         exec_cycles_ += kCpuCoreCycles_MOV;
+      } break;
+      case kMicro_MVBI: {
+        OZ3_INIT_REG_BYTE_MASK1;
+        r_[reg1] = (r_[reg1] & ~mask1) | ((code.arg2 << shift1) & mask1);
+        exec_cycles_ += kCpuCoreCycles_MVBI;
+      } break;
+      case kMicro_MVB: {
+        OZ3_INIT_REG_BYTE_MASK1;
+        OZ3_INIT_REG_BYTE_MASK2;
+        r_[reg1] =
+            (r_[reg1] & ~mask1) | ((r_[reg2] & mask2) >> shift2 << shift1);
+        exec_cycles_ += kCpuCoreCycles_MVB;
+      } break;
+      case kMicro_MVNI: {
+        OZ3_INIT_REG_NIBBLE_MASK1;
+        r_[reg1] = (r_[reg1] & ~mask1) | ((code.arg2 << shift1) & mask1);
+        exec_cycles_ += kCpuCoreCycles_MVNI;
+      } break;
+      case kMicro_MVN: {
+        OZ3_INIT_REG_NIBBLE_MASK1;
+        OZ3_INIT_REG_NIBBLE_MASK2;
+        r_[reg1] =
+            (r_[reg1] & ~mask1) | ((r_[reg2] & mask2) >> shift2 << shift1);
+        exec_cycles_ += kCpuCoreCycles_MVN;
       } break;
       case kMicro_ADDI: {
         OZ3_INIT_REG1;

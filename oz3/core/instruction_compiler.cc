@@ -175,6 +175,7 @@ class InstructionCompiler {
   bool CompileSubInstruction();
   bool CompileInstructionVariant(int macro_index = 0, int macro_size = 0);
   bool CompileMicrocode();
+  bool CompileWordRegMicroArg(std::string_view arg_name, int8_t& arg);
   bool CompileMicroArg(std::string_view arg_name, MicroArgType arg_type,
                        int8_t& arg);
   bool ValidateMacroReturnRegister(ArgType arg_type, int8_t ret);
@@ -769,6 +770,46 @@ bool InstructionCompiler::CompileSubInstruction() {
         LOG(DFATAL) << "Unhandled register: " << arg1;
       }
     }
+    if (def->arg1 == MicroArgType::kRegByte &&
+        (state_.microcode->arg1 | CpuCore::kRegMaskBytes) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg1 = state_.microcode->arg1;
+      const int8_t mask1 = arg1 & CpuCore::kRegMaskBytes;
+      const int8_t reg1 = arg1 | CpuCore::kRegMaskBytes;
+      if (reg1 == CpuCore::MI) {
+        arg1 = (CpuCore::C0 + arg_offset) | mask1;
+      } else if (reg1 == CpuCore::MP0) {  // Also matches CpuCore::MP
+        arg1 = (macro_param0 & ~CpuCore::kRegMaskBytes) | mask1;
+      } else if (reg1 == CpuCore::MP1) {
+        arg1 = (macro_param1 & ~CpuCore::kRegMaskBytes) | mask1;
+      } else if (reg1 == CpuCore::MM0) {  // Also matches CpuCore::MM
+        arg1 = ((CpuCore::A0 - arg_offset) & ~CpuCore::kRegMaskBytes) | mask1;
+      } else if (reg1 == CpuCore::MM1) {
+        arg1 = ((CpuCore::A1 - arg_offset) & ~CpuCore::kRegMaskBytes) | mask1;
+      } else {
+        LOG(DFATAL) << "Unhandled register: " << reg1;
+      }
+    }
+    if (def->arg1 == MicroArgType::kRegNibble &&
+        (state_.microcode->arg1 | CpuCore::kRegMaskNibbles) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg1 = state_.microcode->arg1;
+      const int8_t mask1 = arg1 & CpuCore::kRegMaskNibbles;
+      const int8_t reg1 = arg1 | CpuCore::kRegMaskNibbles;
+      if (reg1 == CpuCore::MI) {
+        arg1 = (CpuCore::C0 + arg_offset) | mask1;
+      } else if (reg1 == CpuCore::MP0) {  // Also matches CpuCore::MP
+        arg1 = (macro_param0 & ~CpuCore::kRegMaskNibbles) | mask1;
+      } else if (reg1 == CpuCore::MP1) {
+        arg1 = (macro_param1 & ~CpuCore::kRegMaskNibbles) | mask1;
+      } else if (reg1 == CpuCore::MM0) {  // Also matches CpuCore::MM
+        arg1 = ((CpuCore::A0 - arg_offset) & ~CpuCore::kRegMaskNibbles) | mask1;
+      } else if (reg1 == CpuCore::MM1) {
+        arg1 = ((CpuCore::A1 - arg_offset) & ~CpuCore::kRegMaskNibbles) | mask1;
+      } else {
+        LOG(DFATAL) << "Unhandled register: " << reg1;
+      }
+    }
     if ((def->arg1 == MicroArgType::kStatus ||
          def->arg1 == MicroArgType::kCondition) &&
         state_.microcode->arg1 < CpuCore::kMinArgReg) {
@@ -795,6 +836,46 @@ bool InstructionCompiler::CompileSubInstruction() {
         arg2 = CpuCore::A1 - arg_offset;
       } else {
         LOG(DFATAL) << "Unhandled register: " << arg2;
+      }
+    }
+    if (def->arg2 == MicroArgType::kRegByte &&
+        (state_.microcode->arg2 | CpuCore::kRegMaskBytes) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg2 = state_.microcode->arg2;
+      const int8_t mask2 = arg2 & CpuCore::kRegMaskBytes;
+      const int8_t reg2 = arg2 | CpuCore::kRegMaskBytes;
+      if (reg2 == CpuCore::MI) {
+        arg2 = (CpuCore::C0 + arg_offset) | mask2;
+      } else if (reg2 == CpuCore::MP0) {  // Also matches CpuCore::MP
+        arg2 = (macro_param0 & ~CpuCore::kRegMaskBytes) | mask2;
+      } else if (reg2 == CpuCore::MP1) {
+        arg2 = (macro_param1 & ~CpuCore::kRegMaskBytes) | mask2;
+      } else if (reg2 == CpuCore::MM0) {  // Also matches CpuCore::MM
+        arg2 = ((CpuCore::A0 - arg_offset) & ~CpuCore::kRegMaskBytes) | mask2;
+      } else if (reg2 == CpuCore::MM1) {
+        arg2 = ((CpuCore::A1 - arg_offset) & ~CpuCore::kRegMaskBytes) | mask2;
+      } else {
+        LOG(DFATAL) << "Unhandled register: " << reg2;
+      }
+    }
+    if (def->arg2 == MicroArgType::kRegNibble &&
+        (state_.microcode->arg2 | CpuCore::kRegMaskNibbles) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg2 = state_.microcode->arg2;
+      const int8_t mask2 = arg2 & CpuCore::kRegMaskNibbles;
+      const int8_t reg2 = arg2 | CpuCore::kRegMaskNibbles;
+      if (reg2 == CpuCore::MI) {
+        arg2 = (CpuCore::C0 + arg_offset) | mask2;
+      } else if (reg2 == CpuCore::MP0) {  // Also matches CpuCore::MP
+        arg2 = (macro_param0 & ~CpuCore::kRegMaskNibbles) | mask2;
+      } else if (reg2 == CpuCore::MP1) {
+        arg2 = (macro_param1 & ~CpuCore::kRegMaskNibbles) | mask2;
+      } else if (reg2 == CpuCore::MM0) {  // Also matches CpuCore::MM
+        arg2 = ((CpuCore::A0 - arg_offset) & ~CpuCore::kRegMaskNibbles) | mask2;
+      } else if (reg2 == CpuCore::MM1) {
+        arg2 = ((CpuCore::A1 - arg_offset) & ~CpuCore::kRegMaskNibbles) | mask2;
+      } else {
+        LOG(DFATAL) << "Unhandled register: " << reg2;
       }
     }
     if ((def->arg2 == MicroArgType::kStatus ||
@@ -838,6 +919,30 @@ bool InstructionCompiler::CompileSubInstruction() {
         arg1 = macro_return1;
       }
     }
+    if (def->arg1 == MicroArgType::kRegByte &&
+        (state_.microcode->arg1 | CpuCore::kRegMaskBytes) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg1 = state_.microcode->arg1;
+      const int8_t mask1 = arg1 & CpuCore::kRegMaskBytes;
+      const int8_t reg1 = arg1 | CpuCore::kRegMaskBytes;
+      if (reg1 == CpuCore::MR0) {  // Also matches CpuCore::MR
+        arg1 = (macro_return0 & ~CpuCore::kRegMaskBytes) | mask1;
+      } else if (reg1 == CpuCore::MR1) {
+        arg1 = (macro_return1 & ~CpuCore::kRegMaskBytes) | mask1;
+      }
+    }
+    if (def->arg1 == MicroArgType::kRegNibble &&
+        (state_.microcode->arg1 | CpuCore::kRegMaskNibbles) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg1 = state_.microcode->arg1;
+      const int8_t mask1 = arg1 & CpuCore::kRegMaskNibbles;
+      const int8_t reg1 = arg1 | CpuCore::kRegMaskNibbles;
+      if (reg1 == CpuCore::MR0) {  // Also matches CpuCore::MR
+        arg1 = (macro_return0 & ~CpuCore::kRegMaskNibbles) | mask1;
+      } else if (reg1 == CpuCore::MR1) {
+        arg1 = (macro_return1 & ~CpuCore::kRegMaskNibbles) | mask1;
+      }
+    }
     if (((def->arg2 == MicroArgType::kWordReg) ||
          (def->arg2 == MicroArgType::kDwordReg)) &&
         state_.microcode->arg2 < CpuCore::kMinArgReg) {
@@ -846,6 +951,30 @@ bool InstructionCompiler::CompileSubInstruction() {
         arg2 = macro_return0;
       } else if (arg2 == CpuCore::MR1) {
         arg2 = macro_return1;
+      }
+    }
+    if (def->arg2 == MicroArgType::kRegByte &&
+        (state_.microcode->arg2 | CpuCore::kRegMaskBytes) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg2 = state_.microcode->arg2;
+      const int8_t mask2 = arg2 & CpuCore::kRegMaskBytes;
+      const int8_t reg2 = arg2 | CpuCore::kRegMaskBytes;
+      if (reg2 == CpuCore::MR0) {  // Also matches CpuCore::MR
+        arg2 = (macro_return0 & ~CpuCore::kRegMaskBytes) | mask2;
+      } else if (reg2 == CpuCore::MR1) {
+        arg2 = (macro_return1 & ~CpuCore::kRegMaskBytes) | mask2;
+      }
+    }
+    if (def->arg2 == MicroArgType::kRegNibble &&
+        (state_.microcode->arg2 | CpuCore::kRegMaskNibbles) <
+            CpuCore::kMinArgReg) {
+      int8_t& arg2 = state_.microcode->arg2;
+      const int8_t mask2 = arg2 & CpuCore::kRegMaskNibbles;
+      const int8_t reg2 = arg2 | CpuCore::kRegMaskNibbles;
+      if (reg2 == CpuCore::MR0) {  // Also matches CpuCore::MR
+        arg2 = (macro_return0 & ~CpuCore::kRegMaskNibbles) | mask2;
+      } else if (reg2 == CpuCore::MR1) {
+        arg2 = (macro_return1 & ~CpuCore::kRegMaskNibbles) | mask2;
       }
     }
   }
@@ -924,6 +1053,190 @@ bool InstructionCompiler::CompileMicrocode() {
   if (!CompileMicroArg(state_.parsed->arg2_name, def->arg2,
                        state_.microcode->arg2)) {
     return false;
+  }
+  return true;
+}
+
+bool InstructionCompiler::CompileWordRegMicroArg(std::string_view arg_name,
+                                                 int8_t& arg) {
+  if (arg_name == "a") {
+    if (state_.macro_code_def != nullptr) {
+      return Error(
+          "Macro code cannot reference instruction arguments (use \"m\" or "
+          "\"i\" for macro arguments)");
+    }
+    if (state_.arg1->type != ArgType::kWordReg) {
+      return Error("\"", arg_name, "\" is not a word register. Argument is ",
+                   ArgTypeToString(state_.arg1->type));
+    }
+    arg = CpuCore::A;
+  } else if (arg_name == "a0") {
+    if (state_.macro_code_def != nullptr) {
+      return Error(
+          "Macro code cannot reference instruction arguments (use \"m0\" "
+          "for macro arguments)");
+    }
+    if (state_.arg1->type != ArgType::kDwordReg) {
+      return Error("\"", arg_name, "\" is not a dwrod register. Argument is ",
+                   ArgTypeToString(state_.arg1->type));
+    }
+    arg = CpuCore::A0;
+  } else if (arg_name == "a1") {
+    if (state_.macro_code_def != nullptr) {
+      return Error(
+          "Macro code cannot reference instruction arguments (use \"m1\" "
+          "for macro arguments)");
+    }
+    if (state_.arg1->type != ArgType::kDwordReg) {
+      return Error("\"", arg_name, "\" is not a dwrod register. Argument is ",
+                   ArgTypeToString(state_.arg1->type));
+    }
+    arg = CpuCore::A1;
+  } else if (arg_name == "b") {
+    if (state_.macro_code_def != nullptr) {
+      return Error(
+          "Macro code cannot reference instruction arguments (use \"m\" or "
+          "\"i\" for macro arguments)");
+    }
+    if (state_.arg2->type != ArgType::kWordReg) {
+      return Error("\"", arg_name, "\" is not a word register. Argument is ",
+                   ArgTypeToString(state_.arg2->type));
+    }
+    arg = CpuCore::B;
+  } else if (arg_name == "b0") {
+    if (state_.macro_code_def != nullptr) {
+      return Error(
+          "Macro code cannot reference instruction arguments (use \"m0\" "
+          "for macro arguments)");
+    }
+    if (state_.arg2->type != ArgType::kDwordReg) {
+      return Error("\"", arg_name, "\" is not a dword register. Argument is ",
+                   ArgTypeToString(state_.arg2->type));
+    }
+    arg = CpuCore::B0;
+  } else if (arg_name == "b1") {
+    if (state_.macro_code_def != nullptr) {
+      return Error(
+          "Macro code cannot reference instruction arguments (use \"m1\" "
+          "for macro arguments)");
+    }
+    if (state_.arg2->type != ArgType::kDwordReg) {
+      return Error("\"", arg_name, "\" is not a dword register. Argument is ",
+                   ArgTypeToString(state_.arg2->type));
+    }
+    arg = CpuCore::B1;
+  } else if (arg_name == "i") {
+    if (state_.macro_code_def == nullptr) {
+      return Error(
+          "Instruction code cannot reference macro arguments (use "
+          "\"C0\"/\"C1\" for instruction immediate values)");
+    }
+    if (state_.argm->type != ArgType::kImmediate) {
+      return Error("Macro argument is not an immediate value. Argument is ",
+                   ArgTypeToString(state_.argm->type));
+    }
+    arg = CpuCore::MI;
+  } else if (arg_name == "m") {
+    if (state_.macro_code_def == nullptr) {
+      return Error(
+          "Instruction code cannot reference macro arguments (use "
+          "\"a\"/\"b\" for instruction arguments)");
+    }
+    if (state_.argm->type != ArgType::kWordReg) {
+      return Error("Macro argument is not a word register. Argument is ",
+                   ArgTypeToString(state_.argm->type));
+    }
+    arg = CpuCore::MM;
+  } else if (arg_name == "m0") {
+    if (state_.macro_code_def == nullptr) {
+      return Error(
+          "Instruction code cannot reference macro arguments (use "
+          "\"a0\"/\"b0\" for instruction arguments)");
+    }
+    if (state_.argm->type != ArgType::kDwordReg) {
+      return Error("Macro argument is not a dword register. Argument is ",
+                   ArgTypeToString(state_.argm->type));
+    }
+    arg = CpuCore::MM0;
+  } else if (arg_name == "m1") {
+    if (state_.macro_code_def == nullptr) {
+      return Error(
+          "Instruction code cannot reference macro arguments (use "
+          "\"a1\"/\"b1\" for instruction arguments)");
+    }
+    if (state_.argm->type != ArgType::kDwordReg) {
+      return Error("Macro argument is not a dword register. Argument is ",
+                   ArgTypeToString(state_.argm->type));
+    }
+    arg = CpuCore::MM1;
+  } else if (arg_name == "p") {
+    if (state_.macro_code_def == nullptr) {
+      return Error("Instruction code cannot reference macro parameter");
+    }
+    if (macro_def_->param != ArgType::kWordReg) {
+      return Error("Macro parameter is not a word register. Parameter is ",
+                   ArgTypeToString(macro_def_->param));
+    }
+    arg = CpuCore::MP;
+  } else if (arg_name == "p0") {
+    if (state_.macro_code_def == nullptr) {
+      return Error("Instruction code cannot reference macro parameter");
+    }
+    if (macro_def_->param != ArgType::kDwordReg) {
+      return Error("Macro parameter is not a dword register. Parameter is ",
+                   ArgTypeToString(macro_def_->param));
+    }
+    arg = CpuCore::MP0;
+  } else if (arg_name == "p1") {
+    if (state_.macro_code_def == nullptr) {
+      return Error("Instruction code cannot reference macro parameter");
+    }
+    if (macro_def_->param != ArgType::kDwordReg) {
+      return Error("Macro parameter is not a dword register. Parameter is ",
+                   ArgTypeToString(macro_def_->param));
+    }
+    arg = CpuCore::MP1;
+  } else if (arg_name == "r") {
+    if (state_.macro_code_def != nullptr) {
+      return Error("Macro code cannot reference its own return value");
+    }
+    if (!state_.macro_return_type.has_value()) {
+      return Error("Macro return type referenced before macro called");
+    }
+    if (*state_.macro_return_type != ArgType::kWordReg) {
+      return Error("Macro return type is not a word register. Return type is ",
+                   ArgTypeToString(*state_.macro_return_type));
+    }
+    arg = CpuCore::MR;
+  } else if (arg_name == "r0") {
+    if (state_.macro_code_def != nullptr) {
+      return Error("Macro code cannot reference its own return value");
+    }
+    if (!state_.macro_return_type.has_value()) {
+      return Error("Macro return type referenced before macro called");
+    }
+    if (*state_.macro_return_type != ArgType::kDwordReg) {
+      return Error("Macro return type is not a dword register. Return type is ",
+                   ArgTypeToString(*state_.macro_return_type));
+    }
+    arg = CpuCore::MR0;
+  } else if (arg_name == "r1") {
+    if (state_.macro_code_def != nullptr) {
+      return Error("Macro code cannot reference its own return value");
+    }
+    if (!state_.macro_return_type.has_value()) {
+      return Error("Macro return type referenced before macro called");
+    }
+    if (*state_.macro_return_type != ArgType::kDwordReg) {
+      return Error("Macro return type is not a dword register. Return type is ",
+                   ArgTypeToString(*state_.macro_return_type));
+    }
+    arg = CpuCore::MR1;
+  } else {
+    arg = CpuCore::GetWordRegFromName(arg_name);
+    if (arg == CpuCore::kInvalidReg) {
+      return Error("Invalid word argument: ", arg_name);
+    }
   }
   return true;
 }
@@ -1109,202 +1422,48 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       if (!absl::SimpleAtoi(arg_name, &value)) {
         return Error("Invalid argument: ", arg_name);
       }
-      if (value < -128 || value > 127) {
-        return Error("Value out of range [-128,127]: ", arg_name);
+      if (value < -128 || value > 255) {
+        return Error("Value out of range [-128,255]: ", arg_name);
       }
       arg = value;
       return true;
     } break;
-    case MicroArgType::kWordReg: {
-      if (arg_name == "a") {
-        if (state_.macro_code_def != nullptr) {
-          return Error(
-              "Macro code cannot reference instruction arguments (use \"m\" or "
-              "\"i\" for macro arguments)");
-        }
-        if (state_.arg1->type != ArgType::kWordReg) {
-          return Error("\"", arg_name,
-                       "\" is not a word register. Argument is ",
-                       ArgTypeToString(state_.arg1->type));
-        }
-        arg = CpuCore::A;
-      } else if (arg_name == "a0") {
-        if (state_.macro_code_def != nullptr) {
-          return Error(
-              "Macro code cannot reference instruction arguments (use \"m0\" "
-              "for macro arguments)");
-        }
-        if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("\"", arg_name,
-                       "\" is not a dwrod register. Argument is ",
-                       ArgTypeToString(state_.arg1->type));
-        }
-        arg = CpuCore::A0;
-      } else if (arg_name == "a1") {
-        if (state_.macro_code_def != nullptr) {
-          return Error(
-              "Macro code cannot reference instruction arguments (use \"m1\" "
-              "for macro arguments)");
-        }
-        if (state_.arg1->type != ArgType::kDwordReg) {
-          return Error("\"", arg_name,
-                       "\" is not a dwrod register. Argument is ",
-                       ArgTypeToString(state_.arg1->type));
-        }
-        arg = CpuCore::A1;
-      } else if (arg_name == "b") {
-        if (state_.macro_code_def != nullptr) {
-          return Error(
-              "Macro code cannot reference instruction arguments (use \"m\" or "
-              "\"i\" for macro arguments)");
-        }
-        if (state_.arg2->type != ArgType::kWordReg) {
-          return Error("\"", arg_name,
-                       "\" is not a word register. Argument is ",
-                       ArgTypeToString(state_.arg2->type));
-        }
-        arg = CpuCore::B;
-      } else if (arg_name == "b0") {
-        if (state_.macro_code_def != nullptr) {
-          return Error(
-              "Macro code cannot reference instruction arguments (use \"m0\" "
-              "for macro arguments)");
-        }
-        if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("\"", arg_name,
-                       "\" is not a dword register. Argument is ",
-                       ArgTypeToString(state_.arg2->type));
-        }
-        arg = CpuCore::B0;
-      } else if (arg_name == "b1") {
-        if (state_.macro_code_def != nullptr) {
-          return Error(
-              "Macro code cannot reference instruction arguments (use \"m1\" "
-              "for macro arguments)");
-        }
-        if (state_.arg2->type != ArgType::kDwordReg) {
-          return Error("\"", arg_name,
-                       "\" is not a dword register. Argument is ",
-                       ArgTypeToString(state_.arg2->type));
-        }
-        arg = CpuCore::B1;
-      } else if (arg_name == "i") {
-        if (state_.macro_code_def == nullptr) {
-          return Error(
-              "Instruction code cannot reference macro arguments (use "
-              "\"C0\"/\"C1\" for instruction immediate values)");
-        }
-        if (state_.argm->type != ArgType::kImmediate) {
-          return Error("Macro argument is not an immediate value. Argument is ",
-                       ArgTypeToString(state_.argm->type));
-        }
-        arg = CpuCore::MI;
-      } else if (arg_name == "m") {
-        if (state_.macro_code_def == nullptr) {
-          return Error(
-              "Instruction code cannot reference macro arguments (use "
-              "\"a\"/\"b\" for instruction arguments)");
-        }
-        if (state_.argm->type != ArgType::kWordReg) {
-          return Error("Macro argument is not a word register. Argument is ",
-                       ArgTypeToString(state_.argm->type));
-        }
-        arg = CpuCore::MM;
-      } else if (arg_name == "m0") {
-        if (state_.macro_code_def == nullptr) {
-          return Error(
-              "Instruction code cannot reference macro arguments (use "
-              "\"a0\"/\"b0\" for instruction arguments)");
-        }
-        if (state_.argm->type != ArgType::kDwordReg) {
-          return Error("Macro argument is not a dword register. Argument is ",
-                       ArgTypeToString(state_.argm->type));
-        }
-        arg = CpuCore::MM0;
-      } else if (arg_name == "m1") {
-        if (state_.macro_code_def == nullptr) {
-          return Error(
-              "Instruction code cannot reference macro arguments (use "
-              "\"a1\"/\"b1\" for instruction arguments)");
-        }
-        if (state_.argm->type != ArgType::kDwordReg) {
-          return Error("Macro argument is not a dword register. Argument is ",
-                       ArgTypeToString(state_.argm->type));
-        }
-        arg = CpuCore::MM1;
-      } else if (arg_name == "p") {
-        if (state_.macro_code_def == nullptr) {
-          return Error("Instruction code cannot reference macro parameter");
-        }
-        if (macro_def_->param != ArgType::kWordReg) {
-          return Error("Macro parameter is not a word register. Parameter is ",
-                       ArgTypeToString(macro_def_->param));
-        }
-        arg = CpuCore::MP;
-      } else if (arg_name == "p0") {
-        if (state_.macro_code_def == nullptr) {
-          return Error("Instruction code cannot reference macro parameter");
-        }
-        if (macro_def_->param != ArgType::kDwordReg) {
-          return Error("Macro parameter is not a dword register. Parameter is ",
-                       ArgTypeToString(macro_def_->param));
-        }
-        arg = CpuCore::MP0;
-      } else if (arg_name == "p1") {
-        if (state_.macro_code_def == nullptr) {
-          return Error("Instruction code cannot reference macro parameter");
-        }
-        if (macro_def_->param != ArgType::kDwordReg) {
-          return Error("Macro parameter is not a dword register. Parameter is ",
-                       ArgTypeToString(macro_def_->param));
-        }
-        arg = CpuCore::MP1;
-      } else if (arg_name == "r") {
-        if (state_.macro_code_def != nullptr) {
-          return Error("Macro code cannot reference its own return value");
-        }
-        if (!state_.macro_return_type.has_value()) {
-          return Error("Macro return type referenced before macro called");
-        }
-        if (*state_.macro_return_type != ArgType::kWordReg) {
-          return Error(
-              "Macro return type is not a word register. Return type is ",
-              ArgTypeToString(*state_.macro_return_type));
-        }
-        arg = CpuCore::MR;
-      } else if (arg_name == "r0") {
-        if (state_.macro_code_def != nullptr) {
-          return Error("Macro code cannot reference its own return value");
-        }
-        if (!state_.macro_return_type.has_value()) {
-          return Error("Macro return type referenced before macro called");
-        }
-        if (*state_.macro_return_type != ArgType::kDwordReg) {
-          return Error(
-              "Macro return type is not a dword register. Return type is ",
-              ArgTypeToString(*state_.macro_return_type));
-        }
-        arg = CpuCore::MR0;
-      } else if (arg_name == "r1") {
-        if (state_.macro_code_def != nullptr) {
-          return Error("Macro code cannot reference its own return value");
-        }
-        if (!state_.macro_return_type.has_value()) {
-          return Error("Macro return type referenced before macro called");
-        }
-        if (*state_.macro_return_type != ArgType::kDwordReg) {
-          return Error(
-              "Macro return type is not a dword register. Return type is ",
-              ArgTypeToString(*state_.macro_return_type));
-        }
-        arg = CpuCore::MR1;
+    case MicroArgType::kRegByte: {
+      std::pair<std::string_view, std::string_view> reg_parts =
+          absl::StrSplit(arg_name, ':');
+      if (!CompileWordRegMicroArg(reg_parts.first, arg)) {
+        return false;
+      }
+      if (reg_parts.second == "l" || reg_parts.second == "L") {
+        arg = (arg & ~CpuCore::kRegMaskBytes) | CpuCore::kRegMaskByte0;
+      } else if (reg_parts.second == "h" || reg_parts.second == "H") {
+        arg = (arg & ~CpuCore::kRegMaskBytes) | CpuCore::kRegMaskByte1;
       } else {
-        arg = CpuCore::GetWordRegFromName(arg_name);
-        if (arg == CpuCore::kInvalidReg) {
-          return Error("Invalid word argument: ", arg_name);
-        }
+        return Error("Invalid register byte: ", arg_name);
       }
       return true;
+    } break;
+    case MicroArgType::kRegNibble: {
+      std::pair<std::string_view, std::string_view> reg_parts =
+          absl::StrSplit(arg_name, ':');
+      if (!CompileWordRegMicroArg(reg_parts.first, arg)) {
+        return false;
+      }
+      if (reg_parts.second == "0") {
+        arg = (arg & ~CpuCore::kRegMaskNibbles) | CpuCore::kRegMaskNibble0;
+      } else if (reg_parts.second == "1") {
+        arg = (arg & ~CpuCore::kRegMaskNibbles) | CpuCore::kRegMaskNibble1;
+      } else if (reg_parts.second == "2") {
+        arg = (arg & ~CpuCore::kRegMaskNibbles) | CpuCore::kRegMaskNibble2;
+      } else if (reg_parts.second == "3") {
+        arg = (arg & ~CpuCore::kRegMaskNibbles) | CpuCore::kRegMaskNibble3;
+      } else {
+        return Error("Invalid register nibble: ", arg_name);
+      }
+      return true;
+    } break;
+    case MicroArgType::kWordReg: {
+      return CompileWordRegMicroArg(arg_name, arg);
     } break;
     case MicroArgType::kDwordReg: {
       if (arg_name == "A") {

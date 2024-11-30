@@ -47,6 +47,10 @@ enum MicroOp : uint8_t {
   kMicro_STP,   // STP(r);
   kMicro_MOVI,  // MOVI(r,v);
   kMicro_MOV,   // MOV(r,r);
+  kMicro_MVBI,  // MVBI(rb,v);
+  kMicro_MVB,   // MVB(rb,rb);
+  kMicro_MVNI,  // MVBI(rn,v);
+  kMicro_MVN,   // MVB(rn,rn);
   kMicro_ADDI,  // ADDI(r,v);
   kMicro_ADD,   // ADD(r,r);
   kMicro_ADC,   // ADC(r,r);
@@ -99,6 +103,8 @@ enum class MicroArgType {
   kValue,      // Signed 8-bit value: [-128,127].
   kWordReg,    // Word register.
   kDwordReg,   // Dword register.
+  kRegByte,    // Byte of a word register.
+  kRegNibble,  // Nibble of a word register.
 };
 
 // Converts an ArgType to a MicroArgType.

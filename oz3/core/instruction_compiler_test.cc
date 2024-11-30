@@ -213,10 +213,147 @@ TEST(InstructionCompilerTest, ImmediateArg) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(0)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(127)"), error));
+  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(255)"), error));
   EXPECT_THAT(error, IsEmpty());
-  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(128)"), error));
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(256)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(InstructionCompilerTest, InstructionRegByteArg) {
+  constexpr MicrocodeDef kMicroWordArg1 = {kMicro_TEST, "TEST",
+                                           MicroArgType::kRegByte};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(a:h)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(a:l)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1,
+                           MakeDef(ArgType::kWordReg, "TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:h)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:l)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:H)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:L)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty()));
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":h)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":H)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":l)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":L)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+  }
+  for (std::string_view reg_name : CpuCore::GetDwordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":H)")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":L)")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+  }
+}
+
+TEST(InstructionCompilerTest, InstructionRegNibbleArg) {
+  constexpr MicrocodeDef kMicroWordArg1 = {kMicro_TEST, "TEST",
+                                           MicroArgType::kRegNibble};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(a:0)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1, MakeDef("TEST(a:1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroWordArg1,
+                           MakeDef(ArgType::kWordReg, "TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:0)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:1)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:2)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:3)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroWordArg1,
+                          MakeDef(ArgType::kWordReg, "TEST(a:4)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty()));
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":0)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":1)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":2)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_TRUE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":3)")), error))
+        << context;
+    EXPECT_THAT(error, IsEmpty()) << context;
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":4)")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty()));
+  }
+  for (std::string_view reg_name : CpuCore::GetDwordRegisterNames()) {
+    std::string context = absl::StrCat("Context: ", reg_name);
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ")")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":0)")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+    EXPECT_FALSE(TestCompile(
+        kMicroWordArg1, MakeDef(absl::StrCat("TEST(", reg_name, ":1)")), error))
+        << context;
+    EXPECT_THAT(error, Not(IsEmpty())) << context;
+  }
 }
 
 TEST(InstructionCompilerTest, InstructionWordRegArg) {

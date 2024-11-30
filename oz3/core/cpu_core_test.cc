@@ -49,6 +49,10 @@ enum MicroTestOp : uint8_t {
   kTestOp_MOV_ST,
   kTestOp_MOVI,
   kTestOp_MOV,
+  kTestOp_MVBI,
+  kTestOp_MVB,
+  kTestOp_MVNI,
+  kTestOp_MVN,
   kTestOp_LV,
   kTestOp_MSSC,
   kTestOp_MSX,
@@ -299,6 +303,47 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg2 = {ArgType::kWordReg, 4},
      .code = "UL;"
              "MOV(a,b);"},
+    {.op = kTestOp_MVBI,
+     .op_name = "MVBI",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "LD(C2);UL;"
+             "CMP(C2,C0);JC(Z,@low);"
+             "@high:MVBI(a:h,142);MVBI(b:h,142);MVBI(SP:h,142);END;"
+             "@low:MVBI(a:l,142);MVBI(b:l,142);MVBI(SP:l,142);"},
+    {.op = kTestOp_MVB,
+     .op_name = "MVB",
+     .arg1 = {ArgType::kWordReg, 4},
+     .arg2 = {ArgType::kWordReg, 4},
+     .code = "LD(C2);UL;"
+             "CMP(C2,C0);"
+             "JC(Z,@low);"
+             "@high:MVB(a:h,b:l);MVB(SP:h,FP:l);END;"
+             "@low:MVB(a:l,b:h);MVB(SP:l,FP:h);"},
+    {.op = kTestOp_MVNI,
+     .op_name = "MVNI",
+     .arg1 = ArgType::kWordReg,
+     .arg2 = ArgType::kWordReg,
+     .code = "LD(C2);UL;"
+             "CMP(C2,C0);JC(Z,@nib0);"
+             "MOVI(C0,1);CMP(C2,C0);JC(Z,@nib1);"
+             "MOVI(C0,2);CMP(C2,C0);JC(Z,@nib2);"
+             "@nib3:MVNI(a:3,9);MVNI(b:3,9);MVNI(SP:3,9);END;"
+             "@nib2:MVNI(a:2,9);MVNI(b:2,9);MVNI(SP:2,9);END;"
+             "@nib1:MVNI(a:1,9);MVNI(b:1,9);MVNI(SP:1,9);END;"
+             "@nib0:MVNI(a:0,9);MVNI(b:0,9);MVNI(SP:0,9);"},
+    {.op = kTestOp_MVN,
+     .op_name = "MVN",
+     .arg1 = {ArgType::kWordReg, 4},
+     .arg2 = {ArgType::kWordReg, 4},
+     .code = "LD(C2);UL;"
+             "CMP(C2,C0);JC(Z,@nib0);"
+             "MOVI(C0,1);CMP(C2,C0);JC(Z,@nib1);"
+             "MOVI(C0,2);CMP(C2,C0);JC(Z,@nib2);"
+             "@nib3:MVN(a:3,b:0);MVN(SP:3,FP:0);END;"
+             "@nib2:MVN(a:2,b:1);MVN(SP:2,FP:1);END;"
+             "@nib1:MVN(a:1,b:2);MVN(SP:1,FP:2);END;"
+             "@nib0:MVN(a:0,b:3);MVN(SP:0,FP:3);"},
     {.op = kTestOp_LV,
      .op_name = "LV",
      .arg1 = ArgType::kWordReg,
@@ -1771,6 +1816,170 @@ TEST(CpuCoreTest, MoviOp) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, MvbiOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R1, 0x1111);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x2222);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x3333);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x4444);
+  core.SetWordRegister(*lock, CpuCore::SP, 0xAAAA);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MVBI, CpuCore::R1, CpuCore::R2).AddValue(0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVBI, CpuCore::R3, CpuCore::R4).AddValue(1);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  EXPECT_EQ(state.r1, 0x118E);
+  EXPECT_EQ(state.r2, 0x228E);
+  EXPECT_EQ(state.sp, 0xAA8E);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.r3, 0x8E33);
+  EXPECT_EQ(state.r4, 0x8E44);
+  EXPECT_EQ(state.sp, 0x8E8E);
+}
+
+TEST(CpuCoreTest, MvbOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R1, 0x1122);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x3344);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x5566);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x7788);
+  core.SetWordRegister(*lock, CpuCore::FP, 0xAABB);
+  core.SetWordRegister(*lock, CpuCore::SP, 0xEEEE);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MVB, CpuCore::R1, CpuCore::R2).AddValue(0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVB, CpuCore::R3, CpuCore::R4).AddValue(1);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  EXPECT_EQ(state.r1, 0x1133);
+  EXPECT_EQ(state.sp, 0xEEAA);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.r3, 0x8866);
+  EXPECT_EQ(state.sp, 0xBBAA);
+}
+
+TEST(CpuCoreTest, MvniOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x1111);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x2222);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x3333);
+  core.SetWordRegister(*lock, CpuCore::R3, 0x4444);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x5555);
+  core.SetWordRegister(*lock, CpuCore::R5, 0x6666);
+  core.SetWordRegister(*lock, CpuCore::R6, 0x7777);
+  core.SetWordRegister(*lock, CpuCore::R7, 0x8888);
+  core.SetWordRegister(*lock, CpuCore::SP, 0xAAAA);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MVNI, CpuCore::R0, CpuCore::R1).AddValue(0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVNI, CpuCore::R2, CpuCore::R3).AddValue(1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVNI, CpuCore::R4, CpuCore::R5).AddValue(2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVNI, CpuCore::R6, CpuCore::R7).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  EXPECT_EQ(state.r0, 0x1119);
+  EXPECT_EQ(state.r1, 0x2229);
+  EXPECT_EQ(state.sp, 0xAAA9);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip2; });
+  EXPECT_EQ(state.r2, 0x3393);
+  EXPECT_EQ(state.r3, 0x4494);
+  EXPECT_EQ(state.sp, 0xAA99);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip3; });
+  EXPECT_EQ(state.r4, 0x5955);
+  EXPECT_EQ(state.r5, 0x6966);
+  EXPECT_EQ(state.sp, 0xA999);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.r6, 0x9777);
+  EXPECT_EQ(state.r7, 0x9888);
+  EXPECT_EQ(state.sp, 0x9999);
+}
+
+TEST(CpuCoreTest, MvnOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x1234);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x5678);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x9ABC);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xDEF0);
+  core.SetWordRegister(*lock, CpuCore::R4, 0x1234);
+  core.SetWordRegister(*lock, CpuCore::R5, 0x5678);
+  core.SetWordRegister(*lock, CpuCore::R6, 0x9ABC);
+  core.SetWordRegister(*lock, CpuCore::R7, 0xDEF0);
+  core.SetWordRegister(*lock, CpuCore::FP, 0xABCD);
+  core.SetWordRegister(*lock, CpuCore::SP, 0xEEEE);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_MVN, CpuCore::R0, CpuCore::R1).AddValue(0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVN, CpuCore::R2, CpuCore::R3).AddValue(1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVN, CpuCore::R4, CpuCore::R5).AddValue(2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_MVN, CpuCore::R6, CpuCore::R7).AddValue(3);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip1; });
+  EXPECT_EQ(state.r0, 0x1235);
+  EXPECT_EQ(state.sp, 0xEEEA);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip2; });
+  EXPECT_EQ(state.r2, 0x9AEC);
+  EXPECT_EQ(state.sp, 0xEEBA);
+
+  ExecuteUntil(processor, state, [&]() { return state.pc == ip3; });
+  EXPECT_EQ(state.r4, 0x1734);
+  EXPECT_EQ(state.sp, 0xECBA);
+
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.r6, 0x0ABC);
+  EXPECT_EQ(state.sp, 0xDCBA);
 }
 
 TEST(CpuCoreTest, MstsMstcOps) {

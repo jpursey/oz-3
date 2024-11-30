@@ -81,7 +81,7 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int C1 = 17;  // Cache register 1 (second arg or zero)
   static constexpr int C2 = 18;  // Cache register 2 (zero)
   static constexpr int CD = C0;  // Cache 32-bit register (C0,C1)
- 
+
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Instruction argument register indexes from microcode
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -130,6 +130,30 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int8_t kMinVirtualReg = MI;  // Min virtual register index
 
   static constexpr int8_t kInvalidReg = kMinVirtualReg - 1;
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Register masks can be combined with an register index to specify a byte or
+  // nibble within the register. This is used with the MVB,/ MVBI, MVN, and MVNI
+  // microcode instructions to move or set data bytes and nibbles within
+  // registers.
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // Amount the mask is shifted in the microcode argument parameter.
+  static constexpr int kRegMaskShift = 5;
+  static_assert(kRegisterCount <= (1 << kRegMaskShift));
+  static_assert(-kMinVirtualReg < (1 << kRegMaskShift));
+
+  // Used with MVB and MVBI micro instructions
+  static constexpr int8_t kRegMaskByte0 = 0 << kRegMaskShift;
+  static constexpr int8_t kRegMaskByte1 = 1 << kRegMaskShift;
+  static constexpr int8_t kRegMaskBytes = 1 << kRegMaskShift;  // Mask of mask
+
+  // Used with MVN and MVNI micro instructions
+  static constexpr int8_t kRegMaskNibble0 = 0 << kRegMaskShift;
+  static constexpr int8_t kRegMaskNibble1 = 1 << kRegMaskShift;
+  static constexpr int8_t kRegMaskNibble2 = 2 << kRegMaskShift;
+  static constexpr int8_t kRegMaskNibble3 = 3 << kRegMaskShift;
+  static constexpr int8_t kRegMaskNibbles = 3 << kRegMaskShift;  // Mask of mask
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Status flags in the ST register. The upper byte of the ST register is for
