@@ -96,6 +96,7 @@ inline constexpr Cycles kCpuCoreCycles_ADDI = 1;
 inline constexpr Cycles kCpuCoreCycles_SUB = 1;
 inline constexpr Cycles kCpuCoreCycles_SBC = 1;
 inline constexpr Cycles kCpuCoreCycles_NEG = 1;
+inline constexpr Cycles kCpuCoreCycles_TST = 1;
 inline constexpr Cycles kCpuCoreCycles_CMP = 1;
 inline constexpr Cycles kCpuCoreCycles_NOT = 1;
 inline constexpr Cycles kCpuCoreCycles_AND = 1;

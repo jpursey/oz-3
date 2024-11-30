@@ -51,6 +51,7 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_SUB, "SUB", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_SBC, "SBC", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_NEG, "NEG", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_TST, "TST", MicroArgType::kWordReg},
     {kMicro_CMP, "CMP", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_NOT, "NOT", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_AND, "AND", MicroArgType::kWordReg, MicroArgType::kWordReg},

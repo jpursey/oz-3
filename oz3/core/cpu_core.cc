@@ -717,6 +717,13 @@ void CpuCore::RunInstructionLoop() {
         mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | ((r == 0x8000) << OShift);
         exec_cycles_ += kCpuCoreCycles_NEG;
       } break;
+      case kMicro_TST: {
+        OZ3_INIT_REG1;
+        const uint16_t r = r_[reg1];
+        const uint16_t rs = (r >> 15);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S;
+        exec_cycles_ += kCpuCoreCycles_TST;
+      } break;
       case kMicro_CMP: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;

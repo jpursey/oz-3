@@ -66,6 +66,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_ADC,
   kTestOp_SBC,
   kTestOp_NEG,
+  kTestOp_TST,
   kTestOp_CMP,
   kTestOp_NOT,
   kTestOp_AND,
@@ -453,6 +454,12 @@ const InstructionDef kMicroTestInstructions[] = {
      .arg2 = ArgType::kWordReg,
      .code = "UL;"
              "NEG(a,b);"
+             "MSR(ZSCO,ZSCO);"},
+    {.op = kTestOp_TST,
+     .op_name = "TST",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "TST(a);"
              "MSR(ZSCO,ZSCO);"},
     {.op = kTestOp_CMP,
      .op_name = "CMP",
@@ -2893,6 +2900,46 @@ TEST(CpuCoreTest, NegOp) {
   // Execute the HALT instruction.
   processor.Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
+}
+
+TEST(CpuCoreTest, TstOp) {
+  Processor processor(ProcessorConfig::OneCore(GetMicroTestInstructionSet()));
+  CpuCore& core = *processor.GetCore(0);
+  CoreState state(core);
+  state.ResetCore();
+
+  auto lock = core.RequestLock();
+  core.SetWordRegister(*lock, CpuCore::R0, 0x0000);
+  core.SetWordRegister(*lock, CpuCore::R1, 0x0001);
+  core.SetWordRegister(*lock, CpuCore::R2, 0x8000);
+  core.SetWordRegister(*lock, CpuCore::R3, 0xFFFF);
+  lock.reset();
+
+  MemAccessor mem(*processor.GetMemory(0));
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::Z);
+  mem.AddCode(kTestOp_TST, CpuCore::R0);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip1 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO);
+  mem.AddCode(kTestOp_TST, CpuCore::R1);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip2 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_TST, CpuCore::R2);
+  mem.AddCode(kTestOp_NOP);
+  const uint16_t ip3 = mem.GetAddress();
+  mem.AddCode(kTestOp_ZSCO, CpuCore::ZSCO - CpuCore::S);
+  mem.AddCode(kTestOp_TST, CpuCore::R3);
+  mem.AddCode(kTestOp_HALT);
+
+  ExecuteUntil(processor, state, [&] { return state.ip == ip1; });
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip2; });
+  EXPECT_EQ(state.st, 0);
+  ExecuteUntil(processor, state, [&] { return state.ip == ip3; });
+  EXPECT_EQ(state.st, CpuCore::S);
+  ExecuteUntilHalt(processor, state);
+  EXPECT_EQ(state.st, CpuCore::S);
 }
 
 TEST(CpuCoreTest, CmpOp) {

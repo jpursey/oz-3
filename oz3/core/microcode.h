@@ -57,6 +57,7 @@ enum MicroOp : uint8_t {
   kMicro_SUB,   // SUB(r,r);
   kMicro_SBC,   // SBC(r,r);
   kMicro_NEG,   // NEG(r,r);
+  kMicro_TST,   // TST(r);
   kMicro_CMP,   // CMP(r,r);
   kMicro_NOT,   // NOT(r,r);
   kMicro_AND,   // AND(r,r);
