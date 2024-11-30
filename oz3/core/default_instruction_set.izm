@@ -86,7 +86,6 @@ macro(bits:5) GetDword:R {
 # returns zero
 #
 # Ends fetch phase.
-# Requires C1=0
 # Modifies C0, C2.
 macro(bits:5) Get16BitMask:r {
   code:C0 "$r" {
@@ -99,7 +98,7 @@ macro(bits:5) Get16BitMask:r {
   @start:
     MOV(C2,m);
     MOVI(C0,1);
-    CMP(m,C1);
+    TST(m);
     JC(Z,@done);
   @shift:
     SL(C0);
@@ -157,7 +156,6 @@ macro(bits:5) Get16BitMask:r {
 # returns zero
 #
 # Ends fetch phase.
-# Requires: C0=0 and C1=0
 # Modifies: C0, C1, C2
 macro(bits:6) Get32BitMask:R {
   code:CD "$r" {
@@ -167,7 +165,7 @@ macro(bits:6) Get32BitMask:R {
     JC(S,@upper);
     JC(Z,@sixteen);
     MOVI(C0,1);
-    CMP(m,C1);
+    TST(m);
     JC(Z,@done);
     MOV(C2,m);
   @shift_lower:
@@ -187,7 +185,7 @@ macro(bits:6) Get32BitMask:R {
     MOV(C2,m);
     ADDI(C2,-16);
     MOVI(C1,1);
-    CMP(C2,C0);
+    TST(C2);
     JC(Z,@done);
   @shift_upper:
     SL(C1);
@@ -1151,7 +1149,7 @@ instruction XOR.D "$R, $m" {
 macro(bits:5) LogicalShiftLeft16(p) {
   code "$r" {
     # Shift zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Shift > 16 bits?
@@ -1173,7 +1171,7 @@ macro(bits:5) LogicalShiftLeft16(p) {
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -1256,7 +1254,7 @@ instruction SHL.W "$r, $m" {
 macro(bits:6) LogicalShiftLeft32(P) {
   code "$r" {
     # Shift zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Shift > 32 bits?
@@ -1278,7 +1276,7 @@ macro(bits:6) LogicalShiftLeft32(P) {
     END;
 
   @zero:
-    CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZCSO,CSO);
+    TST(p0); MSR(Z,Z); TST(p1); MSR(ZCSO,CSO);
   }
 
   code "1" {
@@ -1378,7 +1376,7 @@ macro(bits:6) LogicalShiftLeft32(P) {
   }
   code "16" {
     SR(p1); MSR(C,C); MOV(p1,p0); MOVI(p0,0);
-    CMP(p1,C0); MSR(ZSO,ZSO);
+    TST(p1); MSR(ZSO,ZSO);
   }
   code "17" {
     MOV(p1,p0); MOVI(p0,0);
@@ -1491,7 +1489,7 @@ instruction SHL.D "$R, $m" {
 macro(bits:5) LogicalShiftRight16(p) {
   code "$r" {
     # Shift zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Shift > 16 bits?
@@ -1513,7 +1511,7 @@ macro(bits:5) LogicalShiftRight16(p) {
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -1596,7 +1594,7 @@ instruction SHR.W "$r, $m" {
 macro(bits:6) LogicalShiftRight32(P) {
   code "$r" {
     # Shift zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Shift > 32 bits?
@@ -1618,7 +1616,7 @@ macro(bits:6) LogicalShiftRight32(P) {
     END;
 
   @zero:
-    CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZCSO,CSO);
+    TST(p0); MSR(Z,Z); TST(p1); MSR(ZCSO,CSO);
   }
 
   code "1" {
@@ -1718,7 +1716,7 @@ macro(bits:6) LogicalShiftRight32(P) {
   }
   code "16" {
     SL(p0); MSR(C,C); MOV(p0,p1); MOVI(p1,0);
-    CMP(p0,C0); MSC(S); MSR(ZSO,ZSO);
+    TST(p0); MSC(S); MSR(ZSO,ZSO);
   }
   code "17" {
     MOV(p0,p1); MOVI(p1,0);
@@ -1831,7 +1829,7 @@ instruction SHR.D "$R, $m" {
 macro(bits:5) ArithmeticShiftRight16(p) {
   code "$r" {
     # Shift zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Shift > 16 bits?
@@ -1848,7 +1846,7 @@ macro(bits:5) ArithmeticShiftRight16(p) {
     END;
 
   @max:
-    CMP(p,C0);
+    TST(p);
     JC(S,@signed_max);
     MOVI(p,0);
     MSC(SCO); MSS(Z); MSR(SCO,Z);
@@ -1860,7 +1858,7 @@ macro(bits:5) ArithmeticShiftRight16(p) {
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -1949,7 +1947,7 @@ instruction SRA.W "$r, $m" {
 macro(bits:6) ArithmeticShiftRight32(P) {
   code "$r" {
     # Shift zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Shift > 32 bits?
@@ -1966,7 +1964,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     END;
 
   @max:
-    CMP(p1,C0);
+    TST(p1);
     JC(S,@signed_max);
     MOVI(p0,0); MOVI(p1,0);
     MSC(SCO); MSS(Z); MSR(SCO,Z);
@@ -1978,7 +1976,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     END;
 
   @zero:
-    CMP(p0,C0); MSR(Z,Z); CMP(p1,C0); MSR(ZCSO,CSO);
+    TST(p0); MSR(Z,Z); TST(p1); MSR(ZCSO,CSO);
   }
 
   code "1" {
@@ -2075,10 +2073,10 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "16" {
     SL(p0); MSR(C,C); MOV(p0,p1); 
-    CMP(p0,C0);
+    TST(p0);
     JC(S,@negative);
     MOVI(p1,0);
-    CMP(p0,C0); MSC(S); MSR(ZSO,ZSO);
+    TST(p0); MSC(S); MSR(ZSO,ZSO);
     END;
   @negative:
     MOVI(p1,-1);
@@ -2086,7 +2084,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "17" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2096,7 +2094,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "18" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2107,7 +2105,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "19" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2118,7 +2116,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "20" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2129,7 +2127,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "21" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2140,7 +2138,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "22" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2152,7 +2150,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "23" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2164,7 +2162,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "24" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2176,7 +2174,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "25" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2189,7 +2187,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "26" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2202,7 +2200,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "27" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2215,7 +2213,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "28" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2228,7 +2226,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "29" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2241,7 +2239,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "30" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2255,7 +2253,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "31" {
     MOV(p0,p1); 
-    CMP(p1,C0); JC(S,@negative);
+    TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
     MOVI(p1,-1);
@@ -2301,7 +2299,7 @@ instruction SRA.D "$R, $m" {
 macro(bits:5) RotateLeft16(p) {
   code "$r" {
     # Rotate zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Rotate modulo 16 bits?
@@ -2319,12 +2317,12 @@ macro(bits:5) RotateLeft16(p) {
   @sixteen:
     MOV(C2,p);
     SR(C2); MSR(C,C);
-    CMP(p,C0);
+    TST(p);
     MSR(ZSO,ZSO);
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -2397,7 +2395,7 @@ macro(bits:5) RotateLeft16(p) {
   code "16" {
     MOV(C2,p);
     SR(C2); MSR(C,C);
-    CMP(p,C0);
+    TST(p);
     MSR(ZSO,ZSO);
   }
 }
@@ -2447,7 +2445,7 @@ instruction ROL.D "$R, $m" {
   $GetRotateCount32;
 
   # Rotate zero bits?
-  CMP(r,C0);
+  TST(r);
   JC(Z,@zero);
 
   # Rotate modulo 32 bits?
@@ -2467,12 +2465,12 @@ instruction ROL.D "$R, $m" {
 @thirtytwo:
   MOV(C2,a0);
   SR(C2); MSR(C,C);
-  CMP(a0,C0); MSR(Z,Z);
-  CMP(a1,C0); MSR(ZSO,SO);
+  TST(a0); MSR(Z,Z);
+  TST(a1); MSR(ZSO,SO);
   END;
 
 @zero:
-  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+  TST(a0); MSR(Z,Z); TST(a1); MSR(ZCSO,CSO);
 }
 
 ################################################################################
@@ -2494,7 +2492,7 @@ instruction ROL.D "$R, $m" {
 macro(bits:5) RotateRight16(p) {
   code "$r" {
     # Rotate zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # Rotate modulo 16 bits?
@@ -2512,12 +2510,12 @@ macro(bits:5) RotateRight16(p) {
   @sixteen:
     MOV(C2,p);
     SL(C2); MSR(C,C);
-    CMP(p,C0);
+    TST(p);
     MSR(ZSO,ZSO);
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -2590,7 +2588,7 @@ macro(bits:5) RotateRight16(p) {
   code "16" {
     MOV(C2,p);
     SR(C2); MSR(C,C);
-    CMP(p,C0);
+    TST(p);
     MSR(ZSO,ZSO);
   }
 }
@@ -2604,7 +2602,7 @@ instruction ROR.D "$R, $m" {
   $GetRotateCount32;
 
   # Rotate zero bits?
-  CMP(r,C0);
+  TST(r);
   JC(Z,@zero);
 
   # Rotate modulo 32 bits?
@@ -2623,12 +2621,12 @@ instruction ROR.D "$R, $m" {
 @thirtytwo:
   MOV(C2,a0);
   SR(C2); MSR(C,C);
-  CMP(a0,C0); MSR(Z,Z);
-  CMP(a1,C0); MSR(ZSO,SO);
+  TST(a0); MSR(Z,Z);
+  TST(a1); MSR(ZSO,SO);
   END;
 
 @zero:
-  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+  TST(a0); MSR(Z,Z); TST(a1); MSR(ZCSO,CSO);
 }
 
 ################################################################################
@@ -2650,7 +2648,7 @@ instruction ROR.D "$R, $m" {
 macro(bits:5) RotateLeft16ThroughCarry(p) {
   code "$r" {
     # Rotate zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # TODO: Modulo rotate 17 if it is too big.
@@ -2663,7 +2661,7 @@ macro(bits:5) RotateLeft16ThroughCarry(p) {
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -2785,7 +2783,7 @@ instruction RLC.D "$R, $m" {
   $GetRotateCount32ThroughCarry;
 
   # Rotate zero bits?
-  CMP(r,C0);
+  TST(r);
   JC(Z,@zero);
 
   # TODO: Modulo rotate 33 if it is too big.
@@ -2798,7 +2796,7 @@ instruction RLC.D "$R, $m" {
   END;
 
 @zero:
-  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+  TST(a0); MSR(Z,Z); TST(a1); MSR(ZCSO,CSO);
 }
 
 ################################################################################
@@ -2820,7 +2818,7 @@ instruction RLC.D "$R, $m" {
 macro(bits:5) RotateRight16ThroughCarry(p) {
   code "$r" {
     # Rotate zero bits?
-    CMP(m,C0);
+    TST(m);
     JC(Z,@zero);
 
     # TODO: Modulo rotate 17 if it is too big.
@@ -2833,7 +2831,7 @@ macro(bits:5) RotateRight16ThroughCarry(p) {
     END;
 
   @zero:
-    CMP(p,C0); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSCO,ZSCO);
   }
 
   code "1" {
@@ -2919,7 +2917,7 @@ instruction RRC.D "$R, $m" {
   $GetRotateCount32ThroughCarry;
 
   # Rotate zero bits?
-  CMP(r,C0);
+  TST(r);
   JC(Z,@zero);
 
   # TODO: Modulo rotate 33 if it is too big.
@@ -2932,7 +2930,7 @@ instruction RRC.D "$R, $m" {
   END;
 
 @zero:
-  CMP(a0,C0); MSR(Z,Z); CMP(a1,C0); MSR(ZCSO,CSO);
+  TST(a0); MSR(Z,Z); TST(a1); MSR(ZCSO,CSO);
 }
 
 ################################################################################
@@ -3091,15 +3089,15 @@ instruction NOTF "$#4" {
 
 instruction TST.W "$m" {
   $GetWord;
-  CMP(r,C0);
+  TST(r);
   MSR(ZSCO,ZSCO);
 }
 
 instruction TST.D "$m" {
   $GetDword;
-  CMP(r0,C2);
+  TST(r0);
   MSR(Z,Z);
-  CMP(r1,C2);
+  TST(r1);
   MSR(ZSCO,_SCO);
 }
 
@@ -3811,7 +3809,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "($r)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,m);
   @read:
@@ -3825,7 +3823,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "($r + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,m);
   @read:
@@ -3839,7 +3837,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(SP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,SP);
   @read:
@@ -3853,7 +3851,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(SP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,SP);
   @read:
@@ -3867,7 +3865,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(FP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,FP);
   @read:
@@ -3881,7 +3879,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "(FP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,FP);
   @read:
@@ -3895,7 +3893,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "S($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
@@ -3908,7 +3906,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "D($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
@@ -3921,7 +3919,7 @@ macro(bits:5) ReadPortWordRepeat(p) {
   code "E($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
@@ -3946,7 +3944,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[$r]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,m);
   @read:
@@ -3960,7 +3958,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[$r + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,m);
   @read:
@@ -3974,7 +3972,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[SP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,SP);
   @read:
@@ -3988,7 +3986,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[SP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,SP);
   @read:
@@ -4002,7 +4000,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[FP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,FP);
   @read:
@@ -4016,7 +4014,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "[FP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,FP);
   @read:
@@ -4030,7 +4028,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "S[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
@@ -4043,7 +4041,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "D[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
@@ -4056,7 +4054,7 @@ macro(bits:5) ReadPortDwordRepeat(p) {
   code "E[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @read:
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
@@ -4431,7 +4429,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "($r)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,m);
   @write:
@@ -4445,7 +4443,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "($r + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,m);
   @write:
@@ -4459,7 +4457,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(SP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,SP);
   @write:
@@ -4473,7 +4471,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(SP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,SP);
   @write:
@@ -4487,7 +4485,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(FP)" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,FP);
   @write:
@@ -4501,7 +4499,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "(FP + $v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,FP);
   @write:
@@ -4515,7 +4513,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "S($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @write:
     LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
@@ -4528,7 +4526,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "D($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @write:
     LK(DATA); ADR(C2); LD(C0); LAD(C2); UL;
@@ -4541,7 +4539,7 @@ macro(bits:5) WritePortWordRepeat(p) {
   code "E($v)" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @write:
     LK(EXTRA); ADR(C2); LD(C0); LAD(C2); UL;
@@ -4566,7 +4564,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[$r]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,m);
   @write:
@@ -4580,7 +4578,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[$r + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,m);
   @write:
@@ -4594,7 +4592,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[SP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,SP);
   @write:
@@ -4608,7 +4606,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[SP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,SP);
   @write:
@@ -4622,7 +4620,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[FP]" {
     UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     MOV(C2,FP);
   @write:
@@ -4636,7 +4634,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "[FP + $v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
     ADD(C2,FP);
   @write:
@@ -4650,7 +4648,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "S[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @write:
     LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
@@ -4663,7 +4661,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "D[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @write:
     LK(DATA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
@@ -4676,7 +4674,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
   code "E[$v]" {
     LD(C2); UL;
     MSS(S); MSR(_,S);
-    CMP(R7,C0);
+    TST(R7);
     JC(Z,@done);
   @write:
     LK(EXTRA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;

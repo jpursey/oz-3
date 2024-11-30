@@ -104,8 +104,8 @@ constexpr oz3::MacroCodeDef kMacroCode_Get16BitMask[] = {
      .arg = {oz3::ArgType::kWordReg, 3},
      .ret = CpuCore::C0,
      .code = "UL;MOVI(C2,15);CMP(C2,m);JC(NS,@start);MOVI(C0,0);JP(@done);"
-             "@start:MOV(C2,m);MOVI(C0,1);CMP(m,C1);JC(Z,@done);"
-             "@shift:SL(C0);JD(C2,@shift);@done:MSS(_);"},
+             "@start:MOV(C2,m);MOVI(C0,1);TST(m);JC(Z,@done);@shift:SL(C0);"
+             "JD(C2,@shift);@done:MSS(_);"},
     {.source = "0",
      .prefix = {8, 5},
      .ret = CpuCore::C0,
@@ -181,12 +181,11 @@ constexpr oz3::MacroCodeDef kMacroCode_Get32BitMask[] = {
      .arg = {oz3::ArgType::kWordReg, 3},
      .ret = CpuCore::CD,
      .code = "UL;MOVI(C2,16);CMP(C2,m);JC(S,@upper);JC(Z,@sixteen);"
-             "MOVI(C0,1);CMP(m,C1);JC(Z,@done);MOV(C2,m);"
-             "@shift_lower:SL(C0);JD(C2,@shift_lower);JP(@done);"
-             "@sixteen:MOVI(C1,1);JP(@done);@upper:MOVI(C2,31);CMP(C2,m);"
-             "JC(NS,@start_upper);MOVI(C0,0);JP(@done);"
-             "@start_upper:MOV(C2,m);ADDI(C2,-16);MOVI(C1,1);CMP(C2,C0);"
-             "JC(Z,@done);@shift_upper:SL(C1);JD(C2,@shift_upper);"
+             "MOVI(C0,1);TST(m);JC(Z,@done);MOV(C2,m);@shift_lower:SL(C0);"
+             "JD(C2,@shift_lower);JP(@done);@sixteen:MOVI(C1,1);JP(@done);"
+             "@upper:MOVI(C2,31);CMP(C2,m);JC(NS,@start_upper);MOVI(C0,0);"
+             "JP(@done);@start_upper:MOV(C2,m);ADDI(C2,-16);MOVI(C1,1);"
+             "TST(C2);JC(Z,@done);@shift_upper:SL(C1);JD(C2,@shift_upper);"
              "@done:MSS(_);"},
     {.source = "0",
      .prefix = {8, 6},
@@ -710,10 +709,10 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
              "MOV(C2,m);@shift:SL(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;"
-             "@max:MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;"
-             "@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+             "@max:MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;@zero:TST(p);"
+             "MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "SL(p);MSR(ZSCO,ZSCO);"},
@@ -776,11 +775,10 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft32[] = {
     {.source = "$r",
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
              "MOV(C2,m);@shift:SL(p0);MSR(Z,Z);RLC(p1);JD(C2,@shift);"
              "MSR(ZSCO,SCO);END;@max:MOVI(p0,0);MOVI(p1,0);MSC(SCO);MSS(Z);"
-             "MSR(SCO,Z);END;@zero:CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZCSO,CSO);"},
+             "MSR(SCO,Z);END;@zero:TST(p0);MSR(Z,Z);TST(p1);MSR(ZCSO,CSO);"},
     {.source = "1",
      .prefix = {8, 6},
      .code = "SL(p0);MSR(Z,Z);RLC(p1);MSR(ZSCO,SCO);"},
@@ -856,8 +854,7 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft32[] = {
              "MSR(ZSCO,SCO);"},
     {.source = "16",
      .prefix = {23, 6},
-     .code = "SR(p1);MSR(C,C);MOV(p1,p0);MOVI(p0,0);CMP(p1,C0);"
-             "MSR(ZSO,ZSO);"},
+     .code = "SR(p1);MSR(C,C);MOV(p1,p0);MOVI(p0,0);TST(p1);MSR(ZSO,ZSO);"},
     {.source = "17",
      .prefix = {24, 6},
      .code = "MOV(p1,p0);MOVI(p0,0);SL(p1);MSR(ZSCO,ZSCO);"},
@@ -928,10 +925,10 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftRight16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
              "MOV(C2,m);@shift:SR(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;"
-             "@max:MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;"
-             "@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+             "@max:MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;@zero:TST(p);"
+             "MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "SR(p);MSR(ZSCO,ZSCO);"},
@@ -994,11 +991,10 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftRight32[] = {
     {.source = "$r",
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
              "MOV(C2,m);@shift:SR(p1);MSR(ZS,ZS);RRC(p0);JD(C2,@shift);"
              "MSR(ZCO,CO);END;@max:MOVI(p0,0);MOVI(p1,0);MSC(SCO);MSS(Z);"
-             "MSR(SCO,Z);END;@zero:CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZCSO,CSO);"},
+             "MSR(SCO,Z);END;@zero:TST(p0);MSR(Z,Z);TST(p1);MSR(ZCSO,CSO);"},
     {.source = "1",
      .prefix = {8, 6},
      .code = "SR(p1);MSR(Z,Z);RRC(p0);MSC(S);MSR(ZSCO,SCO);"},
@@ -1074,7 +1070,7 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftRight32[] = {
              "MSR(ZSCO,SCO);"},
     {.source = "16",
      .prefix = {23, 6},
-     .code = "SL(p0);MSR(C,C);MOV(p0,p1);MOVI(p1,0);CMP(p0,C0);MSC(S);"
+     .code = "SL(p0);MSR(C,C);MOV(p0,p1);MOVI(p1,0);TST(p0);MSC(S);"
              "MSR(ZSO,ZSO);"},
     {.source = "17",
      .prefix = {24, 6},
@@ -1146,11 +1142,11 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,16);CMP(C2,m);JC(S,@max);"
              "MOV(C2,m);@shift:SRA(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;"
-             "@max:CMP(p,C0);JC(S,@signed_max);MOVI(p,0);MSC(SCO);MSS(Z);"
+             "@max:TST(p);JC(S,@signed_max);MOVI(p,0);MSC(SCO);MSS(Z);"
              "MSR(SCO,Z);END;@signed_max:MOVI(p,-1);MSC(ZO);MSS(SC);"
-             "MSR(ZO,SC);END;@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+             "MSR(ZO,SC);END;@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "SRA(p);MSR(ZSCO,ZSCO);"},
@@ -1216,13 +1212,12 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
     {.source = "$r",
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,32);CMP(C2,m);JC(S,@max);"
              "MOV(C2,m);@shift:SRA(p1);MSR(ZS,ZS);RRC(p0);JD(C2,@shift);"
-             "MSR(ZCO,CO);END;@max:CMP(p1,C0);JC(S,@signed_max);MOVI(p0,0);"
+             "MSR(ZCO,CO);END;@max:TST(p1);JC(S,@signed_max);MOVI(p0,0);"
              "MOVI(p1,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;"
              "@signed_max:MOVI(p0,-1);MOVI(p1,-1);MSC(ZO);MSS(SC);"
-             "MSR(ZO,SC);END;@zero:CMP(p0,C0);MSR(Z,Z);CMP(p1,C0);"
-             "MSR(ZCSO,CSO);"},
+             "MSR(ZO,SC);END;@zero:TST(p0);MSR(Z,Z);TST(p1);MSR(ZCSO,CSO);"},
     {.source = "1",
      .prefix = {8, 6},
      .code = "SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
@@ -1302,78 +1297,78 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
              "SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "16",
      .prefix = {23, 6},
-     .code = "SL(p0);MSR(C,C);MOV(p0,p1);CMP(p0,C0);JC(S,@negative);"
-             "MOVI(p1,0);CMP(p0,C0);MSC(S);MSR(ZSO,ZSO);END;"
+     .code = "SL(p0);MSR(C,C);MOV(p0,p1);TST(p0);JC(S,@negative);"
+             "MOVI(p1,0);TST(p0);MSC(S);MSR(ZSO,ZSO);END;"
              "@negative:MOVI(p1,-1);MSC(ZO);MSS(S);MSR(ZSO,ZSO);"},
     {.source = "17",
      .prefix = {24, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);MSR(ZS,ZS);RRC(p0);"
              "MSR(ZCO,CO);"},
     {.source = "18",
      .prefix = {25, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);"
              "MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "19",
      .prefix = {26, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "20",
      .prefix = {27, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "21",
      .prefix = {28, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);MSR(ZS,ZS);RRC(p0);"
              "MSR(ZCO,CO);"},
     {.source = "22",
      .prefix = {29, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "23",
      .prefix = {30, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "24",
      .prefix = {31, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);MSR(ZS,ZS);RRC(p0);"
              "MSR(ZCO,CO);"},
     {.source = "25",
      .prefix = {32, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);MSR(ZS,ZS);"
              "RRC(p0);MSR(ZCO,CO);"},
     {.source = "26",
      .prefix = {33, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "27",
      .prefix = {34, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "28",
      .prefix = {35, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
@@ -1381,7 +1376,7 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
              "MSR(ZCO,CO);"},
     {.source = "29",
      .prefix = {36, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
@@ -1389,7 +1384,7 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
              "MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "30",
      .prefix = {37, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
@@ -1397,7 +1392,7 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
              "RRC(p0);SRA(p1);MSR(ZS,ZS);RRC(p0);MSR(ZCO,CO);"},
     {.source = "31",
      .prefix = {38, 6},
-     .code = "MOV(p0,p1);CMP(p1,C0);JC(S,@negative);MOVI(p1,0);JP(@shift);"
+     .code = "MOV(p0,p1);TST(p1);JC(S,@negative);MOVI(p1,0);JP(@shift);"
              "@negative:MOVI(p1,-1);@shift:SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
              "SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);"
              "RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);SRA(p1);RRC(p0);"
@@ -1415,10 +1410,10 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateLeft16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,15);AND(C2,m);JC(Z,@sixteen);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,15);AND(C2,m);JC(Z,@sixteen);"
              "@shift:RL(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;"
-             "@sixteen:MOV(C2,p);SR(C2);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"
-             "END;@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+             "@sixteen:MOV(C2,p);SR(C2);MSR(C,C);TST(p);MSR(ZSO,ZSO);END;"
+             "@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "RL(p);MSR(ZSCO,ZSCO);"},
@@ -1474,7 +1469,7 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateLeft16[] = {
              "RL(p);RL(p);RL(p);RL(p);RL(p);MSR(ZSCO,ZSCO);"},
     {.source = "16",
      .prefix = {23, 5},
-     .code = "MOV(C2,p);SR(C2);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "MOV(C2,p);SR(C2);MSR(C,C);TST(p);MSR(ZSO,ZSO);"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_GetRotateCount32[] = {
@@ -1617,10 +1612,10 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateRight16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);MOVI(C2,15);AND(C2,m);JC(Z,@sixteen);"
+     .code = "TST(m);JC(Z,@zero);MOVI(C2,15);AND(C2,m);JC(Z,@sixteen);"
              "@shift:RR(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;"
-             "@sixteen:MOV(C2,p);SL(C2);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"
-             "END;@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+             "@sixteen:MOV(C2,p);SL(C2);MSR(C,C);TST(p);MSR(ZSO,ZSO);END;"
+             "@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "RR(p);MSR(ZSCO,ZSCO);"},
@@ -1676,15 +1671,15 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateRight16[] = {
              "RR(p);RR(p);RR(p);RR(p);RR(p);MSR(ZSCO,ZSCO);"},
     {.source = "16",
      .prefix = {23, 5},
-     .code = "MOV(C2,p);SR(C2);MSR(C,C);CMP(p,C0);MSR(ZSO,ZSO);"},
+     .code = "MOV(C2,p);SR(C2);MSR(C,C);TST(p);MSR(ZSO,ZSO);"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_RotateLeft16ThroughCarry[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);@shift:RLC(p);JD(C2,@shift);"
-             "MSR(ZSCO,ZSCO);END;@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+     .code = "TST(m);JC(Z,@zero);@shift:RLC(p);JD(C2,@shift);"
+             "MSR(ZSCO,ZSCO);END;@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "RLC(p);MSR(ZSCO,ZSCO);"},
@@ -1887,8 +1882,8 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateRight16ThroughCarry[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "CMP(m,C0);JC(Z,@zero);@shift:RRC(p);JD(C2,@shift);"
-             "MSR(ZSCO,ZSCO);END;@zero:CMP(p,C0);MSR(ZSCO,ZSCO);"},
+     .code = "TST(m);JC(Z,@zero);@shift:RRC(p);JD(C2,@shift);"
+             "MSR(ZSCO,ZSCO);END;@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "RRC(p);MSR(ZSCO,ZSCO);"},
@@ -2135,109 +2130,106 @@ constexpr oz3::MacroCodeDef kMacroCode_ReadPortWordRepeat[] = {
     {.source = "($r)",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,m);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,m);"
              "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LKR(m);"
              "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "($r + $v)",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,m);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,m);"
              "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LKR(m);"
              "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "(SP)",
      .prefix = {16, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,SP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,SP);"
              "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
              "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "(SP + $v)",
      .prefix = {17, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,SP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,SP);"
              "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
              "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "(FP)",
      .prefix = {18, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,FP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,FP);"
              "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
              "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "(FP + $v)",
      .prefix = {19, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,FP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,FP);"
              "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
              "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "S($v)",
      .prefix = {20, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
-             "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
-             "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);@read:PLK(p);"
+             "PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);ADR(C2);"
+             "ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "D($v)",
      .prefix = {21, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
-             "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(DATA);"
-             "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);@read:PLK(p);"
+             "PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(DATA);ADR(C2);ST(C0);"
+             "LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "E($v)",
      .prefix = {22, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
-             "@read:PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(EXTRA);"
-             "ADR(C2);ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);@read:PLK(p);"
+             "PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(EXTRA);ADR(C2);"
+             "ST(C0);LAD(C2);UL;JD(R7,@read);@done:END;"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_ReadPortDwordRepeat[] = {
     {.source = "[$r]",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,m);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,m);"
              "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
              "LKR(m);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
              "@done:END;"},
     {.source = "[$r + $v]",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,m);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,m);"
              "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
              "LKR(m);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
              "@done:END;"},
     {.source = "[SP]",
      .prefix = {16, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,SP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,SP);"
              "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
              "LK(STACK);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
              "@done:END;"},
     {.source = "[SP + $v]",
      .prefix = {17, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,SP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,SP);"
              "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
              "LK(STACK);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
              "@done:END;"},
     {.source = "[FP]",
      .prefix = {18, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,FP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,FP);"
              "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
              "LK(STACK);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
              "@done:END;"},
     {.source = "[FP + $v]",
      .prefix = {19, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,FP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,FP);"
              "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
              "LK(STACK);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
              "@done:END;"},
     {.source = "S[$v]",
      .prefix = {20, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
-             "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
-             "LK(STACK);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
-             "@done:END;"},
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);@read:PLK(p);"
+             "PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
+             "ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "D[$v]",
      .prefix = {21, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
-             "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
-             "LK(DATA);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
-             "@done:END;"},
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);@read:PLK(p);"
+             "PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);LK(DATA);"
+             "ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);@done:END;"},
     {.source = "E[$v]",
      .prefix = {22, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
-             "@read:PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
-             "LK(EXTRA);ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);"
-             "@done:END;"},
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);@read:PLK(p);"
+             "PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);LK(EXTRA);"
+             "ADR(C2);ST(C0);ST(C1);LAD(C2);UL;JD(R7,@read);@done:END;"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_WritePortWord[] = {
@@ -2438,48 +2430,48 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortWordRepeat[] = {
     {.source = "($r)",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,m);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,m);"
              "@write:LKR(m);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "($r + $v)",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,m);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,m);"
              "@write:LKR(m);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "(SP)",
      .prefix = {16, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,SP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,SP);"
              "@write:LK(STACK);ADR(SP);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "(SP + $v)",
      .prefix = {17, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,SP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,SP);"
              "@write:LK(STACK);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "(FP)",
      .prefix = {18, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,FP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,FP);"
              "@write:LK(STACK);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "(FP + $v)",
      .prefix = {19, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,FP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,FP);"
              "@write:LK(STACK);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "S($v)",
      .prefix = {20, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);"
              "@write:LK(STACK);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "D($v)",
      .prefix = {21, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);"
              "@write:LK(DATA);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
     {.source = "E($v)",
      .prefix = {22, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);"
              "@write:LK(EXTRA);ADR(C2);LD(C0);LAD(C2);UL;PLK(p);PST(TS,C0);"
              "PUL;MSX(S);MSR(S,S);JD(R7,@write);@done:END;"},
 };
@@ -2488,56 +2480,56 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortDwordRepeat[] = {
     {.source = "[$r]",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,m);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,m);"
              "@write:LKR(m);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "[$r + $v]",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,m);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,m);"
              "@write:LKR(m);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "[SP]",
      .prefix = {16, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,SP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,SP);"
              "@write:LK(STACK);ADR(SP);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "[SP + $v]",
      .prefix = {17, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,SP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,SP);"
              "@write:LK(STACK);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "[FP]",
      .prefix = {18, 5},
-     .code = "UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);MOV(C2,FP);"
+     .code = "UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);MOV(C2,FP);"
              "@write:LK(STACK);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "[FP + $v]",
      .prefix = {19, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);ADD(C2,FP);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);ADD(C2,FP);"
              "@write:LK(STACK);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "S[$v]",
      .prefix = {20, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);"
              "@write:LK(STACK);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "D[$v]",
      .prefix = {21, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);"
              "@write:LK(DATA);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
     {.source = "E[$v]",
      .prefix = {22, 5},
-     .code = "LD(C2);UL;MSS(S);MSR(_,S);CMP(R7,C0);JC(Z,@done);"
+     .code = "LD(C2);UL;MSS(S);MSR(_,S);TST(R7);JC(Z,@done);"
              "@write:LK(EXTRA);ADR(C2);LD(C0);LD(C1);LAD(C2);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);JD(R7,@write);"
              "@done:END;"},
@@ -2988,12 +2980,12 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
-     .code = "UL;$GetRotateCount32;CMP(r,C0);JC(Z,@zero);MOVI(C2,31);"
+     .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MOVI(C2,31);"
              "AND(C2,r);JC(Z,@thirtytwo);MOVI(C1,1);RR(C1);"
              "@shift:MOV(C0,C1);AND(C0,a1);RL(C0);RLC(a0);MSR(Z,Z);RLC(a1);"
              "JD(C2,@shift);MSR(ZSCO,SCO);END;@thirtytwo:MOV(C2,a0);SR(C2);"
-             "MSR(C,C);CMP(a0,C0);MSR(Z,Z);CMP(a1,C0);MSR(ZSO,SO);END;"
-             "@zero:CMP(a0,C0);MSR(Z,Z);CMP(a1,C0);MSR(ZCSO,CSO);"},
+             "MSR(C,C);TST(a0);MSR(Z,Z);TST(a1);MSR(ZSO,SO);END;"
+             "@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZCSO,CSO);"},
     {.op = 50,
      .op_name = "ROR.W",
      .source = "$r, $m",
@@ -3005,12 +2997,12 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
-     .code = "UL;$GetRotateCount32;CMP(r,C0);JC(Z,@zero);MOVI(C2,31);"
+     .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MOVI(C2,31);"
              "AND(C2,r);JC(Z,@thirtytwo);@shift:MOVI(C0,1);AND(C0,a0);"
              "RR(C0);RRC(a1);MSR(ZS,ZS);RRC(a0);JD(C2,@shift);MSR(ZCO,CO);"
-             "END;@thirtytwo:MOV(C2,a0);SR(C2);MSR(C,C);CMP(a0,C0);"
-             "MSR(Z,Z);CMP(a1,C0);MSR(ZSO,SO);END;@zero:CMP(a0,C0);"
-             "MSR(Z,Z);CMP(a1,C0);MSR(ZCSO,CSO);"},
+             "END;@thirtytwo:MOV(C2,a0);SR(C2);MSR(C,C);TST(a0);MSR(Z,Z);"
+             "TST(a1);MSR(ZSO,SO);END;@zero:TST(a0);MSR(Z,Z);TST(a1);"
+             "MSR(ZCSO,CSO);"},
     {.op = 52,
      .op_name = "RLC.W",
      .source = "$r, $m",
@@ -3022,9 +3014,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
-     .code = "UL;$GetRotateCount32ThroughCarry;CMP(r,C0);JC(Z,@zero);"
+     .code = "UL;$GetRotateCount32ThroughCarry;TST(r);JC(Z,@zero);"
              "@shift:RLC(a0);MSR(Z,Z);RLC(a1);JD(C2,@shift);MSR(ZSCO,SCO);"
-             "END;@zero:CMP(a0,C0);MSR(Z,Z);CMP(a1,C0);MSR(ZCSO,CSO);"},
+             "END;@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZCSO,CSO);"},
     {.op = 54,
      .op_name = "RRC.W",
      .source = "$r, $m",
@@ -3036,9 +3028,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
-     .code = "UL;$GetRotateCount32ThroughCarry;CMP(r,C0);JC(Z,@zero);"
+     .code = "UL;$GetRotateCount32ThroughCarry;TST(r);JC(Z,@zero);"
              "@shift:RRC(a1);MSR(ZS,ZS);RRC(a0);JD(C2,@shift);MSR(ZCO,CO);"
-             "END;@zero:CMP(a0,C0);MSR(Z,Z);CMP(a1,C0);MSR(ZCSO,CSO);"},
+             "END;@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZCSO,CSO);"},
     {.op = 56,
      .op_name = "CLRB.W",
      .source = "$r, $m",
@@ -3106,12 +3098,12 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "TST.W",
      .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
-     .code = "$GetWord;CMP(r,C0);MSR(ZSCO,ZSCO);"},
+     .code = "$GetWord;TST(r);MSR(ZSCO,ZSCO);"},
     {.op = 68,
      .op_name = "TST.D",
      .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
-     .code = "$GetDword;CMP(r0,C2);MSR(Z,Z);CMP(r1,C2);MSR(ZSCO,_SCO);"},
+     .code = "$GetDword;TST(r0);MSR(Z,Z);TST(r1);MSR(ZSCO,_SCO);"},
     {.op = 69,
      .op_name = "CMP.W",
      .source = "$r, $m",
