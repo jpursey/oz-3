@@ -123,7 +123,8 @@ struct MacroCodeDef {
   //   specified ("$r2", "$#5", etc.) then it must also match the argument size.
   //   Otherwise they are implied. However, if compiling an an argument set, the
   //   sizes are required for non-default register sizes and all immediate value
-  //   sizes.
+  //   sizes. Sizes cannot exceed the maximum size of the argument type (3 bits
+  //   for $r, 2 bits for $R, and 8 bits for $#).
   // - It may contain any number of "$v" and "$V" specifications which will
   //   result in added word and dword values to the instruction word. These do
   //   not map to the argument.
@@ -218,10 +219,12 @@ struct InstructionDef {
   // conforms to the following rules:
   // - It may contain "$r", "$R", "$#", or "$m" specifications. There may be at
   //   most two of these with the first matching the type of arg1 and the second
-  //   matching the type of arg2. If sizes are specified ("$r2", "$#5", etc.)
-  //   then they must also match the argument size. Otherwise they are implied.
-  //   However, if compiling an an argument set, the sizes are required for
-  //   non-default register sizes and all immediate value sizes.
+  //   matching the type of arg2. There can only be one "$m" specification. If
+  //   sizes are specified ("$r2", "$#5", etc.) then they must also match the
+  //   argument size. Otherwise they are implied. However, if compiling an an
+  //   argument set, the sizes are required for non-default register sizes and
+  //   all immediate value sizes.  Sizes cannot exceed the maximum size of the
+  //   argument type (3 bits for $r, 2 bits for $R, and 8 bits for $# and $m).
   // - It may contain any number of "$v" and "$V" specifications which will
   //   result in added word and dword values to the instruction word. These do
   //   not map to the arguments.
@@ -237,6 +240,9 @@ struct InstructionDef {
   // exceed a byte (8 bits).
   Argument arg1;  // First argument definition.
   Argument arg2;  // Second argument definition.
+
+  // The name of the macro for the macro arg, if there is one.
+  std::string_view arg_macro_name;  // Empty if no macro arg.
 
   // The microcode source for the instruction.
   std::string_view code;

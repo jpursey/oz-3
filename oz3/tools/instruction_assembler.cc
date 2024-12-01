@@ -227,7 +227,8 @@ class InstructionSetAssembler {
   void AssembleArgument(std::string_view parsed_arg_type, Argument& argument);
   bool AssembleMicrocode(absl::Span<const gb::ParsedItem> parsed_micro_codes,
                          CodeTokens& code_tokens, std::string& code_string,
-                         Argument* macro_arg = nullptr);
+                         Argument* macro_arg = nullptr,
+                         std::string* arg_macro_name = nullptr);
   bool Compile();
 
   gb::ParseError* const error_;
@@ -533,11 +534,16 @@ bool InstructionSetAssembler::AssembleInstruction(
     macro_arg = &instruction_def.arg2;
   }
   std::string code_string;
+  std::string arg_macro_name;
   if (!AssembleMicrocode(parsed_instruction.GetItems("code"),
-                         instruction_tokens.code, code_string, macro_arg)) {
+                         instruction_tokens.code, code_string, macro_arg,
+                         &arg_macro_name)) {
     return false;
   }
   instruction_def.code = AddString(code_string);
+  if (!arg_macro_name.empty()) {
+    instruction_def.arg_macro_name = AddString(arg_macro_name);
+  }
   return true;
 }
 
@@ -625,7 +631,8 @@ void InstructionSetAssembler::AssembleArgument(std::string_view parsed_arg_type,
 
 bool InstructionSetAssembler::AssembleMicrocode(
     absl::Span<const gb::ParsedItem> parsed_micro_codes,
-    CodeTokens& code_tokens, std::string& code_string, Argument* macro_arg) {
+    CodeTokens& code_tokens, std::string& code_string, Argument* macro_arg,
+    std::string* arg_macro_name) {
   code_tokens.reserve(parsed_micro_codes.size());
   bool has_macro = false;
   for (const auto& parsed_micro_code : parsed_micro_codes) {
@@ -654,6 +661,8 @@ bool InstructionSetAssembler::AssembleMicrocode(
                        macro_arg->size, " != macro ", macro_name, " size ",
                        macro_def.size);
       }
+      DCHECK(arg_macro_name != nullptr);
+      *arg_macro_name = macro_name;
       absl::StrAppend(&code_string, "$", macro_name);
       if (const auto& arg1 = parsed_micro_code.GetToken("arg1").ToString();
           !arg1.empty()) {

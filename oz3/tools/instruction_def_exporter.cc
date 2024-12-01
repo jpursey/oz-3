@@ -121,6 +121,10 @@ void InstructionDefExporter::ExportInstruction(
   }
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);
+  if (!instruction.arg_macro_name.empty()) {
+    absl::StrAppend(&result_, ",\n     .arg_macro_name = \"",
+                    instruction.arg_macro_name, "\"");
+  }
   absl::StrAppend(&result_, ",\n     .code = ");
   ExportMicrocode(instruction.code);
   absl::StrAppend(&result_, "},\n");
