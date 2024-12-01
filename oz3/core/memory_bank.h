@@ -90,8 +90,8 @@ class MemoryBank final : public Component {
 
   // Returns direct access to the physical memory of the MemoryBank.
   //
-  // Unlike MemoryLock, this does not wrap around at max memory. However, it
-  // also consumes no cycles and does not affect the address bus.
+  // Unlike ReadWords/WriteWords, this does not wrap around at max memory.
+  // However, it also consumes no cycles and does not affect the address bus.
   //
   // If the entire range does not exist for the specified range, this will
   // return no data.
