@@ -419,7 +419,7 @@ class CpuCore final : public ExecutionComponent {
   // If the core is ahead of the Processor, this may not be simulation accurate.
   // If that is needed, then the caller should call Lock() and wait for it to
   // be locked to ensure the CpuCore is not mid-instruction.
-  void GetRegisters(gb::Array<uint16_t, kRegisterCount>& registers) const;
+  void GetRegisters(Registers& registers) const;
 
   // Returns the current MemoryBank for the specified bank index.
   //

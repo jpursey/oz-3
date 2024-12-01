@@ -33,6 +33,7 @@ set(oz3_core_LIBS
 )
 
 set(oz3_core_TEST_SOURCE
+  base_core_test.cc base_core_test.h
   cpu_core_test.cc
   default_instruction_set_test.cc
   instruction_compiler_test.cc

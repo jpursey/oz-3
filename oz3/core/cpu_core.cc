@@ -267,7 +267,7 @@ void CpuCore::InitBanks() {
 }
 
 void CpuCore::GetRegisters(
-    gb::Array<uint16_t, kRegisterCount>& registers) const {
+    Registers& registers) const {
   std::memcpy(registers.data(), r_, sizeof(r_));
 }
 
