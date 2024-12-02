@@ -6,6 +6,7 @@
 #ifndef OZ3_CORE_BASE_CORE_TEST_H_
 #define OZ3_CORE_BASE_CORE_TEST_H_
 
+#include "absl/container/flat_hash_map.h"
 #include "absl/log/log.h"
 #include "gb/base/callback.h"
 #include "gtest/gtest.h"
@@ -178,6 +179,11 @@ class BaseCoreTest : public testing::Test {
 
   // Encodes an instruction based on the instruction set.
   uint16_t Encode(uint8_t op, uint16_t a = 0, uint16_t b = 0);
+  uint16_t Encode(std::string_view op_name, uint16_t a = 0, uint16_t b = 0);
+  uint16_t Encode(std::string_view op_name, std::string_view macro_code,
+                  uint16_t macro_arg = 0, uint16_t b = 0);
+  uint16_t Encode(std::string_view op_name, uint16_t a,
+                  std::string_view macro_code, uint16_t macro_arg = 0);
 
   // Returns the number of cycles executed so far by the processor.
   Cycles GetCycles() const { return processor_->GetCycles(); }
@@ -203,6 +209,9 @@ class BaseCoreTest : public testing::Test {
  private:
   const InstructionSetDef def_;
   std::shared_ptr<const InstructionSet> instruction_set_;
+  absl::flat_hash_map<uint8_t, InstructionDef> instructions_by_op_;
+  absl::flat_hash_map<std::string_view, InstructionDef> instructions_by_name_;
+  absl::flat_hash_map<std::string_view, MacroDef> macros_;
   std::unique_ptr<Processor> processor_;
   std::vector<CoreState> states_;
 };

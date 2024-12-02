@@ -130,7 +130,7 @@ const InstructionDef kMicroTestInstructions[] = {
              "MSR(a,_);"
              "MOV(b,ST);"},
     {.op = kTestOp_XORF,
-     .op_name = "CLRF",
+     .op_name = "XORF",
      .arg1 = {ArgType::kImmediate, 5},
      .arg2 = ArgType::kWordReg,
      .code = "UL;"
@@ -165,12 +165,12 @@ const InstructionDef kMicroTestInstructions[] = {
      .code = "UL;"
              "HALT;"},
     {.op = kTestOp_LWORD,
-     .op_name = "LCODE",
+     .op_name = "LWORD",
      .arg1 = ArgType::kWordReg,
      .code = "LD(a);"
              "UL;"},
     {.op = kTestOp_LDWORD,
-     .op_name = "LCODE",
+     .op_name = "LDWORD",
      .arg1 = ArgType::kDwordReg,
      .code = "LD(a0);"
              "LD(a1);"
@@ -378,7 +378,7 @@ const InstructionDef kMicroTestInstructions[] = {
              "MSX(C);MSR(ZSCO,ZSCO);MOV(R6,ST);"
              "MSX(O);MSR(ZSCO,ZSCO);MOV(R7,ST);"},
     {.op = kTestOp_MSI,
-     .op_name = "MSSC",
+     .op_name = "MSI",
      .code = "UL;"
              "MSS(I);MSR(I,I);MOV(R0,ST);"
              "MSC(I);MSR(I,I);MOV(R1,ST);"
