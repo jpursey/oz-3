@@ -3316,9 +3316,10 @@ instruction DI {
 ## Retrieves the address of the specified interrupt and assigns to a register.
 ################################################################################
 
-instruction GETI "$m, $r" {
-  $GetWord;
-  ILD(r,b);
+instruction GETI "$v, $r" {
+  LD(C0);
+  UL;
+  ILD(C0,a);
 }
 
 ################################################################################
@@ -3330,9 +3331,10 @@ instruction GETI "$m, $r" {
 ## Sets the address of the specified interrupt from a register.
 ################################################################################
 
-instruction SETI "$m, $r" {
+instruction SETI "$v, $m" {
+  LD(C0);
   $GetWord;
-  IST(r,b);
+  IST(C0,r);
 }
 
 ################################################################################
