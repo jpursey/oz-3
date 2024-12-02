@@ -5,6 +5,7 @@
 
 #include "oz3/core/instruction_def.h"
 
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/types/span.h"
 
@@ -59,6 +60,25 @@ bool Argument::IsValid() const {
     default:
       return false;
   }
+}
+
+uint16_t MacroDef::Encode(int code_index, uint16_t arg) const {
+  DCHECK(code_index >= 0 && code_index < code.size());
+  auto& def = code[code_index];
+  if (def.arg.size == 0) {
+    return def.prefix.value;
+  }
+  return (def.prefix.value << def.arg.size) | (arg & ((1 << def.arg.size) - 1));
+}
+
+uint16_t MacroDef::Encode(std::string_view code_source, uint16_t arg) const {
+  for (int code_index = 0; code_index < code.size(); ++code_index) {
+    if (code[code_index].source == code_source) {
+      return Encode(code_index, arg);
+    }
+  }
+  LOG(DFATAL) << "Invalid code source: " << code_source;
+  return 0;
 }
 
 uint16_t InstructionDef::Encode(uint16_t a, uint16_t b) const {

@@ -163,6 +163,12 @@ struct MacroCodeDef {
 
 // Definition of a microcode instruction macro for the OZ-3 CPU.
 struct MacroDef {
+  // Encodes a macro code arg into a value which can be passed to
+  // InstructionDef::Encode. An index into `code`, or the source of the code in
+  // the `code` array may be passed.
+  uint16_t Encode(int code_index, uint16_t arg) const;
+  uint16_t Encode(std::string_view code_source, uint16_t arg) const;
+
   // The name of the macro. It should consist only of alphanumeric characters.
   // It is case-sensitive. This is referred to as "$name;" or "$name(arg);" in
   // the microcode to refer to a macro (depending on whether it takes an
