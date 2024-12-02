@@ -165,6 +165,13 @@ class BaseCoreTest : public testing::Test {
   // other calls can be made.
   bool Init(InitConfig config = {});
 
+  // Initializes the processor and cores, and then resets each core, setting the
+  // memory banks to cores in a round robin fashion, the exception being the
+  // EXTRA bank which is set to the last memory bank. The BD register is set to
+  // to 1000 and the BE register is set to 2000. The BC, BS, IP, FP, and SP
+  // registers are all left at zero. Interrupts are enabled.
+  bool InitAndReset(InitConfig config = {});
+
   // Returns the core state for the specified core
   CoreState& GetState(int core_index = 0) {
     CHECK(core_index >= 0 && core_index < processor_->GetNumCores());

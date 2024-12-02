@@ -16,9 +16,8 @@ TEST_F(InstructionTest, NOP_ValueIsZero) {
 }
 
 TEST_F(InstructionTest, NOP_Cycles) {
-  ASSERT_TRUE(Init());
+  ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.ResetCore();
 
   for (int i = 0; i < 10; ++i) {
     state.code.AddValue(Encode("NOP"));
@@ -31,9 +30,8 @@ TEST_F(InstructionTest, NOP_Cycles) {
 }
 
 TEST_F(InstructionTest, WAIT_ExactCycles) {
-  ASSERT_TRUE(Init());
+  ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.ResetCore();
 
   state.SetRegisters({{CpuCore::R0, 10}});
   state.code.AddValue(Encode("WAIT", CpuCore::R0));
@@ -50,9 +48,8 @@ TEST_F(InstructionTest, WAIT_ExactCycles) {
 }
 
 TEST_F(InstructionTest, WAIT_OneCycle) {
-  ASSERT_TRUE(Init());
+  ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.ResetCore();
 
   state.SetRegisters({{CpuCore::R0, 1}, {CpuCore::R1, 10}});
   state.code.AddValue(Encode("WAIT", CpuCore::R0));
@@ -68,9 +65,8 @@ TEST_F(InstructionTest, WAIT_OneCycle) {
 }
 
 TEST_F(InstructionTest, HALT_EntersIdle) {
-  ASSERT_TRUE(Init());
+  ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.ResetCore();
 
   state.code.AddValue(Encode("HALT"));
 
@@ -82,12 +78,11 @@ TEST_F(InstructionTest, HALT_EntersIdle) {
 }
 
 TEST_F(InstructionTest, HALT_InterruptReturnsToHalt) {
-  ASSERT_TRUE(Init());
+  ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.ResetCore();
 
   state.code.AddValue(Encode("SETI", "$v")).AddValue(1).AddValue(100);
-  state.code.AddValue(Encode("EI"));
+  const uint16_t halt_ip = state.code.GetAddress();
   state.code.AddValue(Encode("HALT"));
   state.code.SetAddress(100);
   state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v")).AddValue(1);
@@ -96,13 +91,13 @@ TEST_F(InstructionTest, HALT_InterruptReturnsToHalt) {
   Execute(kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
   state.Update();
-  EXPECT_EQ(state.ip, 4);  // Stays on the halt instruction.
+  EXPECT_EQ(state.ip, halt_ip);
 
   state.core.RaiseInterrupt(1);
   Execute(kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
   state.Update();
-  EXPECT_EQ(state.ip, 4);  // Stays on the halt instruction.
+  EXPECT_EQ(state.ip, halt_ip);
   EXPECT_EQ(state.r0, 1);  // Interrupt was triggered.
 }
 

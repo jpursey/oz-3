@@ -71,6 +71,30 @@ bool BaseCoreTest::Init(InitConfig config) {
   return true;
 }
 
+bool BaseCoreTest::InitAndReset(InitConfig config) {
+  if (!Init(config)) {
+    return false;
+  }
+  int extra_bank_index = config.num_memory_banks - 1;
+  int bank_index = 0;
+  for (int core_index = 0; core_index < config.num_cores; ++core_index) {
+    auto& state = states_[core_index];
+    state.ResetCore({.mask = CpuCore::ResetParams::ALL,
+                     .mb = CpuCore::Banks{.code = bank_index,
+                                          .stack = bank_index,
+                                          .data = bank_index,
+                                          .extra = extra_bank_index}
+                               .ToWord(),
+                     .bd = 1000,
+                     .be = 2000});
+    state.SetRegisters({{CpuCore::ST, CpuCore::I}});
+    state.data.SetAddress(1000);
+    state.extra.SetAddress(2000);
+    bank_index = (bank_index + 1) % config.num_memory_banks;
+  }
+  return true;
+}
+
 void BaseCoreTest::CoreState::ResetCore(CpuCore::ResetParams reset_params) {
   auto lock = core.RequestLock();
   EXPECT_TRUE(lock->IsLocked());
@@ -106,6 +130,8 @@ void BaseCoreTest::CoreState::SetRegisters(
   for (const auto& [index, value] : values) {
     core.SetWordRegister(*lock, index, value);
   }
+  lock.reset();
+  Update();
 }
 
 uint16_t BaseCoreTest::DoEncode(const InstructionDef& instruction, Arg a,
