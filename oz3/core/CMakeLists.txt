@@ -38,6 +38,7 @@ set(oz3_core_TEST_SOURCE
   default_instruction_set_test.cc
   instruction_compiler_test.cc
   instruction_set_test.cc
+  instruction_test_misc.cc
   lockable_test.cc
   memory_bank_test.cc
   port_test.cc
