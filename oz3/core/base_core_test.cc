@@ -108,53 +108,48 @@ void BaseCoreTest::CoreState::SetRegisters(
   }
 }
 
-uint16_t BaseCoreTest::Encode(uint8_t op, uint16_t a, uint16_t b) {
+uint16_t BaseCoreTest::DoEncode(const InstructionDef& instruction, Arg a,
+                                Arg b) {
+  if (instruction.arg1.type == ArgType::kMacro) {
+    CHECK(!a.macro_code.empty())
+        << "Argument 'a' does not specify a macro code for macro argument";
+    CHECK(!instruction.arg_macro_name.empty())
+        << instruction.op_name << "does not specify a macro name";
+    auto macro_it = macros_.find(instruction.arg_macro_name);
+    CHECK(macro_it != macros_.end())
+        << "Unknown macro: " << instruction.arg_macro_name;
+    auto& macro = macro_it->second;
+    a = macro.Encode(a.macro_code, a.value);
+  } else if (!a.macro_code.empty()) {
+    LOG(FATAL) << "Argument 'a' specifies a macro code for non-macro argument";
+  }
+  if (instruction.arg2.type == ArgType::kMacro) {
+    CHECK(!b.macro_code.empty())
+        << "Argument 'b' does not specify a macro code for macro argument";
+    CHECK(!instruction.arg_macro_name.empty())
+        << instruction.op_name << "does not specify a macro name";
+    auto macro_it = macros_.find(instruction.arg_macro_name);
+    CHECK(macro_it != macros_.end())
+        << "Unknown macro: " << instruction.arg_macro_name;
+    auto& macro = macro_it->second;
+    b = macro.Encode(b.macro_code, b.value);
+  } else if (!b.macro_code.empty()) {
+    LOG(FATAL) << "Argument 'b' specifies a macro code for non-macro argument";
+  }
+  return instruction.Encode(a.value, b.value);
+}
+
+uint16_t BaseCoreTest::Encode(uint8_t op, Arg a, Arg b) {
   auto it = instructions_by_op_.find(op);
   CHECK(it != instructions_by_op_.end())
       << "Unknown op: " << static_cast<int>(op);
-  return it->second.Encode(a, b);
+  return DoEncode(it->second, a, b);
 }
 
-uint16_t BaseCoreTest::Encode(std::string_view op_name, uint16_t a,
-                              uint16_t b) {
+uint16_t BaseCoreTest::Encode(std::string_view op_name, Arg a, Arg b) {
   auto it = instructions_by_name_.find(op_name);
   CHECK(it != instructions_by_name_.end()) << "Unknown op name: " << op_name;
-  return it->second.Encode(a, b);
-}
-
-uint16_t BaseCoreTest::Encode(std::string_view op_name,
-                              std::string_view macro_code, uint16_t macro_arg,
-                              uint16_t b) {
-  auto instruction_it = instructions_by_name_.find(op_name);
-  CHECK(instruction_it != instructions_by_name_.end())
-      << "Unknown op name: " << op_name;
-  auto& instruction = instruction_it->second;
-  CHECK(instruction.arg1.type == ArgType::kMacro)
-      << op_name << " does not have a macro as argument 1";
-  CHECK(!instruction.arg_macro_name.empty())
-      << op_name << "does not specify a macro name";
-  auto macro_it = macros_.find(instruction.arg_macro_name);
-  CHECK(macro_it != macros_.end())
-      << "Unknown macro: " << instruction.arg_macro_name;
-  auto& macro = macro_it->second;
-  return instruction.Encode(macro.Encode(macro_code, macro_arg), b);
-}
-
-uint16_t BaseCoreTest::Encode(std::string_view op_name, uint16_t a,
-                              std::string_view macro_code, uint16_t macro_arg) {
-  auto instruction_it = instructions_by_name_.find(op_name);
-  CHECK(instruction_it != instructions_by_name_.end())
-      << "Unknown op name: " << op_name;
-  auto& instruction = instruction_it->second;
-  CHECK(instruction.arg2.type == ArgType::kMacro)
-      << op_name << " does not have a macro as argument 2";
-  CHECK(!instruction.arg_macro_name.empty())
-      << op_name << "does not specify a macro name";
-  auto macro_it = macros_.find(instruction.arg_macro_name);
-  CHECK(macro_it != macros_.end())
-      << "Unknown macro: " << instruction.arg_macro_name;
-  auto& macro = macro_it->second;
-  return instruction.Encode(a, macro.Encode(macro_code, macro_arg));
+  return DoEncode(it->second, a, b);
 }
 
 bool BaseCoreTest::ExecuteUntil(int core, gb::Callback<bool()> condition) {

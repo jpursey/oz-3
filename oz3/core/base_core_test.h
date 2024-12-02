@@ -30,6 +30,18 @@ class BaseCoreTest : public testing::Test {
     uint16_t value;
   };
 
+  struct Arg {
+    Arg() = default;
+    Arg(int in_value) : value(in_value) {}
+    Arg(const char* in_macro_code, int in_value = 0)
+        : macro_code(in_macro_code), value(in_value) {}
+    Arg(std::string_view in_macro_code, int in_value = 0)
+        : macro_code(in_macro_code), value(in_value) {}
+
+    std::string_view macro_code;
+    uint16_t value = 0;
+  };
+
   // Helper class to sequentially write code and read/write data ina MemoryBank.
   class MemAccessor {
    public:
@@ -178,12 +190,8 @@ class BaseCoreTest : public testing::Test {
   }
 
   // Encodes an instruction based on the instruction set.
-  uint16_t Encode(uint8_t op, uint16_t a = 0, uint16_t b = 0);
-  uint16_t Encode(std::string_view op_name, uint16_t a = 0, uint16_t b = 0);
-  uint16_t Encode(std::string_view op_name, std::string_view macro_code,
-                  uint16_t macro_arg = 0, uint16_t b = 0);
-  uint16_t Encode(std::string_view op_name, uint16_t a,
-                  std::string_view macro_code, uint16_t macro_arg = 0);
+  uint16_t Encode(uint8_t op, Arg a = {}, Arg b = {});
+  uint16_t Encode(std::string_view op_name, Arg a = {}, Arg b = {});
 
   // Returns the number of cycles executed so far by the processor.
   Cycles GetCycles() const { return processor_->GetCycles(); }
@@ -207,6 +215,8 @@ class BaseCoreTest : public testing::Test {
   }
 
  private:
+  uint16_t DoEncode(const InstructionDef& instruction, Arg a, Arg b);
+
   const InstructionSetDef def_;
   std::shared_ptr<const InstructionSet> instruction_set_;
   absl::flat_hash_map<uint8_t, InstructionDef> instructions_by_op_;
