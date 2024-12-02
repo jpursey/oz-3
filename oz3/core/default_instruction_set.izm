@@ -260,12 +260,15 @@ instruction WAIT "$r" {
 ## ZSCO: ----
 ##
 ## Variants:
-##    MOV.LW <reg> <word-value>
-##    MOV.LD <dreg> <dword-value>
-##    MOV.SW <word-address> <reg>
-##    MOV.SD <dword-address> <dreg>
-##    MOV.S  <sreg> <reg>
-##    MOV.S  <reg> <sreg>
+##    MOV.LW  <reg> <word-value>
+##    MOV.LD  <dreg> <dword-value>
+##    MOV.SWR <word-address> <reg>
+##    MOV.SDR <dword-address> <dreg>
+##    MOV.SWV <word-address> <integer>
+##    MOV.SDV <dword-address> <integer>
+##    MOV.S   <reg> <sreg>
+##    MOV.S   <sreg> <reg>
+##    MOV.S   <sreg> <integer>
 ##
 ## Moves (copies) the value from from <src> into <dst>.
 ################################################################################
@@ -328,7 +331,7 @@ instruction MOV.LD "$R, $m" {
   $LoadDword(A);
 }
 
-macro(bits:5) StoreWord(p) {
+macro(bits:5) StoreWordRegister(p) {
   code "($r)"       { UL; LKR(m); ADR(m); ST(p); UL; }
   code "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); ST(p); UL; }
   code "(SP)"       { UL; LK(STACK); ADR(SP); ST(p); UL; }
@@ -340,11 +343,45 @@ macro(bits:5) StoreWord(p) {
   code "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); ST(p); UL; }
 }
 
-instruction MOV.SW "$m, $r" {
-  $StoreWord(b);
+instruction MOV.SWR "$m, $r" {
+  $StoreWordRegister(b);
 }
 
-macro(bits:5) StoreDword(P) {
+macro(bits:5) StoreWordValue {
+  code "($r), $v" { 
+    LD(C1); UL; LKR(m); ADR(m); ST(C1); UL; 
+  }
+  code "($r + $v), $v" { 
+    LD(C2); LD(C1); UL; ADD(C2,m); LKR(m); ADR(C2); ST(C1); UL; 
+  }
+  code "(SP), $v" { 
+    LD(C1); UL; LK(STACK); ADR(SP); ST(C1); UL; 
+  }
+  code "(SP + $v), $v" { 
+    LD(C2); LD(C1); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(C1); UL; 
+  }
+  code "(FP), $v" { 
+    LD(C1); UL; LK(STACK); ADR(FP); ST(C1); UL; 
+  }
+  code "(FP + $v), $v" { 
+    LD(C2); LD(C1); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(C1); UL; 
+  }
+  code "S($v), $v" { 
+    LD(C2); LD(C1); UL; LK(STACK); ADR(C2); ST(C1); UL; 
+  }
+  code "D($v), $v" { 
+    LD(C2); LD(C1); UL; LK(DATA); ADR(C2); ST(C1); UL; 
+  }
+  code "E($v), $v" { 
+    LD(C2); LD(C1); UL; LK(EXTRA); ADR(C2); ST(C1); UL; 
+  }
+}
+
+instruction MOV.SWV "$m" {
+  $StoreWordValue;
+}
+
+macro(bits:5) StoreDwordRegister(P) {
   code "[$r]" {
     UL; LKR(m); ADR(m); ST(p0); ST(p1); UL;
   }
@@ -374,8 +411,51 @@ macro(bits:5) StoreDword(P) {
   }
 }
 
-instruction MOV.SD "$m, $R" {
-  $StoreDword(B);
+instruction MOV.SDR "$m, $R" {
+  $StoreDwordRegister(B);
+}
+
+macro(bits:5) StoreDwordValue {
+  code "[$r], $v" {
+    LD(C0); LD(C1); UL;
+    LKR(m); ADR(m); ST(C0); ST(C1); UL;
+  }
+  code "[$r + $v], $v" {
+    LD(C2); LD(C0); LD(C1); UL; ADD(C2,m);
+    LKR(m); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "[SP], $v" {
+    LD(C0); LD(C1); UL;
+    LK(STACK); ADR(SP); ST(C0); ST(C1); UL;
+  }
+  code "[SP + $v], $v" {
+    LD(C2); LD(C0); LD(C1); UL; ADD(C2,SP);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "[FP], $v" {
+    LD(C0); LD(C1); UL;
+    LK(STACK); ADR(FP); ST(C0); ST(C1); UL;
+  }
+  code "[FP + $v], $v" {
+    LD(C2); LD(C0); LD(C1); UL; ADD(C2,FP);
+    LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "S[$v], $v" {
+    LD(C2); LD(C0); LD(C1); UL; 
+    LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "D[$v], $v" {
+    LD(C2); LD(C0); LD(C1); UL; 
+    LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
+  }
+  code "E[$v], $v" {
+    LD(C2); LD(C0); LD(C1); UL; 
+    LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
+  }
+}
+
+instruction MOV.SDV "$m" {
+  $StoreDwordValue;
 }
 
 macro MoveSReg {
