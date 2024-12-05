@@ -3,12 +3,10 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/core/base_core_test.h"
+#include "oz3/core/instruction_test.h"
 
 namespace oz3 {
 namespace {
-
-using InstructionTest = BaseCoreTest;
 
 TEST_F(InstructionTest, NOP_ValueIsZero) {
   ASSERT_TRUE(Init());

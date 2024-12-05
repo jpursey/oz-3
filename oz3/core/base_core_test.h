@@ -26,6 +26,8 @@ class BaseCoreTest : public testing::Test {
   };
 
   struct RegisterValue {
+    RegisterValue(int in_index, int in_value)
+        : index(in_index), value(in_value) {}
     int index;
     uint16_t value;
   };
@@ -75,12 +77,35 @@ class BaseCoreTest : public testing::Test {
       return *this;
     }
 
+    MemAccessor& AddValue32(uint32_t value) {
+      mem_[address_++] = value & 0xFFFF;
+      mem_[address_++] = value >> 16;
+      return *this;
+    }
+
     uint16_t AddNopGetAddress() {
       mem_[address_++] = 0;
       return address_;
     }
 
+    MemAccessor& PushValue(uint16_t value) {
+      mem_[--address_] = value;
+      return *this;
+    }
+
+    MemAccessor& PushValue32(uint32_t value) {
+      mem_[--address_] = value >> 16;
+      mem_[--address_] = value & 0xFFFF;
+      return *this;
+    }
+
     uint16_t GetValue() { return mem_[address_++]; }
+
+    uint32_t GetValue32() {
+      uint32_t value = mem_[address_++];
+      value |= static_cast<uint32_t>(mem_[address_++]) << 16;
+      return value;
+    }
 
    private:
     MemoryBank* memory_bank_ = nullptr;
