@@ -531,5 +531,36 @@ TEST_F(InstructionTest, MOV_S_StackAndFramePointers) {
   EXPECT_EQ(state.fp, 100);
 }
 
+TEST_F(InstructionTest, MVQ_LW) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::R0, 42}});
+
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R0, 0));
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R1, 31));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.r1, 31);
+}
+
+TEST_F(InstructionTest, MVQ_LD) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters(
+      {{CpuCore::R0, 1}, {CpuCore::R1, 2}, {CpuCore::R2, 3}, {CpuCore::R3, 4}});
+
+  state.code.AddValue(Encode("MVQ.LD", 0, 0));
+  state.code.AddValue(Encode("MVQ.LD", 1, 31));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.d0(), 0);
+  EXPECT_EQ(state.d1(), 31);
+}
+
 }  // namespace
 }  // namespace oz3
