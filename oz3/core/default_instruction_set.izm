@@ -68,8 +68,8 @@ macro(bits:5) GetDword:R {
   code:CD "[FP + $v]" {
     LD(C0); UL; ADD(C0,FP); LK(STACK); ADR(C0); LD(C0); LD(C1); UL;
   }
-  code:CD "$v" {
-    LD(C0); UL;
+  code:CD "$V" {
+    LD(C0); LD(C1); UL;
   }
   code:CD "S[$v]" {
     LD(C0); UL; LK(STACK); ADR(C0); LD(C0); LD(C1); UL;
@@ -519,12 +519,12 @@ instruction MVQ.LD "$R, $#5" {
 
 instruction PUSH.W "$m" {
   $GetWord;
-  LK(STACK); ADR(SP); STP(C2); LAD(SP); UL;
+  LK(STACK); ADR(SP); STP(r); LAD(SP); UL;
 }
 
 instruction PUSH.D "$m" {
   $GetDword;
-  LK(STACK); ADR(SP); STP(C1); STP(C0); LAD(SP); UL;
+  LK(STACK); ADR(SP); STP(r1); STP(r0); LAD(SP); UL;
 }
 
 ################################################################################
