@@ -195,27 +195,27 @@ TEST_F(InstructionTest, MOV_SWR) {
   state.code.AddValue(Encode("HALT"));
 
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // MOV.SWR (R1), R7
-  EXPECT_EQ(state.data.SetAddress(1100).GetValue(), 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip2));  // MOV.SWR (R2 + 51), R7
-  EXPECT_EQ(state.data.SetAddress(1101).GetValue(), 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 101).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // MOV.SWR (R4 + 50), R7
-  EXPECT_EQ(state.extra.SetAddress(2200).GetValue(), 42);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // MOV.SWR (R6), R7
-  EXPECT_EQ(state.stack.SetAddress(-5).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 5).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // MOV.SWR (SP), R7
-  EXPECT_EQ(state.stack.SetAddress(-3).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 3).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip6));  // MOV.SWR (SP - 1), R7
-  EXPECT_EQ(state.stack.SetAddress(-4).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 4).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip7));  // MOV.SWR (FP), R7
-  EXPECT_EQ(state.stack.SetAddress(-1).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 1).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // MOV.SWR (FP - 1), R7
-  EXPECT_EQ(state.stack.SetAddress(-2).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 2).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip9));  // MOV.SWR S(-6), R7
-  EXPECT_EQ(state.stack.SetAddress(-6).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 6).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip10));  // MOV.SWR D(102), R7
-  EXPECT_EQ(state.data.SetAddress(1102).GetValue(), 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip11));  // MOV.SWR E(202), R7
-  EXPECT_EQ(state.extra.SetAddress(2202).GetValue(), 42);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 202).GetValue(), 42);
 }
 
 TEST_F(InstructionTest, MOV_SWV) {
@@ -267,27 +267,27 @@ TEST_F(InstructionTest, MOV_SWV) {
   state.code.AddValue(Encode("HALT"));
 
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // MOV.SWR (R1), 42
-  EXPECT_EQ(state.data.SetAddress(1100).GetValue(), 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip2));  // MOV.SWR (R2 + 51), 42
-  EXPECT_EQ(state.data.SetAddress(1101).GetValue(), 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 101).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // MOV.SWR (R4 + 50), 42
-  EXPECT_EQ(state.extra.SetAddress(2200).GetValue(), 42);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // MOV.SWR (R6), 42
-  EXPECT_EQ(state.stack.SetAddress(-5).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 5).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // MOV.SWR (SP), 42
-  EXPECT_EQ(state.stack.SetAddress(-3).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 3).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip6));  // MOV.SWR (SP - 1), 42
-  EXPECT_EQ(state.stack.SetAddress(-4).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 4).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip7));  // MOV.SWR (FP), 42
-  EXPECT_EQ(state.stack.SetAddress(-1).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 1).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // MOV.SWR (FP - 1), 42
-  EXPECT_EQ(state.stack.SetAddress(-2).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 2).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip9));  // MOV.SWR S(-6), 42
-  EXPECT_EQ(state.stack.SetAddress(-6).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 6).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip10));  // MOV.SWR D(102), 42
-  EXPECT_EQ(state.data.SetAddress(1102).GetValue(), 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip11));  // MOV.SWR E(202), 42
-  EXPECT_EQ(state.extra.SetAddress(2202).GetValue(), 42);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 202).GetValue(), 42);
 }
 
 TEST_F(InstructionTest, MOV_SDR) {
@@ -329,25 +329,25 @@ TEST_F(InstructionTest, MOV_SDR) {
   state.code.AddValue(Encode("HALT"));
 
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // MOV.SDR [R0], D1
-  EXPECT_EQ(state.data.SetAddress(1100).GetValue32(), 0x20001);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip2));  // MOV.SDR [R1 + 52], D1
-  EXPECT_EQ(state.data.SetAddress(1102).GetValue32(), 0x20001);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // MOV.SDR [R4 + 50], D1
-  EXPECT_EQ(state.extra.SetAddress(2200).GetValue32(), 0x20001);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // MOV.SDR [R6], D1
-  EXPECT_EQ(state.stack.SetAddress(-10).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 10).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // MOV.SDR [SP], D1
-  EXPECT_EQ(state.stack.SetAddress(-6).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 6).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip6));  // MOV.SDR [SP - 2], D1
-  EXPECT_EQ(state.stack.SetAddress(-8).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 8).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip7));  // MOV.SDR [FP], D1
-  EXPECT_EQ(state.stack.SetAddress(-2).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 2).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // MOV.SDR [FP - 2], D1
-  EXPECT_EQ(state.stack.SetAddress(-4).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 4).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip9));  // MOV.SDR S[-12], D1
-  EXPECT_EQ(state.stack.SetAddress(-12).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 12).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip10));  // MOV.SDR D[102], D1
-  EXPECT_EQ(state.data.SetAddress(1102).GetValue32(), 0x20001);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip11));  // MOV.SDR E[202], D1
 }
 
@@ -401,27 +401,27 @@ TEST_F(InstructionTest, MOV_SDV) {
   state.code.AddValue(Encode("HALT"));
 
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // MOV.SDR [R0], 0x20001
-  EXPECT_EQ(state.data.SetAddress(1100).GetValue32(), 0x20001);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip2));  // MOV.SDR [R1 + 52], 0x20001
-  EXPECT_EQ(state.data.SetAddress(1102).GetValue32(), 0x20001);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // MOV.SDR [R4 + 50], 0x20001
-  EXPECT_EQ(state.extra.SetAddress(2200).GetValue32(), 0x20001);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // MOV.SDR [R6], 0x20001
-  EXPECT_EQ(state.stack.SetAddress(-10).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 10).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // MOV.SDR [SP], 0x20001
-  EXPECT_EQ(state.stack.SetAddress(-6).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 6).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip6));  // MOV.SDR [SP - 2], 0x20001
-  EXPECT_EQ(state.stack.SetAddress(-8).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 8).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip7));  // MOV.SDR [FP], 0x20001
-  EXPECT_EQ(state.stack.SetAddress(-2).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 2).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // MOV.SDR [FP - 2], 0x20001
-  EXPECT_EQ(state.stack.SetAddress(-4).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 4).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip9));  // MOV.SDR S[-12], 0x20001
-  EXPECT_EQ(state.stack.SetAddress(-12).GetValue32(), 0x20001);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 12).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip10));  // MOV.SDR D[102], 0x20001
-  EXPECT_EQ(state.data.SetAddress(1102).GetValue32(), 0x20001);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue32(), 0x20001);
   ASSERT_TRUE(ExecuteUntilIp(ip11));  // MOV.SDR E[202], 0x20001
-  EXPECT_EQ(state.extra.SetAddress(2202).GetValue32(), 0x20001);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 202).GetValue32(), 0x20001);
 }
 
 TEST_F(InstructionTest, MOV_S_CodeAndStack) {
@@ -610,43 +610,43 @@ TEST_F(InstructionTest, PUSH_W) {
   uint16_t sp = state.sp;
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // PUSH.W R0
   EXPECT_EQ(state.sp, sp - 1);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 42);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 42);
   ASSERT_TRUE(ExecuteUntilIp(ip2));  // PUSH.W (R1)
   EXPECT_EQ(state.sp, sp - 2);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 300);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 300);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // PUSH.W (R2 + 50)
   EXPECT_EQ(state.sp, sp - 3);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 300);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 300);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // PUSH.W (R4 + 50)
   EXPECT_EQ(state.sp, sp - 4);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 400);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 400);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // PUSH.W (R6)
   EXPECT_EQ(state.sp, sp - 5);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 200);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 200);
   ASSERT_TRUE(ExecuteUntilIp(ip6));  // PUSH.W (SP)
   EXPECT_EQ(state.sp, sp - 6);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 200);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 200);
   ASSERT_TRUE(ExecuteUntilIp(ip7));  // PUSH.W (SP + 2)
   EXPECT_EQ(state.sp, sp - 7);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 400);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 400);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // PUSH.W (FP)
   EXPECT_EQ(state.sp, sp - 8);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 100);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 100);
   ASSERT_TRUE(ExecuteUntilIp(ip9));  // PUSH.W (FP - 1)
   EXPECT_EQ(state.sp, sp - 9);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 200);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 200);
   ASSERT_TRUE(ExecuteUntilIp(ip10));  // PUSH.W 24
   EXPECT_EQ(state.sp, sp - 10);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 24);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 24);
   ASSERT_TRUE(ExecuteUntilIp(ip11));  // PUSH.W S(-1)
   EXPECT_EQ(state.sp, sp - 11);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 100);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 100);
   ASSERT_TRUE(ExecuteUntilIp(ip12));  // PUSH.W D(100)
   EXPECT_EQ(state.sp, sp - 12);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 300);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 300);
   ASSERT_TRUE(ExecuteUntilIp(ip13));  // PUSH.W E(200)
   EXPECT_EQ(state.sp, sp - 13);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue(), 400);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 400);
 }
 
 TEST_F(InstructionTest, PUSH_D) {
@@ -698,43 +698,44 @@ TEST_F(InstructionTest, PUSH_D) {
   uint16_t sp = state.sp;
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // PUSH.D D0
   EXPECT_EQ(state.sp, sp - 2);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x80009);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x80009);
   ASSERT_TRUE(ExecuteUntilIp(ip2));  // PUSH.D [R2]
   EXPECT_EQ(state.sp, sp - 4);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x40005);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x40005);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // PUSH.D [R3 + 50]
   EXPECT_EQ(state.sp, sp - 6);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x40005);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x40005);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // PUSH.D [R4 + 50]
   EXPECT_EQ(state.sp, sp - 8);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x60007);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x60007);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // PUSH.D [R6]
   EXPECT_EQ(state.sp, sp - 10);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x30004);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x30004);
   ASSERT_TRUE(ExecuteUntilIp(ip6));  // PUSH.D [SP]
   EXPECT_EQ(state.sp, sp - 12);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x30004);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x30004);
   ASSERT_TRUE(ExecuteUntilIp(ip7));  // PUSH.D [SP + 4]
   EXPECT_EQ(state.sp, sp - 14);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x60007);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x60007);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // PUSH.D [FP]
   EXPECT_EQ(state.sp, sp - 16);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x10002);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x10002);
   ASSERT_TRUE(ExecuteUntilIp(ip9));  // PUSH.D [FP - 2]
   EXPECT_EQ(state.sp, sp - 18);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x30004);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x30004);
   ASSERT_TRUE(ExecuteUntilIp(ip10));  // PUSH.D 0x12345678
   EXPECT_EQ(state.sp, sp - 20);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x12345678);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(),
+            0x12345678);
   ASSERT_TRUE(ExecuteUntilIp(ip11));  // PUSH.D S(-2)
   EXPECT_EQ(state.sp, sp - 22);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x10002);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x10002);
   ASSERT_TRUE(ExecuteUntilIp(ip12));  // PUSH.D D(100)
   EXPECT_EQ(state.sp, sp - 24);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x40005);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x40005);
   ASSERT_TRUE(ExecuteUntilIp(ip13));  // PUSH.D E(200)
   EXPECT_EQ(state.sp, sp - 26);
-  EXPECT_EQ(state.stack.SetAddress(state.sp).GetValue32(), 0x60007);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x60007);
 }
 
 TEST_F(InstructionTest, POP_W) {
