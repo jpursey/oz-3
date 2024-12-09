@@ -299,8 +299,8 @@ TEST_F(InstructionTest, MOV_SDR) {
                       {CpuCore::R3, 2},     // For all (high word)
                       {CpuCore::R4, 150},   // For "[$r + $v]", v == 50
                       {CpuCore::R6, -10},   // For "[$r]"
-                      {CpuCore::SP, -6},    // For "(SP)" and "(SP + $v)"
-                      {CpuCore::FP, -2}});  // For "(FP)" and "(FP + $v)"
+                      {CpuCore::SP, -6},    // For "[SP]" and "[SP + $v]"
+                      {CpuCore::FP, -2}});  // For "[FP]" and "[FP + $v]"
 
   state.code.AddValue(Encode("MOV.SDR", {"[$r]", CpuCore::R0}, 1));
   const uint16_t ip1 = state.code.AddNopGetAddress();
@@ -358,8 +358,8 @@ TEST_F(InstructionTest, MOV_SDV) {
                       {CpuCore::R1, 50},    // For "[$r + $v]", v == 52
                       {CpuCore::R4, 150},   // For "[$r + $v]", v == 50
                       {CpuCore::R6, -10},   // For "[$r]"
-                      {CpuCore::SP, -6},    // For "(SP)" and "(SP + $v)"
-                      {CpuCore::FP, -2}});  // For "(FP)" and "(FP + $v)"
+                      {CpuCore::SP, -6},    // For "[SP]" and "[SP + $v]"
+                      {CpuCore::FP, -2}});  // For "[FP]" and "[FP + $v]"
   state.code.AddValue(Encode("MOV.SDV", {"[$r], $v", CpuCore::R0}))
       .AddValue32(0x20001);
   const uint16_t ip1 = state.code.AddNopGetAddress();
