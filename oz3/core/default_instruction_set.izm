@@ -745,47 +745,47 @@ macro SwapDword(P) {
     MOV(C0,p0); MOV(p0,m0); MOV(m0,C0);
     MOV(C1,p1); MOV(p1,m1); MOV(m1,C1);
   }
-  code "($r)" {
+  code "[$r]" {
     UL;
     MOV(C0,p0); MOV(C1,p1);
     LKR(m); ADR(m); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "($r + $v)" {
+  code "[$r + $v]" {
     LD(C2); UL; ADD(C2,m);
     MOV(C0,p0); MOV(C1,p1);
     LKR(m); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "(SP)" {
+  code "[SP]" {
     UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(SP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "(SP + $v)" {
+  code "[SP + $v]" {
     LD(C2); UL; ADD(C2,SP);
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "(FP)" {
+  code "[FP]" {
     UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(FP); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "(FP + $v)" {
+  code "[FP + $v]" {
     LD(C2); UL; ADD(C2,FP);
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "S($v)" {
+  code "S[$v]" {
     LD(C2); UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "D($v)" {
+  code "D[$v]" {
     LD(C2); UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(DATA); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "E($v)" {
+  code "E[$v]" {
     LD(C2); UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(EXTRA); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;

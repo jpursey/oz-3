@@ -718,12 +718,12 @@ constexpr oz3::MacroCodeDef kMacroCode_SwapWord[] = {
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_SwapDword[] = {
-    {.source = "($r)",
+    {.source = "[$r]",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
      .code = "UL;MOV(C0,p0);MOV(C1,p1);LKR(m);ADR(m);LD(p0);LD(p1);STP(C1);"
              "STP(C0);UL;"},
-    {.source = "($r + $v)",
+    {.source = "[$r + $v]",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
      .code = "LD(C2);UL;ADD(C2,m);MOV(C0,p0);MOV(C1,p1);LKR(m);ADR(C2);"
@@ -733,31 +733,31 @@ constexpr oz3::MacroCodeDef kMacroCode_SwapDword[] = {
      .arg = {oz3::ArgType::kDwordReg, 2},
      .code = "UL;MOV(C0,p0);MOV(p0,m0);MOV(m0,C0);MOV(C1,p1);MOV(p1,m1);"
              "MOV(m1,C1);"},
-    {.source = "(SP)",
+    {.source = "[SP]",
      .prefix = {20, 5},
      .code = "UL;MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(SP);LD(p0);LD(p1);"
              "STP(C1);STP(C0);UL;"},
-    {.source = "(SP + $v)",
+    {.source = "[SP + $v]",
      .prefix = {21, 5},
      .code = "LD(C2);UL;ADD(C2,SP);MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(C2);"
              "LD(p0);LD(p1);STP(C1);STP(C0);UL;"},
-    {.source = "(FP)",
+    {.source = "[FP]",
      .prefix = {22, 5},
      .code = "UL;MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(FP);LD(p0);LD(p1);"
              "STP(C1);STP(C0);UL;"},
-    {.source = "(FP + $v)",
+    {.source = "[FP + $v]",
      .prefix = {23, 5},
      .code = "LD(C2);UL;ADD(C2,FP);MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(C2);"
              "LD(p0);LD(p1);STP(C1);STP(C0);UL;"},
-    {.source = "S($v)",
+    {.source = "S[$v]",
      .prefix = {24, 5},
      .code = "LD(C2);UL;MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(C2);LD(p0);"
              "LD(p1);STP(C1);STP(C0);UL;"},
-    {.source = "D($v)",
+    {.source = "D[$v]",
      .prefix = {25, 5},
      .code = "LD(C2);UL;MOV(C0,p0);MOV(C1,p1);LK(DATA);ADR(C2);LD(p0);"
              "LD(p1);STP(C1);STP(C0);UL;"},
-    {.source = "E($v)",
+    {.source = "E[$v]",
      .prefix = {26, 5},
      .code = "LD(C2);UL;MOV(C0,p0);MOV(C1,p1);LK(EXTRA);ADR(C2);LD(p0);"
              "LD(p1);STP(C1);STP(C0);UL;"},
