@@ -914,5 +914,169 @@ TEST_F(InstructionTest, POP_D) {
   EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x80009);
 }
 
+TEST_F(InstructionTest, SWP_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.PushValue(100);  // FP
+  state.stack.PushValue(200);  // SP
+  state.data.SetAddress(state.data.GetAddress() + 100).AddValue(300);
+  state.extra.SetAddress(state.extra.GetAddress() + 200).AddValue(400);
+  state.SetRegisters({{CpuCore::R0, 100},  // For "$r"
+                      {CpuCore::R2, 42},   // For "($r)"
+                      {CpuCore::R3, 50},   // For "($r + $v)", v == 50
+                      {CpuCore::R4, 150},  // For "($r + $v)", v == 50
+                      {CpuCore::R6, -2},   // For "($r)"
+                      {CpuCore::SP, -2},
+                      {CpuCore::FP, -1}});
+
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, {"$r", CpuCore::R2}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, {"($r)", CpuCore::R2}));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, {"($r + $v)", CpuCore::R3}))
+      .AddValue(50);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, {"($r + $v)", CpuCore::R4}))
+      .AddValue(50);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, {"($r)", CpuCore::R6}));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "(SP)"));
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "(SP + $v)")).AddValue(1);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "(FP)"));
+  const uint16_t ip8 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "(FP + $v)")).AddValue(-1);
+  const uint16_t ip9 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "S($v)")).AddValue(-1);
+  const uint16_t ip10 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "D($v)")).AddValue(100);
+  const uint16_t ip11 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.W", CpuCore::R0, "E($v)")).AddValue(200);
+  const uint16_t ip12 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SWP.W R0, R2
+  EXPECT_EQ(state.r0, 42);
+  EXPECT_EQ(state.r2, 100);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SWP.W R0, (R2)
+  EXPECT_EQ(state.r0, 300);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 42);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SWP.W R0, (R3 + 50)
+  EXPECT_EQ(state.r0, 42);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 300);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SWP.W R0, (R4 + 50)
+  EXPECT_EQ(state.r0, 400);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue(), 42);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SWP.W R0, (R6)
+  EXPECT_EQ(state.r0, 200);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 2).GetValue(), 400);
+  ASSERT_TRUE(ExecuteUntilIp(ip6));  // SWP.W R0, (SP)
+  EXPECT_EQ(state.r0, 400);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 200);
+  ASSERT_TRUE(ExecuteUntilIp(ip7));  // SWP.W R0, (SP + 1)
+  EXPECT_EQ(state.r0, 100);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp + 1).GetValue(), 400);
+  ASSERT_TRUE(ExecuteUntilIp(ip8));  // SWP.W R0, (FP)
+  EXPECT_EQ(state.r0, 400);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.fp).GetValue(), 100);
+  ASSERT_TRUE(ExecuteUntilIp(ip9));  // SWP.W R0, (FP - 1)
+  EXPECT_EQ(state.r0, 200);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.fp - 1).GetValue(), 400);
+  ASSERT_TRUE(ExecuteUntilIp(ip10));  // SWP.W R0, S(-1)
+  EXPECT_EQ(state.r0, 100);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 1).GetValue(), 200);
+  ASSERT_TRUE(ExecuteUntilIp(ip11));  // SWP.W R0, D(100)
+  EXPECT_EQ(state.r0, 300);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 100);
+  ASSERT_TRUE(ExecuteUntilIp(ip12));  // SWP.W R0, E(200)
+  EXPECT_EQ(state.r0, 42);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue(), 300);
+}
+
+TEST_F(InstructionTest, SWP_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.PushValue32(0x10002);  // FP
+  state.stack.PushValue32(0x30004);  // SP
+  state.data.SetAddress(state.bd + 100).AddValue32(0x12345678);
+  state.extra.SetAddress(state.be + 200).AddValue32(0x9ABCDEF0);
+  state.SetRegisters({{CpuCore::R0, 100},  // For "$R"
+                      {CpuCore::R1, 50},   // For "$R"
+                      {CpuCore::R2, 2},    // For "[$r]"
+                      {CpuCore::R3, 1},    // For "[$r + $v]", v == 50
+                      {CpuCore::R4, 150},  // For "[$r + $v]", v == 50
+                      {CpuCore::R6, -4},   // For "[$r]"
+                      {CpuCore::SP, -4},
+                      {CpuCore::FP, -2}});
+
+  state.code.AddValue(Encode("SWP.D", 0, {"$R", 1}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, {"[$r]", CpuCore::R2}));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, {"[$r + $v]", CpuCore::R3}))
+      .AddValue(50);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, {"[$r + $v]", CpuCore::R4}))
+      .AddValue(50);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, {"[$r]", CpuCore::R6}));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "[SP]"));
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "[SP + $v]")).AddValue(2);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "[FP]"));
+  const uint16_t ip8 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "[FP + $v]")).AddValue(-2);
+  const uint16_t ip9 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "S[$v]")).AddValue(-4);
+  const uint16_t ip10 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "D[$v]")).AddValue(100);
+  const uint16_t ip11 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWP.D", 0, "E[$v]")).AddValue(200);
+  const uint16_t ip12 = state.code.AddNopGetAddress();
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SWP.D D0, D1
+  EXPECT_EQ(state.d0(), 0x10002);
+  EXPECT_EQ(state.d1(), 100 | (50 << 16));
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SWP.D D0, [R2]
+  EXPECT_EQ(state.d0(), 0x12345678);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue32(), 0x10002);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SWP.D D0, [R3 + 50]
+  EXPECT_EQ(state.d0(), 0x10002);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue32(), 0x12345678);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SWP.D D0, [R4 + 50]
+  EXPECT_EQ(state.d0(), 0x9ABCDEF0);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x10002);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SWP.D D0, [R6]
+  EXPECT_EQ(state.d0(), 0x30004);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 4).GetValue32(), 0x9ABCDEF0);
+  ASSERT_TRUE(ExecuteUntilIp(ip6));  // SWP.D D0, [SP]
+  EXPECT_EQ(state.d0(), 0x9ABCDEF0);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x30004);
+  ASSERT_TRUE(ExecuteUntilIp(ip7));  // SWP.D D0, [SP + 2]
+  EXPECT_EQ(state.d0(), 0x10002);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp + 2).GetValue32(),
+            0x9ABCDEF0);
+  ASSERT_TRUE(ExecuteUntilIp(ip8));  // SWP.D D0, [FP]
+  EXPECT_EQ(state.d0(), 0x9ABCDEF0);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.fp).GetValue32(), 0x10002);
+  ASSERT_TRUE(ExecuteUntilIp(ip9));  // SWP.D D0, [FP - 2]
+  EXPECT_EQ(state.d0(), 0x30004);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.fp - 2).GetValue32(),
+            0x9ABCDEF0);
+  ASSERT_TRUE(ExecuteUntilIp(ip10));  // SWP.D D0, S[-4]
+  EXPECT_EQ(state.d0(), 0x9ABCDEF0);
+  EXPECT_EQ(state.stack.SetAddress(state.bs - 4).GetValue32(), 0x30004);
+  ASSERT_TRUE(ExecuteUntilIp(ip11));  // SWP.D D0, D[100]
+  EXPECT_EQ(state.d0(), 0x12345678);
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue32(), 0x9ABCDEF0);
+  ASSERT_TRUE(ExecuteUntilIp(ip12));  // SWP.D D0, E[200]
+  EXPECT_EQ(state.d0(), 0x10002);
+  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x12345678);
+}
+
 }  // namespace
 }  // namespace oz3
