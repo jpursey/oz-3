@@ -90,8 +90,8 @@ TEST_F(InstructionTest, MOV_LD) {
   state.extra.SetAddress(state.extra.GetAddress() + 200).AddValue32(0x60007);
   state.SetRegisters({{CpuCore::R0, 9},    // For "$R"
                       {CpuCore::R1, 8},    // For "$R"
-                      {CpuCore::R4, 150},  // For "($r + $v)", v == 50
-                      {CpuCore::R6, -2},   // For "($r)"
+                      {CpuCore::R4, 150},  // For "[$r + $v]", v == 50
+                      {CpuCore::R6, -2},   // For "[$r]"
                       {CpuCore::SP, -4},
                       {CpuCore::FP, -2}});
 
