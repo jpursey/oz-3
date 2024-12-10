@@ -286,5 +286,99 @@ TEST_F(InstructionTest, ADD_S) {
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
 }
 
+TEST_F(InstructionTest, ADQ_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("ADQ.W", CpuCore::R0, 1));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+      .AddValue(0x8000 - 31);
+  state.code.AddValue(Encode("ADQ.W", CpuCore::R0, 31));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v")).AddValue(0xFFFF);
+  state.code.AddValue(Encode("ADQ.W", CpuCore::R0, 0));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("ADQ.W", CpuCore::R0, 1));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // ADQ.W R0, 1
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // ADQ.W R0, 31
+  EXPECT_EQ(state.r0, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // ADQ.W R0, 0
+  EXPECT_EQ(state.r0, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // ADQ.W R0, 1
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, ADQ_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("ADQ.D", 0, 1));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.LD", 0, "$V")).AddValue32(0x80000000 - 31);
+  state.code.AddValue(Encode("ADQ.D", 0, 31));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.LD", 0, "$V")).AddValue32(0xFFFFFFFF);
+  state.code.AddValue(Encode("ADQ.D", 0, 0));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("ADQ.D", 0, 1));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // ADQ.D D0, 1
+  EXPECT_EQ(state.d0(), 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // ADQ.D D0, 31
+  EXPECT_EQ(state.d0(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // ADQ.D D0, 0
+  EXPECT_EQ(state.d0(), 0xFFFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // ADQ.D D0, 1
+  EXPECT_EQ(state.d0(), 0);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, ADQ_S) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("ADQ.S", 1));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.S", "SP, $v")).AddValue(0x8000 - 31);
+  state.code.AddValue(Encode("ADQ.S", 31));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.S", "SP, $v")).AddValue(0xFFFF);
+  state.code.AddValue(Encode("ADQ.S", 0));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("ADQ.S", 1));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // ADQ.S SP, 1
+  EXPECT_EQ(state.sp, 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // ADQ.S SP, 31
+  EXPECT_EQ(state.sp, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // ADQ.S SP, 0
+  EXPECT_EQ(state.sp, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // ADQ.S SP, 1
+  EXPECT_EQ(state.sp, 0);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
 }  // namespace
 }  // namespace oz3

@@ -897,7 +897,7 @@ instruction ADQ.D "$R, $#5" {
 
 instruction ADQ.S "SP, $#5" {
   UL;
-  ADD(SP,C1);
+  ADD(SP,C0);
   MSR(ZSCO,ZSCO);
 }
 
@@ -992,7 +992,7 @@ instruction SBQ.D "$R, $#5" {
 
 instruction SBQ.S "SP, $#5" {
   UL;
-  SUB(SP,C1);
+  SUB(SP,C0);
   MSR(ZSCO,ZSCO);
 }
 
