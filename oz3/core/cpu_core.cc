@@ -266,8 +266,7 @@ void CpuCore::InitBanks() {
   banks_[EXTRA] = processor_->GetMemory(banks.extra);
 }
 
-void CpuCore::GetRegisters(
-    Registers& registers) const {
+void CpuCore::GetRegisters(Registers& registers) const {
   std::memcpy(registers.data(), r_, sizeof(r_));
 }
 
@@ -1034,8 +1033,14 @@ void CpuCore::RunInstructionLoop() {
 
   state_ = State::kStartInstruction;
 }
+#undef OZ3_INIT_VAL1
+#undef OZ3_INIT_VAL2
 #undef OZ3_INIT_REG1
 #undef OZ3_INIT_REG2
+#undef OZ3_INIT_REG_BYTE_MASK1
+#undef OZ3_INIT_REG_BYTE_MASK2
+#undef OZ3_INIT_REG_NIBBLE_MASK1
+#undef OZ3_INIT_REG_NIBBLE_MASK2
 #undef OZ3_MATH_OP
 #undef OZ3_Z
 #undef OZ3_S
