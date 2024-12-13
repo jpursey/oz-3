@@ -801,7 +801,7 @@ instruction SWP.D "$R, $m" {
 ## NEG <register>
 ##
 ## Cycles: 5-9
-## ZSCO: XX00
+## ZSCO: XX0X
 ##
 ## Variants:
 ##    NEG.W <reg>

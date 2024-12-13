@@ -720,5 +720,93 @@ TEST_F(InstructionTest, SBQ_S) {
   EXPECT_EQ(state.st, CpuCore::Z);
 }
 
+TEST_F(InstructionTest, SBC_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(0);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(0x7FFE);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(0x7FFE);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(1);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(0x8000);
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.W", CpuCore::R0, "$v")).AddValue(0x8000);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SBC.W R0, 0
+  EXPECT_EQ(state.r0, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SBC.W R0, 0x7FFE
+  EXPECT_EQ(state.r0, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SBC.W R0, 1
+  EXPECT_EQ(state.r0, 0x7FFF);
+  EXPECT_EQ(state.st, CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SBC.W R0, 0x7FFE
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SBC.W R0, 1
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip6));  // SBC.W R0, 0x8000
+  EXPECT_EQ(state.r0, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip7));  // SBC.W R0, 0x8000
+  EXPECT_EQ(state.r0, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+}
+
+TEST_F(InstructionTest, SBC_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(0);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(0x7FFFFFFE);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(0x7FFFFFFE);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(1);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(0x80000000);
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SBC.D", 0, "$V")).AddValue32(0x80000000);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SBC.D D0, 0
+  EXPECT_EQ(state.d0(), 0xFFFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SBC.D D0, 0x7FFFFFFE
+  EXPECT_EQ(state.d0(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SBC.D D0, 1
+  EXPECT_EQ(state.d0(), 0x7FFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SBC.D D0, 0x7FFFFFFE
+  EXPECT_EQ(state.d0(), 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SBC.D D0, 1
+  EXPECT_EQ(state.d0(), 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip6));  // SBC.D D0, 0x80000000
+  EXPECT_EQ(state.d0(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip7));  // SBC.D D0, 0x80000000
+  EXPECT_EQ(state.d0(), 0xFFFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+}
+
 }  // namespace
 }  // namespace oz3
