@@ -184,6 +184,64 @@ TEST_F(InstructionTest, MathOpsGetDword) {
   EXPECT_EQ(state.d1(), 0x60007);
 }
 
+TEST_F(InstructionTest, NEG_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters(
+      {{CpuCore::ST, 0}, {CpuCore::R1, 1}, {CpuCore::R2, 0x8000}});
+
+  state.code.AddValue(Encode("NEG.W", CpuCore::R0));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.W", CpuCore::R1));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.W", CpuCore::R1));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.W", CpuCore::R2));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // NEG.W R0
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // NEG.W R1
+  EXPECT_EQ(state.r1, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // NEG.W R1
+  EXPECT_EQ(state.r1, 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // NEG.W R2
+  EXPECT_EQ(state.r2, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+}
+
+TEST_F(InstructionTest, NEG_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters(
+      {{CpuCore::ST, 0}, {CpuCore::R2, 1}, {CpuCore::R5, 0x8000}});
+  state.code.AddValue(Encode("NEG.D", 0));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.D", 1));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.D", 1));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.D", 2));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // NEG.D D0
+  EXPECT_EQ(state.d0(), 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // NEG.D D1
+  EXPECT_EQ(state.d1(), 0xFFFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // NEG.D D1
+  EXPECT_EQ(state.d1(), 1);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // NEG.D D2
+  EXPECT_EQ(state.d2(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+}
+
 TEST_F(InstructionTest, ADD_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();

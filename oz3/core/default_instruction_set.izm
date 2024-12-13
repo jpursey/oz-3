@@ -812,12 +812,7 @@ instruction SWP.D "$R, $m" {
 
 instruction NEG.W "$r" {
   UL;
-  # The contract is to always clear the CO flags, which SUB won't do, so we need
-  # to clear them explicitly before returning the status
-  SUB(C0,a); MSC(CO); MSR(ZSCO,ZSCO);
-
-  # Copy result back to the register
-  MOV(a,C0);
+  NEG(a,a); MSR(ZSCO,ZSCO);
 }
 
 instruction NEG.D "$R" {
@@ -827,7 +822,7 @@ instruction NEG.D "$R" {
   SUB(C0,a0); MSR(Z,Z);
 
   # Clear the zero bit (but don't set it) based on high-order result.
-  SBC(C1,a1); MSC(CO); MSR(ZSCO,_SCO);
+  SBC(C1,a1); MSC(C); MSR(ZSCO,_SCO);
 
   # Copy result back to the register
   MOV(a0,C0); MOV(a1,C1);

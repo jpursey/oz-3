@@ -2871,12 +2871,12 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "NEG.W",
      .source = "$r",
      .arg1 = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;SUB(C0,a);MSC(CO);MSR(ZSCO,ZSCO);MOV(a,C0);"},
+     .code = "UL;NEG(a,a);MSR(ZSCO,ZSCO);"},
     {.op = 19,
      .op_name = "NEG.D",
      .source = "$R",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
-     .code = "UL;SUB(C0,a0);MSR(Z,Z);SBC(C1,a1);MSC(CO);MSR(ZSCO,_SCO);"
+     .code = "UL;SUB(C0,a0);MSR(Z,Z);SBC(C1,a1);MSC(C);MSR(ZSCO,_SCO);"
              "MOV(a0,C0);MOV(a1,C1);"},
     {.op = 20,
      .op_name = "ADD.W",
