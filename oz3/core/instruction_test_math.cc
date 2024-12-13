@@ -442,6 +442,7 @@ TEST_F(InstructionTest, ADC_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
   state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
   state.code.AddValue(Encode("ADC.W", CpuCore::R0, "$v")).AddValue(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("ADC.W", CpuCore::R0, "$v")).AddValue(0x7FFE);
@@ -453,6 +454,7 @@ TEST_F(InstructionTest, ADC_W) {
   state.code.AddValue(Encode("ADC.W", CpuCore::R0, "$v")).AddValue(1);
   const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
+
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // ADC.W R0, 1
   EXPECT_EQ(state.r0, 2);
   EXPECT_EQ(state.st, 0);
@@ -474,6 +476,7 @@ TEST_F(InstructionTest, ADC_D) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
   state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
   state.code.AddValue(Encode("ADC.D", 0, "$V")).AddValue32(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("ADC.D", 0, "$V")).AddValue32(0x7FFFFFFE);
@@ -485,6 +488,7 @@ TEST_F(InstructionTest, ADC_D) {
   state.code.AddValue(Encode("ADC.D", 0, "$V")).AddValue32(1);
   const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
+
   ASSERT_TRUE(ExecuteUntilIp(ip1));  // ADC.D D0, 1
   EXPECT_EQ(state.d0(), 2);
   EXPECT_EQ(state.st, 0);
@@ -500,6 +504,108 @@ TEST_F(InstructionTest, ADC_D) {
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // ADC.D D0, 1
   EXPECT_EQ(state.d0(), 0);
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, SUB_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("SUB.W", CpuCore::R0, "$v")).AddValue(1);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.W", CpuCore::R0, "$v")).AddValue(0x7FFF);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.W", CpuCore::R0, "$v")).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.W", CpuCore::R0, "$v")).AddValue(0x7FFF);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.W", CpuCore::R0, "$v")).AddValue(0x8000);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SUB.W R0, 1
+  EXPECT_EQ(state.r0, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SUB.W R0, 0x7FFF
+  EXPECT_EQ(state.r0, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SUB.W R0, 1
+  EXPECT_EQ(state.r0, 0x7FFF);
+  EXPECT_EQ(state.st, CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SUB.W R0, 0x7FFF
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SUB.W R0, 0x8000
+  EXPECT_EQ(state.r0, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
+}
+
+TEST_F(InstructionTest, SUB_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("SUB.D", 0, "$V")).AddValue32(1);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.D", 0, "$V")).AddValue32(0x7FFFFFFF);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.D", 0, "$V")).AddValue32(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.D", 0, "$V")).AddValue32(0x7FFFFFFF);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.D", 0, "$V")).AddValue32(0x80000000);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SUB.D D0, 1
+  EXPECT_EQ(state.d0(), 0xFFFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SUB.D D0, 0x7FFFFFFF
+  EXPECT_EQ(state.d0(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SUB.D D0, 1
+  EXPECT_EQ(state.d0(), 0x7FFFFFFF);
+  EXPECT_EQ(state.st, CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SUB.D D0, 0x7FFFFFFF
+  EXPECT_EQ(state.d0(), 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SUB.D D0, 0x80000000
+  EXPECT_EQ(state.d0(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
+}
+
+TEST_F(InstructionTest, SUB_S) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("SUB.S", "$v")).AddValue(1);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.S", "$v")).AddValue(0x7FFF);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.S", "$v")).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.S", "$v")).AddValue(0x7FFF);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SUB.S", "$v")).AddValue(0x8000);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SUB.S SP, 1
+  EXPECT_EQ(state.sp, 0xFFFF);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SUB.S SP, 0x7FFF
+  EXPECT_EQ(state.sp, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SUB.S SP, 1
+  EXPECT_EQ(state.sp, 0x7FFF);
+  EXPECT_EQ(state.st, CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // SUB.S SP, 0x7FFF
+  EXPECT_EQ(state.sp, 0);
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // SUB.S SP, 0x8000
+  EXPECT_EQ(state.sp, 0x8000);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
 }
 
 }  // namespace
