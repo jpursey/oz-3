@@ -2133,27 +2133,27 @@ TEST_F(CpuCoreTest, SubOp) {
   // Execute the SUB(R0,R7) instruction. R0 = 0x0000, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.r0, 0xFFFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
   // Execute the SUB(R1,R7) instruction. R1 = 0x0001, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip2));
   EXPECT_EQ(state.r1, 0x0000);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
   // Execute the SUB(R2,R7) instruction. R2 = 0x0002, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip3));
   EXPECT_EQ(state.r2, 0x0001);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
   // Execute the SUB(R3,R7) instruction. R3 = 0xFFFF, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip4));
   EXPECT_EQ(state.r3, 0xFFFE);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
   // Execute the SUB(R4,R7) instruction. R4 = 0x8000, R7 = 0x0001
   ExecuteUntilHalt();
   EXPECT_EQ(state.r4, 0x7FFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::O);
 }
 
 TEST_F(CpuCoreTest, AdcOpNoCarry) {
@@ -2334,27 +2334,27 @@ TEST_F(CpuCoreTest, SbcOpNoCarry) {
   // Execute the SBC(R0,R7) instruction. R0 = 0x0000, R7 = 0x0001, C = 0
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.r0, 0xFFFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
   // Execute the SBC(R1,R7) instruction. R1 = 0x0001, R7 = 0x0001, C = 0
   ASSERT_TRUE(ExecuteUntilIp(ip2));
   EXPECT_EQ(state.r1, 0x0000);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
   // Execute the SBC(R2,R7) instruction. R2 = 0x0002, R7 = 0x0001, C = 0
   ASSERT_TRUE(ExecuteUntilIp(ip3));
   EXPECT_EQ(state.r2, 0x0001);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
   // Execute the SBC(R3,R7) instruction. R3 = 0xFFFF, R7 = 0x0001, C = 0
   ASSERT_TRUE(ExecuteUntilIp(ip4));
   EXPECT_EQ(state.r3, 0xFFFE);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
   // Execute the SBC(R4,R7) instruction. R4 = 0x8000, R7 = 0x0001, C = 0
   ASSERT_TRUE(ExecuteUntilIp(ip5));
   EXPECT_EQ(state.r4, 0x7FFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::O);
 
   // Execute the SBC(R1,R1) instruction. R1 = 0x0000, C = 0
   ExecuteUntilHalt();
@@ -2398,27 +2398,27 @@ TEST_F(CpuCoreTest, SbcOpWithCarry) {
   // Execute the SBC(R0,R7) instruction. R0 = 0x0000, R7 = 0x0001, C = 1
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.r0, 0xFFFE);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
   // Execute the SBC(R1,R7) instruction. R1 = 0x0001, R7 = 0x0001, C = 1
   ASSERT_TRUE(ExecuteUntilIp(ip2));
   EXPECT_EQ(state.r1, 0xFFFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
   // Execute the SBC(R2,R7) instruction. R2 = 0x0002, R7 = 0x0001, C = 1
   ASSERT_TRUE(ExecuteUntilIp(ip3));
   EXPECT_EQ(state.r2, 0x0000);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
   // Execute the SBC(R3,R7) instruction. R3 = 0xFFFF, R7 = 0x0001, C = 1
   ASSERT_TRUE(ExecuteUntilIp(ip4));
   EXPECT_EQ(state.r3, 0xFFFD);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
   // Execute the SBC(R4,R7) instruction. R4 = 0x8001, R7 = 0x0001, C = 1
   ASSERT_TRUE(ExecuteUntilIp(ip5));
   EXPECT_EQ(state.r4, 0x7FFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::O);
 
   // Execute the SBC(R5,R6) instruction. R5 = 0x0000, R6 = 0xFFFF, C = 1
   ExecuteUntilHalt();
@@ -2533,13 +2533,13 @@ TEST_F(CpuCoreTest, CmpiOp) {
   state.code.AddValue(Encode(kTestOp_HALT));
 
   ASSERT_TRUE(ExecuteUntilIp(ip1));
-  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
   ASSERT_TRUE(ExecuteUntilIp(ip2));
-  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.st, CpuCore::Z);
   ASSERT_TRUE(ExecuteUntilIp(ip3));
-  EXPECT_EQ(state.st, CpuCore::C);
+  EXPECT_EQ(state.st, 0);
   ExecuteUntilHalt();
-  EXPECT_EQ(state.st, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.st, CpuCore::O);
 }
 
 TEST_F(CpuCoreTest, CmpOp) {
@@ -2568,27 +2568,27 @@ TEST_F(CpuCoreTest, CmpOp) {
   // Execute the CMP(R0,R7) instruction. R0 = 0x0000, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.r0, 0x0000);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
 
   // Execute the CMP(R1,R7) instruction. R1 = 0x0001, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip2));
   EXPECT_EQ(state.r1, 0x0001);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::Z);
 
   // Execute the CMP(R2,R7) instruction. R2 = 0x0002, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip3));
   EXPECT_EQ(state.r2, 0x0002);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, 0);
 
   // Execute the CMP(R3,R7) instruction. R3 = 0xFFFF, R7 = 0x0001
   ASSERT_TRUE(ExecuteUntilIp(ip4));
   EXPECT_EQ(state.r3, 0xFFFF);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::S);
 
   // Execute the CMP(R4,R7) instruction. R4 = 0x8000, R7 = 0x0001
   ExecuteUntilHalt();
   EXPECT_EQ(state.r4, 0x8000);
-  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::C | CpuCore::O);
+  EXPECT_EQ(state.st & CpuCore::ZSCO, CpuCore::O);
 }
 
 TEST_F(CpuCoreTest, MskiOp) {

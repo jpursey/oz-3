@@ -695,17 +695,25 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
+        const uint16_t c = (r_[reg1] < r_[reg2]) << CShift;
+        const uint16_t o = OZ3_O | ((r_[reg2] == 0x8000) << OShift);
         r_[reg1] = r;
-        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | c | o;
         exec_cycles_ += kCpuCoreCycles_SUB;
       } break;
       case kMicro_SBC: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2 - ((mst_ >> CShift) & 1));
+        const uint16_t pre_carry = ((mst_ >> CShift) & 1);
+        OZ3_MATH_OP(r_[reg1], -r_[reg2] - pre_carry, a1 + a2);
+        const uint16_t c = (static_cast<int>(r_[reg1]) <
+                            static_cast<int>(r_[reg2]) + pre_carry)
+                           << CShift;
+        const uint16_t o =
+            OZ3_O |
+            ((r_[reg2] == 0x8000 && pre_carry == 0) << OShift);
         r_[reg1] = r;
-        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O |
-               ((r == a1 && a2 != 0) << CShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | c | o;
         exec_cycles_ += kCpuCoreCycles_SBC;
       } break;
       case kMicro_NEG: {
@@ -726,14 +734,18 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_CMPI: {
         OZ3_INIT_REG1;
         OZ3_MATH_OP(r_[reg1], -code.arg2, a1 + a2);
-        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        const uint16_t c = (r_[reg1] < static_cast<uint16_t>(code.arg2))
+                           << CShift;
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | c | OZ3_O;
         exec_cycles_ += kCpuCoreCycles_CMPI;
       } break;
       case kMicro_CMP: {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         OZ3_MATH_OP(r_[reg1], -r_[reg2], a1 + a2);
-        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | OZ3_C | OZ3_O;
+        const uint16_t c = (r_[reg1] < r_[reg2]) << CShift;
+        const uint16_t o = OZ3_O | ((r_[reg2] == 0x8000) << OShift);
+        mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | c | o;
         exec_cycles_ += kCpuCoreCycles_CMP;
       } break;
       case kMicro_MSKI: {
