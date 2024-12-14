@@ -2638,10 +2638,12 @@ macro(bits:5) RotateLeft16ThroughCarry(p) {
     # Rotate zero bits?
     TST(m);
     JC(Z,@zero);
+    MSM(C,ST);
 
     # TODO: Modulo rotate 17 if it is too big.
 
     # Rotate 1+ bits
+    MOV(C2,m);
   @shift:
     RLC(p);
     JD(C2,@shift);
@@ -2649,7 +2651,7 @@ macro(bits:5) RotateLeft16ThroughCarry(p) {
     END;
 
   @zero:
-    TST(p); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSO,ZSO);
   }
 
   code "1" {
@@ -2737,6 +2739,7 @@ instruction RLC.D "$R, $m" {
   # Rotate zero bits?
   TST(r);
   JC(Z,@zero);
+  MSM(C,ST);
 
   # TODO: Modulo rotate 33 if it is too big.
 
@@ -2749,7 +2752,7 @@ instruction RLC.D "$R, $m" {
   END;
 
 @zero:
-  TST(a0); MSR(Z,Z); TST(a1); MSR(ZCSO,CSO);
+  TST(a0); MSR(Z,Z); TST(a1); MSR(ZSO,SO);
 }
 
 ################################################################################
@@ -2773,10 +2776,12 @@ macro(bits:5) RotateRight16ThroughCarry(p) {
     # Rotate zero bits?
     TST(m);
     JC(Z,@zero);
+    MSM(C,ST);
 
     # TODO: Modulo rotate 17 if it is too big.
 
     # Rotate 1+ bits
+    MOV(C2,m);
   @shift:
     RRC(p);
     JD(C2,@shift);
@@ -2784,7 +2789,7 @@ macro(bits:5) RotateRight16ThroughCarry(p) {
     END;
 
   @zero:
-    TST(p); MSR(ZSCO,ZSCO);
+    TST(p); MSR(ZSO,ZSO);
   }
 
   code "1" {
@@ -2872,6 +2877,7 @@ instruction RRC.D "$R, $m" {
   # Rotate zero bits?
   TST(r);
   JC(Z,@zero);
+  MSM(C,ST);
 
   # TODO: Modulo rotate 33 if it is too big.
 
@@ -2884,7 +2890,7 @@ instruction RRC.D "$R, $m" {
   END;
 
 @zero:
-  TST(a0); MSR(Z,Z); TST(a1); MSR(ZCSO,CSO);
+  TST(a0); MSR(Z,Z); TST(a1); MSR(ZSO,SO);
 }
 
 ################################################################################
