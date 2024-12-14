@@ -3195,8 +3195,7 @@ instruction FBGN {
 
 instruction FEND {
   UL;
-  MOV(SP,FP);
-  LK(STACK); ADR(SP); LD(FP); LAD(SP); UL;
+  LK(STACK); ADR(FP); LD(FP); LAD(SP); UL;
 }
 
 ################################################################################
