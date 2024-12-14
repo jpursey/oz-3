@@ -1458,8 +1458,8 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
     {.source = "32",
      .prefix = {39, 6},
      .code = "SL(p1);JC(C,@negative);MOVI(p0,0);MOVI(p1,0);MSC(SCO);MSS(Z);"
-             "MSR(SCO,Z);@negative:MOVI(p0,-1);MOVI(p1,-1);MSC(ZO);MSS(SC);"
-             "MSR(ZO,SC);"},
+             "MSR(SCO,Z);END;@negative:MOVI(p0,-1);MOVI(p1,-1);MSC(ZO);"
+             "MSS(SC);MSR(ZO,SC);"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_RotateLeft16[] = {

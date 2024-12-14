@@ -2257,6 +2257,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     JC(C,@negative);
     MOVI(p0,0); MOVI(p1,0);
     MSC(SCO); MSS(Z); MSR(SCO,Z);
+    END;
   @negative:
     MOVI(p0,-1); MOVI(p1,-1);
     MSC(ZO); MSS(SC); MSR(ZO,SC);
