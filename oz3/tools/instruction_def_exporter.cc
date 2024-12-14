@@ -88,10 +88,10 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
     if (absl::ascii_tolower(ret_name[0]) == 'p' ||
         absl::ascii_tolower(ret_name[0]) == 'm' || ret_name[0] == 'i') {
       converted_ret_name =
-          absl::StrCat("CpuCore::M", absl::AsciiStrToUpper(ret_name));
+          absl::StrCat("M", absl::AsciiStrToUpper(ret_name));
       ret_name = converted_ret_name;
     }
-    absl::StrAppend(&result_, ",\n     .ret = CpuCore::", ret_name);
+    absl::StrAppend(&result_, ",\n     .ret = oz3::CpuCore::", ret_name);
   }
   absl::StrAppend(&result_, ",\n     .code = ");
   ExportMicrocode(code.code);
