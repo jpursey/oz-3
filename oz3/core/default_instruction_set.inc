@@ -1727,7 +1727,7 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateRight16[] = {
              "RR(p);RR(p);RR(p);RR(p);RR(p);MSR(ZSCO,ZSCO);"},
     {.source = "16",
      .prefix = {23, 5},
-     .code = "MOV(C2,p);SR(C2);MSR(C,C);TST(p);MSR(ZSO,ZSO);"},
+     .code = "MOV(C2,p);SL(C2);MSR(C,C);TST(p);MSR(ZSO,ZSO);"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_RotateLeft16ThroughCarry[] = {
@@ -2971,7 +2971,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MSKI(r,31);"
              "JC(Z,@thirtytwo);MOVI(C2,31);AND(C2,r);@shift:MOVI(C0,1);"
              "AND(C0,a0);RR(C0);RRC(a1);MSR(ZS,ZS);RRC(a0);JD(C2,@shift);"
-             "MSR(ZCO,CO);END;@thirtytwo:MOV(C2,a0);SR(C2);MSR(C,C);"
+             "MSR(ZCO,CO);END;@thirtytwo:MOV(C2,a1);SL(C2);MSR(C,C);"
              "TST(a0);MSR(Z,Z);TST(a1);MSR(ZSO,SO);END;@zero:TST(a0);"
              "MSR(Z,Z);TST(a1);MSR(ZCSO,CSO);"},
     {.op = 54,

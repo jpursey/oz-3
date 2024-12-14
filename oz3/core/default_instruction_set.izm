@@ -2575,7 +2575,7 @@ macro(bits:5) RotateRight16(p) {
   }
   code "16" {
     MOV(C2,p);
-    SR(C2); MSR(C,C);
+    SL(C2); MSR(C,C);
     TST(p);
     MSR(ZSO,ZSO);
   }
@@ -2607,8 +2607,8 @@ instruction ROR.D "$R, $m" {
   END;
 
 @thirtytwo:
-  MOV(C2,a0);
-  SR(C2); MSR(C,C);
+  MOV(C2,a1);
+  SL(C2); MSR(C,C);
   TST(a0); MSR(Z,Z);
   TST(a1); MSR(ZSO,SO);
   END;
