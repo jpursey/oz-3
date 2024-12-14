@@ -348,32 +348,32 @@ instruction MOV.SWR "$m, $r" {
 }
 
 macro(bits:5) StoreWordValue {
-  code "($r), $v" { 
-    LD(C1); UL; LKR(m); ADR(m); ST(C1); UL; 
+  code "($r), $v" {
+    LD(C1); UL; LKR(m); ADR(m); ST(C1); UL;
   }
-  code "($r + $v), $v" { 
-    LD(C2); LD(C1); UL; ADD(C2,m); LKR(m); ADR(C2); ST(C1); UL; 
+  code "($r + $v), $v" {
+    LD(C2); LD(C1); UL; ADD(C2,m); LKR(m); ADR(C2); ST(C1); UL;
   }
-  code "(SP), $v" { 
-    LD(C1); UL; LK(STACK); ADR(SP); ST(C1); UL; 
+  code "(SP), $v" {
+    LD(C1); UL; LK(STACK); ADR(SP); ST(C1); UL;
   }
-  code "(SP + $v), $v" { 
-    LD(C2); LD(C1); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(C1); UL; 
+  code "(SP + $v), $v" {
+    LD(C2); LD(C1); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(C1); UL;
   }
-  code "(FP), $v" { 
-    LD(C1); UL; LK(STACK); ADR(FP); ST(C1); UL; 
+  code "(FP), $v" {
+    LD(C1); UL; LK(STACK); ADR(FP); ST(C1); UL;
   }
-  code "(FP + $v), $v" { 
-    LD(C2); LD(C1); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(C1); UL; 
+  code "(FP + $v), $v" {
+    LD(C2); LD(C1); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(C1); UL;
   }
-  code "S($v), $v" { 
-    LD(C2); LD(C1); UL; LK(STACK); ADR(C2); ST(C1); UL; 
+  code "S($v), $v" {
+    LD(C2); LD(C1); UL; LK(STACK); ADR(C2); ST(C1); UL;
   }
-  code "D($v), $v" { 
-    LD(C2); LD(C1); UL; LK(DATA); ADR(C2); ST(C1); UL; 
+  code "D($v), $v" {
+    LD(C2); LD(C1); UL; LK(DATA); ADR(C2); ST(C1); UL;
   }
-  code "E($v), $v" { 
-    LD(C2); LD(C1); UL; LK(EXTRA); ADR(C2); ST(C1); UL; 
+  code "E($v), $v" {
+    LD(C2); LD(C1); UL; LK(EXTRA); ADR(C2); ST(C1); UL;
   }
 }
 
@@ -441,15 +441,15 @@ macro(bits:5) StoreDwordValue {
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
   code "S[$v], $v" {
-    LD(C2); LD(C0); LD(C1); UL; 
+    LD(C2); LD(C0); LD(C1); UL;
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
   code "D[$v], $v" {
-    LD(C2); LD(C0); LD(C1); UL; 
+    LD(C2); LD(C0); LD(C1); UL;
     LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
   }
   code "E[$v], $v" {
-    LD(C2); LD(C0); LD(C1); UL; 
+    LD(C2); LD(C0); LD(C1); UL;
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
   }
 }
@@ -1291,7 +1291,7 @@ macro(bits:6) LogicalShiftLeft32(P) {
   }
   code "5" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-   
+
    SL(p0); MSR(Z,Z); RLC(p1);
     MSR(ZSCO,SCO);
   }
@@ -1316,7 +1316,7 @@ macro(bits:6) LogicalShiftLeft32(P) {
   code "9" {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-   
+
    SL(p0); MSR(Z,Z); RLC(p1);
     MSR(ZSCO,SCO);
   }
@@ -1345,7 +1345,7 @@ macro(bits:6) LogicalShiftLeft32(P) {
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
     SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1); SL(p0); RLC(p1);
-   
+
    SL(p0); MSR(Z,Z); RLC(p1);
     MSR(ZSCO,SCO);
   }
@@ -1629,7 +1629,7 @@ macro(bits:6) LogicalShiftRight32(P) {
   }
   code "5" {
     SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0);
-   
+
    SR(p1); MSR(Z,Z); RRC(p0);
     MSC(S); MSR(ZSCO,SCO);
   }
@@ -1654,7 +1654,7 @@ macro(bits:6) LogicalShiftRight32(P) {
   code "9" {
     SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0);
     SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0);
-   
+
    SR(p1); MSR(Z,Z); RRC(p0);
     MSC(S); MSR(ZSCO,SCO);
   }
@@ -1683,7 +1683,7 @@ macro(bits:6) LogicalShiftRight32(P) {
     SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0);
     SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0);
     SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0); SR(p1); RRC(p0);
-   
+
    SR(p1); MSR(Z,Z); RRC(p0);
     MSC(S); MSR(ZSCO,SCO);
   }
@@ -1917,7 +1917,7 @@ macro(bits:5) ArithmeticShiftRight16(p) {
     MSR(ZSCO,ZSCO);
   }
   code "16" {
-    SL(p); 
+    SL(p);
     JC(C,@negative);
     MOVI(p,0);
     MSS(Z); MSC(S); MSR(ZSCO,ZSCO);
@@ -2059,7 +2059,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "16" {
-    SL(p0); MSR(C,C); MOV(p0,p1); 
+    SL(p0); MSR(C,C); MOV(p0,p1);
     TST(p0);
     JC(S,@negative);
     MOVI(p1,0);
@@ -2070,7 +2070,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSC(ZO); MSS(S); MSR(ZSO,ZSO);
   }
   code "17" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2080,7 +2080,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "18" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2091,7 +2091,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "19" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2102,7 +2102,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "20" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2113,7 +2113,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "21" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2124,7 +2124,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "22" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2136,7 +2136,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "23" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2148,7 +2148,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "24" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2160,7 +2160,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "25" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2168,12 +2168,12 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   @shift:
     SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
     SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-   
+
     SRA(p1); MSR(ZS,ZS); RRC(p0);
     MSR(ZCO,CO);
   }
   code "26" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2186,7 +2186,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "27" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2199,7 +2199,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "28" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2212,7 +2212,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "29" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2225,7 +2225,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "30" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2239,7 +2239,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
     MSR(ZCO,CO);
   }
   code "31" {
-    MOV(p0,p1); 
+    MOV(p0,p1);
     TST(p1); JC(S,@negative);
     MOVI(p1,0); JP(@shift);
   @negative:
@@ -2295,6 +2295,7 @@ macro(bits:5) RotateLeft16(p) {
     JC(Z,@sixteen);
 
     # Rotate 1-15 bits
+    MVN(C2:0,m:0);
   @shift:
     RL(p);
     JD(C2,@shift);
@@ -2393,38 +2394,38 @@ instruction ROL.W "$r, $m" {
 
 macro(bits:6) GetRotateCount32:r {
   code:m "$r" {}
-  code:C1 "1" { MOVI(C1,1); }
-  code:C1 "2" { MOVI(C1,2); }
-  code:C1 "3" { MOVI(C1,3); }
-  code:C1 "4" { MOVI(C1,4); }
-  code:C1 "5" { MOVI(C1,5); }
-  code:C1 "6" { MOVI(C1,6); }
-  code:C1 "7" { MOVI(C1,7); }
-  code:C1 "8" { MOVI(C1,8); }
-  code:C1 "9" { MOVI(C1,9); }
-  code:C1 "10" { MOVI(C1,10); }
-  code:C1 "11" { MOVI(C1,11); }
-  code:C1 "12" { MOVI(C1,12); }
-  code:C1 "13" { MOVI(C1,13); }
-  code:C1 "14" { MOVI(C1,14); }
-  code:C1 "15" { MOVI(C1,15); }
-  code:C1 "16" { MOVI(C1,16); }
-  code:C1 "17" { MOVI(C1,17); }
-  code:C1 "18" { MOVI(C1,18); }
-  code:C1 "19" { MOVI(C1,19); }
-  code:C1 "20" { MOVI(C1,20); }
-  code:C1 "21" { MOVI(C1,21); }
-  code:C1 "22" { MOVI(C1,22); }
-  code:C1 "23" { MOVI(C1,23); }
-  code:C1 "24" { MOVI(C1,24); }
-  code:C1 "25" { MOVI(C1,25); }
-  code:C1 "26" { MOVI(C1,26); }
-  code:C1 "27" { MOVI(C1,27); }
-  code:C1 "28" { MOVI(C1,28); }
-  code:C1 "29" { MOVI(C1,29); }
-  code:C1 "30" { MOVI(C1,30); }
-  code:C1 "31" { MOVI(C1,31); }
-  code:C1 "32" { MOVI(C1,32); }
+  code:C0 "1" { MOVI(C0,1); }
+  code:C0 "2" { MOVI(C0,2); }
+  code:C0 "3" { MOVI(C0,3); }
+  code:C0 "4" { MOVI(C0,4); }
+  code:C0 "5" { MOVI(C0,5); }
+  code:C0 "6" { MOVI(C0,6); }
+  code:C0 "7" { MOVI(C0,7); }
+  code:C0 "8" { MOVI(C0,8); }
+  code:C0 "9" { MOVI(C0,9); }
+  code:C0 "10" { MOVI(C0,10); }
+  code:C0 "11" { MOVI(C0,11); }
+  code:C0 "12" { MOVI(C0,12); }
+  code:C0 "13" { MOVI(C0,13); }
+  code:C0 "14" { MOVI(C0,14); }
+  code:C0 "15" { MOVI(C0,15); }
+  code:C0 "16" { MOVI(C0,16); }
+  code:C0 "17" { MOVI(C0,17); }
+  code:C0 "18" { MOVI(C0,18); }
+  code:C0 "19" { MOVI(C0,19); }
+  code:C0 "20" { MOVI(C0,20); }
+  code:C0 "21" { MOVI(C0,21); }
+  code:C0 "22" { MOVI(C0,22); }
+  code:C0 "23" { MOVI(C0,23); }
+  code:C0 "24" { MOVI(C0,24); }
+  code:C0 "25" { MOVI(C0,25); }
+  code:C0 "26" { MOVI(C0,26); }
+  code:C0 "27" { MOVI(C0,27); }
+  code:C0 "28" { MOVI(C0,28); }
+  code:C0 "29" { MOVI(C0,29); }
+  code:C0 "30" { MOVI(C0,30); }
+  code:C0 "31" { MOVI(C0,31); }
+  code:C0 "32" { MOVI(C0,32); }
 }
 
 instruction ROL.D "$R, $m" {
@@ -2440,7 +2441,8 @@ instruction ROL.D "$R, $m" {
   JC(Z,@thirtytwo);
 
   # Rotate 1-31 bits
-  MOVI(C1,1); RR(C1); 
+  MOVI(C2,31); AND(C2,r);
+  MVNI(C1:3,8);            # Set C1 to to 0x8000
 @shift:
   MOV(C0,C1); AND(C0,a1); RL(C0);
   RLC(a0); MSR(Z,Z); RLC(a1);
@@ -2486,6 +2488,7 @@ macro(bits:5) RotateRight16(p) {
     JC(Z,@sixteen);
 
     # Rotate 1-15 bits
+    MVN(C2:0,m:0);
   @shift:
     RR(p);
     JD(C2,@shift);
@@ -2595,6 +2598,7 @@ instruction ROR.D "$R, $m" {
   JC(Z,@thirtytwo);
 
   # Rotate 1-31 bits
+  MOVI(C2,31); AND(C2,r);
 @shift:
   MOVI(C0,1); AND(C0,a0); RR(C0);
   RRC(a1); MSR(ZS,ZS); RRC(a0);
@@ -2737,6 +2741,7 @@ instruction RLC.D "$R, $m" {
   # TODO: Modulo rotate 33 if it is too big.
 
   # Rotate 1+ bits
+  MOV(C2,r);
 @shift:
   RLC(a0); MSR(Z,Z); RLC(a1);
   JD(C2,@shift);
@@ -2871,6 +2876,7 @@ instruction RRC.D "$R, $m" {
   # TODO: Modulo rotate 33 if it is too big.
 
   # Rotate 1+ bits
+  MOV(C2,r);
 @shift:
   RRC(a1); MSR(ZS,ZS); RRC(a0);
   JD(C2,@shift);
@@ -4656,7 +4662,7 @@ instruction OUTR.ID "$v, $m" {
 ##
 ## The core's memory banks are specified in R3 in the same configuration as in
 ## the MB register, depending on the bank mask:
-##   Bit 0: CODE 
+##   Bit 0: CODE
 ##     The core's BC register is set to this cores R4 register.
 ##     The core's IP register is set to zero.
 ##     The core's R0 and R1 registers are copied from this core.

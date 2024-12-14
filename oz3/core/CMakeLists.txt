@@ -43,6 +43,7 @@ set(oz3_core_TEST_SOURCE
   instruction_test_logic.cc
   instruction_test_math.cc
   instruction_test_misc.cc
+  instruction_test_rotate.cc
   instruction_test_shift.cc
   lockable_test.cc
   memory_bank_test.cc
