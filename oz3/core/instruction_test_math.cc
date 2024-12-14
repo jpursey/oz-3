@@ -808,6 +808,56 @@ TEST_F(InstructionTest, SBC_D) {
   EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
 }
 
+TEST_F(InstructionTest, TST_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("TST.W", "$v")).AddValue(0);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TST.W", "$v")).AddValue(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TST.W", "$v")).AddValue(0xFFFF);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TST.W", "$v")).AddValue(0x8000);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // TST.W 0
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // TST.W 1
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // TST.W 0xFFFF
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // TST.W 0x8000
+  EXPECT_EQ(state.st, CpuCore::S);
+}
+
+TEST_F(InstructionTest, TST_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  state.code.AddValue(Encode("TST.D", "$V")).AddValue32(0);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TST.D", "$V")).AddValue32(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TST.D", "$V")).AddValue32(0xFFFFFFFF);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TST.D", "$V")).AddValue32(0x80000000);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // TST.D 0
+  EXPECT_EQ(state.st, CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // TST.D 1
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // TST.D 0xFFFFFFFF
+  EXPECT_EQ(state.st, CpuCore::S);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // TST.D 0x80000000
+  EXPECT_EQ(state.st, CpuCore::S);
+}
+
 TEST_F(InstructionTest, CMP_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
