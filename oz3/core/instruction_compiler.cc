@@ -97,6 +97,7 @@ class InstructionCompiler {
 
  private:
   struct SubMacro {
+    uint32_t id = 0;
     uint16_t code_start = 0;
     uint16_t code_size = 0;
     Argument arg;
@@ -191,6 +192,7 @@ class InstructionCompiler {
   std::vector<Microcode> microcodes_;
 
   MacrosMap macros_;
+  uint32_t next_sub_macro_id_ = 1;
   std::vector<SubMacro> sub_macros_;
   std::vector<Microcode> macro_codes_;
   std::vector<ParsedMicrocode> parsed_macro_codes_;
@@ -199,7 +201,7 @@ class InstructionCompiler {
   InstructionError* error_ = nullptr;
   const MacroDef* macro_def_ = nullptr;
   const InstructionDef* instruction_def_ = nullptr;
-  int last_macro_code_start_ = -1;
+  uint32_t last_sub_macro_id_ = 0;
   const SubInstruction* last_sub_instruction_ = nullptr;
   struct State {
     const MacroCodeDef* macro_code_def = nullptr;
@@ -351,6 +353,7 @@ bool InstructionCompiler::CompileMacro(const MacroDef& macro_def,
     sub_macro.code_size =
         static_cast<uint8_t>(macro_codes_.size() - sub_macro.code_start);
     sub_macro.defined = true;
+    sub_macro.id = next_sub_macro_id_++;
 
     for (int i = 0; i < num_sub_macros; ++i) {
       sub_macros_[start_sub_index + i] = sub_macro;
@@ -668,11 +671,11 @@ bool InstructionCompiler::CompileSubInstruction() {
   // Macros with arguments generate many sub instructions with the same code.
   // We can just reuse the same code, since the instruction didn't change
   // either.
-  if (last_macro_code_start_ == state_.sub_macro->code_start) {
+  if (last_sub_macro_id_ == state_.sub_macro->id) {
     *state_.sub_instruction = *last_sub_instruction_;
     return true;
   }
-  last_macro_code_start_ = state_.sub_macro->code_start;
+  last_sub_macro_id_ = state_.sub_macro->id;
   last_sub_instruction_ = state_.sub_instruction;
 
   const int pre_size = static_cast<int>(state_.pre_codes.size());

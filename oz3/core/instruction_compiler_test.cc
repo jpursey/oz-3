@@ -21,6 +21,7 @@ namespace oz3 {
 namespace {
 
 using ::testing::AllOf;
+using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
@@ -310,7 +311,7 @@ TEST(InstructionCompilerTest, InstructionRegNibbleArg) {
                           MakeDef(ArgType::kWordReg, "TEST(a:3)"), error));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile(kMicroWordArg1,
-                          MakeDef(ArgType::kWordReg, "TEST(a:4)"), error));
+                           MakeDef(ArgType::kWordReg, "TEST(a:4)"), error));
   EXPECT_THAT(error, Not(IsEmpty()));
   for (std::string_view reg_name : CpuCore::GetWordRegisterNames()) {
     std::string context = absl::StrCat("Context: ", reg_name);
@@ -2505,6 +2506,46 @@ TEST(InstructionCompilerTest, MacroWithConflictingArgPrefixCombos) {
   EXPECT_THAT(absl::AsciiStrToLower(error),
               AllOf(HasSubstr("duplicate macro"), HasSubstr("test0"),
                     HasSubstr("test2"), HasSubstr(" 11001 ")));
+}
+
+TEST(InstructionCompilerTest, MacroWithMultipleZeroSizeCodesInInstruction) {
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "0", .prefix = {0, 2}, .ret = CpuCore::R0},
+      {.source = "1", .prefix = {1, 2}, .ret = CpuCore::R1},
+      {.source = "2", .prefix = {2, 2}, .ret = CpuCore::R2},
+      {.source = "3", .prefix = {3, 2}, .ret = CpuCore::R3},
+  };
+  MacroDef macro_def = {.name = "Macro",
+                        .ret = ArgType::kWordReg,
+                        .size = 2,
+                        .code = macro_code_defs};
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 2}, "UL;$Macro;MOV(R4,r);");
+  InstructionError instruction_error;
+  auto instruction_set = CompileInstructionSet({{instruction_def}, {macro_def}},
+                                               &instruction_error);
+  ASSERT_NE(instruction_set, nullptr) << instruction_error.message;
+  DecodedInstruction decoded;
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(0), decoded));
+  EXPECT_THAT(decoded.code, ElementsAre(Microcode{.op = kMicro_UL},
+                                        Microcode{.op = kMicro_MOV,
+                                                  .arg1 = CpuCore::R4,
+                                                  .arg2 = CpuCore::R0}));
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(1), decoded));
+  EXPECT_THAT(decoded.code, ElementsAre(Microcode{.op = kMicro_UL},
+                                        Microcode{.op = kMicro_MOV,
+                                                  .arg1 = CpuCore::R4,
+                                                  .arg2 = CpuCore::R1}));
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(2), decoded));
+  EXPECT_THAT(decoded.code, ElementsAre(Microcode{.op = kMicro_UL},
+                                        Microcode{.op = kMicro_MOV,
+                                                  .arg1 = CpuCore::R4,
+                                                  .arg2 = CpuCore::R2}));
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(3), decoded));
+  EXPECT_THAT(decoded.code, ElementsAre(Microcode{.op = kMicro_UL},
+                                        Microcode{.op = kMicro_MOV,
+                                                  .arg1 = CpuCore::R4,
+                                                  .arg2 = CpuCore::R3}));
 }
 
 }  // namespace
