@@ -2726,45 +2726,9 @@ instruction RLC.W "$r, $m" {
   UL; $RotateLeft16ThroughCarry(a);
 }
 
-macro(bits:6) GetRotateCount32ThroughCarry:r {
-  code:m "$r" {}
-  code:C1 "1" { MOVI(C1,1); }
-  code:C1 "2" { MOVI(C1,2); }
-  code:C1 "3" { MOVI(C1,3); }
-  code:C1 "4" { MOVI(C1,4); }
-  code:C1 "5" { MOVI(C1,5); }
-  code:C1 "6" { MOVI(C1,6); }
-  code:C1 "7" { MOVI(C1,7); }
-  code:C1 "8" { MOVI(C1,8); }
-  code:C1 "9" { MOVI(C1,9); }
-  code:C1 "10" { MOVI(C1,10); }
-  code:C1 "11" { MOVI(C1,11); }
-  code:C1 "12" { MOVI(C1,12); }
-  code:C1 "13" { MOVI(C1,13); }
-  code:C1 "14" { MOVI(C1,14); }
-  code:C1 "15" { MOVI(C1,15); }
-  code:C1 "16" { MOVI(C1,16); }
-  code:C1 "17" { MOVI(C1,17); }
-  code:C1 "18" { MOVI(C1,18); }
-  code:C1 "19" { MOVI(C1,19); }
-  code:C1 "20" { MOVI(C1,20); }
-  code:C1 "21" { MOVI(C1,21); }
-  code:C1 "22" { MOVI(C1,22); }
-  code:C1 "23" { MOVI(C1,23); }
-  code:C1 "24" { MOVI(C1,24); }
-  code:C1 "25" { MOVI(C1,25); }
-  code:C1 "26" { MOVI(C1,26); }
-  code:C1 "27" { MOVI(C1,27); }
-  code:C1 "28" { MOVI(C1,28); }
-  code:C1 "29" { MOVI(C1,29); }
-  code:C1 "30" { MOVI(C1,30); }
-  code:C1 "31" { MOVI(C1,31); }
-  code:C1 "32" { MOVI(C1,32); }
-}
-
 instruction RLC.D "$R, $m" {
   UL;
-  $GetRotateCount32ThroughCarry;
+  $GetRotateCount32;
 
   # Rotate zero bits?
   TST(r);
@@ -2898,7 +2862,7 @@ instruction RRC.W "$r, $m" {
 
 instruction RRC.D "$R, $m" {
   UL;
-  $GetRotateCount32ThroughCarry;
+  $GetRotateCount32;
 
   # Rotate zero bits?
   TST(r);
