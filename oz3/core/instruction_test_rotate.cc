@@ -1000,5 +1000,405 @@ TEST_F(InstructionTest, RLC_D_SignByRegisterWithCarry) {
   }
 }
 
+TEST_F(InstructionTest, RRC_W_ByValueNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[17] = {};
+  for (int i = 1; i < 17; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x5A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 17; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x5A3C) << "RRC.W R0, " << i;
+    EXPECT_EQ(state.st, 0) << "RRC.W R0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_ByRegisterNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[19] = {};
+  for (int i = 0; i < 19; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x5A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R1, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, {"$r", CpuCore::R1}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 19; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x5A3C) << "RRC.W R0, R1=" << i;
+    EXPECT_EQ(state.st, 0) << "RRC.W R0, R1=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_ByValueWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[17] = {};
+  for (int i = 1; i < 17; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x5A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 17; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x5A3C) << "RRC.W R0, " << i;
+    EXPECT_EQ(state.st, CpuCore::C) << "RRC.W R0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_ByRegisterWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[19] = {};
+  for (int i = 0; i < 19; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x5A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R1, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, {"$r", CpuCore::R1}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 19; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x5A3C) << "RRC.W R0, R1=" << i;
+    EXPECT_EQ(state.st, CpuCore::C) << "RRC.W R0, R1=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_SignByValueNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[17] = {};
+  for (int i = 1; i < 17; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x8000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 17; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x8000) << "RRC.W R0, " << i;
+    EXPECT_EQ(state.st, CpuCore::S) << "RRC.W R0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_SignByRegisterNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[19] = {};
+  for (int i = 0; i < 19; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x8000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R1, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, {"$r", CpuCore::R1}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 19; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x8000) << "RRC.W R0, R1=" << i;
+    EXPECT_EQ(state.st, CpuCore::S) << "RRC.W R0, R1=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_SignByValueWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[17] = {};
+  for (int i = 1; i < 17; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x8000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 17; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x8000) << "RRC.W R0, " << i;
+    EXPECT_EQ(state.st, CpuCore::S | CpuCore::C) << "RRC.W R0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_W_SignByRegisterWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[19] = {};
+  for (int i = 0; i < 19; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+        .AddValue(RotateLeft16Carry(0x8000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R1, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.W", CpuCore::R0, {"$r", CpuCore::R1}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 19; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.r0, 0x8000) << "RRC.W R0, R1=" << i;
+    EXPECT_EQ(state.st, CpuCore::S | CpuCore::C) << "RRC.W R0, R1=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_ByValueNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[33] = {};
+  for (int i = 1; i < 33; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x12485A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.D", 0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 33; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x12485A3C) << "RRC.D D0, " << i;
+    EXPECT_EQ(state.st, 0) << "RRC.D D0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_ByRegisterNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[35] = {};
+  for (int i = 0; i < 35; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x12485A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.D", 0, {"$r", CpuCore::R2}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 35; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x12485A3C) << "RRC.D D0, R2=" << i;
+    EXPECT_EQ(state.st, 0) << "RRC.D D0, R2=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_ByValueWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+  bool carry = false;
+
+  uint16_t ips[33] = {};
+  for (int i = 1; i < 33; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x12485A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.D", 0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 33; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x12485A3C) << "RRC.D D0, " << i;
+    EXPECT_EQ(state.st, CpuCore::C) << "RRC.D D0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_ByRegisterWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[35] = {};
+  for (int i = 0; i < 35; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x12485A3C, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.D", 0, {"$r", CpuCore::R2}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 35; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x12485A3C) << "RRC.D D0, R2=" << i;
+    EXPECT_EQ(state.st, CpuCore::C) << "RRC.D D0, R2=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_SignByValueNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[33] = {};
+  for (int i = 1; i < 33; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x80000000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.D", 0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 33; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x80000000) << "RRC.D D0, " << i;
+    EXPECT_EQ(state.st, CpuCore::S) << "RRC.D D0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_SignByRegisterNoCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, 0}});
+
+  bool carry = false;
+  uint16_t ips[35] = {};
+  for (int i = 0; i < 35; ++i) {
+    carry = false;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x80000000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.D", 0, {"$r", CpuCore::R2}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 35; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x80000000) << "RRC.D D0, R2=" << i;
+    EXPECT_EQ(state.st, CpuCore::S) << "RRC.D D0, R2=" << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_SignByValueWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[33] = {};
+  for (int i = 1; i < 33; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x80000000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    const std::string shift_value = absl::StrCat(i);
+    state.code.AddValue(Encode("RRC.D", 0, Arg(shift_value)));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 1; i < 33; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x80000000) << "RRC.D D0, " << i;
+    EXPECT_EQ(state.st, CpuCore::S | CpuCore::C) << "RRC.D D0, " << i;
+  }
+}
+
+TEST_F(InstructionTest, RRC_D_SignByRegisterWithCarry) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::C}});
+
+  bool carry = false;
+  uint16_t ips[35] = {};
+  for (int i = 0; i < 35; ++i) {
+    carry = true;
+    state.code.AddValue(Encode("MOV.LD", 0, "$V"))
+        .AddValue32(RotateLeft32Carry(0x80000000, i, carry));
+    state.code.AddValue(Encode((carry ? "SETF" : "CLRF"), CpuCore::C));
+    state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v")).AddValue(i);
+    state.code.AddValue(Encode("RRC.D", 0, {"$r", CpuCore::R2}));
+    ips[i] = state.code.AddNopGetAddress();
+  }
+  state.code.AddValue(Encode("HALT"));
+
+  for (int i = 0; i < 35; ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(ips[i]));
+    EXPECT_EQ(state.d0(), 0x80000000) << "RRC.D D0, R2=" << i;
+    EXPECT_EQ(state.st, CpuCore::S | CpuCore::C) << "RRC.D D0, R2=" << i;
+  }
+}
+
 }  // namespace
 }  // namespace oz3
