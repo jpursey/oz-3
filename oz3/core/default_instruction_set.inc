@@ -177,13 +177,12 @@ constexpr oz3::MacroCodeDef kMacroCode_Get32BitMask[] = {
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
      .ret = oz3::CpuCore::CD,
-     .code = "UL;CMPI(m,16);JC(NS,@upper);JC(Z,@sixteen);MOVI(C0,1);TST(m);"
+     .code = "UL;CMPI(m,16);JC(Z,@sixteen);JC(NS,@upper);MOVI(C0,1);TST(m);"
              "JC(Z,@done);MOV(C2,m);@shift_lower:SL(C0);"
              "JD(C2,@shift_lower);JP(@done);@sixteen:MOVI(C1,1);JP(@done);"
              "@upper:CMPI(m,32);JC(S,@start_upper);MOVI(C0,0);JP(@done);"
-             "@start_upper:MOV(C2,m);ADDI(C2,-16);MOVI(C1,1);TST(C2);"
-             "JC(Z,@done);@shift_upper:SL(C1);JD(C2,@shift_upper);"
-             "@done:MSS(_);"},
+             "@start_upper:MOV(C2,m);ADDI(C2,-16);MOVI(C1,1);"
+             "@shift_upper:SL(C1);JD(C2,@shift_upper);@done:MSS(_);"},
     {.source = "0",
      .prefix = {8, 6},
      .ret = oz3::CpuCore::CD,

@@ -135,8 +135,8 @@ macro(bits:6) Get32BitMask:R {
   code:CD "$r" {
     UL;
     CMPI(m,16);
-    JC(NS,@upper);
     JC(Z,@sixteen);
+    JC(NS,@upper);
     MOVI(C0,1);
     TST(m);
     JC(Z,@done);
@@ -157,8 +157,6 @@ macro(bits:6) Get32BitMask:R {
     MOV(C2,m);
     ADDI(C2,-16);
     MOVI(C1,1);
-    TST(C2);
-    JC(Z,@done);
   @shift_upper:
     SL(C1);
     JD(C2,@shift_upper);
