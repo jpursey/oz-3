@@ -92,5 +92,103 @@ TEST_F(InstructionTest, BitOps32BitMaskByRegister) {
   EXPECT_EQ(state.d0(), 0) << "SETB.D D0, R2=32";
 }
 
+TEST_F(InstructionTest, CLRB_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::R0, 0xFFFF}});
+
+  state.code.AddValue(Encode("CLRB.W", CpuCore::R0, "8"));
+  const uint16_t ip = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip));
+  EXPECT_EQ(state.r0, 0xFEFF);
+}
+
+TEST_F(InstructionTest, CLRB_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::R0, 0xFFFF}, {CpuCore::R1, 0xFFFF}});
+
+  state.code.AddValue(Encode("CLRB.D", 0, "8"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CLRB.D", 0, "24"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.d0(), 0xFFFFFEFF);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.d0(), 0xFEFFFEFF);
+}
+
+TEST_F(InstructionTest, SETB_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+
+  state.code.AddValue(Encode("SETB.W", CpuCore::R0, "8"));
+  const uint16_t ip = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip));
+  EXPECT_EQ(state.r0, 0x0100);
+}
+
+TEST_F(InstructionTest, SETB_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+
+  state.code.AddValue(Encode("SETB.D", 0, "8"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SETB.D", 0, "24"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.d0(), 0x00000100);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.d0(), 0x01000100);
+}
+
+TEST_F(InstructionTest, NOTB_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+
+  state.code.AddValue(Encode("NOTB.W", CpuCore::R0, "8"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NOTB.W", CpuCore::R0, "8"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.r0, 0x0100);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.r0, 0x0000);
+}
+
+TEST_F(InstructionTest, NOTB_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+
+  state.code.AddValue(Encode("NOTB.D", 0, "8"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NOTB.D", 0, "24"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NOTB.D", 0, "8"));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NOTB.D", 0, "24"));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.d0(), 0x00000100);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.d0(), 0x01000100);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));
+  EXPECT_EQ(state.d0(), 0x01000000);
+  ASSERT_TRUE(ExecuteUntilIp(ip4));
+  EXPECT_EQ(state.d0(), 0x00000000);
+}
+
 }  // namespace
 }  // namespace oz3
