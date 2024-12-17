@@ -233,5 +233,68 @@ TEST_F(InstructionTest, TSTB_D) {
   EXPECT_EQ(state.st, CpuCore::Z);
 }
 
+TEST_F(InstructionTest, CLRF) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::ZSCOI}});
+
+  state.code.AddValue(Encode("CLRF", CpuCore::Z));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CLRF", CpuCore::S | CpuCore::O));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CLRF", CpuCore::C));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.st, CpuCore::ZSCOI - CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.st, CpuCore::C | CpuCore::I);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));
+  EXPECT_EQ(state.st, CpuCore::I);
+}
+
+TEST_F(InstructionTest, SETF) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::I}});
+
+  state.code.AddValue(Encode("SETF", CpuCore::Z));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SETF", CpuCore::S | CpuCore::O));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SETF", CpuCore::C));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::I);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.st, CpuCore::ZSCOI - CpuCore::C);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));
+  EXPECT_EQ(state.st, CpuCore::ZSCOI);
+}
+
+TEST_F(InstructionTest, NOTF) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::ZSCOI}});
+
+  state.code.AddValue(Encode("NOTF", CpuCore::Z));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NOTF", CpuCore::S | CpuCore::O));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NOTF", CpuCore::Z | CpuCore::C));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.st, CpuCore::ZSCOI - CpuCore::Z);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state.st, CpuCore::C | CpuCore::I);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::I);
+}
+
 }  // namespace
 }  // namespace oz3
