@@ -40,6 +40,7 @@ set(oz3_core_TEST_SOURCE
   instruction_set_test.cc
   instruction_test.h
   instruction_test_bits.cc
+  instruction_test_branch.cc
   instruction_test_load_store.cc
   instruction_test_logic.cc
   instruction_test_math.cc
