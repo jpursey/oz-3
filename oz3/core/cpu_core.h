@@ -132,7 +132,7 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int8_t kInvalidReg = kMinVirtualReg - 1;
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-  // Register masks can be combined with an register index to specify a byte or
+  // Register masks can be combined with a register index to specify a byte or
   // nibble within the register. This is used with the MVB,/ MVBI, MVN, and MVNI
   // microcode instructions to move or set data bytes and nibbles within
   // registers.
@@ -179,6 +179,20 @@ class CpuCore final : public ExecutionComponent {
   static constexpr uint16_t WShift = 9;       // Wait flag shift
   static constexpr uint16_t T = 1 << TShift;  // Trace flag
   static constexpr uint16_t W = 1 << WShift;  // Wait flag
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  // Status flag conditions for microcode condition arguments. This is used with
+  // the JC instruction.
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  static constexpr int8_t kConditionNZ = ZShift;
+  static constexpr int8_t kConditionNS = SShift;
+  static constexpr int8_t kConditionNC = CShift;
+  static constexpr int8_t kConditionNO = OShift;
+  static constexpr int8_t kConditionZ = kConditionNZ | 4;
+  static constexpr int8_t kConditionS = kConditionNS | 4;
+  static constexpr int8_t kConditionC = kConditionNC | 4;
+  static constexpr int8_t kConditionO = kConditionNO | 4;
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Banks
