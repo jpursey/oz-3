@@ -28,7 +28,7 @@ namespace oz3 {
 // This class represents a single bank of memory for the OZ3 Processor.
 //
 // MemoryBanks are 16-bit addressable and are accessible from any OZ3 CpuCore,
-// Coprocessor, or Device. Each memory bank is divided into 16 banks of 4096
+// Coprocessor, or Device. Each memory bank is divided into 16 pages of 4096
 // 16-bit words of storage. Each page has separate read/write permissions, and
 // may be backed by physical memory and/or a memory map callback (typical use is
 // for a Coprocessor or Device).
@@ -87,6 +87,20 @@ class MemoryBank final : public Component {
 
   // Returns the size of the memory bank in 16-bit words.
   int GetMemorySize() const { return mem_range_.count; }
+
+  // Returns the page masks for physical memory.
+  //
+  // Not all of the physical memory may be accessible via read/write methods, if
+  // there is a corresponding read or write memory map as well for some or all
+  // of the physical pages. However, GetMem() can be used to access the physical
+  // memory ignoring any memory map.
+  MemoryPageMasks GetMemPageMasks() const { return mem_masks_; }
+
+  // Returns the page masks for mapped memory.
+  //
+  // Any mapped memory will implicitly mask corresponding reads and writes to
+  // physical memory according to the map read and write masks.
+  MemoryPageMasks GetMapPageMasks() const { return map_masks_; }
 
   // Returns direct access to the physical memory of the MemoryBank.
   //

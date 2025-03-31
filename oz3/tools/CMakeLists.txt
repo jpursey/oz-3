@@ -6,6 +6,8 @@
 set(oz3_tools_SOURCE
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
+  program.h
+  program_loader.h program_loader.cc
 )
 set(oz3_tools_DEPS
   gb_file
@@ -20,6 +22,7 @@ set(oz3_tools_LIBS
 
 set(oz3_tools_TEST_SOURCE
   instruction_assembler_test.cc
+  program_loader_test.cc
 )
 
 gb_add_library(oz3_tools)

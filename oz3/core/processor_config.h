@@ -34,11 +34,19 @@ class ProcessorConfig {
   static ProcessorConfig OneCore(std::shared_ptr<const InstructionSet>
                                      instructions = GetDefaultInstructionSet());
 
-  // Creates a ProcessorConfig with the specified number of cores and a single
-  // memory bank with max RAM (can be overridden).
+  // Creates a ProcessorConfig with the specified number of cores (up to
+  // kMaxCores) and a single memory bank with max RAM (can be overridden).
   static ProcessorConfig MultiCore(
       int num_cores, std::shared_ptr<const InstructionSet> instructions =
                          GetDefaultInstructionSet());
+
+  // Creates a ProcessorConfig with the specified number of memory banks (up to
+  // kMaxMemoryBanks) with max RAM (can be overridden) and specified number of
+  // cores (up to kMaxCores).
+  static ProcessorConfig MultiBankMultiCore(
+      int num_banks, int num_cores,
+      std::shared_ptr<const InstructionSet> instructions =
+          GetDefaultInstructionSet());
 
   // Creates a new ProcessorConfig with no resources.
   ProcessorConfig();

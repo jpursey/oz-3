@@ -355,6 +355,15 @@ class CpuCore final : public ExecutionComponent {
     uint16_t bs = 0;  // BS register. Requires reset_mask & RBS
     uint16_t bd = 0;  // BD register. Requires reset_mask & RBD
     uint16_t be = 0;  // BE register. Requires reset_mask & RBE
+
+    auto operator<=>(const ResetParams&) const = default;
+
+    template <typename Sink>
+    friend void AbslStringify(Sink& sink, const ResetParams& params) {
+      absl::Format(&sink, "{mask=%#x, mb=%v, bc=%v, bs=%v, bd=%v, be=%v}",
+                   params.mask, params.mb, params.bc, params.bs, params.bd,
+                   params.be);
+    }
   };
 
   //----------------------------------------------------------------------------
