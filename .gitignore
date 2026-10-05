@@ -6,6 +6,9 @@ build/
 .vs/
 out/
 
+# Claude Code session worktrees
+/.claude/worktrees/
+
 # Output directories
 bin/Debug/
 bin/Release/
