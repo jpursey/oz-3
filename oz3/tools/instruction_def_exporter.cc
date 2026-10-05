@@ -87,8 +87,7 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
     std::string converted_ret_name;
     if (absl::ascii_tolower(ret_name[0]) == 'p' ||
         absl::ascii_tolower(ret_name[0]) == 'm' || ret_name[0] == 'i') {
-      converted_ret_name =
-          absl::StrCat("M", absl::AsciiStrToUpper(ret_name));
+      converted_ret_name = absl::StrCat("M", absl::AsciiStrToUpper(ret_name));
       ret_name = converted_ret_name;
     }
     absl::StrAppend(&result_, ",\n     .ret = oz3::CpuCore::", ret_name);

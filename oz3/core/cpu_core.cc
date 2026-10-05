@@ -710,8 +710,7 @@ void CpuCore::RunInstructionLoop() {
                             static_cast<int>(r_[reg2]) + pre_carry)
                            << CShift;
         const uint16_t o =
-            OZ3_O |
-            ((r_[reg2] == 0x8000 && pre_carry == 0) << OShift);
+            OZ3_O | ((r_[reg2] == 0x8000 && pre_carry == 0) << OShift);
         r_[reg1] = r;
         mst_ = (mst_ & 0xFFF0) | OZ3_Z | OZ3_S | c | o;
         exec_cycles_ += kCpuCoreCycles_SBC;

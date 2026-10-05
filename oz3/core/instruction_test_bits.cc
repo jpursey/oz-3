@@ -222,7 +222,7 @@ TEST_F(InstructionTest, TSTB_D) {
   state.code.AddValue(Encode("TSTB.D", 0, "19"));
   const uint16_t ip4 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
-  
+
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.st, 0);
   ASSERT_TRUE(ExecuteUntilIp(ip2));

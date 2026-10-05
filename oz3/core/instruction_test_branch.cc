@@ -162,13 +162,15 @@ TEST_F(InstructionTest, JCR) {
   state.SetRegisters(
       {{CpuCore::ST, CpuCore::Z | CpuCore::C}, {CpuCore::R0, 100}});
 
-  state.code.AddValue(Encode("JCR", CpuCore::kConditionNZ, {"$r", CpuCore::R0}));
+  state.code.AddValue(
+      Encode("JCR", CpuCore::kConditionNZ, {"$r", CpuCore::R0}));
   state.code.AddValue(Encode("MOV.LW", CpuCore::R4, "$v")).AddValue(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("JCR", CpuCore::kConditionS, {"$r", CpuCore::R0}));
   state.code.AddValue(Encode("MOV.LW", CpuCore::R4, "$v")).AddValue(2);
   const uint16_t ip2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("JCR", CpuCore::kConditionNC, {"$r", CpuCore::R0}));
+  state.code.AddValue(
+      Encode("JCR", CpuCore::kConditionNC, {"$r", CpuCore::R0}));
   state.code.AddValue(Encode("MOV.LW", CpuCore::R4, "$v")).AddValue(3);
   const uint16_t ip3 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("JCR", CpuCore::kConditionO, {"$r", CpuCore::R0}));
