@@ -5,7 +5,6 @@
 
 #include "oz3/core/cpu_core.h"
 
-#include "gb/base/callback.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"

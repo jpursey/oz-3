@@ -178,7 +178,7 @@ uint16_t BaseCoreTest::Encode(std::string_view op_name, Arg a, Arg b) {
   return DoEncode(it->second, a, b);
 }
 
-bool BaseCoreTest::ExecuteUntil(int core, gb::Callback<bool()> condition) {
+bool BaseCoreTest::ExecuteUntil(int core, absl::FunctionRef<bool()> condition) {
   CHECK(core >= 0 && core < states_.size());
   auto& state = states_[core];
   do {

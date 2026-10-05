@@ -25,22 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Replace gb::Callback
-
-- **Layers:** core
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Requested by:** Game Bits *Remove Callback*
-- **Background:** `gb/base/callback.h` in Game Bits
-
-`gb::Callback` is deprecated, and is now only an alias of
-`absl::AnyInvocable`. Replace every use of it with `absl::AnyInvocable`, or
-with `absl::FunctionRef` where the callable is only called during the call it
-is passed to, and remove the `gb/base/callback.h` includes. Today it is only
-used by `BaseCoreTest::ExecuteUntil` (its condition is called synchronously, so
-`absl::FunctionRef`), and its callers in `cpu_core_test.cc`.
-
 ## Default instruction set tests
 
 - **Layers:** core

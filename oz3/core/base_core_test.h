@@ -7,8 +7,8 @@
 #define OZ3_CORE_BASE_CORE_TEST_H_
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/functional/function_ref.h"
 #include "absl/log/log.h"
-#include "gb/base/callback.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
@@ -232,9 +232,9 @@ class BaseCoreTest : public testing::Test {
   void Execute(Cycles cycles) { processor_->Execute(cycles); }
 
   // Executes the requested processor until a specified condition is met.
-  bool ExecuteUntil(int core_index, gb::Callback<bool()> condition);
-  bool ExecuteUntil(gb::Callback<bool()> condition) {
-    return ExecuteUntil(0, std::move(condition));
+  bool ExecuteUntil(int core_index, absl::FunctionRef<bool()> condition);
+  bool ExecuteUntil(absl::FunctionRef<bool()> condition) {
+    return ExecuteUntil(0, condition);
   }
   bool ExecuteUntilIp(int core_index, uint16_t ip) {
     CHECK(core_index >= 0 && core_index < states_.size());

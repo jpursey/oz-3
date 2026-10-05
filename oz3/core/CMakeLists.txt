@@ -52,5 +52,8 @@ set(oz3_core_TEST_SOURCE
   port_test.cc
   processor_test.cc
 )
+set(oz3_core_TEST_DEPS
+  absl::function_ref
+)
 
 gb_add_library(oz3_core)
