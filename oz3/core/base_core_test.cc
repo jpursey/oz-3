@@ -196,4 +196,13 @@ bool BaseCoreTest::ExecuteUntil(int core, absl::FunctionRef<bool()> condition) {
   return true;
 }
 
+Cycles BaseCoreTest::CyclesUntilIp(uint16_t ip) {
+  const CpuCore& core = states_[0].core;
+  const Cycles start_cycles = core.GetCycles();
+  if (!ExecuteUntilIp(ip)) {
+    return -1;
+  }
+  return core.GetCycles() - start_cycles - kCpuCoreFetchAndDecodeCycles;
+}
+
 }  // namespace oz3

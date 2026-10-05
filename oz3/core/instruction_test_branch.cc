@@ -223,5 +223,230 @@ TEST_F(InstructionTest, JCR) {
   EXPECT_EQ(state.r4, 8);
 }
 
+TEST_F(InstructionTest, CALL) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::Z | CpuCore::C},
+                      {CpuCore::R0, 100},
+                      {CpuCore::SP, 500}});
+
+  state.code.AddValue(Encode("CALL", {"$r", CpuCore::R0}));
+  state.code.SetAddress(100);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CALL", "$v")).AddValue(200);
+  state.code.SetAddress(200);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 6);  // CALL R0
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 1);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 7);  // CALL 200
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 103);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, CALLR) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::Z | CpuCore::C},
+                      {CpuCore::R0, 100},
+                      {CpuCore::R1, -50},
+                      {CpuCore::SP, 500}});
+
+  state.code.AddValue(Encode("CALLR", {"$r", CpuCore::R0}));
+  state.code.SetAddress(101);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CALLR", {"$r", CpuCore::R1}));
+  state.code.SetAddress(53);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CALLR", "$v")).AddValue(25);
+  state.code.SetAddress(81);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 6);  // CALLR R0
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 1);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 6);  // CALLR R1
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 103);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip3), 7);  // CALLR 25
+  EXPECT_EQ(state.sp, 497);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 56);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, RET) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.SetAddress(500).PushValue(100).PushValue(50);
+  state.SetRegisters(
+      {{CpuCore::ST, CpuCore::Z | CpuCore::C}, {CpuCore::SP, 498}});
+
+  state.code.AddValue(Encode("RET"));
+  state.code.SetAddress(50);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RET"));
+  state.code.SetAddress(100);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // RET
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 5);  // RET
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, RET_A) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.SetAddress(500).PushValue(100).PushValue(50).PushValue(1);
+  state.stack.PushValue(2);
+  state.SetRegisters(
+      {{CpuCore::ST, CpuCore::Z | CpuCore::C}, {CpuCore::SP, 496}});
+
+  state.code.AddValue(Encode("RET.A", 2));
+  state.code.SetAddress(50);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RET.A", 0));
+  state.code.SetAddress(100);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 6);  // RET.A 2
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 6);  // RET.A 0
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, RETC) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.SetAddress(500).PushValue(40).PushValue(30).PushValue(20);
+  state.stack.PushValue(10);
+  state.SetRegisters(
+      {{CpuCore::ST, CpuCore::Z | CpuCore::C}, {CpuCore::SP, 496}});
+
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionNZ));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionS));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionNC));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionO));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionZ));
+  state.code.SetAddress(10);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionNS));
+  state.code.SetAddress(20);
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionC));
+  state.code.SetAddress(30);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC", CpuCore::kConditionNO));
+  state.code.SetAddress(40);
+  const uint16_t ip8 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 3);  // RETC NZ
+  EXPECT_EQ(state.sp, 496);
+  EXPECT_EQ(CyclesUntilIp(ip2), 3);  // RETC S
+  EXPECT_EQ(state.sp, 496);
+  EXPECT_EQ(CyclesUntilIp(ip3), 3);  // RETC NC
+  EXPECT_EQ(state.sp, 496);
+  EXPECT_EQ(CyclesUntilIp(ip4), 3);  // RETC O
+  EXPECT_EQ(state.sp, 496);
+  EXPECT_EQ(CyclesUntilIp(ip5), 6);  // RETC Z
+  EXPECT_EQ(state.sp, 497);
+  EXPECT_EQ(CyclesUntilIp(ip6), 6);  // RETC NS
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(CyclesUntilIp(ip7), 6);  // RETC C
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(CyclesUntilIp(ip8), 6);  // RETC NO
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, RETC_A) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.SetAddress(500).PushValue(50).PushValue(1).PushValue(2);
+  state.SetRegisters(
+      {{CpuCore::ST, CpuCore::Z | CpuCore::C}, {CpuCore::SP, 497}});
+
+  state.code.AddValue(Encode("RETC.A", CpuCore::kConditionNZ, 2));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RETC.A", CpuCore::kConditionZ, 2));
+  state.code.SetAddress(50);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 3);  // RETC.A NZ, 2
+  EXPECT_EQ(state.sp, 497);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 7);  // RETC.A Z, 2
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, FBGN) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::Z | CpuCore::C},
+                      {CpuCore::SP, 500},
+                      {CpuCore::FP, 300}});
+
+  state.code.AddValue(Encode("FBGN"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("FBGN"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 6);  // FBGN
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(state.fp, 499);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 300);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 6);  // FBGN
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.fp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 499);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, FEND) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.stack.SetAddress(500).PushValue(300).PushValue(499);
+  state.SetRegisters({{CpuCore::ST, CpuCore::Z | CpuCore::C},
+                      {CpuCore::SP, 490},
+                      {CpuCore::FP, 498}});
+
+  state.code.AddValue(Encode("FEND"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("FEND"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // FEND
+  EXPECT_EQ(state.sp, 499);
+  EXPECT_EQ(state.fp, 499);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+
+  EXPECT_EQ(CyclesUntilIp(ip2), 5);  // FEND
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.fp, 300);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
 }  // namespace
 }  // namespace oz3

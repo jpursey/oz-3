@@ -3160,7 +3160,7 @@ instruction JCR "$#3, $m" {
 
 instruction CALL "$m" {
   $GetWord;
-  LK(STACK); ADR(SP); STP(IP); UL;
+  LK(STACK); ADR(SP); STP(IP); LAD(SP); UL;
   MOV(IP,r);
 }
 
@@ -3175,7 +3175,7 @@ instruction CALL "$m" {
 
 instruction CALLR "$m" {
   $GetWord;
-  LK(STACK); ADR(SP); STP(IP); UL;
+  LK(STACK); ADR(SP); STP(IP); LAD(SP); UL;
   ADD(IP,r);
 }
 
@@ -3197,7 +3197,7 @@ instruction FBGN {
 ################################################################################
 ## FEND
 ##
-## Cycles: 6
+## Cycles: 5
 ## ZSCO: ----
 ##
 ## Restores SP from FP and removes FP from the stack

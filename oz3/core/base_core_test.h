@@ -246,6 +246,15 @@ class BaseCoreTest : public testing::Test {
     ExecuteUntil(core_index, [] { return false; });
   }
 
+  // Executes until core 0's IP reaches `ip`, which must be just past a NOP (as
+  // returned by MemAccessor::AddNopGetAddress). Returns the number of cycles
+  // the core executed before the NOP, or -1 if ExecuteUntilIp fails.
+  //
+  // This is how a test times instructions: an instruction can end partway
+  // through one of the core's steps, with the next instruction starting in the
+  // same step, but a step always ends right after a NOP.
+  Cycles CyclesUntilIp(uint16_t ip);
+
  private:
   uint16_t DoEncode(const InstructionDef& instruction, Arg a, Arg b);
 
