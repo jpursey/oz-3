@@ -876,7 +876,7 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         if (locked_core_ != nullptr) {
-          r_[reg2] = locked_core_->ivec_[r_[reg1]];
+          r_[reg2] = locked_core_->ivec_[r_[reg1] & (kInterruptCount - 1)];
         }
         exec_cycles_ += kCpuCoreCycles_ILD;
       } break;
@@ -884,7 +884,7 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
         if (locked_core_ != nullptr) {
-          locked_core_->ivec_[r_[reg1]] = r_[reg2];
+          locked_core_->ivec_[r_[reg1] & (kInterruptCount - 1)] = r_[reg2];
         }
         exec_cycles_ += kCpuCoreCycles_IST;
       } break;

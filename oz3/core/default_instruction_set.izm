@@ -3269,34 +3269,33 @@ instruction RETC.A "$#3, $#5" {
 ## IRT
 ## IRT <size>
 ##
-## Cycles: 7-8
+## Cycles: 6-7
 ## ZSCO: ----
 ##
 ## Variants:
 ##   IRT
 ##   IRT.A <size>
 ##
-## Pops 0-31 words from the stack, then pops ST and IP from the stack.
+## Pops 0-31 words from the stack, then pops ST and IP from the stack. If the
+## interrupt occurred during a WAIT, the WAIT resumes.
 ################################################################################
 
 instruction IRT {
   UL;
-  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
-  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+  IRT;
 }
 
 instruction IRT.A "$#5" {
   UL;
   ADD(SP,C0);
-  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
-  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+  IRT;
 }
 
 ################################################################################
 ## IRTC <condition>
 ## IRTC <condition> <size>
 ##
-## Cycles: 3-9
+## Cycles: 3-8
 ## ZSCO: ----
 ##
 ## Variants:
@@ -3304,7 +3303,8 @@ instruction IRT.A "$#5" {
 ##   IRTC.A <condition> <size>
 ##
 ## If the specified condition is true, optionally pops 0-31 words from the
-## stack, then pops ST and IP from the stack.
+## stack, then pops ST and IP from the stack. If the interrupt occurred during
+## a WAIT, the WAIT resumes.
 ################################################################################
 
 instruction IRTC "$#3" {
@@ -3312,8 +3312,7 @@ instruction IRTC "$#3" {
   JC(a,@return);
   END;
 @return:
-  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
-  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+  IRT;
 }
 
 instruction IRTC.A "$#3, $#5" {
@@ -3322,8 +3321,7 @@ instruction IRTC.A "$#3, $#5" {
   END;
 @return:
   ADD(SP,C1);
-  LK(STACK); ADR(SP); LD(ST); LD(IP); LAD(SP); UL;
-  MSM(ZSCOI,ST); MSR(ZSCOI,ZSCOI);
+  IRT;
 }
 
 ################################################################################
@@ -3359,10 +3357,11 @@ instruction DI {
 ################################################################################
 ## GETI <interrupt> <register>
 ##
-## Cycles: 4+
+## Cycles: 5
 ## ZSCO: ----
 ##
 ## Retrieves the address of the specified interrupt and assigns to a register.
+## Only the low 5 bits of <interrupt> are used.
 ################################################################################
 
 instruction GETI "$v, $r" {
@@ -3372,12 +3371,13 @@ instruction GETI "$v, $r" {
 }
 
 ################################################################################
-## SETI <interrupt> <register>
+## SETI <interrupt> <word-value>
 ##
-## Cycles: 4+
+## Cycles: 5+
 ## ZSCO: ----
 ##
-## Sets the address of the specified interrupt from a register.
+## Sets the address of the specified interrupt to a word value. Only the low 5
+## bits of <interrupt> are used.
 ################################################################################
 
 instruction SETI "$v, $m" {
@@ -3389,10 +3389,11 @@ instruction SETI "$v, $m" {
 ################################################################################
 ## INT <interrupt>
 ##
-## Cycles: 4+
+## Cycles: 3+
 ## ZSCO: ----
 ##
-## Triggers the specified interrupt.
+## Triggers the specified interrupt, which is handled after this instruction if
+## interrupts are enabled. Only the low 5 bits of <interrupt> are used.
 ################################################################################
 
 instruction INT "$m" {

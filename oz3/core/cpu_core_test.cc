@@ -3953,6 +3953,23 @@ TEST_F(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   EXPECT_EQ(state.r3, 42);
 }
 
+TEST_F(CpuCoreTest, InterruptAddressUsesLowBitsOfIndex) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(33);
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  state.code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R2)).AddValue(0xFFE1);
+  state.code.AddValue(Encode(kTestOp_ILD, CpuCore::R2, CpuCore::R3));
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.core.GetInterruptAddress(1), 100);
+  EXPECT_EQ(state.r3, 100);
+}
+
 TEST_F(CpuCoreTest, LoadFromInvalidPort) {
   ASSERT_TRUE(Init({.num_ports = 10}));
   CoreState& state = GetState();
