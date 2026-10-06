@@ -155,6 +155,13 @@ sections are still TODO there: the DMA processor (block copies of pages between
 memory banks) and the math processor (floating point, fast integer multiply and
 divide, trig functions). The spec is written first, then built.
 
+Raising an interrupt must report whether it was a duplicate (already pending),
+as the Interrupts section of `2-Specifications.md` promises. Today
+`CpuCore::RaiseInterrupt` and `Processor::RaiseInterrupt` return nothing.
+Since `Processor::RaiseInterrupt` raises on every core, what it reports when
+the trigger is new on some cores and a duplicate on others is decided here or
+in *Devices*, whichever comes first.
+
 ## Devices
 
 - **Layers:** devices (new), wiki
@@ -166,6 +173,9 @@ divide, trig functions). The spec is written first, then built.
 A `devices` library of independent virtual devices that attach to the OZ-3
 through ports, as used by the Ozzy computer. Which devices are needed comes
 from Ozzy's design.
+
+Raising an interrupt must report whether it was a duplicate, as the spec
+promises (see *Coprocessors*, which shares this, for the details).
 
 ## Ozzy computer
 
