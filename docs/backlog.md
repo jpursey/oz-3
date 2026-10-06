@@ -97,6 +97,22 @@ instruction, its variants and addressing modes, flags, and cycle counts. The
 header comments on each instruction in `default_instruction_set.izm` already
 have most of it.
 
+## Instruction set source reference
+
+- **Layers:** wiki
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `InstructionAssembler` in
+  `oz3/tools/instruction_assembler.h`, `oz3ism.cc`, and
+  `default_instruction_set.izm` as the working example; the wiki's Home page
+  lists `oz3ism`
+
+A wiki page documenting how an instruction set is written: the `.izm` source
+format (instruction and macro definitions, argument encoding and sizes, and
+macro registers such as `p`, `m`, `r`, and `i`), and how `oz3ism` assembles it
+into C++. The microcode page covers only the microcode itself.
+
 ## Program assembler (oz3asm)
 
 - **Layers:** tools
