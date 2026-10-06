@@ -125,6 +125,7 @@ inline constexpr Cycles kCpuCoreCycles_PST = 1;
 inline constexpr Cycles kCpuCoreCycles_CBK = 1;
 inline constexpr Cycles kCpuCoreCycles_CLD = 1;
 inline constexpr Cycles kCpuCoreCycles_CST = 1;
+inline constexpr Cycles kCpuCoreCycles_CRUN = 1;
 
 //==============================================================================
 // Forward declarations

@@ -1735,6 +1735,25 @@ TEST(InstructionCompilerTest, IrtWithinCoreLock) {
   EXPECT_THAT(error, Not(IsEmpty()));
 }
 
+TEST(InstructionCompilerTest, CrunDuringFetch) {
+  InstructionDef instruction_def = MakeDef("CRUN;UL;");
+  std::string error;
+  EXPECT_FALSE(CompileForTest(instruction_def, error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(InstructionCompilerTest, CrunAfterFetch) {
+  InstructionDef instruction_def = MakeDef("UL;CRUN;");
+  std::string error;
+  EXPECT_TRUE(CompileForTest(instruction_def, error)) << error;
+}
+
+TEST(InstructionCompilerTest, CrunWithinCoreLock) {
+  InstructionDef instruction_def = MakeDef("UL;CLK(C0);CRUN;CUL;");
+  std::string error;
+  EXPECT_TRUE(CompileForTest(instruction_def, error)) << error;
+}
+
 TEST(InstructionCompilerTest, EndDuringFetch) {
   InstructionDef instruction_def = MakeDef("END;UL;");
   std::string error;

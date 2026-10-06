@@ -225,13 +225,15 @@ class CpuCore final : public ExecutionComponent {
     // Initial state of a core, and whenever HALT instruction is executed.
     // Transitions to:
     //   - kHandleInterrupt if an interrupt is raised and interrupts are enabled
-    //   - kStartInstruction when Reset is called
+    //   - kStartInstruction when Reset is called, or another core executes
+    //     CRUN on it
     kIdle,
 
     // The core is currently executing a "wait" statement.
     // Transitions to:
     //   - kHandleInterrupt if an interrupt is raised and interrupts are enabled
-    //   - kStartInstruction when Reset is called or wait is completed
+    //   - kStartInstruction when Reset is called, wait is completed, or another
+    //     core executes CRUN on it
     kWaiting,
 
     // The core is starting to handle an interrupt request.

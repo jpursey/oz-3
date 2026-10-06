@@ -1002,15 +1002,6 @@ void CpuCore::RunInstructionLoop() {
         locked_core_->r_[MB] = locked_core_->mbm_ =
             (locked_core_->r_[MB] & ~bank_mask) |
             (bank_index << (code.arg1 * 4));
-        if (code.arg1 == CODE) {
-          locked_core_->r_[ST] &= ~W;
-          if (locked_core_ == this) {
-            msr_ &= ~W;
-          }
-          if (locked_core_->state_ == State::kWaiting) {
-            locked_core_->state_ = State::kStartInstruction;
-          }
-        }
       } break;
       case kMicro_CLD: {
         exec_cycles_ += kCpuCoreCycles_CLD;
@@ -1032,6 +1023,23 @@ void CpuCore::RunInstructionLoop() {
         OZ3_INIT_REG2;
         if (reg1 != MB && reg1 != ST) {
           locked_core_->r_[reg1] = r_[reg2];
+        }
+      } break;
+      case kMicro_CRUN: {
+        exec_cycles_ += kCpuCoreCycles_CRUN;
+        if (locked_core_ == nullptr) {
+          break;
+        }
+        DCHECK(lock_ != nullptr || locked_core_ == this);
+
+        // Clearing W ends a WAIT, including one an interrupt would otherwise
+        // return to.
+        locked_core_->r_[ST] &= ~W;
+        if (locked_core_ == this) {
+          msr_ &= ~W;
+        } else if (locked_core_->state_ == State::kIdle ||
+                   locked_core_->state_ == State::kWaiting) {
+          locked_core_->state_ = State::kStartInstruction;
         }
       } break;
       case kMicro_END:

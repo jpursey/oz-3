@@ -1703,6 +1703,11 @@ bool InstructionCompiler::ValidateMicrocode(int index) {
       }
       CHECK(state_.lock_type_ == LockType::kNone) << "Unhandled lock type";
       break;
+    case kMicro_CRUN:
+      if (state_.in_fetch_) {
+        return Error("CRUN in fetch phase");
+      }
+      break;
     case kMicro_END:
       if (state_.in_fetch_) {
         return Error("END in fetch phase");

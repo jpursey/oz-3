@@ -83,6 +83,7 @@ const MicrocodeDef kMicroCodeDefs[] = {
     {kMicro_CBK, "CBK", MicroArgType::kBank, MicroArgType::kWordReg},
     {kMicro_CLD, "CLD", MicroArgType::kWordReg, MicroArgType::kWordReg},
     {kMicro_CST, "CST", MicroArgType::kWordReg, MicroArgType::kWordReg},
+    {kMicro_CRUN, "CRUN"},
     {kMicro_END, "END"},
 };
 

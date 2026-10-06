@@ -4726,6 +4726,7 @@ instruction RST "$m, $#4" {
   CST(IP,C0);
   CST(R0,R0);
   CST(R1,R1);
+  CRUN;
 
 @stack:
   # Test if stack is set

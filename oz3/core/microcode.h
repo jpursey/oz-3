@@ -89,6 +89,7 @@ enum MicroOp : uint8_t {
   kMicro_CBK,   // CBK(b,r);
   kMicro_CLD,   // CLD(r,r);
   kMicro_CST,   // CST(r,r);
+  kMicro_CRUN,  // CRUN;
   kMicro_END,   // END;
 };
 

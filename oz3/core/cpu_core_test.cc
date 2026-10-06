@@ -99,6 +99,8 @@ enum MicroTestOp : uint8_t {
   kTestOp_CBKS,
   kTestOp_CLD,
   kTestOp_CST,
+  kTestOp_CRUN,
+  kTestOp_CRUNS,
   kTestOp_CINT,
   kTestOp_CSELF,
   kTestOp_ROREG,
@@ -763,6 +765,16 @@ const InstructionDef kMicroTestInstructions[] = {
              "CLK(R6);"
              "CST(a,b);"
              "CUL;"},
+    {.op = kTestOp_CRUN,
+     .op_name = "CRUN",
+     .code = "UL;"
+             "CLK(R6);"
+             "CRUN;"
+             "CUL;"},
+    {.op = kTestOp_CRUNS,
+     .op_name = "CRUNS",
+     .code = "UL;"
+             "CRUN;"},
     {.op = kTestOp_CINT,
      .op_name = "CINT",
      .arg1 = ArgType::kWordReg,
@@ -4797,7 +4809,7 @@ TEST_F(CpuCoreTest, OtherCoreInterrupt) {
   EXPECT_EQ(state0.r3, 0);
 }
 
-TEST_F(CpuCoreTest, CbkResetsWaitOnOtherCore) {
+TEST_F(CpuCoreTest, CbkLeavesWaitOnOtherCore) {
   ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 3}));
   CoreState& state0 = GetState(0);
   CoreState& state1 = GetState(1);
@@ -4817,6 +4829,57 @@ TEST_F(CpuCoreTest, CbkResetsWaitOnOtherCore) {
   mem0.AddValue(Encode(kTestOp_NOP));
   const uint16_t blocked_ip0 = mem0.GetAddress();
   mem0.AddValue(Encode(kTestOp_CBK, CpuCore::CODE, 2));
+  mem0.AddValue(Encode(kTestOp_NOP));
+  const uint16_t nop_ip0 = mem0.GetAddress();
+  mem0.AddValue(Encode(kTestOp_HALT));
+
+  mem1.AddValue(Encode(kTestOp_WAIT, CpuCore::R0));
+  mem1.AddValue(Encode(kTestOp_HALT));
+  const uint16_t end_ip1 = mem1.GetAddress();
+
+  mem2.AddValue(Encode(kTestOp_WAIT, CpuCore::R0));
+  mem2.AddValue(Encode(kTestOp_NOP));
+  mem2.AddValue(Encode(kTestOp_HALT));
+  const uint16_t end_ip2 = mem2.GetAddress();
+  ASSERT_NE(end_ip1, end_ip2);
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntilIp(blocked_ip0));
+  EXPECT_EQ(state1.core.GetState(), CpuCore::State::kWaiting);
+
+  // Only the code bank changes, so core 1 keeps waiting, and then continues
+  // in the new code bank.
+  ASSERT_TRUE(ExecuteUntilIp(nop_ip0));
+  EXPECT_EQ(state1.core.GetState(), CpuCore::State::kWaiting);
+  EXPECT_EQ(state1.st, CpuCore::W | CpuCore::Z | CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(2).ToWord());
+
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(state1.ip, end_ip2);
+  EXPECT_GE(state1.core.GetCycles(), 2000);
+}
+
+TEST_F(CpuCoreTest, CrunEndsWaitOnOtherCore) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 3}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  state0.ResetCore();
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
+  MemAccessor mem0 = GetMemory(0);
+  MemAccessor mem1 = GetMemory(1);
+  MemAccessor mem2 = GetMemory(2);
+
+  // Initialize processor
+  state0.SetRegisters({{CpuCore::R6, 1}});
+  state1.SetRegisters({{CpuCore::ST, CpuCore::ZSCO}, {CpuCore::R0, 2000}});
+
+  // Main program
+  mem0.AddValue(Encode(kTestOp_NOP));
+  mem0.AddValue(Encode(kTestOp_NOP));
+  mem0.AddValue(Encode(kTestOp_NOP));
+  const uint16_t blocked_ip0 = mem0.GetAddress();
+  mem0.AddValue(Encode(kTestOp_CBK, CpuCore::CODE, 2));
+  mem0.AddValue(Encode(kTestOp_CRUN));
   mem0.AddValue(Encode(kTestOp_NOP));
   const uint16_t nop_ip0 = mem0.GetAddress();
   mem0.AddValue(Encode(kTestOp_NOP));
@@ -4849,7 +4912,7 @@ TEST_F(CpuCoreTest, CbkResetsWaitOnOtherCore) {
   EXPECT_EQ(state1.ip, end_ip2);
 }
 
-TEST_F(CpuCoreTest, CbkResetsWaitOnSelf) {
+TEST_F(CpuCoreTest, CbkLeavesWaitOnSelf) {
   ASSERT_TRUE(Init());
   CoreState& state = GetState();
   state.ResetCore();
@@ -4877,6 +4940,45 @@ TEST_F(CpuCoreTest, CbkResetsWaitOnSelf) {
   ASSERT_TRUE(ExecuteUntil(
       [&] { return state.core.GetState() == CpuCore::State::kWaiting; }));
   EXPECT_EQ(state.ip, ip0);
+  state.core.RaiseInterrupt(0);
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.st, CpuCore::W);
+
+  // The interrupt returns to the WAIT, which runs to completion.
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.ip, end_ip);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+  EXPECT_GE(state.core.GetCycles(), 1000);
+}
+
+TEST_F(CpuCoreTest, CrunEndsWaitOnSelf) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  // Initialize processor
+  state.SetRegisters({{CpuCore::R0, 1000},
+                      {CpuCore::R2, 100},
+                      {CpuCore::ST, CpuCore::I | CpuCore::S}});
+
+  // Main program
+  state.code.AddValue(Encode(kTestOp_IST, CpuCore::R7, CpuCore::R2));
+  state.code.AddValue(Encode(kTestOp_WAIT, CpuCore::R0));
+  const uint16_t ip0 = state.code.GetAddress();
+  state.code.AddValue(Encode(kTestOp_HALT));
+  const uint16_t end_ip = state.code.GetAddress();
+
+  state.code.SetAddress(100);
+  state.code.AddValue(Encode(kTestOp_CRUNS));
+  state.code.AddValue(Encode(kTestOp_NOP));
+  const uint16_t ip1 = state.code.GetAddress();
+  state.code.AddValue(Encode(kTestOp_IRET));
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntil(
+      [&] { return state.core.GetState() == CpuCore::State::kWaiting; }));
+  EXPECT_EQ(state.ip, ip0);
   EXPECT_EQ(state.st, CpuCore::W | CpuCore::I | CpuCore::S);
   state.core.RaiseInterrupt(0);
   ASSERT_TRUE(ExecuteUntilIp(ip1));
@@ -4887,6 +4989,33 @@ TEST_F(CpuCoreTest, CbkResetsWaitOnSelf) {
   EXPECT_EQ(state.ip, end_ip);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
   EXPECT_LT(state.core.GetCycles(), 1000);
+}
+
+TEST_F(CpuCoreTest, CrunStartsIdleCore) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  state0.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
+  MemAccessor mem0 = GetMemory(0);
+  MemAccessor mem1 = GetMemory(1);
+
+  // Initialize processor
+  state0.SetRegisters({{CpuCore::R6, 1}});
+
+  // Core 1 has never been reset, so it is idle, and runs from address 0 of
+  // bank 0 once started. Core 0 runs from bank 1.
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(42);
+  mem0.AddValue(Encode(kTestOp_HALT));
+  const uint16_t end_ip1 = mem0.GetAddress();
+  mem1.AddValue(Encode(kTestOp_CRUN));
+  mem1.AddValue(Encode(kTestOp_HALT));
+
+  // Execute code
+  EXPECT_EQ(state1.core.GetState(), CpuCore::State::kIdle);
+  ExecuteUntilHalt(0);
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(state1.ip, end_ip1);
+  EXPECT_EQ(state1.r0, 42);
 }
 
 TEST_F(CpuCoreTest, ResetDuringWait) {
