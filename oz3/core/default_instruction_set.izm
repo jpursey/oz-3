@@ -4373,9 +4373,9 @@ instruction OUTS.ID "$v, $m" {
 }
 
 ################################################################################
-## OUTR <port> <register>
+## OUTR <port> <address>
 ##
-## Cycles: 4+
+## Cycles: 5+
 ## ZSCO: -X--
 ##
 ## Variants:
@@ -4384,9 +4384,10 @@ instruction OUTS.ID "$v, $m" {
 ##    OUTR.RD <reg>    <dword-address>
 ##    OUTR.ID <0..255> <dword-address>
 ##
-## Writes up to R7 values to the specified port while the port status is not
-## set. R7 holds the number of values not written. Sets the "S" flag if all
-## values were was written (R7 is zero).
+## Writes up to R7 values to the specified port, starting at the specified
+## memory address, as long as the port status is not set before each write.
+## R7 is set to the number of values *not* written. The "S" flag is set if all
+## values were written (R7 == 0), otherwise it is cleared.
 ################################################################################
 
 macro(bits:5) WritePortWordRepeat(p) {
@@ -4400,6 +4401,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LKR(m); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4414,6 +4416,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LKR(m); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4425,9 +4428,10 @@ macro(bits:5) WritePortWordRepeat(p) {
     JC(Z,@done);
     MOV(C2,SP);
   @write:
-    LK(STACK); ADR(SP); LD(C0); LAD(C2); UL;
+    LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4442,6 +4446,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4456,6 +4461,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4470,6 +4476,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4483,6 +4490,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4496,6 +4504,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LK(DATA); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4509,6 +4518,7 @@ macro(bits:5) WritePortWordRepeat(p) {
     LK(EXTRA); ADR(C2); LD(C0); LAD(C2); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4535,6 +4545,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LKR(m); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4549,6 +4560,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LKR(m); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4560,9 +4572,10 @@ macro(bits:5) WritePortDwordRepeat(p) {
     JC(Z,@done);
     MOV(C2,SP);
   @write:
-    LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(C2); UL;
+    LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4577,6 +4590,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4591,6 +4605,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4605,6 +4620,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4618,6 +4634,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4631,6 +4648,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LK(DATA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
@@ -4644,6 +4662,7 @@ macro(bits:5) WritePortDwordRepeat(p) {
     LK(EXTRA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
+    JC(NS,@done);
     JD(R7, @write);
   @done:
     END;
