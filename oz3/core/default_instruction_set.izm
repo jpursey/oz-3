@@ -3419,7 +3419,8 @@ instruction INT "$m" {
 ##
 ## Unconditionally reads from the specified port and writes to the specified
 ## register or memory address. "S" flag is set if a new word was read, otherwise
-## it is cleared.
+## it is cleared. Dword variants read port word 0 into the low word and word 1
+## into the high word.
 ################################################################################
 
 macro(bits:5) ReadPortWord(p) {
@@ -3562,7 +3563,8 @@ instruction IN.ID "$v, $m" {
 ##
 ## Reads from the specified port if the port status is set and writes to the
 ## specified register or memory address. "S" flag is set if a word was read,
-## otherwise it is cleared.
+## otherwise it is cleared. Dword variants read port word 0 into the low word
+## and word 1 into the high word.
 ################################################################################
 
 macro(bits:5) ReadPortWordIfReady(p) {
