@@ -4681,26 +4681,27 @@ instruction OUTR.ID "$v, $m" {
 ################################################################################
 ## RST <core-index> <bank-mask>
 ##
-## Cycles: ...
+## Cycles: 11-28
 ## ZSCO: ----
 ##
 ## The core to reset may be specified as an immediate value 0-7 or the special
 ## keyword SELF (to reset the running core), or specified by register R2 (0..7,
-## or -1 to indiciate self).
+## or -1 to indicate self). If the core does not exist, nothing changes.
 ##
 ## The core's memory banks are specified in R3 in the same configuration as in
 ## the MB register, depending on the bank mask:
 ##   Bit 0: CODE
-##     The core's BC register is set to this cores R4 register.
+##     The core's BC register is set to this core's R4 register.
 ##     The core's IP register is set to zero.
 ##     The core's R0 and R1 registers are copied from this core.
+##     The core starts running from its new IP, if it was halted or waiting.
 ##   Bit 1: STACK
-##     The core's BS register is set to this cores R5 register.
+##     The core's BS register is set to this core's R5 register.
 ##     The core's FP and SP registers are set to zero.
 ##   Bit 2: DATA
-##     The core's BD register is set to this cores R6 register.
+##     The core's BD register is set to this core's R6 register.
 ##   Bit 3: EXTRA
-##     The core's BE register is set to this cores Ry register.
+##     The core's BE register is set to this core's R7 register.
 ################################################################################
 
 macro LockCore {
@@ -4742,11 +4743,9 @@ instruction RST "$m, $#4" {
   CST(FP,C0);
 
 @data:
-  SR(MB); SR(MB); SR(MB); SR(MB);
-
   # Test if data is set
   MSKI(C1,4);
-  JC(Z, @data);
+  JC(Z, @extra);
 
   # Update data registers
   MVN(C0:0,R3:2);

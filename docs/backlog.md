@@ -25,21 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Default instruction set tests
-
-- **Layers:** core
-- **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `oz3/core/instruction_test_*.cc`
-
-Finish testing the default instruction set, continuing the existing tests: one
-change per instruction (or closely related group), each checking results,
-flags, and exact cycle counts. Instructions with no tests yet: `CALL`, `CALLR`,
-`RET`, `RETC`, `FBGN`, `FEND`, `EI`, `DI`, `GETI`, `INT`, `IRTC`, `IN`, `INR`,
-`INS`, `OUT`, `OUTR`, `OUTS`, and `RST`. Bugs the tests find are fixed in the
-`.izm` as part of the same change.
-
 ## Generate the default instruction set in the build
 
 - **Layers:** core, tools

@@ -3376,9 +3376,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
              "CBK(CODE,C0);CST(BC,R4);MOVI(C0,0);CST(IP,C0);CST(R0,R0);"
              "CST(R1,R1);CRUN;@stack:MSKI(C1,2);JC(Z,@data);MVN(C0:0,R3:1);"
              "CBK(STACK,C0);CST(BS,R5);MOVI(C0,0);CST(SP,C0);CST(FP,C0);"
-             "@data:SR(MB);SR(MB);SR(MB);SR(MB);MSKI(C1,4);JC(Z,@data);"
-             "MVN(C0:0,R3:2);CBK(DATA,C0);CST(BD,R6);@extra:MSKI(C1,8);"
-             "JC(Z,@end);MVN(C0:0,R3:3);CBK(EXTRA,C0);CST(BE,R7);@end:CUL;"},
+             "@data:MSKI(C1,4);JC(Z,@extra);MVN(C0:0,R3:2);CBK(DATA,C0);"
+             "CST(BD,R6);@extra:MSKI(C1,8);JC(Z,@end);MVN(C0:0,R3:3);"
+             "CBK(EXTRA,C0);CST(BE,R7);@end:CUL;"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

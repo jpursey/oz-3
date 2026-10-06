@@ -41,6 +41,7 @@ set(oz3_core_TEST_SOURCE
   instruction_test.h
   instruction_test_bits.cc
   instruction_test_branch.cc
+  instruction_test_core.cc
   instruction_test_interrupt.cc
   instruction_test_load_store.cc
   instruction_test_logic.cc
