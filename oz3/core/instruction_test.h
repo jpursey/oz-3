@@ -6,6 +6,10 @@
 #ifndef OZ3_CORE_INSTRUCTION_TEST_H_
 #define OZ3_CORE_INSTRUCTION_TEST_H_
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 #include "absl/log/check.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/port.h"
@@ -14,6 +18,43 @@ namespace oz3 {
 
 class InstructionTest : public BaseCoreTest {
  protected:
+  // A fake device that feeds values to a port one at a time: whenever the port
+  // is unlocked and its status is clear, it writes the next value and sets the
+  // status, as WritePort or WritePort32 do. Update() must be called after
+  // every cycle (see CyclesUntilIp).
+  class PortFeeder {
+   public:
+    enum Size { kWord, kDword };
+
+    // `test` must outlive this.
+    PortFeeder(InstructionTest* test, int port, Size size,
+               std::vector<uint32_t> values)
+        : test_(test), port_(port), size_(size), values_(std::move(values)) {}
+
+    void Update() {
+      if (next_ == static_cast<int>(values_.size())) {
+        return;
+      }
+      const Port& port = test_->GetPort(port_);
+      if (port.IsLocked() || port.GetStatus() != 0) {
+        return;
+      }
+      if (size_ == kWord) {
+        test_->WritePort(port_, static_cast<uint16_t>(values_[next_]));
+      } else {
+        test_->WritePort32(port_, values_[next_]);
+      }
+      ++next_;
+    }
+
+   private:
+    InstructionTest* const test_;
+    const int port_;
+    const Size size_;
+    const std::vector<uint32_t> values_;
+    int next_ = 0;
+  };
+
   // Writes `value` to word 0 of the port and sets the port status, as a device
   // would. The port must not be locked.
   void WritePort(int port, uint16_t value) {

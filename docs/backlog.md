@@ -71,6 +71,33 @@ just spins, costing cycles for no effect. Reduce the count modulo the rotation
 size first, and record the behavior (and cycle counts) on the wiki. The `TODO`
 comments come out in the same change.
 
+## Reset the port address when a lock is granted
+
+- **Layers:** core, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `PortBank::LockPort` in `oz3/core/port.cc`; `Lockable` in
+  `oz3/core/lockable.h`; the Ports description in `2-Specifications.md`
+
+Each port lock starts at word 0, but `PortBank::LockPort` resets the port
+address when a lock is *requested*, even if the request is only queued behind
+the current holder. A holder partway through an `A` mode sequence then has its
+address reset under it: for instance, a device that writes word 0 with `A`,
+keeps the lock for a few cycles, and then writes word 1, ends up overwriting
+word 0 if a core executes `PLK` on the port in between, and if the device
+moves the address on again, the core's lock then starts at word 1. A core that
+holds a port is unaffected, as all its port reads and writes happen in the step
+that runs `PLK`, but a core queued behind a device that holds a port across
+cycles is affected both ways.
+
+Reset the address when the lock is granted instead: for instance, a protected
+virtual `OnLocked()` in `Lockable`, called both on an immediate grant and when
+`Unlock()` hands the lock to the next pending request, which `PortLockable`
+overrides. Test a request made while the port is locked. The wiki doesn't say
+the address resets to word 0 when a port is locked at all, so document that
+too.
+
 ## Default instruction set reference
 
 - **Layers:** wiki

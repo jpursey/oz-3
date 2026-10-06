@@ -248,12 +248,24 @@ class BaseCoreTest : public testing::Test {
 
   // Executes until core 0's IP reaches `ip`, which must be just past a NOP (as
   // returned by MemAccessor::AddNopGetAddress). Returns the number of cycles
-  // the core executed before the NOP, or -1 if ExecuteUntilIp fails.
+  // the core executed before the NOP, or -1 if the core halts or IP passes
+  // 1000 first (see ExecuteUntil).
   //
   // This is how a test times instructions: an instruction can end partway
   // through one of the core's steps, with the next instruction starting in the
-  // same step, but a step always ends right after a NOP.
-  Cycles CyclesUntilIp(uint16_t ip);
+  // same step, but the step that fetches a NOP always ends before the next
+  // instruction starts. When this returns, the core is still executing the
+  // NOP (the default NOP is "UL;"), and a running core goes straight from the
+  // end of one instruction to fetching the next, so CoreState::SetRegisters
+  // can't be used between timed instructions. Set registers with untimed
+  // instructions instead.
+  Cycles CyclesUntilIp(uint16_t ip) {
+    return CyclesUntilIp(ip, [] {});
+  }
+
+  // As above, and calls `each_cycle` after every cycle, such as to run a fake
+  // device.
+  Cycles CyclesUntilIp(uint16_t ip, absl::FunctionRef<void()> each_cycle);
 
  private:
   uint16_t DoEncode(const InstructionDef& instruction, Arg a, Arg b);
