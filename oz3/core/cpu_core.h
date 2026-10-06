@@ -175,9 +175,9 @@ class CpuCore final : public ExecutionComponent {
   static constexpr uint16_t ZSCOI = ZSCO | I;      // All core-settable flags
 
   // Control flags
-  static constexpr uint16_t TShift = 8;       // Trace flag shift
+  static constexpr uint16_t TShift = 8;       // Trap flag shift
   static constexpr uint16_t WShift = 9;       // Wait flag shift
-  static constexpr uint16_t T = 1 << TShift;  // Trace flag
+  static constexpr uint16_t T = 1 << TShift;  // Trap flag
   static constexpr uint16_t W = 1 << WShift;  // Wait flag
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
