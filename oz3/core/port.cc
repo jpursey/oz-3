@@ -12,6 +12,8 @@ namespace oz3 {
 
 namespace internal {
 
+void PortLockable::OnLocked() { bank_->OnPortLocked(port_index_); }
+
 void PortLockable::OnUnlocked() { bank_->OnPortUnlocked(port_index_); }
 
 }  // namespace internal
@@ -65,8 +67,12 @@ std::unique_ptr<Lock> PortBank::LockPort(int index) {
           absl::WrapUnique(new internal::PortLockable(this, index));
     }
   }
-  port.address_ = 0;
   return port.lockable_->RequestLock();
+}
+
+void PortBank::OnPortLocked(int index) {
+  DCHECK(index >= 0 && index < GetCount());
+  ports_[index].address_ = 0;
 }
 
 void PortBank::OnPortUnlocked(int index) {

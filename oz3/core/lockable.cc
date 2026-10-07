@@ -42,6 +42,7 @@ std::unique_ptr<Lock> Lockable::RequestLock() {
   } else {
     new_lock->lockable_ = this;
     lock_ = new_lock->self_ptr_;
+    OnLocked();
   }
   return new_lock;
 }
@@ -52,6 +53,7 @@ void Lockable::Unlock() {
     pending_locks_.pop();
     if (lock_.Exists()) {
       lock_->lockable_ = this;
+      OnLocked();
       break;
     }
   }

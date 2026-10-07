@@ -313,6 +313,37 @@ TEST(PortTest, PortHasExclusiveLock) {
   lock2.reset();
 }
 
+TEST(PortTest, LockResetsAddress) {
+  PortBank bank(1);
+  Port& port = bank.GetPort(0);
+
+  auto lock = bank.LockPort(0);
+  EXPECT_EQ(port.StoreWord(*lock, Port::A, 1), 0);
+  EXPECT_EQ(port.GetAddress(), 1);
+  lock.reset();
+  EXPECT_EQ(port.GetAddress(), 1);
+
+  lock = bank.LockPort(0);
+  EXPECT_EQ(port.GetAddress(), 0);
+}
+
+TEST(PortTest, PendingLockResetsAddressWhenGranted) {
+  PortBank bank(1);
+  Port& port = bank.GetPort(0);
+
+  auto lock1 = bank.LockPort(0);
+  EXPECT_EQ(port.StoreWord(*lock1, Port::A, 1), 0);
+  auto lock2 = bank.LockPort(0);
+  EXPECT_FALSE(lock2->IsLocked());
+  EXPECT_EQ(port.StoreWord(*lock1, Port::A, 2), 0);
+  EXPECT_EQ(port.GetValue(0), 1);
+  EXPECT_EQ(port.GetValue(1), 2);
+  lock1.reset();
+
+  EXPECT_TRUE(lock2->IsLocked());
+  EXPECT_EQ(port.GetAddress(), 0);
+}
+
 TEST(PortTest, SequentialPortLocking) {
   PortBank bank(1);
   Port& port = bank.GetPort(0);

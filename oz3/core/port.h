@@ -24,6 +24,7 @@ class PortLockable : public Lockable {
   ~PortLockable() override = default;
 
  protected:
+  void OnLocked() override;
   void OnUnlocked() override;
 
  private:
@@ -150,7 +151,9 @@ class PortBank final {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Locks the port at the specified index, and resets the port address.
+  // Requests a lock on the port at the specified index. The port address is
+  // reset to word 0 when the lock is granted, which may be later if the port
+  // is already locked.
   //
   // The index must be in the range [0, GetCount()-1].
   std::unique_ptr<Lock> LockPort(int index);
@@ -161,6 +164,7 @@ class PortBank final {
   //----------------------------------------------------------------------------
   friend class internal::PortLockable;
 
+  void OnPortLocked(int index);
   void OnPortUnlocked(int index);
 
   std::vector<Port> ports_;

@@ -82,12 +82,15 @@ class DerivedLockable : public Lockable {
   using Lockable::AllowLock;
   using Lockable::PreventLock;
 
+  int GetLockedCount() const { return locked_count_; }
   int GetUnlockedCount() const { return unlocked_count_; }
 
  protected:
+  void OnLocked() override { ++locked_count_; }
   void OnUnlocked() override { ++unlocked_count_; }
 
  private:
+  int locked_count_ = 0;
   int unlocked_count_ = 0;
 };
 
@@ -114,6 +117,45 @@ TEST(LockableTest, AllowLockLocksPendingLock) {
   lockable.AllowLock();
   EXPECT_TRUE(lock1->IsLocked());
   EXPECT_FALSE(lock2->IsLocked());
+}
+
+TEST(LockableTest, OnLockedCalledWhenLockGranted) {
+  DerivedLockable lockable;
+  auto lock = lockable.RequestLock();
+  EXPECT_TRUE(lock->IsLocked());
+  EXPECT_EQ(lockable.GetLockedCount(), 1);
+}
+
+TEST(LockableTest, OnLockedCalledWhenPendingLockGranted) {
+  DerivedLockable lockable;
+  auto lock1 = lockable.RequestLock();
+  auto lock2 = lockable.RequestLock();
+  EXPECT_FALSE(lock2->IsLocked());
+  EXPECT_EQ(lockable.GetLockedCount(), 1);
+  lock1.reset();
+  EXPECT_TRUE(lock2->IsLocked());
+  EXPECT_EQ(lockable.GetLockedCount(), 2);
+}
+
+TEST(LockableTest, OnLockedNotCalledForResetPendingLock) {
+  DerivedLockable lockable;
+  auto lock1 = lockable.RequestLock();
+  auto lock2 = lockable.RequestLock();
+  auto lock3 = lockable.RequestLock();
+  lock2.reset();
+  lock1.reset();
+  EXPECT_TRUE(lock3->IsLocked());
+  EXPECT_EQ(lockable.GetLockedCount(), 2);
+}
+
+TEST(LockableTest, OnLockedCalledWhenAllowLockGrantsPendingLock) {
+  DerivedLockable lockable;
+  EXPECT_TRUE(lockable.PreventLock());
+  auto lock = lockable.RequestLock();
+  EXPECT_EQ(lockable.GetLockedCount(), 0);
+  lockable.AllowLock();
+  EXPECT_TRUE(lock->IsLocked());
+  EXPECT_EQ(lockable.GetLockedCount(), 1);
 }
 
 TEST(LockableTest, OnUnlockedCalled) {

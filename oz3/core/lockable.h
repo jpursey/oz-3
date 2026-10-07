@@ -115,6 +115,11 @@ class Lockable {
   // oldest pending lock will be granted.
   void AllowLock();
 
+  // Called when a lock is granted, whether immediately by RequestLock or later
+  // when a pending lock becomes locked. The new lock is locked by the time this
+  // is called.
+  virtual void OnLocked() {}
+
   // Called when the lockable becomes unlocked with no pending lockables after
   // being locked.
   virtual void OnUnlocked() {}
