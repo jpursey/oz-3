@@ -1420,13 +1420,18 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       arg = jump;
       return true;
     } break;
-    case MicroArgType::kValue: {
+    case MicroArgType::kValue:
+    case MicroArgType::kUnsignedValue: {
       int value;
       if (!absl::SimpleAtoi(arg_name, &value)) {
         return Error("Invalid argument: ", arg_name);
       }
-      if (value < -128 || value > 255) {
-        return Error("Value out of range [-128,255]: ", arg_name);
+      const bool is_signed = (arg_type == MicroArgType::kValue);
+      const int min_value = (is_signed ? -128 : 0);
+      const int max_value = (is_signed ? 127 : 255);
+      if (value < min_value || value > max_value) {
+        return Error("Value out of range [", min_value, ",", max_value,
+                     "]: ", arg_name);
       }
       arg = value;
       return true;

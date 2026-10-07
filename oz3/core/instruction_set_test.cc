@@ -662,6 +662,30 @@ TEST(InstructionSetTest, ImmArgsDecodedCorrectly) {
                   Microcode{.op = kMicro_TEST, .arg1 = -128, .arg2 = 97}));
 }
 
+TEST(InstructionSetTest, UnsignedImmArgsDecodedCorrectly) {
+  const MicrocodeDef micro_defs[] = {
+      {kMicro_UL, "UL"},
+      {kMicro_TEST, "OP", MicroArgType::kUnsignedValue,
+       MicroArgType::kUnsignedValue},
+  };
+  const InstructionDef instruction_defs[] = {
+      MakeDef("UL;OP(0,1);OP(127,128);OP(200,255)"),
+  };
+
+  InstructionError error;
+  auto codes = CompileInstructionSet({.instructions = instruction_defs}, &error,
+                                     micro_defs);
+  EXPECT_THAT(error.message, IsEmpty());
+  DecodedInstruction decoded;
+  EXPECT_TRUE(codes->Decode(MakeCode(kOp_TEST), decoded));
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(Microcode{.op = kMicro_UL},
+                  Microcode{.op = kMicro_TEST, .arg1 = 0, .arg2 = 1},
+                  Microcode{.op = kMicro_TEST, .arg1 = 127, .arg2 = -128},
+                  Microcode{.op = kMicro_TEST, .arg1 = -56, .arg2 = -1}));
+}
+
 TEST(InstructionSetTest, RegByteArgsDecodedCorrectly) {
   const MicrocodeDef micro_defs[] = {
       {kMicro_UL, "UL"},

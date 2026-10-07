@@ -214,6 +214,25 @@ TEST(InstructionCompilerTest, ImmediateArg) {
   EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(0)"), error));
   EXPECT_THAT(error, IsEmpty());
+  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(127)"), error));
+  EXPECT_THAT(error, IsEmpty());
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(128)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+}
+
+TEST(InstructionCompilerTest, UnsignedImmediateArg) {
+  const MicrocodeDef kMicroImmArg1 = {kMicro_TEST, "TEST",
+                                      MicroArgType::kUnsignedValue};
+  std::string error;
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(
+      TestCompile(kMicroImmArg1, MakeDef(ArgType::kWordReg, "TEST(a)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(-1)"), error));
+  EXPECT_THAT(error, Not(IsEmpty()));
+  EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(0)"), error));
+  EXPECT_THAT(error, IsEmpty());
   EXPECT_TRUE(TestCompile(kMicroImmArg1, MakeDef("TEST(255)"), error));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile(kMicroImmArg1, MakeDef("TEST(256)"), error));

@@ -26,7 +26,7 @@ inline constexpr int kMaxInstructionMicrocodes = 255;
 inline constexpr int kMaxInstructionSetMicrocodes =
     kMaxInstructionMicrocodes * 256;
 
-// The folowing lists all the microcode operations that can be executed by the
+// The following lists all the microcode operations that can be executed by the
 // OZ-3 CpuCore. For details see the OZ-3 Wiki:
 // https://github.com/jpursey/oz-3/wiki/2.1-Microcode
 enum MicroOp : uint8_t {
@@ -34,7 +34,7 @@ enum MicroOp : uint8_t {
   kMicro_MSS,   // MSS(s);
   kMicro_MSX,   // MSX(s);
   kMicro_MSM,   // MSM(s,r);
-  kMicro_MSR,   // MSR(s,r);
+  kMicro_MSR,   // MSR(s,s);
   kMicro_WAIT,  // WAIT(r);
   kMicro_HALT,  // HALT;
   kMicro_LK,    // LK(b);
@@ -47,10 +47,10 @@ enum MicroOp : uint8_t {
   kMicro_STP,   // STP(r);
   kMicro_MOVI,  // MOVI(r,v);
   kMicro_MOV,   // MOV(r,r);
-  kMicro_MVBI,  // MVBI(rb,v);
+  kMicro_MVBI,  // MVBI(rb,u);
   kMicro_MVB,   // MVB(rb,rb);
-  kMicro_MVNI,  // MVBI(rn,v);
-  kMicro_MVN,   // MVB(rn,rn);
+  kMicro_MVNI,  // MVNI(rn,u);
+  kMicro_MVN,   // MVN(rn,rn);
   kMicro_ADDI,  // ADDI(r,v);
   kMicro_ADD,   // ADD(r,r);
   kMicro_ADC,   // ADC(r,r);
@@ -106,10 +106,11 @@ enum class MicroArgType {
   kCondition,  // ZSCO condition (Z, NZ, S, NS, C, NC, O, or NO).
   kAddress,    // Relative microcode address.
   kValue,      // Signed 8-bit value: [-128,127].
-  kWordReg,    // Word register.
-  kDwordReg,   // Dword register.
-  kRegByte,    // Byte of a word register.
-  kRegNibble,  // Nibble of a word register.
+  kUnsignedValue,  // Unsigned 8-bit value: [0,255].
+  kWordReg,        // Word register.
+  kDwordReg,       // Dword register.
+  kRegByte,        // Byte of a word register.
+  kRegNibble,      // Nibble of a word register.
 };
 
 // Converts an ArgType to a MicroArgType.
