@@ -178,7 +178,6 @@ class BaseCoreTest : public testing::Test {
     MemAccessor extra;
   };
 
-  BaseCoreTest();
   BaseCoreTest(const InstructionSetDef& def,
                std::shared_ptr<const InstructionSet> instruction_set)
       : def_(def), instruction_set_(std::move(instruction_set)) {}

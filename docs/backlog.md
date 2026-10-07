@@ -10,9 +10,9 @@ bottom are the rest of the roadmap in README.md and the wiki.
 
 Each item carries:
 
-- **Layers**: the OZ-3 libraries it touches (`core`, `tools`), in dependency
-  order, and the wiki if it changes the specification. More than one usually
-  means more than one CL.
+- **Layers**: the OZ-3 libraries it touches (`core`, `tools`,
+  `instruction_sets`), in dependency order, and the wiki if it changes the
+  specification. More than one usually means more than one CL.
 - **Size**: a guess. *Small* is a single CL. *Medium* is a few. *Large* is
   many, usually after a design.
 - **Feature workflow**: whether the item follows the feature workflow, with a
@@ -25,25 +25,9 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Generate the default instruction set in the build
-
-- **Layers:** core, tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** Default instruction set in CLAUDE.md
-
-`default_instruction_set.inc` is generated from `default_instruction_set.izm`
-by running `oz3ism` by hand, and checked in. Generate it in the build instead,
-so the two can't drift. `oz3ism` links `oz3_core`, which compiles the `.inc`,
-so the build has to break that cycle first: for instance, by moving the default
-instruction set out of `oz3_core` into a library of its own that `oz3ism`
-doesn't need. Decide whether the generated file stays checked in (so the source
-builds without running `oz3ism`) or moves to the build tree.
-
 ## Rotate counts larger than the register
 
-- **Layers:** core, wiki
+- **Layers:** instruction_sets, wiki
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -58,7 +42,7 @@ comments come out in the same change.
 
 ## Finish the default instruction set
 
-- **Layers:** core, wiki
+- **Layers:** instruction_sets, wiki
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** nothing

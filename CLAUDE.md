@@ -27,21 +27,22 @@ This is a CMake project, starting at the root. The directory structure is as fol
                    and can get deleted at any time.
 ```
 
-Libraries depend strictly in the order `core` → `tools` (`tools` may use `core`, and `core` uses nothing in OZ-3):
-- `core` (`oz3_core`): The runtime. `Processor` simulates a whole OZ-3 machine: its `CpuCore`s, `MemoryBank`s, and `Port`s, configured by `ProcessorConfig`. Shared resources are `Lockable`, and every access to one goes through a simulated lock. An `InstructionSet` is compiled from an `InstructionSetDef` (instructions and macros written in microcode) by the instruction compiler. The default instruction set is in `default_instruction_set.*` (see Default instruction set).
+Libraries depend strictly in the order `core` → `tools` → `instruction_sets` (each may use the ones before it, and `core` uses nothing in OZ-3):
+- `core` (`oz3_core`): The runtime. `Processor` simulates a whole OZ-3 machine: its `CpuCore`s, `MemoryBank`s, and `Port`s, configured by `ProcessorConfig`. Shared resources are `Lockable`, and every access to one goes through a simulated lock. An `InstructionSet` is compiled from an `InstructionSetDef` (instructions and macros written in microcode) by the instruction compiler. Core has no instruction set of its own: every `CpuCoreConfig` is given one. `oz3_core_testing` holds `BaseCoreTest`, the test fixture for running cores, which other libraries' tests share.
 - `tools` (`oz3_tools`): Libraries and tools for working with the OZ-3 that a host application can use on its own: `InstructionAssembler` (instruction set source files to an `InstructionSetDef`), `InstructionDefExporter` (an `InstructionSetDef` to C++), and `ProgramLoader` (loading a `Program` into a `Processor`'s memory). `oz3ism` is the command line instruction set assembler, built from the two.
+- `instruction_sets` (`oz3_instruction_sets`): Ready-made instruction sets, currently the default one (see Default instruction set). It links only `core`.
 
-The README also describes `devices` (virtual devices attached through ports) and `ozzy` (a virtual computer and "OS" built from the other libraries, with the debugger). Neither exists yet (see the backlog). When they are added, they come after `tools` in the dependency order.
+The README also describes `devices` (virtual devices attached through ports) and `ozzy` (a virtual computer and "OS" built from the other libraries, with the debugger). Neither exists yet (see the backlog). When they are added, they come after `instruction_sets` in the dependency order.
 
 ### Default instruction set
 
-The default instruction set's source is `oz3/core/default_instruction_set.izm`, written in the microcode assembly the wiki describes. `oz3ism` assembles it into C++, `default_instruction_set.inc`, which is checked in and compiled into `oz3_core`. After changing the `.izm`, build, then regenerate the `.inc` from the repository root and check it in with the change:
+The default instruction set's source is `oz3/instruction_sets/default_instruction_set.izm`, written in the microcode assembly the wiki describes. `oz3ism` assembles it into C++, `default_instruction_set.inc`, which is checked in and compiled into `oz3_instruction_sets`. After changing the `.izm`, build, then regenerate the `.inc` from the repository root and check it in with the change:
 
 ```
-bin/oz3ism.exe oz3/core/default_instruction_set.izm oz3/core/default_instruction_set.inc
+bin/oz3ism.exe oz3/instruction_sets/default_instruction_set.izm oz3/instruction_sets/default_instruction_set.inc
 ```
 
-Both paths must be relative to the current directory; `oz3ism` can't read absolute paths. The build doesn't do this step yet (see the backlog). Debug and Release both write `bin/oz3ism.exe`, so it is whichever was built last; a Debug one needs the debug CRT on PATH (see Test below).
+Both paths must be relative to the current directory; `oz3ism` can't read absolute paths. The build doesn't do this step, as running a Debug `oz3ism` needs the debug CRT. `oz3ism` doesn't link `oz3_instruction_sets`, so it still builds when the `.inc` doesn't compile. Debug and Release both write `bin/oz3ism.exe`, so it is whichever was built last; a Debug one needs the debug CRT on PATH (see Test below).
 
 ## Commands
 
@@ -85,7 +86,7 @@ OZ-3 code (everything under `oz3/`) compiles with warnings as errors (`/WX` on M
 
 ### Test
 
-Tests are GoogleTest binaries registered with ctest, one per library (`oz3_core_test`, `oz3_tools_test`).
+Tests are GoogleTest binaries registered with ctest, one per library (`oz3_core_test`, `oz3_tools_test`, `oz3_instruction_sets_test`).
 
 ```
 ctest --test-dir out/build/x64-Debug --output-on-failure
@@ -95,7 +96,7 @@ ctest --test-dir out/build/x64-Debug --output-on-failure -R oz3_core_test
 To use GoogleTest flags, run the binary directly:
 
 ```
-out/build/x64-Debug/oz3/core/oz3_core_test.exe --gtest_filter=InstructionTest.*
+out/build/x64-Debug/oz3/instruction_sets/oz3_instruction_sets_test.exe --gtest_filter=InstructionTest.*
 ```
 
 Debug binaries link the non-redistributable debug CRT, which is not on PATH even in a developer shell, so every test exits with `0xc0000135` (DLL not found) until it is added:

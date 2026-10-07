@@ -24,20 +24,10 @@ class CpuCoreConfig {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Constructs a default core configuration using the base OZ-3 instruction
-  // set.
-  static CpuCoreConfig Default() { return CpuCoreConfig(); }
-
-  // Constructs a core with all banks mapped to memory bank 0.
-  CpuCoreConfig();
-
-  // Sets the instruction set for this core.
-  //
-  // By default, this is the full instruction set defined by the OZ-3
-  // specifications. Custom implementations may choose to override this with a
-  // custom instruction set.
-  CpuCoreConfig& SetInstructionSet(
-      std::shared_ptr<const InstructionSet> instructions);
+  // Constructs a core configuration that runs the specified instruction set,
+  // which must not be null. The default OZ-3 instruction set is in the
+  // instruction_sets library (GetDefaultInstructionSet()).
+  explicit CpuCoreConfig(std::shared_ptr<const InstructionSet> instructions);
 
   //----------------------------------------------------------------------------
   // Accessors

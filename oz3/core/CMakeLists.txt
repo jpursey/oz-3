@@ -8,7 +8,6 @@ set(oz3_core_SOURCE
   core_types.h
   cpu_core.cc cpu_core.h
   cpu_core_config.cc cpu_core_config.h
-  default_instruction_set.cc default_instruction_set.h
   execution_component.h
   instruction_def.cc instruction_def.h
   instruction_compiler.cc instruction_compiler.h
@@ -33,30 +32,33 @@ set(oz3_core_LIBS
 )
 
 set(oz3_core_TEST_SOURCE
-  base_core_test.cc base_core_test.h
   cpu_core_test.cc
-  default_instruction_set_test.cc
   instruction_compiler_test.cc
   instruction_set_test.cc
-  instruction_test.h
-  instruction_test_bits.cc
-  instruction_test_branch.cc
-  instruction_test_core.cc
-  instruction_test_interrupt.cc
-  instruction_test_load_store.cc
-  instruction_test_logic.cc
-  instruction_test_math.cc
-  instruction_test_misc.cc
-  instruction_test_port.cc
-  instruction_test_rotate.cc
-  instruction_test_shift.cc
   lockable_test.cc
   memory_bank_test.cc
   port_test.cc
   processor_test.cc
 )
 set(oz3_core_TEST_DEPS
-  absl::function_ref
+  oz3_core_testing
 )
 
 gb_add_library(oz3_core)
+
+# Test support for libraries that run cores, such as instruction set tests.
+set(oz3_core_testing_SOURCE
+  base_core_test.cc base_core_test.h
+)
+set(oz3_core_testing_DEPS
+  absl::flat_hash_map
+  absl::function_ref
+  gtest
+  oz3_core
+)
+set(oz3_core_testing_LIBS
+  absl::check
+  absl::log
+)
+
+gb_add_library(oz3_core_testing)

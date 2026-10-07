@@ -5,14 +5,9 @@
 
 #include "oz3/core/base_core_test.h"
 
-#include "oz3/core/default_instruction_set.h"
 #include "oz3/core/instruction_compiler.h"
 
 namespace oz3 {
-
-BaseCoreTest::BaseCoreTest()
-    : def_(GetDefaultInstructionSetDef()),
-      instruction_set_(GetDefaultInstructionSet()) {}
 
 bool BaseCoreTest::Init(InitConfig config) {
   if (instruction_set_ == nullptr) {
@@ -56,8 +51,7 @@ bool BaseCoreTest::Init(InitConfig config) {
 
   ProcessorConfig processor_config;
   for (int i = 0; i < config.num_cores; ++i) {
-    processor_config.AddCpuCore(
-        CpuCoreConfig().SetInstructionSet(instruction_set_));
+    processor_config.AddCpuCore(CpuCoreConfig(instruction_set_));
   }
   for (int i = 0; i < config.num_memory_banks; ++i) {
     processor_config.SetMemoryBank(i, MemoryBankConfig::MaxRam());

@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_CORE_DEFAULT_INSTRUCTION_SET_H_
-#define OZ3_CORE_DEFAULT_INSTRUCTION_SET_H_
+#ifndef OZ3_INSTRUCTION_SETS_DEFAULT_INSTRUCTION_SET_H_
+#define OZ3_INSTRUCTION_SETS_DEFAULT_INSTRUCTION_SET_H_
 
 #include <cstdint>
 #include <memory>
@@ -29,4 +29,4 @@ std::shared_ptr<const InstructionSet> GetDefaultInstructionSet();
 
 }  // namespace oz3
 
-#endif  // OZ3_CORE_DEFAULT_INSTRUCTION_SET_H_
+#endif  // OZ3_INSTRUCTION_SETS_DEFAULT_INSTRUCTION_SET_H_

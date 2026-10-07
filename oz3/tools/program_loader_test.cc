@@ -5,8 +5,11 @@
 
 #include "oz3/tools/program_loader.h"
 
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor.h"
 #include "oz3/core/processor_config.h"
@@ -39,6 +42,13 @@ std::vector<uint16_t> GenerateData(uint16_t start, uint16_t count) {
   return data;
 }
 
+// The loader never runs the cores, so they need no instructions.
+std::shared_ptr<const InstructionSet> GetEmptyInstructionSet() {
+  static std::shared_ptr<const InstructionSet> s_instruction_set =
+      CompileInstructionSet({});
+  return s_instruction_set;
+}
+
 TEST(ProgramLoaderTest, EmptyProcessor) {
   Processor processor(ProcessorConfig::Empty());
   ProgramLoader loader(&processor);
@@ -54,7 +64,7 @@ TEST(ProgramLoaderTest, EmptyProcessor) {
 }
 
 TEST(ProgramLoaderTest, FullMemoryProcessor) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(kMaxMemoryBanks, 0));
+  Processor processor(ProcessorConfig::MultiBank(kMaxMemoryBanks));
   ProgramLoader loader(&processor);
 
   auto free_pages = loader.GetFreePages();
@@ -152,7 +162,7 @@ TEST(ProgramLoaderTest, LoadEmptyProgramIntoEmptyProcessor) {
 }
 
 TEST(ProgramLoaderTest, ProgramHasTooManyBanks) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -162,7 +172,7 @@ TEST(ProgramLoaderTest, ProgramHasTooManyBanks) {
 }
 
 TEST(ProgramLoaderTest, ProgramHasMaxBanks) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -178,7 +188,7 @@ TEST(ProgramLoaderTest, ProgramHasMaxBanks) {
 }
 
 TEST(ProgramLoaderTest, ProgramHasTooManySegments) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(kMaxMemoryBanks, 0));
+  Processor processor(ProcessorConfig::MultiBank(kMaxMemoryBanks));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -192,7 +202,7 @@ TEST(ProgramLoaderTest, ProgramHasTooManySegments) {
 }
 
 TEST(ProgramLoaderTest, ProgramHasMaxSegments) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(kMaxMemoryBanks, 0));
+  Processor processor(ProcessorConfig::MultiBank(kMaxMemoryBanks));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -216,7 +226,8 @@ TEST(ProgramLoaderTest, ProgramHasMaxSegments) {
 }
 
 TEST(ProgramLoaderTest, ProgramHasTooManyInstances) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, kMaxCores));
+  Processor processor(ProcessorConfig::MultiBankMultiCore(
+      1, kMaxCores, GetEmptyInstructionSet()));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -229,7 +240,8 @@ TEST(ProgramLoaderTest, ProgramHasTooManyInstances) {
 }
 
 TEST(ProgramLoaderTest, ProgramHasMaxInstances) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, kMaxCores));
+  Processor processor(ProcessorConfig::MultiBankMultiCore(
+      1, kMaxCores, GetEmptyInstructionSet()));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -255,7 +267,7 @@ TEST(ProgramLoaderTest, ProgramHasMaxInstances) {
 }
 
 TEST(ProgramLoaderTest, ProgramSegmentHasInvalidBank) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -267,7 +279,7 @@ TEST(ProgramLoaderTest, ProgramSegmentHasInvalidBank) {
 }
 
 TEST(ProgramLoaderTest, ProgramDynamicSegmentHasNoPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -280,7 +292,7 @@ TEST(ProgramLoaderTest, ProgramDynamicSegmentHasNoPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramDynamicSegmentHasTooManyPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -293,7 +305,7 @@ TEST(ProgramLoaderTest, ProgramDynamicSegmentHasTooManyPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramDynamicSegmentHasMaxPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -313,7 +325,7 @@ TEST(ProgramLoaderTest, ProgramDynamicSegmentHasMaxPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentHasNoPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -327,7 +339,7 @@ TEST(ProgramLoaderTest, ProgramFixedSegmentHasNoPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentHasTooManyPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -342,7 +354,7 @@ TEST(ProgramLoaderTest, ProgramFixedSegmentHasTooManyPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentHasMaxPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -364,7 +376,7 @@ TEST(ProgramLoaderTest, ProgramFixedSegmentHasMaxPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentsWithOverlappingPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -381,7 +393,7 @@ TEST(ProgramLoaderTest, ProgramFixedSegmentsWithOverlappingPages) {
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentsWithNonOverlappingPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -406,7 +418,7 @@ TEST(ProgramLoaderTest, ProgramFixedSegmentsWithNonOverlappingPages) {
 
 TEST(ProgramLoaderTest,
      ProgramFixedSegmentsWithOverlappingPagesDifferentBanks) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(2, 0));
+  Processor processor(ProcessorConfig::MultiBank(2));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -431,7 +443,7 @@ TEST(ProgramLoaderTest,
 }
 
 TEST(ProgramLoaderTest, ProgramSegmentsExceedMaxPagesForBank) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -446,7 +458,7 @@ TEST(ProgramLoaderTest, ProgramSegmentsExceedMaxPagesForBank) {
 }
 
 TEST(ProgramLoaderTest, ProgramSegmentDataExceedsSize) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -464,7 +476,7 @@ TEST(ProgramLoaderTest, ProgramSegmentDataExceedsSize) {
 }
 
 TEST(ProgramLoaderTest, ProgramSegmentDataAtMaxSize) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -489,7 +501,7 @@ TEST(ProgramLoaderTest, ProgramSegmentDataAtMaxSize) {
 }
 
 TEST(ProgramLoaderTest, ProgramInvalidCodeSegment) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -502,7 +514,7 @@ TEST(ProgramLoaderTest, ProgramInvalidCodeSegment) {
 }
 
 TEST(ProgramLoaderTest, ProgramInvalidStackSegment) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -515,7 +527,7 @@ TEST(ProgramLoaderTest, ProgramInvalidStackSegment) {
 }
 
 TEST(ProgramLoaderTest, ProgramInvalidDataSegment) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -528,7 +540,7 @@ TEST(ProgramLoaderTest, ProgramInvalidDataSegment) {
 }
 
 TEST(ProgramLoaderTest, ProgramInvalidExtraSegment) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -541,7 +553,7 @@ TEST(ProgramLoaderTest, ProgramInvalidExtraSegment) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -556,7 +568,7 @@ TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetTooBig) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetAtEnd) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks.resize(1);
@@ -581,7 +593,7 @@ TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetAtEnd) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceStackOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -596,7 +608,7 @@ TEST(ProgramLoaderTest, ProgramInstanceStackOffsetTooBig) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceStackOffsetAtEnd) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -622,7 +634,7 @@ TEST(ProgramLoaderTest, ProgramInstanceStackOffsetAtEnd) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceDataOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -637,7 +649,7 @@ TEST(ProgramLoaderTest, ProgramInstanceDataOffsetTooBig) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceDataOffsetAtEnd) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -663,7 +675,7 @@ TEST(ProgramLoaderTest, ProgramInstanceDataOffsetAtEnd) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceExtraOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -678,7 +690,7 @@ TEST(ProgramLoaderTest, ProgramInstanceExtraOffsetTooBig) {
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceExtraOffsetAtEnd) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
@@ -1219,7 +1231,7 @@ TEST(ProgramLoaderTest, SegmentsWithInitialData) {
 }
 
 TEST(ProgramLoaderTest, UnloadInvalidProgram) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks.resize(1);
@@ -1238,7 +1250,7 @@ TEST(ProgramLoaderTest, UnloadInvalidProgram) {
 }
 
 TEST(ProgramLoaderTest, UnloadProgramInvalidatesHandle) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   ProgramLoader::Handle handle = loader.Load({});
   ASSERT_NE(handle, ProgramLoader::kInvalidHandle);
@@ -1248,7 +1260,7 @@ TEST(ProgramLoaderTest, UnloadProgramInvalidatesHandle) {
 }
 
 TEST(ProgramLoaderTest, UnloadProgramWithReadWritePages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks.resize(1);
@@ -1269,7 +1281,7 @@ TEST(ProgramLoaderTest, UnloadProgramWithReadWritePages) {
 }
 
 TEST(ProgramLoaderTest, UnloadProgramWithReadOnlyPages) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks.resize(1);
@@ -1290,7 +1302,7 @@ TEST(ProgramLoaderTest, UnloadProgramWithReadOnlyPages) {
 }
 
 TEST(ProgramLoaderTest, ReloadProgram) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks.resize(1);
@@ -1316,7 +1328,7 @@ TEST(ProgramLoaderTest, ReloadProgram) {
 }
 
 TEST(ProgramLoaderTest, GetResetParamsForInvalidHandle) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks = {Program::Bank{}};
@@ -1332,7 +1344,7 @@ TEST(ProgramLoaderTest, GetResetParamsForInvalidHandle) {
 }
 
 TEST(ProgramLoaderTest, GetResetParamsForInvalidInstance) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks = {Program::Bank{}};
@@ -1347,7 +1359,7 @@ TEST(ProgramLoaderTest, GetResetParamsForInvalidInstance) {
 }
 
 TEST(ProgramLoaderTest, GetResetParamsWithCodeAndStack) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks = {Program::Bank{}};
@@ -1377,7 +1389,7 @@ TEST(ProgramLoaderTest, GetResetParamsWithCodeAndStack) {
 }
 
 TEST(ProgramLoaderTest, GetResetParamsWithDataAndExtra) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(1, 0));
+  Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
   Program program = {};
   program.banks = {Program::Bank{}};

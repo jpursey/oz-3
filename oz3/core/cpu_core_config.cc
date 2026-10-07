@@ -5,21 +5,15 @@
 
 #include "oz3/core/cpu_core_config.h"
 
-#include <algorithm>
+#include <utility>
 
-#include "absl/log/log.h"
-#include "oz3/core/default_instruction_set.h"
-#include "oz3/core/instruction_compiler.h"
+#include "absl/log/check.h"
 
 namespace oz3 {
 
-CpuCoreConfig::CpuCoreConfig() : instructions_(GetDefaultInstructionSet()) {}
-
-CpuCoreConfig& CpuCoreConfig::SetInstructionSet(
-    std::shared_ptr<const InstructionSet> instructions) {
-  DCHECK(instructions != nullptr);
-  instructions_ = instructions;
-  return *this;
+CpuCoreConfig::CpuCoreConfig(std::shared_ptr<const InstructionSet> instructions)
+    : instructions_(std::move(instructions)) {
+  DCHECK(instructions_ != nullptr);
 }
 
 }  // namespace oz3

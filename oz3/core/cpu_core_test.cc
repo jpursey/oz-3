@@ -824,7 +824,7 @@ class CpuCoreTest : public BaseCoreTest {
 };
 
 TEST_F(CpuCoreTest, CpuCoreInitialState) {
-  CpuCore core(CpuCoreConfig::Default());
+  CpuCore core(CpuCoreConfig{GetMicroTestInstructionSet()});
 
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 

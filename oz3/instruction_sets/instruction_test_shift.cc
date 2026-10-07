@@ -4,7 +4,7 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include "absl/strings/str_cat.h"
-#include "oz3/core/instruction_test.h"
+#include "oz3/instruction_sets/instruction_test.h"
 
 namespace oz3 {
 namespace {

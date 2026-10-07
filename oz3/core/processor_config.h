@@ -6,11 +6,12 @@
 #ifndef OZ3_CORE_PROCESSOR_CONFIG_H_
 #define OZ3_CORE_PROCESSOR_CONFIG_H_
 
+#include <memory>
 #include <vector>
 
 #include "absl/types/span.h"
 #include "oz3/core/cpu_core_config.h"
-#include "oz3/core/default_instruction_set.h"
+#include "oz3/core/instruction_set.h"
 #include "oz3/core/memory_bank_config.h"
 
 namespace oz3 {
@@ -29,24 +30,27 @@ class ProcessorConfig {
   // Creates an empty ProcessorConfig with no resources.
   static ProcessorConfig Empty() { return {}; }
 
-  // Creates a ProcessorConfig with a single core and a single memory bank with
-  // max RAM.
-  static ProcessorConfig OneCore(std::shared_ptr<const InstructionSet>
-                                     instructions = GetDefaultInstructionSet());
+  // Creates a ProcessorConfig with a single core running the specified
+  // instruction set, and a single memory bank with max RAM.
+  static ProcessorConfig OneCore(
+      std::shared_ptr<const InstructionSet> instructions);
 
   // Creates a ProcessorConfig with the specified number of cores (up to
-  // kMaxCores) and a single memory bank with max RAM (can be overridden).
+  // kMaxCores) all running the specified instruction set, and a single memory
+  // bank with max RAM (can be overridden).
   static ProcessorConfig MultiCore(
-      int num_cores, std::shared_ptr<const InstructionSet> instructions =
-                         GetDefaultInstructionSet());
+      int num_cores, std::shared_ptr<const InstructionSet> instructions);
+
+  // Creates a ProcessorConfig with the specified number of memory banks (up to
+  // kMaxMemoryBanks) with max RAM (can be overridden), and no cores.
+  static ProcessorConfig MultiBank(int num_banks);
 
   // Creates a ProcessorConfig with the specified number of memory banks (up to
   // kMaxMemoryBanks) with max RAM (can be overridden) and specified number of
-  // cores (up to kMaxCores).
+  // cores (up to kMaxCores), all running the specified instruction set.
   static ProcessorConfig MultiBankMultiCore(
       int num_banks, int num_cores,
-      std::shared_ptr<const InstructionSet> instructions =
-          GetDefaultInstructionSet());
+      std::shared_ptr<const InstructionSet> instructions);
 
   // Creates a new ProcessorConfig with no resources.
   ProcessorConfig();

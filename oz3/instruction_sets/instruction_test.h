@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_CORE_INSTRUCTION_TEST_H_
-#define OZ3_CORE_INSTRUCTION_TEST_H_
+#ifndef OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
+#define OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
 
 #include <cstdint>
 #include <utility>
@@ -13,6 +13,7 @@
 #include "absl/log/check.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/port.h"
+#include "oz3/instruction_sets/default_instruction_set.h"
 
 namespace oz3 {
 
@@ -92,6 +93,10 @@ class InstructionTest : public BaseCoreTest {
     std::vector<uint32_t> values_;
   };
 
+  InstructionTest()
+      : BaseCoreTest(GetDefaultInstructionSetDef(),
+                     GetDefaultInstructionSet()) {}
+
   // Writes `value` to word 0 of the port and sets the port status, as a device
   // would. The port must not be locked.
   void WritePort(int port, uint16_t value) {
@@ -137,4 +142,4 @@ class InstructionTest : public BaseCoreTest {
 
 }  // namespace oz3
 
-#endif  // OZ3_CORE_INSTRUCTION_TEST_H_
+#endif  // OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
