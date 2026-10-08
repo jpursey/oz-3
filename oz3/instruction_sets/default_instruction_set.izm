@@ -1776,17 +1776,22 @@ instruction XOR.D "$R, $m" {
 ################################################################################
 ## SHL <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-50
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    SHL.W <reg>, <reg>
-##    SHL.W <reg>, <1..16>
-##    SHL.D <dreg>, <reg>
-##    SHL.D <dreg>, <1..32>
+##    SHL.W <reg>, <reg>       (6-37 cycles)
+##    SHL.W <reg>, <1..16>     (4-18 cycles)
+##    SHL.D <dreg>, <reg>      (7-50 cycles)
+##    SHL.D <dreg>, <1..32>    (5-33 cycles)
 ##
 ## Logical shift left of the register by the specified number of bits. The last
 ## bit shifted out sets the value of the "C" flag.
+##
+## The cost grows with the number of bits, except that a dword shift of 16 bits
+## or more moves a word first, and so takes less than one of 15 bits. A shift
+## by a value of the register's whole width, or by a register of more than it,
+## only clears the register.
 ################################################################################
 
 macro(bits:5) LogicalShiftLeft16(p) {
@@ -2131,17 +2136,19 @@ instruction SHL.D "$R, $m" {
 ################################################################################
 ## SHR <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-50
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    SHR.W <reg>, <reg>
-##    SHR.W <reg>, <1..16>
-##    SHR.D <dreg>, <reg>
-##    SHR.D <dreg>, <1..32>
+##    SHR.W <reg>, <reg>       (6-37 cycles)
+##    SHR.W <reg>, <1..16>     (4-18 cycles)
+##    SHR.D <dreg>, <reg>      (7-50 cycles)
+##    SHR.D <dreg>, <1..32>    (5-33 cycles)
 ##
 ## Logical shift right of the register by the specified number of bits. The last
 ## bit shifted out sets the value of the "C" flag.
+##
+## The cost grows with the number of bits, as for SHL.
 ################################################################################
 
 macro(bits:5) LogicalShiftRight16(p) {
@@ -2486,17 +2493,20 @@ instruction SHR.D "$R, $m" {
 ################################################################################
 ## SRA <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-50
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    SRA.W <reg>, <reg>
-##    SRA.W <reg>, <1..16>
-##    SRA.D <dreg>, <reg>
-##    SRA.D <dreg>, <1..32>
+##    SRA.W <reg>, <reg>       (6-37 cycles)
+##    SRA.W <reg>, <1..16>     (4-18 cycles)
+##    SRA.D <dreg>, <reg>      (7-50 cycles)
+##    SRA.D <dreg>, <1..32>    (5-33 cycles)
 ##
 ## Arithmetic shift right of the register by the specified number of bits.  The
 ## last bit shifted out sets the value of the "C" flag.
+##
+## The cost grows with the number of bits, as for SHL, but filling the register
+## with the sign takes a cycle or two more for some counts and values.
 ################################################################################
 
 macro(bits:5) ArithmeticShiftRight16(p) {

@@ -55,7 +55,10 @@ and `E($v)`, and 4 for the `+ $v` forms. Loops and branches are worked out by
 hand, with the worst case for each.
 
 The tests are the check on this arithmetic: a range is only written into a
-header once a test pins both of its ends.
+header once a test pins both of its ends. For the shifts and rotates, whose
+immediate forms are unrolled into a form per count, a temporary test measured
+every count and value kind as a check on the hand-worked costs. It isn't
+checked in, as the pinned ends are what matter.
 
 ### Tests
 
@@ -147,7 +150,7 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_logic.cc` pins both ends of every variant.
 
-### CL4 [ ] instruction_sets: shift
+### CL4 [x] instruction_sets: shift
 
 Depends on: CL1.
 

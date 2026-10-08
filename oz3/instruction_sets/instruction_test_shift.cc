@@ -952,11 +952,60 @@ TEST_F(InstructionTest, SRA_D_ByRegisterCycles) {
                  {0x80018001, 32, 0xFFFFFFFF, CpuCore::S | CpuCore::C, 43}});
 }
 
+// A shift by a value takes 1 cycle a bit (2 for a dword under 16 bits), and a
+// shift by the register's whole width only clears it.
+TEST_F(InstructionTest, SHL_W_ByValueCycles) {
+  RunCountCases("SHL.W", CountArg::kImmediate,
+                {{0x0001, 1, 0x0002, 0, 4},
+                 {0x0001, 15, 0x8000, CpuCore::S, 18},
+                 {0x0001, 16, 0, CpuCore::Z | CpuCore::C, 5}});
+}
+
+TEST_F(InstructionTest, SHR_W_ByValueCycles) {
+  RunCountCases("SHR.W", CountArg::kImmediate,
+                {{0x8000, 1, 0x4000, 0, 4},
+                 {0x8000, 15, 0x0001, 0, 18},
+                 {0x8000, 16, 0, CpuCore::Z | CpuCore::C, 5}});
+}
+
+// As SHL.W and SHR.W, with one more cycle to fill a negative value with the
+// sign at 16 bits.
+TEST_F(InstructionTest, SRA_W_ByValueCycles) {
+  RunCountCases("SRA.W", CountArg::kImmediate,
+                {{0x8000, 1, 0xC000, CpuCore::S, 4},
+                 {0x8000, 15, 0xFFFF, CpuCore::S, 18},
+                 {0x4000, 16, 0, CpuCore::Z, 5},
+                 {0x8000, 16, 0xFFFF, CpuCore::S | CpuCore::C, 6}});
+}
+
+// From 16 bits, a word moves first, and the rest take 1 cycle a bit.
+TEST_F(InstructionTest, SHL_D_ByValueCycles) {
+  RunCountCases("SHL.D", CountArg::kImmediate,
+                {{0x00000001, 1, 0x00000002, 0, 5},
+                 {0x00000001, 15, 0x00008000, 0, 33},
+                 {0x00000001, 16, 0x00010000, 0, 7},
+                 {0x00000001, 17, 0x00020000, 0, 6},
+                 {0x00000001, 31, 0x80000000, CpuCore::S, 20},
+                 {0x00000001, 32, 0, CpuCore::Z | CpuCore::C, 6}});
+}
+
+TEST_F(InstructionTest, SHR_D_ByValueCycles) {
+  RunCountCases("SHR.D", CountArg::kImmediate,
+                {{0x80000000, 1, 0x40000000, 0, 5},
+                 {0x80000000, 15, 0x00010000, 0, 33},
+                 {0x80000000, 16, 0x00008000, 0, 7},
+                 {0x80000000, 17, 0x00004000, 0, 6},
+                 {0x80000000, 31, 0x00000001, 0, 20},
+                 {0x80000000, 32, 0, CpuCore::Z | CpuCore::C, 6}});
+}
+
 // From 17 bits, the high word moves to the low word and is filled with the
 // sign, and only the low word is shifted.
 TEST_F(InstructionTest, SRA_D_ByValueCycles) {
   RunCountCases("SRA.D", CountArg::kImmediate,
-                {{0x40018001, 16, 0x00004001, CpuCore::C, 7},
+                {{0x80000000, 1, 0xC0000000, CpuCore::S, 5},
+                 {0x80000000, 15, 0xFFFF0000, CpuCore::S, 33},
+                 {0x40018001, 16, 0x00004001, CpuCore::C, 7},
                  {0x80018001, 16, 0xFFFF8001, CpuCore::S | CpuCore::C, 8},
                  {0x40018001, 17, 0x00002000, CpuCore::C, 7},
                  {0x80018001, 17, 0xFFFFC000, CpuCore::S | CpuCore::C, 7},
