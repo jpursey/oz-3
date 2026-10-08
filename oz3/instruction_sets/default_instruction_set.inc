@@ -103,7 +103,7 @@ constexpr oz3::MacroCodeDef kMacroCode_Get16BitMask[] = {
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
      .ret = oz3::CpuCore::C0,
-     .code = "UL;CMPI(m,16);JC(S,@start);MOVI(C0,0);JP(@done);"
+     .code = "UL;CMPI(m,16);JC(C,@start);MOVI(C0,0);JP(@done);"
              "@start:MOVI(C0,1);TST(m);JC(Z,@done);MOV(C2,m);@shift:SL(C0);"
              "JD(C2,@shift);@done:MSS(_);"},
     {.source = "0",
@@ -177,10 +177,10 @@ constexpr oz3::MacroCodeDef kMacroCode_Get32BitMask[] = {
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
      .ret = oz3::CpuCore::CD,
-     .code = "UL;CMPI(m,16);JC(Z,@sixteen);JC(NS,@upper);MOVI(C0,1);TST(m);"
+     .code = "UL;CMPI(m,16);JC(Z,@sixteen);JC(NC,@upper);MOVI(C0,1);TST(m);"
              "JC(Z,@done);MOV(C2,m);@shift_lower:SL(C0);"
              "JD(C2,@shift_lower);JP(@done);@sixteen:MOVI(C1,1);JP(@done);"
-             "@upper:CMPI(m,32);JC(S,@start_upper);MOVI(C0,0);JP(@done);"
+             "@upper:CMPI(m,32);JC(C,@start_upper);MOVI(C0,0);JP(@done);"
              "@start_upper:MOV(C2,m);ADDI(C2,-16);MOVI(C1,1);"
              "@shift_upper:SL(C1);JD(C2,@shift_upper);@done:MSS(_);"},
     {.source = "0",
@@ -766,7 +766,7 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);CMPI(m,17);JC(NS,@max);MOV(C2,m);"
+     .code = "TST(m);JC(Z,@zero);CMPI(m,17);JC(NC,@max);MOV(C2,m);"
              "@shift:SL(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;@max:MOVI(p,0);"
              "MSC(SCO);MSS(Z);MSR(SCO,Z);END;@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
@@ -831,7 +831,7 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftLeft32[] = {
     {.source = "$r",
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);CMPI(m,33);JC(NS,@max);MOV(C2,m);"
+     .code = "TST(m);JC(Z,@zero);CMPI(m,33);JC(NC,@max);MOV(C2,m);"
              "@shift:SL(p0);MSR(Z,Z);RLC(p1);JD(C2,@shift);MSR(ZSCO,SCO);"
              "END;@max:MOVI(p0,0);MOVI(p1,0);MSC(SCO);MSS(Z);MSR(SCO,Z);"
              "END;@zero:TST(p0);MSR(Z,Z);TST(p1);MSR(ZCSO,CSO);"},
@@ -981,7 +981,7 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftRight16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);CMPI(m,17);JC(NS,@max);MOV(C2,m);"
+     .code = "TST(m);JC(Z,@zero);CMPI(m,17);JC(NC,@max);MOV(C2,m);"
              "@shift:SR(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;@max:MOVI(p,0);"
              "MSC(SCO);MSS(Z);MSR(SCO,Z);END;@zero:TST(p);MSR(ZSCO,ZSCO);"},
     {.source = "1",
@@ -1046,7 +1046,7 @@ constexpr oz3::MacroCodeDef kMacroCode_LogicalShiftRight32[] = {
     {.source = "$r",
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);CMPI(m,33);JC(NS,@max);MOV(C2,m);"
+     .code = "TST(m);JC(Z,@zero);CMPI(m,33);JC(NC,@max);MOV(C2,m);"
              "@shift:SR(p1);MSR(ZS,ZS);RRC(p0);JD(C2,@shift);MSR(ZCO,CO);"
              "END;@max:MOVI(p0,0);MOVI(p1,0);MSC(SCO);MSS(Z);MSR(SCO,Z);"
              "END;@zero:TST(p0);MSR(Z,Z);TST(p1);MSR(ZCSO,CSO);"},
@@ -1197,7 +1197,7 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight16[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);CMPI(m,17);JC(NS,@max);MOV(C2,m);"
+     .code = "TST(m);JC(Z,@zero);CMPI(m,17);JC(NC,@max);MOV(C2,m);"
              "@shift:SRA(p);JD(C2,@shift);MSR(ZSCO,ZSCO);END;@max:TST(p);"
              "JC(S,@signed_max);MOVI(p,0);MSC(SCO);MSS(Z);MSR(SCO,Z);END;"
              "@signed_max:MOVI(p,-1);MSC(ZO);MSS(SC);MSR(ZO,SC);END;"
@@ -1267,7 +1267,7 @@ constexpr oz3::MacroCodeDef kMacroCode_ArithmeticShiftRight32[] = {
     {.source = "$r",
      .prefix = {0, 3},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);CMPI(m,33);JC(NS,@max);MOV(C2,m);"
+     .code = "TST(m);JC(Z,@zero);CMPI(m,33);JC(NC,@max);MOV(C2,m);"
              "@shift:SRA(p1);MSR(ZS,ZS);RRC(p0);JD(C2,@shift);MSR(ZCO,CO);"
              "END;@max:TST(p1);JC(S,@signed_max);MOVI(p0,0);MOVI(p1,0);"
              "MSC(SCO);MSS(Z);MSR(SCO,Z);END;@signed_max:MOVI(p0,-1);"

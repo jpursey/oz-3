@@ -3,6 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <cstdint>
+
 #include "oz3/instruction_sets/instruction_test.h"
 
 namespace oz3 {
@@ -90,6 +92,22 @@ TEST_F(InstructionTest, BitOps32BitMaskByRegister) {
   }
   ASSERT_TRUE(ExecuteUntilIp(ips[32]));
   EXPECT_EQ(state.d0(), 0) << "SETB.D D0, R2=32";
+}
+
+// Register bit positions past the width of a word or dword, including positions
+// with the high bit set. Every one gets an empty mask in the same cycles.
+constexpr uint16_t kWordLargePositions[] = {16, 0x7FFF, 0x8000, 0x8010, 0xFFFF};
+constexpr uint16_t kDwordLargePositions[] = {32, 0x7FFF, 0x8000, 0x8020,
+                                             0xFFFF};
+
+TEST_F(InstructionTest, BitOps16BitMaskByLargeRegister) {
+  RunCountCases("SETB.W",
+                SameCountCases(kWordLargePositions, 0x1234, 0x1234, 0, 6));
+}
+
+TEST_F(InstructionTest, BitOps32BitMaskByLargeRegister) {
+  RunCountCases("SETB.D", SameCountCases(kDwordLargePositions, 0x12345678,
+                                         0x12345678, 0, 9));
 }
 
 TEST_F(InstructionTest, CLRB_W) {

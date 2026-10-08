@@ -92,7 +92,7 @@ macro(bits:5) Get16BitMask:r {
   code:C0 "$r" {
     UL;
     CMPI(m,16);
-    JC(S,@start);
+    JC(C,@start);
     MOVI(C0,0);
     JP(@done);
   @start:
@@ -136,7 +136,7 @@ macro(bits:6) Get32BitMask:R {
     UL;
     CMPI(m,16);
     JC(Z,@sixteen);
-    JC(NS,@upper);
+    JC(NC,@upper);
     MOVI(C0,1);
     TST(m);
     JC(Z,@done);
@@ -150,7 +150,7 @@ macro(bits:6) Get32BitMask:R {
     JP(@done);
   @upper:
     CMPI(m,32);
-    JC(S,@start_upper);
+    JC(C,@start_upper);
     MOVI(C0,0);
     JP(@done);
   @start_upper:
@@ -1763,7 +1763,7 @@ macro(bits:5) LogicalShiftLeft16(p) {
 
     # Shift > 16 bits?
     CMPI(m,17);
-    JC(NS,@max);
+    JC(NC,@max);
 
     # Shift 1-16 bits
     MOV(C2,m);
@@ -1867,7 +1867,7 @@ macro(bits:6) LogicalShiftLeft32(P) {
 
     # Shift > 32 bits?
     CMPI(m,33);
-    JC(NS,@max);
+    JC(NC,@max);
 
     # Shift 1-32 bits
     MOV(C2,m);
@@ -2101,7 +2101,7 @@ macro(bits:5) LogicalShiftRight16(p) {
 
     # Shift > 16 bits?
     CMPI(m,17);
-    JC(NS,@max);
+    JC(NC,@max);
 
     # Shift 1-16 bits
     MOV(C2,m);
@@ -2205,7 +2205,7 @@ macro(bits:6) LogicalShiftRight32(P) {
 
     # Shift > 32 bits?
     CMPI(m,33);
-    JC(NS,@max);
+    JC(NC,@max);
 
     # Shift 1-32 bits
     MOV(C2,m);
@@ -2439,7 +2439,7 @@ macro(bits:5) ArithmeticShiftRight16(p) {
 
     # Shift > 16 bits?
     CMPI(m,17);
-    JC(NS,@max);
+    JC(NC,@max);
 
     # Shift 1-16 bits
     MOV(C2,m);
@@ -2556,7 +2556,7 @@ macro(bits:6) ArithmeticShiftRight32(P) {
 
     # Shift > 32 bits?
     CMPI(m,33);
-    JC(NS,@max);
+    JC(NC,@max);
 
     # Shift 1-32 bits
     MOV(C2,m);

@@ -7,15 +7,39 @@
 #define OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
 
 #include <cstdint>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/types/span.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/port.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
 
 namespace oz3 {
+
+// An operation on a register with a count (such as a shift by a register),
+// and what it produces. See InstructionTest::RunCountCases.
+struct CountCase {
+  uint32_t value;
+  uint16_t count;
+  uint32_t result;
+  uint16_t st;
+  Cycles cycles;
+};
+
+// Returns a case for `value` with each of `counts`, which all produce `result`
+// and `st` in `cycles`.
+inline std::vector<CountCase> SameCountCases(absl::Span<const uint16_t> counts,
+                                             uint32_t value, uint32_t result,
+                                             uint16_t st, Cycles cycles) {
+  std::vector<CountCase> cases;
+  for (uint16_t count : counts) {
+    cases.push_back({value, count, result, st, cycles});
+  }
+  return cases;
+}
 
 class InstructionTest : public BaseCoreTest {
  protected:
@@ -124,6 +148,46 @@ class InstructionTest : public BaseCoreTest {
   InstructionTest()
       : BaseCoreTest(GetDefaultInstructionSetDef(),
                      GetDefaultInstructionSet()) {}
+
+  // Runs `op` (such as "SHL.D") on each case's value with the case's count in
+  // R2, and expects the case's result, flags, and cycles. The value is in D0
+  // for an op ending in ".D", and in R0 otherwise. Every flag is clear before
+  // each case.
+  void RunCountCases(std::string_view op, absl::Span<const CountCase> cases) {
+    ASSERT_TRUE(InitAndReset());
+    auto& state = GetState();
+    state.SetRegisters({{CpuCore::ST, 0}});
+    const bool dword = op.ends_with(".D");
+
+    std::vector<uint16_t> start_ips;
+    std::vector<uint16_t> end_ips;
+    for (const CountCase& c : cases) {
+      if (dword) {
+        state.code.AddValue(Encode("MOV.LD", 0, "$V")).AddValue32(c.value);
+      } else {
+        state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
+            .AddValue(static_cast<uint16_t>(c.value));
+      }
+      state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v"))
+          .AddValue(c.count);
+      state.code.AddValue(
+          Encode("CLRF", CpuCore::Z | CpuCore::S | CpuCore::C | CpuCore::O));
+      start_ips.push_back(state.code.AddNopGetAddress());
+      state.code.AddValue(Encode(op, 0, {"$r", CpuCore::R2}));
+      end_ips.push_back(state.code.AddNopGetAddress());
+    }
+    state.code.AddValue(Encode("HALT"));
+
+    for (int i = 0; i < static_cast<int>(cases.size()); ++i) {
+      const CountCase& c = cases[i];
+      ASSERT_TRUE(ExecuteUntilIp(start_ips[i]));
+      EXPECT_EQ(CyclesUntilIp(end_ips[i]), c.cycles)
+          << op << " " << c.value << ", R2=" << c.count;
+      EXPECT_EQ(dword ? state.d0() : state.r0, c.result)
+          << op << " " << c.value << ", R2=" << c.count;
+      EXPECT_EQ(state.st, c.st) << op << " " << c.value << ", R2=" << c.count;
+    }
+  }
 
   // Writes `value` to word 0 of the port and sets the port status, as a device
   // would. The port must not be locked.

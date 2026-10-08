@@ -3,6 +3,9 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include <cstdint>
+#include <vector>
+
 #include "absl/strings/str_cat.h"
 #include "oz3/instruction_sets/instruction_test.h"
 
@@ -840,6 +843,52 @@ TEST_F(InstructionTest, SRA_D_CarryByRegister) {
   ASSERT_TRUE(ExecuteUntilIp(ips[33]));
   EXPECT_EQ(state.d0(), 0xFFFFFFFF) << "SRA.D D0, R2=33";
   EXPECT_EQ(state.st, CpuCore::S | CpuCore::C) << "SRA.D D0, R2=33";
+}
+
+// Register counts past the width of a word or dword, including counts with the
+// high bit set. Every one shifts out the whole register in the same cycles.
+constexpr uint16_t kWordLargeCounts[] = {17, 0x7FFF, 0x8000, 0x8011, 0xFFFF};
+constexpr uint16_t kDwordLargeCounts[] = {33, 0x7FFF, 0x8000, 0x8021, 0xFFFF};
+
+TEST_F(InstructionTest, SHL_W_ByLargeRegister) {
+  RunCountCases("SHL.W",
+                SameCountCases(kWordLargeCounts, 0xFFFF, 0, CpuCore::Z, 7));
+}
+
+TEST_F(InstructionTest, SHL_D_ByLargeRegister) {
+  RunCountCases(
+      "SHL.D", SameCountCases(kDwordLargeCounts, 0xFFFFFFFF, 0, CpuCore::Z, 8));
+}
+
+TEST_F(InstructionTest, SHR_W_ByLargeRegister) {
+  RunCountCases("SHR.W",
+                SameCountCases(kWordLargeCounts, 0xFFFF, 0, CpuCore::Z, 7));
+}
+
+TEST_F(InstructionTest, SHR_D_ByLargeRegister) {
+  RunCountCases(
+      "SHR.D", SameCountCases(kDwordLargeCounts, 0xFFFFFFFF, 0, CpuCore::Z, 8));
+}
+
+TEST_F(InstructionTest, SRA_W_ByLargeRegister) {
+  std::vector<CountCase> cases =
+      SameCountCases(kWordLargeCounts, 0x7FFF, 0, CpuCore::Z, 8);
+  for (const CountCase& c : SameCountCases(kWordLargeCounts, 0x8000, 0xFFFF,
+                                           CpuCore::S | CpuCore::C, 9)) {
+    cases.push_back(c);
+  }
+  RunCountCases("SRA.W", cases);
+}
+
+TEST_F(InstructionTest, SRA_D_ByLargeRegister) {
+  std::vector<CountCase> cases =
+      SameCountCases(kDwordLargeCounts, 0x7FFFFFFF, 0, CpuCore::Z, 9);
+  for (const CountCase& c :
+       SameCountCases(kDwordLargeCounts, 0x80000000, 0xFFFFFFFF,
+                      CpuCore::S | CpuCore::C, 10)) {
+    cases.push_back(c);
+  }
+  RunCountCases("SRA.D", cases);
 }
 
 }  // namespace
