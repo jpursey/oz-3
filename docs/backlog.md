@@ -25,35 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Cycle ranges for every instruction
-
-- **Layers:** instruction_sets
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** the `## Cycles:` lines in the header comments of
-  `default_instruction_set.izm`; `RLC` and `RRC`, which already give a range
-  per variant; the `*_ByRegisterCycles` and `*_ByValueCycles` tests in
-  `instruction_test_rotate.cc`, which pin them
-
-Most instruction headers give only a minimum (`4+`, `5+`), and some stated
-ranges look stale (`NEG` says 5-9, but `NEG.W` appears to take 4). Give every
-instruction an overall minimum and maximum, and a range per variant, as `RLC`
-and `RRC` do:
-
-    ## Cycles: 4-138
-    ...
-    ## Variants:
-    ##    RLC.W <reg>, <reg>      (6-66 cycles)
-    ##    RLC.W <reg>, <1..16>    (4-19 cycles)
-
-Each range is worked out from the microcode and pinned by tests at both ends
-of every variant, in the instruction's `instruction_test_<group>.cc`. Ranges
-assume no lock contention, since waiting for a memory bank, port, or core lock
-has no bound. Where the cost grows with a value, as `INR` and `OUTR` with the
-count in `R7` and `WAIT` with its register, the header gives the cost per unit
-instead, and the tests pin it. The plan is a CL per instruction group.
-
 ## Default instruction set reference
 
 - **Layers:** wiki
