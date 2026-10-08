@@ -223,6 +223,122 @@ TEST_F(InstructionTest, JCR) {
   EXPECT_EQ(state.r4, 8);
 }
 
+TEST_F(InstructionTest, JD) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 50).AddValue(180);
+  state.data.SetAddress(state.bd + 60).AddValue(120);
+  state.SetRegisters({{CpuCore::ST, CpuCore::Z | CpuCore::C},
+                      {CpuCore::R0, 2},
+                      {CpuCore::R1, 50},
+                      {CpuCore::R2, 0},
+                      {CpuCore::R3, 1},
+                      {CpuCore::R4, 1},
+                      {CpuCore::R6, 151}});
+
+  state.code.AddValue(Encode("JD", CpuCore::R0, {"$r", CpuCore::R1}));
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(50);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R0, {"$r", CpuCore::R1}));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R2, "$v")).AddValue(70);
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(70);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R3, "$v")).AddValue(0);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R4, {"($r)", CpuCore::R1}));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R4, {"($r + $v)", CpuCore::R1}))
+      .AddValue(10);
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(120);
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R6, {"$r", CpuCore::R6}));
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(150);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JD", CpuCore::R1, {"($r)", CpuCore::R1}));
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(180);
+  const uint16_t ip8 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // JD R0, R1
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(CyclesUntilIp(ip2), 4);  // JD R0, R1
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(CyclesUntilIp(ip3), 6);  // JD R2, 70
+  EXPECT_EQ(state.r2, 0xFFFF);
+  EXPECT_EQ(CyclesUntilIp(ip4), 5);  // JD R3, 0
+  EXPECT_EQ(state.r3, 0);
+  EXPECT_EQ(CyclesUntilIp(ip5), 6);  // JD R4, (R1)
+  EXPECT_EQ(state.r4, 0);
+  EXPECT_EQ(CyclesUntilIp(ip6), 9);  // JD R4, (R1 + 10)
+  EXPECT_EQ(state.r4, 0xFFFF);
+  EXPECT_EQ(CyclesUntilIp(ip7), 5);  // JD R6, R6
+  EXPECT_EQ(state.r6, 150);
+  EXPECT_EQ(CyclesUntilIp(ip8), 7);  // JD R1, (R1)
+  EXPECT_EQ(state.r1, 49);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, JDR) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 50).AddValue(999);
+  state.data.SetAddress(state.bd + 60).AddValue(40);
+  state.SetRegisters({{CpuCore::ST, CpuCore::Z | CpuCore::C},
+                      {CpuCore::R0, 2},
+                      {CpuCore::R1, 50},
+                      {CpuCore::R2, 0},
+                      {CpuCore::R3, 1},
+                      {CpuCore::R4, 1},
+                      {CpuCore::R5, -30}});
+
+  state.code.AddValue(Encode("JDR", CpuCore::R0, {"$r", CpuCore::R1}));
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(51);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JDR", CpuCore::R0, {"$r", CpuCore::R1}));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JDR", CpuCore::R2, "$v")).AddValue(20);
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(76);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JDR", CpuCore::R3, "$v")).AddValue(0);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JDR", CpuCore::R4, {"($r)", CpuCore::R1}));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JDR", CpuCore::R4, {"($r + $v)", CpuCore::R1}))
+      .AddValue(10);
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(124);
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JDR", CpuCore::R5, {"$r", CpuCore::R5}));
+  state.code.AddValue(Encode("HALT"));
+  state.code.SetAddress(95);
+  const uint16_t ip7 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // JDR R0, R1
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(CyclesUntilIp(ip2), 4);  // JDR R0, R1
+  EXPECT_EQ(state.r0, 0);
+  EXPECT_EQ(CyclesUntilIp(ip3), 6);  // JDR R2, 20
+  EXPECT_EQ(state.r2, 0xFFFF);
+  EXPECT_EQ(CyclesUntilIp(ip4), 5);  // JDR R3, 0
+  EXPECT_EQ(state.r3, 0);
+  EXPECT_EQ(CyclesUntilIp(ip5), 6);  // JDR R4, (R1)
+  EXPECT_EQ(state.r4, 0);
+  EXPECT_EQ(CyclesUntilIp(ip6), 9);  // JDR R4, (R1 + 10)
+  EXPECT_EQ(state.r4, 0xFFFF);
+  EXPECT_EQ(CyclesUntilIp(ip7), 5);  // JDR R5, R5
+  EXPECT_EQ(state.r5, static_cast<uint16_t>(-31));
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
 TEST_F(InstructionTest, CALL) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();

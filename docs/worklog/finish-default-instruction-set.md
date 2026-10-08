@@ -223,7 +223,7 @@ Each CL is in `instruction_sets`, regenerates `default_instruction_set.inc`
 from the `.izm`, and has tests of results, flags, and exact cycle counts at
 both ends of every variant.
 
-### CL1 [ ] instruction_sets: JD and JDR
+### CL1 [x] instruction_sets: JD and JDR
 
 Depends on: nothing.
 
@@ -233,8 +233,8 @@ Depends on: nothing.
 **Verify**
 - Standard checks (see CLAUDE.md).
 - Unit tests: jumps when the decremented register isn't zero, falls through
-  at zero, wraps from 0, flags unchanged, and every addressing mode of the
-  target.
+  at zero, wraps from 0, flags unchanged, the register as its own target,
+  and both ends of each variant's cycle range.
 
 ### CL2 [ ] instruction_sets: Multiply
 

@@ -3238,6 +3238,62 @@ instruction JCR "$#3, $m" {
 }
 
 ################################################################################
+## JD <register> <address>
+##
+## Cycles: 4-9
+## ZSCO: ----
+##
+## Variants:
+##    JD <reg>, <reg>              (4-5 cycles)
+##    JD <reg>, <integer>          (5-6 cycles)
+##    JD <reg>, <word-address>     (6-9 cycles)
+##
+## Decrements the register, then sets IP to the specified address if the
+## register is not zero. A register of zero wraps to 0xFFFF and jumps. Each
+## variant takes one more cycle when it jumps.
+##
+## An address in memory is read before the register is decremented, even when
+## the register locates it. An address that is the register itself is the
+## decremented value.
+################################################################################
+
+instruction JD "$r, $m" {
+  $GetWord;
+  JD(a,@jump);
+  END;
+@jump:
+  MOV(IP,r);
+}
+
+################################################################################
+## JDR <register> <relative-address>
+##
+## Cycles: 4-9
+## ZSCO: ----
+##
+## Variants:
+##    JDR <reg>, <reg>             (4-5 cycles)
+##    JDR <reg>, <integer>         (5-6 cycles)
+##    JDR <reg>, <word-address>    (6-9 cycles)
+##
+## Decrements the register, then adds the specified relative address to IP if
+## the register is not zero. A register of zero wraps to 0xFFFF and jumps. Each
+## variant takes one more cycle when it jumps.
+##
+## An address in memory is read before the register is decremented, even when
+## the register locates it. An address that is the register itself is the
+## decremented value.
+################################################################################
+
+instruction JDR "$r, $m" {
+  $GetWord;
+  JD(a,@jump);
+  END;
+@jump:
+  ADD(IP,r);
+}
+
+################################################################################
 ## CALL <address>
 ##
 ## Cycles: 6+
