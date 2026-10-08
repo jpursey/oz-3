@@ -78,12 +78,19 @@ change. A register of 0 wraps to 0xFFFF and jumps, so it loops 65536 times.
 
 Compares the first register with the word at the address in the second
 register (in the bank that register implies), as `CMP.W` does, then steps the
-address register by one and decrements `R7`.
+address register by one. The repeats also decrement the count in `R7` for each
+word.
 - `Z`, `S`, `C`, and `O` are set as `CMP.W` sets them, so `Z` means the last
   word compared matched. After a repeat, the address register points past the
   match.
-- If `R7` is 0 at the start, nothing is compared and `Z`, `S`, `C`, and `O`
-  are cleared.
+- `CPI` and `CPD` don't use `R7`. A loop around them keeps its own count, such
+  as with `JD`.
+- If `R7` is 0 at the start of a repeat, nothing is compared and `Z`, `S`,
+  `C`, and `O` are cleared.
+- `CPI` takes 6 cycles and `CPD` 7, as stepping down takes an add while
+  stepping up comes free with the load. `CPIR` takes 9 cycles a word and
+  `CPDR` 10, including fetching the instruction again, and the last word (when
+  `R7` reaches 0) one less. An `R7` of 0 takes 5.
 
 ### Block move
 
@@ -94,12 +101,14 @@ address register by one and decrements `R7`.
 
 Copies the word at the address in the second register to the address in the
 first (each in the bank its register implies, so any pair of `DATA`, `EXTRA`,
-and `STACK`), then steps both address registers by one and decrements `R7`.
-- `Z` is set if `R7` is 0 afterward, and cleared otherwise, so a loop around
-  `MVI` needs no `TST`. Other flags are unchanged.
-- If `R7` is 0 at the start, nothing is copied (and `Z` is set).
-- About 10 cycles per word, including fetching the instruction again for each
-  word.
+and `STACK`), then steps both address registers by one. The repeats also
+decrement the count in `R7` for each word.
+- No flags change.
+- `MVI` and `MVD` don't use `R7`, as with `CPI` and `CPD`.
+- If `R7` is 0 at the start of a repeat, nothing is copied.
+- About 7 cycles for `MVI`, and about 10 per word for the repeats, including
+  fetching the instruction again for each word. Stepping down costs more, as
+  in block compare.
 
 ### Repeating instructions
 
@@ -111,10 +120,11 @@ next instruction is the same one again:
 - Once the `T` flag is implemented (with the debugger), each step will be one
   word.
 - Each word pays for fetching the instruction again.
-- `R7` is the count for every block instruction, and the address registers
-  are encoded, so `R7` can also be named as an address. That is allowed, and
-  does what the microcode does: it is used as the address, then stepped and
-  decremented.
+- `R7` is the count for every repeating instruction, and the address
+  registers are encoded, so `R7` can also be named as an address. That is
+  allowed, and does what the microcode does: it is used as the address, then
+  stepped and decremented. For the instructions that don't repeat, `R7` is an
+  address like any other.
 
 ### INR and OUTR
 
@@ -249,9 +259,13 @@ so its loops skip tracking it.
   **Confirmed:** the loops aren't unrolled, so each instruction is a few
   dozen microcodes.
 - `InstructionAssembler` accepts formats with literal parentheses around both
-  arguments, such as `"($r), ($r)"`. (CL5)
+  arguments, such as `"($r), ($r)"`. (CL5) **Confirmed:** `CPI` and the others
+  are `"$r, ($r)"`, which assembles to two 3-bit register arguments.
 - An interrupt raised during a repeat is handled between words and returns
-  to the instruction. (CL5)
+  to the instruction. (CL5) **Confirmed:** the tests raise one during the
+  first word of `CPIR` and `CPDR`, and it is handled once that word is done,
+  with the instruction's own address pushed, so `IRT` carries on with the
+  next word.
 
 ## CLs
 
@@ -316,7 +330,7 @@ Depends on: CL2.
   carry in the loop, by a carry in the last add, and by a bit shifted out of
   the register; the other cases from CL2.
 
-### CL5 [ ] instruction_sets: Block compare
+### CL5 [x] instruction_sets: Block compare
 
 Depends on: nothing.
 
@@ -326,7 +340,7 @@ Depends on: nothing.
 **Verify**
 - Standard checks.
 - Unit tests: each bank (`DATA`, `EXTRA`, `STACK` registers), up and down,
-  a match, no match, a match on the last word, `R7` of 0; for the repeats,
+  a match, no match; for the repeats, a match on the last word, `R7` of 0,
   where `IP` ends, and an interrupt between words.
 
 ### CL6 [ ] instruction_sets, wiki: Block move
@@ -341,8 +355,8 @@ Depends on: CL5 (shares the test file).
 **Verify**
 - Standard checks.
 - Unit tests: copies between each pair of banks and within one, up and down,
-  overlapping ranges in each direction, `R7` of 0, the `Z` flag; for the
-  repeats, where `IP` ends, and an interrupt between words.
+  overlapping ranges in each direction, flags unchanged; for the repeats,
+  `R7` of 0, where `IP` ends, and an interrupt between words.
 - Wiki updated.
 
 ### CL7 [ ] instruction_sets: INR and OUTR one word per execution

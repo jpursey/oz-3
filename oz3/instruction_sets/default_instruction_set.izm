@@ -3684,6 +3684,118 @@ instruction CMP.D "$R, $m" {
 }
 
 ################################################################################
+## CPI <register>, (<address-register>)
+##
+## Cycles: 6
+## ZSCO: XXXX
+##
+## Compares the register with the word at the address in the address register
+## (in the memory bank that register implies), setting flags as CMP.W does,
+## then steps the address register up by one.
+################################################################################
+
+instruction CPI "$r, ($r)" {
+  UL;
+
+  # Compares before stepping, as the address register may be the register.
+  LKR(b); ADR(b); LD(C0); CMP(a,C0); LAD(b); UL;
+  MSR(ZSCO,ZSCO);
+}
+
+################################################################################
+## CPD <register>, (<address-register>)
+##
+## Cycles: 7
+## ZSCO: XXXX
+##
+## Compares the register with the word at the address in the address register
+## (in the memory bank that register implies), setting flags as CMP.W does,
+## then steps the address register down by one.
+################################################################################
+
+instruction CPD "$r, ($r)" {
+  UL;
+  LKR(b); ADR(b); LD(C0); CMP(a,C0); UL;  # As CPI
+  MSR(ZSCO,ZSCO);
+  ADDI(b,-1);
+}
+
+################################################################################
+## CPIR <register>, (<address-register>)
+##
+## Cycles: 5 or 8-9 per word
+## ZSCO: XXXX
+##
+## CPI, decrementing the count in R7 for each word, repeated until the word
+## matches (setting the "Z" flag) or R7 is 0. Each execution compares one word,
+## and then executes the instruction again if it isn't done, so interrupts are
+## handled between words. Each word takes 9 cycles, except the last (when R7
+## reaches 0), which takes 8.
+##
+## If R7 is 0, nothing is compared, the "Z", "S", "C", and "O" flags are
+## cleared, and it takes 5 cycles.
+################################################################################
+
+instruction CPIR "$r, ($r)" {
+  UL;
+  TST(R7);
+  JC(Z,@empty);
+  LKR(b); ADR(b); LD(C0); CMP(a,C0); LAD(b); UL;  # As CPI
+  MSR(ZSCO,ZSCO);
+
+  # JD doesn't change the flags, so they still say whether the word matched.
+  JD(R7,@more);
+  END;
+@more:
+  JC(Z,@done);
+  ADDI(IP,-1);
+@done:
+  END;
+
+@empty:
+  MSC(ZSCO); MSR(ZSCO,ZSCO);
+}
+
+################################################################################
+## CPDR <register>, (<address-register>)
+##
+## Cycles: 5 or 9-10 per word
+## ZSCO: XXXX
+##
+## CPD, decrementing the count in R7 for each word, repeated until the word
+## matches (setting the "Z" flag) or R7 is 0. Each execution compares one word,
+## and then executes the instruction again if it isn't done, so interrupts are
+## handled between words. Each word takes 10 cycles, except the last (when R7
+## reaches 0), which takes 9.
+##
+## If R7 is 0, nothing is compared, the "Z", "S", "C", and "O" flags are
+## cleared, and it takes 5 cycles.
+################################################################################
+
+instruction CPDR "$r, ($r)" {
+  UL;
+  TST(R7);
+  JC(Z,@empty);
+  LKR(b); ADR(b); LD(C0); CMP(a,C0); UL;  # As CPI
+  MSR(ZSCO,ZSCO);
+
+  # As CPIR, stepping the address down with JD (which always lands on the next
+  # microcode), as ADDI would change the flags.
+  JD(b,@stepped);
+@stepped:
+  JD(R7,@more);
+  END;
+@more:
+  JC(Z,@done);
+  ADDI(IP,-1);
+@done:
+  END;
+
+@empty:
+  MSC(ZSCO); MSR(ZSCO,ZSCO);
+}
+
+################################################################################
 ## JP <address>
 ##
 ## Cycles: 4+

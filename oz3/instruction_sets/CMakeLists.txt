@@ -16,6 +16,7 @@ set(oz3_instruction_sets_TEST_SOURCE
   default_instruction_set_test.cc
   instruction_test.h
   instruction_test_bits.cc
+  instruction_test_block.cc
   instruction_test_branch.cc
   instruction_test_core.cc
   instruction_test_interrupt.cc
