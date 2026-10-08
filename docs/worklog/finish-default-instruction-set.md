@@ -29,9 +29,9 @@ them.
   either way.
 - A widening multiply (word by word to dword) is `MUL.DW` on a register
   whose high word is zero.
-- Shift and add loops, about 5 cycles per bit of the register: roughly 85-95
-  cycles for the word forms (more for `MULS.W`, which works on absolute
-  values), and 190-200 for `MUL.DW`, plus fetching the value.
+- Shift and add loops, 4 cycles per bit of the register: 71-72 cycles for
+  `MUL.W`, 77-79 for `MULS.W`, and 137-138 for `MUL.DW`, plus fetching the
+  value.
 
 ### Divide and modulo
 
@@ -187,15 +187,25 @@ both the count and a possible address is documented rather than prevented.
 
 The right shift multiply: the register being multiplied is the product's low
 word, `C1` accumulates the high word, and each of 16 steps adds the value to
-`C1` when the low word's bottom bit is set, then rotates `C1` and the low word
-right through carry. After 16 steps, `C1` and the register hold the 32-bit
-product, so overflow is a test of `C1`. `MUL.DW` does the same over 32 steps
-with a 48-bit product (`C1`, `a1`, and `a0`).
+`C1` when the next multiplier bit is set, then rotates `C1` and the low word
+right through carry. The register is shifted right once first, so each
+rotate leaves the next multiplier bit in `C`, and a step costs 4 cycles
+whether or not it adds. After 16 steps, `C1` and the register hold the 32-bit
+product, so overflow is a test of `C1`. The last rotate shifts out the zero
+the first shift put in, so it leaves the flags a `TST` of the result would.
+The value is copied to `C2` first, as it may be the register itself.
 
-`MULS.W` multiplies the absolute values, then negates the result if the signs
-differed, checking that it fits in a signed word. It needs more scratch than
-`C0` to `C2`, so it also uses `ST` and `MB`. Both are restored when the
-instruction ends. `INR.IW` already uses `MB` this way.
+`MUL.DW` runs the same loop on the low word, then on the high word. The second
+loop starts with the first product's high word in `C1`, which adds it in, so
+the two loops make the 48-bit product (`C1`, `a1`, and `a0`) in 4 cycles a
+bit.
+
+`MULS.W` runs the same loop on the raw words, as the low word of a signed
+product is the same as the unsigned one. It then makes the high word signed by
+subtracting each operand from it where the other is negative, and the product
+fits if the high word is the low word's sign extended. It keeps the register's
+original value in `MB`, which is restored when the instruction ends, as
+`INR.IW` already uses it.
 
 ### Divide
 
@@ -204,14 +214,18 @@ into a remainder register, and subtracts the divisor when it fits, setting the
 quotient bit. The dividend register becomes the quotient. For `DVMD.W` the
 remainder register is `a1`, so the remainder lands in the high word for free.
 A divisor of 0x8000 or more can push a 17th bit out of the remainder, which
-counts as fitting. `DIVS.W` divides absolute values and fixes the sign, as
-`MULS.W` does.
+counts as fitting. `DIVS.W` divides absolute values and fixes the sign.
 
 ### To confirm
 
 - `ST` and `MB` work as scratch for the signed forms. `MSR` overwrites `ST`,
-  so nothing can be kept in `ST` across an `MSR`. (CL2)
+  so nothing can be kept in `ST` across an `MSR`. (CL2) **Confirmed:**
+  `MULS.W` keeps the register's original value in `MB`, and the tests check
+  that `MB` is unchanged afterward. It needed no other scratch, so `ST` is
+  unused.
 - The loops stay well under 255 microcodes an instruction. (CL2, CL3)
+  **Confirmed for multiply:** the loops aren't unrolled, so each instruction
+  is a few dozen microcodes.
 - `InstructionAssembler` accepts formats with literal parentheses around both
   arguments, such as `"($r), ($r)"`. (CL4)
 - An interrupt raised during a repeat is handled between words and returns
@@ -236,7 +250,7 @@ Depends on: nothing.
   at zero, wraps from 0, flags unchanged, the register as its own target,
   and both ends of each variant's cycle range.
 
-### CL2 [ ] instruction_sets: Multiply
+### CL2 [x] instruction_sets: Multiply
 
 Depends on: nothing.
 

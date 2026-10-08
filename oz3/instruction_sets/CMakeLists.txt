@@ -23,11 +23,14 @@ set(oz3_instruction_sets_TEST_SOURCE
   instruction_test_logic.cc
   instruction_test_math.cc
   instruction_test_misc.cc
+  instruction_test_multiply.cc
   instruction_test_port.cc
   instruction_test_rotate.cc
   instruction_test_shift.cc
 )
 set(oz3_instruction_sets_TEST_DEPS
+  absl::span
+  absl::strings
   oz3_core_testing
 )
 

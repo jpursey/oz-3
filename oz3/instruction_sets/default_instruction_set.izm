@@ -1017,6 +1017,146 @@ instruction SBC.D "$R, $m" {
 }
 
 ################################################################################
+## MUL <register>, <value>
+##
+## Cycles: 71-142
+## ZSCO: XXXX
+##
+## Variants:
+##    MUL.W  <reg>, <reg>              (71-72 cycles)
+##    MUL.W  <reg>, <integer>          (72-73 cycles)
+##    MUL.W  <reg>, <word-address>     (73-76 cycles)
+##    MUL.DW <dreg>, <reg>             (137-138 cycles)
+##    MUL.DW <dreg>, <integer>         (138-139 cycles)
+##    MUL.DW <dreg>, <word-address>    (139-142 cycles)
+##
+## Unsigned multiply of the register by a word value. The register gets the low
+## bits of the product. The "C" and "O" flags are both set if the product
+## doesn't fit in the register, and both cleared otherwise. Each variant takes
+## one more cycle when the product doesn't fit.
+################################################################################
+
+instruction MUL.W "$r, $m" {
+  $GetWord;
+
+  # Multiply by shifting the product right through C1 (the high word) and the
+  # register (the low word), as the multiplier shifts out of the register's low
+  # bits. The value is copied to C2, as it may be the register itself. The last
+  # RRC shifts out the zero SR shifted in, so it leaves the flags TST(a) would.
+  MOV(C2,r);
+  MOVI(C0,16);
+  SR(a);  # C holds the next bit of the multiplier
+@loop:
+  JC(NC,@shift);
+  ADD(C1,C2);
+@shift:
+  RRC(C1); RRC(a);
+  JD(C0,@loop);
+  MSR(ZSCO,ZSCO);
+
+  # Overflow if the high word is not zero.
+  TST(C1);
+  JC(NZ,@overflow);
+  END;
+@overflow:
+  MSS(CO); MSR(CO,CO);
+}
+
+instruction MUL.DW "$R, $m" {
+  $GetWord;
+
+  # Multiply the low word as MUL.W does, then the high word the same way,
+  # starting from the high word of the first product in C1, which adds it in.
+  MOV(C2,r);
+  MOVI(C0,16);
+  SR(a0);  # C holds the next bit of the multiplier
+@low:
+  JC(NC,@low_shift);
+  ADD(C1,C2);
+@low_shift:
+  RRC(C1); RRC(a0);
+  JD(C0,@low);
+  MSR(Z,Z);
+
+  MOVI(C0,16);
+  SR(a1);  # C holds the next bit of the multiplier
+@high:
+  JC(NC,@high_shift);
+  ADD(C1,C2);
+@high_shift:
+  RRC(C1); RRC(a1);
+  JD(C0,@high);
+  MSR(ZSCO,_SCO);
+
+  # Overflow if the high word is not zero.
+  TST(C1);
+  JC(NZ,@overflow);
+  END;
+@overflow:
+  MSS(CO); MSR(CO,CO);
+}
+
+################################################################################
+## MULS <register>, <value>
+##
+## Cycles: 77-83
+## ZSCO: XXXX
+##
+## Variants:
+##    MULS.W <reg>, <reg>              (77-79 cycles)
+##    MULS.W <reg>, <integer>          (78-80 cycles)
+##    MULS.W <reg>, <word-address>     (79-83 cycles)
+##
+## Signed multiply of the register by a word value. The register gets the low
+## bits of the product. The "C" and "O" flags are both set if the product
+## doesn't fit in a signed word, and both cleared otherwise. Each variant takes
+## one more cycle when the result is negative, and one more when the product
+## doesn't fit.
+################################################################################
+
+instruction MULS.W "$r, $m" {
+  $GetWord;
+
+  # Multiply as MUL.W does, keeping the register's original value in MB (which
+  # is restored when the instruction ends). The low word of a signed product is
+  # the same as the unsigned one.
+  MOV(C2,r);
+  MOV(MB,a);
+  MOVI(C0,16);
+  SR(a);  # C holds the next bit of the multiplier
+@loop:
+  JC(NC,@shift);
+  ADD(C1,C2);
+@shift:
+  RRC(C1); RRC(a);
+  JD(C0,@loop);
+
+  # Make the high word signed, by subtracting each value from it where the
+  # other is negative.
+  TST(MB);
+  JC(NS,@value_sign);
+  SUB(C1,C2);
+@value_sign:
+  TST(C2);
+  JC(NS,@check);
+  SUB(C1,MB);
+
+  # The product fits if the high word is the low word's sign extended.
+@check:
+  TST(a); MSR(ZSCO,ZSCO);
+  JC(S,@negative);
+  TST(C1);
+  JC(NZ,@overflow);
+  END;
+@negative:
+  CMPI(C1,-1);
+  JC(NZ,@overflow);
+  END;
+@overflow:
+  MSS(CO); MSR(CO,CO);
+}
+
+################################################################################
 ## NOT <register>
 ##
 ## Cycles: 5-9
