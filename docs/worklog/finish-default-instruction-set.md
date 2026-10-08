@@ -29,9 +29,12 @@ them.
   either way.
 - A widening multiply (word by word to dword) is `MUL.DW` on a register
   whose high word is zero.
-- Shift and add loops, 4 cycles per bit of the register: 71-72 cycles for
-  `MUL.W`, 77-79 for `MULS.W`, and 137-138 for `MUL.DW`, plus fetching the
-  value.
+- Shift and add loops over the value's bits, which stop after its highest
+  set bit, as the 68000's `MULU` takes longer for values with more bits set.
+  Multiplying by a small value is cheap: each bit up to the highest set bit
+  costs 2 cycles, and each set bit 2 more (3 each for `MUL.DW`), plus one
+  cycle if the product doesn't fit. `MUL.W` takes 7-68 cycles, `MULS.W`
+  12-71, and `MUL.DW` 8-99, plus fetching the value.
 
 ### Divide and modulo
 
@@ -185,27 +188,32 @@ both the count and a possible address is documented rather than prevented.
 
 ### Multiply
 
-The right shift multiply: the register being multiplied is the product's low
-word, `C1` accumulates the high word, and each of 16 steps adds the value to
-`C1` when the next multiplier bit is set, then rotates `C1` and the low word
-right through carry. The register is shifted right once first, so each
-rotate leaves the next multiplier bit in `C`, and a step costs 4 cycles
-whether or not it adds. After 16 steps, `C1` and the register hold the 32-bit
-product, so overflow is a test of `C1`. The last rotate shifts out the zero
-the first shift put in, so it leaves the flags a `TST` of the result would.
-The value is copied to `C2` first, as it may be the register itself.
+The left shift multiply, with the value as the multiplier: each step shifts
+the next bit out of a copy of the value in `C1`, adds the register into the
+product in `C0` (which starts as zero) if the bit is set, and shifts the
+register left. It stops once no bits of the value are left, so the last step
+always adds, into the register itself, and needn't shift. A `JC` that isn't
+taken and a `JP` cost nothing, so a zero bit costs 2 cycles (the two shifts)
+and a set bit 4.
 
-`MUL.DW` runs the same loop on the low word, then on the high word. The second
-loop starts with the first product's high word in `C1`, which adds it in, so
-the two loops make the 48-bit product (`C1`, `a1`, and `a0`) in 4 cycles a
-bit.
+The product never needs more than the register's width. It doesn't fit if an
+add carries, or if a bit is shifted out of the register while bits of the
+value are left (as a later set bit would have added it), and nothing else
+makes it too big. Either jumps to a copy of the loop without those checks,
+which costs one cycle once, and then sets `C` and `O` at the end.
 
-`MULS.W` runs the same loop on the raw words, as the low word of a signed
-product is the same as the unsigned one. It then makes the high word signed by
-subtracting each operand from it where the other is negative, and the product
-fits if the high word is the low word's sign extended. It keeps the register's
-original value in `MB`, which is restored when the instruction ends, as
-`INR.IW` already uses it.
+- `MUL.DW` does the same with the value in `C2`, the product in `C0` and
+  `C1`, and a 32-bit add and shift, so each bit costs 3 cycles and each set
+  bit 3 more.
+- `MULS.W` multiplies the absolute values as `MUL.W` does, with the value in
+  `C2`. `C1` starts as zero, so XORing the register into it copies it and
+  tests its sign, and XORing the value in leaves the product's sign. If the
+  unsigned product fits, the signed one fits when it is below 0x8000, or at
+  most 0x8000 if it is negative, and the result is negated if negative.
+
+CL2 first built a fixed cost right shift multiply, which took 71-72 cycles for
+`MUL.W` whatever the operands. CL4 replaced it with this one, so multiplying by
+a small value is cheap, as on a real CPU.
 
 ### Divide
 
@@ -234,16 +242,16 @@ so its loops skip tracking it.
 
 - `ST` and `MB` work as scratch for the signed forms. `MSR` overwrites `ST`,
   so nothing can be kept in `ST` across an `MSR`. (CL2) **Confirmed:**
-  `MULS.W` keeps the register's original value in `MB`, and the tests check
-  that `MB` is unchanged afterward. It needed no other scratch, so `ST` is
-  unused.
+  `DIVS.W` keeps the quotient's sign in `MB`, and the tests check that `MB` is
+  unchanged afterward for every multiply and divide. Nothing needed more
+  scratch, so `ST` is unused.
 - The loops stay well under 255 microcodes an instruction. (CL2, CL3)
   **Confirmed:** the loops aren't unrolled, so each instruction is a few
   dozen microcodes.
 - `InstructionAssembler` accepts formats with literal parentheses around both
-  arguments, such as `"($r), ($r)"`. (CL4)
+  arguments, such as `"($r), ($r)"`. (CL5)
 - An interrupt raised during a repeat is handled between words and returns
-  to the instruction. (CL4)
+  to the instruction. (CL5)
 
 ## CLs
 
@@ -292,7 +300,23 @@ Depends on: CL2 (shares the test file).
   rounding toward zero, divide by zero and `DIVS.W` -32768 / -1 (register
   unchanged, `O` set), `DVMD.W` ignoring the high word.
 
-### CL4 [ ] instruction_sets: Block compare
+### CL4 [x] instruction_sets: Multiply by the value's bits
+
+Depends on: CL2.
+
+- `MUL.W`, `MULS.W`, and `MUL.DW` use the left shift multiply (see Multiply
+  above), so their cycles depend on the value's highest set bit and how many
+  bits it has set.
+- Their tests in `instruction_test_multiply.cc` change to match.
+
+**Verify**
+- Standard checks.
+- Unit tests: values of 0 and 1, values with few and many bits set, and
+  0xFFFF (0x7FFF for `MULS.W`) for the longest case; overflow found by a
+  carry in the loop, by a carry in the last add, and by a bit shifted out of
+  the register; the other cases from CL2.
+
+### CL5 [ ] instruction_sets: Block compare
 
 Depends on: nothing.
 
@@ -305,9 +329,9 @@ Depends on: nothing.
   a match, no match, a match on the last word, `R7` of 0; for the repeats,
   where `IP` ends, and an interrupt between words.
 
-### CL5 [ ] instruction_sets, wiki: Block move
+### CL6 [ ] instruction_sets, wiki: Block move
 
-Depends on: CL4 (shares the test file).
+Depends on: CL5 (shares the test file).
 
 - `MVI`, `MVD`, `MVIR`, and `MVDR` after `SWP`.
 - Tests in `instruction_test_block.cc`.
@@ -321,9 +345,9 @@ Depends on: CL4 (shares the test file).
   repeats, where `IP` ends, and an interrupt between words.
 - Wiki updated.
 
-### CL6 [ ] instruction_sets: INR and OUTR one word per execution
+### CL7 [ ] instruction_sets: INR and OUTR one word per execution
 
-Depends on: CL4 (the repeat approach and its tests).
+Depends on: CL5 (the repeat approach and its tests).
 
 - `INR` and `OUTR` take a register address that advances, and do one word or
   dword per execution, moving `IP` back until done.

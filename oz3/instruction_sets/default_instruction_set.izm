@@ -1019,141 +1019,223 @@ instruction SBC.D "$R, $m" {
 ################################################################################
 ## MUL <register>, <value>
 ##
-## Cycles: 71-142
+## Cycles: 7-103
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    MUL.W  <reg>, <reg>              (71-72 cycles)
-##    MUL.W  <reg>, <integer>          (72-73 cycles)
-##    MUL.W  <reg>, <word-address>     (73-76 cycles)
-##    MUL.DW <dreg>, <reg>             (137-138 cycles)
-##    MUL.DW <dreg>, <integer>         (138-139 cycles)
-##    MUL.DW <dreg>, <word-address>    (139-142 cycles)
+##    MUL.W  <reg>, <reg>              (7-68 cycles)
+##    MUL.W  <reg>, <integer>          (8-69 cycles)
+##    MUL.W  <reg>, <word-address>     (9-72 cycles)
+##    MUL.DW <dreg>, <reg>             (8-99 cycles)
+##    MUL.DW <dreg>, <integer>         (9-100 cycles)
+##    MUL.DW <dreg>, <word-address>    (10-103 cycles)
 ##
 ## Unsigned multiply of the register by a word value. The register gets the low
 ## bits of the product. The "C" and "O" flags are both set if the product
-## doesn't fit in the register, and both cleared otherwise. Each variant takes
-## one more cycle when the product doesn't fit.
+## doesn't fit in the register, and both cleared otherwise.
+##
+## The cycles depend on the value. For a value of 1, MUL.W <reg>, <reg> takes 7
+## cycles (and 8 for 0). Each bit above that up to the value's highest set bit
+## adds 2 cycles (3 for MUL.DW), and so does each set bit other than the
+## highest. It takes one more cycle if the product doesn't fit.
 ################################################################################
 
 instruction MUL.W "$r, $m" {
   $GetWord;
 
-  # Multiply by shifting the product right through C1 (the high word) and the
-  # register (the low word), as the multiplier shifts out of the register's low
-  # bits. The value is copied to C2, as it may be the register itself. The last
-  # RRC shifts out the zero SR shifted in, so it leaves the flags TST(a) would.
-  MOV(C2,r);
-  MOVI(C0,16);
-  SR(a);  # C holds the next bit of the multiplier
+  # For each bit set in the value (shifted out of C1), add the register into
+  # the product in C0 (which starts as zero), shifting the register left each
+  # bit, until no bits of the value are left. The last bit is always set, so
+  # its add goes into the register, and needn't shift. The value is copied
+  # first, as it may be the register itself.
+  MOV(C1,r);
 @loop:
-  JC(NC,@shift);
-  ADD(C1,C2);
+  SR(C1);
+  JC(Z,@last);
+  JC(C,@add);
 @shift:
-  RRC(C1); RRC(a);
-  JD(C0,@loop);
-  MSR(ZSCO,ZSCO);
-
-  # Overflow if the high word is not zero.
-  TST(C1);
-  JC(NZ,@overflow);
+  SL(a);
+  JC(C,@overflow_loop);
+  JP(@loop);
+@add:
+  ADD(C0,a);
+  JC(C,@overflow_shift);
+  JP(@shift);
+@last:
+  JC(NC,@zero);
+  ADD(a,C0);
+  JC(C,@overflow_done);
+  MSC(O); MSR(ZSCO,ZSCO);
   END;
-@overflow:
-  MSS(CO); MSR(CO,CO);
+@zero:
+  MOVI(a,0); MSR(ZSCO,ZSCO);
+  END;
+
+  # The product doesn't fit if an add carries, or if a bit is shifted out of
+  # the register while bits of the value are left (as a later bit would have
+  # added it). Finish without checking.
+@overflow_loop:
+  SR(C1);
+  JC(Z,@overflow_last);
+  JC(C,@overflow_add);
+@overflow_shift:
+  SL(a);
+  JP(@overflow_loop);
+@overflow_add:
+  ADD(C0,a);
+  JP(@overflow_shift);
+@overflow_last:
+  ADD(a,C0);
+@overflow_done:
+  MSS(CO); MSR(ZSCO,ZSCO);
 }
 
 instruction MUL.DW "$R, $m" {
   $GetWord;
 
-  # Multiply the low word as MUL.W does, then the high word the same way,
-  # starting from the high word of the first product in C1, which adds it in.
+  # As MUL.W, with the value in C2 and the product in C0 and C1.
   MOV(C2,r);
-  MOVI(C0,16);
-  SR(a0);  # C holds the next bit of the multiplier
-@low:
-  JC(NC,@low_shift);
-  ADD(C1,C2);
-@low_shift:
-  RRC(C1); RRC(a0);
-  JD(C0,@low);
-  MSR(Z,Z);
-
-  MOVI(C0,16);
-  SR(a1);  # C holds the next bit of the multiplier
-@high:
-  JC(NC,@high_shift);
-  ADD(C1,C2);
-@high_shift:
-  RRC(C1); RRC(a1);
-  JD(C0,@high);
-  MSR(ZSCO,_SCO);
-
-  # Overflow if the high word is not zero.
-  TST(C1);
-  JC(NZ,@overflow);
+@loop:
+  SR(C2);
+  JC(Z,@last);
+  JC(C,@add);
+@shift:
+  SL(a0); RLC(a1);
+  JC(C,@overflow_loop);
+  JP(@loop);
+@add:
+  ADD(C0,a0); ADC(C1,a1);
+  JC(C,@overflow_shift);
+  JP(@shift);
+@last:
+  JC(NC,@zero);
+  ADD(a0,C0); MSR(Z,Z); ADC(a1,C1);
+  JC(C,@overflow_done);
+  MSC(O); MSR(ZSCO,_SCO);
   END;
-@overflow:
-  MSS(CO); MSR(CO,CO);
+@zero:
+  MOVI(a0,0); MOVI(a1,0); MSR(ZSCO,ZSCO);
+  END;
+
+@overflow_loop:
+  SR(C2);
+  JC(Z,@overflow_last);
+  JC(C,@overflow_add);
+@overflow_shift:
+  SL(a0); RLC(a1);
+  JP(@overflow_loop);
+@overflow_add:
+  ADD(C0,a0); ADC(C1,a1);
+  JP(@overflow_shift);
+@overflow_last:
+  ADD(a0,C0); MSR(Z,Z); ADC(a1,C1);
+@overflow_done:
+  MSS(CO); MSR(ZSCO,_SCO);
 }
 
 ################################################################################
 ## MULS <register>, <value>
 ##
-## Cycles: 77-83
+## Cycles: 12-75
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    MULS.W <reg>, <reg>              (77-79 cycles)
-##    MULS.W <reg>, <integer>          (78-80 cycles)
-##    MULS.W <reg>, <word-address>     (79-83 cycles)
+##    MULS.W <reg>, <reg>              (12-71 cycles)
+##    MULS.W <reg>, <integer>          (13-72 cycles)
+##    MULS.W <reg>, <word-address>     (14-75 cycles)
 ##
 ## Signed multiply of the register by a word value. The register gets the low
 ## bits of the product. The "C" and "O" flags are both set if the product
-## doesn't fit in a signed word, and both cleared otherwise. Each variant takes
-## one more cycle when the result is negative, and one more when the product
-## doesn't fit.
+## doesn't fit in a signed word, and both cleared otherwise.
+##
+## The cycles depend on the value's absolute value as they do for MUL.W, with
+## 4-8 more for the signs.
 ################################################################################
 
 instruction MULS.W "$r, $m" {
   $GetWord;
 
-  # Multiply as MUL.W does, keeping the register's original value in MB (which
-  # is restored when the instruction ends). The low word of a signed product is
-  # the same as the unsigned one.
+  # Multiply the absolute values as MUL.W does, with the value in C2. C1 starts
+  # as zero, so the first XOR copies the register to it and tests its sign, and
+  # the second leaves whether the product is negative in its high bit.
   MOV(C2,r);
-  MOV(MB,a);
-  MOVI(C0,16);
-  SR(a);  # C holds the next bit of the multiplier
+  XOR(C1,a);
+  JC(NS,@positive_register);
+  NEG(a,a);
+  XOR(C1,C2);
+  JC(S,@loop);  # The value is positive
+  JP(@negative_value);
+@positive_register:
+  XOR(C1,C2);
+  JC(NS,@loop);  # The value is positive
+@negative_value:
+  NEG(C2,C2);
 @loop:
-  JC(NC,@shift);
-  ADD(C1,C2);
+  SR(C2);
+  JC(Z,@last);
+  JC(C,@add);
 @shift:
-  RRC(C1); RRC(a);
-  JD(C0,@loop);
+  SL(a);
+  JC(C,@overflow_loop);
+  JP(@loop);
+@add:
+  ADD(C0,a);
+  JC(C,@overflow_shift);
+  JP(@shift);
+@last:
+  JC(NC,@zero);
+  ADD(a,C0);
+  JC(C,@overflow_done);
 
-  # Make the high word signed, by subtracting each value from it where the
-  # other is negative.
-  TST(MB);
-  JC(NS,@value_sign);
-  SUB(C1,C2);
-@value_sign:
-  TST(C2);
-  JC(NS,@check);
-  SUB(C1,MB);
-
-  # The product fits if the high word is the low word's sign extended.
-@check:
-  TST(a); MSR(ZSCO,ZSCO);
-  JC(S,@negative);
+  # The product fits in a word. If it is less than 0x8000, it fits in a signed
+  # word, negated if the product is negative.
+  MSC(O); MSR(ZSCO,ZSCO);
+  JC(S,@high);
   TST(C1);
-  JC(NZ,@overflow);
+  JC(S,@negate);
   END;
-@negative:
-  CMPI(C1,-1);
-  JC(NZ,@overflow);
+@negate:
+  NEG(a,a); MSR(ZSCO,ZSCO);
   END;
-@overflow:
+
+  # Otherwise it only fits if the product is negative and it is 0x8000, which
+  # negates to itself.
+@high:
+  TST(C1);
+  JC(NS,@high_overflow);
+  NEG(a,a);
+  JC(NS,@signed_overflow);
+  MSC(O); MSR(ZSCO,ZSCO);
+  END;
+@high_overflow:
   MSS(CO); MSR(CO,CO);
+  END;
+@zero:
+  MOVI(a,0); MSR(ZSCO,ZSCO);
+  END;
+
+  # The product doesn't fit in a word, as in MUL.W.
+@overflow_loop:
+  SR(C2);
+  JC(Z,@overflow_last);
+  JC(C,@overflow_add);
+@overflow_shift:
+  SL(a);
+  JP(@overflow_loop);
+@overflow_add:
+  ADD(C0,a);
+  JP(@overflow_shift);
+@overflow_last:
+  ADD(a,C0);
+@overflow_done:
+  MSS(CO); MSR(ZSCO,ZSCO);
+  TST(C1);
+  JC(S,@negative_overflow);
+  END;
+@negative_overflow:
+  NEG(a,a);
+@signed_overflow:
+  MSS(CO); MSR(ZSCO,ZSCO);
 }
 
 ################################################################################

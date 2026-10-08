@@ -2855,33 +2855,58 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(C2,r);MOVI(C0,16);SR(a);@loop:JC(NC,@shift);"
-             "ADD(C1,C2);@shift:RRC(C1);RRC(a);JD(C0,@loop);MSR(ZSCO,ZSCO);"
-             "TST(C1);JC(NZ,@overflow);END;@overflow:MSS(CO);MSR(CO,CO);"},
+     .code = "$GetWord;MOV(C1,r);@loop:SR(C1);JC(Z,@last);JC(C,@add);"
+             "@shift:SL(a);JC(C,@overflow_loop);JP(@loop);@add:ADD(C0,a);"
+             "JC(C,@overflow_shift);JP(@shift);@last:JC(NC,@zero);"
+             "ADD(a,C0);JC(C,@overflow_done);MSC(O);MSR(ZSCO,ZSCO);END;"
+             "@zero:MOVI(a,0);MSR(ZSCO,ZSCO);END;@overflow_loop:SR(C1);"
+             "JC(Z,@overflow_last);JC(C,@overflow_add);"
+             "@overflow_shift:SL(a);JP(@overflow_loop);"
+             "@overflow_add:ADD(C0,a);JP(@overflow_shift);"
+             "@overflow_last:ADD(a,C0);@overflow_done:MSS(CO);"
+             "MSR(ZSCO,ZSCO);"},
     {.op = 37,
      .op_name = "MUL.DW",
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(C2,r);MOVI(C0,16);SR(a0);@low:JC(NC,@low_shift);"
-             "ADD(C1,C2);@low_shift:RRC(C1);RRC(a0);JD(C0,@low);MSR(Z,Z);"
-             "MOVI(C0,16);SR(a1);@high:JC(NC,@high_shift);ADD(C1,C2);"
-             "@high_shift:RRC(C1);RRC(a1);JD(C0,@high);MSR(ZSCO,_SCO);"
-             "TST(C1);JC(NZ,@overflow);END;@overflow:MSS(CO);MSR(CO,CO);"},
+     .code = "$GetWord;MOV(C2,r);@loop:SR(C2);JC(Z,@last);JC(C,@add);"
+             "@shift:SL(a0);RLC(a1);JC(C,@overflow_loop);JP(@loop);"
+             "@add:ADD(C0,a0);ADC(C1,a1);JC(C,@overflow_shift);JP(@shift);"
+             "@last:JC(NC,@zero);ADD(a0,C0);MSR(Z,Z);ADC(a1,C1);"
+             "JC(C,@overflow_done);MSC(O);MSR(ZSCO,_SCO);END;"
+             "@zero:MOVI(a0,0);MOVI(a1,0);MSR(ZSCO,ZSCO);END;"
+             "@overflow_loop:SR(C2);JC(Z,@overflow_last);"
+             "JC(C,@overflow_add);@overflow_shift:SL(a0);RLC(a1);"
+             "JP(@overflow_loop);@overflow_add:ADD(C0,a0);ADC(C1,a1);"
+             "JP(@overflow_shift);@overflow_last:ADD(a0,C0);MSR(Z,Z);"
+             "ADC(a1,C1);@overflow_done:MSS(CO);MSR(ZSCO,_SCO);"},
     {.op = 38,
      .op_name = "MULS.W",
      .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(C2,r);MOV(MB,a);MOVI(C0,16);SR(a);"
-             "@loop:JC(NC,@shift);ADD(C1,C2);@shift:RRC(C1);RRC(a);"
-             "JD(C0,@loop);TST(MB);JC(NS,@value_sign);SUB(C1,C2);"
-             "@value_sign:TST(C2);JC(NS,@check);SUB(C1,MB);@check:TST(a);"
-             "MSR(ZSCO,ZSCO);JC(S,@negative);TST(C1);JC(NZ,@overflow);END;"
-             "@negative:CMPI(C1,-1);JC(NZ,@overflow);END;@overflow:MSS(CO);"
-             "MSR(CO,CO);"},
+     .code = "$GetWord;MOV(C2,r);XOR(C1,a);JC(NS,@positive_register);"
+             "NEG(a,a);XOR(C1,C2);JC(S,@loop);JP(@negative_value);"
+             "@positive_register:XOR(C1,C2);JC(NS,@loop);"
+             "@negative_value:NEG(C2,C2);@loop:SR(C2);JC(Z,@last);"
+             "JC(C,@add);@shift:SL(a);JC(C,@overflow_loop);JP(@loop);"
+             "@add:ADD(C0,a);JC(C,@overflow_shift);JP(@shift);"
+             "@last:JC(NC,@zero);ADD(a,C0);JC(C,@overflow_done);MSC(O);"
+             "MSR(ZSCO,ZSCO);JC(S,@high);TST(C1);JC(S,@negate);END;"
+             "@negate:NEG(a,a);MSR(ZSCO,ZSCO);END;@high:TST(C1);"
+             "JC(NS,@high_overflow);NEG(a,a);JC(NS,@signed_overflow);"
+             "MSC(O);MSR(ZSCO,ZSCO);END;@high_overflow:MSS(CO);MSR(CO,CO);"
+             "END;@zero:MOVI(a,0);MSR(ZSCO,ZSCO);END;@overflow_loop:SR(C2);"
+             "JC(Z,@overflow_last);JC(C,@overflow_add);"
+             "@overflow_shift:SL(a);JP(@overflow_loop);"
+             "@overflow_add:ADD(C0,a);JP(@overflow_shift);"
+             "@overflow_last:ADD(a,C0);@overflow_done:MSS(CO);"
+             "MSR(ZSCO,ZSCO);TST(C1);JC(S,@negative_overflow);END;"
+             "@negative_overflow:NEG(a,a);@signed_overflow:MSS(CO);"
+             "MSR(ZSCO,ZSCO);"},
     {.op = 39,
      .op_name = "DIV.W",
      .source = "$r, $m",

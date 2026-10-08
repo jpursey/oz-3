@@ -36,41 +36,46 @@ constexpr uint16_t kZCO = CpuCore::Z | CpuCore::C | CpuCore::O;
 constexpr uint16_t kSCO = CpuCore::S | CpuCore::C | CpuCore::O;
 constexpr uint16_t kCO = CpuCore::C | CpuCore::O;
 
-// MUL.W cases, from the fewest cycles to the most.
+// MUL.W cases, from the fewest cycles to the most. The cycles depend on the
+// value, and overflow is found by a bit shifted out of the register (0x8000 *
+// 2), a carry in the loop (0x6000 * 7), or a carry in the last add (0x6000 *
+// 3).
 constexpr WordCase kMulWordCases[] = {
-    {3, 5, 15, 0, 71},
-    {0, 1234, 0, CpuCore::Z, 71},
-    {300, 200, 60000, CpuCore::S, 71},
-    {0xFFFF, 1, 0xFFFF, CpuCore::S, 71},
-    {0x100, 0x100, 0, kZCO, 72},
-    {0x8000, 2, 0, kZCO, 72},
-    {0xFFFF, 0xFFFF, 1, kCO, 72},
+    {0xFFFF, 1, 0xFFFF, CpuCore::S, 7}, {5, 0, 0, CpuCore::Z, 8},
+    {0x8000, 2, 0, kZCO, 10},           {0xFFFF, 3, 0xFFFD, kSCO, 12},
+    {0x6000, 3, 0x2000, kCO, 12},       {3, 5, 15, 0, 13},
+    {0x6000, 7, 0xA000, kSCO, 16},      {0x100, 0x100, 0, kZCO, 24},
+    {300, 200, 60000, CpuCore::S, 25},  {0, 1234, 0, CpuCore::Z, 35},
+    {0xFFFF, 0xFFFF, 1, kCO, 68},
 };
 
 // MULS.W cases, from the fewest cycles to the most.
 constexpr WordCase kMulsWordCases[] = {
-    {0, 0, 0, CpuCore::Z, 77},
-    {static_cast<uint16_t>(-3), static_cast<uint16_t>(-5), 15, 0, 77},
-    {static_cast<uint16_t>(-1), static_cast<uint16_t>(-1), 1, 0, 77},
-    {0, static_cast<uint16_t>(-5), 0, CpuCore::Z, 77},
-    {1000, 1000, 0x4240, kCO, 78},
-    {256, static_cast<uint16_t>(-129), 0x7F00, kCO, 78},
-    {3, static_cast<uint16_t>(-5), static_cast<uint16_t>(-15), CpuCore::S, 78},
-    {0x8000, 1, 0x8000, CpuCore::S, 78},
-    {256, static_cast<uint16_t>(-128), 0x8000, CpuCore::S, 78},
-    {200, 200, 40000, kSCO, 79},
-    {0x8000, static_cast<uint16_t>(-1), 0x8000, kSCO, 79},
-    {static_cast<uint16_t>(-1000), 1000, 0xBDC0, kSCO, 79},
+    {0, 0, 0, CpuCore::Z, 12},
+    {static_cast<uint16_t>(-1), static_cast<uint16_t>(-1), 1, 0, 12},
+    {0x8000, 1, 0x8000, CpuCore::S, 14},
+    {0x8000, static_cast<uint16_t>(-1), 0x8000, kSCO, 14},
+    {static_cast<uint16_t>(-3), static_cast<uint16_t>(-5), 15, 0, 18},
+    {3, static_cast<uint16_t>(-5), static_cast<uint16_t>(-15), CpuCore::S, 20},
+    {0, static_cast<uint16_t>(-5), 0, CpuCore::Z, 20},
+    {256, static_cast<uint16_t>(-128), 0x8000, CpuCore::S, 28},
+    {256, static_cast<uint16_t>(-129), 0x7F00, kCO, 31},
+    {200, 200, 40000, kSCO, 32},
+    {1000, 1000, 0x4240, kCO, 41},
+    {static_cast<uint16_t>(-1000), 1000, 0xBDC0, kSCO, 43},
+    {static_cast<uint16_t>(-2), 0x7FFF, 2, kCO, 71},
 };
 
 // MUL.DW cases, from the fewest cycles to the most.
 constexpr DwordCase kMulDwordCases[] = {
-    {3, 5, 15, 0, 137},
-    {0, 0xFFFF, 0, CpuCore::Z, 137},
-    {0x12345, 0x100, 0x1234500, 0, 137},
-    {0x10000, 0x8000, 0x80000000, CpuCore::S, 137},
-    {0x80000000, 2, 0, kZCO, 138},
-    {0xFFFFFFFF, 0xFFFF, 0xFFFF0001, kSCO, 138},
+    {0xFFFFFFFF, 1, 0xFFFFFFFF, CpuCore::S, 8},
+    {7, 0, 0, CpuCore::Z, 9},
+    {0x80000000, 2, 0, kZCO, 12},
+    {3, 5, 15, 0, 17},
+    {0x12345, 0x100, 0x1234500, 0, 32},
+    {0x10000, 0x8000, 0x80000000, CpuCore::S, 53},
+    {0, 0xFFFF, 0, CpuCore::Z, 98},
+    {0xFFFFFFFF, 0xFFFF, 0xFFFF0001, kSCO, 99},
 };
 
 // DIV.W cases, from the fewest cycles to the most.
@@ -221,7 +226,7 @@ TEST_F(MulDivTest, MUL_W) { RunWordCases("MUL.W", kMulWordCases); }
 TEST_F(MulDivTest, MUL_W_Operands) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.data.SetAddress(state.bd + 100).AddValue(7).AddValue(0x2000);
+  state.data.SetAddress(state.bd + 100).AddValue(1).AddValue(0xFFFF);
   state.SetRegisters({{CpuCore::ST, 0},
                       {CpuCore::R0, 300},
                       {CpuCore::R1, 3},
@@ -230,9 +235,9 @@ TEST_F(MulDivTest, MUL_W_Operands) {
 
   state.code.AddValue(Encode("MUL.W", CpuCore::R0, {"$r", CpuCore::R0}));
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MUL.W", CpuCore::R1, "$v")).AddValue(5);
+  state.code.AddValue(Encode("MUL.W", CpuCore::R1, "$v")).AddValue(1);
   const uint16_t ip2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MUL.W", CpuCore::R1, "$v")).AddValue(0x8000);
+  state.code.AddValue(Encode("MUL.W", CpuCore::R1, "$v")).AddValue(0xFFFF);
   const uint16_t ip3 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MUL.W", CpuCore::R3, {"($r)", CpuCore::R2}));
   const uint16_t ip4 = state.code.AddNopGetAddress();
@@ -241,20 +246,20 @@ TEST_F(MulDivTest, MUL_W_Operands) {
   const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 72);  // MUL.W R0, R0
+  EXPECT_EQ(CyclesUntilIp(ip1), 30);  // MUL.W R0, R0
   EXPECT_EQ(state.r0, static_cast<uint16_t>(300 * 300));
   EXPECT_EQ(state.st, kCO);
-  EXPECT_EQ(CyclesUntilIp(ip2), 72);  // MUL.W R1, 5
-  EXPECT_EQ(state.r1, 15);
+  EXPECT_EQ(CyclesUntilIp(ip2), 8);  // MUL.W R1, 1
+  EXPECT_EQ(state.r1, 3);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip3), 73);  // MUL.W R1, 0x8000
-  EXPECT_EQ(state.r1, 0x8000);
+  EXPECT_EQ(CyclesUntilIp(ip3), 69);  // MUL.W R1, 0xFFFF
+  EXPECT_EQ(state.r1, 0xFFFD);
   EXPECT_EQ(state.st, kSCO);
-  EXPECT_EQ(CyclesUntilIp(ip4), 73);  // MUL.W R3, (R2)
-  EXPECT_EQ(state.r3, 14);
+  EXPECT_EQ(CyclesUntilIp(ip4), 9);  // MUL.W R3, (R2)
+  EXPECT_EQ(state.r3, 2);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip5), 76);  // MUL.W R3, (R2 + 1)
-  EXPECT_EQ(state.r3, 0xC000);
+  EXPECT_EQ(CyclesUntilIp(ip5), 72);  // MUL.W R3, (R2 + 1)
+  EXPECT_EQ(state.r3, 0xFFFE);
   EXPECT_EQ(state.st, kSCO);
 }
 
@@ -263,7 +268,7 @@ TEST_F(MulDivTest, MUL_DW) { RunDwordCases("MUL.DW", kMulDwordCases); }
 TEST_F(MulDivTest, MUL_DW_Operands) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.extra.SetAddress(state.be + 100).AddValue(0x8000);
+  state.extra.SetAddress(state.be + 99).AddValue(1).AddValue(0xFFFF);
   state.SetRegisters({{CpuCore::ST, 0},
                       {CpuCore::R0, 3},
                       {CpuCore::R1, 1},
@@ -273,22 +278,32 @@ TEST_F(MulDivTest, MUL_DW_Operands) {
 
   state.code.AddValue(Encode("MUL.DW", 0, {"$r", CpuCore::R0}));
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MUL.DW", 1, "$v")).AddValue(2);
+  state.code.AddValue(Encode("MUL.DW", 1, "$v")).AddValue(1);
   const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MUL.DW", 0, "$v")).AddValue(0xFFFF);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MUL.DW", 0, {"($r + $v)", CpuCore::R4}))
       .AddValue(1);
-  const uint16_t ip3 = state.code.AddNopGetAddress();
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MUL.DW", 1, {"($r)", CpuCore::R4}));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 137);  // MUL.DW D0, R0
+  EXPECT_EQ(CyclesUntilIp(ip1), 14);  // MUL.DW D0, R0
   EXPECT_EQ(state.d0(), 0x30009);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip2), 139);  // MUL.DW D1, 2
-  EXPECT_EQ(state.d1(), 0);
-  EXPECT_EQ(state.st, kZCO);
-  EXPECT_EQ(CyclesUntilIp(ip3), 142);  // MUL.DW D0, (R4 + 1)
-  EXPECT_EQ(state.d0(), 0x80048000);
+  EXPECT_EQ(CyclesUntilIp(ip2), 9);  // MUL.DW D1, 1
+  EXPECT_EQ(state.d1(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S);
+  EXPECT_EQ(CyclesUntilIp(ip3), 100);  // MUL.DW D0, 0xFFFF
+  EXPECT_EQ(state.d0(), 0x0005FFF7);
+  EXPECT_EQ(state.st, kCO);
+  EXPECT_EQ(CyclesUntilIp(ip4), 103);  // MUL.DW D0, (R4 + 1)
+  EXPECT_EQ(state.d0(), 0xFFF10009);
   EXPECT_EQ(state.st, kSCO);
+  EXPECT_EQ(CyclesUntilIp(ip5), 10);  // MUL.DW D1, (R4)
+  EXPECT_EQ(state.d1(), 0x80000000);
+  EXPECT_EQ(state.st, CpuCore::S);
 }
 
 TEST_F(MulDivTest, MULS_W) { RunWordCases("MULS.W", kMulsWordCases); }
@@ -296,42 +311,43 @@ TEST_F(MulDivTest, MULS_W) { RunWordCases("MULS.W", kMulsWordCases); }
 TEST_F(MulDivTest, MULS_W_Operands) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.data.SetAddress(state.bd + 100).AddValue(7).AddValue(3000);
+  state.data.SetAddress(state.bd + 100).AddValue(1).AddValue(0x7FFF);
   state.SetRegisters({{CpuCore::ST, 0},
                       {CpuCore::R0, static_cast<uint16_t>(-200)},
                       {CpuCore::R1, 3},
                       {CpuCore::R2, 100},
                       {CpuCore::R3, 2},
-                      {CpuCore::R4, 256}});
+                      {CpuCore::R4, static_cast<uint16_t>(-2)},
+                      {CpuCore::R5, static_cast<uint16_t>(-2)}});
 
   state.code.AddValue(Encode("MULS.W", CpuCore::R0, {"$r", CpuCore::R0}));
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MULS.W", CpuCore::R1, "$v")).AddValue(5);
+  state.code.AddValue(Encode("MULS.W", CpuCore::R1, "$v")).AddValue(1);
   const uint16_t ip2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MULS.W", CpuCore::R4, "$v")).AddValue(200);
+  state.code.AddValue(Encode("MULS.W", CpuCore::R4, "$v")).AddValue(0x7FFF);
   const uint16_t ip3 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MULS.W", CpuCore::R3, {"($r)", CpuCore::R2}));
   const uint16_t ip4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MULS.W", CpuCore::R3, {"($r + $v)", CpuCore::R2}))
+  state.code.AddValue(Encode("MULS.W", CpuCore::R5, {"($r + $v)", CpuCore::R2}))
       .AddValue(1);
   const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 79);  // MULS.W R0, R0
+  EXPECT_EQ(CyclesUntilIp(ip1), 32);  // MULS.W R0, R0
   EXPECT_EQ(state.r0, 40000);
   EXPECT_EQ(state.st, kSCO);
-  EXPECT_EQ(CyclesUntilIp(ip2), 78);  // MULS.W R1, 5
-  EXPECT_EQ(state.r1, 15);
+  EXPECT_EQ(CyclesUntilIp(ip2), 13);  // MULS.W R1, 1
+  EXPECT_EQ(state.r1, 3);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip3), 80);  // MULS.W R4, 200
-  EXPECT_EQ(state.r4, 51200);
-  EXPECT_EQ(state.st, kSCO);
-  EXPECT_EQ(CyclesUntilIp(ip4), 79);  // MULS.W R3, (R2)
-  EXPECT_EQ(state.r3, 14);
+  EXPECT_EQ(CyclesUntilIp(ip3), 72);  // MULS.W R4, 0x7FFF
+  EXPECT_EQ(state.r4, 2);
+  EXPECT_EQ(state.st, kCO);
+  EXPECT_EQ(CyclesUntilIp(ip4), 14);  // MULS.W R3, (R2)
+  EXPECT_EQ(state.r3, 2);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip5), 83);  // MULS.W R3, (R2 + 1)
-  EXPECT_EQ(state.r3, 42000);
-  EXPECT_EQ(state.st, kSCO);
+  EXPECT_EQ(CyclesUntilIp(ip5), 75);  // MULS.W R5, (R2 + 1)
+  EXPECT_EQ(state.r5, 2);
+  EXPECT_EQ(state.st, kCO);
 }
 
 TEST_F(MulDivTest, DIV_W) { RunWordCases("DIV.W", kDivWordCases); }
