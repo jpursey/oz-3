@@ -54,9 +54,9 @@ them.
 - On an error, the register is unchanged, `O` is set, and `Z`, `S`, and `C`
   are cleared. The errors are dividing by zero, and `DIVS.W` of -32768 by -1
   (whose quotient doesn't fit).
-- Shift and subtract loops, about 6-7 cycles per bit: roughly 100-115 cycles
-  for the word forms and 210-230 for the dword forms, plus fetching the value.
-  An error exits early.
+- Shift and subtract loops, 5 cycles per bit: 86-87 cycles for `DIV.W`,
+  `MOD.W`, and `DVMD.W`, 91-94 for `DIVS.W`, and 168-169 for the dword forms,
+  plus fetching the value. Dividing by zero exits early, in 5-10 cycles.
 
 ### Decrement and jump
 
@@ -210,11 +210,25 @@ original value in `MB`, which is restored when the instruction ends, as
 ### Divide
 
 The restoring shift and subtract divide: each step shifts the dividend left
-into a remainder register, and subtracts the divisor when it fits, setting the
-quotient bit. The dividend register becomes the quotient. For `DVMD.W` the
-remainder register is `a1`, so the remainder lands in the high word for free.
-A divisor of 0x8000 or more can push a 17th bit out of the remainder, which
-counts as fitting. `DIVS.W` divides absolute values and fixes the sign.
+out of the register into a remainder in `C1`, and subtracts the divisor when
+it fits. Each quotient bit is left in `C` (the compare's borrow, flipped with
+`MSX`), and shifted into the register as the next dividend bit is shifted
+out, so a step costs 5 cycles whether or not it subtracts, and the register
+becomes the quotient. A divisor of 0x8000 or more can push a 17th bit out of
+the remainder, which counts as fitting. As in multiply, the last shift leaves
+the flags a `TST` of the result would. `C2` starts as zero, so `OR(C2,r)`
+copies and tests the divisor in one cycle. `MOD` doesn't need the quotient,
+so its loops skip tracking it.
+
+- For `DVMD.W` the remainder register is `a1`, so the remainder lands in the
+  high word for free.
+- The dword forms divide the high word, then the low word starting from the
+  high word's remainder, as long division does, in two 16-step loops.
+- `DIVS.W` divides the absolute values, keeping the quotient's sign in `MB`,
+  and negates the quotient if it is negative. The only quotient that doesn't
+  fit is 32768 from -32768 / -1, and in that case the register already holds
+  -32768 again, so checking the result leaves it unchanged without restoring
+  anything.
 
 ### To confirm
 
@@ -224,8 +238,8 @@ counts as fitting. `DIVS.W` divides absolute values and fixes the sign.
   that `MB` is unchanged afterward. It needed no other scratch, so `ST` is
   unused.
 - The loops stay well under 255 microcodes an instruction. (CL2, CL3)
-  **Confirmed for multiply:** the loops aren't unrolled, so each instruction
-  is a few dozen microcodes.
+  **Confirmed:** the loops aren't unrolled, so each instruction is a few
+  dozen microcodes.
 - `InstructionAssembler` accepts formats with literal parentheses around both
   arguments, such as `"($r), ($r)"`. (CL4)
 - An interrupt raised during a repeat is handled between words and returns
@@ -264,7 +278,7 @@ Depends on: nothing.
   bit set for the longest case.
 - Confirm the `ST` and `MB` scratch, and record the findings above.
 
-### CL3 [ ] instruction_sets: Divide and modulo
+### CL3 [x] instruction_sets: Divide and modulo
 
 Depends on: CL2 (shares the test file).
 

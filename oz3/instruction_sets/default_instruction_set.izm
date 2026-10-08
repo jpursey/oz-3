@@ -1157,6 +1157,292 @@ instruction MULS.W "$r, $m" {
 }
 
 ################################################################################
+## DIV <register>, <value>
+##
+## Cycles: 5-172
+## ZSCO: XX0X
+##
+## Variants:
+##    DIV.W  <reg>, <reg>              (86 cycles)
+##    DIV.W  <reg>, <integer>          (87 cycles)
+##    DIV.W  <reg>, <word-address>     (88-90 cycles)
+##    DIV.DW <dreg>, <reg>             (168 cycles)
+##    DIV.DW <dreg>, <integer>         (169 cycles)
+##    DIV.DW <dreg>, <word-address>    (170-172 cycles)
+##
+## Unsigned divide of the register by a word value. The register gets the
+## quotient.
+##
+## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
+## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared.
+################################################################################
+
+instruction DIV.W "$r, $m" {
+  $GetWord;
+
+  # C2 starts as zero, so OR copies the value to it (unless it is already C2),
+  # as the value may be the register itself. It also tests the value, and
+  # clears C.
+  OR(C2,r);
+  JC(Z,@error);
+
+  # Shift the dividend left out of the register into the remainder in C1, and
+  # subtract the value from the remainder wherever it fits. Each quotient bit
+  # is left in C, and shifted into the register as the next dividend bit is
+  # shifted out. A bit shifted out of the remainder means the value fits.
+  MOVI(C0,16);
+@loop:
+  RLC(a); RLC(C1);
+  JC(C,@subtract);
+  CMP(C1,C2); MSX(C);
+  JC(NC,@next);
+@subtract:
+  SUB(C1,C2); MSS(C);
+@next:
+  JD(C0,@loop);
+
+  # The last RLC shifts out the zero C started as, so it leaves the flags
+  # TST(a) would.
+  RLC(a); MSR(ZSCO,ZSCO);
+  END;
+
+@error:
+  MSC(ZSC); MSS(O); MSR(ZSCO,ZSCO);
+}
+
+instruction DIV.DW "$R, $m" {
+  $GetWord;
+  OR(C2,r);  # As DIV.W, as the value may be part of the register
+  JC(Z,@error);
+
+  # Divide the high word as DIV.W does, then the low word the same way,
+  # starting from the high word's remainder in C1.
+  MOVI(C0,16);
+@high:
+  RLC(a1); RLC(C1);
+  JC(C,@high_subtract);
+  CMP(C1,C2); MSX(C);
+  JC(NC,@high_next);
+@high_subtract:
+  SUB(C1,C2); MSS(C);
+@high_next:
+  JD(C0,@high);
+  RLC(a1); MSR(ZSCO,ZSCO);
+
+  MOVI(C0,16);
+@low:
+  RLC(a0); RLC(C1);
+  JC(C,@low_subtract);
+  CMP(C1,C2); MSX(C);
+  JC(NC,@low_next);
+@low_subtract:
+  SUB(C1,C2); MSS(C);
+@low_next:
+  JD(C0,@low);
+  RLC(a0); MSR(Z,_);
+  END;
+
+@error:
+  MSC(ZSC); MSS(O); MSR(ZSCO,ZSCO);
+}
+
+################################################################################
+## DIVS <register>, <value>
+##
+## Cycles: 6-98
+## ZSCO: XX0X
+##
+## Variants:
+##    DIVS.W <reg>, <reg>              (91-94 cycles)
+##    DIVS.W <reg>, <integer>          (92-95 cycles)
+##    DIVS.W <reg>, <word-address>     (93-98 cycles)
+##
+## Signed divide of the register by a word value, rounding toward zero. The
+## register gets the quotient. Each variant takes two more cycles when the
+## value is negative.
+##
+## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
+## the others, taking 6-10 cycles. So does dividing -32768 by -1, whose quotient
+## doesn't fit, taking the most cycles of each variant. Otherwise, the "O" flag
+## is cleared.
+################################################################################
+
+instruction DIVS.W "$r, $m" {
+  $GetWord;
+
+  # Divide the absolute values as DIV.W does. MB (which is restored when the
+  # instruction ends) gets the register, and then the quotient's sign once the
+  # value's sign is known. OR copies and tests the value as in DIV.W.
+  MOV(MB,a);
+  OR(C2,r);
+  JC(Z,@error);
+  JC(S,@negative_value);
+  XOR(MB,C2);  # The quotient has the register's sign
+  JC(NS,@divide);
+  NEG(a,a);
+  JP(@divide);
+@negative_value:
+  XOR(MB,C2);  # The quotient has the opposite of the register's sign
+  JC(S,@abs_value);
+  NEG(a,a);
+@abs_value:
+  NEG(C2,C2);
+
+@divide:
+  MOVI(C0,16);
+@loop:
+  RLC(a); RLC(C1);
+  JC(C,@subtract);
+  CMP(C1,C2); MSX(C);
+  JC(NC,@next);
+@subtract:
+  SUB(C1,C2); MSS(C);
+@next:
+  JD(C0,@loop);
+  RLC(a); MSR(ZSCO,ZSCO);
+  JC(S,@too_big);
+  TST(MB);
+  JC(NS,@positive);
+  NEG(a,a); MSR(ZSCO,ZSCO);
+@positive:
+  END;
+
+  # A quotient of 32768 is already -32768 as a word, which fits if the quotient
+  # is negative. Otherwise the register was -32768 (and still is), and the value
+  # was -1.
+@too_big:
+  TST(MB);
+  JC(NS,@error);
+  END;
+
+@error:
+  MSC(ZSC); MSS(O); MSR(ZSCO,ZSCO);
+}
+
+################################################################################
+## MOD <register>, <value>
+##
+## Cycles: 5-173
+## ZSCO: XX0X
+##
+## Variants:
+##    MOD.W  <reg>, <reg>              (87 cycles)
+##    MOD.W  <reg>, <integer>          (88 cycles)
+##    MOD.W  <reg>, <word-address>     (89-91 cycles)
+##    MOD.DW <dreg>, <reg>             (169 cycles)
+##    MOD.DW <dreg>, <integer>         (170 cycles)
+##    MOD.DW <dreg>, <word-address>    (171-173 cycles)
+##
+## Unsigned modulo of the register by a word value. The register gets the
+## remainder, which always fits in a word (so MOD.DW clears the high word).
+##
+## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
+## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared.
+################################################################################
+
+instruction MOD.W "$r, $m" {
+  $GetWord;
+  OR(C2,r);  # As DIV.W, as the value may be the register itself
+  JC(Z,@error);
+
+  # Divide as DIV.W does, leaving the remainder in C1. The quotient isn't
+  # needed, so whatever C holds is shifted into the register.
+  MOVI(C0,16);
+@loop:
+  RLC(a); RLC(C1);
+  JC(C,@subtract);
+  CMP(C1,C2);
+  JC(C,@next);
+@subtract:
+  SUB(C1,C2);
+@next:
+  JD(C0,@loop);
+  MOV(a,C1); TST(a); MSR(ZSCO,ZSCO);
+  END;
+
+@error:
+  MSC(ZSC); MSS(O); MSR(ZSCO,ZSCO);
+}
+
+instruction MOD.DW "$R, $m" {
+  $GetWord;
+  OR(C2,r);  # As DIV.W, as the value may be part of the register
+  JC(Z,@error);
+
+  # Divide as DIV.DW does, leaving the remainder in C1. The quotient isn't
+  # needed, as in MOD.W.
+  MOVI(C0,16);
+@high:
+  RLC(a1); RLC(C1);
+  JC(C,@high_subtract);
+  CMP(C1,C2);
+  JC(C,@high_next);
+@high_subtract:
+  SUB(C1,C2);
+@high_next:
+  JD(C0,@high);
+
+  MOVI(C0,16);
+@low:
+  RLC(a0); RLC(C1);
+  JC(C,@low_subtract);
+  CMP(C1,C2);
+  JC(C,@low_next);
+@low_subtract:
+  SUB(C1,C2);
+@low_next:
+  JD(C0,@low);
+  MOV(a0,C1); MOVI(a1,0); TST(a0); MSC(S); MSR(ZSCO,ZSCO);
+  END;
+
+@error:
+  MSC(ZSC); MSS(O); MSR(ZSCO,ZSCO);
+}
+
+################################################################################
+## DVMD <register>, <value>
+##
+## Cycles: 5-91
+## ZSCO: XX0X
+##
+## Variants:
+##    DVMD.W <dreg>, <reg>             (87 cycles)
+##    DVMD.W <dreg>, <integer>         (88 cycles)
+##    DVMD.W <dreg>, <word-address>    (89-91 cycles)
+##
+## Unsigned divide of the register's low word by a word value, getting the
+## quotient in the low word and the remainder in the high word. The high word
+## is ignored on input. The "Z" and "S" flags come from the quotient.
+##
+## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
+## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared.
+################################################################################
+
+instruction DVMD.W "$R, $m" {
+  $GetWord;
+  OR(C2,r);  # As DIV.W, as the value may be part of the register
+  JC(Z,@error);
+
+  # Divide as DIV.W does, with the remainder in the high word.
+  MOVI(a1,0);
+  MOVI(C0,16);
+@loop:
+  RLC(a0); RLC(a1);
+  JC(C,@subtract);
+  CMP(a1,C2); MSX(C);
+  JC(NC,@next);
+@subtract:
+  SUB(a1,C2); MSS(C);
+@next:
+  JD(C0,@loop);
+  RLC(a0); MSR(ZSCO,ZSCO);
+  END;
+
+@error:
+  MSC(ZSC); MSS(O); MSR(ZSCO,ZSCO);
+}
+
+################################################################################
 ## NOT <register>
 ##
 ## Cycles: 5-9
