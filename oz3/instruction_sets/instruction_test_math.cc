@@ -217,8 +217,10 @@ TEST_F(InstructionTest, NEG_W) {
 TEST_F(InstructionTest, NEG_D) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
-  state.SetRegisters(
-      {{CpuCore::ST, 0}, {CpuCore::R2, 1}, {CpuCore::R5, 0x8000}});
+  state.SetRegisters({{CpuCore::ST, 0},
+                      {CpuCore::R2, 1},
+                      {CpuCore::R5, 0x8000},
+                      {CpuCore::R7, 1}});
   state.code.AddValue(Encode("NEG.D", 0));
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("NEG.D", 1));
@@ -227,19 +229,27 @@ TEST_F(InstructionTest, NEG_D) {
   const uint16_t ip3 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("NEG.D", 2));
   const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("NEG.D", 3));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
-  ASSERT_TRUE(ExecuteUntilIp(ip1));  // NEG.D D0
+
+  // NEG.D negates the high word when the low word is zero, and NOTs it
+  // otherwise, which takes one cycle less.
+  EXPECT_EQ(CyclesUntilIp(ip1), 6);  // NEG.D D0
   EXPECT_EQ(state.d0(), 0);
   EXPECT_EQ(state.st, CpuCore::Z);
-  ASSERT_TRUE(ExecuteUntilIp(ip2));  // NEG.D D1
+  EXPECT_EQ(CyclesUntilIp(ip2), 5);  // NEG.D D1
   EXPECT_EQ(state.d1(), 0xFFFFFFFF);
   EXPECT_EQ(state.st, CpuCore::S);
-  ASSERT_TRUE(ExecuteUntilIp(ip3));  // NEG.D D1
+  EXPECT_EQ(CyclesUntilIp(ip3), 5);  // NEG.D D1 (the high word NOTs to zero)
   EXPECT_EQ(state.d1(), 1);
   EXPECT_EQ(state.st, 0);
-  ASSERT_TRUE(ExecuteUntilIp(ip4));  // NEG.D D2
+  EXPECT_EQ(CyclesUntilIp(ip4), 6);  // NEG.D D2
   EXPECT_EQ(state.d2(), 0x80000000);
   EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+  EXPECT_EQ(CyclesUntilIp(ip5), 6);  // NEG.D D3
+  EXPECT_EQ(state.d3(), 0xFFFF0000);
+  EXPECT_EQ(state.st, CpuCore::S);
 }
 
 TEST_F(InstructionTest, ADD_W) {

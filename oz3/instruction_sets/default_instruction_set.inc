@@ -571,22 +571,22 @@ constexpr oz3::MacroCodeDef kMacroCode_MoveSReg[] = {
      .code = "UL;MOV(SP,m);"},
     {.source = "BC, $v",
      .prefix = {96, 7},
-     .code = "LD(C0);UL;MOV(BC,C0);"},
+     .code = "LD(BC);UL;"},
     {.source = "BS, $v",
      .prefix = {97, 7},
-     .code = "LD(C0);UL;MOV(BS,C0);"},
+     .code = "LD(BS);UL;"},
     {.source = "BD, $v",
      .prefix = {98, 7},
-     .code = "LD(C0);UL;MOV(BD,C0);"},
+     .code = "LD(BD);UL;"},
     {.source = "BE, $v",
      .prefix = {99, 7},
-     .code = "LD(C0);UL;MOV(BE,C0);"},
+     .code = "LD(BE);UL;"},
     {.source = "FP, $v",
      .prefix = {100, 7},
-     .code = "LD(C0);UL;MOV(FP,C0);"},
+     .code = "LD(FP);UL;"},
     {.source = "SP, $v",
      .prefix = {101, 7},
-     .code = "LD(C0);UL;MOV(SP,C0);"},
+     .code = "LD(SP);UL;"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_PopWord[] = {
@@ -1942,89 +1942,89 @@ constexpr oz3::MacroCodeDef kMacroCode_ReadPortWordIfReady[] = {
     {.source = "($r)",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:LKR(m);ADR(m);ST(C0);UL;"},
+     .code = "UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LKR(m);ADR(m);"
+             "ST(C0);UL;@done:END;"},
     {.source = "($r + $v)",
      .prefix = {2, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:ADD(C2,m);LKR(m);ADR(C2);ST(C0);UL;"},
+     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
+             "ADD(C2,m);LKR(m);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "(SP)",
      .prefix = {24, 5},
-     .code = "UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:LK(STACK);ADR(SP);ST(C0);UL;"},
+     .code = "UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
+             "ADR(SP);ST(C0);UL;@done:END;"},
     {.source = "(SP + $v)",
      .prefix = {25, 5},
-     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:ADD(C2,SP);LK(STACK);ADR(C2);ST(C0);UL;"},
+     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
+             "ADD(C2,SP);LK(STACK);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "(FP)",
      .prefix = {26, 5},
-     .code = "UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:LK(STACK);ADR(FP);ST(C0);UL;"},
+     .code = "UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);LK(STACK);"
+             "ADR(FP);ST(C0);UL;@done:END;"},
     {.source = "(FP + $v)",
      .prefix = {27, 5},
-     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);UL;"},
+     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
+             "ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "S($v)",
      .prefix = {28, 5},
-     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:LK(STACK);ADR(C2);ST(C0);UL;"},
+     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
+             "LK(STACK);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "D($v)",
      .prefix = {29, 5},
-     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:LK(DATA);ADR(C2);ST(C0);UL;"},
+     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
+             "LK(DATA);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "E($v)",
      .prefix = {30, 5},
-     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(S,@ready);END;"
-             "@ready:LK(EXTRA);ADR(C2);ST(C0);UL;"},
+     .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
+             "LK(EXTRA);ADR(C2);ST(C0);UL;@done:END;"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_ReadPortDwordIfReady[] = {
     {.source = "[$r]",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(S,@ready);"
-             "END;@ready:LKR(m);ADR(m);ST(C0);ST(C1);UL;"},
+     .code = "UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
+             "LKR(m);ADR(m);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "[$r + $v]",
      .prefix = {1, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
-             "JC(S,@ready);END;@ready:ADD(C2,m);LKR(m);ADR(C2);ST(C0);"
-             "ST(C1);UL;"},
+             "JC(NS,@done);ADD(C2,m);LKR(m);ADR(C2);ST(C0);ST(C1);UL;"
+             "@done:END;"},
     {.source = "$R",
      .prefix = {4, 3},
      .arg = {oz3::ArgType::kDwordReg, 2},
      .code = "UL;PLK(p);PLD(TA,m0);PLD(TS,m1);MSR(S,S);PUL;"},
     {.source = "[SP]",
      .prefix = {20, 5},
-     .code = "UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(S,@ready);"
-             "END;@ready:LK(STACK);ADR(SP);ST(C0);ST(C1);UL;"},
+     .code = "UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
+             "LK(STACK);ADR(SP);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "[SP + $v]",
      .prefix = {21, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
-             "JC(S,@ready);END;@ready:ADD(C2,SP);LK(STACK);ADR(C2);ST(C0);"
-             "ST(C1);UL;"},
+             "JC(NS,@done);ADD(C2,SP);LK(STACK);ADR(C2);ST(C0);ST(C1);UL;"
+             "@done:END;"},
     {.source = "[FP]",
      .prefix = {22, 5},
-     .code = "UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(S,@ready);"
-             "END;@ready:LK(STACK);ADR(FP);ST(C0);ST(C1);UL;"},
+     .code = "UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@done);"
+             "LK(STACK);ADR(FP);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "[FP + $v]",
      .prefix = {23, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
-             "JC(S,@ready);END;@ready:ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);"
-             "ST(C1);UL;"},
+             "JC(NS,@done);ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);ST(C1);UL;"
+             "@done:END;"},
     {.source = "S[$v]",
      .prefix = {24, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
-             "JC(S,@ready);END;@ready:LK(STACK);ADR(C2);ST(C0);ST(C1);UL;"},
+             "JC(NS,@done);LK(STACK);ADR(C2);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "D[$v]",
      .prefix = {25, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
-             "JC(S,@ready);END;@ready:LK(DATA);ADR(C2);ST(C0);ST(C1);UL;"},
+             "JC(NS,@done);LK(DATA);ADR(C2);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "E[$v]",
      .prefix = {26, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
-             "JC(S,@ready);END;@ready:LK(EXTRA);ADR(C2);ST(C0);ST(C1);UL;"},
+             "JC(NS,@done);LK(EXTRA);ADR(C2);ST(C0);ST(C1);UL;@done:END;"},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_WritePortWord[] = {
@@ -2519,8 +2519,8 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "NEG.D",
      .source = "$R",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
-     .code = "UL;SUB(C0,a0);MSR(Z,Z);SBC(C1,a1);MSC(C);MSR(ZSCO,_SCO);"
-             "MOV(a0,C0);MOV(a1,C1);"},
+     .code = "UL;NEG(a0,a0);MSR(Z,Z);JC(Z,@low_zero);NOT(a1,a1);"
+             "MSR(ZSCO,_SCO);END;@low_zero:NEG(a1,a1);MSR(ZSCO,_SCO);"},
     {.op = 24,
      .op_name = "ADD.W",
      .source = "$r, $m",
@@ -2628,8 +2628,8 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
-     .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(C1,r);@loop:SR(C1);JC(Z,@last);JC(C,@add);"
+     .arg_macro_name = "LoadWord",
+     .code = "$LoadWord(C1);@loop:SR(C1);JC(Z,@last);JC(C,@add);"
              "@shift:SL(a);JC(C,@overflow_loop);JP(@loop);@add:ADD(C0,a);"
              "JC(C,@overflow_shift);JP(@shift);@last:JC(NC,@zero);"
              "ADD(a,C0);JC(C,@overflow_done);MSC(O);MSR(ZSCO,ZSCO);END;"
@@ -2644,8 +2644,8 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$R, $m",
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
-     .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(C2,r);@loop:SR(C2);JC(Z,@last);JC(C,@add);"
+     .arg_macro_name = "LoadWord",
+     .code = "$LoadWord(C2);@loop:SR(C2);JC(Z,@last);JC(C,@add);"
              "@shift:SL(a0);RLC(a1);JC(C,@overflow_loop);JP(@loop);"
              "@add:ADD(C0,a0);ADC(C1,a1);JC(C,@overflow_shift);JP(@shift);"
              "@last:JC(NC,@zero);ADD(a0,C0);MSR(Z,Z);ADC(a1,C1);"
@@ -2661,9 +2661,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, $m",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
-     .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(C2,r);XOR(C1,a);JC(NS,@positive_register);"
-             "NEG(a,a);XOR(C1,C2);JC(S,@loop);JP(@negative_value);"
+     .arg_macro_name = "LoadWord",
+     .code = "$LoadWord(C2);XOR(C1,a);JC(NS,@positive_register);NEG(a,a);"
+             "XOR(C1,C2);JC(S,@loop);JP(@negative_value);"
              "@positive_register:XOR(C1,C2);JC(NS,@loop);"
              "@negative_value:NEG(C2,C2);@loop:SR(C2);JC(Z,@last);"
              "JC(C,@add);@shift:SL(a);JC(C,@overflow_loop);JP(@loop);"
@@ -2727,9 +2727,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .arg_macro_name = "GetWord",
-     .code = "$GetWord;OR(C2,r);JC(Z,@error);MOVI(C0,16);@loop:RLC(a);"
+     .code = "$GetWord;OR(C2,r);JC(Z,@error);MOVI(C0,16);@loop:SL(a);"
              "RLC(C1);JC(C,@subtract);CMP(C1,C2);JC(C,@next);"
-             "@subtract:SUB(C1,C2);@next:JD(C0,@loop);MOV(a,C1);TST(a);"
+             "@subtract:SUB(C1,C2);@next:JD(C0,@loop);OR(a,C1);"
              "MSR(ZSCO,ZSCO);END;@error:MSC(ZSC);MSS(O);MSR(ZSCO,ZSCO);"},
     {.op = 47,
      .op_name = "MOD.DW",
@@ -2737,13 +2737,13 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 5},
      .arg_macro_name = "GetWord",
-     .code = "$GetWord;OR(C2,r);JC(Z,@error);MOVI(C0,16);@high:RLC(a1);"
+     .code = "$GetWord;OR(C2,r);JC(Z,@error);MOVI(C0,16);@high:SL(a1);"
              "RLC(C1);JC(C,@high_subtract);CMP(C1,C2);JC(C,@high_next);"
              "@high_subtract:SUB(C1,C2);@high_next:JD(C0,@high);"
-             "MOVI(C0,16);@low:RLC(a0);RLC(C1);JC(C,@low_subtract);"
+             "MOVI(C0,16);@low:SL(a0);RLC(C1);JC(C,@low_subtract);"
              "CMP(C1,C2);JC(C,@low_next);@low_subtract:SUB(C1,C2);"
-             "@low_next:JD(C0,@low);MOV(a0,C1);MOVI(a1,0);TST(a0);MSC(S);"
-             "MSR(ZSCO,ZSCO);END;@error:MSC(ZSC);MSS(O);MSR(ZSCO,ZSCO);"},
+             "@low_next:JD(C0,@low);OR(a0,C1);MSC(S);MSR(ZSCO,ZSCO);END;"
+             "@error:MSC(ZSC);MSS(O);MSR(ZSCO,ZSCO);"},
     {.op = 48,
      .op_name = "DVMD.W",
      .source = "$R, $m",
@@ -3063,8 +3063,8 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "JP",
      .source = "$m",
      .arg1 = {oz3::ArgType::kMacro, 5},
-     .arg_macro_name = "GetWord",
-     .code = "$GetWord;MOV(IP,r);"},
+     .arg_macro_name = "LoadWord",
+     .code = "$LoadWord(IP);"},
     {.op = 91,
      .op_name = "JPR",
      .source = "$m",

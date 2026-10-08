@@ -424,6 +424,8 @@ TEST_F(InstructionTest, MOV_SDV) {
   EXPECT_EQ(state.extra.SetAddress(state.be + 202).GetValue32(), 0x20001);
 }
 
+// Every form of MOV.S takes 4 cycles, as a value is loaded straight into the
+// register.
 TEST_F(InstructionTest, MOV_S_CodeAndStack) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -450,7 +452,7 @@ TEST_F(InstructionTest, MOV_S_CodeAndStack) {
   // MOV.S BC, 100
   // MOV.S R0, BS
   // MOV.S R1, BC
-  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(CyclesUntilIp(ip1), 16);
   EXPECT_EQ(state.bs, 200);
   EXPECT_EQ(state.bc, 100);
   EXPECT_EQ(state.r0, 200);
@@ -458,7 +460,7 @@ TEST_F(InstructionTest, MOV_S_CodeAndStack) {
 
   // MOV.S BS, R1
   // MOV.S BC, R0
-  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(CyclesUntilIp(ip2), 8);
   EXPECT_EQ(state.bs, 100);
   EXPECT_EQ(state.bc, 200);
 }
@@ -480,19 +482,19 @@ TEST_F(InstructionTest, MOV_S_DataAndExtra) {
 
   // MOV.S BD, 100
   // MOV.S BE, 200
-  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(CyclesUntilIp(ip1), 8);
   EXPECT_EQ(state.bd, 100);
   EXPECT_EQ(state.be, 200);
 
   // MOV.S R0, BD
   // MOV.S R1, BE
-  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(CyclesUntilIp(ip2), 8);
   EXPECT_EQ(state.r0, 100);
   EXPECT_EQ(state.r1, 200);
 
   // MOV.S BD, R1
   // MOV.S BE, R0
-  ASSERT_TRUE(ExecuteUntilIp(ip3));
+  EXPECT_EQ(CyclesUntilIp(ip3), 8);
   EXPECT_EQ(state.bd, 200);
   EXPECT_EQ(state.be, 100);
 }
@@ -514,19 +516,19 @@ TEST_F(InstructionTest, MOV_S_StackAndFramePointers) {
 
   // MOV.S SP, 100
   // MOV.S FP, 200
-  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(CyclesUntilIp(ip1), 8);
   EXPECT_EQ(state.sp, 100);
   EXPECT_EQ(state.fp, 200);
 
   // MOV.S R0, SP
   // MOV.S R1, FP
-  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(CyclesUntilIp(ip2), 8);
   EXPECT_EQ(state.r0, 100);
   EXPECT_EQ(state.r1, 200);
 
   // MOV.S SP, R1
   // MOV.S FP, R0
-  ASSERT_TRUE(ExecuteUntilIp(ip3));
+  EXPECT_EQ(CyclesUntilIp(ip3), 8);
   EXPECT_EQ(state.sp, 200);
   EXPECT_EQ(state.fp, 100);
 }

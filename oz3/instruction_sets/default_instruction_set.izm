@@ -460,12 +460,15 @@ macro MoveSReg {
   code "BE, $r" { UL; MOV(BE,m); }
   code "FP, $r" { UL; MOV(FP,m); }
   code "SP, $r" { UL; MOV(SP,m); }
-  code "BC, $v" { LD(C0); UL; MOV(BC,C0); }
-  code "BS, $v" { LD(C0); UL; MOV(BS,C0); }
-  code "BD, $v" { LD(C0); UL; MOV(BD,C0); }
-  code "BE, $v" { LD(C0); UL; MOV(BE,C0); }
-  code "FP, $v" { LD(C0); UL; MOV(FP,C0); }
-  code "SP, $v" { LD(C0); UL; MOV(SP,C0); }
+
+  # The fetch phase may load straight into any register (see the microcode
+  # reference), so the value goes straight into the register.
+  code "BC, $v" { LD(BC); UL; }
+  code "BS, $v" { LD(BS); UL; }
+  code "BD, $v" { LD(BD); UL; }
+  code "BE, $v" { LD(BE); UL; }
+  code "FP, $v" { LD(FP); UL; }
+  code "SP, $v" { LD(SP); UL; }
 }
 
 instruction MOV.S "$m" {
@@ -899,14 +902,15 @@ instruction MVDR "($r), ($r)" {
 ################################################################################
 ## NEG <register>
 ##
-## Cycles: 5-9
+## Cycles: 4-6
 ## ZSCO: XX0X
 ##
 ## Variants:
-##    NEG.W <reg>
-##    NEG.D <dreg>
+##    NEG.W <reg>     (4 cycles)
+##    NEG.D <dreg>    (5-6 cycles)
 ##
-## Negates the value in the specified register.
+## Negates the value in the specified register. NEG.D takes one more cycle when
+## the low word is zero.
 ################################################################################
 
 instruction NEG.W "$r" {
@@ -917,14 +921,17 @@ instruction NEG.W "$r" {
 instruction NEG.D "$R" {
   UL;
 
-  # Proactively set zero bit here based on low-order result.
-  SUB(C0,a0); MSR(Z,Z);
+  # Negate the low word, which sets Z if it is zero (and so stays zero).
+  NEG(a0,a0); MSR(Z,Z);
 
-  # Clear the zero bit (but don't set it) based on high-order result.
-  SBC(C1,a1); MSC(C); MSR(ZSCO,_SCO);
-
-  # Copy result back to the register
-  MOV(a0,C0); MOV(a1,C1);
+  # The high word is negated if the low word is zero, and otherwise it is
+  # NOTed, as there is a borrow. Only NEG can overflow (0x80000000), and both
+  # clear C. Z is cleared (but not set) based on the high word.
+  JC(Z,@low_zero);
+  NOT(a1,a1); MSR(ZSCO,_SCO);
+  END;
+@low_zero:
+  NEG(a1,a1); MSR(ZSCO,_SCO);
 }
 
 ################################################################################
@@ -1120,16 +1127,16 @@ instruction SBC.D "$R, $m" {
 ################################################################################
 ## MUL <register>, <value>
 ##
-## Cycles: 7-103
+## Cycles: 7-102
 ## ZSCO: XXXX
 ##
 ## Variants:
 ##    MUL.W  <reg>, <reg>              (7-68 cycles)
-##    MUL.W  <reg>, <integer>          (8-69 cycles)
-##    MUL.W  <reg>, <word-address>     (9-72 cycles)
+##    MUL.W  <reg>, <integer>          (7-68 cycles)
+##    MUL.W  <reg>, <word-address>     (8-71 cycles)
 ##    MUL.DW <dreg>, <reg>             (8-99 cycles)
-##    MUL.DW <dreg>, <integer>         (9-100 cycles)
-##    MUL.DW <dreg>, <word-address>    (10-103 cycles)
+##    MUL.DW <dreg>, <integer>         (8-99 cycles)
+##    MUL.DW <dreg>, <word-address>    (9-102 cycles)
 ##
 ## Unsigned multiply of the register by a word value. The register gets the low
 ## bits of the product. The "C" and "O" flags are both set if the product
@@ -1142,14 +1149,12 @@ instruction SBC.D "$R, $m" {
 ################################################################################
 
 instruction MUL.W "$r, $m" {
-  $GetWord;
-
   # For each bit set in the value (shifted out of C1), add the register into
   # the product in C0 (which starts as zero), shifting the register left each
   # bit, until no bits of the value are left. The last bit is always set, so
-  # its add goes into the register, and needn't shift. The value is copied
-  # first, as it may be the register itself.
-  MOV(C1,r);
+  # its add goes into the register, and needn't shift. The value is loaded
+  # into C1 (copied, for a register), as it may be the register itself.
+  $LoadWord(C1);
 @loop:
   SR(C1);
   JC(Z,@last);
@@ -1192,10 +1197,8 @@ instruction MUL.W "$r, $m" {
 }
 
 instruction MUL.DW "$R, $m" {
-  $GetWord;
-
   # As MUL.W, with the value in C2 and the product in C0 and C1.
-  MOV(C2,r);
+  $LoadWord(C2);
 @loop:
   SR(C2);
   JC(Z,@last);
@@ -1237,13 +1240,13 @@ instruction MUL.DW "$R, $m" {
 ################################################################################
 ## MULS <register>, <value>
 ##
-## Cycles: 12-75
+## Cycles: 12-74
 ## ZSCO: XXXX
 ##
 ## Variants:
 ##    MULS.W <reg>, <reg>              (12-71 cycles)
-##    MULS.W <reg>, <integer>          (13-72 cycles)
-##    MULS.W <reg>, <word-address>     (14-75 cycles)
+##    MULS.W <reg>, <integer>          (12-71 cycles)
+##    MULS.W <reg>, <word-address>     (13-74 cycles)
 ##
 ## Signed multiply of the register by a word value. The register gets the low
 ## bits of the product. The "C" and "O" flags are both set if the product
@@ -1254,12 +1257,10 @@ instruction MUL.DW "$R, $m" {
 ################################################################################
 
 instruction MULS.W "$r, $m" {
-  $GetWord;
-
   # Multiply the absolute values as MUL.W does, with the value in C2. C1 starts
   # as zero, so the first XOR copies the register to it and tests its sign, and
   # the second leaves whether the product is negative in its high bit.
-  MOV(C2,r);
+  $LoadWord(C2);
   XOR(C1,a);
   JC(NS,@positive_register);
   NEG(a,a);
@@ -1505,16 +1506,16 @@ instruction DIVS.W "$r, $m" {
 ################################################################################
 ## MOD <register>, <value>
 ##
-## Cycles: 5-173
+## Cycles: 5-171
 ## ZSCO: XX0X
 ##
 ## Variants:
-##    MOD.W  <reg>, <reg>              (87 cycles)
-##    MOD.W  <reg>, <integer>          (88 cycles)
-##    MOD.W  <reg>, <word-address>     (89-91 cycles)
-##    MOD.DW <dreg>, <reg>             (169 cycles)
-##    MOD.DW <dreg>, <integer>         (170 cycles)
-##    MOD.DW <dreg>, <word-address>    (171-173 cycles)
+##    MOD.W  <reg>, <reg>              (86 cycles)
+##    MOD.W  <reg>, <integer>          (87 cycles)
+##    MOD.W  <reg>, <word-address>     (88-90 cycles)
+##    MOD.DW <dreg>, <reg>             (167 cycles)
+##    MOD.DW <dreg>, <integer>         (168 cycles)
+##    MOD.DW <dreg>, <word-address>    (169-171 cycles)
 ##
 ## Unsigned modulo of the register by a word value. The register gets the
 ## remainder, which always fits in a word (so MOD.DW clears the high word).
@@ -1529,10 +1530,11 @@ instruction MOD.W "$r, $m" {
   JC(Z,@error);
 
   # Divide as DIV.W does, leaving the remainder in C1. The quotient isn't
-  # needed, so whatever C holds is shifted into the register.
+  # needed, so SL shifts zeros into the register, leaving it zero. Then OR
+  # copies the remainder to it and tests it.
   MOVI(C0,16);
 @loop:
-  RLC(a); RLC(C1);
+  SL(a); RLC(C1);
   JC(C,@subtract);
   CMP(C1,C2);
   JC(C,@next);
@@ -1540,7 +1542,7 @@ instruction MOD.W "$r, $m" {
   SUB(C1,C2);
 @next:
   JD(C0,@loop);
-  MOV(a,C1); TST(a); MSR(ZSCO,ZSCO);
+  OR(a,C1); MSR(ZSCO,ZSCO);
   END;
 
 @error:
@@ -1553,10 +1555,10 @@ instruction MOD.DW "$R, $m" {
   JC(Z,@error);
 
   # Divide as DIV.DW does, leaving the remainder in C1. The quotient isn't
-  # needed, as in MOD.W.
+  # needed, as in MOD.W, so both words are left zero.
   MOVI(C0,16);
 @high:
-  RLC(a1); RLC(C1);
+  SL(a1); RLC(C1);
   JC(C,@high_subtract);
   CMP(C1,C2);
   JC(C,@high_next);
@@ -1567,7 +1569,7 @@ instruction MOD.DW "$R, $m" {
 
   MOVI(C0,16);
 @low:
-  RLC(a0); RLC(C1);
+  SL(a0); RLC(C1);
   JC(C,@low_subtract);
   CMP(C1,C2);
   JC(C,@low_next);
@@ -1575,7 +1577,7 @@ instruction MOD.DW "$R, $m" {
   SUB(C1,C2);
 @low_next:
   JD(C0,@low);
-  MOV(a0,C1); MOVI(a1,0); TST(a0); MSC(S); MSR(ZSCO,ZSCO);
+  OR(a0,C1); MSC(S); MSR(ZSCO,ZSCO);  # S is clear, as the high word is zero
   END;
 
 @error:
@@ -3865,8 +3867,9 @@ instruction CPDR "$r, ($r)" {
 ################################################################################
 
 instruction JP "$m" {
-  $GetWord;
-  MOV(IP,r);
+  # The fetch phase may load straight into any register (see the microcode
+  # reference), so the address goes straight into IP.
+  $LoadWord(IP);
 }
 
 ################################################################################
@@ -4389,6 +4392,9 @@ instruction IN.ID "$v, $m" {
 ## specified register or memory address. "S" flag is set if a word was read,
 ## otherwise it is cleared. Dword variants read port word 0 into the low word
 ## and word 1 into the high word.
+##
+## For a memory address, checking the port status costs nothing when a word is
+## read, and a cycle when it isn't, favoring moving data over polling.
 ################################################################################
 
 macro(bits:5) ReadPortWordIfReady(p) {
@@ -4399,77 +4405,77 @@ macro(bits:5) ReadPortWordIfReady(p) {
   code "($r)" {
     UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LKR(m); ADR(m); ST(C0); UL;
+  @done:
+    END;
   }
   code "($r + $v)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     ADD(C2,m);
     LKR(m); ADR(C2); ST(C0); UL;
+  @done:
+    END;
   }
   code "(SP)" {
     UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(STACK); ADR(SP); ST(C0); UL;
+  @done:
+    END;
   }
   code "(SP + $v)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     ADD(C2,SP);
     LK(STACK); ADR(C2); ST(C0); UL;
+  @done:
+    END;
   }
   code "(FP)" {
     UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(STACK); ADR(FP); ST(C0); UL;
+  @done:
+    END;
   }
   code "(FP + $v)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     ADD(C2,FP);
     LK(STACK); ADR(C2); ST(C0); UL;
+  @done:
+    END;
   }
   code "S($v)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); UL;
+  @done:
+    END;
   }
   code "D($v)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(DATA); ADR(C2); ST(C0); UL;
+  @done:
+    END;
   }
   code "E($v)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(EXTRA); ADR(C2); ST(C0); UL;
+  @done:
+    END;
   }
 }
 
@@ -4490,77 +4496,77 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   code "[$r]" {
     UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LKR(m); ADR(m); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "[$r + $v]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     ADD(C2,m);
     LKR(m); ADR(C2); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "[SP]" {
     UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(STACK); ADR(SP); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "[SP + $v]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     ADD(C2,SP);
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "[FP]" {
     UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(STACK); ADR(FP); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "[FP + $v]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     ADD(C2,FP);
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "S[$v]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "D[$v]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
   code "E[$v]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(S,@ready);
-    END;
-  @ready:
+    JC(NS,@done);
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
+  @done:
+    END;
   }
 }
 

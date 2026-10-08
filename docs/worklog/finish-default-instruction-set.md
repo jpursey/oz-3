@@ -54,9 +54,9 @@ for a register value; fetching the value from an immediate or memory adds 1 to
 - On an error, the register is unchanged, `O` is set, and `Z`, `S`, and `C`
   are cleared. The errors are dividing by zero, and `DIVS.W` of -32768 by -1
   (whose quotient doesn't fit).
-- 5 cycles per bit, whatever the operands: `DIV.W` takes 86 cycles, `MOD.W`
-  and `DVMD.W` 87, `DIVS.W` 91-94 (depending on the signs), `DIV.DW`
-  168, and `MOD.DW` 169. Dividing by zero stops early, in 5 (6 for `DIVS.W`).
+- 5 cycles per bit, whatever the operands: `DIV.W` and `MOD.W` take 86
+  cycles, `DVMD.W` 87, `DIVS.W` 91-94 (depending on the signs), `MOD.DW` 167,
+  and `DIV.DW` 168. Dividing by zero stops early, in 5 (6 for `DIVS.W`).
 
 ### Decrement and jump
 
@@ -239,6 +239,14 @@ These came up across the feature, and are worth reusing in other instructions:
   the check costs nothing on the common path and one cycle once.
 - **Undo on the rare path:** `OUTR` steps its address while memory is locked
   (free), and steps it back only when the port turns out to be busy.
+- **Load straight into the target:** the fetch phase may load into any
+  register, including `IP` or `BC`, so `JP` uses `$LoadWord(IP)` and `MUL`
+  uses `$LoadWord(C1)` rather than `$GetWord` and a `MOV`.
+- **Fall through on the common path:** a `JC` costs a cycle only when taken,
+  so `INS` jumps past the store when the port isn't ready, rather than to it
+  when it is.
+- **Shift in zeros:** a register shifted with `SL` 16 times is zero, so `MOD`
+  copies the remainder into it and tests it with one `OR`.
 
 ### Multiply
 
@@ -279,7 +287,8 @@ so a step costs 5 cycles whether or not it subtracts, and the register becomes
 the quotient. A divisor of 0x8000 or more can push a 17th bit out of the
 remainder, which counts as fitting. The last shift leaves the flags a `TST` of
 the result would. `MOD` doesn't need the quotient, so its loops skip tracking
-it.
+it, and shift zeros into the register instead, which leaves it zero for an `OR`
+to copy the remainder into and test.
 
 - For `DVMD.W` the remainder register is `a1`, so the remainder lands in the
   high word for free.

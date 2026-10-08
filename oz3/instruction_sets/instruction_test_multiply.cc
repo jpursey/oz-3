@@ -113,9 +113,9 @@ constexpr WordCase kDivsWordCases[] = {
 
 // MOD.W cases, from the fewest cycles to the most.
 constexpr WordCase kModWordCases[] = {
-    {1234, 0, 1234, CpuCore::O, 5},  {100, 7, 2, 0, 87},
-    {35, 7, 0, CpuCore::Z, 87},      {0xFFFF, 0x10, 0xF, 0, 87},
-    {0xFFFF, 0x8001, 0x7FFE, 0, 87}, {0x9000, 0xA000, 0x9000, CpuCore::S, 87},
+    {1234, 0, 1234, CpuCore::O, 5},  {100, 7, 2, 0, 86},
+    {35, 7, 0, CpuCore::Z, 86},      {0xFFFF, 0x10, 0xF, 0, 86},
+    {0xFFFF, 0x8001, 0x7FFE, 0, 86}, {0x9000, 0xA000, 0x9000, CpuCore::S, 86},
 };
 
 // DIV.DW cases, from the fewest cycles to the most.
@@ -133,10 +133,10 @@ constexpr DwordCase kDivDwordCases[] = {
 // MOD.DW cases, from the fewest cycles to the most.
 constexpr DwordCase kModDwordCases[] = {
     {1234, 0, 1234, CpuCore::O, 5},
-    {1000000, 7, 1, 0, 169},
-    {0x12345678, 0x8001, 12816, 0, 169},
-    {0xFFFFFFFF, 0xFFFF, 0, CpuCore::Z, 169},
-    {0x9000, 0xA000, 0x9000, 0, 169},
+    {1000000, 7, 1, 0, 167},
+    {0x12345678, 0x8001, 12816, 0, 167},
+    {0xFFFFFFFF, 0xFFFF, 0, CpuCore::Z, 167},
+    {0x9000, 0xA000, 0x9000, 0, 167},
 };
 
 // DVMD.W cases, from the fewest cycles to the most. The register's high word
@@ -249,16 +249,16 @@ TEST_F(MulDivTest, MUL_W_Operands) {
   EXPECT_EQ(CyclesUntilIp(ip1), 30);  // MUL.W R0, R0
   EXPECT_EQ(state.r0, static_cast<uint16_t>(300 * 300));
   EXPECT_EQ(state.st, kCO);
-  EXPECT_EQ(CyclesUntilIp(ip2), 8);  // MUL.W R1, 1
+  EXPECT_EQ(CyclesUntilIp(ip2), 7);  // MUL.W R1, 1
   EXPECT_EQ(state.r1, 3);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip3), 69);  // MUL.W R1, 0xFFFF
+  EXPECT_EQ(CyclesUntilIp(ip3), 68);  // MUL.W R1, 0xFFFF
   EXPECT_EQ(state.r1, 0xFFFD);
   EXPECT_EQ(state.st, kSCO);
-  EXPECT_EQ(CyclesUntilIp(ip4), 9);  // MUL.W R3, (R2)
+  EXPECT_EQ(CyclesUntilIp(ip4), 8);  // MUL.W R3, (R2)
   EXPECT_EQ(state.r3, 2);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip5), 72);  // MUL.W R3, (R2 + 1)
+  EXPECT_EQ(CyclesUntilIp(ip5), 71);  // MUL.W R3, (R2 + 1)
   EXPECT_EQ(state.r3, 0xFFFE);
   EXPECT_EQ(state.st, kSCO);
 }
@@ -292,16 +292,16 @@ TEST_F(MulDivTest, MUL_DW_Operands) {
   EXPECT_EQ(CyclesUntilIp(ip1), 14);  // MUL.DW D0, R0
   EXPECT_EQ(state.d0(), 0x30009);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip2), 9);  // MUL.DW D1, 1
+  EXPECT_EQ(CyclesUntilIp(ip2), 8);  // MUL.DW D1, 1
   EXPECT_EQ(state.d1(), 0x80000000);
   EXPECT_EQ(state.st, CpuCore::S);
-  EXPECT_EQ(CyclesUntilIp(ip3), 100);  // MUL.DW D0, 0xFFFF
+  EXPECT_EQ(CyclesUntilIp(ip3), 99);  // MUL.DW D0, 0xFFFF
   EXPECT_EQ(state.d0(), 0x0005FFF7);
   EXPECT_EQ(state.st, kCO);
-  EXPECT_EQ(CyclesUntilIp(ip4), 103);  // MUL.DW D0, (R4 + 1)
+  EXPECT_EQ(CyclesUntilIp(ip4), 102);  // MUL.DW D0, (R4 + 1)
   EXPECT_EQ(state.d0(), 0xFFF10009);
   EXPECT_EQ(state.st, kSCO);
-  EXPECT_EQ(CyclesUntilIp(ip5), 10);  // MUL.DW D1, (R4)
+  EXPECT_EQ(CyclesUntilIp(ip5), 9);  // MUL.DW D1, (R4)
   EXPECT_EQ(state.d1(), 0x80000000);
   EXPECT_EQ(state.st, CpuCore::S);
 }
@@ -336,16 +336,16 @@ TEST_F(MulDivTest, MULS_W_Operands) {
   EXPECT_EQ(CyclesUntilIp(ip1), 32);  // MULS.W R0, R0
   EXPECT_EQ(state.r0, 40000);
   EXPECT_EQ(state.st, kSCO);
-  EXPECT_EQ(CyclesUntilIp(ip2), 13);  // MULS.W R1, 1
+  EXPECT_EQ(CyclesUntilIp(ip2), 12);  // MULS.W R1, 1
   EXPECT_EQ(state.r1, 3);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip3), 72);  // MULS.W R4, 0x7FFF
+  EXPECT_EQ(CyclesUntilIp(ip3), 71);  // MULS.W R4, 0x7FFF
   EXPECT_EQ(state.r4, 2);
   EXPECT_EQ(state.st, kCO);
-  EXPECT_EQ(CyclesUntilIp(ip4), 14);  // MULS.W R3, (R2)
+  EXPECT_EQ(CyclesUntilIp(ip4), 13);  // MULS.W R3, (R2)
   EXPECT_EQ(state.r3, 2);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip5), 75);  // MULS.W R5, (R2 + 1)
+  EXPECT_EQ(CyclesUntilIp(ip5), 74);  // MULS.W R5, (R2 + 1)
   EXPECT_EQ(state.r5, 2);
   EXPECT_EQ(state.st, kCO);
 }
@@ -485,16 +485,16 @@ TEST_F(MulDivTest, MOD_W_Operands) {
   const uint16_t ip4 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 87);  // MOD.W R0, R0
+  EXPECT_EQ(CyclesUntilIp(ip1), 86);  // MOD.W R0, R0
   EXPECT_EQ(state.r0, 0);
   EXPECT_EQ(state.st, CpuCore::Z);
-  EXPECT_EQ(CyclesUntilIp(ip2), 88);  // MOD.W R1, 7
+  EXPECT_EQ(CyclesUntilIp(ip2), 87);  // MOD.W R1, 7
   EXPECT_EQ(state.r1, 2);
   EXPECT_EQ(state.st, 0);
   EXPECT_EQ(CyclesUntilIp(ip3), 7);  // MOD.W R3, (R2)
   EXPECT_EQ(state.r3, 100);
   EXPECT_EQ(state.st, CpuCore::O);
-  EXPECT_EQ(CyclesUntilIp(ip4), 91);  // MOD.W R3, (R2 + 1)
+  EXPECT_EQ(CyclesUntilIp(ip4), 90);  // MOD.W R3, (R2 + 1)
   EXPECT_EQ(state.r3, 10);
   EXPECT_EQ(state.st, 0);
 }
@@ -521,13 +521,13 @@ TEST_F(MulDivTest, MOD_DW_Operands) {
   const uint16_t ip3 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 169);  // MOD.DW D0, R0
+  EXPECT_EQ(CyclesUntilIp(ip1), 167);  // MOD.DW D0, R0
   EXPECT_EQ(state.d0(), 0x10064 % 100);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip2), 173);  // MOD.DW D1, (R4 + 1)
+  EXPECT_EQ(CyclesUntilIp(ip2), 171);  // MOD.DW D1, (R4 + 1)
   EXPECT_EQ(state.d1(), 0x34);
   EXPECT_EQ(state.st, 0);
-  EXPECT_EQ(CyclesUntilIp(ip3), 170);  // MOD.DW D1, 7
+  EXPECT_EQ(CyclesUntilIp(ip3), 168);  // MOD.DW D1, 7
   EXPECT_EQ(state.d1(), 0x34 % 7);
   EXPECT_EQ(state.st, 0);
 }

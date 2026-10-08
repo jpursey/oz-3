@@ -50,6 +50,36 @@ TEST_F(InstructionTest, JP) {
   EXPECT_EQ(state.r4, 6);
 }
 
+// JP loads the address straight into IP, so it takes as long as the address
+// takes to load.
+TEST_F(InstructionTest, JP_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(40).AddValue(50);
+  state.SetRegisters({{CpuCore::R0, 20}, {CpuCore::R2, 300}});
+
+  const uint16_t ip0 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JP", {"$r", CpuCore::R0}));
+  state.code.SetAddress(20);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JP", "$v")).AddValue(30);
+  state.code.SetAddress(30);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JP", {"($r)", CpuCore::R2}));
+  state.code.SetAddress(40);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JP", {"($r + $v)", CpuCore::R2})).AddValue(1);
+  state.code.SetAddress(50);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip0));
+  EXPECT_EQ(CyclesUntilIp(ip1), 4);  // JP R0
+  EXPECT_EQ(CyclesUntilIp(ip2), 4);  // JP 30
+  EXPECT_EQ(CyclesUntilIp(ip3), 5);  // JP (R2)
+  EXPECT_EQ(CyclesUntilIp(ip4), 7);  // JP (R2 + 1)
+}
+
 TEST_F(InstructionTest, JPR) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
