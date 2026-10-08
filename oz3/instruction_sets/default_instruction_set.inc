@@ -1733,8 +1733,12 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateLeft16ThroughCarry[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);MSM(C,ST);MOV(C2,m);@shift:RLC(p);"
-             "JD(C2,@shift);MSR(ZSCO,ZSCO);END;@zero:TST(p);MSR(ZSO,ZSO);"},
+     .code = "TST(m);JC(Z,@zero);MOV(C2,m);CMPI(C2,17);JC(NC,@reduce);"
+             "@rotate:MSM(C,ST);@shift:RLC(p);JD(C2,@shift);MSR(ZSCO,ZSCO);"
+             "END;@reduce:MVB(C0:L,C2:H);MVBI(C2:H,0);ADD(C2,C0);"
+             "MVBI(C0:H,1);MVBI(C0:L,16);@divide:CMP(C2,C0);JC(C,@next);"
+             "SUB(C2,C0);@next:SR(C0);JC(NC,@divide);TST(C2);"
+             "JC(NZ,@rotate);@zero:TST(p);MSR(ZSO,ZSO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "RLC(p);MSR(ZSCO,ZSCO);"},
@@ -1801,8 +1805,12 @@ constexpr oz3::MacroCodeDef kMacroCode_RotateRight16ThroughCarry[] = {
     {.source = "$r",
      .prefix = {0, 2},
      .arg = {oz3::ArgType::kWordReg, 3},
-     .code = "TST(m);JC(Z,@zero);MSM(C,ST);MOV(C2,m);@shift:RRC(p);"
-             "JD(C2,@shift);MSR(ZSCO,ZSCO);END;@zero:TST(p);MSR(ZSO,ZSO);"},
+     .code = "TST(m);JC(Z,@zero);MOV(C2,m);CMPI(C2,17);JC(NC,@reduce);"
+             "@rotate:MSM(C,ST);@shift:RRC(p);JD(C2,@shift);MSR(ZSCO,ZSCO);"
+             "END;@reduce:MVB(C0:L,C2:H);MVBI(C2:H,0);ADD(C2,C0);"
+             "MVBI(C0:H,1);MVBI(C0:L,16);@divide:CMP(C2,C0);JC(C,@next);"
+             "SUB(C2,C0);@next:SR(C0);JC(NC,@divide);TST(C2);"
+             "JC(NZ,@rotate);@zero:TST(p);MSR(ZSO,ZSO);"},
     {.source = "1",
      .prefix = {8, 5},
      .code = "RRC(p);MSR(ZSCO,ZSCO);"},
@@ -2986,9 +2994,14 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .arg_macro_name = "GetRotateCount32",
-     .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MSM(C,ST);MOV(C2,r);"
-             "@shift:RLC(a0);MSR(Z,Z);RLC(a1);JD(C2,@shift);MSR(ZSCO,SCO);"
-             "END;@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZSO,SO);"},
+     .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MOV(C2,r);"
+             "CMPI(C2,33);JC(NC,@reduce);@rotate:MSM(C,ST);@shift:RLC(a0);"
+             "MSR(Z,Z);RLC(a1);JD(C2,@shift);MSR(ZSCO,SCO);END;"
+             "@reduce:MVB(C0:L,C2:H);SR(C0);SR(C0);MOVI(C1,-1);"
+             "MVBI(C1:H,3);AND(C2,C1);ADD(C2,C0);MVBI(C0:H,4);"
+             "MVBI(C0:L,32);@divide:CMP(C2,C0);JC(C,@next);SUB(C2,C0);"
+             "@next:SR(C0);JC(NC,@divide);TST(C2);JC(NZ,@rotate);"
+             "@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZSO,SO);"},
     {.op = 56,
      .op_name = "RRC.W",
      .source = "$r, $m",
@@ -3002,9 +3015,14 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kDwordReg, 2},
      .arg2 = {oz3::ArgType::kMacro, 6},
      .arg_macro_name = "GetRotateCount32",
-     .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MSM(C,ST);MOV(C2,r);"
-             "@shift:RRC(a1);MSR(ZS,ZS);RRC(a0);JD(C2,@shift);MSR(ZCO,CO);"
-             "END;@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZSO,SO);"},
+     .code = "UL;$GetRotateCount32;TST(r);JC(Z,@zero);MOV(C2,r);"
+             "CMPI(C2,33);JC(NC,@reduce);@rotate:MSM(C,ST);@shift:RRC(a1);"
+             "MSR(ZS,ZS);RRC(a0);JD(C2,@shift);MSR(ZCO,CO);END;"
+             "@reduce:MVB(C0:L,C2:H);SR(C0);SR(C0);MOVI(C1,-1);"
+             "MVBI(C1:H,3);AND(C2,C1);ADD(C2,C0);MVBI(C0:H,4);"
+             "MVBI(C0:L,32);@divide:CMP(C2,C0);JC(C,@next);SUB(C2,C0);"
+             "@next:SR(C0);JC(NC,@divide);TST(C2);JC(NZ,@rotate);"
+             "@zero:TST(a0);MSR(Z,Z);TST(a1);MSR(ZSO,SO);"},
     {.op = 58,
      .op_name = "CLRB.W",
      .source = "$r, $m",

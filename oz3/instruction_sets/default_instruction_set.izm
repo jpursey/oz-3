@@ -2618,17 +2618,21 @@ instruction ROR.D "$R, $m" {
 ################################################################################
 ## RLC <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-138
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    RLC.W <reg>, <reg>
-##    RLC.W <reg>, <1..16>
-##    RLC.D <dreg>, <reg>
-##    RLC.D <dreg>, <1..32>
+##    RLC.W <reg>, <reg>      (6-66 cycles)
+##    RLC.W <reg>, <1..16>    (4-19 cycles)
+##    RLC.D <dreg>, <reg>     (7-138 cycles)
+##    RLC.D <dreg>, <1..32>   (11-104 cycles)
 ##
 ## Rotate left of the register through the "C" flag by the specified number of
 ## bits. The last bit shifted sets the value of the "C" flag.
+##
+## Rotating 17 bits (33 for a dword) through the "C" flag is a full turn, so a
+## count from a register of 17 (33) or more is reduced modulo 17 (33) first.
+## This adds a fixed 27 cycles (35 for a dword).
 ################################################################################
 
 macro(bits:5) RotateLeft16ThroughCarry(p) {
@@ -2636,17 +2640,36 @@ macro(bits:5) RotateLeft16ThroughCarry(p) {
     # Rotate zero bits?
     TST(m);
     JC(Z,@zero);
-    MSM(C,ST);
-
-    # TODO: Modulo rotate 17 if it is too big.
-
-    # Rotate 1+ bits
     MOV(C2,m);
+
+    # Rotate 17+ bits?
+    CMPI(C2,17);
+    JC(NC,@reduce);
+
+    # Rotate 1-16 bits
+  @rotate:
+    MSM(C,ST);
   @shift:
     RLC(p);
     JD(C2,@shift);
     MSR(ZSCO,ZSCO);
     END;
+
+    # Reduce modulo 17. As 256 is 1 modulo 17, add the high byte to the low
+    # byte (at most 510), then subtract each of 17<<4 down to 17 that fits.
+    # Shifting out the low bit of 17 ends the loop. C0 starts at zero.
+  @reduce:
+    MVB(C0:L,C2:H); MVBI(C2:H,0); ADD(C2,C0);
+    MVBI(C0:H,1); MVBI(C0:L,16);  # Set C0 to 0x0110 (17<<4)
+  @divide:
+    CMP(C2,C0);
+    JC(C,@next);
+    SUB(C2,C0);
+  @next:
+    SR(C0);
+    JC(NC,@divide);
+    TST(C2);
+    JC(NZ,@rotate);
 
   @zero:
     TST(p); MSR(ZSO,ZSO);
@@ -2737,17 +2760,38 @@ instruction RLC.D "$R, $m" {
   # Rotate zero bits?
   TST(r);
   JC(Z,@zero);
-  MSM(C,ST);
-
-  # TODO: Modulo rotate 33 if it is too big.
-
-  # Rotate 1+ bits
   MOV(C2,r);
+
+  # Rotate 33+ bits?
+  CMPI(C2,33);
+  JC(NC,@reduce);
+
+  # Rotate 1-32 bits
+@rotate:
+  MSM(C,ST);
 @shift:
   RLC(a0); MSR(Z,Z); RLC(a1);
   JD(C2,@shift);
   MSR(ZSCO,SCO);
   END;
+
+  # Reduce modulo 33. As 1024 is 1 modulo 33, add the high 6 bits to the low
+  # 10 bits (at most 1086), then subtract each of 33<<5 down to 33 that fits.
+  # Shifting out the low bit of 33 ends the loop. C0 starts at zero.
+@reduce:
+  MVB(C0:L,C2:H); SR(C0); SR(C0);         # Set C0 to the high 6 bits
+  MOVI(C1,-1); MVBI(C1:H,3); AND(C2,C1);  # Set C2 to the low 10 bits
+  ADD(C2,C0);
+  MVBI(C0:H,4); MVBI(C0:L,32);  # Set C0 to 0x0420 (33<<5)
+@divide:
+  CMP(C2,C0);
+  JC(C,@next);
+  SUB(C2,C0);
+@next:
+  SR(C0);
+  JC(NC,@divide);
+  TST(C2);
+  JC(NZ,@rotate);
 
 @zero:
   TST(a0); MSR(Z,Z); TST(a1); MSR(ZSO,SO);
@@ -2756,17 +2800,21 @@ instruction RLC.D "$R, $m" {
 ################################################################################
 ## RRC <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-138
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    RRC.W <reg>, <reg>
-##    RRC.W <reg>, <1..16>
-##    RRC.D <dreg>, <reg>
-##    RRC.D <dreg>, <1..32>
+##    RRC.W <reg>, <reg>      (6-66 cycles)
+##    RRC.W <reg>, <1..16>    (4-19 cycles)
+##    RRC.D <dreg>, <reg>     (7-138 cycles)
+##    RRC.D <dreg>, <1..32>   (11-104 cycles)
 ##
 ## Rotate right of the register through the "C" flag by the specified number of
 ## bits. The last bit shifted sets the value of the "C" flag.
+##
+## Rotating 17 bits (33 for a dword) through the "C" flag is a full turn, so a
+## count from a register of 17 (33) or more is reduced modulo 17 (33) first.
+## This adds a fixed 27 cycles (35 for a dword).
 ################################################################################
 
 macro(bits:5) RotateRight16ThroughCarry(p) {
@@ -2774,17 +2822,36 @@ macro(bits:5) RotateRight16ThroughCarry(p) {
     # Rotate zero bits?
     TST(m);
     JC(Z,@zero);
-    MSM(C,ST);
-
-    # TODO: Modulo rotate 17 if it is too big.
-
-    # Rotate 1+ bits
     MOV(C2,m);
+
+    # Rotate 17+ bits?
+    CMPI(C2,17);
+    JC(NC,@reduce);
+
+    # Rotate 1-16 bits
+  @rotate:
+    MSM(C,ST);
   @shift:
     RRC(p);
     JD(C2,@shift);
     MSR(ZSCO,ZSCO);
     END;
+
+    # Reduce modulo 17. As 256 is 1 modulo 17, add the high byte to the low
+    # byte (at most 510), then subtract each of 17<<4 down to 17 that fits.
+    # Shifting out the low bit of 17 ends the loop. C0 starts at zero.
+  @reduce:
+    MVB(C0:L,C2:H); MVBI(C2:H,0); ADD(C2,C0);
+    MVBI(C0:H,1); MVBI(C0:L,16);  # Set C0 to 0x0110 (17<<4)
+  @divide:
+    CMP(C2,C0);
+    JC(C,@next);
+    SUB(C2,C0);
+  @next:
+    SR(C0);
+    JC(NC,@divide);
+    TST(C2);
+    JC(NZ,@rotate);
 
   @zero:
     TST(p); MSR(ZSO,ZSO);
@@ -2875,17 +2942,38 @@ instruction RRC.D "$R, $m" {
   # Rotate zero bits?
   TST(r);
   JC(Z,@zero);
-  MSM(C,ST);
-
-  # TODO: Modulo rotate 33 if it is too big.
-
-  # Rotate 1+ bits
   MOV(C2,r);
+
+  # Rotate 33+ bits?
+  CMPI(C2,33);
+  JC(NC,@reduce);
+
+  # Rotate 1-32 bits
+@rotate:
+  MSM(C,ST);
 @shift:
   RRC(a1); MSR(ZS,ZS); RRC(a0);
   JD(C2,@shift);
   MSR(ZCO,CO);
   END;
+
+  # Reduce modulo 33. As 1024 is 1 modulo 33, add the high 6 bits to the low
+  # 10 bits (at most 1086), then subtract each of 33<<5 down to 33 that fits.
+  # Shifting out the low bit of 33 ends the loop. C0 starts at zero.
+@reduce:
+  MVB(C0:L,C2:H); SR(C0); SR(C0);         # Set C0 to the high 6 bits
+  MOVI(C1,-1); MVBI(C1:H,3); AND(C2,C1);  # Set C2 to the low 10 bits
+  ADD(C2,C0);
+  MVBI(C0:H,4); MVBI(C0:L,32);  # Set C0 to 0x0420 (33<<5)
+@divide:
+  CMP(C2,C0);
+  JC(C,@next);
+  SUB(C2,C0);
+@next:
+  SR(C0);
+  JC(NC,@divide);
+  TST(C2);
+  JC(NZ,@rotate);
 
 @zero:
   TST(a0); MSR(Z,Z); TST(a1); MSR(ZSO,SO);
