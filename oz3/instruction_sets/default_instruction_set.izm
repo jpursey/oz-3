@@ -2889,17 +2889,23 @@ instruction SRA.D "$R, $m" {
 ################################################################################
 ## ROL <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-71
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    ROL.W <reg>, <reg>
-##    ROL.W <reg>, <1..16>
-##    ROL.D <dreg>, <reg>
-##    ROL.D <dreg>, <1..32>
+##    ROL.W <reg>, <reg>       (7-35 cycles)
+##    ROL.W <reg>, <1..16>     (4-18 cycles)
+##    ROL.D <dreg>, <reg>      (10-70 cycles)
+##    ROL.D <dreg>, <1..32>    (11-71 cycles)
 ##
 ## Rotate left of the register by the specified number of bits. The last bit
 ## shifted sets the value of the "C" flag.
+##
+## A count from a register rotates by the count modulo the register's width.
+## The cost grows with the number of bits, except that a dword rotate of 16 bits
+## or more swaps the words first, and so takes less than one of 15 bits. A word
+## rotate by a register of a multiple of 16 bits (including zero) takes 9
+## cycles, 2 more than one of a single bit.
 ################################################################################
 
 macro(bits:5) RotateLeft16(p) {
@@ -3082,17 +3088,20 @@ instruction ROL.D "$R, $m" {
 ################################################################################
 ## ROR <register>, <value>
 ##
-## Cycles: 5+
+## Cycles: 4-73
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    ROR.W <reg>, <reg>
-##    ROR.W <reg>, <1..16>
-##    ROR.D <dreg>, <reg>
-##    ROR.D <dreg>, <1..32>
+##    ROR.W <reg>, <reg>       (7-35 cycles)
+##    ROR.W <reg>, <1..16>     (4-18 cycles)
+##    ROR.D <dreg>, <reg>      (10-72 cycles)
+##    ROR.D <dreg>, <1..32>    (11-73 cycles)
 ##
 ## Rotate right of the register by the specified number of bits. The last bit
 ## shifted sets the value of the "C" flag.
+##
+## The cost depends on the count as for ROL, except that a dword rotate takes 2
+## cycles more than ROL.D whenever it rotates a bit at a time.
 ################################################################################
 
 macro(bits:5) RotateRight16(p) {

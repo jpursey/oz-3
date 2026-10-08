@@ -161,12 +161,15 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_shift.cc` pins both ends of every variant.
 
-### CL5 [ ] instruction_sets: rotate
+### CL5 [x] instruction_sets: rotate
 
 Depends on: CL1.
 
 - Headers for `ROL` and `ROR`, including the zero count by register costing
   more than other small counts. `RLC` and `RRC` are checked.
+- The existing rotate tests already pin both ends of every variant, and the
+  `RLC` and `RRC` headers are right, so only the `ROL` and `ROR` headers
+  change.
 
 **Verify**
 - Standard checks. The regenerated `.inc` is unchanged.
