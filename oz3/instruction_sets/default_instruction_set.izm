@@ -1659,12 +1659,12 @@ instruction DVMD.W "$R, $m" {
 ################################################################################
 ## NOT <register>
 ##
-## Cycles: 5-9
+## Cycles: 4-5
 ## ZSCO: XX00
 ##
 ## Variants:
-##    NOT.W <reg>
-##    NOT.D <dreg>
+##    NOT.W <reg>     (4 cycles)
+##    NOT.D <dreg>    (5 cycles)
 ##
 ## Bitwise NOT of the value in the specified register.
 ################################################################################
@@ -1683,12 +1683,16 @@ instruction NOT.D "$R" {
 ################################################################################
 ## AND <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XX00
 ##
 ## Variants:
-##    AND.W <reg>, <word-value>
-##    AND.D <dreg>, <dword-value>
+##    AND.W <reg>, <reg>               (4 cycles)
+##    AND.W <reg>, <integer>           (5 cycles)
+##    AND.W <reg>, <word-address>      (6-8 cycles)
+##    AND.D <dreg>, <dreg>             (5 cycles)
+##    AND.D <dreg>, <integer>          (7 cycles)
+##    AND.D <dreg>, <dword-address>    (8-10 cycles)
 ##
 ## Bitwise AND a value to the specified register.
 ################################################################################
@@ -1710,12 +1714,16 @@ instruction AND.D "$R, $m" {
 ################################################################################
 ## OR <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XX00
 ##
 ## Variants:
-##    OR.W <reg>, <word-value>
-##    OR.D <dreg>, <dword-value>
+##    OR.W <reg>, <reg>               (4 cycles)
+##    OR.W <reg>, <integer>           (5 cycles)
+##    OR.W <reg>, <word-address>      (6-8 cycles)
+##    OR.D <dreg>, <dreg>             (5 cycles)
+##    OR.D <dreg>, <integer>          (7 cycles)
+##    OR.D <dreg>, <dword-address>    (8-10 cycles)
 ##
 ## Bitwise OR a value to the specified register.
 ################################################################################
@@ -1737,12 +1745,16 @@ instruction OR.D "$R, $m" {
 ################################################################################
 ## XOR <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XX00
 ##
 ## Variants:
-##    XOR.W <reg>, <word-value>
-##    XOR.D <dreg>, <dword-value>
+##    XOR.W <reg>, <reg>               (4 cycles)
+##    XOR.W <reg>, <integer>           (5 cycles)
+##    XOR.W <reg>, <word-address>      (6-8 cycles)
+##    XOR.D <dreg>, <dreg>             (5 cycles)
+##    XOR.D <dreg>, <integer>          (7 cycles)
+##    XOR.D <dreg>, <dword-address>    (8-10 cycles)
 ##
 ## Bitwise XOR a value to the specified register.
 ################################################################################

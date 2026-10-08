@@ -137,7 +137,7 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_math.cc` pins both ends of every variant.
 
-### CL3 [ ] instruction_sets: logic
+### CL3 [x] instruction_sets: logic
 
 Depends on: CL1.
 
