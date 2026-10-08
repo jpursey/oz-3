@@ -25,6 +25,30 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Port readiness on a missing port
+
+- **Layers:** core or instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `PLK`, `PLD`, and `PST` in the wiki's `2.1-Microcode.md`;
+  `INS`, `OUTS`, `INR`, and `OUTR` in `default_instruction_set.izm`
+
+On a port that doesn't exist, every port microcode is a no-op, so `PLD` and
+`PST` leave the `S` flag in `MST` as it was. The instructions that check
+whether the port is ready then decide from whatever `S` already held:
+- `INS` and `OUTS` use the `S` flag the instruction started with.
+- `INR` and `OUTR` use the sign of `R7` - 1, from decrementing `R7`. `INR`
+  with `R7` of 0x8001 or more stores 0 to memory for every word until `R7`
+  drops below 0x8001, and `OUTR` with a smaller `R7` "writes" every word,
+  stepping the address and reporting success.
+
+A missing port should read as not ready: status clear for a read, and set for
+a write. Either the core reports that from `PLD` and `PST` on a missing port,
+which fixes every instruction set and is specified in the wiki, or each of
+these instructions clears or sets `S` before the port access, which costs no
+cycles.
+
 ## Cycle ranges for every instruction
 
 - **Layers:** instruction_sets

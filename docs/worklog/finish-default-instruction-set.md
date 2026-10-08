@@ -405,7 +405,7 @@ Depends on: CL6, CL7 (the same approach).
 - Unit tests: the existing `MVIR` and `MVDR` tests with the new counts, and
   `R7` as the address register.
 
-### After landing [ ] wiki: Block moves
+### After landing [x] wiki: Block moves
 
 Depends on: CL6, and the branch landed on `main`.
 
