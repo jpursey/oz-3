@@ -898,14 +898,18 @@ bool InstructionCompiler::CompileSubInstruction() {
     state_.parsed = &state_.parsed_code[index];
     state_.microcode = &state_.microcodes[index];
     const MicrocodeDef* def = FindMicrocodeDef(state_.microcode->op);
-    if (def->arg1 == MicroArgType::kAddress && k + state_.microcode->arg1 < 0) {
+    // A jump lands at k + 1 + arg after the macro, so it jumps back over the
+    // macro if that is negative. A jump to just after the macro (0) doesn't.
+    if (def->arg1 == MicroArgType::kAddress &&
+        k + state_.microcode->arg1 < -1) {
       if (state_.microcode->arg1 - macro_size_increase < -128) {
         return Error("Macro size increase too large for relative address");
       }
       state_.microcode->arg1 -= macro_size_increase;
       DCHECK(state_.microcode->arg1 < 0);
     }
-    if (def->arg2 == MicroArgType::kAddress && k + state_.microcode->arg2 < 0) {
+    if (def->arg2 == MicroArgType::kAddress &&
+        k + state_.microcode->arg2 < -1) {
       if (state_.microcode->arg2 - macro_size_increase < -128) {
         return Error("Macro size increase too large for relative address");
       }

@@ -2586,5 +2586,52 @@ TEST(InstructionCompilerTest, MacroWithMultipleZeroSizeCodesInInstruction) {
                                                   .arg2 = CpuCore::R3}));
 }
 
+TEST(InstructionCompilerTest, MacroMovesJumpsAroundIt) {
+  MacroCodeDef macro_code_defs[] = {
+      {.source = "One", .prefix = {0, 1}, .code = "MOV(R2,R3);"},
+      {.source = "Three",
+       .prefix = {1, 1},
+       .code = "MOV(R2,R3);MOV(R4,R5);MOV(R6,R7);"},
+  };
+  MacroDef macro_def = {.name = "Macro", .size = 1, .code = macro_code_defs};
+
+  // Jumps from before the macro to just after it, from after it back to just
+  // after it (with the address as the first argument, and as the second), and
+  // from after it back to its start.
+  InstructionDef instruction_def =
+      MakeDef({ArgType::kMacro, 1},
+              "UL;JP(@after);@macro:$Macro;@after:MOV(R0,R1);JP(@after);"
+              "JC(Z,@after);JP(@macro);");
+  InstructionError instruction_error;
+  auto instruction_set = CompileInstructionSet({{instruction_def}, {macro_def}},
+                                               &instruction_error);
+  ASSERT_NE(instruction_set, nullptr) << instruction_error.message;
+  DecodedInstruction decoded;
+
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(0), decoded));
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL}, Microcode{.op = kMicro_JP, .arg1 = 1},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R2, .arg2 = CpuCore::R3},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{.op = kMicro_JP, .arg1 = -2},
+          Microcode{.op = kMicro_JC, .arg1 = CpuCore::kConditionZ, .arg2 = -3},
+          Microcode{.op = kMicro_JP, .arg1 = -5}));
+
+  EXPECT_TRUE(instruction_set->Decode(instruction_def.Encode(1), decoded));
+  EXPECT_THAT(
+      decoded.code,
+      ElementsAre(
+          Microcode{.op = kMicro_UL}, Microcode{.op = kMicro_JP, .arg1 = 3},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R2, .arg2 = CpuCore::R3},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = CpuCore::R5},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = CpuCore::R7},
+          Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R0, .arg2 = CpuCore::R1},
+          Microcode{.op = kMicro_JP, .arg1 = -2},
+          Microcode{.op = kMicro_JC, .arg1 = CpuCore::kConditionZ, .arg2 = -3},
+          Microcode{.op = kMicro_JP, .arg1 = -7}));
+}
+
 }  // namespace
 }  // namespace oz3
