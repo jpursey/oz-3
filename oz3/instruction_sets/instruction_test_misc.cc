@@ -62,6 +62,33 @@ TEST_F(InstructionTest, WAIT_OneCycle) {
   EXPECT_EQ(state.r1, 0);
 }
 
+TEST_F(InstructionTest, WAIT_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::R0, 0},
+                      {CpuCore::R1, 3},
+                      {CpuCore::R2, 4},
+                      {CpuCore::R3, 0xFFFF}});
+  RunCycleCases({
+      {"WAIT R0 (0)", 3, {Encode("WAIT", CpuCore::R0)}},
+      {"WAIT R1 (3)", 3, {Encode("WAIT", CpuCore::R1)}},
+      {"WAIT R2 (4)", 4, {Encode("WAIT", CpuCore::R2)}},
+      {"WAIT R3 (0xFFFF)", 0xFFFF, {Encode("WAIT", CpuCore::R3)}},
+  });
+}
+
+TEST_F(InstructionTest, HALT_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+
+  state.code.AddValue(Encode("HALT"));
+
+  Execute(kCpuCoreFetchAndDecodeCycles);
+  EXPECT_NE(state.core.GetState(), CpuCore::State::kIdle);
+  Execute(1);
+  EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
+}
+
 TEST_F(InstructionTest, HALT_EntersIdle) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();

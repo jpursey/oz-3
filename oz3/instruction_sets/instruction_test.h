@@ -43,6 +43,13 @@ inline std::vector<CountCase> SameCountCases(absl::Span<const uint16_t> counts,
   return cases;
 }
 
+// An instruction and the cycles it takes. See InstructionTest::RunCycleCases.
+struct CycleCase {
+  std::string_view name;  // For failures, such as "ADD.W R0, R1"
+  Cycles cycles;
+  std::vector<uint16_t> code;  // From Encode(), then any words after it
+};
+
 class InstructionTest : public BaseCoreTest {
  protected:
   // The size of the values a fake device reads or writes on a port.
@@ -203,6 +210,32 @@ class InstructionTest : public BaseCoreTest {
       EXPECT_EQ(CyclesUntilIp(end_ips[i]), c.cycles);
       EXPECT_EQ(dword ? state.d0() : state.r0, c.result);
       EXPECT_EQ(state.st, c.st);
+    }
+  }
+
+  // Adds each case's instruction to the code after whatever is there, then
+  // runs them in turn and expects each one's cycles. Registers and memory are
+  // whatever the test (and the cases before) left them, so each case's
+  // instruction must fall through to the next. Call after InitAndReset().
+  void RunCycleCases(absl::Span<const CycleCase> cases) {
+    auto& state = GetState();
+
+    // Each case starts at a NOP, and ends at the next case's NOP, so timing
+    // one case leaves the core ready to time the next.
+    std::vector<uint16_t> ips;
+    for (const CycleCase& c : cases) {
+      ips.push_back(state.code.AddNopGetAddress());
+      for (uint16_t word : c.code) {
+        state.code.AddValue(word);
+      }
+    }
+    ips.push_back(state.code.AddNopGetAddress());
+    state.code.AddValue(Encode("HALT"));
+
+    ASSERT_TRUE(ExecuteUntilIp(ips[0]));
+    for (int i = 0; i < static_cast<int>(cases.size()); ++i) {
+      SCOPED_TRACE(cases[i].name);
+      EXPECT_EQ(CyclesUntilIp(ips[i + 1]), cases[i].cycles);
     }
   }
 

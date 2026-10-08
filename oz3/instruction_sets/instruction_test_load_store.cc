@@ -533,6 +533,51 @@ TEST_F(InstructionTest, MOV_S_StackAndFramePointers) {
   EXPECT_EQ(state.fp, 100);
 }
 
+TEST_F(InstructionTest, MOV_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"MOV.LW R0, R1",
+       4,
+       {Encode("MOV.LW", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"MOV.LW R0, 5", 4, {Encode("MOV.LW", CpuCore::R0, "$v"), 5}},
+      {"MOV.LW R0, (R1)",
+       5,
+       {Encode("MOV.LW", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"MOV.LW R0, (R1 + 1)",
+       7,
+       {Encode("MOV.LW", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"MOV.LD D0, D1", 5, {Encode("MOV.LD", 0, {"$R", 1})}},
+      {"MOV.LD D0, 5", 5, {Encode("MOV.LD", 0, "$V"), 5, 0}},
+      {"MOV.LD D0, [R4]", 6, {Encode("MOV.LD", 0, {"[$r]", CpuCore::R4})}},
+      {"MOV.LD D0, [R4 + 1]",
+       8,
+       {Encode("MOV.LD", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+      {"MOV.SWR (R1), R0",
+       5,
+       {Encode("MOV.SWR", {"($r)", CpuCore::R1}, CpuCore::R0)}},
+      {"MOV.SWR (R1 + 1), R0",
+       7,
+       {Encode("MOV.SWR", {"($r + $v)", CpuCore::R1}, CpuCore::R0), 1}},
+      {"MOV.SWV (R1), 5", 6, {Encode("MOV.SWV", {"($r), $v", CpuCore::R1}), 5}},
+      {"MOV.SWV (R1 + 1), 5",
+       8,
+       {Encode("MOV.SWV", {"($r + $v), $v", CpuCore::R1}), 1, 5}},
+      {"MOV.SDR [R4], D0", 6, {Encode("MOV.SDR", {"[$r]", CpuCore::R4}, 0)}},
+      {"MOV.SDR [R4 + 1], D0",
+       8,
+       {Encode("MOV.SDR", {"[$r + $v]", CpuCore::R4}, 0), 1}},
+      {"MOV.SDV [R4], 5",
+       8,
+       {Encode("MOV.SDV", {"[$r], $v", CpuCore::R4}), 5, 0}},
+      {"MOV.SDV [R4 + 1], 5",
+       10,
+       {Encode("MOV.SDV", {"[$r + $v], $v", CpuCore::R4}), 1, 5, 0}},
+      {"MOV.S R0, FP", 4, {Encode("MOV.S", {"$r, FP", CpuCore::R0})}},
+      {"MOV.S FP, R0", 4, {Encode("MOV.S", {"FP, $r", CpuCore::R0})}},
+      {"MOV.S FP, 5", 4, {Encode("MOV.S", "FP, $v"), 5}},
+  });
+}
+
 TEST_F(InstructionTest, MVQ_LW) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -562,6 +607,14 @@ TEST_F(InstructionTest, MVQ_LD) {
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.d0(), 0);
   EXPECT_EQ(state.d1(), 31);
+}
+
+TEST_F(InstructionTest, MVQ_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"MVQ.LW R0, 31", 4, {Encode("MVQ.LW", CpuCore::R0, 31)}},
+      {"MVQ.LD D0, 31", 5, {Encode("MVQ.LD", 0, 31)}},
+  });
 }
 
 TEST_F(InstructionTest, PUSH_W) {
@@ -740,6 +793,22 @@ TEST_F(InstructionTest, PUSH_D) {
   EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue32(), 0x60007);
 }
 
+TEST_F(InstructionTest, PUSH_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"PUSH.W R0", 5, {Encode("PUSH.W", {"$r", CpuCore::R0})}},
+      {"PUSH.W 5", 6, {Encode("PUSH.W", "$v"), 5}},
+      {"PUSH.W (R1)", 7, {Encode("PUSH.W", {"($r)", CpuCore::R1})}},
+      {"PUSH.W (R1 + 1)", 9, {Encode("PUSH.W", {"($r + $v)", CpuCore::R1}), 1}},
+      {"PUSH.D D0", 6, {Encode("PUSH.D", {"$R", 0})}},
+      {"PUSH.D 5", 8, {Encode("PUSH.D", "$V"), 5, 0}},
+      {"PUSH.D [R4]", 9, {Encode("PUSH.D", {"[$r]", CpuCore::R4})}},
+      {"PUSH.D [R4 + 1]",
+       11,
+       {Encode("PUSH.D", {"[$r + $v]", CpuCore::R4}), 1}},
+  });
+}
+
 TEST_F(InstructionTest, POP_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -916,6 +985,22 @@ TEST_F(InstructionTest, POP_D) {
   EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x80009);
 }
 
+TEST_F(InstructionTest, POP_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"POP.W R0", 5, {Encode("POP.W", {"$r", CpuCore::R0})}},
+      {"POP.W (SP)", 6, {Encode("POP.W", "(SP)")}},
+      {"POP.W (R1)", 7, {Encode("POP.W", {"($r)", CpuCore::R1})}},
+      {"POP.W (R1 + 1)", 9, {Encode("POP.W", {"($r + $v)", CpuCore::R1}), 1}},
+      {"POP.W (SP + 1)", 9, {Encode("POP.W", "(SP + $v)"), 1}},
+      {"POP.D D0", 6, {Encode("POP.D", {"$R", 0})}},
+      {"POP.D [SP]", 8, {Encode("POP.D", "[SP]")}},
+      {"POP.D [R4]", 9, {Encode("POP.D", {"[$r]", CpuCore::R4})}},
+      {"POP.D [R4 + 1]", 11, {Encode("POP.D", {"[$r + $v]", CpuCore::R4}), 1}},
+      {"POP.D [SP + 1]", 11, {Encode("POP.D", "[SP + $v]"), 1}},
+  });
+}
+
 TEST_F(InstructionTest, SWP_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -1078,6 +1163,24 @@ TEST_F(InstructionTest, SWP_D) {
   ASSERT_TRUE(ExecuteUntilIp(ip12));  // SWP.D D0, E[200]
   EXPECT_EQ(state.d0(), 0x10002);
   EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x12345678);
+}
+
+TEST_F(InstructionTest, SWP_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"SWP.W R0, R1", 6, {Encode("SWP.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"SWP.W R0, (R1)",
+       7,
+       {Encode("SWP.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"SWP.W R0, (R1 + 1)",
+       9,
+       {Encode("SWP.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"SWP.D D0, D1", 9, {Encode("SWP.D", 0, {"$R", 1})}},
+      {"SWP.D D0, [R4]", 10, {Encode("SWP.D", 0, {"[$r]", CpuCore::R4})}},
+      {"SWP.D D0, [R4 + 1]",
+       12,
+       {Encode("SWP.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+  });
 }
 
 }  // namespace

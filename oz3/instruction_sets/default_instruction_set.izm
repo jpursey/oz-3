@@ -205,7 +205,7 @@ instruction(opcode:0) NOP {
 ################################################################################
 ## HALT
 ##
-## Cycles: 3
+## Cycles: 4
 ## ZSCO: ----
 ##
 ## Puts the core into the IDLE state. Interrupts will still be triggered and
@@ -222,12 +222,13 @@ instruction HALT {
 ################################################################################
 ## WAIT <reg>
 ##
-## Cycles: 3+ ()
+## Cycles: 3-65535
 ## ZSCO: ---X
 ##
 ## Puts the core into the WAIT state for at least the number of cycles
-## specified. Interrupts may still be executed during the WAIT state, but
-## cannot recursively call WAIT themselves.
+## specified, counting from the start of the WAIT instruction. A WAIT takes at
+## least 3 cycles, so 0 to 3 all take 3. Interrupts may still be executed
+## during the WAIT state, but cannot recursively call WAIT themselves.
 ##
 ## After a successful WAIT execution (it was not called recursively from within
 ## an interrupt), the provided register will be update with the number of
@@ -245,19 +246,23 @@ instruction WAIT "$r" {
 ################################################################################
 ## MOV <dst> <src>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: ----
 ##
 ## Variants:
-##    MOV.LW  <reg> <word-value>
-##    MOV.LD  <dreg> <dword-value>
-##    MOV.SWR <word-address> <reg>
-##    MOV.SDR <dword-address> <dreg>
-##    MOV.SWV <word-address> <integer>
-##    MOV.SDV <dword-address> <integer>
-##    MOV.S   <reg> <sreg>
-##    MOV.S   <sreg> <reg>
-##    MOV.S   <sreg> <integer>
+##    MOV.LW  <reg>, <reg>                  (4 cycles)
+##    MOV.LW  <reg>, <integer>              (4 cycles)
+##    MOV.LW  <reg>, <word-address>         (5-7 cycles)
+##    MOV.LD  <dreg>, <dreg>                (5 cycles)
+##    MOV.LD  <dreg>, <integer>             (5 cycles)
+##    MOV.LD  <dreg>, <dword-address>       (6-8 cycles)
+##    MOV.SWR <word-address>, <reg>         (5-7 cycles)
+##    MOV.SDR <dword-address>, <dreg>       (6-8 cycles)
+##    MOV.SWV <word-address>, <integer>     (6-8 cycles)
+##    MOV.SDV <dword-address>, <integer>    (8-10 cycles)
+##    MOV.S   <reg>, <sreg>                 (4 cycles)
+##    MOV.S   <sreg>, <reg>                 (4 cycles)
+##    MOV.S   <sreg>, <integer>             (4 cycles)
 ##
 ## Moves (copies) the value from from <src> into <dst>.
 ################################################################################
@@ -482,8 +487,8 @@ instruction MOV.S "$m" {
 ## ZSCO: ----
 ##
 ## Variants:
-##    MVQ.LW <reg> <0..31>
-##    MVQ.LD <dreg> <0..31>
+##    MVQ.LW <reg>, <0..31>     (4 cycles)
+##    MVQ.LD <dreg>, <0..31>    (5 cycles)
 ##
 ## Moves the immediate value in the range [0,31] to the specified register.
 ################################################################################
@@ -499,12 +504,16 @@ instruction MVQ.LD "$R, $#5" {
 ################################################################################
 ## PUSH <src>
 ##
-## Cycles: 5+
+## Cycles: 5-11
 ## ZSCO: ----
 ##
 ## Variants:
-##    PUSH.W <word-value>
-##    PUSH.D <dword-value>
+##    PUSH.W <reg>              (5 cycles)
+##    PUSH.W <integer>          (6 cycles)
+##    PUSH.W <word-address>     (7-9 cycles)
+##    PUSH.D <dreg>             (6 cycles)
+##    PUSH.D <integer>          (8 cycles)
+##    PUSH.D <dword-address>    (9-11 cycles)
 ##
 ## Pushes the value onto the stack, updating SP.
 ################################################################################
@@ -522,14 +531,14 @@ instruction PUSH.D "$m" {
 ################################################################################
 ## POP <dst>
 ##
-## Cycles: 5+
+## Cycles: 5-11
 ## ZSCO: ----
 ##
 ## Variants:
-##    POP.W <reg>
-##    POP.W <word-address>
-##    POP.D <dreg>
-##    POP.D <dword-address>
+##    POP.W <reg>              (5 cycles)
+##    POP.W <word-address>     (6-9 cycles)
+##    POP.D <dreg>             (6 cycles)
+##    POP.D <dword-address>    (8-11 cycles)
 ##
 ## Pops the value from the stack, updating SP. The destination address is
 ## determined *after* the the value is popped, which affects addresses using an
@@ -671,14 +680,14 @@ instruction POP.D "$m" {
 ################################################################################
 ## SWP <a> <b>
 ##
-## Cycles: 6+
+## Cycles: 6-12
 ## ZSCO: ----
 ##
 ## Variants:
-##    SWP.W <reg> <reg>
-##    SWP.W <reg> <word-address>
-##    SWP.D <dreg> <dreg>
-##    SWP.D <dreg> <dword-address>
+##    SWP.W <reg>, <reg>               (6 cycles)
+##    SWP.W <reg>, <word-address>      (7-9 cycles)
+##    SWP.D <dreg>, <dreg>             (9 cycles)
+##    SWP.D <dreg>, <dword-address>    (10-12 cycles)
 ##
 ## Swaps the contents of the specified register <a> with a register or memory
 ## address value <b>

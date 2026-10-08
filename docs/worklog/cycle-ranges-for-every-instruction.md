@@ -33,8 +33,7 @@ already use:
 - When a variant's cost depends on a value, the header's description says on
   what, as `NEG` does for `NEG.D`.
 - When the cost grows without a fixed bound, the header gives the cost per
-  unit instead: per word for the repeating block and port instructions, and
-  per cycle waited for `WAIT`.
+  unit instead, as the repeating block and port instructions do per word.
 - Ranges assume no lock contention, since waiting for a memory bank, port, or
   core lock has no bound.
 
@@ -66,14 +65,20 @@ the ends of each variant compactly:
 ```
 // An instruction and the cycles it takes. See InstructionTest::RunCycleCases.
 struct CycleCase {
-  std::string_view name;          // For failures, such as "ADD.W R0, (R1 + 1)"
-  uint16_t code;                  // From Encode()
-  std::vector<uint16_t> words;    // Any words after the code word
+  std::string_view name;       // For failures, such as "ADD.W R0, R1"
   Cycles cycles;
+  std::vector<uint16_t> code;  // From Encode(), then any words after it
 };
 
 // Runs each case's instruction in turn, and expects its cycles.
 void RunCycleCases(absl::Span<const CycleCase> cases);
+```
+
+The cycles come right after the name, so a row reads as a line of a timing
+table:
+
+```
+{"PUSH.W (R1 + 1)", 9, {Encode("PUSH.W", {"($r + $v)", CpuCore::R1}), 1}},
 ```
 
 - It lives in `InstructionTest` (in `instruction_test.h`), beside
@@ -99,7 +104,9 @@ on the address, so the cycles stay right.
   pinned. Each CL checks the stated ranges against the microcode and the
   tests, and fills in any end that isn't pinned.
 - `WAIT`'s header says `3+ ()`. CL1 checks what it costs for each value of its
-  register.
+  register. *Confirmed:* it takes the register's value in cycles, but at
+  least 3, so its range is 3-65535. `HALT` takes 4 cycles to go idle, not 3,
+  as it moves `IP` back first.
 - `RST`'s 11-28. CL10 checks what makes it vary.
 
 ## CLs
@@ -108,7 +115,7 @@ Each CL covers one instruction group: its headers in the `.izm`, and its
 tests in `instruction_test_<group>.cc`. The groups go in `.izm` order. Every CL
 is `instruction_sets` only, and none changes the wiki.
 
-### CL1 [ ] instruction_sets: RunCycleCases, misc, and load and store
+### CL1 [x] instruction_sets: RunCycleCases, misc, and load and store
 
 Depends on: nothing.
 
