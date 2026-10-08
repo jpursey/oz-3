@@ -5,8 +5,11 @@
 
 #include <cstdint>
 #include <iterator>
+#include <type_traits>
+#include <vector>
 
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 #include "oz3/instruction_sets/instruction_test.h"
 
 namespace oz3 {
@@ -78,23 +81,23 @@ constexpr int kWordCarryValueCountsSize =
 
 // Immediate counts for a dword rotate through carry, from the fewest cycles to
 // the most.
-constexpr CountCycles kDwordCarryValueCounts[] = {{1, 11}, {16, 56}, {32, 104}};
+constexpr CountCycles kDwordCarryValueCounts[] = {{1, 10}, {16, 55}, {32, 103}};
 constexpr int kDwordCarryValueCountsSize =
     static_cast<int>(std::size(kDwordCarryValueCounts));
 
 // Register counts for a word rotate through carry. A count of 17 or more is
 // reduced modulo 17 for a fixed cost.
 constexpr CountCycles kWordCarryRegisterCounts[] = {
-    {0, 6},   {1, 9},    {16, 39},     {17, 33},     {18, 36},    {33, 66},
-    {34, 33}, {100, 64}, {0x8800, 33}, {0xFFFE, 66}, {0xFFFF, 33}};
+    {0, 6},   {1, 8},    {16, 38},     {17, 32},     {18, 35},    {33, 65},
+    {34, 32}, {100, 63}, {0x8800, 32}, {0xFFFE, 65}, {0xFFFF, 32}};
 constexpr int kWordCarryRegisterCountsSize =
     static_cast<int>(std::size(kWordCarryRegisterCounts));
 
 // Register counts for a dword rotate through carry. A count of 33 or more is
 // reduced modulo 33 for a fixed cost.
 constexpr CountCycles kDwordCarryRegisterCounts[] = {
-    {0, 7},    {1, 10},  {32, 103},  {33, 42},     {34, 45},
-    {65, 138}, {66, 42}, {1000, 72}, {0x8400, 42}, {0xFFFF, 132}};
+    {0, 7},    {1, 9},   {32, 102},  {33, 41},     {34, 44},
+    {65, 137}, {66, 41}, {1000, 71}, {0x8400, 41}, {0xFFFF, 131}};
 constexpr int kDwordCarryRegisterCountsSize =
     static_cast<int>(std::size(kDwordCarryRegisterCounts));
 
@@ -636,6 +639,117 @@ TEST_F(InstructionTest, ROR_D_SignByRegister) {
     EXPECT_EQ(state.d0(), 0x80000000) << "ROR.D D0, R2=" << i;
     EXPECT_EQ(state.st, CpuCore::S | CpuCore::C) << "ROR.D D0, R2=" << i;
   }
+}
+
+// Register counts for a word rotate, and their cycles. Each bit up to 15 takes
+// 2 cycles, and a multiple of 16 bits (including zero) a fixed 9.
+constexpr CountCycles kWordRegisterCounts[] = {{0, 9},  {1, 7},  {15, 35},
+                                               {16, 9}, {17, 7}, {0xFFFF, 35}};
+
+// Immediate counts for a word rotate, and their cycles.
+constexpr CountCycles kWordValueCounts[] = {{1, 4}, {15, 18}, {16, 5}};
+
+// Counts for a dword rotate, and their cycles. From 16 bits the words are
+// swapped first, and the rest take 4 cycles a bit. ROR.D takes 2 cycles more
+// than ROL.D whenever it rotates a bit at a time.
+constexpr CountCycles kRolDwordRegisterCounts[] = {
+    {0, 10},  {1, 11},  {15, 67}, {16, 14},
+    {17, 14}, {31, 70}, {32, 10}, {0xFFFF, 70}};
+constexpr CountCycles kRolDwordValueCounts[] = {{1, 12},  {15, 68}, {16, 15},
+                                                {17, 15}, {31, 71}, {32, 11}};
+constexpr CountCycles kRorDwordRegisterCounts[] = {
+    {0, 10},  {1, 13},  {15, 69}, {16, 14},
+    {17, 16}, {31, 72}, {32, 10}, {0xFFFF, 72}};
+constexpr CountCycles kRorDwordValueCounts[] = {{1, 14},  {15, 70}, {16, 15},
+                                                {17, 17}, {31, 73}, {32, 11}};
+
+// Returns a case for each of `counts`, which rotates a value to `result`, and
+// `unrotate` returns that value from `result` and the count. The flags are all
+// clear, as `result` has neither its low nor its high bit set.
+template <typename T>
+std::vector<CountCase> RotateCases(absl::Span<const CountCycles> counts,
+                                   std::type_identity_t<T> result,
+                                   T (*unrotate)(T, int)) {
+  std::vector<CountCase> cases;
+  for (const CountCycles& c : counts) {
+    cases.push_back({unrotate(result, c.count), static_cast<uint16_t>(c.count),
+                     result, 0, c.cycles});
+  }
+  return cases;
+}
+
+TEST_F(InstructionTest, ROL_W_ByRegisterCycles) {
+  RunCountCases("ROL.W", CountArg::kRegister,
+                RotateCases(kWordRegisterCounts, 0x5A3C, RotateRight16));
+}
+
+TEST_F(InstructionTest, ROL_W_ByValueCycles) {
+  RunCountCases("ROL.W", CountArg::kImmediate,
+                RotateCases(kWordValueCounts, 0x5A3C, RotateRight16));
+}
+
+TEST_F(InstructionTest, ROR_W_ByRegisterCycles) {
+  RunCountCases("ROR.W", CountArg::kRegister,
+                RotateCases(kWordRegisterCounts, 0x5A3C, RotateLeft16));
+}
+
+TEST_F(InstructionTest, ROR_W_ByValueCycles) {
+  RunCountCases("ROR.W", CountArg::kImmediate,
+                RotateCases(kWordValueCounts, 0x5A3C, RotateLeft16));
+}
+
+TEST_F(InstructionTest, ROL_D_ByRegisterCycles) {
+  RunCountCases(
+      "ROL.D", CountArg::kRegister,
+      RotateCases(kRolDwordRegisterCounts, 0x12485A3C, RotateRight32));
+}
+
+TEST_F(InstructionTest, ROL_D_ByValueCycles) {
+  RunCountCases("ROL.D", CountArg::kImmediate,
+                RotateCases(kRolDwordValueCounts, 0x12485A3C, RotateRight32));
+}
+
+TEST_F(InstructionTest, ROR_D_ByRegisterCycles) {
+  RunCountCases("ROR.D", CountArg::kRegister,
+                RotateCases(kRorDwordRegisterCounts, 0x12485A3C, RotateLeft32));
+}
+
+TEST_F(InstructionTest, ROR_D_ByValueCycles) {
+  RunCountCases("ROR.D", CountArg::kImmediate,
+                RotateCases(kRorDwordValueCounts, 0x12485A3C, RotateLeft32));
+}
+
+// Rotating zero gives zero, with only Z set, on every path.
+TEST_F(InstructionTest, ROL_W_ZeroByRegister) {
+  RunCountCases("ROL.W", CountArg::kRegister,
+                {{0, 0, 0, CpuCore::Z, 9},
+                 {0, 1, 0, CpuCore::Z, 7},
+                 {0, 16, 0, CpuCore::Z, 9}});
+}
+
+TEST_F(InstructionTest, ROR_W_ZeroByRegister) {
+  RunCountCases("ROR.W", CountArg::kRegister,
+                {{0, 0, 0, CpuCore::Z, 9},
+                 {0, 1, 0, CpuCore::Z, 7},
+                 {0, 16, 0, CpuCore::Z, 9}});
+}
+
+TEST_F(InstructionTest, ROL_D_ZeroByRegister) {
+  RunCountCases("ROL.D", CountArg::kRegister,
+                {{0, 0, 0, CpuCore::Z, 10},
+                 {0, 1, 0, CpuCore::Z, 11},
+                 {0, 16, 0, CpuCore::Z, 14},
+                 {0, 17, 0, CpuCore::Z, 14},
+                 {0, 32, 0, CpuCore::Z, 10}});
+}
+
+TEST_F(InstructionTest, ROR_D_ZeroByRegister) {
+  RunCountCases("ROR.D", CountArg::kRegister,
+                {{0, 0, 0, CpuCore::Z, 10},
+                 {0, 1, 0, CpuCore::Z, 13},
+                 {0, 16, 0, CpuCore::Z, 14},
+                 {0, 17, 0, CpuCore::Z, 16},
+                 {0, 32, 0, CpuCore::Z, 10}});
 }
 
 TEST_F(InstructionTest, RLC_W_ByValueNoCarry) {

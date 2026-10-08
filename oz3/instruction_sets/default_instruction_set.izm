@@ -86,20 +86,16 @@ macro(bits:5) GetDword:R {
 # returns zero
 #
 # Ends fetch phase.
-# Requires C0 is zero.
+# Requires C0 and C2 are zero.
 # Modifies C0, C2.
 macro(bits:5) Get16BitMask:r {
   code:C0 "$r" {
     UL;
     CMPI(m,16);
-    JC(C,@start);
-    MOVI(C0,0);
-    JP(@done);
-  @start:
+    JC(NC,@done);  # The mask is zero, as C0 already is
     MOVI(C0,1);
-    TST(m);
+    OR(C2,m);  # Copies and tests the position, as C2 is zero
     JC(Z,@done);
-    MOV(C2,m);
   @shift:
     SL(C0);
     JD(C2,@shift);
@@ -129,7 +125,7 @@ macro(bits:5) Get16BitMask:r {
 # returns zero
 #
 # Ends fetch phase.
-# Requires: C0 and C1 are zero
+# Requires: C0, C1, and C2 are zero
 # Modifies: C0, C1, C2
 macro(bits:6) Get32BitMask:R {
   code:CD "$r" {
@@ -138,9 +134,8 @@ macro(bits:6) Get32BitMask:R {
     JC(Z,@sixteen);
     JC(NC,@upper);
     MOVI(C0,1);
-    TST(m);
+    OR(C2,m);  # Copies and tests the position, as C2 is zero
     JC(Z,@done);
-    MOV(C2,m);
   @shift_lower:
     SL(C0);
     JD(C2,@shift_lower);
@@ -150,12 +145,8 @@ macro(bits:6) Get32BitMask:R {
     JP(@done);
   @upper:
     CMPI(m,32);
-    JC(C,@start_upper);
-    MOVI(C0,0);
-    JP(@done);
-  @start_upper:
-    MOV(C2,m);
-    ADDI(C2,-16);
+    JC(NC,@done);  # The mask is zero, as C0 and C1 already are
+    MVN(C2:0,m:0);  # The position is 17-31, so this is 1-15 more than 16
     MOVI(C1,1);
   @shift_upper:
     SL(C1);
@@ -1757,8 +1748,8 @@ instruction XOR.D "$R, $m" {
 
 macro(bits:5) LogicalShiftLeft16(p) {
   code "$r" {
-    # Shift zero bits?
-    TST(m);
+    # Shift zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
 
     # Shift > 16 bits?
@@ -1766,7 +1757,6 @@ macro(bits:5) LogicalShiftLeft16(p) {
     JC(NC,@max);
 
     # Shift 1-16 bits
-    MOV(C2,m);
   @shift:
     SL(p);
     JD(C2,@shift);
@@ -1861,20 +1851,38 @@ instruction SHL.W "$r, $m" {
 
 macro(bits:6) LogicalShiftLeft32(P) {
   code "$r" {
-    # Shift zero bits?
-    TST(m);
+    # Shift zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
 
-    # Shift > 32 bits?
-    CMPI(m,33);
-    JC(NC,@max);
+    # Shift 16 bits or more? The low word moves to the high word first, so
+    # only the rest are shifted, a word at a time.
+    CMPI(m,16);
+    JC(Z,@sixteen);
+    JC(NC,@high);
 
-    # Shift 1-32 bits
-    MOV(C2,m);
+    # Shift 1-15 bits
   @shift:
     SL(p0); MSR(Z,Z); RLC(p1);
     JD(C2,@shift);
     MSR(ZSCO,SCO);
+    END;
+
+    # Shift 17-32 bits
+  @high:
+    CMPI(m,33);
+    JC(NC,@max);
+    MOV(p1,p0); MOVI(p0,0); ADDI(C2,-16);
+  @shift_high:
+    SL(p1);
+    JD(C2,@shift_high);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @sixteen:  # As code "16"
+    SR(p1); MSR(C,C);  # The last bit shifted out
+    MOV(p1,p0); MOVI(p0,0);
+    TST(p1); MSR(ZSO,ZSO);
     END;
 
   @max:
@@ -2095,8 +2103,8 @@ instruction SHL.D "$R, $m" {
 
 macro(bits:5) LogicalShiftRight16(p) {
   code "$r" {
-    # Shift zero bits?
-    TST(m);
+    # Shift zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
 
     # Shift > 16 bits?
@@ -2104,7 +2112,6 @@ macro(bits:5) LogicalShiftRight16(p) {
     JC(NC,@max);
 
     # Shift 1-16 bits
-    MOV(C2,m);
   @shift:
     SR(p);
     JD(C2,@shift);
@@ -2199,20 +2206,38 @@ instruction SHR.W "$r, $m" {
 
 macro(bits:6) LogicalShiftRight32(P) {
   code "$r" {
-    # Shift zero bits?
-    TST(m);
+    # Shift zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
 
-    # Shift > 32 bits?
-    CMPI(m,33);
-    JC(NC,@max);
+    # Shift 16 bits or more? The high word moves to the low word first, so
+    # only the rest are shifted, a word at a time.
+    CMPI(m,16);
+    JC(Z,@sixteen);
+    JC(NC,@high);
 
-    # Shift 1-32 bits
-    MOV(C2,m);
+    # Shift 1-15 bits
   @shift:
     SR(p1); MSR(ZS,ZS); RRC(p0);
     JD(C2,@shift);
     MSR(ZCO,CO);
+    END;
+
+    # Shift 17-32 bits
+  @high:
+    CMPI(m,33);
+    JC(NC,@max);
+    MOV(p0,p1); MOVI(p1,0); ADDI(C2,-16);
+  @shift_high:
+    SR(p0);
+    JD(C2,@shift_high);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @sixteen:  # As code "16"
+    SL(p0); MSR(C,C);  # The last bit shifted out
+    MOV(p0,p1); MOVI(p1,0);
+    TST(p0); MSC(S); MSR(ZSO,ZSO);
     END;
 
   @max:
@@ -2433,8 +2458,8 @@ instruction SHR.D "$R, $m" {
 
 macro(bits:5) ArithmeticShiftRight16(p) {
   code "$r" {
-    # Shift zero bits?
-    TST(m);
+    # Shift zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
 
     # Shift > 16 bits?
@@ -2442,7 +2467,6 @@ macro(bits:5) ArithmeticShiftRight16(p) {
     JC(NC,@max);
 
     # Shift 1-16 bits
-    MOV(C2,m);
   @shift:
     SRA(p);
     JD(C2,@shift);
@@ -2550,20 +2574,44 @@ instruction SRA.W "$r, $m" {
 
 macro(bits:6) ArithmeticShiftRight32(P) {
   code "$r" {
-    # Shift zero bits?
-    TST(m);
+    # Shift zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
 
-    # Shift > 32 bits?
-    CMPI(m,33);
-    JC(NC,@max);
+    # Shift 16 bits or more? The high word moves to the low word first, so
+    # only the rest are shifted, a word at a time.
+    CMPI(m,16);
+    JC(Z,@sixteen);
+    JC(NC,@high);
 
-    # Shift 1-32 bits
-    MOV(C2,m);
+    # Shift 1-15 bits
   @shift:
     SRA(p1); MSR(ZS,ZS); RRC(p0);
     JD(C2,@shift);
     MSR(ZCO,CO);
+    END;
+
+    # Shift 17-32 bits. SL then SBC fills the high word with its sign bit, as
+    # SBC subtracts C (the sign) from zero.
+  @high:
+    CMPI(m,33);
+    JC(NC,@max);
+    MOV(p0,p1); SL(p1); SBC(p1,p1); ADDI(C2,-16);
+  @shift_high:
+    SRA(p0);
+    JD(C2,@shift_high);
+    MSR(ZSCO,ZSCO);
+    END;
+
+  @sixteen:  # As code "16"
+    SL(p0); MSR(C,C);  # The last bit shifted out
+    MOV(p0,p1);
+    TST(p0); MSR(ZSO,ZSO);
+    JC(S,@negative_sixteen);
+    MOVI(p1,0);
+    END;
+  @negative_sixteen:
+    MOVI(p1,-1);
     END;
 
   @max:
@@ -2676,197 +2724,98 @@ macro(bits:6) ArithmeticShiftRight32(P) {
   }
   code "16" {
     SL(p0); MSR(C,C); MOV(p0,p1);
-    TST(p0);
+    TST(p0); MSR(ZSO,ZSO);
     JC(S,@negative);
     MOVI(p1,0);
-    TST(p0); MSC(S); MSR(ZSO,ZSO);
     END;
   @negative:
     MOVI(p1,-1);
-    MSC(ZO); MSS(S); MSR(ZSO,ZSO);
   }
+
+  # The high word moves to the low word, and SL then SBC fills the high word
+  # with its sign bit (SBC subtracts C from zero), so only the low word needs
+  # shifting.
   code "17" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "18" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "19" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "20" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "21" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "22" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "23" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "24" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "25" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "26" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "27" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "28" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "29" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "30" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "31" {
-    MOV(p0,p1);
-    TST(p1); JC(S,@negative);
-    MOVI(p1,0); JP(@shift);
-  @negative:
-    MOVI(p1,-1);
-  @shift:
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); RRC(p0); SRA(p1); RRC(p0);
-    SRA(p1); MSR(ZS,ZS); RRC(p0);
-    MSR(ZCO,CO);
+    MOV(p0,p1); SL(p1); SBC(p1,p1);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0); SRA(p0);
+    MSR(ZSCO,ZSCO);
   }
   code "32" {
     SL(p1);
@@ -2902,27 +2851,23 @@ instruction SRA.D "$R, $m" {
 
 macro(bits:5) RotateLeft16(p) {
   code "$r" {
-    # Rotate zero bits?
-    TST(m);
-    JC(Z,@zero);
-
-    # Rotate modulo 16 bits?
-    MSKI(m,15);
-    JC(Z,@sixteen);
+    # Rotate a multiple of 16 bits (including zero)?
+    MOVI(C2,15); AND(C2,m);
+    JC(Z,@full);
 
     # Rotate 1-15 bits
-    MVN(C2:0,m:0);
   @shift:
     RL(p);
     JD(C2,@shift);
     MSR(ZSCO,ZSCO);
     END;
 
-  @sixteen:
-    MOV(C2,p);
-    SR(C2); MSR(C,C);
-    TST(p);
-    MSR(ZSO,ZSO);
+    # Rotating zero bits clears C. Otherwise, RR then RL leaves the register
+    # as it was, with the last bit rotated in C.
+  @full:
+    TST(m);
+    JC(Z,@zero);
+    RR(p); RL(p); MSR(ZSCO,ZSCO);
     END;
 
   @zero:
@@ -2997,10 +2942,7 @@ macro(bits:5) RotateLeft16(p) {
     MSR(ZSCO,ZSCO);
   }
   code "16" {
-    MOV(C2,p);
-    SR(C2); MSR(C,C);
-    TST(p);
-    MSR(ZSO,ZSO);
+    RR(p); RL(p); MSR(ZSCO,ZSCO);  # As "$r" for 16
   }
 }
 
@@ -3048,28 +2990,35 @@ instruction ROL.D "$R, $m" {
   UL;
   $GetRotateCount32;
 
-  # Rotate zero bits?
-  TST(r);
-  JC(Z,@zero);
-
-  # Rotate modulo 32 bits?
-  MSKI(r,31);
-  JC(Z,@thirtytwo);
-
-  # Rotate 1-31 bits
+  # Rotate a multiple of 32 bits (including zero)?
   MOVI(C2,31); AND(C2,r);
-  MVNI(C1:3,8);            # Set C1 to to 0x8000
+  JC(Z,@full);
+
+  # Rotate 16 bits or more? Swapping the words rotates 16, so only the rest
+  # rotate a bit at a time.
+  CMPI(C2,16);
+  JC(C,@shift);
+  MOV(C0,a0); MOV(a0,a1); MOV(a1,C0);
+  ADDI(C2,-16);
+  JC(Z,@last_bit);
+
+  # Rotate 1-15 bits. The bit shifted out of the high word is added into the
+  # low bit of the low word, which SL cleared (C1 is zero). MSR keeps the high
+  # word's flags and the bit rotated, and Z is cleared after if the low word
+  # isn't zero.
 @shift:
-  MOV(C0,C1); AND(C0,a1); RL(C0);
-  RLC(a0); MSR(Z,Z); RLC(a1);
+  SL(a0); RLC(a1); MSR(ZSC,ZSC); ADC(a0,C1);
   JD(C2,@shift);
-  MSR(ZSCO,SCO);
+  MSR(ZO,_);
   END;
 
-@thirtytwo:
-  MOV(C2,a0);
-  SR(C2); MSR(C,C);
-  TST(a0); MSR(Z,Z);
+  # Rotating zero bits clears C. Otherwise, the last bit rotated is the low bit
+  # of the low word, which RR then RL leaves in C.
+@full:
+  TST(r);
+  JC(Z,@zero);
+@last_bit:
+  RR(a0); RL(a0); MSR(ZC,ZC);
   TST(a1); MSR(ZSO,SO);
   END;
 
@@ -3095,27 +3044,23 @@ instruction ROL.D "$R, $m" {
 
 macro(bits:5) RotateRight16(p) {
   code "$r" {
-    # Rotate zero bits?
-    TST(m);
-    JC(Z,@zero);
-
-    # Rotate modulo 16 bits?
-    MSKI(m,15);
-    JC(Z,@sixteen);
+    # Rotate a multiple of 16 bits (including zero)?
+    MOVI(C2,15); AND(C2,m);
+    JC(Z,@full);
 
     # Rotate 1-15 bits
-    MVN(C2:0,m:0);
   @shift:
     RR(p);
     JD(C2,@shift);
     MSR(ZSCO,ZSCO);
     END;
 
-  @sixteen:
-    MOV(C2,p);
-    SL(C2); MSR(C,C);
-    TST(p);
-    MSR(ZSO,ZSO);
+    # Rotating zero bits clears C. Otherwise, RL then RR leaves the register
+    # as it was, with the last bit rotated in C.
+  @full:
+    TST(m);
+    JC(Z,@zero);
+    RL(p); RR(p); MSR(ZSCO,ZSCO);
     END;
 
   @zero:
@@ -3190,10 +3135,7 @@ macro(bits:5) RotateRight16(p) {
     MSR(ZSCO,ZSCO);
   }
   code "16" {
-    MOV(C2,p);
-    SL(C2); MSR(C,C);
-    TST(p);
-    MSR(ZSO,ZSO);
+    RL(p); RR(p); MSR(ZSCO,ZSCO);  # As "$r" for 16
   }
 }
 
@@ -3205,28 +3147,40 @@ instruction ROR.D "$R, $m" {
   UL;
   $GetRotateCount32;
 
-  # Rotate zero bits?
-  TST(r);
-  JC(Z,@zero);
-
-  # Rotate modulo 32 bits?
-  MSKI(r,31);
-  JC(Z,@thirtytwo);
-
-  # Rotate 1-31 bits
+  # Rotate a multiple of 32 bits (including zero)?
   MOVI(C2,31); AND(C2,r);
+  JC(Z,@full);
+
+  # Rotate 16 bits or more? Swapping the words rotates 16, so only the rest
+  # rotate a bit at a time.
+  CMPI(C2,16);
+  JC(C,@rotate);
+  MOV(C0,a0); MOV(a0,a1); MOV(a1,C0);
+  ADDI(C2,-16);
+  JC(Z,@last_bit);
+
+  # Rotate 1-15 bits. The bit shifted out of the high word is ORed into the
+  # high bit of the low word, which SR cleared. MSR keeps the bit rotated and
+  # the high word's flags, and Z is cleared after if the low word isn't zero.
+@rotate:
+  MVNI(C1:3,8);  # Set C1 to 0x8000
 @shift:
-  MOVI(C0,1); AND(C0,a0); RR(C0);
-  RRC(a1); MSR(ZS,ZS); RRC(a0);
+  SR(a0); MSR(C,C); RRC(a1); MSR(ZS,ZS);
+  JC(NC,@next);
+  OR(a0,C1);
+@next:
   JD(C2,@shift);
-  MSR(ZCO,CO);
+  TST(a0); MSR(ZO,_);
   END;
 
-@thirtytwo:
-  MOV(C2,a1);
-  SL(C2); MSR(C,C);
-  TST(a0); MSR(Z,Z);
-  TST(a1); MSR(ZSO,SO);
+  # Rotating zero bits clears C. Otherwise, the last bit rotated is the high
+  # bit of the high word, which RL then RR leaves in C.
+@full:
+  TST(r);
+  JC(Z,@zero);
+@last_bit:
+  RL(a1); RR(a1); MSR(ZSC,ZSC);
+  TST(a0); MSR(ZO,_);
   END;
 
 @zero:
@@ -3236,14 +3190,14 @@ instruction ROR.D "$R, $m" {
 ################################################################################
 ## RLC <register>, <value>
 ##
-## Cycles: 4-138
+## Cycles: 4-137
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    RLC.W <reg>, <reg>      (6-66 cycles)
+##    RLC.W <reg>, <reg>      (6-65 cycles)
 ##    RLC.W <reg>, <1..16>    (4-19 cycles)
-##    RLC.D <dreg>, <reg>     (7-138 cycles)
-##    RLC.D <dreg>, <1..32>   (11-104 cycles)
+##    RLC.D <dreg>, <reg>     (7-137 cycles)
+##    RLC.D <dreg>, <1..32>   (10-103 cycles)
 ##
 ## Rotate left of the register through the "C" flag by the specified number of
 ## bits. The last bit shifted sets the value of the "C" flag.
@@ -3255,10 +3209,9 @@ instruction ROR.D "$R, $m" {
 
 macro(bits:5) RotateLeft16ThroughCarry(p) {
   code "$r" {
-    # Rotate zero bits?
-    TST(m);
+    # Rotate zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
-    MOV(C2,m);
 
     # Rotate 17+ bits?
     CMPI(C2,17);
@@ -3375,10 +3328,9 @@ instruction RLC.D "$R, $m" {
   UL;
   $GetRotateCount32;
 
-  # Rotate zero bits?
-  TST(r);
+  # Rotate zero bits? C2 starts as zero, so OR copies the count and tests it.
+  OR(C2,r);
   JC(Z,@zero);
-  MOV(C2,r);
 
   # Rotate 33+ bits?
   CMPI(C2,33);
@@ -3418,14 +3370,14 @@ instruction RLC.D "$R, $m" {
 ################################################################################
 ## RRC <register>, <value>
 ##
-## Cycles: 4-138
+## Cycles: 4-137
 ## ZSCO: XXX0
 ##
 ## Variants:
-##    RRC.W <reg>, <reg>      (6-66 cycles)
+##    RRC.W <reg>, <reg>      (6-65 cycles)
 ##    RRC.W <reg>, <1..16>    (4-19 cycles)
-##    RRC.D <dreg>, <reg>     (7-138 cycles)
-##    RRC.D <dreg>, <1..32>   (11-104 cycles)
+##    RRC.D <dreg>, <reg>     (7-137 cycles)
+##    RRC.D <dreg>, <1..32>   (10-103 cycles)
 ##
 ## Rotate right of the register through the "C" flag by the specified number of
 ## bits. The last bit shifted sets the value of the "C" flag.
@@ -3437,10 +3389,9 @@ instruction RLC.D "$R, $m" {
 
 macro(bits:5) RotateRight16ThroughCarry(p) {
   code "$r" {
-    # Rotate zero bits?
-    TST(m);
+    # Rotate zero bits? C2 starts as zero, so OR copies the count and tests it.
+    OR(C2,m);
     JC(Z,@zero);
-    MOV(C2,m);
 
     # Rotate 17+ bits?
     CMPI(C2,17);
@@ -3557,10 +3508,9 @@ instruction RRC.D "$R, $m" {
   UL;
   $GetRotateCount32;
 
-  # Rotate zero bits?
-  TST(r);
+  # Rotate zero bits? C2 starts as zero, so OR copies the count and tests it.
+  OR(C2,r);
   JC(Z,@zero);
-  MOV(C2,r);
 
   # Rotate 33+ bits?
   CMPI(C2,33);

@@ -101,13 +101,32 @@ constexpr uint16_t kDwordLargePositions[] = {32, 0x7FFF, 0x8000, 0x8020,
                                              0xFFFF};
 
 TEST_F(InstructionTest, BitOps16BitMaskByLargeRegister) {
-  RunCountCases("SETB.W",
+  RunCountCases("SETB.W", CountArg::kRegister,
                 SameCountCases(kWordLargePositions, 0x1234, 0x1234, 0, 6));
 }
 
 TEST_F(InstructionTest, BitOps32BitMaskByLargeRegister) {
-  RunCountCases("SETB.D", SameCountCases(kDwordLargePositions, 0x12345678,
-                                         0x12345678, 0, 9));
+  RunCountCases(
+      "SETB.D", CountArg::kRegister,
+      SameCountCases(kDwordLargePositions, 0x12345678, 0x12345678, 0, 9));
+}
+
+// A mask from a register takes 2 cycles a bit. For a dword, the mask for the
+// high word starts at bit 16.
+TEST_F(InstructionTest, BitOps16BitMaskByRegisterCycles) {
+  RunCountCases(
+      "SETB.W", CountArg::kRegister,
+      {{0, 0, 0x0001, 0, 8}, {0, 1, 0x0002, 0, 9}, {0, 15, 0x8000, 0, 37}});
+}
+
+TEST_F(InstructionTest, BitOps32BitMaskByRegisterCycles) {
+  RunCountCases("SETB.D", CountArg::kRegister,
+                {{0, 0, 0x00000001, 0, 9},
+                 {0, 1, 0x00000002, 0, 10},
+                 {0, 15, 0x00008000, 0, 38},
+                 {0, 16, 0x00010000, 0, 8},
+                 {0, 17, 0x00020000, 0, 12},
+                 {0, 31, 0x80000000, 0, 40}});
 }
 
 TEST_F(InstructionTest, CLRB_W) {

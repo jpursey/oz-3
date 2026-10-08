@@ -7,11 +7,13 @@
 #define OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/port.h"
@@ -19,8 +21,8 @@
 
 namespace oz3 {
 
-// An operation on a register with a count (such as a shift by a register),
-// and what it produces. See InstructionTest::RunCountCases.
+// An operation on a register with a count (such as a shift), and what it
+// produces. See InstructionTest::RunCountCases.
 struct CountCase {
   uint32_t value;
   uint16_t count;
@@ -149,11 +151,18 @@ class InstructionTest : public BaseCoreTest {
       : BaseCoreTest(GetDefaultInstructionSetDef(),
                      GetDefaultInstructionSet()) {}
 
-  // Runs `op` (such as "SHL.D") on each case's value with the case's count in
-  // R2, and expects the case's result, flags, and cycles. The value is in D0
-  // for an op ending in ".D", and in R0 otherwise. Every flag is clear before
-  // each case.
-  void RunCountCases(std::string_view op, absl::Span<const CountCase> cases) {
+  // How RunCountCases passes the count.
+  enum class CountArg {
+    kRegister,   // In R2, as "$r"
+    kImmediate,  // As the macro code for the count, such as "16"
+  };
+
+  // Runs `op` (such as "SHL.D") on each case's value with the case's count,
+  // and expects the case's result, flags, and cycles. The value is in D0 for
+  // an op ending in ".D", and in R0 otherwise. Every flag is clear before each
+  // case.
+  void RunCountCases(std::string_view op, CountArg arg,
+                     absl::Span<const CountCase> cases) {
     ASSERT_TRUE(InitAndReset());
     auto& state = GetState();
     state.SetRegisters({{CpuCore::ST, 0}});
@@ -168,24 +177,32 @@ class InstructionTest : public BaseCoreTest {
         state.code.AddValue(Encode("MOV.LW", CpuCore::R0, "$v"))
             .AddValue(static_cast<uint16_t>(c.value));
       }
-      state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v"))
-          .AddValue(c.count);
+      if (arg == CountArg::kRegister) {
+        state.code.AddValue(Encode("MOV.LW", CpuCore::R2, "$v"))
+            .AddValue(c.count);
+      }
       state.code.AddValue(
           Encode("CLRF", CpuCore::Z | CpuCore::S | CpuCore::C | CpuCore::O));
       start_ips.push_back(state.code.AddNopGetAddress());
-      state.code.AddValue(Encode(op, 0, {"$r", CpuCore::R2}));
+      if (arg == CountArg::kRegister) {
+        state.code.AddValue(Encode(op, 0, {"$r", CpuCore::R2}));
+      } else {
+        const std::string count = absl::StrCat(c.count);
+        state.code.AddValue(Encode(op, 0, Arg(count)));
+      }
       end_ips.push_back(state.code.AddNopGetAddress());
     }
     state.code.AddValue(Encode("HALT"));
 
     for (int i = 0; i < static_cast<int>(cases.size()); ++i) {
       const CountCase& c = cases[i];
+      SCOPED_TRACE(absl::StrCat(op, " ", c.value,
+                                arg == CountArg::kRegister ? ", R2=" : ", ",
+                                c.count));
       ASSERT_TRUE(ExecuteUntilIp(start_ips[i]));
-      EXPECT_EQ(CyclesUntilIp(end_ips[i]), c.cycles)
-          << op << " " << c.value << ", R2=" << c.count;
-      EXPECT_EQ(dword ? state.d0() : state.r0, c.result)
-          << op << " " << c.value << ", R2=" << c.count;
-      EXPECT_EQ(state.st, c.st) << op << " " << c.value << ", R2=" << c.count;
+      EXPECT_EQ(CyclesUntilIp(end_ips[i]), c.cycles);
+      EXPECT_EQ(dword ? state.d0() : state.r0, c.result);
+      EXPECT_EQ(state.st, c.st);
     }
   }
 

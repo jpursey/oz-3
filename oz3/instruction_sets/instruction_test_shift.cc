@@ -851,23 +851,25 @@ constexpr uint16_t kWordLargeCounts[] = {17, 0x7FFF, 0x8000, 0x8011, 0xFFFF};
 constexpr uint16_t kDwordLargeCounts[] = {33, 0x7FFF, 0x8000, 0x8021, 0xFFFF};
 
 TEST_F(InstructionTest, SHL_W_ByLargeRegister) {
-  RunCountCases("SHL.W",
+  RunCountCases("SHL.W", CountArg::kRegister,
                 SameCountCases(kWordLargeCounts, 0xFFFF, 0, CpuCore::Z, 7));
 }
 
 TEST_F(InstructionTest, SHL_D_ByLargeRegister) {
   RunCountCases(
-      "SHL.D", SameCountCases(kDwordLargeCounts, 0xFFFFFFFF, 0, CpuCore::Z, 8));
+      "SHL.D", CountArg::kRegister,
+      SameCountCases(kDwordLargeCounts, 0xFFFFFFFF, 0, CpuCore::Z, 10));
 }
 
 TEST_F(InstructionTest, SHR_W_ByLargeRegister) {
-  RunCountCases("SHR.W",
+  RunCountCases("SHR.W", CountArg::kRegister,
                 SameCountCases(kWordLargeCounts, 0xFFFF, 0, CpuCore::Z, 7));
 }
 
 TEST_F(InstructionTest, SHR_D_ByLargeRegister) {
   RunCountCases(
-      "SHR.D", SameCountCases(kDwordLargeCounts, 0xFFFFFFFF, 0, CpuCore::Z, 8));
+      "SHR.D", CountArg::kRegister,
+      SameCountCases(kDwordLargeCounts, 0xFFFFFFFF, 0, CpuCore::Z, 10));
 }
 
 TEST_F(InstructionTest, SRA_W_ByLargeRegister) {
@@ -877,18 +879,89 @@ TEST_F(InstructionTest, SRA_W_ByLargeRegister) {
                                            CpuCore::S | CpuCore::C, 9)) {
     cases.push_back(c);
   }
-  RunCountCases("SRA.W", cases);
+  RunCountCases("SRA.W", CountArg::kRegister, cases);
 }
 
 TEST_F(InstructionTest, SRA_D_ByLargeRegister) {
   std::vector<CountCase> cases =
-      SameCountCases(kDwordLargeCounts, 0x7FFFFFFF, 0, CpuCore::Z, 9);
+      SameCountCases(kDwordLargeCounts, 0x7FFFFFFF, 0, CpuCore::Z, 11);
   for (const CountCase& c :
        SameCountCases(kDwordLargeCounts, 0x80000000, 0xFFFFFFFF,
-                      CpuCore::S | CpuCore::C, 10)) {
+                      CpuCore::S | CpuCore::C, 12)) {
     cases.push_back(c);
   }
-  RunCountCases("SRA.D", cases);
+  RunCountCases("SRA.D", CountArg::kRegister, cases);
+}
+
+// A word shift by a register takes 2 cycles a bit.
+TEST_F(InstructionTest, SHL_W_ByRegisterCycles) {
+  RunCountCases("SHL.W", CountArg::kRegister,
+                {{0x1234, 0, 0x1234, 0, 6},
+                 {0x1234, 1, 0x2468, 0, 7},
+                 {0x1234, 16, 0, CpuCore::Z, 37}});
+}
+
+TEST_F(InstructionTest, SHR_W_ByRegisterCycles) {
+  RunCountCases("SHR.W", CountArg::kRegister,
+                {{0x1234, 0, 0x1234, 0, 6},
+                 {0x1234, 1, 0x091A, 0, 7},
+                 {0x1234, 16, 0, CpuCore::Z, 37}});
+}
+
+TEST_F(InstructionTest, SRA_W_ByRegisterCycles) {
+  RunCountCases("SRA.W", CountArg::kRegister,
+                {{0x8000, 0, 0x8000, CpuCore::S, 6},
+                 {0x8000, 1, 0xC000, CpuCore::S, 7},
+                 {0x8000, 16, 0xFFFF, CpuCore::S | CpuCore::C, 37}});
+}
+
+// A dword shift by a register takes 3 cycles a bit up to 15 bits. From 16
+// bits, a word moves first, and the rest take 2 cycles a bit.
+TEST_F(InstructionTest, SHL_D_ByRegisterCycles) {
+  RunCountCases("SHL.D", CountArg::kRegister,
+                {{0x00018001, 0, 0x00018001, 0, 7},
+                 {0x00018001, 1, 0x00030002, 0, 8},
+                 {0x00018001, 15, 0xC0008000, CpuCore::S, 50},
+                 {0x00018001, 16, 0x80010000, CpuCore::S | CpuCore::C, 10},
+                 {0x00018001, 17, 0x00020000, CpuCore::C, 12},
+                 {0x00018001, 32, 0, CpuCore::Z | CpuCore::C, 42}});
+}
+
+TEST_F(InstructionTest, SHR_D_ByRegisterCycles) {
+  RunCountCases("SHR.D", CountArg::kRegister,
+                {{0x00018001, 0, 0x00018001, 0, 7},
+                 {0x00018001, 1, 0x0000C000, CpuCore::C, 8},
+                 {0x00018001, 15, 0x00000003, 0, 50},
+                 {0x00018001, 16, 0x00000001, CpuCore::C, 10},
+                 {0x00018001, 17, 0, CpuCore::Z | CpuCore::C, 12},
+                 {0x00018001, 32, 0, CpuCore::Z, 42}});
+}
+
+// As SHL.D and SHR.D, with one more cycle to fill the high word with the sign
+// from 17 bits, and one more for a negative value at 16 bits.
+TEST_F(InstructionTest, SRA_D_ByRegisterCycles) {
+  RunCountCases("SRA.D", CountArg::kRegister,
+                {{0x80018001, 0, 0x80018001, CpuCore::S, 7},
+                 {0x80018001, 1, 0xC000C000, CpuCore::S | CpuCore::C, 8},
+                 {0x80018001, 15, 0xFFFF0003, CpuCore::S, 50},
+                 {0x40018001, 16, 0x00004001, CpuCore::C, 10},
+                 {0x80018001, 16, 0xFFFF8001, CpuCore::S | CpuCore::C, 11},
+                 {0x40018001, 17, 0x00002000, CpuCore::C, 13},
+                 {0x80018001, 17, 0xFFFFC000, CpuCore::S | CpuCore::C, 13},
+                 {0x40018001, 32, 0, CpuCore::Z, 43},
+                 {0x80018001, 32, 0xFFFFFFFF, CpuCore::S | CpuCore::C, 43}});
+}
+
+// From 17 bits, the high word moves to the low word and is filled with the
+// sign, and only the low word is shifted.
+TEST_F(InstructionTest, SRA_D_ByValueCycles) {
+  RunCountCases("SRA.D", CountArg::kImmediate,
+                {{0x40018001, 16, 0x00004001, CpuCore::C, 7},
+                 {0x80018001, 16, 0xFFFF8001, CpuCore::S | CpuCore::C, 8},
+                 {0x40018001, 17, 0x00002000, CpuCore::C, 7},
+                 {0x80018001, 17, 0xFFFFC000, CpuCore::S | CpuCore::C, 7},
+                 {0x40018001, 31, 0, CpuCore::Z | CpuCore::C, 21},
+                 {0x80018001, 31, 0xFFFFFFFF, CpuCore::S, 21}});
 }
 
 }  // namespace
