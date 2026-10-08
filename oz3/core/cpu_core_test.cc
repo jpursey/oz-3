@@ -4009,9 +4009,10 @@ TEST_F(CpuCoreTest, LoadFromInvalidPort) {
   state.core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
   lock.reset();
 
+  // A missing port is never ready to read, so S is cleared.
   ASSERT_TRUE(ExecuteUntilIp(ip2));
   EXPECT_EQ(state.r1, 24);
-  EXPECT_EQ(state.st, CpuCore::ZSCO);
+  EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C | CpuCore::O);
 
   ExecuteUntilHalt();
   EXPECT_EQ(state.ip, end_ip);
@@ -4294,15 +4295,16 @@ TEST_F(CpuCoreTest, StoreToInvalidPort) {
   state.code.AddValue(Encode(kTestOp_HALT));
   const uint16_t end_ip = state.code.GetAddress();
 
-  // Execute code
+  // A missing port is never ready to write, so S is set.
   ASSERT_TRUE(ExecuteUntilIp(ip1));
-  EXPECT_EQ(state.st, 0);
+  EXPECT_EQ(state.st, CpuCore::S);
 
   auto lock = state.core.RequestLock();
   while (!lock->IsLocked()) {
     Execute(1);
   }
-  state.core.SetWordRegister(*lock, CpuCore::ST, CpuCore::ZSCO);
+  state.core.SetWordRegister(*lock, CpuCore::ST,
+                             CpuCore::Z | CpuCore::C | CpuCore::O);
   lock.reset();
 
   ASSERT_TRUE(ExecuteUntilIp(ip2));

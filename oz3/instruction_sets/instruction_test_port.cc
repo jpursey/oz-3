@@ -619,6 +619,23 @@ TEST_F(InstructionTest, INS_ID) {
   EXPECT_EQ(state.st, ZC);
 }
 
+TEST_F(InstructionTest, INS_MissingPort) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 100).AddValue(0xBAD);
+  state.SetRegisters({{CpuCore::ST, ZSC},
+                      {CpuCore::R0, 2},      // Missing port
+                      {CpuCore::R2, 100}});  // For "($r)"
+
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, {"($r)", CpuCore::R2}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+
+  // A missing port is never ready, whatever S held before.
+  EXPECT_EQ(CyclesUntilIp(ip1), 4);  // INS.RW R0, (R2)
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 0xBAD);
+  EXPECT_EQ(state.st, ZC);
+}
+
 TEST_F(InstructionTest, INR_RW) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
@@ -925,6 +942,27 @@ TEST_F(InstructionTest, INR_Interrupt) {
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.sp, 500);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+}
+
+TEST_F(InstructionTest, INR_MissingPort) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 100).AddValue(0xBAD);
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R0, 2},         // Missing port
+                      {CpuCore::R2, 100},       // DATA address
+                      {CpuCore::R7, 0x8001}});  // Words to read
+
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+
+  // A missing port is never ready, so nothing is read. R7 is large enough that
+  // decrementing it sets S, which must not be taken as the port being ready.
+  EXPECT_EQ(CyclesUntilIp(ip1), 7);  // INR.RW R0, (R2)
+  EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 0xBAD);
+  EXPECT_EQ(state.r2, 100);
+  EXPECT_EQ(state.r7, 0x8001);
+  EXPECT_EQ(state.st, ZC);
 }
 
 TEST_F(InstructionTest, OUT_RW) {
@@ -1623,6 +1661,21 @@ TEST_F(InstructionTest, OUTS_ID) {
   EXPECT_EQ(ReadPort32(1), 0xBAD0BAD);
 }
 
+TEST_F(InstructionTest, OUTS_MissingPort) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R0, 2},    // Missing port
+                      {CpuCore::R1, 1}});  // For "$r"
+
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, {"$r", CpuCore::R1}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+
+  // A missing port is never ready, whatever S held before.
+  EXPECT_EQ(CyclesUntilIp(ip1), 4);  // OUTS.RW R0, R1
+  EXPECT_EQ(state.st, ZC);
+}
+
 TEST_F(InstructionTest, OUTR_RW) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
@@ -1944,6 +1997,27 @@ TEST_F(InstructionTest, OUTR_Interrupt) {
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.sp, 500);
   EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+}
+
+TEST_F(InstructionTest, OUTR_MissingPort) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 100).AddValue(1).AddValue(2);
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R0, 2},    // Missing port
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R7, 2}});  // Words to write
+
+  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+
+  // A missing port is never ready, so nothing is written. R7 is small enough
+  // that decrementing it clears S, which must not be taken as the port being
+  // ready.
+  EXPECT_EQ(CyclesUntilIp(ip1), 10);  // OUTR.RW R0, (R2)
+  EXPECT_EQ(state.r2, 100);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.st, ZC);
 }
 
 }  // namespace

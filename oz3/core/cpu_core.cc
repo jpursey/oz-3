@@ -931,6 +931,8 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_PLD: {
         exec_cycles_ += kCpuCoreCycles_PLD;
         if (locked_port_ == -1) {
+          // A missing port is never ready to read.
+          mst_ &= ~S;
           break;
         }
         DCHECK(lock_ != nullptr && locked_port_ >= 0 &&
@@ -943,6 +945,8 @@ void CpuCore::RunInstructionLoop() {
       case kMicro_PST: {
         exec_cycles_ += kCpuCoreCycles_PST;
         if (locked_port_ == -1) {
+          // A missing port is never ready to write.
+          mst_ |= S;
           break;
         }
         DCHECK(lock_ != nullptr && locked_port_ >= 0 &&
