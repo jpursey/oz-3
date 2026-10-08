@@ -946,13 +946,19 @@ instruction NEG.D "$R" {
 ################################################################################
 ## ADD <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    ADD.W <reg>, <word-value>
-##    ADD.D <dreg>, <dword-value>
-##    ADD.S SP, <word-value>
+##    ADD.W <reg>, <reg>               (4 cycles)
+##    ADD.W <reg>, <integer>           (5 cycles)
+##    ADD.W <reg>, <word-address>      (6-8 cycles)
+##    ADD.D <dreg>, <dreg>             (5 cycles)
+##    ADD.D <dreg>, <integer>          (7 cycles)
+##    ADD.D <dreg>, <dword-address>    (8-10 cycles)
+##    ADD.S SP, <reg>                  (4 cycles)
+##    ADD.S SP, <integer>              (5 cycles)
+##    ADD.S SP, <word-address>         (6-8 cycles)
 ##
 ## Adds a value to the specified register.
 ################################################################################
@@ -984,9 +990,9 @@ instruction ADD.S "SP, $m" {
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    ADQ.W <reg>, <0..31>
-##    ADQ.D <dreg>, <0..31>
-##    ADQ.S SP, <0..31>
+##    ADQ.W <reg>, <0..31>     (4 cycles)
+##    ADQ.D <dreg>, <0..31>    (5 cycles)
+##    ADQ.S SP, <0..31>        (4 cycles)
 ##
 ## Adds an immediate value to the specified register.
 ################################################################################
@@ -1014,14 +1020,18 @@ instruction ADQ.S "SP, $#5" {
 ################################################################################
 ## ADC <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    ADC.W <reg>, <word-value>
-##    ADC.D <dreg>, <dword-value>
+##    ADC.W <reg>, <reg>               (4 cycles)
+##    ADC.W <reg>, <integer>           (5 cycles)
+##    ADC.W <reg>, <word-address>      (6-8 cycles)
+##    ADC.D <dreg>, <dreg>             (5 cycles)
+##    ADC.D <dreg>, <integer>          (7 cycles)
+##    ADC.D <dreg>, <dword-address>    (8-10 cycles)
 ##
-## Adds a value to the specified register.
+## Adds a value and the carry to the specified register.
 ################################################################################
 
 instruction ADC.W "$r, $m" {
@@ -1041,15 +1051,21 @@ instruction ADC.D "$R, $m" {
 ################################################################################
 ## SUB <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    SUB.W <reg>, <word-value>
-##    SUB.D <dreg>, <dword-value>
-##    SUB.S SP, <word-value>
+##    SUB.W <reg>, <reg>               (4 cycles)
+##    SUB.W <reg>, <integer>           (5 cycles)
+##    SUB.W <reg>, <word-address>      (6-8 cycles)
+##    SUB.D <dreg>, <dreg>             (5 cycles)
+##    SUB.D <dreg>, <integer>          (7 cycles)
+##    SUB.D <dreg>, <dword-address>    (8-10 cycles)
+##    SUB.S SP, <reg>                  (4 cycles)
+##    SUB.S SP, <integer>              (5 cycles)
+##    SUB.S SP, <word-address>         (6-8 cycles)
 ##
-## Subtracts a value to the specified register.
+## Subtracts a value from the specified register.
 ################################################################################
 
 instruction SUB.W "$r, $m" {
@@ -1079,11 +1095,11 @@ instruction SUB.S "SP, $m" {
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    SBQ.W <reg>, <0..31>
-##    SBQ.D <dreg>, <0..31>
-##    SBQ.S SP, <0..31>
+##    SBQ.W <reg>, <0..31>     (4 cycles)
+##    SBQ.D <dreg>, <0..31>    (5 cycles)
+##    SBQ.S SP, <0..31>        (4 cycles)
 ##
-## Subtracts an immediate value to the specified register.
+## Subtracts an immediate value from the specified register.
 ################################################################################
 
 instruction SBQ.W "$r, $#5" {
@@ -1109,14 +1125,18 @@ instruction SBQ.S "SP, $#5" {
 ################################################################################
 ## SBC <register>, <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    SBC.W <reg>, <word-value>
-##    SBC.D <dreg>, <dword-value>
+##    SBC.W <reg>, <reg>               (4 cycles)
+##    SBC.W <reg>, <integer>           (5 cycles)
+##    SBC.W <reg>, <word-address>      (6-8 cycles)
+##    SBC.D <dreg>, <dreg>             (5 cycles)
+##    SBC.D <dreg>, <integer>          (7 cycles)
+##    SBC.D <dreg>, <dword-address>    (8-10 cycles)
 ##
-## Adds a value to the specified register.
+## Subtracts a value and the carry from the specified register.
 ################################################################################
 
 instruction SBC.W "$r, $m" {
@@ -3702,12 +3722,16 @@ instruction NOTF "$#4" {
 ################################################################################
 ## TST <value>
 ##
-## Cycles: 4+
+## Cycles: 4-10
 ## ZSCO: XX00
 ##
 ## Variants:
-##    TST.W <word-value>
-##    TST.D <dword-value>
+##    TST.W <reg>              (4 cycles)
+##    TST.W <integer>          (5 cycles)
+##    TST.W <word-address>     (6-8 cycles)
+##    TST.D <dreg>             (5 cycles)
+##    TST.D <integer>          (7 cycles)
+##    TST.D <dword-address>    (8-10 cycles)
 ##
 ## Tests a value setting flags.
 ################################################################################
@@ -3729,12 +3753,16 @@ instruction TST.D "$m" {
 ################################################################################
 ## CMP <register> <value>
 ##
-## Cycles: 4+
+## Cycles: 4-11
 ## ZSCO: XXXX
 ##
 ## Variants:
-##    CMP.W <reg> <word-value>
-##    CMP.D <dreg> <dword-value>
+##    CMP.W <reg>, <reg>               (4 cycles)
+##    CMP.W <reg>, <integer>           (5 cycles)
+##    CMP.W <reg>, <word-address>      (6-8 cycles)
+##    CMP.D <dreg>, <dreg>             (6 cycles)
+##    CMP.D <dreg>, <integer>          (8 cycles)
+##    CMP.D <dreg>, <dword-address>    (9-11 cycles)
 ##
 ## Subtracts <value> from <register> setting flags, but not updating <register>.
 ################################################################################

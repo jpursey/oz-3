@@ -127,7 +127,7 @@ Depends on: nothing.
 - `instruction_test_misc.cc` and `instruction_test_load_store.cc` pin both
   ends of every variant.
 
-### CL2 [ ] instruction_sets: math
+### CL2 [x] instruction_sets: math
 
 Depends on: CL1.
 

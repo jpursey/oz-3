@@ -252,6 +252,14 @@ TEST_F(InstructionTest, NEG_D) {
   EXPECT_EQ(state.st, CpuCore::S);
 }
 
+// NEG_D times NEG.D, whose cost depends on the value.
+TEST_F(InstructionTest, NEG_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"NEG.W R0", 4, {Encode("NEG.W", CpuCore::R0)}},
+  });
+}
+
 TEST_F(InstructionTest, ADD_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -354,6 +362,32 @@ TEST_F(InstructionTest, ADD_S) {
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
 }
 
+TEST_F(InstructionTest, ADD_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"ADD.W R0, R1", 4, {Encode("ADD.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"ADD.W R0, 5", 5, {Encode("ADD.W", CpuCore::R0, "$v"), 5}},
+      {"ADD.W R0, (R1)",
+       6,
+       {Encode("ADD.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"ADD.W R0, (R1 + 1)",
+       8,
+       {Encode("ADD.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"ADD.D D0, D1", 5, {Encode("ADD.D", 0, {"$R", 1})}},
+      {"ADD.D D0, 5", 7, {Encode("ADD.D", 0, "$V"), 5, 0}},
+      {"ADD.D D0, [R4]", 8, {Encode("ADD.D", 0, {"[$r]", CpuCore::R4})}},
+      {"ADD.D D0, [R4 + 1]",
+       10,
+       {Encode("ADD.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+      {"ADD.S SP, R1", 4, {Encode("ADD.S", {"$r", CpuCore::R1})}},
+      {"ADD.S SP, 5", 5, {Encode("ADD.S", "$v"), 5}},
+      {"ADD.S SP, (R1)", 6, {Encode("ADD.S", {"($r)", CpuCore::R1})}},
+      {"ADD.S SP, (R1 + 1)",
+       8,
+       {Encode("ADD.S", {"($r + $v)", CpuCore::R1}), 1}},
+  });
+}
+
 TEST_F(InstructionTest, ADQ_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -448,6 +482,15 @@ TEST_F(InstructionTest, ADQ_S) {
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
 }
 
+TEST_F(InstructionTest, ADQ_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"ADQ.W R0, 31", 4, {Encode("ADQ.W", CpuCore::R0, 31)}},
+      {"ADQ.D D0, 31", 5, {Encode("ADQ.D", 0, 31)}},
+      {"ADQ.S SP, 31", 4, {Encode("ADQ.S", 31)}},
+  });
+}
+
 TEST_F(InstructionTest, ADC_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -514,6 +557,26 @@ TEST_F(InstructionTest, ADC_D) {
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // ADC.D D0, 1
   EXPECT_EQ(state.d0(), 0);
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+TEST_F(InstructionTest, ADC_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"ADC.W R0, R1", 4, {Encode("ADC.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"ADC.W R0, 5", 5, {Encode("ADC.W", CpuCore::R0, "$v"), 5}},
+      {"ADC.W R0, (R1)",
+       6,
+       {Encode("ADC.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"ADC.W R0, (R1 + 1)",
+       8,
+       {Encode("ADC.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"ADC.D D0, D1", 5, {Encode("ADC.D", 0, {"$R", 1})}},
+      {"ADC.D D0, 5", 7, {Encode("ADC.D", 0, "$V"), 5, 0}},
+      {"ADC.D D0, [R4]", 8, {Encode("ADC.D", 0, {"[$r]", CpuCore::R4})}},
+      {"ADC.D D0, [R4 + 1]",
+       10,
+       {Encode("ADC.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+  });
 }
 
 TEST_F(InstructionTest, SUB_W) {
@@ -616,6 +679,32 @@ TEST_F(InstructionTest, SUB_S) {
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // SUB.S SP, 0x8000
   EXPECT_EQ(state.sp, 0x8000);
   EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
+}
+
+TEST_F(InstructionTest, SUB_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"SUB.W R0, R1", 4, {Encode("SUB.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"SUB.W R0, 5", 5, {Encode("SUB.W", CpuCore::R0, "$v"), 5}},
+      {"SUB.W R0, (R1)",
+       6,
+       {Encode("SUB.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"SUB.W R0, (R1 + 1)",
+       8,
+       {Encode("SUB.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"SUB.D D0, D1", 5, {Encode("SUB.D", 0, {"$R", 1})}},
+      {"SUB.D D0, 5", 7, {Encode("SUB.D", 0, "$V"), 5, 0}},
+      {"SUB.D D0, [R4]", 8, {Encode("SUB.D", 0, {"[$r]", CpuCore::R4})}},
+      {"SUB.D D0, [R4 + 1]",
+       10,
+       {Encode("SUB.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+      {"SUB.S SP, R1", 4, {Encode("SUB.S", {"$r", CpuCore::R1})}},
+      {"SUB.S SP, 5", 5, {Encode("SUB.S", "$v"), 5}},
+      {"SUB.S SP, (R1)", 6, {Encode("SUB.S", {"($r)", CpuCore::R1})}},
+      {"SUB.S SP, (R1 + 1)",
+       8,
+       {Encode("SUB.S", {"($r + $v)", CpuCore::R1}), 1}},
+  });
 }
 
 TEST_F(InstructionTest, SBQ_W) {
@@ -730,6 +819,15 @@ TEST_F(InstructionTest, SBQ_S) {
   EXPECT_EQ(state.st, CpuCore::Z);
 }
 
+TEST_F(InstructionTest, SBQ_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"SBQ.W R0, 31", 4, {Encode("SBQ.W", CpuCore::R0, 31)}},
+      {"SBQ.D D0, 31", 5, {Encode("SBQ.D", 0, 31)}},
+      {"SBQ.S SP, 31", 4, {Encode("SBQ.S", 31)}},
+  });
+}
+
 TEST_F(InstructionTest, SBC_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -818,6 +916,26 @@ TEST_F(InstructionTest, SBC_D) {
   EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
 }
 
+TEST_F(InstructionTest, SBC_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"SBC.W R0, R1", 4, {Encode("SBC.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"SBC.W R0, 5", 5, {Encode("SBC.W", CpuCore::R0, "$v"), 5}},
+      {"SBC.W R0, (R1)",
+       6,
+       {Encode("SBC.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"SBC.W R0, (R1 + 1)",
+       8,
+       {Encode("SBC.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"SBC.D D0, D1", 5, {Encode("SBC.D", 0, {"$R", 1})}},
+      {"SBC.D D0, 5", 7, {Encode("SBC.D", 0, "$V"), 5, 0}},
+      {"SBC.D D0, [R4]", 8, {Encode("SBC.D", 0, {"[$r]", CpuCore::R4})}},
+      {"SBC.D D0, [R4 + 1]",
+       10,
+       {Encode("SBC.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+  });
+}
+
 TEST_F(InstructionTest, TST_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -866,6 +984,20 @@ TEST_F(InstructionTest, TST_D) {
   EXPECT_EQ(state.st, CpuCore::S);
   ASSERT_TRUE(ExecuteUntilIp(ip4));  // TST.D 0x80000000
   EXPECT_EQ(state.st, CpuCore::S);
+}
+
+TEST_F(InstructionTest, TST_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"TST.W R1", 4, {Encode("TST.W", {"$r", CpuCore::R1})}},
+      {"TST.W 5", 5, {Encode("TST.W", "$v"), 5}},
+      {"TST.W (R1)", 6, {Encode("TST.W", {"($r)", CpuCore::R1})}},
+      {"TST.W (R1 + 1)", 8, {Encode("TST.W", {"($r + $v)", CpuCore::R1}), 1}},
+      {"TST.D D1", 5, {Encode("TST.D", {"$R", 1})}},
+      {"TST.D 5", 7, {Encode("TST.D", "$V"), 5, 0}},
+      {"TST.D [R4]", 8, {Encode("TST.D", {"[$r]", CpuCore::R4})}},
+      {"TST.D [R4 + 1]", 10, {Encode("TST.D", {"[$r + $v]", CpuCore::R4}), 1}},
+  });
 }
 
 TEST_F(InstructionTest, CMP_W) {
@@ -930,6 +1062,26 @@ TEST_F(InstructionTest, CMP_D) {
   EXPECT_EQ(state.st, CpuCore::Z);
   ASSERT_TRUE(ExecuteUntilIp(ip5));  // CMP.D D0, 0x80000000
   EXPECT_EQ(state.st, CpuCore::S | CpuCore::C | CpuCore::O);
+}
+
+TEST_F(InstructionTest, CMP_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"CMP.W R0, R1", 4, {Encode("CMP.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"CMP.W R0, 5", 5, {Encode("CMP.W", CpuCore::R0, "$v"), 5}},
+      {"CMP.W R0, (R1)",
+       6,
+       {Encode("CMP.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"CMP.W R0, (R1 + 1)",
+       8,
+       {Encode("CMP.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"CMP.D D0, D1", 6, {Encode("CMP.D", 0, {"$R", 1})}},
+      {"CMP.D D0, 5", 8, {Encode("CMP.D", 0, "$V"), 5, 0}},
+      {"CMP.D D0, [R4]", 9, {Encode("CMP.D", 0, {"[$r]", CpuCore::R4})}},
+      {"CMP.D D0, [R4 + 1]",
+       11,
+       {Encode("CMP.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+  });
 }
 
 }  // namespace
