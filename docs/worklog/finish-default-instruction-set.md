@@ -110,8 +110,8 @@ decrement the count in `R7` for each word.
   which costs nothing. So if both are the same register, the word is copied
   to the next address (up or down), and the register is stepped by two.
 - `MVI` takes 7 cycles and `MVD` 9, as stepping down takes an add for each
-  register. `MVIR` takes 10 cycles a word and `MVDR` 12, including fetching
-  the instruction again, and the last word one less. An `R7` of 0 takes 5.
+  register. `MVIR` takes 9 cycles a word and `MVDR` 11, including fetching
+  the instruction again. An `R7` of 0 takes 6.
 
 ### Repeating instructions
 
@@ -123,11 +123,18 @@ next instruction is the same one again:
 - Once the `T` flag is implemented (with the debugger), each step will be one
   word.
 - Each word pays for fetching the instruction again.
+- `MVIR`, `MVDR`, `INR`, and `OUTR` decrement `R7` first, which also tests
+  it for 0 and for the last word, and restore it when nothing moves. That
+  makes each word a cycle cheaper and an execution that moves nothing a
+  cycle dearer, favoring moving data over polling a port that isn't ready.
+  `CPIR` and `CPDR` test `R7` and decrement it after the compare instead, as
+  `Z` must come from the compare.
 - `R7` is the count for every repeating instruction, and the address
   registers are encoded, so `R7` can also be named as an address. That is
-  allowed, and does what the microcode does: it is used as the address, then
-  stepped and decremented. For the instructions that don't repeat, `R7` is an
-  address like any other.
+  allowed, and does what the microcode does: `CPIR` and `CPDR` use it as the
+  address and then step and decrement it, while the others decrement it
+  first. For the instructions that don't repeat, `R7` is an address like any
+  other.
 
 ### INR and OUTR
 
@@ -148,9 +155,7 @@ This is a breaking change, with no programs yet to break:
   `R7` is 0. It stops early, with `S` clear, when the port isn't ready.
 - Cycle counts change, as each word pays for a fetch. A word takes 8 cycles
   for the register port forms and 9 for the immediate ones (10 and 11 for a
-  dword). `R7` is decremented first, which also tests it for 0 and for the
-  last word, so it is restored when nothing moves: an `R7` of 0 takes 6 or 7.
-  This favors moving data over polling a port that isn't ready.
+  dword), and an `R7` of 0 takes 6 or 7.
 - When the port isn't ready, `INR` stops before touching memory, in 7 to 9
   cycles. `OUTR` has already loaded the word by then, so it takes two cycles
   more than a word, and steps the address register back.
@@ -383,6 +388,22 @@ Depends on: CL5 (the repeat approach and its tests).
   handles `R7` of 0, leaves the address register past the last word, and
   moves `IP` back by the right size. An interrupt between words for a word
   and a dword variant of each, covering both instruction sizes.
+
+### CL8 [x] instruction_sets: MVIR and MVDR decrement R7 first
+
+Depends on: CL6, CL7 (the same approach).
+
+- `MVIR` and `MVDR` decrement `R7` first, as `INR` and `OUTR` do, which also
+  tests it for 0 and for the last word. Each word costs a cycle less, except
+  the last, which costs the same, and an `R7` of 0 costs one more. `MVDR`
+  steps its addresses down with `JD`, which leaves the flags alone, as `CPDR`
+  does.
+- Their tests in `instruction_test_block.cc` change to match.
+
+**Verify**
+- Standard checks.
+- Unit tests: the existing `MVIR` and `MVDR` tests with the new counts, and
+  `R7` as the address register.
 
 ### After landing [ ] wiki: Block moves
 

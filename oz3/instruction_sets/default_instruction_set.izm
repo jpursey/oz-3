@@ -841,57 +841,68 @@ instruction MVD "($r), ($r)" {
 ################################################################################
 ## MVIR (<address-register>), (<address-register>)
 ##
-## Cycles: 5 or 9-10 per word
+## Cycles: 6 or 9 per word
 ## ZSCO: ----
 ##
 ## MVI, decrementing the count in R7 for each word, repeated until R7 is 0.
 ## Each execution copies one word, and then executes the instruction again if
-## it isn't done, so interrupts are handled between words. Each word takes 10
-## cycles, except the last, which takes 9.
+## it isn't done, so interrupts are handled between words. Each word takes 9
+## cycles.
 ##
-## If R7 is 0, nothing is copied, and it takes 5 cycles.
+## If R7 is 0, nothing is copied, and it takes 6 cycles.
 ################################################################################
 
 instruction MVIR "($r), ($r)" {
   UL;
-  TST(R7);
-  JC(Z,@done);
+
+  # R7 is decremented first, which clears C if it was 0, and sets Z if this is
+  # the last word. Nothing after it changes Z or C, and R7 is restored if no
+  # word is copied.
+  ADDI(R7,-1);
+  JC(NC,@restore);
   LKR(b); ADR(b); LD(C0); LAD(b); UL;  # As MVI
   LKR(a); ADR(a); ST(C0); LAD(a); UL;
-  JD(R7,@repeat);
+  JC(Z,@done);
+  ADDI(IP,-1);
 @done:
   END;
-@repeat:
-  ADDI(IP,-1);
+@restore:
+  ADDI(R7,1);
 }
 
 ################################################################################
 ## MVDR (<address-register>), (<address-register>)
 ##
-## Cycles: 5 or 11-12 per word
+## Cycles: 6 or 11 per word
 ## ZSCO: ----
 ##
 ## MVD, decrementing the count in R7 for each word, repeated until R7 is 0.
 ## Each execution copies one word, and then executes the instruction again if
-## it isn't done, so interrupts are handled between words. Each word takes 12
-## cycles, except the last, which takes 11.
+## it isn't done, so interrupts are handled between words. Each word takes 11
+## cycles.
 ##
-## If R7 is 0, nothing is copied, and it takes 5 cycles.
+## If R7 is 0, nothing is copied, and it takes 6 cycles.
 ################################################################################
 
 instruction MVDR "($r), ($r)" {
   UL;
-  TST(R7);
-  JC(Z,@done);
-  LKR(b); ADR(b); LD(C0); UL;  # As MVD
-  ADDI(b,-1);
+  ADDI(R7,-1);  # As MVIR
+  JC(NC,@restore);
+
+  # As MVD, stepping the addresses down with JD (which always lands on the next
+  # microcode), as ADDI would change the flags.
+  LKR(b); ADR(b); LD(C0); UL;
+  JD(b,@source_stepped);
+@source_stepped:
   LKR(a); ADR(a); ST(C0); UL;
-  ADDI(a,-1);
-  JD(R7,@repeat);
+  JD(a,@stepped);
+@stepped:
+  JC(Z,@done);
+  ADDI(IP,-1);
 @done:
   END;
-@repeat:
-  ADDI(IP,-1);
+@restore:
+  ADDI(R7,1);
 }
 
 ################################################################################

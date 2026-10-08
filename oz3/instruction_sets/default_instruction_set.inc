@@ -2524,17 +2524,18 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "($r), ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;TST(R7);JC(Z,@done);LKR(b);ADR(b);LD(C0);LAD(b);UL;LKR(a);"
-             "ADR(a);ST(C0);LAD(a);UL;JD(R7,@repeat);@done:END;"
-             "@repeat:ADDI(IP,-1);"},
+     .code = "UL;ADDI(R7,-1);JC(NC,@restore);LKR(b);ADR(b);LD(C0);LAD(b);"
+             "UL;LKR(a);ADR(a);ST(C0);LAD(a);UL;JC(Z,@done);ADDI(IP,-1);"
+             "@done:END;@restore:ADDI(R7,1);"},
     {.op = 21,
      .op_name = "MVDR",
      .source = "($r), ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
-     .code = "UL;TST(R7);JC(Z,@done);LKR(b);ADR(b);LD(C0);UL;ADDI(b,-1);"
-             "LKR(a);ADR(a);ST(C0);UL;ADDI(a,-1);JD(R7,@repeat);@done:END;"
-             "@repeat:ADDI(IP,-1);"},
+     .code = "UL;ADDI(R7,-1);JC(NC,@restore);LKR(b);ADR(b);LD(C0);UL;"
+             "JD(b,@source_stepped);@source_stepped:LKR(a);ADR(a);ST(C0);"
+             "UL;JD(a,@stepped);@stepped:JC(Z,@done);ADDI(IP,-1);@done:END;"
+             "@restore:ADDI(R7,1);"},
     {.op = 22,
      .op_name = "NEG.W",
      .source = "$r",

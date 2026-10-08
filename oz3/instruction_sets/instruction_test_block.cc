@@ -511,8 +511,8 @@ TEST_F(InstructionTest, MVIR) {
   state.code.AddValue(Encode("MVIR", CpuCore::R4, CpuCore::R0));
   const uint16_t ip4 = state.code.AddNopGetAddress();
 
-  // Two words that repeat, and the last that doesn't.
-  EXPECT_EQ(CyclesUntilIp(ip1), 10 + 10 + 9);  // MVIR (R4), (R0)
+  // All of R7 is copied.
+  EXPECT_EQ(CyclesUntilIp(ip1), 9 + 9 + 9);  // MVIR (R4), (R0)
   state.extra.SetAddress(state.be + 200);
   EXPECT_EQ(state.extra.GetValue(), 1);
   EXPECT_EQ(state.extra.GetValue(), 2);
@@ -523,8 +523,8 @@ TEST_F(InstructionTest, MVIR) {
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 
   // Overlapping, moving the words down by one.
-  ASSERT_TRUE(ExecuteUntilIp(setup2));         // MVQ R7, 3
-  EXPECT_EQ(CyclesUntilIp(ip2), 10 + 10 + 9);  // MVIR (R2), (R1)
+  ASSERT_TRUE(ExecuteUntilIp(setup2));       // MVQ R7, 3
+  EXPECT_EQ(CyclesUntilIp(ip2), 9 + 9 + 9);  // MVIR (R2), (R1)
   state.data.SetAddress(state.bd + 110);
   EXPECT_EQ(state.data.GetValue(), 5);
   EXPECT_EQ(state.data.GetValue(), 6);
@@ -536,8 +536,8 @@ TEST_F(InstructionTest, MVIR) {
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 
   // Overlapping, moving the words up by one, which repeats the first word.
-  ASSERT_TRUE(ExecuteUntilIp(setup3));         // MVQ R7, 3
-  EXPECT_EQ(CyclesUntilIp(ip3), 10 + 10 + 9);  // MVIR (R3), (R2)
+  ASSERT_TRUE(ExecuteUntilIp(setup3));       // MVQ R7, 3
+  EXPECT_EQ(CyclesUntilIp(ip3), 9 + 9 + 9);  // MVIR (R3), (R2)
   state.data.SetAddress(state.bd + 113);
   EXPECT_EQ(state.data.GetValue(), 7);
   EXPECT_EQ(state.data.GetValue(), 7);
@@ -549,7 +549,7 @@ TEST_F(InstructionTest, MVIR) {
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 
   // With R7 of 0, nothing is copied.
-  EXPECT_EQ(CyclesUntilIp(ip4), 5);  // MVIR (R4), (R0)
+  EXPECT_EQ(CyclesUntilIp(ip4), 6);  // MVIR (R4), (R0)
   EXPECT_EQ(state.extra.SetAddress(state.be + 203).GetValue(), 0);
   EXPECT_EQ(state.r0, 103);
   EXPECT_EQ(state.r4, 203);
@@ -583,8 +583,8 @@ TEST_F(InstructionTest, MVDR) {
   state.code.AddValue(Encode("MVDR", CpuCore::R5, CpuCore::R6));
   const uint16_t ip3 = state.code.AddNopGetAddress();
 
-  // Two words that repeat, and the last that doesn't.
-  EXPECT_EQ(CyclesUntilIp(ip1), 12 + 12 + 11);  // MVDR (R5), (R6)
+  // All of R7 is copied.
+  EXPECT_EQ(CyclesUntilIp(ip1), 11 + 11 + 11);  // MVDR (R5), (R6)
   state.extra.SetAddress(state.be + 200);
   EXPECT_EQ(state.extra.GetValue(), 1);
   EXPECT_EQ(state.extra.GetValue(), 2);
@@ -596,7 +596,7 @@ TEST_F(InstructionTest, MVDR) {
 
   // Overlapping, moving the words up by one.
   ASSERT_TRUE(ExecuteUntilIp(setup2));          // MVQ R7, 3
-  EXPECT_EQ(CyclesUntilIp(ip2), 12 + 12 + 11);  // MVDR (R1), (R0)
+  EXPECT_EQ(CyclesUntilIp(ip2), 11 + 11 + 11);  // MVDR (R1), (R0)
   state.data.SetAddress(state.bd + 100);
   EXPECT_EQ(state.data.GetValue(), 4);
   EXPECT_EQ(state.data.GetValue(), 4);
@@ -608,7 +608,7 @@ TEST_F(InstructionTest, MVDR) {
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 
   // With R7 of 0, nothing is copied.
-  EXPECT_EQ(CyclesUntilIp(ip3), 5);  // MVDR (R5), (R6)
+  EXPECT_EQ(CyclesUntilIp(ip3), 6);  // MVDR (R5), (R6)
   EXPECT_EQ(state.extra.SetAddress(state.be + 199).GetValue(), 0);
   EXPECT_EQ(state.r5, 199);
   EXPECT_EQ(state.r6, 299);
@@ -630,13 +630,38 @@ TEST_F(InstructionTest, MVDR_R7) {
   state.code.AddValue(Encode("MVDR", CpuCore::R1, CpuCore::R7));
   const uint16_t ip1 = state.code.AddNopGetAddress();
 
-  // As the address, R7 is stepped down and then decremented, so from 2 it
-  // stops after one word.
-  EXPECT_EQ(CyclesUntilIp(ip1), 11);  // MVDR (R1), (R7)
+  // As the address, R7 is decremented first, so the word below it is copied,
+  // and then it is stepped down. From 2, one word is copied, and the next
+  // execution finds R7 at 0.
+  EXPECT_EQ(CyclesUntilIp(ip1), 11 + 6);  // MVDR (R1), (R7)
   state.data.SetAddress(state.bd + 99);
   EXPECT_EQ(state.data.GetValue(), 0);
-  EXPECT_EQ(state.data.GetValue(), 9);
+  EXPECT_EQ(state.data.GetValue(), 8);
   EXPECT_EQ(state.r1, 99);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.st, CpuCore::ZSCO);
+}
+
+TEST_F(InstructionTest, MVDR_Wrap) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.extra.SetAddress(state.be + 0xFFFF).AddValue(3);
+  state.extra.SetAddress(state.be).AddValue(2).AddValue(1);
+  state.SetRegisters({{CpuCore::ST, CpuCore::ZSCO},
+                      {CpuCore::R1, 1},
+                      {CpuCore::R4, 1},
+                      {CpuCore::R7, 3}});
+
+  state.code.AddValue(Encode("MVDR", CpuCore::R1, CpuCore::R4));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+
+  // Both addresses step from 1 to 0, and wrap from 0 to 0xFFFF.
+  EXPECT_EQ(CyclesUntilIp(ip1), 11 + 11 + 11);  // MVDR (R1), (R4)
+  EXPECT_EQ(state.data.SetAddress(state.bd + 0xFFFF).GetValue(), 3);
+  EXPECT_EQ(state.data.SetAddress(state.bd).GetValue(), 2);
+  EXPECT_EQ(state.data.GetValue(), 1);
+  EXPECT_EQ(state.r1, 0xFFFE);
+  EXPECT_EQ(state.r4, 0xFFFE);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, CpuCore::ZSCO);
 }
@@ -669,14 +694,14 @@ TEST_F(InstructionTest, MVIR_MVDR_Interrupt) {
   ASSERT_TRUE(ExecuteUntilIp(ip0));     // SETI 1, 100
   InterruptRaiser raiser1(this, 1, 2);  // During the first word
   EXPECT_EQ(CyclesUntilIp(handler_ip, [&] { raiser1.Update(); }),
-            10 + kCpuCoreStartInterruptCycles);  // MVIR (R4), (R0)
+            9 + kCpuCoreStartInterruptCycles);  // MVIR (R4), (R0)
   EXPECT_EQ(state.r0, 101);
   EXPECT_EQ(state.r4, 201);
   EXPECT_EQ(state.r7, 2);
   EXPECT_EQ(state.sp, 498);
   EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), CpuCore::I);
   EXPECT_EQ(state.stack.GetValue(), ip0);
-  EXPECT_EQ(CyclesUntilIp(ip1), 6 + 10 + 9);  // IRT, MVIR (R4), (R0)
+  EXPECT_EQ(CyclesUntilIp(ip1), 6 + 9 + 9);  // IRT, MVIR (R4), (R0)
   state.extra.SetAddress(state.be + 200);
   EXPECT_EQ(state.extra.GetValue(), 1);
   EXPECT_EQ(state.extra.GetValue(), 2);
@@ -691,14 +716,14 @@ TEST_F(InstructionTest, MVIR_MVDR_Interrupt) {
   ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ R7, 3
   InterruptRaiser raiser2(this, 1, 2);
   EXPECT_EQ(CyclesUntilIp(handler_ip, [&] { raiser2.Update(); }),
-            12 + kCpuCoreStartInterruptCycles);  // MVDR (R1), (R5)
+            11 + kCpuCoreStartInterruptCycles);  // MVDR (R1), (R5)
   EXPECT_EQ(state.r1, 111);
   EXPECT_EQ(state.r5, 201);
   EXPECT_EQ(state.r7, 2);
   EXPECT_EQ(state.sp, 498);
   EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), CpuCore::I);
   EXPECT_EQ(state.stack.GetValue(), setup2);
-  EXPECT_EQ(CyclesUntilIp(ip2), 6 + 12 + 11);  // IRT, MVDR (R1), (R5)
+  EXPECT_EQ(CyclesUntilIp(ip2), 6 + 11 + 11);  // IRT, MVDR (R1), (R5)
   state.data.SetAddress(state.bd + 110);
   EXPECT_EQ(state.data.GetValue(), 1);
   EXPECT_EQ(state.data.GetValue(), 2);
