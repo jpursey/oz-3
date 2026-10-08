@@ -116,6 +116,9 @@ only documented, as doing whatever the microcode does:
   tell when both arguments are the same register.
 - The repeating instructions (`CPIR`, `CPDR`, `MVIR`, `MVDR`, and `INR` and
   `OUTR`) with `R7`, their count, as an address register.
+- `INR` and `OUTR` with the same register for the port and the address, or
+  with `R7` as the port. The port changes as the register is stepped or
+  decremented (for `OUTR`, before the word is even written).
 
 Let an instruction definition declare argument combinations as invalid (such
 as that its two register arguments must differ, or that one can't be `R7`),

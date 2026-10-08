@@ -4613,291 +4613,99 @@ instruction INS.ID "$v, $m" {
 }
 
 ################################################################################
-## INR <port> <address>
+## INR <port>, <address>
 ##
-## Cycles: 5+
+## Cycles: 6-11 per execution
 ## ZSCO: -X--
 ##
 ## Variants:
-##    INR.RW <reg>    <word-address>
-##    INR.IW <0..255> <word-address>
-##    INR.RD <reg>    <dword-address>
-##    INR.ID <0..255> <dword-address>
+##    INR.RW <reg>,    (<reg>)         (8 cycles per word)
+##    INR.IW <0..255>, (<reg>)         (9 cycles per word)
+##    INR.RD <reg>,    [<reg>]         (10 cycles per dword)
+##    INR.ID <0..255>, [<reg>]         (11 cycles per dword)
 ##
-## Reads up to R7 words from the specified port as long as port status is set
-## before each read and writes sequentially starting at the specified memory
-## address. R7 is set to the number of words *not* read. The "S" flag is set
-## if all words/dwords were read (R7 == 0), otherwise it is cleared.
+## Reads up to R7 words (or dwords) from the port, storing them at the address
+## in the address register (in the memory bank that register implies), and
+## stepping the address register past each one. A word is read only if the port
+## status is set, and R7 is decremented for each word read, so it is left at the
+## number of words *not* read.
+##
+## Each execution reads one word, and then executes the instruction again if
+## it isn't done, so interrupts are handled between words. It is done when R7
+## is 0, which sets the "S" flag, or when the port status isn't set, which
+## clears it.
+##
+## If R7 is 0, nothing is read, and it takes 6 cycles (7 for INR.IW and
+## INR.ID). If the port status isn't set, it takes 7 cycles for INR.RW, 8 for
+## INR.IW and INR.RD, and 9 for INR.ID.
 ################################################################################
 
-macro(bits:5) ReadPortWordRepeat(p) {
-  code "($r)" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,m);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LKR(m); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "($r + $v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,m);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LKR(m); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "(SP)" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,SP);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "(SP + $v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,SP);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "(FP)" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,FP);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "(FP + $v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,FP);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "S($v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "D($v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(DATA); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "E($v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @read:
-    PLK(p); PLD(TS,C0); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(EXTRA); ADR(C2); ST(C0); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
+instruction INR.RW "$r, ($r)" {
+  UL;
+  MSS(S); MSR(_,S);
+
+  # R7 is decremented first, which clears C if it was 0, and sets Z if this is
+  # the last word. Nothing after it changes Z or C, and R7 is restored if no
+  # word is read.
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  PLK(a); PLD(TS,C0); MSR(S,S); PUL;
+  JC(NS,@restore);
+  LKR(b); ADR(b); ST(C0); LAD(b); UL;
+  JC(Z,@done);
+  ADDI(IP,-1);
+@done:
+  END;
+@restore:
+  ADDI(R7,1);
 }
 
-instruction INR.RW "$r, $m" {
-  $ReadPortWordRepeat(a);
+instruction INR.IW "$v, ($r)" {
+  LD(MB); UL;  # As INR.RW, with the port in MB and the address in a
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  PLK(MB); PLD(TS,C0); MSR(S,S); PUL;
+  JC(NS,@restore);
+  LKR(a); ADR(a); ST(C0); LAD(a); UL;
+  JC(Z,@done);
+  ADDI(IP,-2);
+@done:
+  END;
+@restore:
+  ADDI(R7,1);
 }
 
-instruction INR.IW "$v, $m" {
-  LD(MB);
-  $ReadPortWordRepeat(MB);
+instruction INR.RD "$r, [$r]" {
+  UL;  # As INR.RW, a dword at a time
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  PLK(a); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
+  JC(NS,@restore);
+  LKR(b); ADR(b); ST(C0); ST(C1); LAD(b); UL;
+  JC(Z,@done);
+  ADDI(IP,-1);
+@done:
+  END;
+@restore:
+  ADDI(R7,1);
 }
 
-macro(bits:5) ReadPortDwordRepeat(p) {
-  code "[$r]" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,m);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LKR(m); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "[$r + $v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,m);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LKR(m); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "[SP]" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,SP);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "[SP + $v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,SP);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "[FP]" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,FP);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "[FP + $v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,FP);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "S[$v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(STACK); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "D[$v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(DATA); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-  code "E[$v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @read:
-    PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
-    JC(NS,@done);
-    LK(EXTRA); ADR(C2); ST(C0); ST(C1); LAD(C2); UL;
-    JD(R7,@read);
-  @done:
-    END;
-  }
-}
-
-instruction INR.RD "$r, $m" {
-  $ReadPortDwordRepeat(a);
-}
-
-instruction INR.ID "$v, $m" {
-  LD(MB);
-  $ReadPortDwordRepeat(MB);
+instruction INR.ID "$v, [$r]" {
+  LD(MB); UL;  # As INR.IW, a dword at a time
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  PLK(MB); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
+  JC(NS,@restore);
+  LKR(a); ADR(a); ST(C0); ST(C1); LAD(a); UL;
+  JC(Z,@done);
+  ADDI(IP,-2);
+@done:
+  END;
+@restore:
+  ADDI(R7,1);
 }
 
 ################################################################################
@@ -5236,309 +5044,107 @@ instruction OUTS.ID "$v, $m" {
 }
 
 ################################################################################
-## OUTR <port> <address>
+## OUTR <port>, <address>
 ##
-## Cycles: 5+
+## Cycles: 6-13 per execution
 ## ZSCO: -X--
 ##
 ## Variants:
-##    OUTR.RW <reg>    <word-address>
-##    OUTR.IW <0..255> <word-address>
-##    OUTR.RD <reg>    <dword-address>
-##    OUTR.ID <0..255> <dword-address>
+##    OUTR.RW <reg>,    (<reg>)        (8 cycles per word)
+##    OUTR.IW <0..255>, (<reg>)        (9 cycles per word)
+##    OUTR.RD <reg>,    [<reg>]        (10 cycles per dword)
+##    OUTR.ID <0..255>, [<reg>]        (11 cycles per dword)
 ##
-## Writes up to R7 values to the specified port, starting at the specified
-## memory address, as long as the port status is not set before each write.
-## R7 is set to the number of values *not* written. The "S" flag is set if all
-## values were written (R7 == 0), otherwise it is cleared.
+## Writes up to R7 words (or dwords) to the port, loading them from the address
+## in the address register (in the memory bank that register implies), and
+## stepping the address register past each one. A word is written only if the
+## port status is not set, and R7 is decremented for each word written, so it
+## is left at the number of words *not* written.
+##
+## Each execution writes one word, and then executes the instruction again if
+## it isn't done, so interrupts are handled between words. It is done when R7
+## is 0, which sets the "S" flag, or when the port status is set, which clears
+## it.
+##
+## If R7 is 0, nothing is written, and it takes 6 cycles (7 for OUTR.IW and
+## OUTR.ID). The word is loaded before the port status is known, so when the
+## port status is set, it takes two cycles more than a word.
 ################################################################################
 
-macro(bits:5) WritePortWordRepeat(p) {
-  code "($r)" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,m);
-  @write:
-    LKR(m); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "($r + $v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,m);
-  @write:
-    LKR(m); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "(SP)" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,SP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "(SP + $v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,SP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "(FP)" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,FP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "(FP + $v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,FP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "S($v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "D($v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @write:
-    LK(DATA); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "E($v)" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @write:
-    LK(EXTRA); ADR(C2); LD(C0); LAD(C2); UL;
-    PLK(p); PST(TS,C0); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
+instruction OUTR.RW "$r, ($r)" {
+  UL;
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);  # As INR.RW
+  JC(NC,@restore);
+  LKR(b); ADR(b); LD(C0); LAD(b); UL;
+  PLK(a); PST(TS,C0); PUL;
+  MSX(S); MSR(S,S);
+  JC(NS,@not_written);
+  JC(Z,@done);
+  ADDI(IP,-1);
+@done:
+  END;
+@not_written:
+  ADDI(b,-1);
+@restore:
+  ADDI(R7,1);
 }
 
-instruction OUTR.RW "$r, $m" {
-  $WritePortWordRepeat(a);
+instruction OUTR.IW "$v, ($r)" {
+  LD(MB); UL;  # As OUTR.RW, with the port in MB and the address in a
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  LKR(a); ADR(a); LD(C0); LAD(a); UL;
+  PLK(MB); PST(TS,C0); PUL;
+  MSX(S); MSR(S,S);
+  JC(NS,@not_written);
+  JC(Z,@done);
+  ADDI(IP,-2);
+@done:
+  END;
+@not_written:
+  ADDI(a,-1);
+@restore:
+  ADDI(R7,1);
 }
 
-instruction OUTR.IW "$v, $m" {
-  LD(MB);
-  $WritePortWordRepeat(MB);
+instruction OUTR.RD "$r, [$r]" {
+  UL;  # As OUTR.RW, a dword at a time
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  LKR(b); ADR(b); LD(C0); LD(C1); LAD(b); UL;
+  PLK(a); PST(TA,C0); PST(TS,C1); PUL;
+  MSX(S); MSR(S,S);
+  JC(NS,@not_written);
+  JC(Z,@done);
+  ADDI(IP,-1);
+@done:
+  END;
+@not_written:
+  ADDI(b,-2);
+@restore:
+  ADDI(R7,1);
 }
 
-macro(bits:5) WritePortDwordRepeat(p) {
-  code "[$r]" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,m);
-  @write:
-    LKR(m); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "[$r + $v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,m);
-  @write:
-    LKR(m); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "[SP]" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,SP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "[SP + $v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,SP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "[FP]" {
-    UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    MOV(C2,FP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "[FP + $v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-    ADD(C2,FP);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "S[$v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @write:
-    LK(STACK); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "D[$v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @write:
-    LK(DATA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-  code "E[$v]" {
-    LD(C2); UL;
-    MSS(S); MSR(_,S);
-    TST(R7);
-    JC(Z,@done);
-  @write:
-    LK(EXTRA); ADR(C2); LD(C0); LD(C1); LAD(C2); UL;
-    PLK(p); PST(TA,C0); PST(TS,C1); PUL;
-    MSX(S); MSR(S,S);
-    JC(NS,@done);
-    JD(R7, @write);
-  @done:
-    END;
-  }
-}
-
-instruction OUTR.RD "$r, $m" {
-  $WritePortDwordRepeat(a);
-}
-
-instruction OUTR.ID "$v, $m" {
-  LD(MB);
-  $WritePortDwordRepeat(MB);
+instruction OUTR.ID "$v, [$r]" {
+  LD(MB); UL;  # As OUTR.IW, a dword at a time
+  MSS(S); MSR(_,S);
+  ADDI(R7,-1);
+  JC(NC,@restore);
+  LKR(a); ADR(a); LD(C0); LD(C1); LAD(a); UL;
+  PLK(MB); PST(TA,C0); PST(TS,C1); PUL;
+  MSX(S); MSR(S,S);
+  JC(NS,@not_written);
+  JC(Z,@done);
+  ADDI(IP,-2);
+@done:
+  END;
+@not_written:
+  ADDI(a,-2);
+@restore:
+  ADDI(R7,1);
 }
 
 ################################################################################

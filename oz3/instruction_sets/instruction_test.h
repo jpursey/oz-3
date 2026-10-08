@@ -93,6 +93,34 @@ class InstructionTest : public BaseCoreTest {
     std::vector<uint32_t> values_;
   };
 
+  // Raises an interrupt on core 0 once, as soon as R7 reaches `r7`, such as to
+  // interrupt a repeating instruction between words. Update() must be called
+  // after every cycle (see CyclesUntilIp).
+  class InterruptRaiser {
+   public:
+    // `test` must outlive this.
+    InterruptRaiser(InstructionTest* test, int interrupt, uint16_t r7)
+        : test_(test), interrupt_(interrupt), r7_(r7) {}
+
+    void Update() {
+      if (raised_) {
+        return;
+      }
+      CoreState& state = test_->GetState();
+      if (state.r7 != r7_) {
+        return;
+      }
+      state.core.RaiseInterrupt(interrupt_);
+      raised_ = true;
+    }
+
+   private:
+    InstructionTest* const test_;
+    const int interrupt_;
+    const uint16_t r7_;
+    bool raised_ = false;
+  };
+
   InstructionTest()
       : BaseCoreTest(GetDefaultInstructionSetDef(),
                      GetDefaultInstructionSet()) {}

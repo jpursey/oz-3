@@ -324,18 +324,10 @@ TEST_F(InstructionTest, CPIR_CPDR_Interrupt) {
   const uint16_t handler_ip = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("IRT"));
 
-  // Raises the interrupt once, during the first word.
-  bool raised = false;
-  auto raise_after_first_word = [&] {
-    if (!raised && state.r7 == 2) {
-      state.core.RaiseInterrupt(1);
-      raised = true;
-    }
-  };
-
   // The interrupt is handled after the first word, and returns to CPIR.
-  ASSERT_TRUE(ExecuteUntilIp(ip0));  // SETI 1, 100
-  EXPECT_EQ(CyclesUntilIp(handler_ip, raise_after_first_word),
+  ASSERT_TRUE(ExecuteUntilIp(ip0));     // SETI 1, 100
+  InterruptRaiser raiser1(this, 1, 2);  // During the first word
+  EXPECT_EQ(CyclesUntilIp(handler_ip, [&] { raiser1.Update(); }),
             9 + kCpuCoreStartInterruptCycles);  // CPIR R0, (R1)
   EXPECT_EQ(state.r1, 101);
   EXPECT_EQ(state.r7, 2);
@@ -349,9 +341,9 @@ TEST_F(InstructionTest, CPIR_CPDR_Interrupt) {
   EXPECT_EQ(state.st, CpuCore::I);
 
   // The same for CPDR.
-  raised = false;
   ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ R7, 3
-  EXPECT_EQ(CyclesUntilIp(handler_ip, raise_after_first_word),
+  InterruptRaiser raiser2(this, 1, 2);
+  EXPECT_EQ(CyclesUntilIp(handler_ip, [&] { raiser2.Update(); }),
             10 + kCpuCoreStartInterruptCycles);  // CPDR R0, (R1)
   EXPECT_EQ(state.r1, 102);
   EXPECT_EQ(state.r7, 2);
@@ -673,18 +665,10 @@ TEST_F(InstructionTest, MVIR_MVDR_Interrupt) {
   const uint16_t handler_ip = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("IRT"));
 
-  // Raises the interrupt once, during the first word.
-  bool raised = false;
-  auto raise_after_first_word = [&] {
-    if (!raised && state.r7 == 2) {
-      state.core.RaiseInterrupt(1);
-      raised = true;
-    }
-  };
-
   // The interrupt is handled after the first word, and returns to MVIR.
-  ASSERT_TRUE(ExecuteUntilIp(ip0));  // SETI 1, 100
-  EXPECT_EQ(CyclesUntilIp(handler_ip, raise_after_first_word),
+  ASSERT_TRUE(ExecuteUntilIp(ip0));     // SETI 1, 100
+  InterruptRaiser raiser1(this, 1, 2);  // During the first word
+  EXPECT_EQ(CyclesUntilIp(handler_ip, [&] { raiser1.Update(); }),
             10 + kCpuCoreStartInterruptCycles);  // MVIR (R4), (R0)
   EXPECT_EQ(state.r0, 101);
   EXPECT_EQ(state.r4, 201);
@@ -704,9 +688,9 @@ TEST_F(InstructionTest, MVIR_MVDR_Interrupt) {
   EXPECT_EQ(state.st, CpuCore::I);
 
   // The same for MVDR, copying the words back to the DATA bank.
-  raised = false;
   ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ R7, 3
-  EXPECT_EQ(CyclesUntilIp(handler_ip, raise_after_first_word),
+  InterruptRaiser raiser2(this, 1, 2);
+  EXPECT_EQ(CyclesUntilIp(handler_ip, [&] { raiser2.Update(); }),
             12 + kCpuCoreStartInterruptCycles);  // MVDR (R1), (R5)
   EXPECT_EQ(state.r1, 111);
   EXPECT_EQ(state.r5, 201);

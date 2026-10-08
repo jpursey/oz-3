@@ -146,7 +146,14 @@ This is a breaking change, with no programs yet to break:
 - One word (or dword) per execution, as above. The count in `R7` and the `S`
   flag mean what they do today: `R7` is what is left, and `S` is set once
   `R7` is 0. It stops early, with `S` clear, when the port isn't ready.
-- Cycle counts change, as each word pays for a fetch.
+- Cycle counts change, as each word pays for a fetch. A word takes 8 cycles
+  for the register port forms and 9 for the immediate ones (10 and 11 for a
+  dword). `R7` is decremented first, which also tests it for 0 and for the
+  last word, so it is restored when nothing moves: an `R7` of 0 takes 6 or 7.
+  This favors moving data over polling a port that isn't ready.
+- When the port isn't ready, `INR` stops before touching memory, in 7 to 9
+  cycles. `OUTR` has already loaded the word by then, so it takes two cycles
+  more than a word, and steps the address register back.
 
 ### Wiki
 
@@ -360,7 +367,7 @@ Depends on: CL5 (shares the test file).
   overlapping ranges in each direction, flags unchanged; for the repeats,
   `R7` of 0, where `IP` ends, and an interrupt between words.
 
-### CL7 [ ] instruction_sets: INR and OUTR one word per execution
+### CL7 [x] instruction_sets: INR and OUTR one word per execution
 
 Depends on: CL5 (the repeat approach and its tests).
 
@@ -373,8 +380,9 @@ Depends on: CL5 (the repeat approach and its tests).
 - Standard checks.
 - Unit tests: each variant (register and immediate port, word and dword)
   reads or writes all of `R7`, stops early when the port isn't ready,
-  handles `R7` of 0, leaves the address register past the last word, moves
-  `IP` back by the right size, and handles an interrupt between words.
+  handles `R7` of 0, leaves the address register past the last word, and
+  moves `IP` back by the right size. An interrupt between words for a word
+  and a dword variant of each, covering both instruction sizes.
 
 ### After landing [ ] wiki: Block moves
 

@@ -624,152 +624,78 @@ TEST_F(InstructionTest, INR_RW) {
   auto& state = GetState();
   state.SetRegisters({{CpuCore::ST, ZC},
                       {CpuCore::R0, 1},    // Port
-                      {CpuCore::R2, 100},  // For "($r)"
-                      {CpuCore::R4, 150},  // For "($r + $v)", v == 50
-                      {CpuCore::R7, 2},    // Words to read
-                      {CpuCore::SP, 500},
-                      {CpuCore::FP, 520}});
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R4, 200},  // EXTRA address
+                      {CpuCore::R6, 300},  // STACK address
+                      {CpuCore::R7, 2}});  // Words to read
 
   // Each INR after the first is preceded by setting R7, which is not timed.
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, {"($r)", CpuCore::R2}));
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R2));
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
   const uint16_t setup2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, {"($r + $v)", CpuCore::R4}))
-      .AddValue(50);
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R4));
   const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
   const uint16_t setup3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "(SP)"));
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R6));
   const uint16_t ip3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "(SP + $v)")).AddValue(4);
-  const uint16_t ip4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "(FP)"));
-  const uint16_t ip5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "(FP + $v)")).AddValue(-8);
-  const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "S($v)")).AddValue(530);
-  const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "D($v)")).AddValue(300);
-  const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "E($v)")).AddValue(400);
-  const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
-  const uint16_t setup10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "D($v)")).AddValue(600);
-  const uint16_t ip10 = state.code.AddNopGetAddress();
+  const uint16_t setup4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  const uint16_t setup11 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RW", CpuCore::R0, "D($v)")).AddValue(700);
-  const uint16_t ip11 = state.code.AddNopGetAddress();
+  const uint16_t setup5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
 
+  // All of R7 is read.
   PortFeeder feeder1(this, 1, PortSize::kWord, {1, 2});
   EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder1.Update(); }),
-            13);  // INR.RW R0, (R2)
+            8 + 8);  // INR.RW R0, (R2)
   EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue(), 1);
   EXPECT_EQ(state.data.GetValue(), 2);
+  EXPECT_EQ(state.r2, 102);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 2
   PortFeeder feeder2(this, 1, PortSize::kWord, {3, 4});
   EXPECT_EQ(CyclesUntilIp(ip2, [&] { feeder2.Update(); }),
-            14);  // INR.RW R0, (R4 + 50)
+            8 + 8);  // INR.RW R0, (R4)
   EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue(), 3);
   EXPECT_EQ(state.extra.GetValue(), 4);
+  EXPECT_EQ(state.r4, 202);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 2
   PortFeeder feeder3(this, 1, PortSize::kWord, {5, 6});
   EXPECT_EQ(CyclesUntilIp(ip3, [&] { feeder3.Update(); }),
-            13);  // INR.RW R0, (SP)
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 500).GetValue(), 5);
+            8 + 8);  // INR.RW R0, (R6)
+  EXPECT_EQ(state.stack.SetAddress(state.bs + 300).GetValue(), 5);
   EXPECT_EQ(state.stack.GetValue(), 6);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup4));  // MVQ.LW R7, 2
-  PortFeeder feeder4(this, 1, PortSize::kWord, {7, 8});
-  EXPECT_EQ(CyclesUntilIp(ip4, [&] { feeder4.Update(); }),
-            14);  // INR.RW R0, (SP + 4)
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 504).GetValue(), 7);
-  EXPECT_EQ(state.stack.GetValue(), 8);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup5));  // MVQ.LW R7, 2
-  PortFeeder feeder5(this, 1, PortSize::kWord, {9, 10});
-  EXPECT_EQ(CyclesUntilIp(ip5, [&] { feeder5.Update(); }),
-            13);  // INR.RW R0, (FP)
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 520).GetValue(), 9);
-  EXPECT_EQ(state.stack.GetValue(), 10);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup6));  // MVQ.LW R7, 2
-  PortFeeder feeder6(this, 1, PortSize::kWord, {11, 12});
-  EXPECT_EQ(CyclesUntilIp(ip6, [&] { feeder6.Update(); }),
-            14);  // INR.RW R0, (FP - 8)
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 512).GetValue(), 11);
-  EXPECT_EQ(state.stack.GetValue(), 12);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup7));  // MVQ.LW R7, 2
-  PortFeeder feeder7(this, 1, PortSize::kWord, {13, 14});
-  EXPECT_EQ(CyclesUntilIp(ip7, [&] { feeder7.Update(); }),
-            13);  // INR.RW R0, S(530)
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 530).GetValue(), 13);
-  EXPECT_EQ(state.stack.GetValue(), 14);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup8));  // MVQ.LW R7, 2
-  PortFeeder feeder8(this, 1, PortSize::kWord, {15, 16});
-  EXPECT_EQ(CyclesUntilIp(ip8, [&] { feeder8.Update(); }),
-            13);  // INR.RW R0, D(300)
-  EXPECT_EQ(state.data.SetAddress(state.bd + 300).GetValue(), 15);
-  EXPECT_EQ(state.data.GetValue(), 16);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup9));  // MVQ.LW R7, 2
-  PortFeeder feeder9(this, 1, PortSize::kWord, {17, 18});
-  EXPECT_EQ(CyclesUntilIp(ip9, [&] { feeder9.Update(); }),
-            13);  // INR.RW R0, E(400)
-  EXPECT_EQ(state.extra.SetAddress(state.be + 400).GetValue(), 17);
-  EXPECT_EQ(state.extra.GetValue(), 18);
+  EXPECT_EQ(state.r6, 302);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   // The port runs dry after one word, leaving R7 at the words not read.
-  ASSERT_TRUE(ExecuteUntilIp(setup10));  // MVQ.LW R7, 3
-  PortFeeder feeder10(this, 1, PortSize::kWord, {19});
-  EXPECT_EQ(CyclesUntilIp(ip10, [&] { feeder10.Update(); }),
-            11);  // INR.RW R0, D(600)
-  EXPECT_EQ(state.data.SetAddress(state.bd + 600).GetValue(), 19);
+  ASSERT_TRUE(ExecuteUntilIp(setup4));  // MVQ.LW R7, 3
+  PortFeeder feeder4(this, 1, PortSize::kWord, {7});
+  EXPECT_EQ(CyclesUntilIp(ip4, [&] { feeder4.Update(); }),
+            8 + 7);  // INR.RW R0, (R2)
+  EXPECT_EQ(state.data.SetAddress(state.bd + 102).GetValue(), 7);
   EXPECT_EQ(state.data.GetValue(), 0);
+  EXPECT_EQ(state.r2, 103);
   EXPECT_EQ(state.r7, 2);
   EXPECT_EQ(state.st, ZC);
 
   // Nothing is read when R7 is zero, even with the port ready.
-  ASSERT_TRUE(ExecuteUntilIp(setup11));  // MVQ.LW R7, 0
-  WritePort(1, 20);
-  EXPECT_EQ(CyclesUntilIp(ip11), 6);  // INR.RW R0, D(700)
-  EXPECT_EQ(state.data.SetAddress(state.bd + 700).GetValue(), 0);
+  ASSERT_TRUE(ExecuteUntilIp(setup5));  // MVQ.LW R7, 0
+  WritePort(1, 8);
+  EXPECT_EQ(CyclesUntilIp(ip5), 6);  // INR.RW R0, (R2)
+  EXPECT_EQ(state.data.SetAddress(state.bd + 103).GetValue(), 0);
+  EXPECT_EQ(state.r2, 103);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
   EXPECT_EQ(GetPort(1).GetStatus(), 1);
@@ -778,20 +704,50 @@ TEST_F(InstructionTest, INR_RW) {
 TEST_F(InstructionTest, INR_IW) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
-  state.SetRegisters({{CpuCore::ST, ZC}, {CpuCore::R4, 150}, {CpuCore::R7, 2}});
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R4, 200},  // EXTRA address
+                      {CpuCore::R7, 2}});  // Words to read
 
-  state.code.AddValue(Encode("INR.IW", {"($r + $v)", CpuCore::R4}))
-      .AddValue(1)
-      .AddValue(50);
+  state.code.AddValue(Encode("INR.IW", CpuCore::R4)).AddValue(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.IW", CpuCore::R4)).AddValue(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
+  const uint16_t setup3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.IW", CpuCore::R4)).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
 
-  PortFeeder feeder(this, 1, PortSize::kWord, {1, 2});
-  EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder.Update(); }),
-            15);  // INR.IW 1, (R4 + 50)
+  // All of R7 is read.
+  PortFeeder feeder1(this, 1, PortSize::kWord, {1, 2});
+  EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder1.Update(); }),
+            9 + 9);  // INR.IW 1, (R4)
   EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue(), 1);
   EXPECT_EQ(state.extra.GetValue(), 2);
+  EXPECT_EQ(state.r4, 202);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
+
+  // The port runs dry after one word, leaving R7 at the words not read.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  PortFeeder feeder2(this, 1, PortSize::kWord, {3});
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { feeder2.Update(); }),
+            9 + 8);  // INR.IW 1, (R4)
+  EXPECT_EQ(state.extra.SetAddress(state.be + 202).GetValue(), 3);
+  EXPECT_EQ(state.r4, 203);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.st, ZC);
+
+  // Nothing is read when R7 is zero, even with the port ready.
+  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 0
+  WritePort(1, 4);
+  EXPECT_EQ(CyclesUntilIp(ip3), 7);  // INR.IW 1, (R4)
+  EXPECT_EQ(state.extra.SetAddress(state.be + 203).GetValue(), 0);
+  EXPECT_EQ(state.r4, 203);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.st, ZSC);
+  EXPECT_EQ(GetPort(1).GetStatus(), 1);
 }
 
 TEST_F(InstructionTest, INR_RD) {
@@ -799,152 +755,47 @@ TEST_F(InstructionTest, INR_RD) {
   auto& state = GetState();
   state.SetRegisters({{CpuCore::ST, ZC},
                       {CpuCore::R5, 1},    // Port
-                      {CpuCore::R2, 100},  // For "[$r]"
-                      {CpuCore::R4, 150},  // For "[$r + $v]", v == 50
-                      {CpuCore::R7, 2},    // Dwords to read
-                      {CpuCore::SP, 500},
-                      {CpuCore::FP, 520}});
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R7, 2}});  // Dwords to read
 
-  // Each INR after the first is preceded by setting R7, which is not timed.
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, {"[$r]", CpuCore::R2}));
+  state.code.AddValue(Encode("INR.RD", CpuCore::R5, CpuCore::R2));
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, {"[$r + $v]", CpuCore::R4}))
-      .AddValue(50);
-  const uint16_t ip2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "[SP]"));
-  const uint16_t ip3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "[SP + $v]")).AddValue(4);
-  const uint16_t ip4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "[FP]"));
-  const uint16_t ip5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "[FP + $v]")).AddValue(-8);
-  const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "S[$v]")).AddValue(530);
-  const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "D[$v]")).AddValue(300);
-  const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "E[$v]")).AddValue(400);
-  const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
-  const uint16_t setup10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "D[$v]")).AddValue(600);
-  const uint16_t ip10 = state.code.AddNopGetAddress();
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.RD", CpuCore::R5, CpuCore::R2));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  const uint16_t setup11 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INR.RD", CpuCore::R5, "D[$v]")).AddValue(700);
-  const uint16_t ip11 = state.code.AddNopGetAddress();
+  const uint16_t setup3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.RD", CpuCore::R5, CpuCore::R2));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
 
+  // All of R7 is read.
   PortFeeder feeder1(this, 1, PortSize::kDword, {0x10002, 0x30004});
   EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder1.Update(); }),
-            17);  // INR.RD R5, [R2]
+            10 + 10);  // INR.RD R5, [R2]
   EXPECT_EQ(state.data.SetAddress(state.bd + 100).GetValue32(), 0x10002);
   EXPECT_EQ(state.data.GetValue32(), 0x30004);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 2
-  PortFeeder feeder2(this, 1, PortSize::kDword, {0x50006, 0x70008});
-  EXPECT_EQ(CyclesUntilIp(ip2, [&] { feeder2.Update(); }),
-            18);  // INR.RD R5, [R4 + 50]
-  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x50006);
-  EXPECT_EQ(state.extra.GetValue32(), 0x70008);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 2
-  PortFeeder feeder3(this, 1, PortSize::kDword, {0x9000A, 0xB000C});
-  EXPECT_EQ(CyclesUntilIp(ip3, [&] { feeder3.Update(); }),
-            17);  // INR.RD R5, [SP]
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 500).GetValue32(), 0x9000A);
-  EXPECT_EQ(state.stack.GetValue32(), 0xB000C);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup4));  // MVQ.LW R7, 2
-  PortFeeder feeder4(this, 1, PortSize::kDword, {0xD000E, 0xF0010});
-  EXPECT_EQ(CyclesUntilIp(ip4, [&] { feeder4.Update(); }),
-            18);  // INR.RD R5, [SP + 4]
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 504).GetValue32(), 0xD000E);
-  EXPECT_EQ(state.stack.GetValue32(), 0xF0010);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup5));  // MVQ.LW R7, 2
-  PortFeeder feeder5(this, 1, PortSize::kDword, {0x110012, 0x130014});
-  EXPECT_EQ(CyclesUntilIp(ip5, [&] { feeder5.Update(); }),
-            17);  // INR.RD R5, [FP]
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 520).GetValue32(), 0x110012);
-  EXPECT_EQ(state.stack.GetValue32(), 0x130014);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup6));  // MVQ.LW R7, 2
-  PortFeeder feeder6(this, 1, PortSize::kDword, {0x150016, 0x170018});
-  EXPECT_EQ(CyclesUntilIp(ip6, [&] { feeder6.Update(); }),
-            18);  // INR.RD R5, [FP - 8]
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 512).GetValue32(), 0x150016);
-  EXPECT_EQ(state.stack.GetValue32(), 0x170018);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup7));  // MVQ.LW R7, 2
-  PortFeeder feeder7(this, 1, PortSize::kDword, {0x19001A, 0x1B001C});
-  EXPECT_EQ(CyclesUntilIp(ip7, [&] { feeder7.Update(); }),
-            17);  // INR.RD R5, S[530]
-  EXPECT_EQ(state.stack.SetAddress(state.bs + 530).GetValue32(), 0x19001A);
-  EXPECT_EQ(state.stack.GetValue32(), 0x1B001C);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup8));  // MVQ.LW R7, 2
-  PortFeeder feeder8(this, 1, PortSize::kDword, {0x1D001E, 0x1F0020});
-  EXPECT_EQ(CyclesUntilIp(ip8, [&] { feeder8.Update(); }),
-            17);  // INR.RD R5, D[300]
-  EXPECT_EQ(state.data.SetAddress(state.bd + 300).GetValue32(), 0x1D001E);
-  EXPECT_EQ(state.data.GetValue32(), 0x1F0020);
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup9));  // MVQ.LW R7, 2
-  PortFeeder feeder9(this, 1, PortSize::kDword, {0x210022, 0x230024});
-  EXPECT_EQ(CyclesUntilIp(ip9, [&] { feeder9.Update(); }),
-            17);  // INR.RD R5, E[400]
-  EXPECT_EQ(state.extra.SetAddress(state.be + 400).GetValue32(), 0x210022);
-  EXPECT_EQ(state.extra.GetValue32(), 0x230024);
+  EXPECT_EQ(state.r2, 104);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   // The port runs dry after one dword, leaving R7 at the dwords not read.
-  ASSERT_TRUE(ExecuteUntilIp(setup10));  // MVQ.LW R7, 3
-  PortFeeder feeder10(this, 1, PortSize::kDword, {0x250026});
-  EXPECT_EQ(CyclesUntilIp(ip10, [&] { feeder10.Update(); }),
-            14);  // INR.RD R5, D[600]
-  EXPECT_EQ(state.data.SetAddress(state.bd + 600).GetValue32(), 0x250026);
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  PortFeeder feeder2(this, 1, PortSize::kDword, {0x50006});
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { feeder2.Update(); }),
+            10 + 8);  // INR.RD R5, [R2]
+  EXPECT_EQ(state.data.SetAddress(state.bd + 104).GetValue32(), 0x50006);
   EXPECT_EQ(state.data.GetValue32(), 0);
+  EXPECT_EQ(state.r2, 106);
   EXPECT_EQ(state.r7, 2);
   EXPECT_EQ(state.st, ZC);
 
   // Nothing is read when R7 is zero, even with the port ready.
-  ASSERT_TRUE(ExecuteUntilIp(setup11));  // MVQ.LW R7, 0
-  WritePort32(1, 0x270028);
-  EXPECT_EQ(CyclesUntilIp(ip11), 6);  // INR.RD R5, D[700]
-  EXPECT_EQ(state.data.SetAddress(state.bd + 700).GetValue32(), 0);
+  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 0
+  WritePort32(1, 0x70008);
+  EXPECT_EQ(CyclesUntilIp(ip3), 6);  // INR.RD R5, [R2]
+  EXPECT_EQ(state.data.SetAddress(state.bd + 106).GetValue32(), 0);
+  EXPECT_EQ(state.r2, 106);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
   EXPECT_EQ(GetPort(1).GetStatus(), 1);
@@ -953,20 +804,127 @@ TEST_F(InstructionTest, INR_RD) {
 TEST_F(InstructionTest, INR_ID) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
-  state.SetRegisters({{CpuCore::ST, ZC}, {CpuCore::R4, 150}, {CpuCore::R7, 2}});
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R6, 300},  // STACK address
+                      {CpuCore::R7, 2}});  // Dwords to read
 
-  state.code.AddValue(Encode("INR.ID", {"[$r + $v]", CpuCore::R4}))
-      .AddValue(1)
-      .AddValue(50);
+  state.code.AddValue(Encode("INR.ID", CpuCore::R6)).AddValue(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.ID", CpuCore::R6)).AddValue(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
+  const uint16_t setup3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.ID", CpuCore::R6)).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
 
-  PortFeeder feeder(this, 1, PortSize::kDword, {0x10002, 0x30004});
-  EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder.Update(); }),
-            19);  // INR.ID 1, [R4 + 50]
-  EXPECT_EQ(state.extra.SetAddress(state.be + 200).GetValue32(), 0x10002);
-  EXPECT_EQ(state.extra.GetValue32(), 0x30004);
+  // All of R7 is read.
+  PortFeeder feeder1(this, 1, PortSize::kDword, {0x10002, 0x30004});
+  EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder1.Update(); }),
+            11 + 11);  // INR.ID 1, [R6]
+  EXPECT_EQ(state.stack.SetAddress(state.bs + 300).GetValue32(), 0x10002);
+  EXPECT_EQ(state.stack.GetValue32(), 0x30004);
+  EXPECT_EQ(state.r6, 304);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
+
+  // The port runs dry after one dword, leaving R7 at the dwords not read.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  PortFeeder feeder2(this, 1, PortSize::kDword, {0x50006});
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { feeder2.Update(); }),
+            11 + 9);  // INR.ID 1, [R6]
+  EXPECT_EQ(state.stack.SetAddress(state.bs + 304).GetValue32(), 0x50006);
+  EXPECT_EQ(state.r6, 306);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.st, ZC);
+
+  // Nothing is read when R7 is zero, even with the port ready.
+  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 0
+  WritePort32(1, 0x70008);
+  EXPECT_EQ(CyclesUntilIp(ip3), 7);  // INR.ID 1, [R6]
+  EXPECT_EQ(state.stack.SetAddress(state.bs + 306).GetValue32(), 0);
+  EXPECT_EQ(state.r6, 306);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.st, ZSC);
+  EXPECT_EQ(GetPort(1).GetStatus(), 1);
+}
+
+TEST_F(InstructionTest, INR_Interrupt) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::I},
+                      {CpuCore::R0, 1},    // Port
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R4, 200},  // EXTRA address
+                      {CpuCore::R7, 3},    // Words to read
+                      {CpuCore::SP, 500}});
+
+  state.code.AddValue(Encode("SETI", "$v")).AddValue(1).AddValue(100);
+  const uint16_t ip0 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("INR.ID", CpuCore::R4)).AddValue(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.SetAddress(100);
+  const uint16_t handler_ip = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("IRT"));
+
+  // The interrupt is handled after the first word, and returns to INR.
+  ASSERT_TRUE(ExecuteUntilIp(ip0));     // SETI 1, 100
+  InterruptRaiser raiser1(this, 1, 2);  // During the first word
+  PortFeeder feeder1(this, 1, PortSize::kWord, {1, 2, 3});
+  EXPECT_EQ(CyclesUntilIp(handler_ip,
+                          [&] {
+                            feeder1.Update();
+                            raiser1.Update();
+                          }),
+            8 + kCpuCoreStartInterruptCycles);  // INR.RW R0, (R2)
+  EXPECT_EQ(state.r2, 101);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(),
+            CpuCore::I | CpuCore::S);
+  EXPECT_EQ(state.stack.GetValue(), ip0);
+  EXPECT_EQ(CyclesUntilIp(ip1, [&] { feeder1.Update(); }),
+            6 + 8 + 8);  // IRT, INR.RW R0, (R2)
+  state.data.SetAddress(state.bd + 100);
+  EXPECT_EQ(state.data.GetValue(), 1);
+  EXPECT_EQ(state.data.GetValue(), 2);
+  EXPECT_EQ(state.data.GetValue(), 3);
+  EXPECT_EQ(state.r2, 103);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+
+  // The same for INR.ID, which is two words long.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  InterruptRaiser raiser2(this, 1, 2);
+  PortFeeder feeder2(this, 1, PortSize::kDword, {0x10002, 0x30004, 0x50006});
+  EXPECT_EQ(CyclesUntilIp(handler_ip,
+                          [&] {
+                            feeder2.Update();
+                            raiser2.Update();
+                          }),
+            11 + kCpuCoreStartInterruptCycles);  // INR.ID 1, [R4]
+  EXPECT_EQ(state.r4, 202);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(),
+            CpuCore::I | CpuCore::S);
+  EXPECT_EQ(state.stack.GetValue(), setup2);
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { feeder2.Update(); }),
+            6 + 11 + 11);  // IRT, INR.ID 1, [R4]
+  state.extra.SetAddress(state.be + 200);
+  EXPECT_EQ(state.extra.GetValue32(), 0x10002);
+  EXPECT_EQ(state.extra.GetValue32(), 0x30004);
+  EXPECT_EQ(state.extra.GetValue32(), 0x50006);
+  EXPECT_EQ(state.r4, 206);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
 }
 
 TEST_F(InstructionTest, OUT_RW) {
@@ -1668,155 +1626,85 @@ TEST_F(InstructionTest, OUTS_ID) {
 TEST_F(InstructionTest, OUTR_RW) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
-  state.data.SetAddress(state.bd + 100).AddValue(1).AddValue(2);
+  state.data.SetAddress(state.bd + 100)
+      .AddValue(1)
+      .AddValue(2)
+      .AddValue(7)
+      .AddValue(8)
+      .AddValue(9);
   state.extra.SetAddress(state.be + 200).AddValue(3).AddValue(4);
-  state.stack.SetAddress(state.bs + 500).AddValue(5).AddValue(6);
-  state.stack.SetAddress(state.bs + 504).AddValue(7).AddValue(8);
-  state.stack.SetAddress(state.bs + 520).AddValue(9).AddValue(10);
-  state.stack.SetAddress(state.bs + 512).AddValue(11).AddValue(12);
-  state.stack.SetAddress(state.bs + 530).AddValue(13).AddValue(14);
-  state.data.SetAddress(state.bd + 300).AddValue(15).AddValue(16);
-  state.extra.SetAddress(state.be + 400).AddValue(17).AddValue(18);
-  state.data.SetAddress(state.bd + 600).AddValue(19).AddValue(20).AddValue(21);
+  state.stack.SetAddress(state.bs + 300).AddValue(5).AddValue(6);
   state.SetRegisters({{CpuCore::ST, ZC},
                       {CpuCore::R0, 1},    // Port
-                      {CpuCore::R2, 100},  // For "($r)"
-                      {CpuCore::R4, 150},  // For "($r + $v)", v == 50
-                      {CpuCore::R7, 2},    // Words to write
-                      {CpuCore::SP, 500},
-                      {CpuCore::FP, 520}});
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R4, 200},  // EXTRA address
+                      {CpuCore::R6, 300},  // STACK address
+                      {CpuCore::R7, 2}});  // Words to write
 
   // Each OUTR after the first is preceded by setting R7, which is not timed.
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, {"($r)", CpuCore::R2}));
+  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, CpuCore::R2));
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
   const uint16_t setup2 = state.code.AddNopGetAddress();
-  state.code
-      .AddValue(Encode("OUTR.RW", CpuCore::R0, {"($r + $v)", CpuCore::R4}))
-      .AddValue(50);
+  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, CpuCore::R4));
   const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
   const uint16_t setup3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "(SP)"));
+  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, CpuCore::R6));
   const uint16_t ip3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "(SP + $v)")).AddValue(4);
-  const uint16_t ip4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "(FP)"));
-  const uint16_t ip5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "(FP + $v)")).AddValue(-8);
-  const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "S($v)")).AddValue(530);
-  const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "D($v)")).AddValue(300);
-  const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "E($v)")).AddValue(400);
-  const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
-  const uint16_t setup10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "D($v)")).AddValue(600);
-  const uint16_t ip10 = state.code.AddNopGetAddress();
+  const uint16_t setup4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  const uint16_t setup11 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, "D($v)")).AddValue(700);
-  const uint16_t ip11 = state.code.AddNopGetAddress();
+  const uint16_t setup5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.RW", CpuCore::R0, CpuCore::R2));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
 
+  // All of R7 is written.
   PortDrainer drainer1(this, 1, PortSize::kWord, 2);
   EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer1.Update(); }),
-            13);  // OUTR.RW R0, (R2)
+            8 + 8);  // OUTR.RW R0, (R2)
   EXPECT_THAT(drainer1.GetValues(), ElementsAre(1, 2));
+  EXPECT_EQ(state.r2, 102);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 2
   PortDrainer drainer2(this, 1, PortSize::kWord, 2);
   EXPECT_EQ(CyclesUntilIp(ip2, [&] { drainer2.Update(); }),
-            14);  // OUTR.RW R0, (R4 + 50)
+            8 + 8);  // OUTR.RW R0, (R4)
   EXPECT_THAT(drainer2.GetValues(), ElementsAre(3, 4));
+  EXPECT_EQ(state.r4, 202);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 2
   PortDrainer drainer3(this, 1, PortSize::kWord, 2);
   EXPECT_EQ(CyclesUntilIp(ip3, [&] { drainer3.Update(); }),
-            13);  // OUTR.RW R0, (SP)
+            8 + 8);  // OUTR.RW R0, (R6)
   EXPECT_THAT(drainer3.GetValues(), ElementsAre(5, 6));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup4));  // MVQ.LW R7, 2
-  PortDrainer drainer4(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip4, [&] { drainer4.Update(); }),
-            14);  // OUTR.RW R0, (SP + 4)
-  EXPECT_THAT(drainer4.GetValues(), ElementsAre(7, 8));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup5));  // MVQ.LW R7, 2
-  PortDrainer drainer5(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip5, [&] { drainer5.Update(); }),
-            13);  // OUTR.RW R0, (FP)
-  EXPECT_THAT(drainer5.GetValues(), ElementsAre(9, 10));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup6));  // MVQ.LW R7, 2
-  PortDrainer drainer6(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip6, [&] { drainer6.Update(); }),
-            14);  // OUTR.RW R0, (FP - 8)
-  EXPECT_THAT(drainer6.GetValues(), ElementsAre(11, 12));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup7));  // MVQ.LW R7, 2
-  PortDrainer drainer7(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip7, [&] { drainer7.Update(); }),
-            13);  // OUTR.RW R0, S(530)
-  EXPECT_THAT(drainer7.GetValues(), ElementsAre(13, 14));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup8));  // MVQ.LW R7, 2
-  PortDrainer drainer8(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip8, [&] { drainer8.Update(); }),
-            13);  // OUTR.RW R0, D(300)
-  EXPECT_THAT(drainer8.GetValues(), ElementsAre(15, 16));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup9));  // MVQ.LW R7, 2
-  PortDrainer drainer9(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip9, [&] { drainer9.Update(); }),
-            13);  // OUTR.RW R0, E(400)
-  EXPECT_THAT(drainer9.GetValues(), ElementsAre(17, 18));
+  EXPECT_EQ(state.r6, 302);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
   // The device stops reading after one word, so the second word stays in the
-  // port, and the third can't be written. R7 is left at the words not written.
-  ASSERT_TRUE(ExecuteUntilIp(setup10));  // MVQ.LW R7, 3
-  PortDrainer drainer10(this, 1, PortSize::kWord, 1);
-  EXPECT_EQ(CyclesUntilIp(ip10, [&] { drainer10.Update(); }),
-            17);  // OUTR.RW R0, D(600)
-  EXPECT_THAT(drainer10.GetValues(), ElementsAre(19));
+  // port, and the third can't be written. R7 is left at the words not
+  // written, and the address register past the last word written.
+  ASSERT_TRUE(ExecuteUntilIp(setup4));  // MVQ.LW R7, 3
+  PortDrainer drainer4(this, 1, PortSize::kWord, 1);
+  EXPECT_EQ(CyclesUntilIp(ip4, [&] { drainer4.Update(); }),
+            8 + 8 + 10);  // OUTR.RW R0, (R2)
+  EXPECT_THAT(drainer4.GetValues(), ElementsAre(7));
+  EXPECT_EQ(state.r2, 104);
   EXPECT_EQ(state.r7, 1);
   EXPECT_EQ(state.st, ZC);
 
   // Nothing is written when R7 is zero, even with the port ready.
-  ASSERT_TRUE(ExecuteUntilIp(setup11));  // MVQ.LW R7, 0
-  EXPECT_EQ(ReadPort(1), 20);
-  EXPECT_EQ(CyclesUntilIp(ip11), 6);  // OUTR.RW R0, D(700)
+  ASSERT_TRUE(ExecuteUntilIp(setup5));  // MVQ.LW R7, 0
+  EXPECT_EQ(ReadPort(1), 8);
+  EXPECT_EQ(CyclesUntilIp(ip5), 6);  // OUTR.RW R0, (R2)
+  EXPECT_EQ(state.r2, 104);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
   EXPECT_EQ(GetPort(1).GetStatus(), 0);
@@ -1825,194 +1713,105 @@ TEST_F(InstructionTest, OUTR_RW) {
 TEST_F(InstructionTest, OUTR_IW) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
-  state.extra.SetAddress(state.be + 200).AddValue(1).AddValue(2);
-  state.SetRegisters({{CpuCore::ST, ZC}, {CpuCore::R4, 150}, {CpuCore::R7, 2}});
-
-  state.code.AddValue(Encode("OUTR.IW", {"($r + $v)", CpuCore::R4}))
+  state.extra.SetAddress(state.be + 200)
       .AddValue(1)
-      .AddValue(50);
-  const uint16_t ip1 = state.code.AddNopGetAddress();
+      .AddValue(2)
+      .AddValue(3)
+      .AddValue(4)
+      .AddValue(5);
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R4, 200},  // EXTRA address
+                      {CpuCore::R7, 2}});  // Words to write
 
-  PortDrainer drainer(this, 1, PortSize::kWord, 2);
-  EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer.Update(); }),
-            15);  // OUTR.IW 1, (R4 + 50)
-  EXPECT_THAT(drainer.GetValues(), ElementsAre(1, 2));
+  state.code.AddValue(Encode("OUTR.IW", CpuCore::R4)).AddValue(1);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.IW", CpuCore::R4)).AddValue(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
+  const uint16_t setup3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.IW", CpuCore::R4)).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+
+  // All of R7 is written.
+  PortDrainer drainer1(this, 1, PortSize::kWord, 2);
+  EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer1.Update(); }),
+            9 + 9);  // OUTR.IW 1, (R4)
+  EXPECT_THAT(drainer1.GetValues(), ElementsAre(1, 2));
+  EXPECT_EQ(state.r4, 202);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
+
+  // The device stops reading after one word, as in OUTR.RW.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  PortDrainer drainer2(this, 1, PortSize::kWord, 1);
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { drainer2.Update(); }),
+            9 + 9 + 11);  // OUTR.IW 1, (R4)
+  EXPECT_THAT(drainer2.GetValues(), ElementsAre(3));
+  EXPECT_EQ(state.r4, 204);
+  EXPECT_EQ(state.r7, 1);
+  EXPECT_EQ(state.st, ZC);
+
+  // Nothing is written when R7 is zero, even with the port ready.
+  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 0
+  EXPECT_EQ(ReadPort(1), 4);
+  EXPECT_EQ(CyclesUntilIp(ip3), 7);  // OUTR.IW 1, (R4)
+  EXPECT_EQ(state.r4, 204);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.st, ZSC);
+  EXPECT_EQ(GetPort(1).GetStatus(), 0);
 }
 
 TEST_F(InstructionTest, OUTR_RD) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
-  state.data.SetAddress(state.bd + 100).AddValue32(0x10002).AddValue32(0x30004);
-  state.extra.SetAddress(state.be + 200)
+  state.data.SetAddress(state.bd + 100)
+      .AddValue32(0x10002)
+      .AddValue32(0x30004)
       .AddValue32(0x50006)
-      .AddValue32(0x70008);
-  state.stack.SetAddress(state.bs + 500)
-      .AddValue32(0x9000A)
-      .AddValue32(0xB000C);
-  state.stack.SetAddress(state.bs + 504)
-      .AddValue32(0xD000E)
-      .AddValue32(0xF0010);
-  state.stack.SetAddress(state.bs + 520)
-      .AddValue32(0x110012)
-      .AddValue32(0x130014);
-  state.stack.SetAddress(state.bs + 512)
-      .AddValue32(0x150016)
-      .AddValue32(0x170018);
-  state.stack.SetAddress(state.bs + 530)
-      .AddValue32(0x19001A)
-      .AddValue32(0x1B001C);
-  state.data.SetAddress(state.bd + 300)
-      .AddValue32(0x1D001E)
-      .AddValue32(0x1F0020);
-  state.extra.SetAddress(state.be + 400)
-      .AddValue32(0x210022)
-      .AddValue32(0x230024);
-  state.data.SetAddress(state.bd + 600)
-      .AddValue32(0x250026)
-      .AddValue32(0x270028)
-      .AddValue32(0x29002A);
+      .AddValue32(0x70008)
+      .AddValue32(0x9000A);
   state.SetRegisters({{CpuCore::ST, ZC},
                       {CpuCore::R5, 1},    // Port
-                      {CpuCore::R2, 100},  // For "[$r]"
-                      {CpuCore::R4, 150},  // For "[$r + $v]", v == 50
-                      {CpuCore::R7, 2},    // Dwords to write
-                      {CpuCore::SP, 500},
-                      {CpuCore::FP, 520}});
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R7, 2}});  // Dwords to write
 
-  // Each OUTR after the first is preceded by setting R7, which is not timed.
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, {"[$r]", CpuCore::R2}));
+  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, CpuCore::R2));
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup2 = state.code.AddNopGetAddress();
-  state.code
-      .AddValue(Encode("OUTR.RD", CpuCore::R5, {"[$r + $v]", CpuCore::R4}))
-      .AddValue(50);
-  const uint16_t ip2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "[SP]"));
-  const uint16_t ip3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "[SP + $v]")).AddValue(4);
-  const uint16_t ip4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "[FP]"));
-  const uint16_t ip5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "[FP + $v]")).AddValue(-8);
-  const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "S[$v]")).AddValue(530);
-  const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "D[$v]")).AddValue(300);
-  const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 2));
-  const uint16_t setup9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "E[$v]")).AddValue(400);
-  const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
-  const uint16_t setup10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "D[$v]")).AddValue(600);
-  const uint16_t ip10 = state.code.AddNopGetAddress();
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, CpuCore::R2));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  const uint16_t setup11 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, "D[$v]")).AddValue(700);
-  const uint16_t ip11 = state.code.AddNopGetAddress();
+  const uint16_t setup3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.RD", CpuCore::R5, CpuCore::R2));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
 
+  // All of R7 is written.
   PortDrainer drainer1(this, 1, PortSize::kDword, 2);
   EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer1.Update(); }),
-            17);  // OUTR.RD R5, [R2]
+            10 + 10);  // OUTR.RD R5, [R2]
   EXPECT_THAT(drainer1.GetValues(), ElementsAre(0x10002, 0x30004));
+  EXPECT_EQ(state.r2, 104);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
 
-  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 2
-  PortDrainer drainer2(this, 1, PortSize::kDword, 2);
+  // The device stops reading after one dword, as in OUTR.RW.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  PortDrainer drainer2(this, 1, PortSize::kDword, 1);
   EXPECT_EQ(CyclesUntilIp(ip2, [&] { drainer2.Update(); }),
-            18);  // OUTR.RD R5, [R4 + 50]
-  EXPECT_THAT(drainer2.GetValues(), ElementsAre(0x50006, 0x70008));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 2
-  PortDrainer drainer3(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip3, [&] { drainer3.Update(); }),
-            17);  // OUTR.RD R5, [SP]
-  EXPECT_THAT(drainer3.GetValues(), ElementsAre(0x9000A, 0xB000C));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup4));  // MVQ.LW R7, 2
-  PortDrainer drainer4(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip4, [&] { drainer4.Update(); }),
-            18);  // OUTR.RD R5, [SP + 4]
-  EXPECT_THAT(drainer4.GetValues(), ElementsAre(0xD000E, 0xF0010));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup5));  // MVQ.LW R7, 2
-  PortDrainer drainer5(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip5, [&] { drainer5.Update(); }),
-            17);  // OUTR.RD R5, [FP]
-  EXPECT_THAT(drainer5.GetValues(), ElementsAre(0x110012, 0x130014));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup6));  // MVQ.LW R7, 2
-  PortDrainer drainer6(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip6, [&] { drainer6.Update(); }),
-            18);  // OUTR.RD R5, [FP - 8]
-  EXPECT_THAT(drainer6.GetValues(), ElementsAre(0x150016, 0x170018));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup7));  // MVQ.LW R7, 2
-  PortDrainer drainer7(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip7, [&] { drainer7.Update(); }),
-            17);  // OUTR.RD R5, S[530]
-  EXPECT_THAT(drainer7.GetValues(), ElementsAre(0x19001A, 0x1B001C));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup8));  // MVQ.LW R7, 2
-  PortDrainer drainer8(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip8, [&] { drainer8.Update(); }),
-            17);  // OUTR.RD R5, D[300]
-  EXPECT_THAT(drainer8.GetValues(), ElementsAre(0x1D001E, 0x1F0020));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  ASSERT_TRUE(ExecuteUntilIp(setup9));  // MVQ.LW R7, 2
-  PortDrainer drainer9(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip9, [&] { drainer9.Update(); }),
-            17);  // OUTR.RD R5, E[400]
-  EXPECT_THAT(drainer9.GetValues(), ElementsAre(0x210022, 0x230024));
-  EXPECT_EQ(state.r7, 0);
-  EXPECT_EQ(state.st, ZSC);
-
-  // The device stops reading after one dword, so the second dword stays in
-  // the port, and the third can't be written. R7 is left at the dwords not
-  // written.
-  ASSERT_TRUE(ExecuteUntilIp(setup10));  // MVQ.LW R7, 3
-  PortDrainer drainer10(this, 1, PortSize::kDword, 1);
-  EXPECT_EQ(CyclesUntilIp(ip10, [&] { drainer10.Update(); }),
-            23);  // OUTR.RD R5, D[600]
-  EXPECT_THAT(drainer10.GetValues(), ElementsAre(0x250026));
+            10 + 10 + 12);  // OUTR.RD R5, [R2]
+  EXPECT_THAT(drainer2.GetValues(), ElementsAre(0x50006));
+  EXPECT_EQ(state.r2, 108);
   EXPECT_EQ(state.r7, 1);
   EXPECT_EQ(state.st, ZC);
 
   // Nothing is written when R7 is zero, even with the port ready.
-  ASSERT_TRUE(ExecuteUntilIp(setup11));  // MVQ.LW R7, 0
-  EXPECT_EQ(ReadPort32(1), 0x270028);
-  EXPECT_EQ(CyclesUntilIp(ip11), 6);  // OUTR.RD R5, D[700]
+  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 0
+  EXPECT_EQ(ReadPort32(1), 0x70008);
+  EXPECT_EQ(CyclesUntilIp(ip3), 6);  // OUTR.RD R5, [R2]
+  EXPECT_EQ(state.r2, 108);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
   EXPECT_EQ(GetPort(1).GetStatus(), 0);
@@ -2021,22 +1820,130 @@ TEST_F(InstructionTest, OUTR_RD) {
 TEST_F(InstructionTest, OUTR_ID) {
   ASSERT_TRUE(InitAndReset({.num_ports = 2}));
   auto& state = GetState();
-  state.extra.SetAddress(state.be + 200)
+  state.stack.SetAddress(state.bs + 300)
       .AddValue32(0x10002)
-      .AddValue32(0x30004);
-  state.SetRegisters({{CpuCore::ST, ZC}, {CpuCore::R4, 150}, {CpuCore::R7, 2}});
+      .AddValue32(0x30004)
+      .AddValue32(0x50006)
+      .AddValue32(0x70008)
+      .AddValue32(0x9000A);
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R6, 300},  // STACK address
+                      {CpuCore::R7, 2}});  // Dwords to write
 
-  state.code.AddValue(Encode("OUTR.ID", {"[$r + $v]", CpuCore::R4}))
-      .AddValue(1)
-      .AddValue(50);
+  state.code.AddValue(Encode("OUTR.ID", CpuCore::R6)).AddValue(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.ID", CpuCore::R6)).AddValue(1);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
+  const uint16_t setup3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.ID", CpuCore::R6)).AddValue(1);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
 
-  PortDrainer drainer(this, 1, PortSize::kDword, 2);
-  EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer.Update(); }),
-            19);  // OUTR.ID 1, [R4 + 50]
-  EXPECT_THAT(drainer.GetValues(), ElementsAre(0x10002, 0x30004));
+  // All of R7 is written.
+  PortDrainer drainer1(this, 1, PortSize::kDword, 2);
+  EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer1.Update(); }),
+            11 + 11);  // OUTR.ID 1, [R6]
+  EXPECT_THAT(drainer1.GetValues(), ElementsAre(0x10002, 0x30004));
+  EXPECT_EQ(state.r6, 304);
   EXPECT_EQ(state.r7, 0);
   EXPECT_EQ(state.st, ZSC);
+
+  // The device stops reading after one dword, as in OUTR.RW.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  PortDrainer drainer2(this, 1, PortSize::kDword, 1);
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { drainer2.Update(); }),
+            11 + 11 + 13);  // OUTR.ID 1, [R6]
+  EXPECT_THAT(drainer2.GetValues(), ElementsAre(0x50006));
+  EXPECT_EQ(state.r6, 308);
+  EXPECT_EQ(state.r7, 1);
+  EXPECT_EQ(state.st, ZC);
+
+  // Nothing is written when R7 is zero, even with the port ready.
+  ASSERT_TRUE(ExecuteUntilIp(setup3));  // MVQ.LW R7, 0
+  EXPECT_EQ(ReadPort32(1), 0x70008);
+  EXPECT_EQ(CyclesUntilIp(ip3), 7);  // OUTR.ID 1, [R6]
+  EXPECT_EQ(state.r6, 308);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.st, ZSC);
+  EXPECT_EQ(GetPort(1).GetStatus(), 0);
+}
+
+TEST_F(InstructionTest, OUTR_Interrupt) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 100).AddValue(1).AddValue(2).AddValue(3);
+  state.extra.SetAddress(state.be + 200)
+      .AddValue32(0x10002)
+      .AddValue32(0x30004)
+      .AddValue32(0x50006);
+  state.SetRegisters({{CpuCore::ST, CpuCore::I},
+                      {CpuCore::R0, 1},    // Port
+                      {CpuCore::R2, 100},  // DATA address
+                      {CpuCore::R4, 200},  // EXTRA address
+                      {CpuCore::R7, 3},    // Words to write
+                      {CpuCore::SP, 500}});
+
+  state.code.AddValue(Encode("SETI", "$v")).AddValue(1).AddValue(100);
+  const uint16_t ip0 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.IW", CpuCore::R2)).AddValue(1);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 3));
+  const uint16_t setup2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("OUTR.RD", CpuCore::R0, CpuCore::R4));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.SetAddress(100);
+  const uint16_t handler_ip = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("IRT"));
+
+  // The interrupt is handled after the first word, and returns to OUTR.
+  ASSERT_TRUE(ExecuteUntilIp(ip0));     // SETI 1, 100
+  InterruptRaiser raiser1(this, 1, 2);  // During the first word
+  PortDrainer drainer1(this, 1, PortSize::kWord, 3);
+  EXPECT_EQ(CyclesUntilIp(handler_ip,
+                          [&] {
+                            drainer1.Update();
+                            raiser1.Update();
+                          }),
+            9 + kCpuCoreStartInterruptCycles);  // OUTR.IW 1, (R2)
+  EXPECT_EQ(state.r2, 101);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(),
+            CpuCore::I | CpuCore::S);
+  EXPECT_EQ(state.stack.GetValue(), ip0);
+  EXPECT_EQ(CyclesUntilIp(ip1, [&] { drainer1.Update(); }),
+            6 + 9 + 9);  // IRT, OUTR.IW 1, (R2)
+  EXPECT_THAT(drainer1.GetValues(), ElementsAre(1, 2, 3));
+  EXPECT_EQ(state.r2, 103);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+
+  // The same for OUTR.RD, a dword at a time.
+  ASSERT_TRUE(ExecuteUntilIp(setup2));  // MVQ.LW R7, 3
+  InterruptRaiser raiser2(this, 1, 2);
+  PortDrainer drainer2(this, 1, PortSize::kDword, 3);
+  EXPECT_EQ(CyclesUntilIp(handler_ip,
+                          [&] {
+                            drainer2.Update();
+                            raiser2.Update();
+                          }),
+            10 + kCpuCoreStartInterruptCycles);  // OUTR.RD R0, [R4]
+  EXPECT_EQ(state.r4, 202);
+  EXPECT_EQ(state.r7, 2);
+  EXPECT_EQ(state.sp, 498);
+  EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(),
+            CpuCore::I | CpuCore::S);
+  EXPECT_EQ(state.stack.GetValue(), setup2);
+  EXPECT_EQ(CyclesUntilIp(ip2, [&] { drainer2.Update(); }),
+            6 + 10 + 10);  // IRT, OUTR.RD R0, [R4]
+  EXPECT_THAT(drainer2.GetValues(), ElementsAre(0x10002, 0x30004, 0x50006));
+  EXPECT_EQ(state.r4, 206);
+  EXPECT_EQ(state.r7, 0);
+  EXPECT_EQ(state.sp, 500);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
 }
 
 }  // namespace
