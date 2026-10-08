@@ -794,6 +794,105 @@ instruction SWP.D "$R, $m" {
   $SwapDword(A);
 }
 
+################################################################################
+## MVI (<address-register>), (<address-register>)
+##
+## Cycles: 7
+## ZSCO: ----
+##
+## Copies the word at the address in the second register to the address in the
+## first (each in the memory bank its register implies), then steps both
+## address registers up by one.
+##
+## The second register is stepped before the first is used, so if they are the
+## same register, the word is copied to the next address, and the register is
+## stepped by two.
+################################################################################
+
+instruction MVI "($r), ($r)" {
+  UL;
+  LKR(b); ADR(b); LD(C0); LAD(b); UL;
+  LKR(a); ADR(a); ST(C0); LAD(a); UL;
+}
+
+################################################################################
+## MVD (<address-register>), (<address-register>)
+##
+## Cycles: 9
+## ZSCO: ----
+##
+## Copies the word at the address in the second register to the address in the
+## first (each in the memory bank its register implies), then steps both
+## address registers down by one.
+##
+## The second register is stepped before the first is used, so if they are the
+## same register, the word is copied to the next address down, and the
+## register is stepped by two.
+################################################################################
+
+instruction MVD "($r), ($r)" {
+  UL;
+  LKR(b); ADR(b); LD(C0); UL;
+  ADDI(b,-1);
+  LKR(a); ADR(a); ST(C0); UL;
+  ADDI(a,-1);
+}
+
+################################################################################
+## MVIR (<address-register>), (<address-register>)
+##
+## Cycles: 5 or 9-10 per word
+## ZSCO: ----
+##
+## MVI, decrementing the count in R7 for each word, repeated until R7 is 0.
+## Each execution copies one word, and then executes the instruction again if
+## it isn't done, so interrupts are handled between words. Each word takes 10
+## cycles, except the last, which takes 9.
+##
+## If R7 is 0, nothing is copied, and it takes 5 cycles.
+################################################################################
+
+instruction MVIR "($r), ($r)" {
+  UL;
+  TST(R7);
+  JC(Z,@done);
+  LKR(b); ADR(b); LD(C0); LAD(b); UL;  # As MVI
+  LKR(a); ADR(a); ST(C0); LAD(a); UL;
+  JD(R7,@repeat);
+@done:
+  END;
+@repeat:
+  ADDI(IP,-1);
+}
+
+################################################################################
+## MVDR (<address-register>), (<address-register>)
+##
+## Cycles: 5 or 11-12 per word
+## ZSCO: ----
+##
+## MVD, decrementing the count in R7 for each word, repeated until R7 is 0.
+## Each execution copies one word, and then executes the instruction again if
+## it isn't done, so interrupts are handled between words. Each word takes 12
+## cycles, except the last, which takes 11.
+##
+## If R7 is 0, nothing is copied, and it takes 5 cycles.
+################################################################################
+
+instruction MVDR "($r), ($r)" {
+  UL;
+  TST(R7);
+  JC(Z,@done);
+  LKR(b); ADR(b); LD(C0); UL;  # As MVD
+  ADDI(b,-1);
+  LKR(a); ADR(a); ST(C0); UL;
+  ADDI(a,-1);
+  JD(R7,@repeat);
+@done:
+  END;
+@repeat:
+  ADDI(IP,-1);
+}
 
 ################################################################################
 ## NEG <register>

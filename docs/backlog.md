@@ -98,6 +98,30 @@ assembles source for any instruction set (using the syntax the instruction set
 defines) into RAM and ROM modules that `ProgramLoader` can load into memory,
 plus a `.oz3map` file mapping addresses back to source for the debugger.
 
+## Invalid register arguments
+
+- **Layers:** core, tools, instruction_sets
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Program assembler (oz3asm)*
+- **Background:** the `MVI` and `MVD` headers in `default_instruction_set.izm`,
+  and the Repeating instructions section of
+  `docs/worklog/finish-default-instruction-set.md`
+
+Some register arguments are encodable but never useful, and today they are
+only documented, as doing whatever the microcode does:
+- `MVI`, `MVD`, `MVIR`, and `MVDR` with the same register for both addresses
+  copy the word to the next address and step the register by two. Copying in
+  place and stepping once would cost a cycle on every move, as microcode can't
+  tell when both arguments are the same register.
+- The repeating instructions (`CPIR`, `CPDR`, `MVIR`, `MVDR`, and `INR` and
+  `OUTR`) with `R7`, their count, as an address register.
+
+Let an instruction definition declare argument combinations as invalid (such
+as that its two register arguments must differ, or that one can't be `R7`),
+in `InstructionDef` and the `.izm` source, so the program assembler rejects
+them. Then declare them on the instructions above.
+
 ## Debugger (oz3dbg)
 
 - **Layers:** core, tools

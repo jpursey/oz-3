@@ -106,9 +106,12 @@ decrement the count in `R7` for each word.
 - No flags change.
 - `MVI` and `MVD` don't use `R7`, as with `CPI` and `CPD`.
 - If `R7` is 0 at the start of a repeat, nothing is copied.
-- About 7 cycles for `MVI`, and about 10 per word for the repeats, including
-  fetching the instruction again for each word. Stepping down costs more, as
-  in block compare.
+- The source register is stepped before the destination register is used,
+  which costs nothing. So if both are the same register, the word is copied
+  to the next address (up or down), and the register is stepped by two.
+- `MVI` takes 7 cycles and `MVD` 9, as stepping down takes an add for each
+  register. `MVIR` takes 10 cycles a word and `MVDR` 12, including fetching
+  the instruction again, and the last word one less. An `R7` of 0 takes 5.
 
 ### Repeating instructions
 
@@ -150,7 +153,7 @@ This is a breaking change, with no programs yet to break:
 `2-Specifications.md` says the default instruction set has no memory to memory
 operations and leaves block copies to the DMA coprocessor. It changes to say
 that the default instruction set has block moves, one word at a time, while
-the DMA coprocessor copies blocks much faster over a memory bus of its own.
+copying whole pages is much faster with the DMA coprocessor.
 Nothing else in the wiki documents individual instructions yet (see the
 backlog's *Default instruction set reference*).
 
@@ -343,21 +346,19 @@ Depends on: nothing.
   a match, no match; for the repeats, a match on the last word, `R7` of 0,
   where `IP` ends, and an interrupt between words.
 
-### CL6 [ ] instruction_sets, wiki: Block move
+### CL6 [x] instruction_sets: Block move
 
 Depends on: CL5 (shares the test file).
 
 - `MVI`, `MVD`, `MVIR`, and `MVDR` after `SWP`.
 - Tests in `instruction_test_block.cc`.
-- `2-Specifications.md` says the default instruction set has block moves (see
-  Wiki above).
+- The wiki change for block moves comes after landing (see below).
 
 **Verify**
 - Standard checks.
 - Unit tests: copies between each pair of banks and within one, up and down,
   overlapping ranges in each direction, flags unchanged; for the repeats,
   `R7` of 0, where `IP` ends, and an interrupt between words.
-- Wiki updated.
 
 ### CL7 [ ] instruction_sets: INR and OUTR one word per execution
 
@@ -374,3 +375,21 @@ Depends on: CL5 (the repeat approach and its tests).
   reads or writes all of `R7`, stops early when the port isn't ready,
   handles `R7` of 0, leaves the address register past the last word, moves
   `IP` back by the right size, and handles an interrupt between words.
+
+### After landing [ ] wiki: Block moves
+
+Depends on: CL6, and the branch landed on `main`.
+
+The session works in a worktree, which can't edit the main checkout's `wiki/`,
+so the wiki change waits until the branch has landed and the session has left
+the worktree.
+- `2-Specifications.md` says the default instruction set has block moves (see
+  Wiki above). In the "Overhaul addressing modes" bullet, the sentence about
+  the DMA coprocessor becomes: "The exception is block moves (`MVI`, `MVD`,
+  `MVIR`, and `MVDR`), which copy one word at a time between addresses held
+  in registers. Copying whole pages is much faster with the DMA
+  coprocessor."
+
+**Verify**
+- The user reviews the wiki change, and it is committed in `wiki/` with only
+  `2-Specifications.md` added, and not pushed.
