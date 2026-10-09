@@ -126,6 +126,21 @@ TEST_F(InstructionTest, JPR) {
   EXPECT_EQ(state.r4, 6);
 }
 
+// A relative jump of 0 lands on the next instruction, so it can be timed as one
+// that falls through. R1 locates a 0 in memory for the address forms.
+TEST_F(InstructionTest, JPR_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(0).AddValue(0);
+  state.SetRegisters({{CpuCore::R0, 0}, {CpuCore::R1, 300}});
+  RunCycleCases({
+      {"JPR R0 (0)", 4, {Encode("JPR", {"$r", CpuCore::R0})}},
+      {"JPR 0", 5, {Encode("JPR", "$v"), 0}},
+      {"JPR (R1)", 6, {Encode("JPR", {"($r)", CpuCore::R1})}},
+      {"JPR (R1 + 1)", 8, {Encode("JPR", {"($r + $v)", CpuCore::R1}), 1}},
+  });
+}
+
 TEST_F(InstructionTest, JC) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -184,6 +199,56 @@ TEST_F(InstructionTest, JC) {
   EXPECT_EQ(state.r4, 7);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // JC NO, 80
   EXPECT_EQ(state.r4, 8);
+}
+
+// With every flag clear, Z is false, so JC Z falls through.
+TEST_F(InstructionTest, JC_NotTakenCycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::ST, 0}});
+  RunCycleCases({
+      {"JC Z, R0",
+       3,
+       {Encode("JC", CpuCore::kConditionZ, {"$r", CpuCore::R0})}},
+      {"JC Z, 0", 4, {Encode("JC", CpuCore::kConditionZ, "$v"), 0}},
+      {"JC Z, (R1)",
+       5,
+       {Encode("JC", CpuCore::kConditionZ, {"($r)", CpuCore::R1})}},
+      {"JC Z, (R1 + 1)",
+       7,
+       {Encode("JC", CpuCore::kConditionZ, {"($r + $v)", CpuCore::R1}), 1}},
+  });
+}
+
+// With every flag clear, NZ is true, so JC NZ jumps.
+TEST_F(InstructionTest, JC_TakenCycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(40).AddValue(50);
+  state.SetRegisters({{CpuCore::ST, 0}, {CpuCore::R0, 20}, {CpuCore::R2, 300}});
+
+  const uint16_t ip0 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JC", CpuCore::kConditionNZ, {"$r", CpuCore::R0}));
+  state.code.SetAddress(20);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("JC", CpuCore::kConditionNZ, "$v")).AddValue(30);
+  state.code.SetAddress(30);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(
+      Encode("JC", CpuCore::kConditionNZ, {"($r)", CpuCore::R2}));
+  state.code.SetAddress(40);
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code
+      .AddValue(Encode("JC", CpuCore::kConditionNZ, {"($r + $v)", CpuCore::R2}))
+      .AddValue(1);
+  state.code.SetAddress(50);
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip0));
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // JC NZ, R0
+  EXPECT_EQ(CyclesUntilIp(ip2), 6);  // JC NZ, 30
+  EXPECT_EQ(CyclesUntilIp(ip3), 7);  // JC NZ, (R2)
+  EXPECT_EQ(CyclesUntilIp(ip4), 9);  // JC NZ, (R2 + 1)
 }
 
 TEST_F(InstructionTest, JCR) {
@@ -251,6 +316,37 @@ TEST_F(InstructionTest, JCR) {
   EXPECT_EQ(state.r4, 7);
   ASSERT_TRUE(ExecuteUntilIp(ip8));  // JCR NO, 5
   EXPECT_EQ(state.r4, 8);
+}
+
+// With every flag clear, JCR Z falls through, and JCR NZ jumps by 0 to the next
+// instruction (see JPR_Cycles).
+TEST_F(InstructionTest, JCR_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(0).AddValue(0);
+  state.SetRegisters({{CpuCore::ST, 0}, {CpuCore::R0, 0}, {CpuCore::R1, 300}});
+  RunCycleCases({
+      {"JCR Z, R0",
+       3,
+       {Encode("JCR", CpuCore::kConditionZ, {"$r", CpuCore::R0})}},
+      {"JCR Z, 0", 4, {Encode("JCR", CpuCore::kConditionZ, "$v"), 0}},
+      {"JCR Z, (R1)",
+       5,
+       {Encode("JCR", CpuCore::kConditionZ, {"($r)", CpuCore::R1})}},
+      {"JCR Z, (R1 + 1)",
+       7,
+       {Encode("JCR", CpuCore::kConditionZ, {"($r + $v)", CpuCore::R1}), 1}},
+      {"JCR NZ, R0 (0)",
+       5,
+       {Encode("JCR", CpuCore::kConditionNZ, {"$r", CpuCore::R0})}},
+      {"JCR NZ, 0", 6, {Encode("JCR", CpuCore::kConditionNZ, "$v"), 0}},
+      {"JCR NZ, (R1)",
+       7,
+       {Encode("JCR", CpuCore::kConditionNZ, {"($r)", CpuCore::R1})}},
+      {"JCR NZ, (R1 + 1)",
+       9,
+       {Encode("JCR", CpuCore::kConditionNZ, {"($r + $v)", CpuCore::R1}), 1}},
+  });
 }
 
 TEST_F(InstructionTest, JD) {
@@ -394,6 +490,27 @@ TEST_F(InstructionTest, CALL) {
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
 }
 
+// CALL times its register and integer forms above.
+TEST_F(InstructionTest, CALL_AddressCycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(40).AddValue(50);
+  state.SetRegisters({{CpuCore::R2, 300}});
+
+  const uint16_t ip0 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CALL", {"($r)", CpuCore::R2}));
+  state.code.SetAddress(40);
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CALL", {"($r + $v)", CpuCore::R2})).AddValue(1);
+  state.code.SetAddress(50);
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip0));
+  EXPECT_EQ(CyclesUntilIp(ip1), 8);   // CALL (R2)
+  EXPECT_EQ(CyclesUntilIp(ip2), 10);  // CALL (R2 + 1)
+}
+
 TEST_F(InstructionTest, CALLR) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -426,6 +543,19 @@ TEST_F(InstructionTest, CALLR) {
   EXPECT_EQ(state.sp, 497);
   EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp).GetValue(), 56);
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
+}
+
+// CALLR times its register and integer forms above. A call of 0 returns to the
+// next instruction (see JPR_Cycles).
+TEST_F(InstructionTest, CALLR_AddressCycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(0).AddValue(0);
+  state.SetRegisters({{CpuCore::R1, 300}});
+  RunCycleCases({
+      {"CALLR (R1)", 8, {Encode("CALLR", {"($r)", CpuCore::R1})}},
+      {"CALLR (R1 + 1)", 10, {Encode("CALLR", {"($r + $v)", CpuCore::R1}), 1}},
+  });
 }
 
 TEST_F(InstructionTest, RET) {

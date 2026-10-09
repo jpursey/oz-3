@@ -3944,8 +3944,13 @@ instruction CPDR "$r, ($r)" {
 ################################################################################
 ## JP <address>
 ##
-## Cycles: 4+
+## Cycles: 4-7
 ## ZSCO: ----
+##
+## Variants:
+##    JP <reg>             (4 cycles)
+##    JP <integer>         (4 cycles)
+##    JP <word-address>    (5-7 cycles)
 ##
 ## Sets IP to the specified address.
 ################################################################################
@@ -3959,8 +3964,13 @@ instruction JP "$m" {
 ################################################################################
 ## JPR <relative-address>
 ##
-## Cycles: 4+
+## Cycles: 4-8
 ## ZSCO: ----
+##
+## Variants:
+##    JPR <reg>             (4 cycles)
+##    JPR <integer>         (5 cycles)
+##    JPR <word-address>    (6-8 cycles)
 ##
 ## Adds the specified relative address to IP.
 ################################################################################
@@ -3973,10 +3983,16 @@ instruction JPR "$m" {
 ################################################################################
 ## JC <condition> <address>
 ##
-## Cycles: 3+
+## Cycles: 3-9
 ## ZSCO: ----
 ##
-## Sets IP to the specified address if the specified condition is true.
+## Variants:
+##    JC <condition>, <reg>             (3-5 cycles)
+##    JC <condition>, <integer>         (4-6 cycles)
+##    JC <condition>, <word-address>    (5-9 cycles)
+##
+## Sets IP to the specified address if the specified condition is true. Each
+## variant takes 2 more cycles when it jumps.
 ################################################################################
 
 instruction JC "$#3, $m" {
@@ -3990,10 +4006,16 @@ instruction JC "$#3, $m" {
 ################################################################################
 ## JCR <condition> <relative-address>
 ##
-## Cycles: 3+
+## Cycles: 3-9
 ## ZSCO: ----
 ##
+## Variants:
+##    JCR <condition>, <reg>             (3-5 cycles)
+##    JCR <condition>, <integer>         (4-6 cycles)
+##    JCR <condition>, <word-address>    (5-9 cycles)
+##
 ## Adds the specified relative address to IP if the specified condition is true.
+## Each variant takes 2 more cycles when it jumps.
 ################################################################################
 
 instruction JCR "$#3, $m" {
@@ -4063,8 +4085,13 @@ instruction JDR "$r, $m" {
 ################################################################################
 ## CALL <address>
 ##
-## Cycles: 6+
+## Cycles: 6-10
 ## ZSCO: ----
+##
+## Variants:
+##    CALL <reg>             (6 cycles)
+##    CALL <integer>         (7 cycles)
+##    CALL <word-address>    (8-10 cycles)
 ##
 ## Pushes IP onto the stack and sets IP to the specified address.
 ################################################################################
@@ -4078,8 +4105,13 @@ instruction CALL "$m" {
 ################################################################################
 ## CALLR <relative-address>
 ##
-## Cycles: 6+
+## Cycles: 6-10
 ## ZSCO: ----
+##
+## Variants:
+##    CALLR <reg>             (6 cycles)
+##    CALLR <integer>         (7 cycles)
+##    CALLR <word-address>    (8-10 cycles)
 ##
 ## Pushes IP onto the stack and adds the specified relative address to IP.
 ################################################################################
@@ -4127,8 +4159,8 @@ instruction FEND {
 ## ZSCO: ----
 ##
 ## Variants:
-##   RET
-##   RET.A <size>
+##    RET              (5 cycles)
+##    RET.A <0..31>    (6 cycles)
 ##
 ## Pops 0-31 words from the stack, then pops IP from the stack.
 ################################################################################
@@ -4152,11 +4184,12 @@ instruction RET.A "$#5" {
 ## ZSCO: ----
 ##
 ## Variants:
-##   RETC   <condition>
-##   RETC.A <condition> <size>
+##    RETC   <condition>             (3-6 cycles)
+##    RETC.A <condition>, <0..31>    (3-7 cycles)
 ##
 ## If the specified condition is true, optionally pops 0-31 words from the
-## stack, then pops IP from the stack.
+## stack, then pops IP from the stack. Each variant takes 3 cycles when it
+## doesn't return.
 ################################################################################
 
 instruction RETC "$#3" {
