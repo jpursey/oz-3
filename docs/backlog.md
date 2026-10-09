@@ -25,21 +25,28 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Instruction set source reference
+## Instruction encoding checks
 
-- **Layers:** wiki
-- **Size:** medium
+- **Layers:** core, tools
+- **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** `InstructionAssembler` in
-  `oz3/tools/instruction_assembler.h`, `oz3ism.cc`, and
-  `default_instruction_set.izm` as the working example; the wiki's Home page
-  lists `oz3ism`
+- **Background:** the Arguments and Encoding sections of the wiki's
+  `2.3-Instruction-Set-Source.md`; `CompileInstruction` in
+  `oz3/core/instruction_compiler.cc`, and `AssembleMacro` in
+  `oz3/tools/instruction_assembler.cc`
 
-A wiki page documenting how an instruction set is written: the `.izm` source
-format (instruction and macro definitions, argument encoding and sizes, and
-macro registers such as `p`, `m`, `r`, and `i`), and how `oz3ism` assembles it
-into C++. The microcode page covers only the microcode itself.
+Two rules of how instructions are encoded, which the wiki states but the code
+doesn't hold to:
+- An instruction's arguments must fit in the 8 bits of the code word's low
+  byte, but nothing checks it. `instruction X "$#8, $r"` assembles, and its
+  register is then decoded from the opcode's bits. The instruction compiler
+  should reject it.
+- A macro's codes are laid out largest argument first, and in the order they
+  are written among codes of the same size. `AssembleMacro` sorts them with
+  `std::sort`, which isn't stable, so that order only holds by chance. It
+  should use `std::stable_sort`. `default_instruction_set_test.cc` confirms no
+  code word changes.
 
 ## Program assembler (oz3asm)
 
