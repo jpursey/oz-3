@@ -360,11 +360,12 @@ bool InstructionSetAssembler::AssembleMacro(
   }
 
   // Sort the macro code definitions by argument size (largest to smallest), so
-  // we can assign prefix values trivially.
-  std::sort(macro_code_defs.begin(), macro_code_defs.end(),
-            [](const MacroCodeDef& a, const MacroCodeDef& b) {
-              return a.arg.size > b.arg.size;
-            });
+  // we can assign prefix values trivially. Codes of the same size keep the
+  // order they are written in, which programs depend on.
+  std::stable_sort(macro_code_defs.begin(), macro_code_defs.end(),
+                   [](const MacroCodeDef& a, const MacroCodeDef& b) {
+                     return a.arg.size > b.arg.size;
+                   });
 
   int next_code = 0;
   for (int i = 0; i < macro_code_defs.size(); ++i) {

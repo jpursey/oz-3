@@ -154,6 +154,29 @@ TEST(InstructionCompilerTest, InvalidSecondArg) {
   EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("second argument"));
 }
 
+TEST(InstructionCompilerTest, ArgsFitInLowByte) {
+  std::string error;
+  EXPECT_TRUE(CompileForTest(
+      MakeDef({ArgType::kImmediate, 5}, ArgType::kWordReg), error))
+      << error;
+  EXPECT_TRUE(CompileForTest(
+      MakeDef(ArgType::kWordReg, {ArgType::kImmediate, 5}), error))
+      << error;
+}
+
+TEST(InstructionCompilerTest, ArgsExceedLowByte) {
+  std::string error;
+  EXPECT_FALSE(CompileForTest(
+      MakeDef({ArgType::kImmediate, 8}, ArgType::kWordReg), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("8 bits"));
+  EXPECT_FALSE(CompileForTest(
+      MakeDef(ArgType::kWordReg, {ArgType::kImmediate, 6}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("8 bits"));
+  EXPECT_FALSE(CompileForTest(
+      MakeDef({ArgType::kWordReg, 4}, {ArgType::kMacro, 5}), error));
+  EXPECT_THAT(absl::AsciiStrToLower(error), HasSubstr("8 bits"));
+}
+
 TEST(InstructionCompilerTest, InvalidMacroArg) {
   std::string error;
   auto TestCompile = [&](Argument arg) {
@@ -967,7 +990,7 @@ TEST(InstructionCompilerTest, InstructionArgAsStatus) {
   std::string error;
   EXPECT_TRUE(TestCompile(
       kMicroStatusArgs,
-      MakeDef({ArgType::kImmediate, 5}, {ArgType::kImmediate, 4}, "TEST(a,b)"),
+      MakeDef({ArgType::kImmediate, 4}, {ArgType::kImmediate, 4}, "TEST(a,b)"),
       error));
   EXPECT_THAT(error, IsEmpty());
   EXPECT_FALSE(TestCompile(kMicroStatusArgs,
@@ -992,12 +1015,12 @@ TEST(InstructionCompilerTest, InstructionArgAsStatus) {
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(
       kMicroStatusArgs,
-      MakeDef({ArgType::kImmediate, 5}, {ArgType::kImmediate, 5}, "TEST(m,m)"),
+      MakeDef({ArgType::kImmediate, 4}, {ArgType::kImmediate, 4}, "TEST(m,m)"),
       error));
   EXPECT_THAT(error, Not(IsEmpty()));
   EXPECT_FALSE(TestCompile(
       kMicroStatusArgs,
-      MakeDef({ArgType::kImmediate, 5}, {ArgType::kImmediate, 5}, "TEST(i,i)"),
+      MakeDef({ArgType::kImmediate, 4}, {ArgType::kImmediate, 4}, "TEST(i,i)"),
       error));
   EXPECT_THAT(error, Not(IsEmpty()));
 }

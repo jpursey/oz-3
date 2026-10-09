@@ -6,6 +6,7 @@
 #include "oz3/tools/instruction_assembler.h"
 
 #include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -223,6 +224,35 @@ TEST(InstructionAssemblerTest, InstructionInvalidArgSource) {
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("invalid"), HasSubstr("$x")));
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionAssemblerTest, InstructionArgsExceedLowByte) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) ALPHA "$#8, $r" {
+      UL;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()), HasSubstr("8 bits"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionAssemblerTest, InstructionWithMacroArgsExceedLowByte) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro(bits:6) Macro {
+      code "$r" { MOV(R0,m); }
+    }
+    instruction(opcode:0) ALPHA "$r, $m" {
+      UL; $Macro;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()), HasSubstr("8 bits"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
 TEST(InstructionAssemblerTest, InstructionEmbeddedArgumentTypes) {
@@ -911,6 +941,37 @@ TEST(InstructionAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
   EXPECT_EQ(code.source, "$r1");
   EXPECT_EQ(code.prefix.value, 0b1110);
   EXPECT_EQ(code.prefix.size, 4);
+}
+
+TEST(InstructionAssemblerTest, MacroCodesOfSameSizeKeepWrittenOrder) {
+  // Enough codes that sorting them can't be done by insertion sort alone, with
+  // the two sizes interleaved.
+  constexpr int kCodePairs = 24;
+  std::string source = "macro Macro {\n";
+  for (int i = 0; i < kCodePairs; ++i) {
+    absl::StrAppend(&source, "  code \"A", i, ", $r1\" { MOV(R0,m); }\n");
+    absl::StrAppend(&source, "  code \"B", i, "\" { UL; }\n");
+  }
+  absl::StrAppend(&source, "}\n");
+  gb::ParseError error;
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.size, 7);
+  ASSERT_EQ(macro.code.size(), kCodePairs * 2);
+  for (int i = 0; i < kCodePairs; ++i) {
+    const auto& code = macro.code[i];
+    EXPECT_EQ(code.source, absl::StrCat("A", i, ", $r1"));
+    EXPECT_EQ(code.prefix.value, i);
+    EXPECT_EQ(code.prefix.size, 6);
+  }
+  for (int i = 0; i < kCodePairs; ++i) {
+    const auto& code = macro.code[kCodePairs + i];
+    EXPECT_EQ(code.source, absl::StrCat("B", i));
+    EXPECT_EQ(code.prefix.value, kCodePairs * 2 + i);
+    EXPECT_EQ(code.prefix.size, 7);
+  }
 }
 
 TEST(InstructionAssemblerTest, MacroCodeSourceExceedsSetBits) {

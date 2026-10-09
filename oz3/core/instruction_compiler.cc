@@ -389,6 +389,11 @@ bool InstructionCompiler::CompileInstruction(
   if (!instruction.arg2.IsValid()) {
     return Error("Invalid second argument (size is probably invalid for type)");
   }
+  const int arg_size = instruction.arg1.size + instruction.arg2.size;
+  if (arg_size > 8) {
+    return Error("Arguments take ", arg_size,
+                 " bits, which exceeds the 8 bits of the code word");
+  }
 
   state_.src_code =
       absl::StrSplit(instruction_def_->code, ';', absl::SkipWhitespace());
