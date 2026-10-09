@@ -44,7 +44,7 @@ bin/oz3ism.exe oz3/instruction_sets/default_instruction_set.izm oz3/instruction_
 
 Both paths must be relative to the current directory; `oz3ism` can't read absolute paths. The build doesn't do this step, as running a Debug `oz3ism` needs the debug CRT. `oz3ism` doesn't link `oz3_instruction_sets`, so it still builds when the `.inc` doesn't compile. Debug and Release both write `bin/oz3ism.exe`, so it is whichever was built last; a Debug one needs the debug CRT on PATH (see Test below).
 
-Programs depend on the default instruction set's code words, so they never change. Opcodes are numbered in the order instructions appear in the `.izm`, and each variant's code word comes from its instruction's argument and macro layout. So existing instructions are never reordered, removed, or given new variants, and their arguments and macros keep their layout. A new instruction goes at the end of the `.izm`, after the last opcode. Microcode changes that keep every code word (fixes, cycle changes) are fine.
+Programs depend on the default instruction set's code words, so they never change. Opcodes are numbered in the order instructions appear in the `.izm`, and each variant's code word comes from its instruction's argument and macro layout. So existing instructions are never reordered, removed, or given new variants, and their arguments and macros keep their layout. A new instruction goes at the end of the `.izm`, after the last opcode. `default_instruction_set_test.cc` fails if a pinned instruction's code words change, and new instructions are pinned too by raising `kPinnedInstructionCount` and updating `kPinnedFingerprint`. Microcode changes that keep every code word (fixes, cycle changes) are fine.
 
 ## Commands
 
