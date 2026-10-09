@@ -44,6 +44,8 @@ bin/oz3ism.exe oz3/instruction_sets/default_instruction_set.izm oz3/instruction_
 
 Both paths must be relative to the current directory; `oz3ism` can't read absolute paths. The build doesn't do this step, as running a Debug `oz3ism` needs the debug CRT. `oz3ism` doesn't link `oz3_instruction_sets`, so it still builds when the `.inc` doesn't compile. Debug and Release both write `bin/oz3ism.exe`, so it is whichever was built last; a Debug one needs the debug CRT on PATH (see Test below).
 
+Programs depend on the default instruction set's code words, so they never change. Opcodes are numbered in the order instructions appear in the `.izm`, and each variant's code word comes from its instruction's argument and macro layout. So existing instructions are never reordered, removed, or given new variants, and their arguments and macros keep their layout. A new instruction goes at the end of the `.izm`, after the last opcode. Microcode changes that keep every code word (fixes, cycle changes) are fine.
+
 ## Commands
 
 Everything is driven directly by CMake using the Ninja generator, which is exactly what Visual Studio's "open a local folder" CMake integration does (see CMakeSettings.json). Command line builds and IDE builds use the same build.
@@ -128,7 +130,7 @@ Every change is checked as follows:
 - `ctest` passes in Debug.
 - Touched files pass the clang-format check (see Format above).
 - New and changed behavior has unit tests.
-- A change to the default instruction set's `.izm` regenerates the `.inc` (see Default instruction set), and `git diff` of the `.inc` shows only what the change meant to change.
+- A change to the default instruction set's `.izm` regenerates the `.inc` (see Default instruction set), and `git diff` of the `.inc` shows only what the change meant to change, with no existing opcode or code word changed.
 - A change to behavior the wiki specifies updates the wiki to match (see Wiki).
 
 ## Wiki
