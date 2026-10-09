@@ -2020,5 +2020,31 @@ TEST_F(InstructionTest, OUTR_MissingPort) {
   EXPECT_EQ(state.st, ZC);
 }
 
+// The tests above time the ends of every variant but these, which take a port
+// as a value: their cheapest address forms, and OUT and OUTS from a register.
+// Nothing has written to port 1 before the INS cases, so they find it not
+// ready.
+TEST_F(InstructionTest, PortByValue_Cycles) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  RunCycleCases({
+      {"IN.IW 1, (R2)", 7, {Encode("IN.IW", {"($r)", CpuCore::R2}), 1}},
+      {"IN.ID 1, [R2]", 9, {Encode("IN.ID", {"[$r]", CpuCore::R2}), 1}},
+      {"INS.IW 1, (R2) (not ready)",
+       6,
+       {Encode("INS.IW", {"($r)", CpuCore::R2}), 1}},
+      {"INS.ID 1, [R2] (not ready)",
+       7,
+       {Encode("INS.ID", {"[$r]", CpuCore::R2}), 1}},
+      {"OUT.IW 1, R1", 5, {Encode("OUT.IW", {"$r", CpuCore::R1}), 1}},
+      {"OUT.IW 1, (R2)", 7, {Encode("OUT.IW", {"($r)", CpuCore::R2}), 1}},
+      {"OUT.ID 1, D1", 6, {Encode("OUT.ID", {"$R", 1}), 1}},
+      {"OUT.ID 1, [R2]", 9, {Encode("OUT.ID", {"[$r]", CpuCore::R2}), 1}},
+      {"OUTS.IW 1, R1", 5, {Encode("OUTS.IW", {"$r", CpuCore::R1}), 1}},
+      {"OUTS.IW 1, (R2)", 7, {Encode("OUTS.IW", {"($r)", CpuCore::R2}), 1}},
+      {"OUTS.ID 1, D1", 6, {Encode("OUTS.ID", {"$R", 1}), 1}},
+      {"OUTS.ID 1, [R2]", 9, {Encode("OUTS.ID", {"[$r]", CpuCore::R2}), 1}},
+  });
+}
+
 }  // namespace
 }  // namespace oz3

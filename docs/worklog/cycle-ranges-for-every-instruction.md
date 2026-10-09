@@ -206,7 +206,7 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_interrupt.cc` pins both ends of every variant.
 
-### CL9 [ ] instruction_sets: port
+### CL9 [x] instruction_sets: port
 
 Depends on: CL1.
 

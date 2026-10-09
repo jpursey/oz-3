@@ -4360,18 +4360,18 @@ instruction INT "$m" {
 ################################################################################
 ## IN <port> <dst>
 ##
-## Cycles: 4+
+## Cycles: 4-11
 ## ZSCO: -X--
 ##
 ## Variants:
-##    IN.RW <reg>    <reg>
-##    IN.RW <reg>    <word-address>
-##    IN.IW <0..255> <reg>
-##    IN.IW <0..255> <word-address>
-##    IN.RD <reg>    <dreg>
-##    IN.RD <reg>    <dword-address>
-##    IN.ID <0..255> <dreg>
-##    IN.ID <0..255> <dword-address>
+##    IN.RW <reg>,    <reg>              (4 cycles)
+##    IN.RW <reg>,    <word-address>     (6-8 cycles)
+##    IN.IW <0..255>, <reg>              (5 cycles)
+##    IN.IW <0..255>, <word-address>     (7-9 cycles)
+##    IN.RD <reg>,    <dreg>             (5 cycles)
+##    IN.RD <reg>,    <dword-address>    (8-10 cycles)
+##    IN.ID <0..255>, <dreg>             (6 cycles)
+##    IN.ID <0..255>, <dword-address>    (9-11 cycles)
 ##
 ## Unconditionally reads from the specified port and writes to the specified
 ## register or memory address. "S" flag is set if a new word was read, otherwise
@@ -4504,18 +4504,18 @@ instruction IN.ID "$v, $m" {
 ################################################################################
 ## INS <port> <dst>
 ##
-## Cycles: 4+
+## Cycles: 4-11
 ## ZSCO: -X--
 ##
 ## Variants:
-##    INS.RW <reg>    <reg>
-##    INS.RW <reg>    <word-address>
-##    INS.IW <0..255> <reg>
-##    INS.IW <0..255> <word-address>
-##    INS.RD <reg>    <dreg>
-##    INS.RD <reg>    <dword-address>
-##    INS.ID <0..255> <dreg>
-##    INS.ID <0..255> <dword-address>
+##    INS.RW <reg>,    <reg>              (4 cycles)
+##    INS.RW <reg>,    <word-address>     (5-8 cycles)
+##    INS.IW <0..255>, <reg>              (5 cycles)
+##    INS.IW <0..255>, <word-address>     (6-9 cycles)
+##    INS.RD <reg>,    <dreg>             (5 cycles)
+##    INS.RD <reg>,    <dword-address>    (6-10 cycles)
+##    INS.ID <0..255>, <dreg>             (6 cycles)
+##    INS.ID <0..255>, <dword-address>    (7-11 cycles)
 ##
 ## Reads from the specified port if the port status is set and writes to the
 ## specified register or memory address. "S" flag is set if a word was read,
@@ -4807,14 +4807,22 @@ instruction INR.ID "$v, [$r]" {
 ################################################################################
 ## OUT <port> <value>
 ##
-## Cycles: 4+
+## Cycles: 4-11
 ## ZSCO: -1--
 ##
 ## Variants:
-##    OUT.RW <reg>    <word-value>
-##    OUT.IW <0..255> <word-value>
-##    OUT.RD <reg>    <dword-value>
-##    OUT.ID <0..255> <dword-value>
+##    OUT.RW <reg>,    <reg>              (4 cycles)
+##    OUT.RW <reg>,    <integer>          (5 cycles)
+##    OUT.RW <reg>,    <word-address>     (6-8 cycles)
+##    OUT.IW <0..255>, <reg>              (5 cycles)
+##    OUT.IW <0..255>, <integer>          (6 cycles)
+##    OUT.IW <0..255>, <word-address>     (7-9 cycles)
+##    OUT.RD <reg>,    <dreg>             (5 cycles)
+##    OUT.RD <reg>,    <integer>          (7 cycles)
+##    OUT.RD <reg>,    <dword-address>    (8-10 cycles)
+##    OUT.ID <0..255>, <dreg>             (6 cycles)
+##    OUT.ID <0..255>, <integer>          (8 cycles)
+##    OUT.ID <0..255>, <dword-address>    (9-11 cycles)
 ##
 ## Unconditionally writes the specified value to the specified port.
 ################################################################################
@@ -4974,17 +4982,26 @@ instruction OUT.ID "$v, $m" {
 ################################################################################
 ## OUTS <port> <value>
 ##
-## Cycles: 4+
+## Cycles: 4-11
 ## ZSCO: -X--
 ##
 ## Variants:
-##    OUTS.RW <reg>    <word-value>
-##    OUTS.IW <0..255> <word-value>
-##    OUTS.RD <reg>    <dword-value>
-##    OUTS.ID <0..255> <dword-value>
+##    OUTS.RW <reg>,    <reg>              (4 cycles)
+##    OUTS.RW <reg>,    <integer>          (5 cycles)
+##    OUTS.RW <reg>,    <word-address>     (6-8 cycles)
+##    OUTS.IW <0..255>, <reg>              (5 cycles)
+##    OUTS.IW <0..255>, <integer>          (6 cycles)
+##    OUTS.IW <0..255>, <word-address>     (7-9 cycles)
+##    OUTS.RD <reg>,    <dreg>             (5 cycles)
+##    OUTS.RD <reg>,    <integer>          (7 cycles)
+##    OUTS.RD <reg>,    <dword-address>    (8-10 cycles)
+##    OUTS.ID <0..255>, <dreg>             (6 cycles)
+##    OUTS.ID <0..255>, <integer>          (8 cycles)
+##    OUTS.ID <0..255>, <dword-address>    (9-11 cycles)
 ##
 ## Writes the specified value to the specified port if the port status is not
-## set. Sets the "S" flag if a value was written.
+## set. Sets the "S" flag if a value was written. It takes the same cycles
+## whether or not it writes.
 ################################################################################
 
 macro(bits:5) WritePortWordIfReady(p) {
