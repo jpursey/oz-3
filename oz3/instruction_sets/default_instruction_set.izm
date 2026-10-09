@@ -3612,14 +3612,21 @@ instruction RRC.D "$R, $m" {
 ################################################################################
 ## CLRB <register>, <bit-position>
 ##
-## Cycles: 6+
+## Cycles: 6-42
 ## ZSCO: ----
 ##
 ## Variants:
-##    CLRB.W <reg>, <word-value>
-##    CLRB.D <dreg>, <dword-value>
+##    CLRB.W <reg>, <reg>       (7-38 cycles)
+##    CLRB.W <reg>, <0..15>     (6 cycles)
+##    CLRB.D <dreg>, <reg>      (10-42 cycles)
+##    CLRB.D <dreg>, <0..31>    (8 cycles)
 ##
 ## Clears bit in the specified register.
+##
+## A bit position from a register costs about 2 cycles more for each position,
+## up to 15 for a word. For a dword, the high word's positions count again from
+## 16, so 16 is the cheapest. A position past the register's width changes
+## nothing, and is also among the cheapest.
 ################################################################################
 
 instruction CLRB.W "$r, $m" {
@@ -3639,14 +3646,17 @@ instruction CLRB.D "$R, $m" {
 ################################################################################
 ## SETB <register>, <bit-position>
 ##
-## Cycles: 5+
+## Cycles: 5-40
 ## ZSCO: ----
 ##
 ## Variants:
-##    SETB.W <reg>, <word-value>
-##    SETB.D <dreg>, <dword-value>
+##    SETB.W <reg>, <reg>       (6-37 cycles)
+##    SETB.W <reg>, <0..15>     (5 cycles)
+##    SETB.D <dreg>, <reg>      (8-40 cycles)
+##    SETB.D <dreg>, <0..31>    (6 cycles)
 ##
-## Sets bit in the specified register.
+## Sets bit in the specified register. The cost depends on the bit position as
+## for CLRB.
 ################################################################################
 
 instruction SETB.W "$r, $m" {
@@ -3663,14 +3673,17 @@ instruction SETB.D "$R, $m" {
 ################################################################################
 ## NOTB <register>, <bit-position>
 ##
-## Cycles: 5+
+## Cycles: 5-40
 ## ZSCO: ----
 ##
 ## Variants:
-##    NOTB.W <reg>, <word-value>
-##    NOTB.D <dreg>, <dword-value>
+##    NOTB.W <reg>, <reg>       (6-37 cycles)
+##    NOTB.W <reg>, <0..15>     (5 cycles)
+##    NOTB.D <dreg>, <reg>      (8-40 cycles)
+##    NOTB.D <dreg>, <0..31>    (6 cycles)
 ##
-## Toggles bit in the specified register.
+## Toggles bit in the specified register. The cost depends on the bit position
+## as for CLRB.
 ################################################################################
 
 instruction NOTB.W "$r, $m" {
@@ -3687,14 +3700,17 @@ instruction NOTB.D "$R, $m" {
 ################################################################################
 ## TSTB <register>, <bit-position>
 ##
-## Cycles: 5+
+## Cycles: 5-40
 ## ZSCO: X---
 ##
 ## Variants:
-##    TSTB.W <reg>, <word-value>
-##    TSTB.D <dreg>, <dword-value>
+##    TSTB.W <reg>, <reg>       (6-37 cycles)
+##    TSTB.W <reg>, <0..15>     (5 cycles)
+##    TSTB.D <dreg>, <reg>      (8-40 cycles)
+##    TSTB.D <dreg>, <0..31>    (6 cycles)
 ##
-## Tests a bit in the specified register, setting Z if it is zero.
+## Tests a bit in the specified register, setting Z if it is zero. The cost
+## depends on the bit position as for CLRB.
 ################################################################################
 
 instruction TSTB.W "$r, $m" {

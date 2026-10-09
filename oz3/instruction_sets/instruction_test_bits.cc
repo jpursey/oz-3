@@ -159,6 +159,30 @@ TEST_F(InstructionTest, CLRB_D) {
   EXPECT_EQ(state.d0(), 0xFEFFFEFF);
 }
 
+// The bit operation cycle tests put the positions with the cheapest and
+// costliest masks (see BitOps16BitMaskByRegisterCycles and
+// BitOps32BitMaskByRegisterCycles) in R1 and R2 for a word, and R3 and R4 for
+// a dword, which use D3 so as not to overlap them.
+TEST_F(InstructionTest, CLRB_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::R1, 16},
+                           {CpuCore::R2, 15},
+                           {CpuCore::R3, 16},
+                           {CpuCore::R4, 31}});
+  RunCycleCases({
+      {"CLRB.W R0, R1 (16)",
+       7,
+       {Encode("CLRB.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"CLRB.W R0, R2 (15)",
+       38,
+       {Encode("CLRB.W", CpuCore::R0, {"$r", CpuCore::R2})}},
+      {"CLRB.W R0, 15", 6, {Encode("CLRB.W", CpuCore::R0, "15")}},
+      {"CLRB.D D3, R3 (16)", 10, {Encode("CLRB.D", 3, {"$r", CpuCore::R3})}},
+      {"CLRB.D D3, R4 (31)", 42, {Encode("CLRB.D", 3, {"$r", CpuCore::R4})}},
+      {"CLRB.D D3, 31", 8, {Encode("CLRB.D", 3, "31")}},
+  });
+}
+
 TEST_F(InstructionTest, SETB_W) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -185,6 +209,26 @@ TEST_F(InstructionTest, SETB_D) {
   EXPECT_EQ(state.d0(), 0x00000100);
   ASSERT_TRUE(ExecuteUntilIp(ip2));
   EXPECT_EQ(state.d0(), 0x01000100);
+}
+
+TEST_F(InstructionTest, SETB_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::R1, 16},
+                           {CpuCore::R2, 15},
+                           {CpuCore::R3, 16},
+                           {CpuCore::R4, 31}});
+  RunCycleCases({
+      {"SETB.W R0, R1 (16)",
+       6,
+       {Encode("SETB.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"SETB.W R0, R2 (15)",
+       37,
+       {Encode("SETB.W", CpuCore::R0, {"$r", CpuCore::R2})}},
+      {"SETB.W R0, 15", 5, {Encode("SETB.W", CpuCore::R0, "15")}},
+      {"SETB.D D3, R3 (16)", 8, {Encode("SETB.D", 3, {"$r", CpuCore::R3})}},
+      {"SETB.D D3, R4 (31)", 40, {Encode("SETB.D", 3, {"$r", CpuCore::R4})}},
+      {"SETB.D D3, 31", 6, {Encode("SETB.D", 3, "31")}},
+  });
 }
 
 TEST_F(InstructionTest, NOTB_W) {
@@ -225,6 +269,26 @@ TEST_F(InstructionTest, NOTB_D) {
   EXPECT_EQ(state.d0(), 0x01000000);
   ASSERT_TRUE(ExecuteUntilIp(ip4));
   EXPECT_EQ(state.d0(), 0x00000000);
+}
+
+TEST_F(InstructionTest, NOTB_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::R1, 16},
+                           {CpuCore::R2, 15},
+                           {CpuCore::R3, 16},
+                           {CpuCore::R4, 31}});
+  RunCycleCases({
+      {"NOTB.W R0, R1 (16)",
+       6,
+       {Encode("NOTB.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"NOTB.W R0, R2 (15)",
+       37,
+       {Encode("NOTB.W", CpuCore::R0, {"$r", CpuCore::R2})}},
+      {"NOTB.W R0, 15", 5, {Encode("NOTB.W", CpuCore::R0, "15")}},
+      {"NOTB.D D3, R3 (16)", 8, {Encode("NOTB.D", 3, {"$r", CpuCore::R3})}},
+      {"NOTB.D D3, R4 (31)", 40, {Encode("NOTB.D", 3, {"$r", CpuCore::R4})}},
+      {"NOTB.D D3, 31", 6, {Encode("NOTB.D", 3, "31")}},
+  });
 }
 
 TEST_F(InstructionTest, TSTB_W) {
@@ -268,6 +332,26 @@ TEST_F(InstructionTest, TSTB_D) {
   EXPECT_EQ(state.st, 0);
   ASSERT_TRUE(ExecuteUntilIp(ip4));
   EXPECT_EQ(state.st, CpuCore::Z);
+}
+
+TEST_F(InstructionTest, TSTB_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::R1, 16},
+                           {CpuCore::R2, 15},
+                           {CpuCore::R3, 16},
+                           {CpuCore::R4, 31}});
+  RunCycleCases({
+      {"TSTB.W R0, R1 (16)",
+       6,
+       {Encode("TSTB.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"TSTB.W R0, R2 (15)",
+       37,
+       {Encode("TSTB.W", CpuCore::R0, {"$r", CpuCore::R2})}},
+      {"TSTB.W R0, 15", 5, {Encode("TSTB.W", CpuCore::R0, "15")}},
+      {"TSTB.D D3, R3 (16)", 8, {Encode("TSTB.D", 3, {"$r", CpuCore::R3})}},
+      {"TSTB.D D3, R4 (31)", 40, {Encode("TSTB.D", 3, {"$r", CpuCore::R4})}},
+      {"TSTB.D D3, 31", 6, {Encode("TSTB.D", 3, "31")}},
+  });
 }
 
 TEST_F(InstructionTest, CLRF) {
@@ -331,6 +415,16 @@ TEST_F(InstructionTest, NOTF) {
   EXPECT_EQ(state.st, CpuCore::C | CpuCore::I);
   ASSERT_TRUE(ExecuteUntilIp(ip3));
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::I);
+}
+
+TEST_F(InstructionTest, FlagOps_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  const uint16_t flags = CpuCore::Z | CpuCore::S | CpuCore::C | CpuCore::O;
+  RunCycleCases({
+      {"CLRF ZSCO", 3, {Encode("CLRF", flags)}},
+      {"SETF ZSCO", 3, {Encode("SETF", flags)}},
+      {"NOTF ZSCO", 3, {Encode("NOTF", flags)}},
+  });
 }
 
 }  // namespace

@@ -175,7 +175,7 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_rotate.cc` pins both ends of every variant.
 
-### CL6 [ ] instruction_sets: bits and flags
+### CL6 [x] instruction_sets: bits and flags
 
 Depends on: CL1.
 
