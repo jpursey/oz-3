@@ -110,7 +110,12 @@ on the address, so the cycles stay right.
   register. *Confirmed:* it takes the register's value in cycles, but at
   least 3, so its range is 3-65535. `HALT` takes 4 cycles to go idle, not 3,
   as it moves `IP` back first.
-- `RST`'s 11-28. CL10 checks what makes it vary.
+- `RST`'s 11-28. CL10 checks what makes it vary. *Confirmed:* 11 cycles with
+  no banks, 7 more for CODE, 5 for STACK, and 2 each for DATA and EXTRA, and
+  one more for SELF.
+- *Found in CL10:* the divide variant lines left out dividing by zero, which
+  is each variant's cheapest case, though the overall ranges included it.
+  The variant ranges now include it.
 
 ## CLs
 
@@ -217,7 +222,7 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_port.cc` pins both ends of every variant.
 
-### CL10 [ ] instruction_sets: multiply, block, and core
+### CL10 [x] instruction_sets: multiply, block, and core
 
 Depends on: CL1.
 

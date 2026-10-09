@@ -844,7 +844,7 @@ instruction MVD "($r), ($r)" {
 ################################################################################
 ## MVIR (<address-register>), (<address-register>)
 ##
-## Cycles: 6 or 9 per word
+## Cycles: 6-9 per execution
 ## ZSCO: ----
 ##
 ## MVI, decrementing the count in R7 for each word, repeated until R7 is 0.
@@ -876,7 +876,7 @@ instruction MVIR "($r), ($r)" {
 ################################################################################
 ## MVDR (<address-register>), (<address-register>)
 ##
-## Cycles: 6 or 11 per word
+## Cycles: 6-11 per execution
 ## ZSCO: ----
 ##
 ## MVD, decrementing the count in R7 for each word, repeated until R7 is 0.
@@ -1376,18 +1376,21 @@ instruction MULS.W "$r, $m" {
 ## ZSCO: XX0X
 ##
 ## Variants:
-##    DIV.W  <reg>, <reg>              (86 cycles)
-##    DIV.W  <reg>, <integer>          (87 cycles)
-##    DIV.W  <reg>, <word-address>     (88-90 cycles)
-##    DIV.DW <dreg>, <reg>             (168 cycles)
-##    DIV.DW <dreg>, <integer>         (169 cycles)
-##    DIV.DW <dreg>, <word-address>    (170-172 cycles)
+##    DIV.W  <reg>, <reg>              (5-86 cycles)
+##    DIV.W  <reg>, <integer>          (6-87 cycles)
+##    DIV.W  <reg>, <word-address>     (7-90 cycles)
+##    DIV.DW <dreg>, <reg>             (5-168 cycles)
+##    DIV.DW <dreg>, <integer>         (6-169 cycles)
+##    DIV.DW <dreg>, <word-address>    (7-172 cycles)
 ##
 ## Unsigned divide of the register by a word value. The register gets the
 ## quotient.
 ##
 ## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
-## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared.
+## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared, and every
+## divide takes the top of its variant's range, whatever the values: 86 cycles
+## from a register, 87 from an integer, or 88-90 from memory (168, 169, or
+## 170-172 for DIV.DW).
 ################################################################################
 
 instruction DIV.W "$r, $m" {
@@ -1466,18 +1469,19 @@ instruction DIV.DW "$R, $m" {
 ## ZSCO: XX0X
 ##
 ## Variants:
-##    DIVS.W <reg>, <reg>              (91-94 cycles)
-##    DIVS.W <reg>, <integer>          (92-95 cycles)
-##    DIVS.W <reg>, <word-address>     (93-98 cycles)
+##    DIVS.W <reg>, <reg>              (6-94 cycles)
+##    DIVS.W <reg>, <integer>          (7-95 cycles)
+##    DIVS.W <reg>, <word-address>     (8-98 cycles)
 ##
 ## Signed divide of the register by a word value, rounding toward zero. The
-## register gets the quotient. Each variant takes two more cycles when the
-## value is negative.
+## register gets the quotient.
 ##
 ## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
 ## the others, taking 6-10 cycles. So does dividing -32768 by -1, whose quotient
 ## doesn't fit, taking the most cycles of each variant. Otherwise, the "O" flag
-## is cleared.
+## is cleared, and every divide takes close to the top of its variant's range:
+## 91 cycles from a register, 92 from an integer, or 93-95 from memory, and 2
+## more when the value is negative.
 ################################################################################
 
 instruction DIVS.W "$r, $m" {
@@ -1539,18 +1543,21 @@ instruction DIVS.W "$r, $m" {
 ## ZSCO: XX0X
 ##
 ## Variants:
-##    MOD.W  <reg>, <reg>              (86 cycles)
-##    MOD.W  <reg>, <integer>          (87 cycles)
-##    MOD.W  <reg>, <word-address>     (88-90 cycles)
-##    MOD.DW <dreg>, <reg>             (167 cycles)
-##    MOD.DW <dreg>, <integer>         (168 cycles)
-##    MOD.DW <dreg>, <word-address>    (169-171 cycles)
+##    MOD.W  <reg>, <reg>              (5-86 cycles)
+##    MOD.W  <reg>, <integer>          (6-87 cycles)
+##    MOD.W  <reg>, <word-address>     (7-90 cycles)
+##    MOD.DW <dreg>, <reg>             (5-167 cycles)
+##    MOD.DW <dreg>, <integer>         (6-168 cycles)
+##    MOD.DW <dreg>, <word-address>    (7-171 cycles)
 ##
 ## Unsigned modulo of the register by a word value. The register gets the
 ## remainder, which always fits in a word (so MOD.DW clears the high word).
 ##
 ## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
-## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared.
+## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared, and every
+## divide takes the top of its variant's range, whatever the values: 86 cycles
+## from a register, 87 from an integer, or 88-90 from memory (167, 168, or
+## 169-171 for MOD.DW).
 ################################################################################
 
 instruction MOD.W "$r, $m" {
@@ -1620,16 +1627,18 @@ instruction MOD.DW "$R, $m" {
 ## ZSCO: XX0X
 ##
 ## Variants:
-##    DVMD.W <dreg>, <reg>             (87 cycles)
-##    DVMD.W <dreg>, <integer>         (88 cycles)
-##    DVMD.W <dreg>, <word-address>    (89-91 cycles)
+##    DVMD.W <dreg>, <reg>             (5-87 cycles)
+##    DVMD.W <dreg>, <integer>         (6-88 cycles)
+##    DVMD.W <dreg>, <word-address>    (7-91 cycles)
 ##
 ## Unsigned divide of the register's low word by a word value, getting the
 ## quotient in the low word and the remainder in the high word. The high word
 ## is ignored on input. The "Z" and "S" flags come from the quotient.
 ##
 ## Dividing by zero leaves the register unchanged, sets the "O" flag, and clears
-## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared.
+## the others, taking 5-9 cycles. Otherwise, the "O" flag is cleared, and every
+## divide takes the top of its variant's range, whatever the values: 87 cycles
+## from a register, 88 from an integer, or 89-91 from memory.
 ################################################################################
 
 instruction DVMD.W "$R, $m" {
@@ -3869,7 +3878,7 @@ instruction CPD "$r, ($r)" {
 ################################################################################
 ## CPIR <register>, (<address-register>)
 ##
-## Cycles: 5 or 8-9 per word
+## Cycles: 5-9 per execution
 ## ZSCO: XXXX
 ##
 ## CPI, decrementing the count in R7 for each word, repeated until the word
@@ -3905,7 +3914,7 @@ instruction CPIR "$r, ($r)" {
 ################################################################################
 ## CPDR <register>, (<address-register>)
 ##
-## Cycles: 5 or 9-10 per word
+## Cycles: 5-10 per execution
 ## ZSCO: XXXX
 ##
 ## CPD, decrementing the count in R7 for each word, repeated until the word
@@ -5265,6 +5274,14 @@ instruction OUTR.ID "$v, [$r]" {
 ##
 ## Cycles: 11-28
 ## ZSCO: ----
+##
+## Variants:
+##    RST <0..7>, <bank-mask>    (11-27 cycles)
+##    RST R2, <bank-mask>        (11-27 cycles)
+##    RST SELF, <bank-mask>      (12-28 cycles)
+##
+## The cost depends on the banks: 11 cycles with none (12 for SELF), and 7 more
+## for CODE, 5 for STACK, and 2 each for DATA and EXTRA.
 ##
 ## The core to reset may be specified as an immediate value 0-7 or the special
 ## keyword SELF (to reset the running core), or specified by register R2 (0..7,

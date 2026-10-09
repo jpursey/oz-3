@@ -291,5 +291,40 @@ TEST_F(RstTest, RST_SELF) {
   EXPECT_EQ(state.st, ZC);
 }
 
+// SELF takes a cycle more than a core index, to load -1, so resetting every
+// bank of this core is the costliest RST.
+TEST_F(RstTest, RST_SELF_AllBanks) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::IP, 10},
+                      {CpuCore::R3, 0},  // Bank 0 for every bank
+                      {CpuCore::R4, 200},
+                      {CpuCore::R5, 300},
+                      {CpuCore::R6, 400},
+                      {CpuCore::R7, 500}});
+
+  // The core continues from its new code location, at 200.
+  state.code.SetAddress(10);
+  state.code.AddValue(Encode("RST", "SELF", 0xF));
+  state.code.SetAddress(200);
+  const uint16_t ip1 = state.code.AddNopGetAddress() - 200;
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 28);  // RST SELF, CODE|STACK|DATA|EXTRA
+  EXPECT_EQ(state.bc, 200);
+  EXPECT_EQ(state.bs, 300);
+  EXPECT_EQ(state.bd, 400);
+  EXPECT_EQ(state.be, 500);
+}
+
+// With no banks, RST changes nothing, so it falls through. There is no core 1.
+TEST_F(RstTest, RST_NoBanksCycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::R2, 1}});
+  RunCycleCases({
+      {"RST R2 (1), 0", 11, {Encode("RST", "R2", 0)}},
+      {"RST SELF, 0", 12, {Encode("RST", "SELF", 0)}},
+  });
+}
+
 }  // namespace
 }  // namespace oz3

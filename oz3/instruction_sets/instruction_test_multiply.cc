@@ -565,5 +565,33 @@ TEST_F(MulDivTest, DVMD_W_Operands) {
   EXPECT_EQ(state.st, 0);
 }
 
+// Dividing by zero stops as soon as the value is fetched, so it is the cheapest
+// case of each variant. The tables above time it from a register, and these
+// time it from an integer and from memory, where R1 locates a 0. An error
+// leaves the register unchanged, so R1 stays valid.
+TEST_F(InstructionTest, DivideByZero_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(0);
+  state.SetRegisters({{CpuCore::R1, 300}});
+  RunCycleCases({
+      {"DIV.W R0, 0", 6, {Encode("DIV.W", CpuCore::R0, "$v"), 0}},
+      {"DIV.W R0, (R1)",
+       7,
+       {Encode("DIV.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"DIVS.W R0, 0", 7, {Encode("DIVS.W", CpuCore::R0, "$v"), 0}},
+      {"DIVS.W R0, (R1)",
+       8,
+       {Encode("DIVS.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"MOD.W R0, 0", 6, {Encode("MOD.W", CpuCore::R0, "$v"), 0}},
+      {"DIV.DW D2, 0", 6, {Encode("DIV.DW", 2, "$v"), 0}},
+      {"DIV.DW D2, (R1)", 7, {Encode("DIV.DW", 2, {"($r)", CpuCore::R1})}},
+      {"MOD.DW D2, 0", 6, {Encode("MOD.DW", 2, "$v"), 0}},
+      {"MOD.DW D2, (R1)", 7, {Encode("MOD.DW", 2, {"($r)", CpuCore::R1})}},
+      {"DVMD.W D2, 0", 6, {Encode("DVMD.W", 2, "$v"), 0}},
+      {"DVMD.W D2, (R1)", 7, {Encode("DVMD.W", 2, {"($r)", CpuCore::R1})}},
+  });
+}
+
 }  // namespace
 }  // namespace oz3
