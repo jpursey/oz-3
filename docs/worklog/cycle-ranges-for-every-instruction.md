@@ -1,41 +1,52 @@
 # Cycle ranges for every instruction
 
 Every instruction's header in `default_instruction_set.izm` gives its overall
-cycle range, and a range for each variant. Each range is worked out from the
-microcode and pinned by tests at both ends. Most headers today give only a
-minimum (`4+`, `5+`), and some are stale. This is groundwork for the *Default
-instruction set reference* wiki page, which will be built from these headers.
+cycle range, and a range for each variant. Each range was worked out from the
+microcode and is pinned by tests at both ends. Before, most headers gave only
+a minimum (`4+`, `5+`), and some were stale. This is groundwork for the
+*Default instruction set reference* wiki page, which will be built from these
+headers.
 
-There is no change in behavior. Only the header comments and the tests change.
-The `.inc` doesn't hold comments, so it doesn't change either.
+There was no change in behavior. Only the header comments and the tests
+changed, and the `.inc` (which holds no comments) is unchanged.
 
 ## Behavior
 
-An OZ-3 program sees no difference. The headers follow the form `RLC` and `RRC`
-already use:
+The headers all take the same form:
 
-    ## Cycles: 4-137
+    ## Cycles: 4-10
     ...
     ## Variants:
-    ##    RLC.W <reg>, <reg>      (6-65 cycles)
-    ##    RLC.W <reg>, <1..16>    (4-19 cycles)
+    ##    ADD.W <reg>, <reg>               (4 cycles)
+    ##    ADD.W <reg>, <integer>           (5 cycles)
+    ##    ADD.W <reg>, <word-address>      (6-8 cycles)
 
 - `## Cycles:` is the overall minimum and maximum, or a single number when
   every variant costs the same.
 - Each variant line ends with its own range, or a single number, aligned
   within the header.
-- A variant whose value comes from the `GetWord`, `GetDword`, or `LoadWord`
-  macros, or a matching store macro, is split by the kind of value: `<reg>`
-  (or `<dreg>`), `<integer>`, and `<word-address>` (or `<dword-address>`), as
-  `MUL` already does. One `<word-address>` line covers every memory form, from
-  the cheapest (such as `(R1)` or `(SP)`) to the most expensive (such as
-  `(R1 + 4)`).
+- A variant that takes a value through the `GetWord`, `GetDword`, `LoadWord`,
+  or store macros is split by the kind of value: `<reg>` (or `<dreg>`),
+  `<integer>`, and `<word-address>` (or `<dword-address>`). One address line
+  covers every memory form, from the cheapest (such as `(R1)` or `(SP)`) to
+  the most expensive (such as `(R1 + 4)`).
+- A range covers every input, including the cheap error and fall-through
+  cases: dividing by zero, a branch or return not taken, a port not ready.
 - When a variant's cost depends on a value, the header's description says on
-  what, as `NEG` does for `NEG.D`.
-- When the cost grows without a fixed bound, the header gives the cost per
-  unit instead, as the repeating block and port instructions do per word.
+  what: the number of bits for shifts, rotates, and bit operations, the banks
+  for `RST`, the value for multiply, and that a divide by anything but zero
+  takes the top of its range.
+- The repeating instructions (`MVIR`, `MVDR`, `CPIR`, `CPDR`, `INR`, `OUTR`)
+  give their cycles per execution, which is one word, as their cost grows
+  with `R7`.
 - Ranges assume no lock contention, since waiting for a memory bank, port, or
   core lock has no bound.
+
+Some headers were wrong, and are now right: `HALT` takes 4 cycles to go idle
+(not 3), `WAIT` takes its register's value but at least 3 (3-65535), `NOT`
+takes 4-5 (not 5-9), and the divide variants included dividing by zero. A few
+descriptions were also fixed (`ADC`, `SUB`, `SBQ`, and `SBC`), and the bit
+operations' variants now say their positions are a register or an immediate.
 
 ## Design
 
@@ -51,19 +62,19 @@ page: 3 cycles for the code word, then 1 for most microcode ops, 0 for `UL`,
 taken `JC` (0 untaken). The value macros add a fixed cost per form, which
 makes most ranges come down to arithmetic. For example, `GetWord` adds 0 for
 `$r`, 1 for `$v`, 2 for `($r)`, `(SP)`, and `(FP)`, 3 for `S($v)`, `D($v)`,
-and `E($v)`, and 4 for the `+ $v` forms. Loops and branches are worked out by
-hand, with the worst case for each.
+and `E($v)`, and 4 for the `+ $v` forms. Loops and branches were worked out
+by hand, with the worst case for each.
 
-The tests are the check on this arithmetic: a range is only written into a
-header once a test pins both of its ends. For the shifts and rotates, whose
+The tests are the check on this arithmetic: a range was only written into a
+header once a test pinned both of its ends. For the shifts and rotates, whose
 immediate forms are unrolled into a form per count, a temporary test measured
-every count and value kind as a check on the hand-worked costs. It isn't
+every count and value kind as a check on the hand-worked costs. It wasn't
 checked in, as the pinned ends are what matter.
 
 ### Tests
 
-Most groups check results and flags, but not cycles. A table of cases pins
-the ends of each variant compactly:
+`InstructionTest::RunCycleCases` (in `instruction_test.h`) pins the ends of
+each variant as a table:
 
 ```
 // An instruction and the cycles it takes. See InstructionTest::RunCycleCases.
@@ -73,7 +84,8 @@ struct CycleCase {
   std::vector<uint16_t> code;  // From Encode(), then any words after it
 };
 
-// Runs each case's instruction in turn, and expects its cycles.
+// Adds each case's instruction to the code, then runs them in turn and
+// expects each one's cycles. Call after InitAndReset().
 void RunCycleCases(absl::Span<const CycleCase> cases);
 ```
 
@@ -84,153 +96,26 @@ table:
 {"PUSH.W (R1 + 1)", 9, {Encode("PUSH.W", {"($r + $v)", CpuCore::R1}), 1}},
 ```
 
-- It lives in `InstructionTest` (in `instruction_test.h`), beside
-  `RunCountCases`, so every group can use it.
-- The cases run in order in one program, without resetting registers, so a
-  table picks registers that keep its addresses valid. The costs being pinned
-  don't depend on the values, only on the form.
-- Where the cost depends on a value (shifts, rotates, `NEG.D`, bit masks), the
-  existing tables (`RunCountCases`, `MulDivTest`) or hand-written tests pin
-  the ends instead.
-- Instructions that jump (branches, calls, returns, interrupts) keep their own
-  tests, as the cases assume each instruction falls through to the next.
+- Each case starts at a NOP and ends at the next case's NOP, so timing one
+  case leaves the core ready to time the next.
+- The cases run in order in one program, without resetting registers. A test
+  sets any registers and memory a table needs before calling it, and picks
+  registers that keep its addresses valid. Most costs pinned this way depend
+  only on the form, not the values.
+- Each instruction must fall through to the next. A relative jump (`JPR`,
+  `JCR`, `CALLR`) by 0 does, while still paying for the jump. Absolute jumps
+  and calls jump to fixed addresses in their own tests, as `JP_Cycles` does.
+- Where the cost depends on a value (shifts, rotates, `NEG.D`, bit masks,
+  multiply and divide), `RunCountCases`, `MulDivTest`, or hand-written tests
+  pin the ends instead.
+- Each group's cycle tests follow the instruction's other tests, named
+  `<instruction>_Cycles` (or by what they time, such as `JC_TakenCycles` or
+  `DivideByZero_Cycles`).
 
 **Brittleness:** a table that loads into a register it later uses as an
-address can make a case read from a different bank, but no case's cost depends
-on the address, so the cycles stay right.
-
-### To confirm
-
-- Which headers are already right. Multiply (from *Finish the default
-  instruction set*), `RLC` and `RRC`, `JD` and `JDR`, `NEG`, and the
-  repeating block and port instructions already state ranges, and most are
-  pinned. Each CL checks the stated ranges against the microcode and the
-  tests, and fills in any end that isn't pinned.
-- `WAIT`'s header says `3+ ()`. CL1 checks what it costs for each value of its
-  register. *Confirmed:* it takes the register's value in cycles, but at
-  least 3, so its range is 3-65535. `HALT` takes 4 cycles to go idle, not 3,
-  as it moves `IP` back first.
-- `RST`'s 11-28. CL10 checks what makes it vary. *Confirmed:* 11 cycles with
-  no banks, 7 more for CODE, 5 for STACK, and 2 each for DATA and EXTRA, and
-  one more for SELF.
-- *Found in CL10:* the divide variant lines left out dividing by zero, which
-  is each variant's cheapest case, though the overall ranges included it.
-  The variant ranges now include it.
-
-## CLs
-
-Each CL covers one instruction group: its headers in the `.izm`, and its
-tests in `instruction_test_<group>.cc`. The groups go in `.izm` order. Every CL
-is `instruction_sets` only, and none changes the wiki.
-
-### CL1 [x] instruction_sets: RunCycleCases, misc, and load and store
-
-Depends on: nothing.
-
-- `CycleCase` and `InstructionTest::RunCycleCases` in `instruction_test.h`.
-- Headers for `NOP`, `HALT`, `WAIT`, `MOV`, `MVQ`, `PUSH`, `POP`, and `SWP`.
-
-**Verify**
-- Standard checks (see CLAUDE.md). The regenerated `.inc` is unchanged.
-- `instruction_test_misc.cc` and `instruction_test_load_store.cc` pin both
-  ends of every variant.
-
-### CL2 [x] instruction_sets: math
-
-Depends on: CL1.
-
-- Headers for `NEG`, `ADD`, `ADQ`, `ADC`, `SUB`, `SBQ`, `SBC`, `TST`, and `CMP`.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_math.cc` pins both ends of every variant.
-
-### CL3 [x] instruction_sets: logic
-
-Depends on: CL1.
-
-- Headers for `NOT`, `AND`, `OR`, and `XOR`.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_logic.cc` pins both ends of every variant.
-
-### CL4 [x] instruction_sets: shift
-
-Depends on: CL1.
-
-- Headers for `SHL`, `SHR`, and `SRA`, including the drop in cost at 16 bits
-  for the dword forms.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_shift.cc` pins both ends of every variant.
-
-### CL5 [x] instruction_sets: rotate
-
-Depends on: CL1.
-
-- Headers for `ROL` and `ROR`, including the zero count by register costing
-  more than other small counts. `RLC` and `RRC` are checked.
-- The existing rotate tests already pin both ends of every variant, and the
-  `RLC` and `RRC` headers are right, so only the `ROL` and `ROR` headers
-  change.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_rotate.cc` pins both ends of every variant.
-
-### CL6 [x] instruction_sets: bits and flags
-
-Depends on: CL1.
-
-- Headers for `CLRB`, `SETB`, `NOTB`, `TSTB`, `CLRF`, `SETF`, and `NOTF`.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_bits.cc` pins both ends of every variant.
-
-### CL7 [x] instruction_sets: branch
-
-Depends on: CL1.
-
-- Headers for `JP`, `JPR`, `JC`, `JCR`, `CALL`, `CALLR`, `FBGN`, `FEND`, `RET`,
-  and `RETC`, taken and not taken. `JD` and `JDR` are checked.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_branch.cc` pins both ends of every variant.
-
-### CL8 [x] instruction_sets: interrupt
-
-Depends on: CL1.
-
-- Headers for `EI`, `DI`, `GETI`, `SETI`, `INT`, `IRT`, and `IRTC`.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_interrupt.cc` pins both ends of every variant.
-
-### CL9 [x] instruction_sets: port
-
-Depends on: CL1.
-
-- Headers for `IN`, `INS`, `OUT`, and `OUTS`, including the port being ready
-  or not. `INR` and `OUTR` are checked.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_port.cc` pins both ends of every variant.
-
-### CL10 [x] instruction_sets: multiply, block, and core
-
-Depends on: CL1.
-
-- These headers already state ranges. Check `MUL`, `MULS`, `DIV`, `DIVS`,
-  `MOD`, `DVMD`, `MVI`, `MVD`, `MVIR`, `MVDR`, `CPI`, `CPD`, `CPIR`, `CPDR`,
-  and `RST`, and fix any that are wrong.
-
-**Verify**
-- Standard checks. The regenerated `.inc` is unchanged.
-- `instruction_test_multiply.cc`, `instruction_test_block.cc`, and
-  `instruction_test_core.cc` pin both ends of every variant.
+address can make a case read from a different bank, but no case's cost
+depends on the address, so the cycles stay right. The NOP-bracketed timing
+loop is now in `RunCycleCases`, `RunCountCases`, and `MulDivTest`'s two
+helpers. The others put untimed setup between cases and check results, so
+sharing it would need hooks for both, which costs more than the few lines
+each copy is.
