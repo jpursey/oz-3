@@ -196,7 +196,7 @@ Depends on: CL1.
 - Standard checks. The regenerated `.inc` is unchanged.
 - `instruction_test_branch.cc` pins both ends of every variant.
 
-### CL8 [ ] instruction_sets: interrupt
+### CL8 [x] instruction_sets: interrupt
 
 Depends on: CL1.
 

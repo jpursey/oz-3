@@ -4217,8 +4217,8 @@ instruction RETC.A "$#3, $#5" {
 ## ZSCO: ----
 ##
 ## Variants:
-##   IRT
-##   IRT.A <size>
+##    IRT              (6 cycles)
+##    IRT.A <0..31>    (7 cycles)
 ##
 ## Pops 0-31 words from the stack, then pops ST and IP from the stack. If the
 ## interrupt occurred during a WAIT, the WAIT resumes.
@@ -4243,12 +4243,12 @@ instruction IRT.A "$#5" {
 ## ZSCO: ----
 ##
 ## Variants:
-##   IRTC   <condition>
-##   IRTC.A <condition> <size>
+##    IRTC   <condition>             (3-7 cycles)
+##    IRTC.A <condition>, <0..31>    (3-8 cycles)
 ##
 ## If the specified condition is true, optionally pops 0-31 words from the
 ## stack, then pops ST and IP from the stack. If the interrupt occurred during
-## a WAIT, the WAIT resumes.
+## a WAIT, the WAIT resumes. Each variant takes 3 cycles when it doesn't return.
 ################################################################################
 
 instruction IRTC "$#3" {
@@ -4317,8 +4317,13 @@ instruction GETI "$v, $r" {
 ################################################################################
 ## SETI <interrupt> <word-value>
 ##
-## Cycles: 5+
+## Cycles: 5-9
 ## ZSCO: ----
+##
+## Variants:
+##    SETI <interrupt>, <reg>             (5 cycles)
+##    SETI <interrupt>, <integer>         (6 cycles)
+##    SETI <interrupt>, <word-address>    (7-9 cycles)
 ##
 ## Sets the address of the specified interrupt to a word value. Only the low 5
 ## bits of <interrupt> are used.
@@ -4333,11 +4338,18 @@ instruction SETI "$v, $m" {
 ################################################################################
 ## INT <interrupt>
 ##
-## Cycles: 3+
+## Cycles: 3-7
 ## ZSCO: ----
 ##
+## Variants:
+##    INT <reg>             (3 cycles)
+##    INT <integer>         (4 cycles)
+##    INT <word-address>    (5-7 cycles)
+##
 ## Triggers the specified interrupt, which is handled after this instruction if
-## interrupts are enabled. Only the low 5 bits of <interrupt> are used.
+## interrupts are enabled. Only the low 5 bits of <interrupt> are used. If the
+## interrupt has a handler, starting it then takes 3 more cycles, as for any
+## interrupt.
 ################################################################################
 
 instruction INT "$m" {

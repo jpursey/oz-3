@@ -89,6 +89,19 @@ TEST_F(InstructionTest, SETI) {
   EXPECT_EQ(state.st, CpuCore::Z | CpuCore::C);
 }
 
+TEST_F(InstructionTest, SETI_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::R1, 300}});
+  RunCycleCases({
+      {"SETI 1, R1", 5, {Encode("SETI", {"$r", CpuCore::R1}), 1}},
+      {"SETI 1, 100", 6, {Encode("SETI", "$v"), 1, 100}},
+      {"SETI 1, (R1)", 7, {Encode("SETI", {"($r)", CpuCore::R1}), 1}},
+      {"SETI 1, (R1 + 1)",
+       9,
+       {Encode("SETI", {"($r + $v)", CpuCore::R1}), 1, 1}},
+  });
+}
+
 TEST_F(InstructionTest, GETI) {
   ASSERT_TRUE(InitAndReset());
   auto& state = GetState();
@@ -163,6 +176,19 @@ TEST_F(InstructionTest, INT) {
   EXPECT_EQ(state.stack.SetAddress(state.bs + state.sp + 1).GetValue(),
             ip3 - 1);
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // IRT
+}
+
+// With interrupts disabled, the interrupt isn't handled, so INT takes only its
+// own cycles. INT times its register and integer forms above.
+TEST_F(InstructionTest, INT_AddressCycles) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.data.SetAddress(state.bd + 300).AddValue(1).AddValue(1);
+  state.SetRegisters({{CpuCore::ST, 0}, {CpuCore::R1, 300}});
+  RunCycleCases({
+      {"INT (R1)", 5, {Encode("INT", {"($r)", CpuCore::R1})}},
+      {"INT (R1 + 1)", 7, {Encode("INT", {"($r + $v)", CpuCore::R1}), 1}},
+  });
 }
 
 TEST_F(InstructionTest, IRT) {
