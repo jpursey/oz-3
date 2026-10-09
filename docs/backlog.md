@@ -25,20 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Default instruction set reference
-
-- **Layers:** wiki
-- **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** *Cycle ranges for every instruction*
-- **Background:** the Instruction Set section of `2-Specifications.md`, which
-  has a TODO link for it
-
-A wiki page documenting the default instruction set for programmers: each
-instruction, its variants and addressing modes, flags, and cycle counts. The
-header comments on each instruction in `default_instruction_set.izm` already
-have most of it.
-
 ## Instruction set source reference
 
 - **Layers:** wiki
@@ -123,6 +109,12 @@ coprocessor to run. Then the two standard coprocessors the spec names, whose
 sections are still TODO there: the DMA processor (block copies of pages between
 memory banks) and the math processor (floating point, fast integer multiply and
 divide, trig functions). The spec is written first, then built.
+
+How coprocessors add opcodes is still to be designed. The likely shape is to
+reserve the high bytes `0xF0` to `0xFF` of the code word as coprocessor
+identifiers (up to 16 coprocessors), with the low byte as the coprocessor's own
+opcode (up to 256 each). That would leave the core instruction sets, including
+the default one, below `0xF0`.
 
 Raising an interrupt must report whether it was a duplicate (already pending),
 as the Interrupts section of `2-Specifications.md` promises. Today

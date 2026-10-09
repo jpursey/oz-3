@@ -4,7 +4,7 @@ Every instruction's header in `default_instruction_set.izm` gives its overall
 cycle range, and a range for each variant. Each range was worked out from the
 microcode and is pinned by tests at both ends. Before, most headers gave only
 a minimum (`4+`, `5+`), and some were stale. This is groundwork for the
-*Default instruction set reference* wiki page, which will be built from these
+*Default instruction set reference* wiki page, which is built from these
 headers.
 
 There was no change in behavior. Only the header comments and the tests
