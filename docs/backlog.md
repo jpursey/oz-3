@@ -25,33 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Instruction set syntax for programs
-
-- **Layers:** core, tools, instruction_sets, wiki
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [program_assembler.md](program_assembler.md) (What the
-  instruction set declares)
-
-What the program assembler needs from an instruction set's source, in
-`InstructionSetDef`, the `.izm` syntax, and the exporter:
-- **Named values:** a set of names for the values of a code word argument,
-  with a size in bits, used as a placeholder in place of `$#` (`"$Condition,
-  $m"`). The names are in scope only within that argument.
-- **Relative instructions:** an instruction marked relative, whose bare `$v`
-  is written as a target address, and encoded as its offset from the next
-  instruction.
-- **Pattern rules:** patterns no longer allow `;` or `@`, which programs use
-  for comments and local labels.
-
-The default instruction set then declares its conditions and flag masks as
-named values, and marks `JPR`, `JCR`, `JDR`, and `CALLR` relative. None of its
-code words change, which `git diff` of the `.inc` shows. Its syntax does, so
-the pin test's fingerprint changes once, safely as no program has been
-assembled yet, and the fingerprint's layout adds named values and the relative
-mark, so they are pinned from then on.
-
 ## Check instruction sizes against microcode
 
 - **Layers:** core
