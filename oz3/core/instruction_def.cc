@@ -5,8 +5,11 @@
 
 #include "oz3/core/instruction_def.h"
 
+#include <string_view>
+
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/ascii.h"
 #include "absl/types/span.h"
 
 namespace oz3 {
@@ -60,6 +63,34 @@ bool Argument::IsValid() const {
     default:
       return false;
   }
+}
+
+bool IsPlaceholderName(std::string_view name) {
+  if (name == "v" || name == "V") {
+    return true;
+  }
+  if (name.empty() || name.size() > 2) {
+    return false;
+  }
+  ArgType type = ArgType::kNone;
+  switch (name[0]) {
+    case 'r':
+      type = ArgType::kWordReg;
+      break;
+    case 'R':
+      type = ArgType::kDwordReg;
+      break;
+    case 'm':
+      type = ArgType::kMacro;
+      break;
+    default:
+      return false;
+  }
+  if (name.size() == 1) {
+    return true;
+  }
+  return absl::ascii_isdigit(name[1]) &&
+         Argument(type, name[1] - '0').IsValid();
 }
 
 uint16_t MacroDef::Encode(int code_index, uint16_t arg) const {

@@ -27,15 +27,16 @@ struct InstructionError {
     kNone,
     kMacro,
     kInstruction,
+    kValueSet,
   };
 
   // Full error message.
   std::string message;
 
-  // Instruction or Macro definition where the error occurred.
+  // Instruction, macro, or value set definition where the error occurred.
   Def def = Def::kNone;
 
-  // Name of the instruction or macro where the error occurred.
+  // Name of the instruction, macro, or value set where the error occurred.
   std::string def_name;
 
   // The source string of the MacroCodeDef where the error occurred. This is

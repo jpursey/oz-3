@@ -96,6 +96,11 @@ struct Argument {
 };
 static_assert(sizeof(Argument) == 2);
 
+// Returns true if the name is one a source pattern uses for its own
+// placeholders after the "$": "r", "R", and "m", with or without a valid size
+// ("r4"), and "v" and "V". Any other name after a "$" is a ValueSetDef's.
+bool IsPlaceholderName(std::string_view name);
+
 //------------------------------------------------------------------------------
 // Macro declarations and definitions.
 //------------------------------------------------------------------------------
@@ -125,6 +130,8 @@ struct MacroCodeDef {
   //   sizes are required for non-default register sizes and all immediate value
   //   sizes. Sizes cannot exceed the maximum size of the argument type (3 bits
   //   for $r, 2 bits for $R, and 8 bits for $#).
+  // - In place of "$#", it may name a ValueSetDef in the instruction set
+  //   ("$Condition"), which is an immediate argument of the set's size.
   // - It may contain any number of "$v" and "$V" specifications which will
   //   result in added word and dword values to the instruction word. These do
   //   not map to the argument.
@@ -231,6 +238,8 @@ struct InstructionDef {
   //   argument set, the sizes are required for non-default register sizes and
   //   all immediate value sizes.  Sizes cannot exceed the maximum size of the
   //   argument type (3 bits for $r, 2 bits for $R, and 8 bits for $# and $m).
+  // - In place of "$#", it may name a ValueSetDef in the instruction set
+  //   ("$Condition"), which is an immediate argument of the set's size.
   // - It may contain any number of "$v" and "$V" specifications which will
   //   result in added word and dword values to the instruction word. These do
   //   not map to the arguments.
@@ -240,6 +249,12 @@ struct InstructionDef {
   //   character constants.
   // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
+
+  // If true, a program writes each argument that is only "$v" (in the source,
+  // or in the source of the macro code that takes the place of "$m") as a
+  // target address, which is encoded as its offset from the next instruction.
+  // This is for instructions that add the value to IP.
+  bool relative = false;
 
   // The argument definitions for the instruction that are encoded in the lower
   // byte of the instruction word. The total number of bits required must not
@@ -255,6 +270,38 @@ struct InstructionDef {
 };
 
 //------------------------------------------------------------------------------
+// Named value definitions.
+//------------------------------------------------------------------------------
+
+// A name for one value of a code word argument.
+struct NamedValueDef {
+  // The name, which is a C identifier, unique within its ValueSetDef.
+  std::string_view name;
+
+  // The value, which must fit in the ValueSetDef's size. Several names may
+  // have the same value.
+  uint8_t value = 0;
+};
+
+// Names for the values of an immediate code word argument, so a program can
+// write a value by name (such as a condition) instead of as a number. An
+// instruction's or macro code's source uses the set as a placeholder
+// ("$Condition") in place of "$#", and the names are only in scope for that
+// argument.
+struct ValueSetDef {
+  // The name of the set, which is a C identifier, unique within the
+  // instruction set. It is case-sensitive, and can't be the name of another
+  // placeholder (see IsPlaceholderName).
+  std::string_view name;
+
+  // The number of bits of the argument, from 1 to 8, as for "$#".
+  uint8_t size = 0;
+
+  // The named values. There must be at least one.
+  absl::Span<const NamedValueDef> values;
+};
+
+//------------------------------------------------------------------------------
 // InstructionSet definition.
 //------------------------------------------------------------------------------
 
@@ -265,6 +312,9 @@ struct InstructionSetDef {
 
   // The list of all macro definitions in the instruction set.
   absl::Span<const MacroDef> macros;
+
+  // The list of all value sets in the instruction set.
+  absl::Span<const ValueSetDef> value_sets;
 };
 
 }  // namespace oz3

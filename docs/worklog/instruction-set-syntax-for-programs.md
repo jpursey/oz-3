@@ -150,10 +150,15 @@ its layout, so a new set for a new instruction leaves the fingerprint alone.
 ### core
 
 `NamedValueDef`, `ValueSetDef`, `InstructionDef::relative`, and
-`InstructionSetDef::value_sets` in `instruction_def.h`, and the checks in
-`InstructionCompiler`, which compiles value sets before macros. The pattern
-comments on `InstructionDef::source` and `MacroCodeDef::source` gain named
-value placeholders and lose `;` and `@`.
+`InstructionSetDef::value_sets` in `instruction_def.h`, with the pattern
+comments on `InstructionDef::source` and `MacroCodeDef::source` gaining named
+value placeholders. `IsPlaceholderName` (also in `instruction_def.h`) is the
+one list of the built-in placeholder names, from `Argument::IsValid`'s sizes,
+which the value set checks and the instruction assembler share.
+
+`CompileInstructionSet` checks the value sets first, in a free function rather
+than in `InstructionCompiler`, as they have no microcode and nothing compiled
+depends on them.
 
 ### tools
 
@@ -162,9 +167,11 @@ value placeholders and lose `;` and `@`.
   in any order, and checks names with token locations (as it does for
   duplicate macro and instruction names). `CompileInstructionSet` then rechecks
   them, which only fails for a bug in the assembler.
+- Maps a `kValueSet` error from `CompileInstructionSet` to the set's
+  location, as it does for macros and instructions.
 - The pattern lexer's placeholder token becomes `\$(#[1-8]|[a-zA-Z_]\w*)`, and
-  `AssembleArgument` classifies the name: a built-in placeholder, or else a
-  value set, or else an error. This also turns today's silent splits, such as
+  `AssembleArgument` classifies the name: a built-in placeholder
+  (`IsPlaceholderName`), or else a value set, or else an error. This also turns today's silent splits, such as
   `$r5` lexing as `$r` then `5`, into errors.
 - A relative instruction's bare `$v` is checked once its macro is known, after
   its microcode is assembled.
@@ -188,19 +195,21 @@ the pattern the one place that says how an instruction is written.
 
 ## CLs
 
-### CL1 [ ] core: Named values and relative instructions in InstructionSetDef
+### CL1 [x] core: Named values and relative instructions in InstructionSetDef
 
 Depends on: nothing.
 
 - `NamedValueDef`, `ValueSetDef`, `InstructionDef::relative`, and
   `InstructionSetDef::value_sets` (`instruction_def.h`), with the pattern
-  comments updated.
+  comments updated, and `IsPlaceholderName`.
 - `CompileInstructionSet` checks value sets, reporting
   `InstructionError::Def::kValueSet` (`instruction_compiler.h/.cc`).
 - Unused by anything else, so no visible change.
 
 **Verify**
 - Standard checks (see CLAUDE.md).
+- Unit tests (`instruction_def_test.cc`, new): `IsPlaceholderName` for every
+  placeholder name, and for names just outside them.
 - Unit tests (`instruction_compiler_test.cc`): valid sets compile, and each
   rule fails with a `kValueSet` error naming the set: a missing or
   non-identifier name, a placeholder's name, a duplicate set name, a size of 0

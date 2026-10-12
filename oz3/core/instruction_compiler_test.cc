@@ -11,6 +11,7 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/substitute.h"
+#include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/cpu_core.h"
@@ -2654,6 +2655,140 @@ TEST(InstructionCompilerTest, MacroMovesJumpsAroundIt) {
           Microcode{.op = kMicro_JP, .arg1 = -2},
           Microcode{.op = kMicro_JC, .arg1 = CpuCore::kConditionZ, .arg2 = -3},
           Microcode{.op = kMicro_JP, .arg1 = -7}));
+}
+
+// Compiles an instruction set with an instruction, and the value sets. The
+// error is cleared on success.
+bool CompileValueSets(absl::Span<const ValueSetDef> value_sets,
+                      InstructionError& error) {
+  const InstructionDef instructions[] = {MakeDef("UL;")};
+  return CompileInstructionSet(
+             {.instructions = instructions, .value_sets = value_sets},
+             &error) != nullptr;
+}
+
+TEST(InstructionCompilerTest, ValueSetsCompile) {
+  const NamedValueDef conditions[] = {
+      {"NZ", 0}, {"Z", 1}, {"EQ", 1}, {"Max", 7}};
+  const NamedValueDef flags[] = {{"Z", 1}, {"_flag_2", 2}};
+  const ValueSetDef value_sets[] = {
+      {.name = "Condition", .size = 3, .values = conditions},
+      {.name = "Flags_2", .size = 8, .values = flags},
+  };
+  InstructionError error;
+  EXPECT_TRUE(CompileValueSets(value_sets, error)) << error.message;
+  EXPECT_EQ(error.def, InstructionError::Def::kNone);
+}
+
+TEST(InstructionCompilerTest, ValueSetNameNotIdentifier) {
+  const NamedValueDef values[] = {{"A", 0}};
+  for (std::string_view name : {"", "1Set", "Set-1", "Set 1"}) {
+    const ValueSetDef value_sets[] = {
+        {.name = name, .size = 1, .values = values}};
+    InstructionError error;
+    EXPECT_FALSE(CompileValueSets(value_sets, error)) << name;
+    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << name;
+    EXPECT_EQ(error.def_name, name);
+    EXPECT_THAT(error.message, HasSubstr("not an identifier")) << name;
+  }
+}
+
+TEST(InstructionCompilerTest, ValueSetNameIsPlaceholder) {
+  const NamedValueDef values[] = {{"A", 0}};
+  for (std::string_view name :
+       {"r", "r1", "r4", "R", "R1", "R2", "m", "m1", "m8", "v", "V"}) {
+    const ValueSetDef value_sets[] = {
+        {.name = name, .size = 1, .values = values}};
+    InstructionError error;
+    EXPECT_FALSE(CompileValueSets(value_sets, error)) << name;
+    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << name;
+    EXPECT_THAT(error.message, HasSubstr("placeholder")) << name;
+  }
+  for (std::string_view name : {"r0", "r5", "R3", "m9", "M", "rr", "vV", "x"}) {
+    const ValueSetDef value_sets[] = {
+        {.name = name, .size = 1, .values = values}};
+    InstructionError error;
+    EXPECT_TRUE(CompileValueSets(value_sets, error))
+        << name << ": " << error.message;
+  }
+}
+
+TEST(InstructionCompilerTest, DuplicateValueSetName) {
+  const NamedValueDef values[] = {{"A", 0}};
+  const ValueSetDef value_sets[] = {
+      {.name = "Set", .size = 1, .values = values},
+      {.name = "Other", .size = 1, .values = values},
+      {.name = "Set", .size = 2, .values = values},
+  };
+  InstructionError error;
+  EXPECT_FALSE(CompileValueSets(value_sets, error));
+  EXPECT_EQ(error.def, InstructionError::Def::kValueSet);
+  EXPECT_EQ(error.def_name, "Set");
+  EXPECT_THAT(error.message, HasSubstr("Duplicate value set"));
+}
+
+TEST(InstructionCompilerTest, ValueSetSizeInvalid) {
+  const NamedValueDef values[] = {{"A", 0}};
+  for (int size : {0, 9}) {
+    const ValueSetDef value_sets[] = {
+        {.name = "Set", .size = static_cast<uint8_t>(size), .values = values}};
+    InstructionError error;
+    EXPECT_FALSE(CompileValueSets(value_sets, error)) << size;
+    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << size;
+    EXPECT_THAT(error.message, HasSubstr("between 1 and 8")) << size;
+  }
+}
+
+TEST(InstructionCompilerTest, ValueSetWithoutValues) {
+  const ValueSetDef value_sets[] = {{.name = "Set", .size = 1}};
+  InstructionError error;
+  EXPECT_FALSE(CompileValueSets(value_sets, error));
+  EXPECT_EQ(error.def, InstructionError::Def::kValueSet);
+  EXPECT_THAT(error.message, HasSubstr("no values"));
+}
+
+TEST(InstructionCompilerTest, ValueNameNotIdentifier) {
+  for (std::string_view name : {"", "1A", "A-B"}) {
+    const NamedValueDef values[] = {{"A", 0}, {name, 1}};
+    const ValueSetDef value_sets[] = {
+        {.name = "Set", .size = 1, .values = values}};
+    InstructionError error;
+    EXPECT_FALSE(CompileValueSets(value_sets, error)) << name;
+    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << name;
+    EXPECT_EQ(error.def_name, "Set");
+    EXPECT_THAT(error.message, HasSubstr("not an identifier")) << name;
+  }
+}
+
+TEST(InstructionCompilerTest, DuplicateValueName) {
+  const NamedValueDef values[] = {{"A", 0}, {"B", 1}, {"A", 1}};
+  const ValueSetDef value_sets[] = {
+      {.name = "Set", .size = 1, .values = values}};
+  InstructionError error;
+  EXPECT_FALSE(CompileValueSets(value_sets, error));
+  EXPECT_EQ(error.def, InstructionError::Def::kValueSet);
+  EXPECT_THAT(error.message, HasSubstr("Duplicate value name A"));
+}
+
+TEST(InstructionCompilerTest, ValueMustFitSize) {
+  for (int size = 1; size <= 8; ++size) {
+    const NamedValueDef values[] = {
+        {"Max", static_cast<uint8_t>((1 << size) - 1)}};
+    const ValueSetDef value_sets[] = {
+        {.name = "Set", .size = static_cast<uint8_t>(size), .values = values}};
+    InstructionError error;
+    EXPECT_TRUE(CompileValueSets(value_sets, error))
+        << size << ": " << error.message;
+  }
+  for (int size = 1; size <= 7; ++size) {
+    const NamedValueDef values[] = {{"Big", static_cast<uint8_t>(1 << size)}};
+    const ValueSetDef value_sets[] = {
+        {.name = "Set", .size = static_cast<uint8_t>(size), .values = values}};
+    InstructionError error;
+    EXPECT_FALSE(CompileValueSets(value_sets, error)) << size;
+    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << size;
+    EXPECT_THAT(error.message, HasSubstr("does not fit")) << size;
+  }
 }
 
 }  // namespace

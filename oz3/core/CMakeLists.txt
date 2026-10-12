@@ -22,8 +22,10 @@ set(oz3_core_SOURCE
   processor_config.cc processor_config.h
 )
 set(oz3_core_DEPS
+  absl::flat_hash_set
   absl::memory
   absl::span
+  absl::strings
   gb_container
 )
 set(oz3_core_LIBS
@@ -34,6 +36,7 @@ set(oz3_core_LIBS
 set(oz3_core_TEST_SOURCE
   cpu_core_test.cc
   instruction_compiler_test.cc
+  instruction_def_test.cc
   instruction_set_test.cc
   lockable_test.cc
   memory_bank_test.cc
