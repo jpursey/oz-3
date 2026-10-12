@@ -25,26 +25,145 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Program assembler (oz3asm)
+## Instruction set syntax for programs
 
-- **Layers:** tools
-- **Size:** large
+- **Layers:** core, tools, instruction_sets, wiki
+- **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** nothing
-- **Background:** the wiki's Home page; `ProgramLoader` in
-  `oz3/tools/program_loader.h`
+- **Background:** [program_assembler.md](program_assembler.md) (What the
+  instruction set declares)
 
-The assembler for OZ-3 programs, as a library and a command line tool. It
-assembles source for any instruction set (using the syntax the instruction set
-defines) into RAM and ROM modules that `ProgramLoader` can load into memory,
-plus a `.oz3map` file mapping addresses back to source for the debugger.
+What the program assembler needs from an instruction set's source, in
+`InstructionSetDef`, the `.izm` syntax, and the exporter:
+- **Named values:** a set of names for the values of a code word argument,
+  with a size in bits, used as a placeholder in place of `$#` (`"$Condition,
+  $m"`). The names are in scope only within that argument.
+- **Relative instructions:** an instruction marked relative, whose bare `$v`
+  is written as a target address, and encoded as its offset from the next
+  instruction.
+- **Pattern rules:** patterns no longer allow `;` or `@`, which programs use
+  for comments and local labels.
+
+The default instruction set then declares its conditions and flag masks as
+named values, and marks `JPR`, `JCR`, `JDR`, and `CALLR` relative. None of its
+code words change, which `git diff` of the `.inc` shows. Its syntax does, so
+the pin test's fingerprint changes once, safely as no program has been
+assembled yet, and the fingerprint's layout adds named values and the relative
+mark, so they are pinned from then on.
+
+## Check instruction sizes against microcode
+
+- **Layers:** core
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [program_assembler.md](program_assembler.md) (What the
+  instruction set declares), and Arguments in the wiki's Instruction Set Source
+  page
+
+The program assembler sizes an instruction from its source pattern (the code
+word, one word for each `$v`, and two for each `$V`), but nothing checks that
+the microcode reads that many words. Compiling an instruction set checks, for
+every instruction and macro code with a source, that the pattern's size is the
+size the compiled instruction decodes to.
+
+## Program files
+
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [program_assembler.md](program_assembler.md) (Program file);
+  `Program` in `oz3/tools/program.h`
+
+The OZ-3's executable format: a `Program` as a sequence of words (a header with
+an identifying word and a version, then banks, segments and their data, role
+assignments, and instances), which a loader written in OZ-3 code could read as
+easily as C++. Reading and writing it, so a program can be assembled once and
+loaded many times, and its specification in the wiki. Also fixes two comments: `ProgramLoader`
+refers to a `program_exporter.h` that doesn't exist, and `Program::Instance`
+says a stack offset should be negative, where the loader subtracts it from the
+segment's end.
+
+## Instruction forms
+
+- **Layers:** tools
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Instruction set syntax for programs*
+- **Background:** [program_assembler.md](program_assembler.md) (Instructions)
+
+`InstructionSetSyntax`: every form of every instruction in an
+`InstructionSetDef` (each instruction with each of its macro's codes), with its
+code word layout and size. It matches a statement's tokens to exactly one form
+and encodes it, ignoring case, reporting a statement that matches none or
+several, and it turns a code word back into text for the debugger.
+
+## Program assembler
+
+- **Layers:** tools, wiki
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Instruction forms*
+- **Background:** [program_assembler.md](program_assembler.md)
+
+The assembler library: source files and includes, statements, symbols (labels,
+local labels, and constants), expressions sized by where they are used,
+segments and their roles, banks, the stack, shared and per instance segments,
+and data (including strings of one or two characters per word), assembled in
+two passes into a `Program`, with every error in a pass reported. Its syntax is
+in the style of Z80 and 8086 era assemblers (`;` comments, `.DW`, `0FFh`), and
+names are case-insensitive. It creates the wiki's assembler page, the public
+reference for the program syntax.
+
+## Program maps
+
+- **Layers:** tools
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Program assembler*, *Program files*
+- **Background:** [program_assembler.md](program_assembler.md) (Program map)
+
+The `.oz3map` file that the assembler writes beside a program: its source
+files, its segments, where each statement's words came from, and every symbol.
+Read back, it lets the debugger turn an address in a loaded program into source
+and symbols.
+
+## oz3asm
+
+- **Layers:** apps (new), wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Program assembler*, *Program files*, *Program maps*
+- **Background:** [program_assembler.md](program_assembler.md) (Library and
+  tool)
+
+The command line program assembler: a source file and an instruction set (the
+default one unless given a `.izm` file) to a program file, and optionally its
+map and a listing. It links the default instruction set, so it starts a new
+`apps` directory for executables, after `instruction_sets` in the dependency
+order, which CLAUDE.md's directory structure gains.
+
+## Assemble the default instruction set
+
+- **Layers:** instruction_sets
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Program assembler*
+- **Background:** [program_assembler.md](program_assembler.md), and the wiki's
+  Default Instruction Set page
+
+Tests that assemble every form of the default instruction set, as the wiki's
+reference writes it, and check each against its code word, and that run small
+assembled programs on a core.
 
 ## Invalid register arguments
 
 - **Layers:** core, tools, instruction_sets
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Program assembler (oz3asm)*
+- **Depends on:** *Instruction forms*
 - **Background:** the `MVI` and `MVD` headers in `default_instruction_set.izm`,
   and the Repeating instructions section of
   `docs/worklog/finish-default-instruction-set.md`
@@ -71,13 +190,49 @@ them. Then declare them on the instructions above.
 - **Layers:** core, tools
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Program assembler (oz3asm)*
+- **Depends on:** *Program maps*, *Instruction forms*
 - **Background:** the wiki's Home page, and the `T` (trap) flag in
   `2-Specifications.md`
 
 The debugger for OZ-3 programs, as a library and a tool: stepping (through the
 `T` flag), breakpoints, watches, and source level debugging from `.oz3map`
 files. Ozzy integrates the library.
+
+## Program macros and conditional assembly
+
+- **Layers:** tools, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Program assembler*
+- **Background:** [program_assembler.md](program_assembler.md)
+
+Macros in program source (`.MACRO`), for the boilerplate the instruction set
+doesn't cover, and conditional assembly (`.IF`), such as for building one
+source for different hardware configurations.
+
+## Case-sensitive programs
+
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Program assembler*
+- **Background:** [program_assembler.md](program_assembler.md) (Source)
+
+An assembler option for case-sensitive names, which must then be written as
+the instruction set and the specification write them. Without it, every name is
+turned to upper case as it is read.
+
+## Instruction set identity in program files
+
+- **Layers:** tools
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Program files*
+- **Background:** [program_assembler.md](program_assembler.md) (Program file)
+
+A program file records which instruction set it was assembled for, such as a
+fingerprint of its code word layout, so loading it for a core with a different
+instruction set can be caught.
 
 ## Coprocessors
 
