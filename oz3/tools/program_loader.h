@@ -23,8 +23,8 @@ namespace oz3 {
 // A ProgramLoader is a helper class that manages loading one or more programs
 // into memory for a specified Processor.
 //
-// Programs may be manually defined (see program.h), or loaded from disk using
-// the defined Program format (see program_exporter.h).
+// Programs may be manually defined (see program.h), or read from a program
+// file (see program_file.h).
 //
 // Each program is assigned a program handle when it is successfully loaded (all
 // the program's memory requirements can be fulfilled). The program handle can
@@ -179,7 +179,7 @@ class ProgramLoader final {
   void AddPageSpans(std::vector<PageSpan>& spans, uint16_t mask);
 
   // Determines the memory requirements for a program, returning false if the
-  // Program has invalid or incompatible requirements.
+  // Program isn't valid (see ValidateProgram).
   bool GetRequirements(const Program& program, BankReqs& bank_reqs);
 
   // Attempts to allocate pages for a program bank into the speciied bank pages.

@@ -158,10 +158,7 @@ ProgramLoader::Handle ProgramLoader::Load(const Program& program) {
 
 bool ProgramLoader::GetRequirements(const Program& program,
                                     BankReqs& bank_reqs) {
-  // Validate limits.
-  if (program.banks.size() > kMaxMemoryBanks ||
-      program.segments.size() > kMaxMemoryBanks * kMemoryBankPageCount ||
-      program.instances.size() > kMaxCores) {
+  if (!ValidateProgram(program).ok()) {
     return false;
   }
 
@@ -172,110 +169,18 @@ bool ProgramLoader::GetRequirements(const Program& program,
   }
 
   // Add Segment requirements
-  static_assert(kMemoryBankPageCount <= 16);
-  uint16_t bank_masks[kMaxMemoryBanks] = {};
-  uint16_t page_counts[kMaxMemoryBanks] = {};
   for (const auto& segment : program.segments) {
-    // Ensure the bank index is valid.
-    if (segment.bank >= program.banks.size()) {
-      return false;
-    }
-
+    BankReq& req = reqs[segment.bank];
+    const bool read_only =
+        segment.access == Program::Segment::Access::kReadOnly;
     if (segment.page_start == 0xFFFF) {
-      if (segment.page_count == 0 ||
-          segment.page_count > kMemoryBankPageCount) {
-        return false;
-      }
-
-      (segment.access == Program::Segment::Access::kReadOnly
-           ? reqs[segment.bank].any_read_only
-           : reqs[segment.bank].any_read_write)
-          .push_back(&segment);
+      (read_only ? req.any_read_only : req.any_read_write).push_back(&segment);
     } else {
-      if (segment.page_count == 0 ||
-          segment.page_start + segment.page_count > kMemoryBankPageCount) {
-        return false;
-      }
-
-      // Mark bank pages as reserved, to ensure no two segments are requiring
-      // overlapping ranges.
-      for (int p = 0; p < segment.page_count; ++p) {
-        uint16_t mask = (1 << (segment.page_start + p));
-        if ((bank_masks[segment.bank] & mask) != 0) {
-          return false;
-        }
-        bank_masks[segment.bank] |= mask;
-      }
-
-      (segment.access == Program::Segment::Access::kReadOnly
-           ? reqs[segment.bank].fixed_read_only
-           : reqs[segment.bank].fixed_read_write)
+      (read_only ? req.fixed_read_only : req.fixed_read_write)
           .push_back(&segment);
     }
-
-    // Validate total page count does not exceed the max for a single memory
-    // bank.
-    page_counts[segment.bank] += segment.page_count;
-    if (page_counts[segment.bank] > kMemoryBankPageCount) {
-      return false;
-    }
-
-    // Validate all initial data fits within the segment.
-    for (const auto& data : segment.data) {
-      if (data.offset + data.data.size() >
-          segment.page_count * kMemoryBankPageSize) {
-        return false;
-      }
-    }
   }
 
-  // Validate instance specifications.
-  if (program.code_segment != 0xFFFF) {
-    if (program.code_segment >= program.segments.size()) {
-      return false;
-    }
-    for (const auto& offsets : program.instances) {
-      if (offsets.code > program.segments[program.code_segment].page_count *
-                             kMemoryBankPageSize) {
-        return false;
-      }
-    }
-  }
-  if (program.stack_segment != 0xFFFF) {
-    if (program.stack_segment >= program.segments.size()) {
-      return false;
-    }
-    for (const auto& offsets : program.instances) {
-      if (offsets.stack > program.segments[program.stack_segment].page_count *
-                              kMemoryBankPageSize) {
-        return false;
-      }
-    }
-  }
-  if (program.data_segment != 0xFFFF) {
-    if (program.data_segment >= program.segments.size()) {
-      return false;
-    }
-    for (const auto& offsets : program.instances) {
-      if (offsets.data > program.segments[program.data_segment].page_count *
-                             kMemoryBankPageSize) {
-        return false;
-      }
-    }
-  }
-  if (program.extra_segment != 0xFFFF) {
-    if (program.extra_segment >= program.segments.size()) {
-      return false;
-    }
-    for (const auto& offsets : program.instances) {
-      if (offsets.extra > program.segments[program.extra_segment].page_count *
-                              kMemoryBankPageSize) {
-        return false;
-      }
-    }
-  }
-
-  // Success!
   bank_reqs = std::move(reqs);
   return true;
 }

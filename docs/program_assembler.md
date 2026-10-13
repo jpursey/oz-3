@@ -98,7 +98,9 @@ include files.
 Space the source reserves without giving its words (see [Data](#data)) is left
 out of the segment's data, so the loader doesn't write it, and it holds
 whatever was in memory. This is how RAM for variables costs nothing in the
-program file.
+program file. A segment's data is in blocks aligned to two words
+(`Program::Segment::Data::kAlignment`), so where the source gives only one word
+of an aligned pair, the other is written as 0.
 
 ### Roles
 
@@ -410,16 +412,19 @@ files were for CP/M and DOS, so it is written for a loader in OZ-3 code as much
 as for `ProgramLoader`:
 - It is a sequence of words, as an OZ-3 program would read them from a storage
   device: a header with an identifying word and a version, then the banks, the
-  segments with their data, the role assignments, and the instances. Every
-  field of `Program` is already a word.
+  segments, the role assignments, and the instances, and last the segments'
+  data. Every field of `Program` is already a word.
+- Everything a loader needs to place the program comes before the data, so it
+  can allocate every segment, or give up, before it writes any memory, and then
+  copy the data straight from the device to where it goes.
 - It needs no relocation, so a loader only allocates pages, copies words, and
   sets base registers.
-- Its format is specified in the wiki, as part of the machine, since programs
-  that load programs depend on it. On a host, each word is two bytes, low byte
-  first.
+- Its format is specified in the wiki (Program Files), as part of the machine,
+  since programs that load programs depend on it. On a host, each word is two
+  bytes, low byte first.
 
 `ProgramLoader` still loads a `Program`, and reading and writing the file is
-separate.
+separate (`oz3/tools/program_file.h`).
 
 ### Program map
 

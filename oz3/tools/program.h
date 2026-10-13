@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "absl/status/status.h"
+
 namespace oz3 {
 
 // A Program defines a complete set of Segments and corresponding bank
@@ -37,16 +39,23 @@ struct Program {
 
     // Defines a block of initialized data within the Segment
     struct Data {
+      // A block's offset and size are each a multiple of this many words, so
+      // a loader can copy it in units of this size.
+      static constexpr int kAlignment = 2;
+
       // Offset from the beginning of the Segment where the data starts. This
-      // must be less than the Segment size.
+      // must be less than the Segment size, and a multiple of kAlignment.
       uint16_t offset = 0;
 
       // Data values to be loaded into the Segment at the specified offset. The
-      // offset + data.size() must be less than or equal to Segment size.
+      // offset + data.size() must be less than or equal to Segment size. The
+      // size must be a non-zero multiple of kAlignment.
       std::vector<uint16_t> data;
+
+      bool operator==(const Data&) const = default;
     };
 
-    // Bank index for the Segment. Must be in the range [0, banks.size()].
+    // Bank index for the Segment. Must be in the range [0, banks.size()).
     uint16_t bank = 0;
 
     // Access permissions for the Segment.
@@ -61,8 +70,10 @@ struct Program {
     // less than or equal to kMemoryBankPageCount.
     uint16_t page_count = 1;
 
-    // Data blocks within the Segment.
+    // Data blocks within the Segment, in order of offset, and not overlapping.
     std::vector<Data> data;
+
+    bool operator==(const Segment&) const = default;
   };
 
   // A Bank specifies a physical memory bank that one or more program segments
@@ -71,17 +82,22 @@ struct Program {
     // Explicit mask of physical memory banks the Bank may be assigned to. By
     // default, any bank may be used.
     uint16_t assign_mask = 0xFFFF;
+
+    bool operator==(const Bank&) const = default;
   };
 
   // An instance defines offsets relative to the segment start (for CODE, DATA,
   // and EXTRA) or segment end (for STACK) for the corresponding base address
   // registers (BC, BS, BD, and BE) of a CpuCore. Since the stack starts at the
-  // end, the offset should be negative (in two's compliement) if overriden.
+  // end, the stack offset is how far below the segment's end BS starts. Each
+  // offset for a role with a segment must be at most that segment's size.
   struct Instance {
     uint16_t code = 0;
     uint16_t stack = 0;
     uint16_t data = 0;
     uint16_t extra = 0;
+
+    bool operator==(const Instance&) const = default;
   };
 
   // List of Banks for the program.
@@ -108,7 +124,7 @@ struct Program {
 
   // Index into the Segment array in a Program specifying the Segment assigned
   // to the bank. If this is set to 0xFFFF (-1), then no bank assignment is
-  // made.
+  // made. Otherwise, it must be in the range [0, segments.size()).
   uint16_t code_segment = 0xFFFF;
   uint16_t stack_segment = 0xFFFF;
   uint16_t data_segment = 0xFFFF;
@@ -118,7 +134,14 @@ struct Program {
   // execute the same program, there must be enough instances defined for the
   // maximum simultaneous executions (up to kMaxCores).
   std::vector<Instance> instances;
+
+  bool operator==(const Program&) const = default;
 };
+
+// Returns an error naming the first rule above that `program` breaks, or OK if
+// it is a valid program, which ProgramLoader can load if there is memory for
+// it, and a program file can hold.
+absl::Status ValidateProgram(const Program& program);
 
 }  // namespace oz3
 

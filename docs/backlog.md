@@ -25,24 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Program files
-
-- **Layers:** tools, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [program_assembler.md](program_assembler.md) (Program file);
-  `Program` in `oz3/tools/program.h`
-
-The OZ-3's executable format: a `Program` as a sequence of words (a header with
-an identifying word and a version, then banks, segments and their data, role
-assignments, and instances), which a loader written in OZ-3 code could read as
-easily as C++. Reading and writing it, so a program can be assembled once and
-loaded many times, and its specification in the wiki. Also fixes two comments: `ProgramLoader`
-refers to a `program_exporter.h` that doesn't exist, and `Program::Instance`
-says a stack offset should be negative, where the loader subtracts it from the
-segment's end.
-
 ## Instruction forms
 
 - **Layers:** tools
@@ -99,7 +81,7 @@ reference for the program syntax.
 - **Layers:** tools
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Program assembler*, *Program files*
+- **Depends on:** *Program assembler*
 - **Background:** [program_assembler.md](program_assembler.md) (Program map)
 
 The `.oz3map` file that the assembler writes beside a program: its source
@@ -112,7 +94,7 @@ and symbols.
 - **Layers:** apps (new), wiki
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Program assembler*, *Program files*, *Program maps*
+- **Depends on:** *Program assembler*, *Program maps*
 - **Background:** [program_assembler.md](program_assembler.md) (Library and
   tool)
 
@@ -201,15 +183,17 @@ turned to upper case as it is read.
 
 ## Instruction set identity in program files
 
-- **Layers:** tools
+- **Layers:** tools, wiki
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Program files*
-- **Background:** [program_assembler.md](program_assembler.md) (Program file)
+- **Depends on:** nothing
+- **Background:** [program_assembler.md](program_assembler.md) (Program file);
+  the wiki's Program Files page; `oz3/tools/program_file.h`
 
 A program file records which instruction set it was assembled for, such as a
 fingerprint of its code word layout, so loading it for a core with a different
-instruction set can be caught.
+instruction set can be caught. It is a new version of the program file format,
+which readers of version 1 reject.
 
 ## Coprocessors
 

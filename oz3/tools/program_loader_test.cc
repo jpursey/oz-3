@@ -161,12 +161,14 @@ TEST(ProgramLoaderTest, LoadEmptyProgramIntoEmptyProcessor) {
   EXPECT_THAT(loaded_program->instances, IsEmpty());
 }
 
-TEST(ProgramLoaderTest, ProgramHasTooManyBanks) {
+// ValidateProgram's tests cover each way a program can be invalid.
+TEST(ProgramLoaderTest, LoadFailsForInvalidProgram) {
   Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
 
   Program program = {};
   program.banks.resize(kMaxMemoryBanks + 1);
+  ASSERT_FALSE(ValidateProgram(program).ok());
   ProgramLoader::Handle handle = loader.Load(program);
   EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
@@ -185,20 +187,6 @@ TEST(ProgramLoaderTest, ProgramHasMaxBanks) {
   BankPages expected_pages[kMaxMemoryBanks] = {};
   EXPECT_THAT(loaded_program->pages, ElementsAreArray(expected_pages));
   EXPECT_THAT(loaded_program->instances, IsEmpty());
-}
-
-TEST(ProgramLoaderTest, ProgramHasTooManySegments) {
-  Processor processor(ProcessorConfig::MultiBank(kMaxMemoryBanks));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(kMaxMemoryBanks);
-  program.segments.resize(kMaxMemoryBanks * kMemoryBankPageCount + 1);
-  for (int i = 0; i < program.segments.size(); ++i) {
-    program.segments[i].bank = i % kMaxMemoryBanks;
-  }
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
 
 TEST(ProgramLoaderTest, ProgramHasMaxSegments) {
@@ -223,20 +211,6 @@ TEST(ProgramLoaderTest, ProgramHasMaxSegments) {
   }
   EXPECT_THAT(loaded_program->pages, ElementsAreArray(expected_pages));
   EXPECT_THAT(loaded_program->instances, IsEmpty());
-}
-
-TEST(ProgramLoaderTest, ProgramHasTooManyInstances) {
-  Processor processor(ProcessorConfig::MultiBankMultiCore(
-      1, kMaxCores, GetEmptyInstructionSet()));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.instances.resize(kMaxCores + 1);
-  program.code_segment = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
 
 TEST(ProgramLoaderTest, ProgramHasMaxInstances) {
@@ -266,44 +240,6 @@ TEST(ProgramLoaderTest, ProgramHasMaxInstances) {
   EXPECT_THAT(loaded_program->instances, ElementsAreArray(expected_instances));
 }
 
-TEST(ProgramLoaderTest, ProgramSegmentHasInvalidBank) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramDynamicSegmentHasNoPages) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.segments[0].page_count = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramDynamicSegmentHasTooManyPages) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.segments[0].page_count = kMemoryBankPageCount + 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
 TEST(ProgramLoaderTest, ProgramDynamicSegmentHasMaxPages) {
   Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
@@ -322,35 +258,6 @@ TEST(ProgramLoaderTest, ProgramDynamicSegmentHasMaxPages) {
       loaded_program->pages,
       ElementsAre(BankPages{.bank = 0, .read_write = {PageSpan(0, 16)}}));
   EXPECT_THAT(loaded_program->instances, IsEmpty());
-}
-
-TEST(ProgramLoaderTest, ProgramFixedSegmentHasNoPages) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.segments[0].page_start = 0;
-  program.segments[0].page_count = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramFixedSegmentHasTooManyPages) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.segments[0].page_start = kMemoryBankPageCount / 2;
-  program.segments[0].page_count =
-      kMemoryBankPageCount - program.segments[0].page_start + 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentHasMaxPages) {
@@ -373,23 +280,6 @@ TEST(ProgramLoaderTest, ProgramFixedSegmentHasMaxPages) {
       loaded_program->pages,
       ElementsAre(BankPages{.bank = 0, .read_write = {PageSpan(8, 16)}}));
   EXPECT_THAT(loaded_program->instances, IsEmpty());
-}
-
-TEST(ProgramLoaderTest, ProgramFixedSegmentsWithOverlappingPages) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(2);
-  program.segments[0].bank = 0;
-  program.segments[0].page_start = 0;
-  program.segments[0].page_count = 8;
-  program.segments[1].bank = 0;
-  program.segments[1].page_start = 7;
-  program.segments[1].page_count = 4;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
 
 TEST(ProgramLoaderTest, ProgramFixedSegmentsWithNonOverlappingPages) {
@@ -442,39 +332,6 @@ TEST(ProgramLoaderTest,
   EXPECT_THAT(loaded_program->instances, IsEmpty());
 }
 
-TEST(ProgramLoaderTest, ProgramSegmentsExceedMaxPagesForBank) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(2);
-  program.segments[0].bank = 0;
-  program.segments[0].page_count = 8;
-  program.segments[1].bank = 0;
-  program.segments[1].page_count = 9;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramSegmentDataExceedsSize) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.segments[0].page_count = 1;
-  program.segments[0].data.resize(2);
-  program.segments[0].data[0].offset = 0;
-  program.segments[0].data[0].data.resize(kMemoryBankPageSize / 4);
-  program.segments[0].data[1].offset = kMemoryBankPageSize / 2;
-  program.segments[0].data[1].data.resize(kMemoryBankPageSize / 2 + 1);
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
 TEST(ProgramLoaderTest, ProgramSegmentDataAtMaxSize) {
   Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
@@ -500,73 +357,6 @@ TEST(ProgramLoaderTest, ProgramSegmentDataAtMaxSize) {
   EXPECT_THAT(loaded_program->instances, IsEmpty());
 }
 
-TEST(ProgramLoaderTest, ProgramInvalidCodeSegment) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.code_segment = 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramInvalidStackSegment) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.stack_segment = 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramInvalidDataSegment) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.data_segment = 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramInvalidExtraSegment) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.segments[0].bank = 0;
-  program.extra_segment = 1;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
-TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.instances.resize(2);
-  program.instances[0].code = 0;
-  program.instances[1].code = kMemoryBankPageSize + 1;
-  program.code_segment = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
 TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetAtEnd) {
   Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
@@ -590,21 +380,6 @@ TEST(ProgramLoaderTest, ProgramInstanceCodeOffsetAtEnd) {
        .mb = CpuCore::Banks::Default().SetCode(0).ToWord(),
        .bc = kMemoryBankPageSize}};
   EXPECT_THAT(loaded_program->instances, ElementsAreArray(expected_instances));
-}
-
-TEST(ProgramLoaderTest, ProgramInstanceStackOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.instances.resize(2);
-  program.instances[0].stack = 0;
-  program.instances[1].stack = kMemoryBankPageSize + 1;
-  program.stack_segment = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceStackOffsetAtEnd) {
@@ -633,21 +408,6 @@ TEST(ProgramLoaderTest, ProgramInstanceStackOffsetAtEnd) {
   EXPECT_THAT(loaded_program->instances, ElementsAreArray(expected_instances));
 }
 
-TEST(ProgramLoaderTest, ProgramInstanceDataOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.instances.resize(2);
-  program.instances[0].data = 0;
-  program.instances[1].data = kMemoryBankPageSize + 1;
-  program.data_segment = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
-}
-
 TEST(ProgramLoaderTest, ProgramInstanceDataOffsetAtEnd) {
   Processor processor(ProcessorConfig::MultiBank(1));
   ProgramLoader loader(&processor);
@@ -672,21 +432,6 @@ TEST(ProgramLoaderTest, ProgramInstanceDataOffsetAtEnd) {
        .mb = CpuCore::Banks::Default().SetData(0).ToWord(),
        .bd = kMemoryBankPageSize}};
   EXPECT_THAT(loaded_program->instances, ElementsAreArray(expected_instances));
-}
-
-TEST(ProgramLoaderTest, ProgramInstanceExtraOffsetTooBig) {
-  Processor processor(ProcessorConfig::MultiBank(1));
-  ProgramLoader loader(&processor);
-
-  Program program = {};
-  program.banks.resize(1);
-  program.segments.resize(1);
-  program.instances.resize(2);
-  program.instances[0].extra = 0;
-  program.instances[1].extra = kMemoryBankPageSize + 1;
-  program.extra_segment = 0;
-  ProgramLoader::Handle handle = loader.Load(program);
-  EXPECT_EQ(handle, ProgramLoader::kInvalidHandle);
 }
 
 TEST(ProgramLoaderTest, ProgramInstanceExtraOffsetAtEnd) {
