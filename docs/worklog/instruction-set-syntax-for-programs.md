@@ -9,9 +9,9 @@ declares). This adds three things to instruction set source, in
 - **Named values:** names for the values of a code word argument, which a
   pattern uses as a placeholder in place of `$#` (`"$Condition, $m"`), so a
   program writes `JC Z, @done` rather than `JC 4, @done`.
-- **Relative instructions:** an instruction marked relative, whose bare `$v` a
-  program writes as a target address, which the assembler encodes as its offset
-  from the next instruction.
+- **Relative instructions:** an instruction marked relative, where a `$v` that
+  is a whole argument is written in a program as a target address, which the
+  assembler encodes as its offset from the next instruction.
 - **Pattern rules:** patterns no longer allow `;` or `@`, which programs use
   for comments and local labels.
 
@@ -49,12 +49,19 @@ An instruction marks itself relative in its config, alongside `opcode`:
     instruction(relative) JPR "$m" { ... }
     instruction(opcode:5, relative) JPR "$m" { ... }
 
-A relative instruction must have a form with a bare `$v`: an argument of its
-source that is just `$v`, or just `$m` with a macro code whose source is just
-`$v`. Otherwise it is an error, as the mark would mean nothing. Every bare `$v`
-of a relative instruction is relative. `$V` never is.
+A placeholder is a **whole argument** when it is all of one of the pattern's
+comma-separated arguments, with nothing else in it: the `$v` in `"$r, $v"` is,
+and the ones in `"D($v)"` and `"$v + 1"` aren't. A relative instruction must
+have a form where `$v` is a whole argument: either in its own source, or in a
+macro code whose source is just `"$v"`, taking the place of a `$m` that is a
+whole argument. Otherwise it is an error, as the mark would mean nothing. Every
+`$v` that is a whole argument of a relative instruction is relative. `$V` never
+is.
 
-Patterns can't contain `;` or `@`.
+Patterns can't contain `;` or `@`. These, and `#` outside of `$#`, were in the
+pattern lexer's symbols, but the pattern grammar already rejected them, though
+the wiki listed them as allowed. Now the lexer drops them too, and the wiki
+says so.
 
 ### `InstructionSetDef`
 
@@ -76,8 +83,9 @@ struct ValueSetDef {
 struct InstructionDef {
   ...
   std::string_view source;
-  // If true, a bare "$v" argument in any form of this instruction is written as
-  // a target address, and encoded as its offset from the next instruction.
+  // If true, a "$v" that is a whole argument in any form of this instruction is
+  // written as a target address, and encoded as its offset from the next
+  // instruction.
   bool relative = false;
   ...
 };
@@ -92,7 +100,8 @@ struct InstructionSetDef {
 `CompileInstructionSet` checks every value set as the source rules above say,
 reporting `InstructionError::Def::kValueSet` with the set's name. It doesn't
 parse patterns, so it doesn't check that a pattern's `$<name>` names a set, or
-that a relative instruction has a bare `$v`: the instruction assembler checks
+that a relative instruction has a `$v` that is a whole argument: the
+instruction assembler checks
 both, and `InstructionSetSyntax` will for any `InstructionSetDef`.
 
 The changes add fields with defaults, so existing `InstructionSetDef`s,
@@ -164,17 +173,27 @@ depends on them.
 
 `InstructionSetAssembler`:
 - Assembles value sets before macros and instructions, so they may be written
-  in any order, and checks names with token locations (as it does for
-  duplicate macro and instruction names). `CompileInstructionSet` then rechecks
-  them, which only fails for a bug in the assembler.
-- Maps a `kValueSet` error from `CompileInstructionSet` to the set's
-  location, as it does for macros and instructions.
+  in any order. It checks what it must before building the set, with the
+  token's location: a duplicate set name (for its own lookup), `bits`, and
+  that each value fits them (before narrowing it to `uint8_t`).
+  `CompileInstructionSet` checks the rest, and the assembler maps its
+  `kValueSet` error to the set's location, as it does for macros and
+  instructions.
 - The pattern lexer's placeholder token becomes `\$(#[1-8]|[a-zA-Z_]\w*)`, and
   `AssembleArgument` classifies the name: a built-in placeholder
-  (`IsPlaceholderName`), or else a value set, or else an error. This also turns today's silent splits, such as
-  `$r5` lexing as `$r` then `5`, into errors.
-- A relative instruction's bare `$v` is checked once its macro is known, after
-  its microcode is assembled.
+  (`IsPlaceholderName`), or else a value set, or else an error. This also
+  turns today's silent splits, such as `$r5` lexing as `$r` then `5`, into
+  errors.
+- The pattern grammar names each argument's terms (`Arg { $terms=Term+; }`),
+  so a placeholder that is a whole argument is found from the parse, rather
+  than by splitting text, which a string in a pattern could break.
+- A relative instruction's whole argument `$v` is checked once its macro is
+  known, after its microcode is assembled: a `$v` that is a whole argument of
+  its source, or a `$m` that is a whole argument, whose macro has a code where
+  `$v` is a whole argument.
+- A macro code's source allowed one code word placeholder per argument, rather
+  than per source, so `"$r, $#3"` was accepted with the second overwriting the
+  first. Its check now covers the whole source.
 
 `InstructionDefExporter` writes the new fields, and gains a test
 (`instruction_def_exporter_test.cc`) that exports to a memory file system.
@@ -188,10 +207,12 @@ the pattern the one place that says how an instruction is written.
 
 ### To confirm
 
-- That Game Bits' parser can capture a bare keyword in an alternative
-  (`$relative="relative"`) within the comma-separated config list. CL2.
+- That Game Bits' parser can capture a keyword on its own in an alternative
+  (`$relative="relative"`) within the comma-separated config list. CL2:
+  confirmed, in either order with `opcode`.
 - That the `.izm` lexer can add `=` as a symbol without changing how existing
-  source lexes. CL2.
+  source lexes. CL2: confirmed, as the default instruction set's `.inc`
+  regenerates unchanged.
 
 ## CLs
 
@@ -216,7 +237,7 @@ Depends on: nothing.
   or 9, no values, a non-identifier or duplicate value name, and a value that
   doesn't fit. Aliased values compile.
 
-### CL2 [ ] tools: Value sets, relative instructions, and pattern rules in .izm
+### CL2 [x] tools: Value sets, relative instructions, and pattern rules in .izm
 
 Depends on: CL1.
 
@@ -234,7 +255,8 @@ Depends on: CL1.
   their uses, a `$<name>` encoding as `$#` of the set's size in an instruction
   and in a macro code, an unknown `$<name>`, each value set rule with its
   location, `relative` alone and with `opcode`, a relative instruction with a
-  bare `$v` directly and through `$m`, and one without (`"D($v)"`) failing,
+  whole argument `$v` directly and through `$m`, and one without (`"D($v)"`)
+  failing,
   and `;` and `@` in patterns failing.
 - Unit tests (`instruction_def_exporter_test.cc`, new): the exported text for a
   small def with a value set and a relative instruction, and one without

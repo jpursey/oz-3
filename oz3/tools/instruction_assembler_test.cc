@@ -1197,5 +1197,246 @@ TEST(InstructionAssemblerTest, ErrorInsideMacroExpansionLocationAtMacroCall) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(12, 6));
 }
 
+TEST(InstructionAssemblerTest, ValueSetsInAnyOrder) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) JUMP "$Condition, $m" { UL; $Target; }
+    macro Target {
+      code "$Flags" { }
+      code "$r" { }
+    }
+    values(bits:3) Condition { NZ = 0, Z = 4, EQ = 4, O = 0x7 }
+    values(bits:4) Flags { Z = 1, O = 8 }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  const InstructionSetDef& def = asm_set->GetInstructionSetDef();
+  ASSERT_EQ(def.value_sets.size(), 2);
+  EXPECT_EQ(def.value_sets[0].name, "Condition");
+  EXPECT_EQ(def.value_sets[0].size, 3);
+  ASSERT_EQ(def.value_sets[0].values.size(), 4);
+  EXPECT_EQ(def.value_sets[0].values[0].name, "NZ");
+  EXPECT_EQ(def.value_sets[0].values[0].value, 0);
+  EXPECT_EQ(def.value_sets[0].values[1].name, "Z");
+  EXPECT_EQ(def.value_sets[0].values[1].value, 4);
+  EXPECT_EQ(def.value_sets[0].values[2].name, "EQ");
+  EXPECT_EQ(def.value_sets[0].values[2].value, 4);
+  EXPECT_EQ(def.value_sets[0].values[3].name, "O");
+  EXPECT_EQ(def.value_sets[0].values[3].value, 7);
+  EXPECT_EQ(def.value_sets[1].name, "Flags");
+  EXPECT_EQ(def.value_sets[1].size, 4);
+  ASSERT_EQ(def.value_sets[1].values.size(), 2);
+  EXPECT_EQ(def.value_sets[1].values[0].name, "Z");
+  EXPECT_EQ(def.value_sets[1].values[0].value, 1);
+  EXPECT_EQ(def.value_sets[1].values[1].name, "O");
+  EXPECT_EQ(def.value_sets[1].values[1].value, 8);
+
+  ASSERT_EQ(def.instructions.size(), 1);
+  EXPECT_EQ(def.instructions[0].source, "$Condition, $m");
+  EXPECT_EQ(def.instructions[0].arg1.type, ArgType::kImmediate);
+  EXPECT_EQ(def.instructions[0].arg1.size, 3);
+  EXPECT_EQ(def.instructions[0].arg2.type, ArgType::kMacro);
+  ASSERT_EQ(def.macros.size(), 1);
+  ASSERT_EQ(def.macros[0].code.size(), 2);
+  EXPECT_EQ(def.macros[0].code[0].source, "$Flags");
+  EXPECT_EQ(def.macros[0].code[0].arg.type, ArgType::kImmediate);
+  EXPECT_EQ(def.macros[0].code[0].arg.size, 4);
+}
+
+TEST(InstructionAssemblerTest, UnknownValueSet) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:3) Condition { Z = 4 }
+    instruction(opcode:0) JUMP "$Conditions" { UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              AllOf(HasSubstr("Invalid"), HasSubstr("$Conditions"),
+                    HasSubstr("not a placeholder or value set")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
+}
+
+TEST(InstructionAssemblerTest, UnknownValueSetInMacroCode) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$Condition" { UL; }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              AllOf(HasSubstr("$Condition"),
+                    HasSubstr("not a placeholder or value set")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionAssemblerTest, PlaceholdersWithInvalidSizesAreUnknown) {
+  for (std::string_view placeholder : {"$r5", "$R3", "$m9", "$vx"}) {
+    gb::ParseError error;
+    std::string source = absl::StrCat("instruction(opcode:0) TEST \"",
+                                      placeholder, "\" { UL; }");
+    auto asm_set = AssembleInstructionSet(source, &error);
+    EXPECT_EQ(asm_set, nullptr) << placeholder;
+    EXPECT_THAT(error.GetMessage(),
+                AllOf(HasSubstr(placeholder),
+                      HasSubstr("not a placeholder or value set")));
+  }
+}
+
+TEST(InstructionAssemblerTest, DuplicateValueSet) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:3) Condition { Z = 4 }
+    values(bits:3) Condition { NZ = 0 }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("already defined"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
+}
+
+TEST(InstructionAssemblerTest, ValueSetBitsInvalid) {
+  for (int bits : {0, 9, 264}) {
+    gb::ParseError error;
+    std::string source =
+        absl::StrCat("values(bits:", bits, ") Condition { Z = 0 }");
+    auto asm_set = AssembleInstructionSet(source, &error);
+    EXPECT_EQ(asm_set, nullptr) << bits;
+    EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid bits value")) << bits;
+    EXPECT_THAT(error.GetLocation(), AtLineCol(0, 0)) << bits;
+  }
+}
+
+TEST(InstructionAssemblerTest, ValueDoesNotFitBits) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:3) Condition {
+      NZ = 0,
+      Z = 8
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("Z = 8 does not fit in 3 bits"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
+}
+
+TEST(InstructionAssemblerTest, ValueSetErrorFromCompilerAtValueSet) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) NOP { UL; }
+    values(bits:3) Condition { Z = 4, Z = 5 }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("Duplicate value name Z"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
+}
+
+TEST(InstructionAssemblerTest, ValueSetNamedAsPlaceholder) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:3) r { Z = 4 }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("placeholder $r"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionAssemblerTest, RelativeInstructions) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Value {
+      code "$r" { UL; }
+      code "$v" { LD(C0); UL; }
+    }
+    instruction(relative) DIRECT "$r, $v" { LD(C0); UL; }
+    instruction(opcode:5, relative) VIA_MACRO "$m" { $Value; }
+    instruction(relative, opcode:6) VIA_SIZED_MACRO "$m4, $#4" { $Value; }
+    instruction ABSOLUTE "$v" { LD(C0); UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  const InstructionSetDef& def = asm_set->GetInstructionSetDef();
+  ASSERT_EQ(def.instructions.size(), 4);
+  EXPECT_EQ(def.instructions[0].op_name, "DIRECT");
+  EXPECT_TRUE(def.instructions[0].relative);
+  EXPECT_EQ(def.instructions[1].op_name, "VIA_MACRO");
+  EXPECT_EQ(def.instructions[1].op, 5);
+  EXPECT_TRUE(def.instructions[1].relative);
+  EXPECT_EQ(def.instructions[2].op_name, "VIA_SIZED_MACRO");
+  EXPECT_EQ(def.instructions[2].op, 6);
+  EXPECT_TRUE(def.instructions[2].relative);
+  EXPECT_EQ(def.instructions[3].op_name, "ABSOLUTE");
+  EXPECT_FALSE(def.instructions[3].relative);
+}
+
+TEST(InstructionAssemblerTest, RelativeInstructionWithoutWholeArgValue) {
+  struct Case {
+    std::string_view source;
+    std::string_view instruction;
+  };
+  const Case cases[] = {
+      {.instruction = "instruction(relative) TEST { UL; }"},
+      {.instruction = "instruction(relative) TEST \"D($v)\" { LD(C0); UL; }"},
+      {.instruction = "instruction(relative) TEST \"$v + 1\" { LD(C0); UL; }"},
+      {.instruction = "instruction(relative) TEST \"$V\" "
+                      "{ LD(C0); LD(C1); UL; }"},
+      {.source = "macro Value { code \"($v)\" { LD(C0); UL; } }",
+       .instruction = "instruction(relative) TEST \"$m\" { $Value; }"},
+      {.source = "macro Value { code \"$v\" { LD(C0); UL; } }",
+       .instruction = "instruction(relative) TEST \"($m)\" { $Value; }"},
+  };
+  for (const Case& test : cases) {
+    gb::ParseError error;
+    auto asm_set = AssembleInstructionSet(
+        absl::StrCat(test.source, "\n", test.instruction), &error);
+    EXPECT_EQ(asm_set, nullptr) << test.instruction;
+    EXPECT_THAT(error.GetMessage(),
+                HasSubstr("has no form where $v is a whole argument"))
+        << test.instruction;
+    EXPECT_THAT(error.GetLocation(), AtLineCol(1, 0)) << test.instruction;
+  }
+}
+
+TEST(InstructionAssemblerTest, SourceCannotUseCommentOrLabelSymbols) {
+  for (std::string_view source : {"$r; $v", "@$r", "#$v"}) {
+    gb::ParseError error;
+    auto asm_set = AssembleInstructionSet(
+        absl::StrCat("instruction(opcode:0) TEST \"", source, "\" { UL; }"),
+        &error);
+    EXPECT_EQ(asm_set, nullptr) << source;
+    EXPECT_THAT(
+        error.GetMessage(),
+        AllOf(HasSubstr("Invalid instruction code source"), HasSubstr(source)));
+  }
+  for (std::string_view source : {"$r; $v", "@$r", "#$v"}) {
+    gb::ParseError error;
+    auto asm_set = AssembleInstructionSet(
+        absl::StrCat("macro Macro { code \"", source, "\" { UL; } }"), &error);
+    EXPECT_EQ(asm_set, nullptr) << source;
+    EXPECT_THAT(
+        error.GetMessage(),
+        AllOf(HasSubstr("Invalid macro code source"), HasSubstr(source)));
+  }
+}
+
+TEST(InstructionAssemblerTest, MacroCodeSourceWithArgsInSeparateArgsInvalid) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$r, $#3" { MOV(R0,R1); }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              AllOf(HasSubstr("$r, $#3"), HasSubstr("Only one non-value")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
 }  // namespace
 }  // namespace oz3

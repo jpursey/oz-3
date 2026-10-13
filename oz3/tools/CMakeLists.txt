@@ -22,6 +22,7 @@ set(oz3_tools_LIBS
 
 set(oz3_tools_TEST_SOURCE
   instruction_assembler_test.cc
+  instruction_def_exporter_test.cc
   program_loader_test.cc
 )
 

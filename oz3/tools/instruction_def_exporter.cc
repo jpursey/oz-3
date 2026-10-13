@@ -41,6 +41,8 @@ class InstructionDefExporter {
 
  private:
   void ExportArgumentField(std::string field_name, const Argument& arg);
+  void ExportNamedValue(const NamedValueDef& value);
+  void ExportValueSet(const ValueSetDef& value_set);
   void ExportMacroCode(const MacroDef& macro, const MacroCodeDef& code);
   void ExportMacro(const MacroDef& macro);
   void ExportInstruction(const InstructionDef& instruction);
@@ -58,6 +60,18 @@ void InstructionDefExporter::ExportArgumentField(std::string field_name,
   }
   absl::StrAppend(&result_, ",\n     .", field_name, " = {",
                   ArgTypeConstName(arg.type), ", ", arg.size, "}");
+}
+
+void InstructionDefExporter::ExportNamedValue(const NamedValueDef& value) {
+  absl::StrAppend(&result_, "    {.name = \"", value.name,
+                  "\", .value = ", value.value, "},\n");
+}
+
+void InstructionDefExporter::ExportValueSet(const ValueSetDef& value_set) {
+  absl::StrAppend(&result_, "    {.name = \"", value_set.name,
+                  "\",\n     .size = ", value_set.size,
+                  ",\n     .values = ", const_prefix_, "Values_",
+                  value_set.name, "},\n");
 }
 
 void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
@@ -118,6 +132,9 @@ void InstructionDefExporter::ExportInstruction(
   if (!instruction.source.empty()) {
     absl::StrAppend(&result_, ",\n     .source = \"", instruction.source, "\"");
   }
+  if (instruction.relative) {
+    absl::StrAppend(&result_, ",\n     .relative = true");
+  }
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);
   if (!instruction.arg_macro_name.empty()) {
@@ -146,6 +163,23 @@ void InstructionDefExporter::ExportMicrocode(std::string_view code) {
 }
 
 std::string InstructionDefExporter::Export() {
+  const bool has_value_sets = !instruction_set_.value_sets.empty();
+  if (has_value_sets) {
+    for (const auto& value_set : instruction_set_.value_sets) {
+      absl::StrAppend(&result_, "constexpr oz3::NamedValueDef ", const_prefix_,
+                      "Values_", value_set.name, "[] = {\n");
+      for (const auto& value : value_set.values) {
+        ExportNamedValue(value);
+      }
+      absl::StrAppend(&result_, "};\n\n");
+    }
+    absl::StrAppend(&result_, "constexpr oz3::ValueSetDef ", const_prefix_,
+                    "ValueSets[] = {\n");
+    for (const auto& value_set : instruction_set_.value_sets) {
+      ExportValueSet(value_set);
+    }
+    absl::StrAppend(&result_, "};\n\n");
+  }
   const bool has_macros = !instruction_set_.macros.empty();
   if (has_macros) {
     for (const auto& macro : instruction_set_.macros) {
@@ -180,6 +214,10 @@ std::string InstructionDefExporter::Export() {
   }
   if (has_macros) {
     absl::StrAppend(&result_, "    .macros=", const_prefix_, "Macros,\n");
+  }
+  if (has_value_sets) {
+    absl::StrAppend(&result_, "    .value_sets=", const_prefix_,
+                    "ValueSets,\n");
   }
   absl::StrAppend(&result_, "};\n");
   return result_;

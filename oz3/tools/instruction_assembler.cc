@@ -5,6 +5,10 @@
 
 #include "oz3/tools/instruction_assembler.h"
 
+#include <cstdint>
+#include <string_view>
+#include <vector>
+
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/memory/memory.h"
@@ -15,6 +19,7 @@
 #include "gb/parse/parser.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
+#include "oz3/core/instruction_def.h"
 
 namespace oz3 {
 
@@ -23,7 +28,7 @@ namespace {
 constexpr gb::TokenType kTokenMacroName = gb::kTokenUser + 0;
 constexpr gb::TokenType kTokenLabel = gb::kTokenUser + 1;
 
-constexpr gb::Symbol kSymbols[] = {'(', ')', '{', '}', ':', ';', ',', '.'};
+constexpr gb::Symbol kSymbols[] = {'(', ')', '{', '}', ':', ';', ',', '.', '='};
 constexpr std::string_view kLineComments[] = {"#"};
 constexpr gb::LexerConfig::UserToken kUserTokens[] = {
     {.name = "macro name",
@@ -49,8 +54,17 @@ constexpr std::string_view kParserProgram = R"---(
   %label = 1;
 
   InstructionSet {
-    ($macros=Macro | $instructions=Instruction)*
-    %end:'Expected "macro" or "instruction"';
+    ($value_sets=ValueSet | $macros=Macro | $instructions=Instruction)*
+    %end:'Expected "values", "macro", or "instruction"';
+  }
+
+  ValueSet {
+    "values" "(" "bits" ":" $bits=%int ")" $name=%ident
+    "{" $values=NamedValue,* "}";
+  }
+
+  NamedValue {
+    $name=%ident "=" $value=%int;
   }
 
   Macro {
@@ -81,6 +95,7 @@ constexpr std::string_view kParserProgram = R"---(
 
   InstructionConfig {
     "opcode" ":" $opcode=%int;
+    $relative="relative";
   }
 
   MicroCode {
@@ -105,13 +120,18 @@ std::shared_ptr<const gb::ParserProgram> GetInstructionParserProgram() {
 
 constexpr gb::TokenType kTokenArgType = gb::kTokenUser + 0;
 
-constexpr gb::Symbol kSourceSymbols[] = {
-    '(', ')', '[', ']', '{', '}', '#', '@', ',', ';', '+', '-', '*',
-    '/', '%', '&', '|', '^', '~', '!', '<', '>', '=', ':', '.', '?'};
+// Patterns can't use ';' or '@', which programs use for comments and local
+// labels, or a '#' outside of "$#".
+constexpr gb::Symbol kSourceSymbols[] = {'(', ')', '[', ']', '{', '}', ',', '+',
+                                         '-', '*', '/', '%', '&', '|', '^', '~',
+                                         '!', '<', '>', '=', ':', '.', '?'};
+
+// A placeholder: "$#" with its size, or "$" and a name, which is either one of
+// the built-in placeholders (IsPlaceholderName) or a value set.
 constexpr gb::LexerConfig::UserToken kSourceUserTokens[] = {
     {.name = "arg type",
      .type = kTokenArgType,
-     .regex = R"-(\$(r[1-4]?|R[1-2]?|#[1-8]|m[1-8]?|[vV]))-"},
+     .regex = R"-(\$(#[1-8]|[a-zA-Z_]\w*))-"},
 };
 constexpr gb::LexerConfig kSourceLexerConfig = {
     .flags = {gb::kLexerFlags_AllIntegers, gb::kLexerFlags_AllFloats,
@@ -126,7 +146,10 @@ constexpr gb::LexerConfig kSourceLexerConfig = {
 constexpr std::string_view kSourceProgram = R"---(
   %arg_type = 0;
   Source {
-    $args=(<Term>+),* %end;
+    $args=Arg,* %end;
+  }
+  Arg {
+    $terms=Term+;
   }
   Term {
     $types=%arg_type;
@@ -147,6 +170,34 @@ std::shared_ptr<const gb::ParserProgram> GetSourceParserProgram() {
       parser_program(
           gb::ParserProgram::Create(kSourceLexerConfig, kSourceProgram));
   return *parser_program;
+}
+
+// Returns the names of the placeholders in an argument of a parsed source, in
+// order, without their "$".
+std::vector<std::string_view> GetPlaceholders(
+    const gb::ParsedItem& parsed_arg) {
+  std::vector<std::string_view> placeholders;
+  for (const auto& term : parsed_arg.GetItems("terms")) {
+    for (const auto& type : term.GetItems("types")) {
+      placeholders.push_back(type.GetToken().GetString());
+    }
+  }
+  return placeholders;
+}
+
+// Returns the name of the placeholder that is the whole of an argument of a
+// parsed source (such as "v" for the argument "$v"), or an empty string if the
+// argument has anything else in it (such as "D($v)" or "$v + 1").
+std::string_view GetWholeArgPlaceholder(const gb::ParsedItem& parsed_arg) {
+  auto terms = parsed_arg.GetItems("terms");
+  if (terms.size() != 1 || !terms[0].IsUser(kTokenArgType)) {
+    return {};
+  }
+  return terms[0].GetToken().GetString();
+}
+
+bool IsValuePlaceholder(std::string_view placeholder) {
+  return placeholder == "v" || placeholder == "V";
 }
 
 std::string GetMacroCodeSourceKey(std::string_view macro_name,
@@ -186,6 +237,17 @@ class InstructionSetAssembler {
     gb::TokenIndex def;
     CodeTokens code;
   };
+  struct ValueSetInfo {
+    gb::TokenIndex def;
+    uint8_t size = 0;
+  };
+
+  // Which placeholders are a whole argument of an instruction's source, which
+  // decides whether it can be relative.
+  struct WholeArgs {
+    bool value = false;  // "$v" is a whole argument.
+    bool macro = false;  // "$m" is a whole argument.
+  };
 
   template <typename... Args>
   bool ErrorAt(const gb::ParsedItem& item, Args&&... args) {
@@ -214,6 +276,7 @@ class InstructionSetAssembler {
   }
 
   gb::ParseResult Parse(std::string_view filename, std::string text);
+  bool AssembleValueSet(const gb::ParsedItem& parsed_value_set);
   bool AssembleMacro(const gb::ParsedItem& parsed_macro);
   bool AssembleMacroCode(const gb::ParsedItem& parsed_macro_code,
                          MacroCodeDef& macro_code_def);
@@ -223,8 +286,9 @@ class InstructionSetAssembler {
   bool AssembleInstruction(const gb::ParsedItem& parsed_instruction);
   bool AssembleInstructionCodeSource(const gb::ParsedItem& parsed_instruction,
                                      std::string_view source,
-                                     InstructionDef& instruction_def);
-  void AssembleArgument(std::string_view parsed_arg_type, Argument& argument);
+                                     InstructionDef& instruction_def,
+                                     WholeArgs& whole_args);
+  bool AssembleArgument(std::string_view placeholder, Argument& argument);
   bool AssembleMicrocode(absl::Span<const gb::ParsedItem> parsed_micro_codes,
                          CodeTokens& code_tokens, std::string& code_string,
                          Argument* macro_arg = nullptr,
@@ -234,7 +298,9 @@ class InstructionSetAssembler {
   gb::ParseError* const error_;
   std::unique_ptr<gb::Parser> parser_;
   std::unique_ptr<AsmInstructionSet> result_;
+  absl::flat_hash_map<std::string_view, ValueSetInfo> value_set_map_;
   absl::flat_hash_map<std::string_view, int> macro_map_;
+  absl::flat_hash_set<std::string_view> macros_with_whole_arg_value_;
   absl::flat_hash_map<std::string, int> macro_code_map_;
   absl::flat_hash_map<std::string_view, int> instruction_map_;
   std::vector<int> needs_opcode_;
@@ -254,6 +320,14 @@ std::unique_ptr<AsmInstructionSet> InstructionSetAssembler::Assemble(
     return nullptr;
   }
   result_ = absl::WrapUnique(new AsmInstructionSet);
+
+  // Value sets come first, as instructions and macros may use them wherever
+  // they are in the source.
+  for (const auto& parsed_value_set : parsed_set->GetItems("value_sets")) {
+    if (!AssembleValueSet(parsed_value_set)) {
+      return nullptr;
+    }
+  }
   for (const auto& parsed_macro : parsed_set->GetItems("macros")) {
     if (!AssembleMacro(parsed_macro)) {
       return nullptr;
@@ -298,6 +372,43 @@ gb::ParseResult InstructionSetAssembler::Parse(std::string_view filename,
     return gb::ParseError("Instruction set program is too big");
   }
   return parser_->Parse(content, "InstructionSet");
+}
+
+bool InstructionSetAssembler::AssembleValueSet(
+    const gb::ParsedItem& parsed_value_set) {
+  auto& value_set_def = result_->value_set_defs_.emplace_back();
+  value_set_def.name = AddString(parsed_value_set.GetString("name"));
+  auto [it, inserted] = value_set_map_.try_emplace(value_set_def.name);
+  if (!inserted) {
+    return ErrorAt(parsed_value_set, "Value set '", value_set_def.name,
+                   "' is already defined");
+  }
+  ValueSetInfo& value_set_info = it->second;
+  value_set_info.def = parsed_value_set.GetToken().GetTokenIndex();
+
+  const int64_t bits = parsed_value_set.GetInt("bits");
+  if (bits < 0 || bits > 8 ||
+      !Argument(ArgType::kImmediate, static_cast<int>(bits)).IsValid()) {
+    return ErrorAt(parsed_value_set, "Invalid bits value: ", bits);
+  }
+  value_set_def.size = static_cast<uint8_t>(bits);
+  value_set_info.size = value_set_def.size;
+
+  // The value must be checked here, as it is narrowed to fit NamedValueDef.
+  // CompileInstructionSet checks the rest.
+  auto& named_value_defs = result_->named_value_defs_.emplace_back();
+  for (const auto& parsed_value : parsed_value_set.GetItems("values")) {
+    std::string_view name = AddString(parsed_value.GetString("name"));
+    const int64_t value = parsed_value.GetInt("value");
+    if (value < 0 || value >= (int64_t{1} << bits)) {
+      return ErrorAt(parsed_value, "Value ", name, " = ", value,
+                     " does not fit in ", bits, " bits");
+    }
+    named_value_defs.push_back(
+        {.name = name, .value = static_cast<uint8_t>(value)});
+  }
+  value_set_def.values = named_value_defs;
+  return true;
 }
 
 bool InstructionSetAssembler::AssembleMacro(
@@ -460,29 +571,32 @@ bool InstructionSetAssembler::AssembleMacroCodeSource(
                    "\". Error: ", result.GetError().GetMessage());
   }
 
-  auto args = result->GetItems("args");
-  for (const auto& arg : args) {
-    auto types = arg.GetItems("types");
-    bool has_macro_arg = false;
-    for (const auto& type : types) {
-      std::string_view type_name = type.GetToken().GetString();
-      char type_char = type_name[0];
-      if (type_char == 'v' || type_char == 'V') {
+  bool has_macro_arg = false;
+  for (const auto& arg : result->GetItems("args")) {
+    if (GetWholeArgPlaceholder(arg) == "v") {
+      macros_with_whole_arg_value_.insert(result_->macro_defs_.back().name);
+    }
+    for (std::string_view placeholder : GetPlaceholders(arg)) {
+      if (IsValuePlaceholder(placeholder)) {
         continue;
       }
       if (has_macro_arg) {
         return ErrorAt(
             parsed_macro_code, "Invalid macro code source: \"", source,
-            "\". Only one non-value macro argument type ($r, $R, or $#) is "
-            "allowed for a macro.");
+            "\". Only one non-value macro argument type ($r, $R, $#, or a "
+            "value set) is allowed for a macro.");
       }
       has_macro_arg = true;
-      if (type_char != 'r' && type_char != 'R' && type_char != '#') {
+      if (!AssembleArgument(placeholder, macro_code_def.arg)) {
         return ErrorAt(parsed_macro_code, "Invalid macro code source: \"",
-                       source, "\". $", type_name,
+                       source, "\". $", placeholder,
+                       " is not a placeholder or value set.");
+      }
+      if (macro_code_def.arg.type == ArgType::kMacro) {
+        return ErrorAt(parsed_macro_code, "Invalid macro code source: \"",
+                       source, "\". $", placeholder,
                        " is not allowed for a macro arg.");
       }
-      AssembleArgument(type_name, macro_code_def.arg);
     }
   }
 
@@ -524,8 +638,9 @@ bool InstructionSetAssembler::AssembleInstruction(
   instruction_tokens.def = parsed_instruction.GetToken().GetTokenIndex();
 
   instruction_def.source = AddString(parsed_instruction.GetString("source"));
+  WholeArgs whole_args;
   if (!AssembleInstructionCodeSource(parsed_instruction, instruction_def.source,
-                                     instruction_def)) {
+                                     instruction_def, whole_args)) {
     return false;
   }
   Argument* macro_arg = nullptr;
@@ -545,12 +660,26 @@ bool InstructionSetAssembler::AssembleInstruction(
   if (!arg_macro_name.empty()) {
     instruction_def.arg_macro_name = AddString(arg_macro_name);
   }
+
+  // A relative instruction needs a form where "$v" is a whole argument, either
+  // in its own source, or in a macro code that takes the place of a "$m" that
+  // is a whole argument.
+  if (parsed_instruction.GetItem("relative") != nullptr) {
+    instruction_def.relative = true;
+    if (!whole_args.value &&
+        !(whole_args.macro && macros_with_whole_arg_value_.contains(
+                                  instruction_def.arg_macro_name))) {
+      return ErrorAt(parsed_instruction, "Relative instruction '",
+                     instruction_def.op_name,
+                     "' has no form where $v is a whole argument");
+    }
+  }
   return true;
 }
 
 bool InstructionSetAssembler::AssembleInstructionCodeSource(
     const gb::ParsedItem& parsed_instruction, std::string_view source,
-    InstructionDef& instruction_def) {
+    InstructionDef& instruction_def, WholeArgs& whole_args) {
   auto parser = gb::Parser::Create(GetSourceParserProgram());
   if (parser == nullptr) {
     return Error("Internal error: Invalid parser or lexer program");
@@ -564,26 +693,33 @@ bool InstructionSetAssembler::AssembleInstructionCodeSource(
                    source, "\". Error: ", result.GetError().GetMessage());
   }
 
-  auto args = result->GetItems("args");
   int instruction_arg_count = 0;
   bool has_macro_arg = false;
-  for (const auto& arg : args) {
-    auto types = arg.GetItems("types");
-    for (const auto& type : types) {
-      std::string_view type_name = type.GetToken().GetString();
-      char type_char = type_name[0];
-      if (type_char == 'v' || type_char == 'V') {
+  for (const auto& arg : result->GetItems("args")) {
+    const std::string_view whole_arg_placeholder = GetWholeArgPlaceholder(arg);
+    if (whole_arg_placeholder == "v") {
+      whole_args.value = true;
+    }
+    for (std::string_view placeholder : GetPlaceholders(arg)) {
+      if (IsValuePlaceholder(placeholder)) {
         continue;
       }
       if (instruction_arg_count == 2) {
         return ErrorAt(parsed_instruction,
                        "Invalid instruction code source: \"", source,
                        "\". At most two non-value argument types ($m, $r, "
-                       "$R, or $#) are "
-                       "allowed for a macro.");
+                       "$R, $#, or a value set) are allowed for an "
+                       "instruction.");
       }
       ++instruction_arg_count;
-      if (type_char == 'm') {
+      Argument& argument = (instruction_arg_count == 1 ? instruction_def.arg1
+                                                       : instruction_def.arg2);
+      if (!AssembleArgument(placeholder, argument)) {
+        return ErrorAt(parsed_instruction,
+                       "Invalid instruction code source: \"", source, "\". $",
+                       placeholder, " is not a placeholder or value set.");
+      }
+      if (argument.type == ArgType::kMacro) {
         if (has_macro_arg) {
           return ErrorAt(parsed_instruction,
                          "Invalid instruction code source: \"", source,
@@ -591,20 +727,29 @@ bool InstructionSetAssembler::AssembleInstructionCodeSource(
                          "an instruction.");
         }
         has_macro_arg = true;
+        if (!whole_arg_placeholder.empty()) {
+          whole_args.macro = true;
+        }
       }
-      AssembleArgument(type.GetToken().GetString(), instruction_arg_count == 1
-                                                        ? instruction_def.arg1
-                                                        : instruction_def.arg2);
     }
   }
   return true;
 }
 
-void InstructionSetAssembler::AssembleArgument(std::string_view parsed_arg_type,
+bool InstructionSetAssembler::AssembleArgument(std::string_view placeholder,
                                                Argument& argument) {
-  const char type_char = parsed_arg_type[0];
-  const uint8_t size = static_cast<uint8_t>(
-      parsed_arg_type.size() < 2 ? 0 : parsed_arg_type[1] - '0');
+  DCHECK(!IsValuePlaceholder(placeholder));
+  const char type_char = placeholder[0];
+  if (type_char != '#' && !IsPlaceholderName(placeholder)) {
+    auto it = value_set_map_.find(placeholder);
+    if (it == value_set_map_.end()) {
+      return false;
+    }
+    argument = {ArgType::kImmediate, it->second.size};
+    return true;
+  }
+  const uint8_t size =
+      static_cast<uint8_t>(placeholder.size() < 2 ? 0 : placeholder[1] - '0');
   switch (type_char) {
     case 'r':
       argument.type = ArgType::kWordReg;
@@ -628,6 +773,7 @@ void InstructionSetAssembler::AssembleArgument(std::string_view parsed_arg_type,
       // verify the macro size is correct.
       break;
   }
+  return true;
 }
 
 bool InstructionSetAssembler::AssembleMicrocode(
@@ -699,12 +845,18 @@ bool InstructionSetAssembler::Compile() {
   result_->instruction_set_def_ = {
       .instructions = result_->instruction_defs_,
       .macros = result_->macro_defs_,
+      .value_sets = result_->value_set_defs_,
   };
   InstructionError error;
   result_->instruction_set_ =
       CompileInstructionSet(result_->instruction_set_def_, &error);
   if (error.message.empty()) {
     return true;
+  }
+  if (error.def == InstructionError::Def::kValueSet) {
+    DCHECK(value_set_map_.contains(error.def_name));
+    return ErrorAt(value_set_map_.find(error.def_name)->second.def,
+                   error.message);
   }
   if (error.def == InstructionError::Def::kMacro) {
     DCHECK(macro_token_map_.contains(error.def_name));

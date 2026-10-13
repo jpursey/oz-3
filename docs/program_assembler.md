@@ -203,9 +203,8 @@ instruction:
   one token.
 - A **comment** starts with `;`.
 
-Patterns may contain `;` and `@` today. Neither is used by the default
-instruction set, and the instruction set source stops allowing them (see [What
-the instruction set declares](#what-the-instruction-set-declares)).
+Patterns can't contain `;` or `@` (see [What the instruction set
+declares](#what-the-instruction-set-declares)).
 
 ## Symbols
 
@@ -346,9 +345,9 @@ too, so they never change either.
   and 1 in the other. It encodes exactly as `$#3` and `$#4` did.
 - **Relative values.** `JPR`, `JCR`, `JDR`, and `CALLR` add their value to `IP`,
   which is past the instruction. An instruction marks itself relative
-  (`instruction(relative) JPR "$m"`), and then a value written as the whole
-  argument (a bare `$v`) is a target address, which the assembler encodes as
-  its offset from the next instruction. So `JPR @loop` jumps to `@loop`, as
+  (`instruction(relative) JPR "$m"`), and then a `$v` that is a whole argument
+  is a target address, which the assembler encodes as its offset from the next
+  instruction. So `JPR @loop` jumps to `@loop`, as
   `JP @loop` does. Its other forms are unchanged: `JPR D(table)` still reads
   the offset from memory. Marking the instruction, rather than the `$v`, keeps
   the relative instructions on `GetWord`, where marking the placeholder would

@@ -45,6 +45,8 @@ class AsmInstructionSet final {
   std::shared_ptr<const InstructionSet> instruction_set_;
   InstructionSetDef instruction_set_def_;
   std::vector<std::unique_ptr<std::string>> strings_;
+  std::vector<std::vector<NamedValueDef>> named_value_defs_;
+  std::vector<ValueSetDef> value_set_defs_;
   std::vector<std::vector<MacroCodeDef>> macro_code_defs_;
   std::vector<MacroDef> macro_defs_;
   std::vector<InstructionDef> instruction_defs_;
