@@ -321,6 +321,11 @@ struct ValueSetDef {
 // MacroCodeDef::source, and ValueSetDef). CompileInstructionSet doesn't check
 // those rules, so an instruction set that compiles may not be one the
 // assembler can use.
+//
+// Instruction set source (.izm) is the format for instruction sets the OZ-3
+// tools can use, and assembling it checks their rules. An instruction set that
+// doesn't need the tools may not fit that format, and is built directly as an
+// InstructionSetDef instead.
 struct InstructionSetDef {
   // The list of all instruction definitions in the instruction set.
   absl::Span<const InstructionDef> instructions;
