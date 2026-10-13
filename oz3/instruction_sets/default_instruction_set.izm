@@ -1,4 +1,18 @@
 ################################################################################
+## Named values
+################################################################################
+
+# A condition on the status flags (JC, JCR, RETC, RETC.A, IRTC, and IRTC.A).
+values(bits:3) Condition { NZ = 0, NS = 1, NC = 2, NO = 3,
+                           Z = 4, S = 5, C = 6, O = 7 }
+
+# A mask of status flags (CLRF, SETF, and NOTF).
+values(bits:4) Flags { Z = 1, S = 2, C = 4, O = 8 }
+
+# A mask of memory banks (RST).
+values(bits:4) Banks { CODE = 1, STACK = 2, DATA = 4, EXTRA = 8 }
+
+################################################################################
 ## Shared macros to fetch word and dword values
 ################################################################################
 
@@ -3745,7 +3759,7 @@ instruction TSTB.D "$R, $m" {
 ## Clears the specified status flags.
 ################################################################################
 
-instruction CLRF "$#4" {
+instruction CLRF "$Flags" {
   MSC(a); MSR(a,_); UL;
 }
 
@@ -3758,7 +3772,7 @@ instruction CLRF "$#4" {
 ## Sets the specified status flags.
 ################################################################################
 
-instruction SETF "$#4" {
+instruction SETF "$Flags" {
   MSS(a); MSR(_,a); UL;
 }
 
@@ -3771,7 +3785,7 @@ instruction SETF "$#4" {
 ## Performs a bitwise NOT to the specified status flags.
 ################################################################################
 
-instruction NOTF "$#4" {
+instruction NOTF "$Flags" {
   MSX(a); MSR(a,a); UL;
 }
 
@@ -3984,7 +3998,7 @@ instruction JP "$m" {
 ## Adds the specified relative address to IP.
 ################################################################################
 
-instruction JPR "$m" {
+instruction(relative) JPR "$m" {
   $GetWord;
   ADD(IP,r);
 }
@@ -4004,7 +4018,7 @@ instruction JPR "$m" {
 ## variant takes 2 more cycles when it jumps.
 ################################################################################
 
-instruction JC "$#3, $m" {
+instruction JC "$Condition, $m" {
   $GetWord;
   JC(a,@jump);
   END;
@@ -4027,7 +4041,7 @@ instruction JC "$#3, $m" {
 ## Each variant takes 2 more cycles when it jumps.
 ################################################################################
 
-instruction JCR "$#3, $m" {
+instruction(relative) JCR "$Condition, $m" {
   $GetWord;
   JC(a,@jump);
   END;
@@ -4083,7 +4097,7 @@ instruction JD "$r, $m" {
 ## decremented value.
 ################################################################################
 
-instruction JDR "$r, $m" {
+instruction(relative) JDR "$r, $m" {
   $GetWord;
   JD(a,@jump);
   END;
@@ -4125,7 +4139,7 @@ instruction CALL "$m" {
 ## Pushes IP onto the stack and adds the specified relative address to IP.
 ################################################################################
 
-instruction CALLR "$m" {
+instruction(relative) CALLR "$m" {
   $GetWord;
   LK(STACK); ADR(SP); STP(IP); LAD(SP); UL;
   ADD(IP,r);
@@ -4201,7 +4215,7 @@ instruction RET.A "$#5" {
 ## doesn't return.
 ################################################################################
 
-instruction RETC "$#3" {
+instruction RETC "$Condition" {
   UL;
   JC(a,@return);
   END;
@@ -4209,7 +4223,7 @@ instruction RETC "$#3" {
   LK(STACK); ADR(SP); LD(IP); LAD(SP); UL;
 }
 
-instruction RETC.A "$#3, $#5" {
+instruction RETC.A "$Condition, $#5" {
   UL;
   JC(a,@return);
   END;
@@ -4260,7 +4274,7 @@ instruction IRT.A "$#5" {
 ## a WAIT, the WAIT resumes. Each variant takes 3 cycles when it doesn't return.
 ################################################################################
 
-instruction IRTC "$#3" {
+instruction IRTC "$Condition" {
   UL;
   JC(a,@return);
   END;
@@ -4268,7 +4282,7 @@ instruction IRTC "$#3" {
   IRT;
 }
 
-instruction IRTC.A "$#3, $#5" {
+instruction IRTC.A "$Condition, $#5" {
   UL;
   JC(a,@return);
   END;
@@ -5309,7 +5323,7 @@ macro LockCore {
   code "SELF" { MOVI(C2,-1); CLK(C2); }
 }
 
-instruction RST "$m, $#4" {
+instruction RST "$m, $Banks" {
   UL;
   $LockCore;
 

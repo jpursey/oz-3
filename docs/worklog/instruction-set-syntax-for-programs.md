@@ -263,7 +263,7 @@ Depends on: CL1.
   either, which writes no `value_sets`.
 - The default instruction set's `.inc` regenerates unchanged.
 
-### CL3 [ ] instruction_sets: The default instruction set's named values and relative instructions
+### CL3 [x] instruction_sets: The default instruction set's named values and relative instructions
 
 Depends on: CL2.
 
@@ -273,7 +273,9 @@ Depends on: CL2.
 - `default_instruction_set_test.cc`: the layout gains the relative mark and
   the value sets each pinned instruction uses, and the new fingerprint.
 - Wiki: Default Instruction Set.
-- Backlog: nothing left over, unless review finds some.
+- Backlog: once `InstructionSetSyntax` exists, the pin test could fingerprint
+  its resolved forms (through a test-only dependency on tools) instead of
+  scanning patterns for value sets itself.
 
 **Verify**
 - Standard checks, including the `.inc` check: `git diff` shows only patterns,

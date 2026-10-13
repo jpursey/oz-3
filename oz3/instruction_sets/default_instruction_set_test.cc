@@ -5,11 +5,14 @@
 
 #include "oz3/instruction_sets/default_instruction_set.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
 #include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -35,22 +38,55 @@ namespace {
 // Instructions with opcodes below this have pinned code words.
 constexpr int kPinnedInstructionCount = 0x8A;
 
-constexpr uint64_t kPinnedFingerprint = 0x01146DE15F191B06;
+constexpr uint64_t kPinnedFingerprint = 0xEA7244FC1145A7E4;
 
 std::string ArgumentLayout(const Argument& arg) {
   return absl::StrCat(ArgTypeToString(arg.type), ":",
                       static_cast<int>(arg.size));
 }
 
+// Returns the size and values of each value set the pattern uses, in the order
+// it uses them. Sets the pattern doesn't use are left out, so adding a set
+// doesn't change the layout of an instruction that doesn't use it.
+std::string ValueSetLayouts(const InstructionSetDef& def,
+                            std::string_view pattern) {
+  std::string layout;
+  std::vector<std::string_view> pieces = absl::StrSplit(pattern, '$');
+  // Every piece but the first follows a '$', so it starts with a placeholder.
+  for (int i = 1; i < std::ssize(pieces); ++i) {
+    std::string_view piece = pieces[i];
+    std::string_view name = piece.substr(
+        0, piece.find_first_not_of("abcdefghijklmnopqrstuvwxyz"
+                                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"));
+    if (name.empty() || IsPlaceholderName(name)) {
+      continue;  // "$#5", "$r", "$m", and the other placeholders.
+    }
+    auto value_set =
+        std::ranges::find(def.value_sets, name, &ValueSetDef::name);
+    // A name this misses would leave its set's values unpinned.
+    if (value_set == def.value_sets.end()) {
+      ADD_FAILURE() << "\"" << pattern << "\" uses unknown value set $" << name;
+      continue;
+    }
+    absl::StrAppend(&layout, " values:", value_set->size);
+    for (const NamedValueDef& value : value_set->values) {
+      absl::StrAppend(&layout, " ", value.name, "=",
+                      static_cast<int>(value.value));
+    }
+  }
+  return layout;
+}
+
 // Returns everything about an instruction that determines its code words and
-// syntax, including the codes of a macro argument. The macro's name is left
-// out, as it doesn't affect either.
+// syntax, including the codes of a macro argument, and the value sets they
+// use. The macro's name is left out, as it doesn't affect either.
 std::string EncodingLayout(const InstructionSetDef& def,
                            const InstructionDef& instruction) {
   std::string layout = absl::StrCat(
       static_cast<int>(instruction.op), " ", instruction.op_name, " \"",
       instruction.source, "\" ", ArgumentLayout(instruction.arg1), " ",
-      ArgumentLayout(instruction.arg2));
+      ArgumentLayout(instruction.arg2), instruction.relative ? " relative" : "",
+      ValueSetLayouts(def, instruction.source));
   if (instruction.arg1.type != ArgType::kMacro &&
       instruction.arg2.type != ArgType::kMacro) {
     return layout;
@@ -64,7 +100,8 @@ std::string EncodingLayout(const InstructionSetDef& def,
       absl::StrAppend(&layout, " \"", code.source, "\" ",
                       static_cast<int>(code.prefix.value), "/",
                       static_cast<int>(code.prefix.size), " ",
-                      ArgumentLayout(code.arg));
+                      ArgumentLayout(code.arg),
+                      ValueSetLayouts(def, code.source));
     }
   }
   return layout;
