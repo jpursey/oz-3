@@ -73,6 +73,17 @@ code word layout and size. It matches a statement's tokens to exactly one form
 and encodes it, ignoring case, reporting a statement that matches none or
 several, and it turns a code word back into text for the debugger.
 
+It parses source patterns, as the instruction assembler already does in two
+places (`AssembleInstructionCodeSource` and `AssembleMacroCodeSource` in
+`instruction_assembler.cc`), each creating the pattern parser and walking its
+placeholders. One shared pattern parser in tools would serve all three, along
+with the mapping from a placeholder to its `Argument`, which is split today
+between `IsPlaceholderName` in core and the assembler's `AssembleArgument` and
+`IsValuePlaceholder`. Once it exists, the default instruction set's pin test
+(`default_instruction_set_test.cc`) can fingerprint each instruction's resolved
+forms, through a test-only dependency on tools, rather than scanning patterns
+for value sets itself.
+
 ## Program assembler
 
 - **Layers:** tools, wiki
