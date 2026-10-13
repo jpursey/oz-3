@@ -10,6 +10,7 @@ set(oz3_tools_SOURCE
   program_loader.h program_loader.cc
 )
 set(oz3_tools_DEPS
+  absl::flat_hash_set
   gb_file
   gb_parse
   oz3_core

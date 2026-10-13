@@ -22,7 +22,6 @@ set(oz3_core_SOURCE
   processor_config.cc processor_config.h
 )
 set(oz3_core_DEPS
-  absl::flat_hash_set
   absl::memory
   absl::span
   absl::strings

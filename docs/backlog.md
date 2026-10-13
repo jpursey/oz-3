@@ -25,22 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Check instruction sizes against microcode
-
-- **Layers:** core
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [program_assembler.md](program_assembler.md) (What the
-  instruction set declares), and Arguments in the wiki's Instruction Set Source
-  page
-
-The program assembler sizes an instruction from its source pattern (the code
-word, one word for each `$v`, and two for each `$V`), but nothing checks that
-the microcode reads that many words. Compiling an instruction set checks, for
-every instruction and macro code with a source, that the pattern's size is the
-size the compiled instruction decodes to.
-
 ## Program files
 
 - **Layers:** tools, wiki
@@ -79,7 +63,16 @@ places (`AssembleInstructionCodeSource` and `AssembleMacroCodeSource` in
 placeholders. One shared pattern parser in tools would serve all three, along
 with the mapping from a placeholder to its `Argument`, which is split today
 between `IsPlaceholderName` in core and the assembler's `AssembleArgument` and
-`IsValuePlaceholder`. Once it exists, the default instruction set's pin test
+`IsValuePlaceholder`.
+
+Building it from an `InstructionSetDef` is also what checks that the assembler
+can use the def, as `CompileInstructionSet` only checks what cores need. The
+rules the instruction assembler checks for `.izm` source today move into it, so
+they hold for a def written by hand too: the value set rules
+(`AssembleValueSet`), and each form's size against its compiled microcode
+(`CheckSizes`).
+
+Once it exists, the default instruction set's pin test
 (`default_instruction_set_test.cc`) can fingerprint each instruction's resolved
 forms, through a test-only dependency on tools, rather than scanning patterns
 for value sets itself.

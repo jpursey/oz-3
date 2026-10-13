@@ -2657,138 +2657,64 @@ TEST(InstructionCompilerTest, MacroMovesJumpsAroundIt) {
           Microcode{.op = kMicro_JP, .arg1 = -7}));
 }
 
-// Compiles an instruction set with an instruction, and the value sets. The
-// error is cleared on success.
-bool CompileValueSets(absl::Span<const ValueSetDef> value_sets,
-                      InstructionError& error) {
-  const InstructionDef instructions[] = {MakeDef("UL;")};
-  return CompileInstructionSet(
-             {.instructions = instructions, .value_sets = value_sets},
-             &error) != nullptr;
-}
-
-TEST(InstructionCompilerTest, ValueSetsCompile) {
-  const NamedValueDef conditions[] = {
-      {"NZ", 0}, {"Z", 1}, {"EQ", 1}, {"Max", 7}};
-  const NamedValueDef flags[] = {{"Z", 1}, {"_flag_2", 2}};
-  const ValueSetDef value_sets[] = {
-      {.name = "Condition", .size = 3, .values = conditions},
-      {.name = "Flags_2", .size = 8, .values = flags},
+TEST(InstructionCompilerTest, InstructionsSharingMacroCompileSeparately) {
+  // A macro with one code that fills all its bits, so each instruction's first
+  // and last forms come from the same code.
+  const MacroCodeDef macro_code_defs[] = {
+      {.arg = ArgType::kWordReg, .code = "UL;"}};
+  const MacroDef macro_defs[] = {
+      {.name = "Macro", .size = 3, .code = macro_code_defs}};
+  const InstructionDef instruction_defs[] = {
+      {.op = 0,
+       .op_name = "FIRST",
+       .arg1 = {ArgType::kMacro, 3},
+       .code = "$Macro;"},
+      {.op = 1,
+       .op_name = "SECOND",
+       .arg1 = {ArgType::kMacro, 3},
+       .code = "LD(C0);$Macro;"},
   };
   InstructionError error;
-  EXPECT_TRUE(CompileValueSets(value_sets, error)) << error.message;
-  EXPECT_EQ(error.def, InstructionError::Def::kNone);
+  auto instruction_set = CompileInstructionSet(
+      {.instructions = instruction_defs, .macros = macro_defs}, &error);
+  ASSERT_NE(instruction_set, nullptr) << error.message;
+  DecodedInstruction decoded;
+  EXPECT_TRUE(instruction_set->Decode(instruction_defs[1].Encode(0), decoded));
+  EXPECT_EQ(decoded.size, 2);
+  EXPECT_THAT(decoded.code,
+              ElementsAre(Microcode{.op = kMicro_LD, .arg1 = CpuCore::C0},
+                          Microcode{.op = kMicro_UL}));
 }
 
-TEST(InstructionCompilerTest, ValueSetNameNotIdentifier) {
-  const NamedValueDef values[] = {{"A", 0}};
-  for (std::string_view name : {"", "1Set", "Set-1", "Set 1"}) {
-    const ValueSetDef value_sets[] = {
-        {.name = name, .size = 1, .values = values}};
-    InstructionError error;
-    EXPECT_FALSE(CompileValueSets(value_sets, error)) << name;
-    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << name;
-    EXPECT_EQ(error.def_name, name);
-    EXPECT_THAT(error.message, HasSubstr("not an identifier")) << name;
-  }
-}
-
-TEST(InstructionCompilerTest, ValueSetNameIsPlaceholder) {
-  const NamedValueDef values[] = {{"A", 0}};
-  for (std::string_view name :
-       {"r", "r1", "r4", "R", "R1", "R2", "m", "m1", "m8", "v", "V"}) {
-    const ValueSetDef value_sets[] = {
-        {.name = name, .size = 1, .values = values}};
-    InstructionError error;
-    EXPECT_FALSE(CompileValueSets(value_sets, error)) << name;
-    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << name;
-    EXPECT_THAT(error.message, HasSubstr("placeholder")) << name;
-  }
-  for (std::string_view name : {"r0", "r5", "R3", "m9", "M", "rr", "vV", "x"}) {
-    const ValueSetDef value_sets[] = {
-        {.name = name, .size = 1, .values = values}};
-    InstructionError error;
-    EXPECT_TRUE(CompileValueSets(value_sets, error))
-        << name << ": " << error.message;
-  }
-}
-
-TEST(InstructionCompilerTest, DuplicateValueSetName) {
-  const NamedValueDef values[] = {{"A", 0}};
+TEST(InstructionCompilerTest, AssemblerRulesNotChecked) {
+  // Value sets that break every rule the assembler has for them.
+  const NamedValueDef values[] = {{"1A", 9}, {"1A", 9}};
   const ValueSetDef value_sets[] = {
-      {.name = "Set", .size = 1, .values = values},
-      {.name = "Other", .size = 1, .values = values},
-      {.name = "Set", .size = 2, .values = values},
+      {.name = "r", .size = 9, .values = values},
+      {.name = "r", .size = 0},
+  };
+
+  // Sources that don't match the arguments or the words the microcode reads.
+  const MacroCodeDef macro_code_defs[] = {
+      {.source = "$V, $V", .arg = ArgType::kWordReg, .code = "UL;"}};
+  const MacroDef macro_defs[] = {
+      {.name = "Macro", .size = 3, .code = macro_code_defs}};
+  const InstructionDef instruction_defs[] = {
+      {.op = 0, .op_name = "VALUE", .source = "$v, $#4", .code = "UL;"},
+      {.op = 1,
+       .op_name = "MACRO",
+       .source = "$r",
+       .relative = true,
+       .arg1 = {ArgType::kMacro, 3},
+       .code = "LD(C0);$Macro;"},
   };
   InstructionError error;
-  EXPECT_FALSE(CompileValueSets(value_sets, error));
-  EXPECT_EQ(error.def, InstructionError::Def::kValueSet);
-  EXPECT_EQ(error.def_name, "Set");
-  EXPECT_THAT(error.message, HasSubstr("Duplicate value set"));
-}
-
-TEST(InstructionCompilerTest, ValueSetSizeInvalid) {
-  const NamedValueDef values[] = {{"A", 0}};
-  for (int size : {0, 9}) {
-    const ValueSetDef value_sets[] = {
-        {.name = "Set", .size = static_cast<uint8_t>(size), .values = values}};
-    InstructionError error;
-    EXPECT_FALSE(CompileValueSets(value_sets, error)) << size;
-    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << size;
-    EXPECT_THAT(error.message, HasSubstr("between 1 and 8")) << size;
-  }
-}
-
-TEST(InstructionCompilerTest, ValueSetWithoutValues) {
-  const ValueSetDef value_sets[] = {{.name = "Set", .size = 1}};
-  InstructionError error;
-  EXPECT_FALSE(CompileValueSets(value_sets, error));
-  EXPECT_EQ(error.def, InstructionError::Def::kValueSet);
-  EXPECT_THAT(error.message, HasSubstr("no values"));
-}
-
-TEST(InstructionCompilerTest, ValueNameNotIdentifier) {
-  for (std::string_view name : {"", "1A", "A-B"}) {
-    const NamedValueDef values[] = {{"A", 0}, {name, 1}};
-    const ValueSetDef value_sets[] = {
-        {.name = "Set", .size = 1, .values = values}};
-    InstructionError error;
-    EXPECT_FALSE(CompileValueSets(value_sets, error)) << name;
-    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << name;
-    EXPECT_EQ(error.def_name, "Set");
-    EXPECT_THAT(error.message, HasSubstr("not an identifier")) << name;
-  }
-}
-
-TEST(InstructionCompilerTest, DuplicateValueName) {
-  const NamedValueDef values[] = {{"A", 0}, {"B", 1}, {"A", 1}};
-  const ValueSetDef value_sets[] = {
-      {.name = "Set", .size = 1, .values = values}};
-  InstructionError error;
-  EXPECT_FALSE(CompileValueSets(value_sets, error));
-  EXPECT_EQ(error.def, InstructionError::Def::kValueSet);
-  EXPECT_THAT(error.message, HasSubstr("Duplicate value name A"));
-}
-
-TEST(InstructionCompilerTest, ValueMustFitSize) {
-  for (int size = 1; size <= 8; ++size) {
-    const NamedValueDef values[] = {
-        {"Max", static_cast<uint8_t>((1 << size) - 1)}};
-    const ValueSetDef value_sets[] = {
-        {.name = "Set", .size = static_cast<uint8_t>(size), .values = values}};
-    InstructionError error;
-    EXPECT_TRUE(CompileValueSets(value_sets, error))
-        << size << ": " << error.message;
-  }
-  for (int size = 1; size <= 7; ++size) {
-    const NamedValueDef values[] = {{"Big", static_cast<uint8_t>(1 << size)}};
-    const ValueSetDef value_sets[] = {
-        {.name = "Set", .size = static_cast<uint8_t>(size), .values = values}};
-    InstructionError error;
-    EXPECT_FALSE(CompileValueSets(value_sets, error)) << size;
-    EXPECT_EQ(error.def, InstructionError::Def::kValueSet) << size;
-    EXPECT_THAT(error.message, HasSubstr("does not fit")) << size;
-  }
+  EXPECT_NE(CompileInstructionSet({.instructions = instruction_defs,
+                                   .macros = macro_defs,
+                                   .value_sets = value_sets},
+                                  &error),
+            nullptr)
+      << error.message;
 }
 
 }  // namespace

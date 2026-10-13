@@ -424,39 +424,39 @@ instruction MOV.SDR "$m, $R" {
 }
 
 macro(bits:5) StoreDwordValue {
-  code "[$r], $v" {
+  code "[$r], $V" {
     LD(C0); LD(C1); UL;
     LKR(m); ADR(m); ST(C0); ST(C1); UL;
   }
-  code "[$r + $v], $v" {
+  code "[$r + $v], $V" {
     LD(C2); LD(C0); LD(C1); UL; ADD(C2,m);
     LKR(m); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "[SP], $v" {
+  code "[SP], $V" {
     LD(C0); LD(C1); UL;
     LK(STACK); ADR(SP); ST(C0); ST(C1); UL;
   }
-  code "[SP + $v], $v" {
+  code "[SP + $v], $V" {
     LD(C2); LD(C0); LD(C1); UL; ADD(C2,SP);
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "[FP], $v" {
+  code "[FP], $V" {
     LD(C0); LD(C1); UL;
     LK(STACK); ADR(FP); ST(C0); ST(C1); UL;
   }
-  code "[FP + $v], $v" {
+  code "[FP + $v], $V" {
     LD(C2); LD(C0); LD(C1); UL; ADD(C2,FP);
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "S[$v], $v" {
+  code "S[$v], $V" {
     LD(C2); LD(C0); LD(C1); UL;
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "D[$v], $v" {
+  code "D[$v], $V" {
     LD(C2); LD(C0); LD(C1); UL;
     LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "E[$v], $v" {
+  code "E[$v], $V" {
     LD(C2); LD(C0); LD(C1); UL;
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
   }

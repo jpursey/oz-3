@@ -121,7 +121,8 @@ struct MacroCodeDef {
   //
   // This is only used by the OZ-3 assembler, and may be empty if not using it.
   //
-  // This must conform to the following rules:
+  // For the assembler, this must conform to the following rules, which
+  // CompileInstructionSet doesn't check:
   // - The source must be unique within the macro set.
   // - It may contain "$r", "$R", ot "$#", specifications. There may be at
   //   most one of these with and it must match the type of arg/ If sizes are
@@ -134,7 +135,8 @@ struct MacroCodeDef {
   //   ("$Condition"), which is an immediate argument of the set's size.
   // - It may contain any number of "$v" and "$V" specifications which will
   //   result in added word and dword values to the instruction word. These do
-  //   not map to the argument.
+  //   not map to the argument. See InstructionDef::source for how many there
+  //   must be.
   // - It may contain any parentheses, brackets, or braces, but they must be
   //   balanced, and nested correctly.
   // - It may contain C-style identifiers, integer, floating-point, string, and
@@ -228,8 +230,9 @@ struct InstructionDef {
   //
   // This is only used by the OZ-3 assembler, and may be empty if not using it.
   //
-  // This must be a comma delimited set of expressions where each expression
-  // conforms to the following rules:
+  // For the assembler, this must be a comma delimited set of expressions where
+  // each expression conforms to the following rules, which
+  // CompileInstructionSet doesn't check:
   // - It may contain "$r", "$R", "$#", or "$m" specifications. There may be at
   //   most two of these with the first matching the type of arg1 and the second
   //   matching the type of arg2. There can only be one "$m" specification. If
@@ -242,7 +245,9 @@ struct InstructionDef {
   //   ("$Condition"), which is an immediate argument of the set's size.
   // - It may contain any number of "$v" and "$V" specifications which will
   //   result in added word and dword values to the instruction word. These do
-  //   not map to the arguments.
+  //   not map to the arguments. With the source of the macro code that takes
+  //   the place of "$m", there must be a "$v" for each word the microcode
+  //   reads with LD in the fetch phase (a "$V" for two).
   // - It may contain any parentheses, brackets, or braces, but they must be
   //   balanced, and nested correctly.
   // - It may contain C-style identifiers, integer, floating-point, string, and
@@ -288,6 +293,9 @@ struct NamedValueDef {
 // instruction's or macro code's source uses the set as a placeholder
 // ("$Condition") in place of "$#", and the names are only in scope for that
 // argument.
+//
+// Only the assembler uses value sets, and checks the rules below.
+// CompileInstructionSet ignores them.
 struct ValueSetDef {
   // The name of the set, which is a C identifier, unique within the
   // instruction set. It is case-sensitive, and can't be the name of another
@@ -306,6 +314,13 @@ struct ValueSetDef {
 //------------------------------------------------------------------------------
 
 // Defines a set of instructions and macros for the OZ-3 CPU.
+//
+// CompileInstructionSet checks only what cores need to run the instructions.
+// The sources, value sets, and relative marks are for the OZ-3 assembler and
+// debugger, which have rules of their own for them (see InstructionDef::source,
+// MacroCodeDef::source, and ValueSetDef). CompileInstructionSet doesn't check
+// those rules, so an instruction set that compiles may not be one the
+// assembler can use.
 struct InstructionSetDef {
   // The list of all instruction definitions in the instruction set.
   absl::Span<const InstructionDef> instructions;

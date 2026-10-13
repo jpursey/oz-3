@@ -27,16 +27,15 @@ struct InstructionError {
     kNone,
     kMacro,
     kInstruction,
-    kValueSet,
   };
 
   // Full error message.
   std::string message;
 
-  // Instruction, macro, or value set definition where the error occurred.
+  // Instruction or Macro definition where the error occurred.
   Def def = Def::kNone;
 
-  // Name of the instruction, macro, or value set where the error occurred.
+  // Name of the instruction or macro where the error occurred.
   std::string def_name;
 
   // The source string of the MacroCodeDef where the error occurred. This is
@@ -53,6 +52,9 @@ struct InstructionError {
 };
 
 // Compiles the provided instruction set definition into an instruction set.
+//
+// This checks only that cores can run the instruction set, not that the OZ-3
+// assembler can use it (see InstructionSetDef).
 //
 // If an error occurs, this function returns null, and it will set the error to
 // a description of the error.

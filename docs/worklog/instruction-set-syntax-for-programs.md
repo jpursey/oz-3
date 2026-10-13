@@ -104,11 +104,12 @@ struct InstructionSetDef {
 };
 ```
 
-`CompileInstructionSet` checks every value set as the source rules above say,
-reporting `InstructionError::Def::kValueSet` with the set's name. It doesn't
-parse patterns, so it doesn't check that a pattern's `$<name>` names a set, or
-that a relative instruction has a `$v` that is a whole argument: the
-instruction assembler checks both, and `InstructionSetSyntax` will for any
+`CompileInstructionSet` checks only what cores need to run the instructions,
+so it ignores value sets, patterns, and relative marks: an `InstructionSetDef`
+that compiles may not be one the assembler can use. The instruction assembler
+checks the source rules above for `.izm` source, including that a pattern's
+`$<name>` names a set, and that a relative instruction has a `$v` that is a
+whole argument. `InstructionSetSyntax` will check them for any
 `InstructionSetDef`.
 
 The new fields have defaults, so existing `InstructionSetDef`s, written by
@@ -138,8 +139,10 @@ values(bits:4) Banks { CODE = 1, STACK = 2, DATA = 4, EXTRA = 8 }
   masks, as a pinned instruction's syntax can't change later.
 - `JPR`, `JCR`, `JDR`, and `CALLR` are relative.
 
-No code word changed. The pin test's fingerprint changed once, safely, as no
-program had been assembled yet.
+No code word changed. The pin test's fingerprint changed, safely, as no
+program had been assembled yet. It changed once more when the size check found
+that `MOV.SDV`'s `StoreDwordValue` patterns wrote its dword value as `$v`,
+which became `$V`, before any program could depend on the wrong size.
 
 ## Design
 
@@ -160,22 +163,21 @@ program had been assembled yet.
 comments on `InstructionDef::source` and `MacroCodeDef::source` include named
 value placeholders. `IsPlaceholderName` (also in `instruction_def.h`) is the
 one list of the built-in placeholder names, derived from `Argument::IsValid`'s
-sizes, which the value set checks and the instruction assembler share.
-
-`CompileInstructionSet` checks the value sets first, in a free function
-(`ValidateValueSets`) rather than in `InstructionCompiler`, as they have no
-microcode and nothing compiled depends on them.
+sizes, which the instruction assembler and the pin test share. It stays in
+core, beside the patterns it describes, though nothing in core checks them.
 
 ### tools
 
 `InstructionSetAssembler`:
 - Assembles value sets before macros and instructions, so they may be written
-  in any order. It checks what it must before building the set, with the
-  token's location: a duplicate set name (for its own lookup), `bits`, and
-  that each value fits them (before narrowing it to `uint8_t`).
-  `CompileInstructionSet` checks the rest, and the assembler maps its
-  `kValueSet` error to the set's location, as it does for macros and
-  instructions.
+  in any order. It checks every value set rule, with the token's location: a
+  duplicate set name, a set named as a built-in placeholder, `bits`, a set
+  without values, a duplicate value name, and that each value fits (before
+  narrowing it to `uint8_t`). The grammar makes the names identifiers.
+- After compiling the set, checks each form's size (see Arguments in the
+  wiki's Instruction Set Source page): the code word and the words of its
+  pattern's `$v` and `$V`, counted as the patterns are parsed, must be the
+  size the compiled form decodes to.
 - The pattern lexer's placeholder token is `\$(#[1-8]|[a-zA-Z_]\w*)`, and
   `AssembleArgument` classifies the name: a built-in placeholder
   (`IsPlaceholderName`), or else a value set, or else an error.

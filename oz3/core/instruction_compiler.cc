@@ -12,7 +12,6 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/container/flat_hash_set.h"
 #include "absl/log/log.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
@@ -72,78 +71,6 @@ absl::string_view LockOpNameFromIndex(int lock) {
     return "PLK";
   }
   return "CLK";
-}
-
-bool IsIdentifier(std::string_view name) {
-  if (name.empty() || absl::ascii_isdigit(name[0])) {
-    return false;
-  }
-  for (char c : name) {
-    if (!absl::ascii_isalnum(c) && c != '_') {
-      return false;
-    }
-  }
-  return true;
-}
-
-template <typename... Args>
-bool ValueSetError(const ValueSetDef& value_set_def, InstructionError* error,
-                   Args&&... args) {
-  if (error != nullptr) {
-    *error = {.message = absl::StrCat("Error in values ", value_set_def.name,
-                                      ": ", std::forward<Args>(args)...),
-              .def = InstructionError::Def::kValueSet,
-              .def_name = std::string(value_set_def.name)};
-  }
-  return false;
-}
-
-// Checks every value set. Nothing else in the instruction set depends on them,
-// so they are only checked, not compiled.
-bool ValidateValueSets(absl::Span<const ValueSetDef> value_sets,
-                       InstructionError* error) {
-  absl::flat_hash_set<std::string_view> value_set_names;
-  for (const ValueSetDef& value_set_def : value_sets) {
-    if (!IsIdentifier(value_set_def.name)) {
-      return ValueSetError(value_set_def, error, "Value set name \"",
-                           value_set_def.name, "\" is not an identifier");
-    }
-    if (IsPlaceholderName(value_set_def.name)) {
-      return ValueSetError(value_set_def, error,
-                           "Value set name is the placeholder $",
-                           value_set_def.name);
-    }
-    if (!value_set_names.insert(value_set_def.name).second) {
-      return ValueSetError(value_set_def, error, "Duplicate value set name");
-    }
-    if (!Argument(ArgType::kImmediate, value_set_def.size).IsValid()) {
-      return ValueSetError(value_set_def, error,
-                           "Value set size must be between 1 and 8. Size is ",
-                           static_cast<int>(value_set_def.size));
-    }
-    if (value_set_def.values.empty()) {
-      return ValueSetError(value_set_def, error, "Value set has no values");
-    }
-    const int max_value = (1 << value_set_def.size) - 1;
-    absl::flat_hash_set<std::string_view> value_names;
-    for (const NamedValueDef& value_def : value_set_def.values) {
-      if (!IsIdentifier(value_def.name)) {
-        return ValueSetError(value_set_def, error, "Value name \"",
-                             value_def.name, "\" is not an identifier");
-      }
-      if (!value_names.insert(value_def.name).second) {
-        return ValueSetError(value_set_def, error, "Duplicate value name ",
-                             value_def.name);
-      }
-      if (value_def.value > max_value) {
-        return ValueSetError(value_set_def, error, "Value ", value_def.name,
-                             " = ", static_cast<int>(value_def.value),
-                             " does not fit in ",
-                             static_cast<int>(value_set_def.size), " bits");
-      }
-    }
-  }
-  return true;
 }
 
 std::string ToBitString(int value, int count) {
@@ -447,6 +374,8 @@ bool InstructionCompiler::CompileInstruction(
     *error_ = {};
   }
   state_ = {};
+  last_sub_macro_id_ = 0;
+  last_sub_instruction_ = nullptr;
 
   int op_index = static_cast<int>(instruction_def_->op);
   if (instructions_.size() <= op_index) {
@@ -1835,9 +1764,6 @@ bool InstructionCompiler::ValidateMicroArg(int index, MicroArgType arg_type,
 std::shared_ptr<const InstructionSet> CompileInstructionSet(
     InstructionSetDef instruction_set_def, InstructionError* error,
     absl::Span<const MicrocodeDef> microcode_defs) {
-  if (!ValidateValueSets(instruction_set_def.value_sets, error)) {
-    return nullptr;
-  }
   InstructionCompiler compiler(microcode_defs);
   for (const MacroDef& macro_def : instruction_set_def.macros) {
     if (!compiler.CompileMacro(macro_def, error)) {

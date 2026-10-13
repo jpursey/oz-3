@@ -1009,7 +1009,7 @@ TEST(InstructionAssemblerTest, AllMicrocodeSyntaxValid) {
     macro WithArg(p) {
       code "$r" { MOV(m,p); }
     }
-    instruction TEST "$r, $m" { 
+    instruction TEST "$r, $v, $m" {
       LD(C0);             # Load value into C0
       UL;                 # End fetch phase
       @label:ADDI(a,1);   # Increment argument by 1
@@ -1323,7 +1323,7 @@ TEST(InstructionAssemblerTest, ValueDoesNotFitBits) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
 }
 
-TEST(InstructionAssemblerTest, ValueSetErrorFromCompilerAtValueSet) {
+TEST(InstructionAssemblerTest, DuplicateValueName) {
   gb::ParseError error;
   std::string source = R"---(
     instruction(opcode:0) NOP { UL; }
@@ -1332,7 +1332,18 @@ TEST(InstructionAssemblerTest, ValueSetErrorFromCompilerAtValueSet) {
   auto asm_set = AssembleInstructionSet(source, &error);
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(error.GetMessage(), HasSubstr("Duplicate value name Z"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 38));
+}
+
+TEST(InstructionAssemblerTest, ValueSetWithoutValues) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:3) Condition { }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("no values"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
 TEST(InstructionAssemblerTest, ValueSetNamedAsPlaceholder) {
@@ -1344,6 +1355,66 @@ TEST(InstructionAssemblerTest, ValueSetNamedAsPlaceholder) {
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(error.GetMessage(), HasSubstr("placeholder $r"));
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
+TEST(InstructionAssemblerTest, SourceSizesMatchMicrocode) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Value {
+      code "$r" { UL; }
+      code "($v)" { LD(C1); UL; }
+      code "[$V]" { LD(C1); LD(C2); UL; }
+    }
+    instruction NONE "X, '$v'" { UL; }
+    instruction WORD "$v" { LD(C0); UL; }
+    instruction DWORD "$V" { LD(C0); LD(C1); UL; }
+    instruction MACRO "$v, $m" { LD(C0); $Value; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_NE(asm_set, nullptr) << error.FormatMessage();
+}
+
+TEST(InstructionAssemblerTest, InstructionSourceSizeDoesNotMatchMicrocode) {
+  struct Case {
+    std::string_view instruction;
+    std::string_view message;
+  };
+  const Case kCases[] = {
+      {R"---(instruction TEST "$v" { UL; })---",
+       "Source \"$v\" has size 2, but the microcode has size 1"},
+      {R"---(instruction TEST "X" { LD(C0); UL; })---",
+       "Source \"X\" has size 1, but the microcode has size 2"},
+      {R"---(instruction TEST "$v" { LD(C0); LD(C1); UL; })---",
+       "Source \"$v\" has size 2, but the microcode has size 3"},
+      {R"---(instruction TEST "$V" { LD(C0); UL; })---",
+       "Source \"$V\" has size 3, but the microcode has size 2"},
+  };
+  for (const Case& test_case : kCases) {
+    gb::ParseError error;
+    auto asm_set =
+        AssembleInstructionSet(std::string(test_case.instruction), &error);
+    EXPECT_EQ(asm_set, nullptr) << test_case.instruction;
+    EXPECT_THAT(error.GetMessage(), HasSubstr(test_case.message))
+        << test_case.instruction;
+    EXPECT_THAT(error.GetLocation(), AtLineCol(0, 0)) << test_case.instruction;
+  }
+}
+
+TEST(InstructionAssemblerTest, MacroCodeSourceSizeDoesNotMatchMicrocode) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Value {
+      code "$r" { UL; }
+      code "($v)" { UL; }
+    }
+    instruction TEST "$m" { $Value; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              HasSubstr("Source \"$m\" with macro code \"($v)\" has size 2, "
+                        "but the microcode has size 1"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(5, 4));
 }
 
 TEST(InstructionAssemblerTest, RelativeInstructions) {

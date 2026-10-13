@@ -355,10 +355,10 @@ too, so they never change either.
 - **Patterns can't contain `;` or `@`**, so that comments and local labels never
   collide with an instruction's syntax.
 - **Sizes match the microcode.** The assembler sizes an instruction from its
-  pattern, and nothing yet checks that against the words the microcode reads
-  (see Arguments in the wiki's Instruction Set Source page). Compiling an
-  instruction set checks that each form's size in its pattern is the size the
-  compiled instruction decodes to.
+  pattern, so assembling an instruction set checks that each form's size in its
+  pattern is the size the compiled instruction decodes to (see Arguments in the
+  wiki's Instruction Set Source page). `CompileInstructionSet` doesn't, as it
+  only checks what cores need to run an instruction set.
 
 ## Data
 
@@ -555,8 +555,10 @@ first of them creating the assembler's page:
 1. *Instruction set syntax for programs* (core, tools, instruction_sets, wiki):
    named values, relative instructions, and the pattern rules, with the default
    instruction set using them and its code words unchanged.
-2. *Check instruction sizes against microcode* (core): independent, and can be
-   done any time before the assembler relies on pattern sizes.
+2. *Check instruction sizes against microcode* (tools): the instruction
+   assembler checks each form's pattern size against its compiled microcode.
+   Independent, and can be done any time before the assembler relies on
+   pattern sizes.
 3. *Program files* (tools, wiki): the word format, and its specification.
    Independent, and can be done first.
 4. *Instruction forms* (tools): `InstructionSetSyntax`, matching and encoding

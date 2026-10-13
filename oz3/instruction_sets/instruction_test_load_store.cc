@@ -360,41 +360,41 @@ TEST_F(InstructionTest, MOV_SDV) {
                       {CpuCore::R6, -10},   // For "[$r]"
                       {CpuCore::SP, -6},    // For "[SP]" and "[SP + $v]"
                       {CpuCore::FP, -2}});  // For "[FP]" and "[FP + $v]"
-  state.code.AddValue(Encode("MOV.SDV", {"[$r], $v", CpuCore::R0}))
+  state.code.AddValue(Encode("MOV.SDV", {"[$r], $V", CpuCore::R0}))
       .AddValue32(0x20001);
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", {"[$r + $v], $v", CpuCore::R1}))
+  state.code.AddValue(Encode("MOV.SDV", {"[$r + $v], $V", CpuCore::R1}))
       .AddValue(52)
       .AddValue32(0x20001);
   const uint16_t ip2 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", {"[$r + $v], $v", CpuCore::R4}))
+  state.code.AddValue(Encode("MOV.SDV", {"[$r + $v], $V", CpuCore::R4}))
       .AddValue(50)
       .AddValue32(0x20001);
   const uint16_t ip3 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", {"[$r], $v", CpuCore::R6}))
+  state.code.AddValue(Encode("MOV.SDV", {"[$r], $V", CpuCore::R6}))
       .AddValue32(0x20001);
   const uint16_t ip4 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "[SP], $v")).AddValue32(0x20001);
+  state.code.AddValue(Encode("MOV.SDV", "[SP], $V")).AddValue32(0x20001);
   const uint16_t ip5 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "[SP + $v], $v"))
+  state.code.AddValue(Encode("MOV.SDV", "[SP + $v], $V"))
       .AddValue(-2)
       .AddValue32(0x20001);
   const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "[FP], $v")).AddValue32(0x20001);
+  state.code.AddValue(Encode("MOV.SDV", "[FP], $V")).AddValue32(0x20001);
   const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "[FP + $v], $v"))
+  state.code.AddValue(Encode("MOV.SDV", "[FP + $v], $V"))
       .AddValue(-2)
       .AddValue32(0x20001);
   const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "S[$v], $v"))
+  state.code.AddValue(Encode("MOV.SDV", "S[$v], $V"))
       .AddValue(-12)
       .AddValue32(0x20001);
   const uint16_t ip9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "D[$v], $v"))
+  state.code.AddValue(Encode("MOV.SDV", "D[$v], $V"))
       .AddValue(102)
       .AddValue32(0x20001);
   const uint16_t ip10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("MOV.SDV", "E[$v], $v"))
+  state.code.AddValue(Encode("MOV.SDV", "E[$v], $V"))
       .AddValue(202)
       .AddValue32(0x20001);
   const uint16_t ip11 = state.code.AddNopGetAddress();
@@ -568,10 +568,10 @@ TEST_F(InstructionTest, MOV_Cycles) {
        {Encode("MOV.SDR", {"[$r + $v]", CpuCore::R4}, 0), 1}},
       {"MOV.SDV [R4], 5",
        8,
-       {Encode("MOV.SDV", {"[$r], $v", CpuCore::R4}), 5, 0}},
+       {Encode("MOV.SDV", {"[$r], $V", CpuCore::R4}), 5, 0}},
       {"MOV.SDV [R4 + 1], 5",
        10,
-       {Encode("MOV.SDV", {"[$r + $v], $v", CpuCore::R4}), 1, 5, 0}},
+       {Encode("MOV.SDV", {"[$r + $v], $V", CpuCore::R4}), 1, 5, 0}},
       {"MOV.S R0, FP", 4, {Encode("MOV.S", {"$r, FP", CpuCore::R0})}},
       {"MOV.S FP, R0", 4, {Encode("MOV.S", {"FP, $r", CpuCore::R0})}},
       {"MOV.S FP, 5", 4, {Encode("MOV.S", "FP, $v"), 5}},
