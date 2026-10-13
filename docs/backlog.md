@@ -64,7 +64,7 @@ segment's end.
 - **Layers:** tools
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Instruction set syntax for programs*
+- **Depends on:** nothing
 - **Background:** [program_assembler.md](program_assembler.md) (Instructions)
 
 `InstructionSetSyntax`: every form of every instruction in an
