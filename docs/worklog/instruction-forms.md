@@ -306,7 +306,7 @@ error in one value of a set, which is now at the set.
 
 ## CLs
 
-### CL1 [ ] core: value set errors
+### CL1 [x] core: value set errors
 
 Depends on: nothing.
 

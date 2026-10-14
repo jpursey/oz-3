@@ -20,22 +20,23 @@ namespace oz3 {
 // CompileInstructionSet
 //==============================================================================
 
-// Structured data for an error that occurred during instruction set
-// compilation.
+// Structured data for an error in an instruction set definition, from
+// compiling it, or from a tool's own checks of it.
 struct InstructionError {
   enum class Def {
     kNone,
     kMacro,
     kInstruction,
+    kValueSet,
   };
 
   // Full error message.
   std::string message;
 
-  // Instruction or Macro definition where the error occurred.
+  // Instruction, macro, or value set definition where the error occurred.
   Def def = Def::kNone;
 
-  // Name of the instruction or macro where the error occurred.
+  // Name of the instruction, macro, or value set where the error occurred.
   std::string def_name;
 
   // The source string of the MacroCodeDef where the error occurred. This is
