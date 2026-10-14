@@ -9,6 +9,7 @@ set(oz3_tools_SOURCE
   program.h program.cc
   program_file.h program_file.cc
   program_loader.h program_loader.cc
+  source_pattern.h source_pattern.cc
 )
 set(oz3_tools_DEPS
   absl::flat_hash_set
@@ -30,6 +31,7 @@ set(oz3_tools_TEST_SOURCE
   program_file_test.cc
   program_loader_test.cc
   program_test.cc
+  source_pattern_test.cc
 )
 
 gb_add_library(oz3_tools)

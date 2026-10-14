@@ -316,7 +316,7 @@ Depends on: nothing.
 **Verify**
 - Standard checks (see CLAUDE.md).
 
-### CL2 [ ] tools: `SourcePattern`
+### CL2 [x] tools: `SourcePattern`
 
 Depends on: nothing.
 
