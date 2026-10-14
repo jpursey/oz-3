@@ -173,6 +173,8 @@ class SourcePattern final {
       kDword,     // $V
     };
     Kind kind = Kind::kLiteral;
+    int offset = 0;  // Where it is in the source text.
+    int size = 0;
     gb::TokenType literal_type = gb::kTokenNone;  // For kLiteral.
     gb::TokenValue literal;                       // For kLiteral.
     Argument arg;                                 // For kArgument.
@@ -180,13 +182,17 @@ class SourcePattern final {
     bool whole_arg = false;  // It is all of one comma-separated argument.
   };
 
-  // Parses `source`, which may name any of `value_sets`. Returns nullopt and
-  // sets `error` if it breaks a pattern rule, or names an unknown placeholder.
-  static std::optional<SourcePattern> Parse(
-      std::string_view source, absl::Span<const ValueSetDef> value_sets,
-      std::string* error);
+  // Parse an instruction's source (at most two code word arguments, at most
+  // one of them $m) or a macro code's (at most one, not $m), whose
+  // placeholders may name any of `value_sets`. Return an error if it breaks a
+  // pattern rule.
+  static absl::StatusOr<SourcePattern> ParseInstruction(
+      std::string_view source, absl::Span<const ValueSetDef> value_sets);
+  static absl::StatusOr<SourcePattern> ParseMacroCode(
+      std::string_view source, absl::Span<const ValueSetDef> value_sets);
 
   absl::Span<const Part> GetParts() const;
+  absl::Span<const Argument> GetArgs() const;  // Its code word arguments.
   int GetValueWords() const;  // Words its $v and $V add after the code word.
 };
 ```
@@ -198,6 +204,11 @@ class SourcePattern final {
   program assembler for matching.
 - It tells a placeholder's own name from a value set's with `core`'s
   `IsPlaceholderName`.
+- It owns the rules for how many code word arguments each kind of pattern
+  has, so the instruction assembler (deriving the def's arguments) and
+  `InstructionSetSyntax` (checking them) share them. Part offsets let a form
+  splice its macro code's source in place of the `$m`, and let `Disassemble`
+  fill in its placeholders.
 - Parsing creates a parser from the shared parser program each time, as the
   assembler does today. That is once per instruction and macro code.
 
@@ -255,7 +266,8 @@ class InstructionSetSyntax final {
 
   // The forms of a full name, or of every instruction with a root, ignoring
   // case.
-  std::vector<const InstructionForm*> GetForms(std::string_view name) const;
+  absl::Span<const InstructionForm* const> GetForms(
+      std::string_view name) const;
 
   // Returns the form of a code word, or null if it is no form.
   const InstructionForm* FindForm(uint16_t code_word) const;
@@ -290,10 +302,14 @@ macro, and each macro code's `arg`, from its pattern, now through
 `SourcePattern`. It turns instruction and value names to upper case as it reads
 them. After compiling, it creates an `InstructionSetSyntax` to check the
 result, passing the compiled set, and reports its error at the definition,
-macro code, or microcode the
-`InstructionError` names. It drops `CheckSizes`, the rules in
-`AssembleValueSet` (keeping only what it needs to read a set, such as `bits`
-fitting in a byte), and its macro code source key check.
+macro code, or microcode the `InstructionError` names. It drops `CheckSizes`,
+its relative check, the value set rules in `AssembleValueSet`, and its check
+that macro code sources are unique ignoring spacing.
+
+It keeps what it needs before compiling: valid bits for a value set, as a
+pattern that uses it takes them as its argument's size; values that fit in a
+byte; and instruction names and macro code sources that are exactly unique,
+as errors are mapped back to the source by them.
 
 Errors stay at the same places, mostly with the same messages, apart from an
 error in one value of a set, which is now at the set.
@@ -345,7 +361,7 @@ Depends on: nothing.
   upper case, and names that differ only in case are already defined.
 - `default_instruction_set.inc` is unchanged.
 
-### CL4 [ ] tools, wiki: `InstructionSetSyntax` and its checks
+### CL4 [x] tools, wiki: `InstructionSetSyntax` and its checks
 
 Depends on: CL1, CL2.
 

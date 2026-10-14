@@ -53,20 +53,22 @@ void ExpectIdent(const SourcePattern::Part& part, std::string_view ident) {
 
 void ExpectError(std::string_view source, std::string_view message) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse(source, kValueSets);
+      SourcePattern::ParseInstruction(source, kValueSets);
   ASSERT_FALSE(pattern.ok()) << source;
   EXPECT_THAT(pattern.status().message(), HasSubstr(message)) << source;
 }
 
 TEST(SourcePatternTest, Empty) {
-  absl::StatusOr<SourcePattern> pattern = SourcePattern::Parse("", {});
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   EXPECT_THAT(pattern->GetParts(), IsEmpty());
   EXPECT_EQ(pattern->GetValueWords(), 0);
 }
 
 TEST(SourcePatternTest, RegistersWithDefaultSizes) {
-  absl::StatusOr<SourcePattern> pattern = SourcePattern::Parse("$r, $R", {});
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("$r, $R", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 3);
@@ -79,22 +81,86 @@ TEST(SourcePatternTest, RegistersWithDefaultSizes) {
 }
 
 TEST(SourcePatternTest, ArgumentsWithSizes) {
+  struct Case {
+    std::string_view source;
+    ArgType type;
+    int size;
+  };
+  const Case kCases[] = {
+      {"$r1", ArgType::kWordReg, 1},   {"$r4", ArgType::kWordReg, 4},
+      {"$R1", ArgType::kDwordReg, 1},  {"$#1", ArgType::kImmediate, 1},
+      {"$#8", ArgType::kImmediate, 8}, {"$m", ArgType::kMacro, 0},
+      {"$m5", ArgType::kMacro, 5},
+  };
+  for (const Case& test_case : kCases) {
+    absl::StatusOr<SourcePattern> pattern =
+        SourcePattern::ParseInstruction(test_case.source, {});
+    ASSERT_TRUE(pattern.ok()) << pattern.status();
+    auto parts = pattern->GetParts();
+    ASSERT_EQ(parts.size(), 1) << test_case.source;
+    ExpectArgument(parts[0], test_case.type, test_case.size, true);
+  }
+}
+
+TEST(SourcePatternTest, ArgsInOrder) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse("$r4 $R1 $#1 $#8 $m $m5", {});
+      SourcePattern::ParseInstruction("$v, $r2, ($m + $v)", {});
+  ASSERT_TRUE(pattern.ok()) << pattern.status();
+  auto args = pattern->GetArgs();
+  ASSERT_EQ(args.size(), 2);
+  EXPECT_EQ(args[0].type, ArgType::kWordReg);
+  EXPECT_EQ(args[0].size, 2);
+  EXPECT_EQ(args[1].type, ArgType::kMacro);
+  EXPECT_EQ(args[1].size, 0);
+
+  pattern = SourcePattern::ParseMacroCode("($r + $v), $V", {});
+  ASSERT_TRUE(pattern.ok()) << pattern.status();
+  args = pattern->GetArgs();
+  ASSERT_EQ(args.size(), 1);
+  EXPECT_EQ(args[0].type, ArgType::kWordReg);
+
+  pattern = SourcePattern::ParseMacroCode("(SP)", {});
+  ASSERT_TRUE(pattern.ok()) << pattern.status();
+  EXPECT_THAT(pattern->GetArgs(), IsEmpty());
+}
+
+TEST(SourcePatternTest, PartPositions) {
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("$r,  ($r4 + $v)", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
-  ASSERT_EQ(parts.size(), 6);
-  ExpectArgument(parts[0], ArgType::kWordReg, 4, false);
-  ExpectArgument(parts[1], ArgType::kDwordReg, 1, false);
-  ExpectArgument(parts[2], ArgType::kImmediate, 1, false);
-  ExpectArgument(parts[3], ArgType::kImmediate, 8, false);
-  ExpectArgument(parts[4], ArgType::kMacro, 0, false);
-  ExpectArgument(parts[5], ArgType::kMacro, 5, false);
+  ASSERT_EQ(parts.size(), 7);
+  const int kOffsets[] = {0, 2, 5, 6, 10, 12, 14};
+  const int kSizes[] = {2, 1, 1, 3, 1, 2, 1};
+  for (int i = 0; i < 7; ++i) {
+    EXPECT_EQ(parts[i].offset, kOffsets[i]) << i;
+    EXPECT_EQ(parts[i].size, kSizes[i]) << i;
+  }
+}
+
+TEST(SourcePatternTest, InstructionArgumentRules) {
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("$r, $r, $r", {});
+  ASSERT_FALSE(pattern.ok());
+  EXPECT_THAT(pattern.status().message(), HasSubstr("At most two"));
+  pattern = SourcePattern::ParseInstruction("$m, $m", {});
+  ASSERT_FALSE(pattern.ok());
+  EXPECT_THAT(pattern.status().message(), HasSubstr("Only one macro"));
+}
+
+TEST(SourcePatternTest, MacroCodeArgumentRules) {
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseMacroCode("$r, $r", {});
+  ASSERT_FALSE(pattern.ok());
+  EXPECT_THAT(pattern.status().message(), HasSubstr("Only one non-value"));
+  pattern = SourcePattern::ParseMacroCode("($m)", {});
+  ASSERT_FALSE(pattern.ok());
+  EXPECT_THAT(pattern.status().message(), HasSubstr("$m is not allowed"));
 }
 
 TEST(SourcePatternTest, Values) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse("$v, ($r + $v), $V", {});
+      SourcePattern::ParseInstruction("$v, ($r + $v), $V", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 9);
@@ -116,7 +182,7 @@ TEST(SourcePatternTest, Values) {
 
 TEST(SourcePatternTest, WholeArgsAreOnlyAPlaceholder) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse("$v + 1, D($v), $v $v, $m", {});
+      SourcePattern::ParseInstruction("$v + 1, D($v), $v $v, $m", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   int whole_args = 0;
   for (const SourcePattern::Part& part : pattern->GetParts()) {
@@ -129,8 +195,8 @@ TEST(SourcePatternTest, WholeArgsAreOnlyAPlaceholder) {
 }
 
 TEST(SourcePatternTest, Literals) {
-  absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse("SP, D[x_1] 3 2.5 'a' \"bc\" {-*/%~&|^!<>=:.?}", {});
+  absl::StatusOr<SourcePattern> pattern = SourcePattern::ParseInstruction(
+      "SP, D[x_1] 3 2.5 'a' \"bc\" {-*/%~&|^!<>=:.?}", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 27);
@@ -162,7 +228,7 @@ TEST(SourcePatternTest, Literals) {
 
 TEST(SourcePatternTest, ValueSets) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse("$Condition, ($Flags)", kValueSets);
+      SourcePattern::ParseInstruction("$Condition, ($Flags)", kValueSets);
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 5);
@@ -185,7 +251,7 @@ TEST(SourcePatternTest, PlaceholdersBeforeValueSets) {
       {.name = "v", .size = 1, .values = kValues},
   };
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse("$r, $v", kPlaceholderSets);
+      SourcePattern::ParseInstruction("$r, $v", kPlaceholderSets);
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 3);

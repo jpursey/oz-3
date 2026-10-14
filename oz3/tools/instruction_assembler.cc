@@ -16,13 +16,12 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_join.h"
-#include "absl/strings/str_split.h"
 #include "gb/file/path.h"
 #include "gb/parse/parser.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
+#include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/source_pattern.h"
 
 namespace oz3 {
@@ -122,15 +121,6 @@ std::shared_ptr<const gb::ParserProgram> GetInstructionParserProgram() {
   return *parser_program;
 }
 
-std::string GetMacroCodeSourceKey(std::string_view macro_name,
-                                  std::string_view source) {
-  return absl::StrCat(
-      macro_name, ";",
-      absl::StrJoin(
-          absl::StrSplit(source, absl::ByAsciiWhitespace(), absl::SkipEmpty()),
-          ""));
-}
-
 }  // namespace
 
 class InstructionSetAssembler {
@@ -150,7 +140,6 @@ class InstructionSetAssembler {
   struct MacroCodeTokens {
     gb::TokenIndex def;
     CodeTokens code;
-    int value_words = 0;  // Words its source adds after the code word.
   };
   struct MacroTokens {
     gb::TokenIndex def;
@@ -159,14 +148,6 @@ class InstructionSetAssembler {
   struct InstructionTokens {
     gb::TokenIndex def;
     CodeTokens code;
-    int value_words = 0;  // Words its source adds after the code word.
-  };
-
-  // Which placeholders are a whole argument of an instruction's source, which
-  // decides whether it can be relative.
-  struct WholeArgs {
-    bool value = false;  // "$v" is a whole argument.
-    bool macro = false;  // "$m" is a whole argument.
   };
 
   template <typename... Args>
@@ -195,6 +176,9 @@ class InstructionSetAssembler {
     return false;
   }
 
+  // Reports an error in the def at the source it came from.
+  bool ErrorAt(const InstructionError& error);
+
   gb::ParseResult Parse(std::string_view filename, std::string text);
   bool AssembleValueSet(const gb::ParsedItem& parsed_value_set);
   bool AssembleMacro(const gb::ParsedItem& parsed_macro);
@@ -202,32 +186,25 @@ class InstructionSetAssembler {
                          MacroCodeDef& macro_code_def);
   bool AssembleMacroCodeSource(const gb::ParsedItem& parsed_macro_code,
                                std::string_view source,
-                               MacroCodeDef& macro_code_def, int& value_words);
+                               MacroCodeDef& macro_code_def);
   bool AssembleInstruction(const gb::ParsedItem& parsed_instruction);
   bool AssembleInstructionCodeSource(const gb::ParsedItem& parsed_instruction,
                                      std::string_view source,
-                                     InstructionDef& instruction_def,
-                                     WholeArgs& whole_args, int& value_words);
+                                     InstructionDef& instruction_def);
   bool AssembleMicrocode(absl::Span<const gb::ParsedItem> parsed_micro_codes,
                          CodeTokens& code_tokens, std::string& code_string,
                          Argument* macro_arg = nullptr,
                          std::string* arg_macro_name = nullptr);
   bool Compile();
-  bool CheckSizes();
-  bool CheckSize(const InstructionDef& instruction_def, gb::TokenIndex def,
-                 uint16_t code_word, int source_size,
-                 std::string_view macro_code_source);
+  bool CheckSyntax();
 
   gb::ParseError* const error_;
   std::unique_ptr<gb::Parser> parser_;
   std::unique_ptr<AsmInstructionSet> result_;
-  absl::flat_hash_set<std::string_view> value_set_names_;
   absl::flat_hash_map<std::string_view, int> macro_map_;
-  absl::flat_hash_set<std::string_view> macros_with_whole_arg_value_;
-  absl::flat_hash_map<std::string, int> macro_code_map_;
-  absl::flat_hash_map<std::string_view, int> instruction_map_;
   std::vector<int> needs_opcode_;
   absl::flat_hash_set<int> opcode_values_;
+  absl::flat_hash_map<std::string_view, gb::TokenIndex> value_set_token_map_;
   absl::flat_hash_map<std::string_view, MacroTokens> macro_token_map_;
   absl::flat_hash_map<std::string_view, InstructionTokens>
       instruction_token_map_;
@@ -276,7 +253,7 @@ std::unique_ptr<AsmInstructionSet> InstructionSetAssembler::Assemble(
     ++opcode;
   }
 
-  if (!Compile() || !CheckSizes()) {
+  if (!Compile() || !CheckSyntax()) {
     return nullptr;
   }
 
@@ -301,36 +278,25 @@ bool InstructionSetAssembler::AssembleValueSet(
     const gb::ParsedItem& parsed_value_set) {
   auto& value_set_def = result_->value_set_defs_.emplace_back();
   value_set_def.name = AddString(parsed_value_set.GetString("name"));
-  if (!value_set_names_.insert(value_set_def.name).second) {
-    return ErrorAt(parsed_value_set, "Value set '", value_set_def.name,
-                   "' is already defined");
-  }
-  if (IsPlaceholderName(value_set_def.name)) {
-    return ErrorAt(parsed_value_set, "Value set name is the placeholder $",
-                   value_set_def.name);
-  }
 
+  // InstructionSetSyntax checks the rules for value sets, apart from what
+  // reading them needs: valid bits, which patterns that use the set take as
+  // their argument's size, and values that fit in the def's bytes. Its errors
+  // for a set with the same name as another are reported at the last one.
+  value_set_token_map_[value_set_def.name] =
+      parsed_value_set.GetToken().GetTokenIndex();
   const int64_t bits = parsed_value_set.GetInt("bits");
-  if (bits < 0 || bits > 8 ||
-      !Argument(ArgType::kImmediate, static_cast<int>(bits)).IsValid()) {
+  if (bits < 1 || bits > 8) {
     return ErrorAt(parsed_value_set, "Invalid bits value: ", bits);
   }
   value_set_def.size = static_cast<uint8_t>(bits);
 
-  auto parsed_values = parsed_value_set.GetItems("values");
-  if (parsed_values.empty()) {
-    return ErrorAt(parsed_value_set, "Value set has no values");
-  }
   auto& named_value_defs = result_->named_value_defs_.emplace_back();
-  absl::flat_hash_set<std::string_view> value_names;
-  for (const auto& parsed_value : parsed_values) {
+  for (const auto& parsed_value : parsed_value_set.GetItems("values")) {
     std::string_view name =
         AddString(absl::AsciiStrToUpper(parsed_value.GetString("name")));
-    if (!value_names.insert(name).second) {
-      return ErrorAt(parsed_value, "Duplicate value name ", name);
-    }
     const int64_t value = parsed_value.GetInt("value");
-    if (value < 0 || value >= (int64_t{1} << bits)) {
+    if (value < 0 || value > 255) {
       return ErrorAt(parsed_value, "Value ", name, " = ", value,
                      " does not fit in ", bits, " bits");
     }
@@ -424,23 +390,22 @@ bool InstructionSetAssembler::AssembleMacro(
 
 bool InstructionSetAssembler::AssembleMacroCode(
     const gb::ParsedItem& parsed_macro_code, MacroCodeDef& macro_code_def) {
-  const int macro_code_index = result_->macro_code_defs_.size() - 1;
   const MacroDef& macro_def = result_->macro_defs_.back();
 
+  // Errors in a macro code are found by its source, so it must be unique.
+  // InstructionSetSyntax checks the rest of the rule for macro code sources.
   macro_code_def.source = AddString(parsed_macro_code.GetString("source"));
-  std::string source_key =
-      GetMacroCodeSourceKey(macro_def.name, macro_code_def.source);
-  if (!macro_code_map_.insert({std::move(source_key), macro_code_index})
-           .second) {
+  auto [it, inserted] = macro_token_map_[macro_def.name].code.try_emplace(
+      macro_code_def.source,
+      MacroCodeTokens{.def = parsed_macro_code.GetToken().GetTokenIndex()});
+  if (!inserted) {
     return ErrorAt(parsed_macro_code, "Macro code source '",
                    macro_code_def.source, "' is already defined");
   }
-  MacroCodeTokens& macro_code_tokens =
-      macro_token_map_[macro_def.name].code[macro_code_def.source];
-  macro_code_tokens.def = parsed_macro_code.GetToken().GetTokenIndex();
+  MacroCodeTokens& macro_code_tokens = it->second;
 
   if (!AssembleMacroCodeSource(parsed_macro_code, macro_code_def.source,
-                               macro_code_def, macro_code_tokens.value_words)) {
+                               macro_code_def)) {
     return false;
   }
 
@@ -487,37 +452,16 @@ bool InstructionSetAssembler::AssembleMacroCode(
 
 bool InstructionSetAssembler::AssembleMacroCodeSource(
     const gb::ParsedItem& parsed_macro_code, std::string_view source,
-    MacroCodeDef& macro_code_def, int& value_words) {
+    MacroCodeDef& macro_code_def) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse(source, result_->value_set_defs_);
+      SourcePattern::ParseMacroCode(source, result_->value_set_defs_);
   if (!pattern.ok()) {
     return ErrorAt(parsed_macro_code, "Invalid macro code source: \"", source,
                    "\". ", pattern.status().message());
   }
-  value_words = pattern->GetValueWords();
-
-  bool has_macro_arg = false;
-  for (const SourcePattern::Part& part : pattern->GetParts()) {
-    if (part.kind == SourcePattern::Part::Kind::kWord && part.whole_arg) {
-      macros_with_whole_arg_value_.insert(result_->macro_defs_.back().name);
-    }
-    if (part.kind != SourcePattern::Part::Kind::kArgument) {
-      continue;
-    }
-    if (has_macro_arg) {
-      return ErrorAt(
-          parsed_macro_code, "Invalid macro code source: \"", source,
-          "\". Only one non-value macro argument type ($r, $R, $#, or a "
-          "value set) is allowed for a macro.");
-    }
-    has_macro_arg = true;
-    if (part.arg.type == ArgType::kMacro) {
-      return ErrorAt(parsed_macro_code, "Invalid macro code source: \"", source,
-                     "\". $m is not allowed for a macro arg.");
-    }
-    macro_code_def.arg = part.arg;
+  if (!pattern->GetArgs().empty()) {
+    macro_code_def.arg = pattern->GetArgs()[0];
   }
-
   return true;
 }
 
@@ -547,20 +491,20 @@ bool InstructionSetAssembler::AssembleInstruction(
   }
   absl::AsciiStrToUpper(&op_name);
   instruction_def.op_name = AddString(op_name);
-  if (!instruction_map_.insert({instruction_def.op_name, instruction_index})
-           .second) {
+
+  // Errors in an instruction are found by its name, so it must be unique.
+  auto [it, inserted] = instruction_token_map_.try_emplace(
+      instruction_def.op_name,
+      InstructionTokens{.def = parsed_instruction.GetToken().GetTokenIndex()});
+  if (!inserted) {
     return ErrorAt(parsed_instruction, "Instruction '", instruction_def.op_name,
                    "' is already defined");
   }
-  InstructionTokens& instruction_tokens =
-      instruction_token_map_[instruction_def.op_name];
-  instruction_tokens.def = parsed_instruction.GetToken().GetTokenIndex();
+  InstructionTokens& instruction_tokens = it->second;
 
   instruction_def.source = AddString(parsed_instruction.GetString("source"));
-  WholeArgs whole_args;
   if (!AssembleInstructionCodeSource(parsed_instruction, instruction_def.source,
-                                     instruction_def, whole_args,
-                                     instruction_tokens.value_words)) {
+                                     instruction_def)) {
     return false;
   }
   Argument* macro_arg = nullptr;
@@ -581,65 +525,26 @@ bool InstructionSetAssembler::AssembleInstruction(
     instruction_def.arg_macro_name = AddString(arg_macro_name);
   }
 
-  // A relative instruction needs a form where "$v" is a whole argument, either
-  // in its own source, or in a macro code that takes the place of a "$m" that
-  // is a whole argument.
-  if (parsed_instruction.GetItem("relative") != nullptr) {
-    instruction_def.relative = true;
-    if (!whole_args.value &&
-        !(whole_args.macro && macros_with_whole_arg_value_.contains(
-                                  instruction_def.arg_macro_name))) {
-      return ErrorAt(parsed_instruction, "Relative instruction '",
-                     instruction_def.op_name,
-                     "' has no form where $v is a whole argument");
-    }
-  }
+  instruction_def.relative =
+      (parsed_instruction.GetItem("relative") != nullptr);
   return true;
 }
 
 bool InstructionSetAssembler::AssembleInstructionCodeSource(
     const gb::ParsedItem& parsed_instruction, std::string_view source,
-    InstructionDef& instruction_def, WholeArgs& whole_args, int& value_words) {
+    InstructionDef& instruction_def) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::Parse(source, result_->value_set_defs_);
+      SourcePattern::ParseInstruction(source, result_->value_set_defs_);
   if (!pattern.ok()) {
     return ErrorAt(parsed_instruction, "Invalid instruction code source: \"",
                    source, "\". ", pattern.status().message());
   }
-  value_words = pattern->GetValueWords();
-
-  int instruction_arg_count = 0;
-  bool has_macro_arg = false;
-  for (const SourcePattern::Part& part : pattern->GetParts()) {
-    if (part.kind == SourcePattern::Part::Kind::kWord && part.whole_arg) {
-      whole_args.value = true;
-    }
-    if (part.kind != SourcePattern::Part::Kind::kArgument) {
-      continue;
-    }
-    if (instruction_arg_count == 2) {
-      return ErrorAt(parsed_instruction, "Invalid instruction code source: \"",
-                     source,
-                     "\". At most two non-value argument types ($m, $r, "
-                     "$R, $#, or a value set) are allowed for an "
-                     "instruction.");
-    }
-    ++instruction_arg_count;
-    Argument& argument = (instruction_arg_count == 1 ? instruction_def.arg1
-                                                     : instruction_def.arg2);
-    argument = part.arg;
-    if (part.arg.type == ArgType::kMacro) {
-      if (has_macro_arg) {
-        return ErrorAt(parsed_instruction,
-                       "Invalid instruction code source: \"", source,
-                       "\". Only one macro argument type ($m) is allowed for "
-                       "an instruction.");
-      }
-      has_macro_arg = true;
-      if (part.whole_arg) {
-        whole_args.macro = true;
-      }
-    }
+  auto args = pattern->GetArgs();
+  if (args.size() > 0) {
+    instruction_def.arg1 = args[0];
+  }
+  if (args.size() > 1) {
+    instruction_def.arg2 = args[1];
   }
   return true;
 }
@@ -718,8 +623,27 @@ bool InstructionSetAssembler::Compile() {
   InstructionError error;
   result_->instruction_set_ =
       CompileInstructionSet(result_->instruction_set_def_, &error);
-  if (error.message.empty()) {
-    return true;
+  if (result_->instruction_set_ == nullptr) {
+    return ErrorAt(error);
+  }
+  return true;
+}
+
+bool InstructionSetAssembler::CheckSyntax() {
+  InstructionError error;
+  if (InstructionSetSyntax::Create(result_->instruction_set_def_,
+                                   result_->instruction_set_.get(),
+                                   &error) == nullptr) {
+    return ErrorAt(error);
+  }
+  return true;
+}
+
+bool InstructionSetAssembler::ErrorAt(const InstructionError& error) {
+  if (error.def == InstructionError::Def::kValueSet) {
+    DCHECK(value_set_token_map_.contains(error.def_name));
+    return ErrorAt(value_set_token_map_.find(error.def_name)->second,
+                   error.message);
   }
   if (error.def == InstructionError::Def::kMacro) {
     DCHECK(macro_token_map_.contains(error.def_name));
@@ -747,69 +671,6 @@ bool InstructionSetAssembler::Compile() {
     return ErrorAt(instruction_tokens.code[error.code_index], error.message);
   }
   return Error(error.message);
-}
-
-bool InstructionSetAssembler::CheckSizes() {
-  for (const InstructionDef& instruction_def : result_->instruction_defs_) {
-    const InstructionTokens& instruction_tokens =
-        instruction_token_map_.find(instruction_def.op_name)->second;
-    const int source_size = 1 + instruction_tokens.value_words;
-    if (instruction_def.arg_macro_name.empty()) {
-      if (!CheckSize(instruction_def, instruction_tokens.def,
-                     instruction_def.Encode(), source_size, {})) {
-        return false;
-      }
-      continue;
-    }
-
-    // Each code of the macro is a form of the instruction, with its own size.
-    const MacroDef& macro_def =
-        result_->macro_defs_[macro_map_.find(instruction_def.arg_macro_name)
-                                 ->second];
-    const MacroTokens& macro_tokens =
-        macro_token_map_.find(macro_def.name)->second;
-    const bool macro_is_arg1 = (instruction_def.arg1.type == ArgType::kMacro);
-    for (int i = 0; i < static_cast<int>(macro_def.code.size()); ++i) {
-      const MacroCodeDef& code_def = macro_def.code[i];
-      const uint16_t macro_arg = macro_def.Encode(i, 0);
-      const uint16_t code_word = macro_is_arg1
-                                     ? instruction_def.Encode(macro_arg)
-                                     : instruction_def.Encode(0, macro_arg);
-      const int form_size =
-          source_size +
-          macro_tokens.code.find(code_def.source)->second.value_words;
-      if (!CheckSize(instruction_def, instruction_tokens.def, code_word,
-                     form_size, code_def.source)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-// Programs size each form of an instruction from its source, so it must be the
-// size its microcode decodes to.
-bool InstructionSetAssembler::CheckSize(const InstructionDef& instruction_def,
-                                        gb::TokenIndex def, uint16_t code_word,
-                                        int source_size,
-                                        std::string_view macro_code_source) {
-  DecodedInstruction decoded;
-  if (!result_->instruction_set_->Decode(code_word, decoded)) {
-    return Error("Internal error: No form of ", instruction_def.op_name,
-                 " for code word ", code_word);
-  }
-  if (decoded.size == source_size) {
-    return true;
-  }
-  std::string macro_context;
-  if (!macro_code_source.empty()) {
-    macro_context =
-        absl::StrCat(" with macro code \"", macro_code_source, "\"");
-  }
-  return ErrorAt(def, "Source \"", instruction_def.source, "\"", macro_context,
-                 " has size ", source_size, ", but the microcode has size ",
-                 static_cast<int>(decoded.size),
-                 " (the code word, and a word for each LD in the fetch phase)");
 }
 
 std::unique_ptr<AsmInstructionSet> AssembleInstructionSet(

@@ -6,6 +6,7 @@
 set(oz3_tools_SOURCE
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
+  instruction_set_syntax.cc instruction_set_syntax.h
   program.h program.cc
   program_file.h program_file.cc
   program_loader.h program_loader.cc
@@ -28,6 +29,7 @@ set(oz3_tools_LIBS
 set(oz3_tools_TEST_SOURCE
   instruction_assembler_test.cc
   instruction_def_exporter_test.cc
+  instruction_set_syntax_test.cc
   program_file_test.cc
   program_loader_test.cc
   program_test.cc

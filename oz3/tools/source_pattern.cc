@@ -128,6 +128,42 @@ std::optional<SourcePattern::Part> ParsePlaceholder(
 
 }  // namespace
 
+absl::StatusOr<SourcePattern> SourcePattern::ParseInstruction(
+    std::string_view source, absl::Span<const ValueSetDef> value_sets) {
+  absl::StatusOr<SourcePattern> pattern = Parse(source, value_sets);
+  if (!pattern.ok()) {
+    return pattern;
+  }
+  if (pattern->args_.size() > 2) {
+    return absl::InvalidArgumentError(
+        "At most two non-value argument types ($m, $r, $R, $#, or a value set) "
+        "are allowed for an instruction.");
+  }
+  if (pattern->args_.size() == 2 && pattern->args_[0].type == ArgType::kMacro &&
+      pattern->args_[1].type == ArgType::kMacro) {
+    return absl::InvalidArgumentError(
+        "Only one macro argument type ($m) is allowed for an instruction.");
+  }
+  return pattern;
+}
+
+absl::StatusOr<SourcePattern> SourcePattern::ParseMacroCode(
+    std::string_view source, absl::Span<const ValueSetDef> value_sets) {
+  absl::StatusOr<SourcePattern> pattern = Parse(source, value_sets);
+  if (!pattern.ok()) {
+    return pattern;
+  }
+  if (pattern->args_.size() > 1) {
+    return absl::InvalidArgumentError(
+        "Only one non-value macro argument type ($r, $R, $#, or a value set) "
+        "is allowed for a macro.");
+  }
+  if (!pattern->args_.empty() && pattern->args_[0].type == ArgType::kMacro) {
+    return absl::InvalidArgumentError("$m is not allowed for a macro arg.");
+  }
+  return pattern;
+}
+
 absl::StatusOr<SourcePattern> SourcePattern::Parse(
     std::string_view source, absl::Span<const ValueSetDef> value_sets) {
   auto parser = gb::Parser::Create(GetParserProgram());
@@ -144,7 +180,9 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
     return absl::InvalidArgumentError(result.GetError().GetMessage());
   }
 
-  // The parse checked the syntax, so every token is a part, in order.
+  // The parse checked the syntax, so every token is a part, in order. Token
+  // text is a view of the content's text, which gives each part's offset.
+  const std::string_view text = lexer.GetContentText(content);
   SourcePattern pattern;
   int arg_start = 0;
   lexer.RewindContent(content);
@@ -154,19 +192,24 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
       pattern.EndArg(arg_start);
       arg_start = static_cast<int>(pattern.parts_.size()) + 1;
     }
-    if (!token.IsUser(kTokenPlaceholder)) {
-      Part& part = pattern.parts_.emplace_back();
-      part.literal_type = token.GetType();
-      part.literal = token.GetValue();
-      continue;
+    std::optional<Part> part;
+    if (token.IsUser(kTokenPlaceholder)) {
+      part = ParsePlaceholder(token.GetString().substr(1), value_sets);
+      if (!part.has_value()) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            token.GetString(), " is not a placeholder or value set"));
+      }
+    } else {
+      part.emplace();
+      part->literal_type = token.GetType();
+      part->literal = token.GetValue();
     }
-    std::optional<Part> part =
-        ParsePlaceholder(token.GetString().substr(1), value_sets);
-    if (!part.has_value()) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          token.GetString(), " is not a placeholder or value set"));
-    }
-    if (part->kind == Part::Kind::kWord) {
+    const std::string_view token_text = lexer.GetTokenText(token);
+    part->offset = static_cast<int>(token_text.data() - text.data());
+    part->size = static_cast<int>(token_text.size());
+    if (part->kind == Part::Kind::kArgument) {
+      pattern.args_.push_back(part->arg);
+    } else if (part->kind == Part::Kind::kWord) {
       pattern.value_words_ += 1;
     } else if (part->kind == Part::Kind::kDword) {
       pattern.value_words_ += 2;

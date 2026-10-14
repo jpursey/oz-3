@@ -1,0 +1,642 @@
+// Copyright (c) 2026 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+#include "oz3/tools/instruction_set_syntax.h"
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
+#include "gb/parse/parse_error.h"
+#include "gb/parse/symbol.h"
+#include "gb/parse/token.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "oz3/core/instruction_compiler.h"
+#include "oz3/core/instruction_def.h"
+#include "oz3/tools/instruction_assembler.h"
+#include "oz3/tools/source_pattern.h"
+
+namespace oz3 {
+namespace {
+
+using ::testing::ElementsAre;
+using ::testing::HasSubstr;
+using ::testing::IsEmpty;
+using Kind = InstructionForm::Arg::Kind;
+
+// GetWord's codes are laid out as:
+//   0 0 r r r  "$r"
+//   0 1 r r r  "($r + $v)"
+//   1 0 0 0 0  "$v"
+//   1 0 0 0 1  "D($v)"
+constexpr std::string_view kInstructionSet = R"---(
+  values(bits:3) Condition { NZ = 0, Z = 4 }
+
+  macro GetWord:r {
+    code:m "$r" { UL; }
+    code:C2 "($r + $v)" { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(C2); UL; }
+    code:C2 "$v" { LD(C2); UL; }
+    code:C2 "D($v)" { LD(C2); UL; LK(DATA); ADR(C2); LD(C2); UL; }
+  }
+
+  instruction(opcode:0) NOP { UL; }
+  instruction(opcode:1) ADD.W "$r, $m" { $GetWord; ADD(a,r); MSR(ZSCO,ZSCO); }
+  instruction(opcode:2) PUSH "$m" {
+    $GetWord; LK(STACK); ADR(SP); STP(r); LAD(SP); UL;
+  }
+  instruction(opcode:3) SETC "$Condition" { UL; }
+  instruction(opcode:4, relative) JPR "$m" { $GetWord; ADD(IP,r); }
+  instruction(opcode:5) MOV.D "$R, $V" { LD(a0); LD(a1); UL; }
+  instruction(opcode:6) MVQ "$r, $#5" { UL; MOV(a,C1); }
+  instruction(opcode:7) PEEK "[$m]" { $GetWord; MOV(R0,r); }
+)---";
+
+// An InstructionSetDef that a test can change, copied from an assembled one.
+class TestDef {
+ public:
+  explicit TestDef(std::string_view source) {
+    gb::ParseError error;
+    asm_set_ = AssembleInstructionSet(std::string(source), &error);
+    CHECK(asm_set_ != nullptr) << error.FormatMessage();
+    const InstructionSetDef& def = asm_set_->GetInstructionSetDef();
+    instructions.assign(def.instructions.begin(), def.instructions.end());
+    macros.assign(def.macros.begin(), def.macros.end());
+    for (const MacroDef& macro : macros) {
+      codes.emplace_back(macro.code.begin(), macro.code.end());
+    }
+    value_sets.assign(def.value_sets.begin(), def.value_sets.end());
+    for (const ValueSetDef& value_set : value_sets) {
+      values.emplace_back(value_set.values.begin(), value_set.values.end());
+    }
+  }
+
+  // Returns the def, as it is now.
+  const InstructionSetDef& GetDef() {
+    for (int i = 0; i < static_cast<int>(macros.size()); ++i) {
+      macros[i].code = codes[i];
+    }
+    for (int i = 0; i < static_cast<int>(value_sets.size()); ++i) {
+      value_sets[i].values = values[i];
+    }
+    def_ = {.instructions = instructions,
+            .macros = macros,
+            .value_sets = value_sets};
+    return def_;
+  }
+
+  // Returns the instruction set compiled from the def as it was assembled.
+  const InstructionSet* GetCompiled() const {
+    return asm_set_->GetInstructionSet().get();
+  }
+
+  std::vector<InstructionDef> instructions;
+  std::vector<MacroDef> macros;
+  std::vector<std::vector<MacroCodeDef>> codes;
+  std::vector<ValueSetDef> value_sets;
+  std::vector<std::vector<NamedValueDef>> values;
+
+ private:
+  std::unique_ptr<AsmInstructionSet> asm_set_;
+  InstructionSetDef def_;
+};
+
+std::vector<std::string_view> GetPatterns(
+    absl::Span<const InstructionForm* const> forms) {
+  std::vector<std::string_view> patterns;
+  for (const InstructionForm* form : forms) {
+    patterns.push_back(form->GetPattern());
+  }
+  return patterns;
+}
+
+void ExpectArg(const InstructionForm::Arg& arg, Kind kind, int bits, int shift,
+               const ValueSetDef* value_set = nullptr, bool relative = false) {
+  EXPECT_EQ(arg.kind, kind);
+  EXPECT_EQ(arg.bits, bits);
+  EXPECT_EQ(arg.shift, shift);
+  EXPECT_EQ(arg.value_set, value_set);
+  EXPECT_EQ(arg.relative, relative);
+}
+
+void ExpectForm(const InstructionForm& form, std::string_view pattern,
+                uint16_t code_word, uint16_t mask, int size) {
+  EXPECT_EQ(form.GetPattern(), pattern);
+  EXPECT_EQ(form.GetCodeWord(), code_word) << pattern;
+  EXPECT_EQ(form.GetCodeWordMask(), mask) << pattern;
+  EXPECT_EQ(form.GetSize(), size) << pattern;
+}
+
+//==============================================================================
+// Forms
+//==============================================================================
+
+TEST(InstructionSetSyntaxTest, InstructionWithoutArguments) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("NOP");
+  ASSERT_EQ(forms.size(), 1);
+  EXPECT_EQ(&forms[0]->GetInstruction(), &def.instructions[0]);
+  EXPECT_EQ(forms[0]->GetMacroCode(), nullptr);
+  ExpectForm(*forms[0], "", 0x0000, 0xFF00, 1);
+  EXPECT_THAT(forms[0]->GetParts(), IsEmpty());
+  EXPECT_THAT(forms[0]->GetArgs(), IsEmpty());
+}
+
+TEST(InstructionSetSyntaxTest, MacroAsSecondArgument) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("ADD.W");
+  ASSERT_EQ(forms.size(), 4);
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(&forms[i]->GetInstruction(), &def.instructions[1]);
+    EXPECT_EQ(forms[i]->GetMacroCode(), &def.codes[0][i]);
+  }
+
+  // The macro is in bits 3 to 7, above the register.
+  ExpectForm(*forms[0], "$r, $r", 0x0100, 0xFFC0, 1);
+  ExpectForm(*forms[1], "$r, ($r + $v)", 0x0140, 0xFFC0, 2);
+  ExpectForm(*forms[2], "$r, $v", 0x0180, 0xFFF8, 2);
+  ExpectForm(*forms[3], "$r, D($v)", 0x0188, 0xFFF8, 2);
+
+  auto args = forms[1]->GetArgs();
+  ASSERT_EQ(args.size(), 3);
+  ExpectArg(args[0], Kind::kWordReg, 3, 0);
+  ExpectArg(args[1], Kind::kWordReg, 3, 3);
+  ExpectArg(args[2], Kind::kWord, 0, 0);
+
+  auto parts = forms[1]->GetParts();
+  ASSERT_EQ(parts.size(), 7);
+  EXPECT_EQ(parts[0].kind, SourcePattern::Part::Kind::kArgument);
+  EXPECT_TRUE(parts[0].whole_arg);
+  EXPECT_EQ(parts[1].literal, gb::TokenValue(gb::Symbol(',')));
+  EXPECT_EQ(parts[2].literal, gb::TokenValue(gb::Symbol('(')));
+  EXPECT_EQ(parts[3].kind, SourcePattern::Part::Kind::kArgument);
+  EXPECT_FALSE(parts[3].whole_arg);
+  EXPECT_EQ(parts[5].kind, SourcePattern::Part::Kind::kWord);
+  EXPECT_FALSE(parts[5].whole_arg);
+
+  args = forms[2]->GetArgs();
+  ASSERT_EQ(args.size(), 2);
+  ExpectArg(args[0], Kind::kWordReg, 3, 0);
+  ExpectArg(args[1], Kind::kWord, 0, 0);
+  EXPECT_TRUE(forms[2]->GetParts()[2].whole_arg);
+}
+
+TEST(InstructionSetSyntaxTest, MacroAsFirstArgument) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("PUSH");
+  ASSERT_EQ(forms.size(), 4);
+  ExpectForm(*forms[0], "$r", 0x0200, 0xFF18, 1);
+  ExpectForm(*forms[1], "($r + $v)", 0x0208, 0xFF18, 2);
+  ExpectForm(*forms[2], "$v", 0x0210, 0xFF1F, 2);
+  ExpectForm(*forms[3], "D($v)", 0x0211, 0xFF1F, 2);
+  auto args = forms[1]->GetArgs();
+  ASSERT_EQ(args.size(), 2);
+  ExpectArg(args[0], Kind::kWordReg, 3, 0);
+  ExpectArg(args[1], Kind::kWord, 0, 0);
+}
+
+TEST(InstructionSetSyntaxTest, CodeWordArguments) {
+  TestDef def(kInstructionSet);
+  const InstructionSetDef& instruction_set = def.GetDef();
+  auto syntax = InstructionSetSyntax::Create(instruction_set);
+  ASSERT_NE(syntax, nullptr);
+
+  auto forms = syntax->GetForms("SETC");
+  ASSERT_EQ(forms.size(), 1);
+  ExpectForm(*forms[0], "$Condition", 0x0300, 0xFF00, 1);
+  ASSERT_EQ(forms[0]->GetArgs().size(), 1);
+  ExpectArg(forms[0]->GetArgs()[0], Kind::kCodeValue, 3, 0,
+            &instruction_set.value_sets[0]);
+
+  forms = syntax->GetForms("MVQ");
+  ASSERT_EQ(forms.size(), 1);
+  ExpectForm(*forms[0], "$r, $#5", 0x0600, 0xFF00, 1);
+  ASSERT_EQ(forms[0]->GetArgs().size(), 2);
+  ExpectArg(forms[0]->GetArgs()[0], Kind::kWordReg, 3, 0);
+  ExpectArg(forms[0]->GetArgs()[1], Kind::kCodeValue, 5, 3);
+
+  forms = syntax->GetForms("MOV.D");
+  ASSERT_EQ(forms.size(), 1);
+  ExpectForm(*forms[0], "$R, $V", 0x0500, 0xFF00, 3);
+  ASSERT_EQ(forms[0]->GetArgs().size(), 2);
+  ExpectArg(forms[0]->GetArgs()[0], Kind::kDwordReg, 2, 0);
+  ExpectArg(forms[0]->GetArgs()[1], Kind::kDword, 0, 0);
+}
+
+TEST(InstructionSetSyntaxTest, RelativeValuesAreWholeArguments) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("JPR");
+  ASSERT_EQ(forms.size(), 4);
+  ASSERT_EQ(forms[1]->GetArgs().size(), 2);
+  EXPECT_FALSE(forms[1]->GetArgs()[1].relative);  // ($r + $v)
+  ASSERT_EQ(forms[2]->GetArgs().size(), 1);
+  EXPECT_TRUE(forms[2]->GetArgs()[0].relative);  // $v
+  ASSERT_EQ(forms[3]->GetArgs().size(), 1);
+  EXPECT_FALSE(forms[3]->GetArgs()[0].relative);  // D($v)
+
+  // ADD.W isn't relative, so neither is its $v.
+  forms = syntax->GetForms("ADD.W");
+  ASSERT_EQ(forms.size(), 4);
+  EXPECT_FALSE(forms[2]->GetArgs()[1].relative);
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeIsOnlyWholeIfMacroIs) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("PEEK");
+  ASSERT_EQ(forms.size(), 4);
+  EXPECT_EQ(forms[2]->GetPattern(), "[$v]");
+  auto parts = forms[2]->GetParts();
+  ASSERT_EQ(parts.size(), 3);
+  EXPECT_EQ(parts[1].kind, SourcePattern::Part::Kind::kWord);
+  EXPECT_FALSE(parts[1].whole_arg);
+}
+
+TEST(InstructionSetSyntaxTest, PartPositionsAreInThePattern) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  for (const InstructionForm& form : syntax->GetForms()) {
+    for (const SourcePattern::Part& part : form.GetParts()) {
+      std::string_view text = form.GetPattern().substr(part.offset, part.size);
+      if (part.kind == SourcePattern::Part::Kind::kLiteral) {
+        EXPECT_FALSE(text.starts_with("$")) << form.GetPattern();
+      } else {
+        EXPECT_TRUE(text.starts_with("$")) << form.GetPattern();
+      }
+    }
+  }
+
+  // The parts after the macro code's move with it.
+  auto forms = syntax->GetForms("PEEK");
+  ASSERT_EQ(forms.size(), 4);
+  EXPECT_EQ(forms[1]->GetPattern(), "[($r + $v)]");
+  auto parts = forms[1]->GetParts();
+  ASSERT_EQ(parts.size(), 7);
+  const int kOffsets[] = {0, 1, 2, 5, 7, 9, 10};
+  for (int i = 0; i < 7; ++i) {
+    EXPECT_EQ(parts[i].offset, kOffsets[i]) << i;
+  }
+  EXPECT_EQ(parts[6].literal, gb::TokenValue(gb::Symbol(']')));
+}
+
+TEST(InstructionSetSyntaxTest, AllFormsInOrder) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  std::vector<std::string_view> names;
+  for (const InstructionForm& form : syntax->GetForms()) {
+    names.push_back(form.GetInstruction().op_name);
+  }
+  EXPECT_THAT(names, ElementsAre("NOP", "ADD.W", "ADD.W", "ADD.W", "ADD.W",
+                                 "PUSH", "PUSH", "PUSH", "PUSH", "SETC", "JPR",
+                                 "JPR", "JPR", "JPR", "MOV.D", "MVQ", "PEEK",
+                                 "PEEK", "PEEK", "PEEK"));
+}
+
+TEST(InstructionSetSyntaxTest, FormsByName) {
+  TestDef def(R"---(
+    instruction(opcode:0) ADD { UL; }
+    instruction(opcode:1) ADD.W "$r" { UL; }
+    instruction(opcode:2) ADD.D "$R" { UL; }
+    instruction(opcode:3) ADDX.W "$r, $r" { UL; }
+  )---");
+  def.instructions[3].op_name = "addx.w";
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  EXPECT_THAT(GetPatterns(syntax->GetForms("ADD")),
+              ElementsAre("", "$r", "$R"));
+  EXPECT_THAT(GetPatterns(syntax->GetForms("add")),
+              ElementsAre("", "$r", "$R"));
+  EXPECT_THAT(GetPatterns(syntax->GetForms("Add.W")), ElementsAre("$r"));
+  EXPECT_THAT(GetPatterns(syntax->GetForms("ADD.D")), ElementsAre("$R"));
+  EXPECT_THAT(GetPatterns(syntax->GetForms("ADDX")), ElementsAre("$r, $r"));
+  EXPECT_THAT(GetPatterns(syntax->GetForms("ADDX.W")), ElementsAre("$r, $r"));
+  EXPECT_THAT(syntax->GetForms("ADD.X"), IsEmpty());
+  EXPECT_THAT(syntax->GetForms("SUB"), IsEmpty());
+  EXPECT_THAT(syntax->GetForms(""), IsEmpty());
+}
+
+TEST(InstructionSetSyntaxTest, FindForm) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  for (const InstructionForm& form : syntax->GetForms()) {
+    EXPECT_EQ(syntax->FindForm(form.GetCodeWord()), &form)
+        << form.GetInstruction().op_name << " " << form.GetPattern();
+  }
+
+  // ADD.W R7, (R5 + $v)
+  auto forms = syntax->GetForms("ADD.W");
+  ASSERT_EQ(forms.size(), 4);
+  EXPECT_EQ(syntax->FindForm(0x0100 | (0b01101 << 3) | 7), forms[1]);
+
+  // Bits above every argument are ignored.
+  forms = syntax->GetForms("SETC");
+  ASSERT_EQ(forms.size(), 1);
+  EXPECT_EQ(syntax->FindForm(0x03FF), forms[0]);
+}
+
+TEST(InstructionSetSyntaxTest, FindFormOfUnusedCodeWords) {
+  TestDef def(kInstructionSet);
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  EXPECT_EQ(syntax->FindForm(0x0800), nullptr);
+  EXPECT_EQ(syntax->FindForm(0xFFFF), nullptr);
+
+  // GetWord's codes use values 0 to 17 of its 32.
+  EXPECT_EQ(syntax->FindForm(0x0100 | (18 << 3)), nullptr);
+  EXPECT_EQ(syntax->FindForm(0x0200 | 31), nullptr);
+}
+
+TEST(InstructionSetSyntaxTest, CreateWithCompiledInstructionSet) {
+  TestDef def(kInstructionSet);
+  auto syntax =
+      InstructionSetSyntax::Create(def.GetDef(), def.GetCompiled(), nullptr);
+  ASSERT_NE(syntax, nullptr);
+  EXPECT_EQ(syntax->GetForms().size(), 20);
+}
+
+TEST(InstructionSetSyntaxTest, DifferentLiteralNumbersAreDifferentForms) {
+  TestDef def(R"---(
+    macro Shift {
+      code "$r" { UL; }
+      code "1" { UL; }
+      code "2" { UL; }
+    }
+    instruction(opcode:0) SHL "$r, $m" { $Shift; }
+  )---");
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  EXPECT_THAT(GetPatterns(syntax->GetForms("SHL")),
+              ElementsAre("$r, $r", "$r, 1", "$r, 2"));
+}
+
+//==============================================================================
+// Errors
+//==============================================================================
+
+// Creates the syntax for `def`, which must fail with an error in `def_name`,
+// and returns the error.
+InstructionError ExpectError(TestDef& def, InstructionError::Def def_kind,
+                             std::string_view def_name,
+                             const InstructionSet* instruction_set = nullptr) {
+  InstructionError error;
+  EXPECT_EQ(InstructionSetSyntax::Create(def.GetDef(), instruction_set, &error),
+            nullptr);
+  EXPECT_EQ(error.def, def_kind) << error.message;
+  EXPECT_EQ(error.def_name, def_name) << error.message;
+  return error;
+}
+
+TEST(InstructionSetSyntaxTest, ErrorIsOptional) {
+  TestDef def(kInstructionSet);
+  def.instructions[0].code = "XYZ;";
+  EXPECT_EQ(InstructionSetSyntax::Create(def.GetDef()), nullptr);
+}
+
+TEST(InstructionSetSyntaxTest, CompileError) {
+  TestDef def(kInstructionSet);
+  def.instructions[0].code = "XYZ;";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "NOP");
+  EXPECT_FALSE(error.message.empty());
+}
+
+TEST(InstructionSetSyntaxTest, DuplicateValueSet) {
+  TestDef def(kInstructionSet);
+  def.value_sets.push_back(def.value_sets[0]);
+  def.values.push_back(def.values[0]);
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kValueSet, "Condition");
+  EXPECT_THAT(error.message, HasSubstr("'Condition' is already defined"));
+}
+
+TEST(InstructionSetSyntaxTest, ValueSetNamedAsPlaceholder) {
+  TestDef def(kInstructionSet);
+  def.value_sets[0].name = "r4";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kValueSet, "r4");
+  EXPECT_THAT(error.message, HasSubstr("placeholder $r4"));
+}
+
+TEST(InstructionSetSyntaxTest, ValueSetBitsInvalid) {
+  for (int bits : {0, 9}) {
+    TestDef def(kInstructionSet);
+    def.value_sets[0].size = static_cast<uint8_t>(bits);
+    InstructionError error =
+        ExpectError(def, InstructionError::Def::kValueSet, "Condition");
+    EXPECT_THAT(error.message,
+                HasSubstr(absl::StrCat("Invalid bits value: ", bits)));
+  }
+}
+
+TEST(InstructionSetSyntaxTest, ValueSetWithoutValues) {
+  TestDef def(kInstructionSet);
+  def.values[0].clear();
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kValueSet, "Condition");
+  EXPECT_THAT(error.message, HasSubstr("no values"));
+}
+
+TEST(InstructionSetSyntaxTest, DuplicateValueNameIgnoringCase) {
+  TestDef def(kInstructionSet);
+  def.values[0][1].name = "nz";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kValueSet, "Condition");
+  EXPECT_THAT(error.message, HasSubstr("Duplicate value name nz"));
+}
+
+TEST(InstructionSetSyntaxTest, ValueDoesNotFit) {
+  TestDef def(kInstructionSet);
+  def.values[0][1].value = 8;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kValueSet, "Condition");
+  EXPECT_THAT(error.message, HasSubstr("Z = 8 does not fit in 3 bits"));
+}
+
+TEST(InstructionSetSyntaxTest, DuplicateInstructionNameIgnoringCase) {
+  TestDef def(kInstructionSet);
+  def.instructions[3].op_name = "add.w";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "add.w");
+  EXPECT_THAT(error.message, HasSubstr("'add.w' is already defined"));
+}
+
+TEST(InstructionSetSyntaxTest, InvalidMacroCodeSource) {
+  TestDef def(kInstructionSet);
+  def.codes[0][1].source = "($r + $v";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_EQ(error.macro_source_name, "($r + $v");
+  EXPECT_THAT(error.message, HasSubstr("Invalid macro code source"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeWithTwoArguments) {
+  TestDef def(kInstructionSet);
+  def.codes[0][1].source = "($r + $r)";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_THAT(error.message, HasSubstr("Only one"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeWithMacroArgument) {
+  TestDef def(kInstructionSet);
+  def.codes[0][1].source = "($m)";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_THAT(error.message, HasSubstr("$m is not allowed"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeSourceDisagreesWithArgument) {
+  for (std::string_view source : {"($R + $v)", "($r2 + $v)", "(R1 + $v)"}) {
+    TestDef def(kInstructionSet);
+    def.codes[0][1].source = source;
+    InstructionError error =
+        ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+    EXPECT_EQ(error.macro_source_name, source);
+    EXPECT_THAT(error.message, HasSubstr("doesn't match its argument"));
+  }
+  TestDef def(kInstructionSet);
+  def.codes[0][2].source = "$r";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_THAT(error.message, HasSubstr("doesn't match its argument"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodesWrittenTheSameWay) {
+  // Each case changes one of GetWord's codes, and expects the error at
+  // `error_code`, which is written the same way as `same_as` before it.
+  struct Case {
+    int code;
+    std::string_view source;
+    Argument arg;
+    std::string_view error_code;
+    std::string_view same_as;
+  };
+  const Case kCases[] = {
+      {2, "d( $v )", {}, "D($v)", "d( $v )"},
+      {3, "$#4", {ArgType::kImmediate, 4}, "$#4", "$v"},
+      {3, "$Condition", {ArgType::kImmediate, 3}, "$Condition", "$v"},
+      {3, "3", {}, "3", "$v"},
+      {3, "$V", {}, "$V", "$v"},
+      {1, "$r2", {ArgType::kWordReg, 2}, "$r2", "$r"},
+      {1, "$r4", {ArgType::kWordReg, 4}, "$r4", "$r"},
+  };
+  for (const Case& test_case : kCases) {
+    TestDef def(kInstructionSet);
+    MacroCodeDef& code = def.codes[0][test_case.code];
+    code.source = test_case.source;
+    code.arg = test_case.arg;
+    InstructionError error = ExpectError(def, InstructionError::Def::kMacro,
+                                         "GetWord", def.GetCompiled());
+    EXPECT_EQ(error.macro_source_name, test_case.error_code);
+    EXPECT_THAT(error.message,
+                HasSubstr(absl::StrCat("is written the same way as \"",
+                                       test_case.same_as, "\"")));
+  }
+}
+
+TEST(InstructionSetSyntaxTest, InvalidInstructionSource) {
+  TestDef def(kInstructionSet);
+  def.instructions[1].source = "$r; $m";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "ADD.W");
+  EXPECT_THAT(error.message, HasSubstr("Invalid instruction code source"));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionWithThreeArguments) {
+  TestDef def(kInstructionSet);
+  def.instructions[6].source = "$r, $#5, $r";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "MVQ");
+  EXPECT_THAT(error.message, HasSubstr("At most two"));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionWithTwoMacroArguments) {
+  TestDef def(kInstructionSet);
+  def.instructions[1].source = "$m, $m";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "ADD.W");
+  EXPECT_THAT(error.message, HasSubstr("Only one macro"));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionSourceDisagreesWithArguments) {
+  for (std::string_view source :
+       {"$r", "$m, $r", "$r2, $m", "$r, $m4", "$R, $m", "$r, $#5"}) {
+    TestDef def(kInstructionSet);
+    def.instructions[1].source = source;
+    InstructionError error =
+        ExpectError(def, InstructionError::Def::kInstruction, "ADD.W");
+    EXPECT_THAT(error.message, HasSubstr("doesn't match the instruction's"))
+        << source;
+  }
+  TestDef def(kInstructionSet);
+  def.instructions[0].source = "$r";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "NOP");
+  EXPECT_THAT(error.message, HasSubstr("doesn't match the instruction's"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroArgumentWithoutMacro) {
+  TestDef def(kInstructionSet);
+  def.instructions[1].arg_macro_name = {};
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "ADD.W", def.GetCompiled());
+  EXPECT_THAT(error.message, HasSubstr("must have a $m exactly when"));
+}
+
+TEST(InstructionSetSyntaxTest, UnknownMacro) {
+  TestDef def(kInstructionSet);
+  def.instructions[1].arg_macro_name = "GetWords";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "ADD.W", def.GetCompiled());
+  EXPECT_THAT(error.message, HasSubstr("Unknown macro: GetWords"));
+}
+
+TEST(InstructionSetSyntaxTest, RelativeWithoutWholeValue) {
+  TestDef def(kInstructionSet);
+  def.instructions[7].relative = true;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "PEEK");
+  EXPECT_THAT(error.message,
+              HasSubstr("has no form where $v is a whole argument"));
+}
+
+TEST(InstructionSetSyntaxTest, SizeDisagreesWithMicrocode) {
+  TestDef def(kInstructionSet);
+  def.codes[0][3].source = "D($v), $v";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "ADD.W");
+  EXPECT_THAT(error.message,
+              AllOf(HasSubstr("with macro code \"D($v), $v\""),
+                    HasSubstr("has size 3, but the microcode has size 2")));
+}
+
+TEST(InstructionSetSyntaxTest, SizeDisagreesWithCompiledInstructionSet) {
+  TestDef def(kInstructionSet);
+  def.instructions[5].source = "$R, $V, $v";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "MOV.D", def.GetCompiled());
+  EXPECT_THAT(error.message,
+              HasSubstr("has size 4, but the microcode has size 3"));
+}
+
+}  // namespace
+}  // namespace oz3

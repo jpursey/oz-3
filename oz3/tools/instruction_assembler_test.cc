@@ -751,8 +751,9 @@ TEST(InstructionAssemblerTest, DuplicateMacroCodeSourceIgnoreSpaces) {
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
   EXPECT_EQ(asm_set, nullptr);
-  EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
-              AllOf(HasSubstr("already defined"), HasSubstr("[x+y -   z] ")));
+  EXPECT_THAT(
+      absl::AsciiStrToLower(error.GetMessage()),
+      AllOf(HasSubstr("written the same way"), HasSubstr("[x+y -   z] ")));
   EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
 }
 
@@ -940,10 +941,10 @@ TEST(InstructionAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
-      code "$r1" { MOV(R1,m); }
-      code "$r2" { MOV(R2,m); }
-      code "$r3" { MOV(R3,m); }
-      code "$r4" { MOV(R4,m); }
+      code "A $r1" { MOV(R1,m); }
+      code "B $r2" { MOV(R2,m); }
+      code "C $r3" { MOV(R3,m); }
+      code "D $r4" { MOV(R4,m); }
     }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
@@ -953,19 +954,19 @@ TEST(InstructionAssemblerTest, MacroBitsAutoArgSizesSmallToLarge) {
   ASSERT_EQ(macro.size, 5);
   ASSERT_EQ(macro.code.size(), 4);
   auto code = macro.code[0];
-  EXPECT_EQ(code.source, "$r4");
+  EXPECT_EQ(code.source, "D $r4");
   EXPECT_EQ(code.prefix.value, 0);
   EXPECT_EQ(code.prefix.size, 1);
   code = macro.code[1];
-  EXPECT_EQ(code.source, "$r3");
+  EXPECT_EQ(code.source, "C $r3");
   EXPECT_EQ(code.prefix.value, 0b10);
   EXPECT_EQ(code.prefix.size, 2);
   code = macro.code[2];
-  EXPECT_EQ(code.source, "$r2");
+  EXPECT_EQ(code.source, "B $r2");
   EXPECT_EQ(code.prefix.value, 0b110);
   EXPECT_EQ(code.prefix.size, 3);
   code = macro.code[3];
-  EXPECT_EQ(code.source, "$r1");
+  EXPECT_EQ(code.source, "A $r1");
   EXPECT_EQ(code.prefix.value, 0b1110);
   EXPECT_EQ(code.prefix.size, 4);
 }
@@ -1336,6 +1337,18 @@ TEST(InstructionAssemblerTest, ValueSetBitsInvalid) {
   }
 }
 
+TEST(InstructionAssemblerTest, ValueSetBitsInvalidWhereUsed) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:9) Condition { Z = 0 }
+    instruction(opcode:0) JC "$Condition" { UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid bits value: 9"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
 TEST(InstructionAssemblerTest, ValueDoesNotFitBits) {
   gb::ParseError error;
   std::string source = R"---(
@@ -1347,7 +1360,7 @@ TEST(InstructionAssemblerTest, ValueDoesNotFitBits) {
   auto asm_set = AssembleInstructionSet(source, &error);
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(error.GetMessage(), HasSubstr("Z = 8 does not fit in 3 bits"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(3, 6));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
 TEST(InstructionAssemblerTest, DuplicateValueName) {
@@ -1359,7 +1372,7 @@ TEST(InstructionAssemblerTest, DuplicateValueName) {
   auto asm_set = AssembleInstructionSet(source, &error);
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(error.GetMessage(), HasSubstr("Duplicate value name Z"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 38));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
 }
 
 TEST(InstructionAssemblerTest, ValueNamesAreUpperCase) {
@@ -1387,7 +1400,7 @@ TEST(InstructionAssemblerTest, DuplicateValueNameIgnoringCase) {
   auto asm_set = AssembleInstructionSet(source, &error);
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(error.GetMessage(), HasSubstr("Duplicate value name Z"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 38));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
 }
 
 TEST(InstructionAssemblerTest, ValueSetWithoutValues) {

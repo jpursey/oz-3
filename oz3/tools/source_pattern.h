@@ -20,10 +20,9 @@ namespace oz3 {
 // code, are written in a program (InstructionDef::source and
 // MacroCodeDef::source).
 //
-// Parsing checks the rules every pattern follows: its syntax, and that each
-// placeholder is a valid one or names a value set. Rules for where
-// placeholders may be, such as how many an instruction may have, are left to
-// the caller.
+// Parsing checks the rules every pattern follows: its syntax, that each
+// placeholder is a valid one or names a value set, and how many code word
+// arguments it has.
 class SourcePattern final {
  public:
   // One part of a pattern: literal text, or a placeholder.
@@ -37,6 +36,11 @@ class SourcePattern final {
 
     Kind kind = Kind::kLiteral;
 
+    // Where the part is in the source text, as an offset and size in
+    // characters.
+    int offset = 0;
+    int size = 0;
+
     // For kLiteral, the token's type and value, such as kTokenSymbol and ','
     // for the commas between arguments.
     gb::TokenType literal_type = gb::kTokenNone;
@@ -48,7 +52,7 @@ class SourcePattern final {
     Argument arg;
 
     // For kArgument, the value set it names, if it is one. The set is one of
-    // those passed to Parse().
+    // those passed when parsing.
     const ValueSetDef* value_set = nullptr;
 
     // For a placeholder, whether it is all of one of the pattern's
@@ -57,10 +61,16 @@ class SourcePattern final {
     bool whole_arg = false;
   };
 
-  // Parses `source`, whose placeholders may name any of `value_sets`, which
-  // must outlive the result. Returns an error if `source` isn't a valid
-  // pattern.
-  static absl::StatusOr<SourcePattern> Parse(
+  // Parses an instruction's source, which has at most two code word arguments,
+  // of which at most one is a $m. Its placeholders may name any of
+  // `value_sets`, which must outlive the result. Returns an error if `source`
+  // isn't a valid pattern.
+  static absl::StatusOr<SourcePattern> ParseInstruction(
+      std::string_view source, absl::Span<const ValueSetDef> value_sets);
+
+  // Parses a macro code's source, which has at most one code word argument,
+  // which isn't a $m. Otherwise, as ParseInstruction().
+  static absl::StatusOr<SourcePattern> ParseMacroCode(
       std::string_view source, absl::Span<const ValueSetDef> value_sets);
 
   SourcePattern(const SourcePattern&) = default;
@@ -72,6 +82,9 @@ class SourcePattern final {
   // Returns the parts of the pattern, in order.
   absl::Span<const Part> GetParts() const { return parts_; }
 
+  // Returns the code word arguments of the pattern's kArgument parts, in order.
+  absl::Span<const Argument> GetArgs() const { return args_; }
+
   // Returns the number of words the pattern's $v and $V add after the code
   // word: one for each $v, and two for each $V.
   int GetValueWords() const { return value_words_; }
@@ -79,11 +92,15 @@ class SourcePattern final {
  private:
   SourcePattern() = default;
 
+  static absl::StatusOr<SourcePattern> Parse(
+      std::string_view source, absl::Span<const ValueSetDef> value_sets);
+
   // Ends the comma-separated argument whose parts start at `arg_start`, marking
   // its placeholder as a whole argument if it is the only part.
   void EndArg(int arg_start);
 
   std::vector<Part> parts_;
+  std::vector<Argument> args_;
   int value_words_ = 0;
 };
 
