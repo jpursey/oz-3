@@ -459,7 +459,9 @@ own, and `oz3asm` is the command line tool built on it.
 class InstructionSetSyntax final {
  public:
   static std::unique_ptr<InstructionSetSyntax> Create(
-      const InstructionSetDef& instruction_set, gb::ParseError* error);
+      const InstructionSetDef& def,
+      const InstructionSet* instruction_set = nullptr,
+      InstructionError* error = nullptr);
   ...
 };
 
@@ -486,10 +488,12 @@ std::optional<Program> ReadProgramFile(gb::FileSystem& file_system,
 - `InstructionSetSyntax` is built once per instruction set, and indexes forms
   by instruction name, so matching a statement only tries that name's forms. It
   has no `Asm` prefix, as the debugger uses it too.
-- The instruction set source is case-sensitive, so it could have two names
-  that differ only in case, such as instructions `ADD` and `add`.
-  `InstructionSetSyntax` reports that as an error, as a program couldn't tell
-  them apart.
+- The names a program writes from an instruction set (instructions and named
+  values) are case-insensitive in instruction set source too, and are upper
+  case in an assembled `InstructionSetDef`. A def written by hand can't have
+  two that differ only in case, such as instructions `ADD` and `add`, which
+  `InstructionSetSyntax` reports as an error, as a program couldn't tell them
+  apart.
 - `tools` tests assemble programs for small instruction sets written in their
   tests. `instruction_sets` tests assemble every form of the default
   instruction set and check its code words against the reference, and run small
@@ -566,10 +570,11 @@ first of them creating the assembler's page:
    pattern sizes.
 3. *Program files* (tools, wiki): the word format, and its specification.
    Independent, and can be done first.
-4. *Instruction forms* (tools): `InstructionSetSyntax`, matching and encoding
-   statements, and turning code words back into text.
-5. *Program assembler* (tools, wiki): statements, symbols, expressions,
-   segments, instances, data, and the two passes, producing a `Program`.
+4. *Instruction forms* (tools): `InstructionSetSyntax`, its forms, encoding
+   them, and turning code words back into text.
+5. *Program assembler* (tools, wiki): statements, matching them to forms,
+   symbols, expressions, segments, instances, data, and the two passes,
+   producing a `Program`.
 6. *Program maps* (tools): the map, written by the assembler, and read back.
 7. *oz3asm* (apps, wiki): the command line tool, with the listing, and the new
    `apps` directory.

@@ -25,40 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Instruction forms
-
-- **Layers:** tools
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [program_assembler.md](program_assembler.md) (Instructions)
-
-`InstructionSetSyntax`: every form of every instruction in an
-`InstructionSetDef` (each instruction with each of its macro's codes), with its
-code word layout and size. It matches a statement's tokens to exactly one form
-and encodes it, ignoring case, reporting a statement that matches none or
-several, and it turns a code word back into text for the debugger.
-
-It parses source patterns, as the instruction assembler already does in two
-places (`AssembleInstructionCodeSource` and `AssembleMacroCodeSource` in
-`instruction_assembler.cc`), each creating the pattern parser and walking its
-placeholders. One shared pattern parser in tools would serve all three, along
-with the mapping from a placeholder to its `Argument`, which is split today
-between `IsPlaceholderName` in core and the assembler's `AssembleArgument` and
-`IsValuePlaceholder`.
-
-Building it from an `InstructionSetDef` is also what checks that the assembler
-can use the def, as `CompileInstructionSet` only checks what cores need. The
-rules the instruction assembler checks for `.izm` source today move into it, so
-they hold for a def written by hand too: the value set rules
-(`AssembleValueSet`), and each form's size against its compiled microcode
-(`CheckSizes`).
-
-Once it exists, the default instruction set's pin test
-(`default_instruction_set_test.cc`) can fingerprint each instruction's resolved
-forms, through a test-only dependency on tools, rather than scanning patterns
-for value sets itself.
-
 ## Program assembler
 
 - **Layers:** tools, wiki
@@ -67,14 +33,23 @@ for value sets itself.
 - **Depends on:** *Instruction forms*
 - **Background:** [program_assembler.md](program_assembler.md)
 
-The assembler library: source files and includes, statements, symbols (labels,
-local labels, and constants), expressions sized by where they are used,
-segments and their roles, banks, the stack, shared and per instance segments,
-and data (including strings of one or two characters per word), assembled in
-two passes into a `Program`, with every error in a pass reported. Its syntax is
-in the style of Z80 and 8086 era assemblers (`;` comments, `.DW`, `0FFh`), and
-names are case-insensitive. It creates the wiki's assembler page, the public
-reference for the program syntax.
+The assembler library: source files and includes, statements, matching each
+instruction to one form, symbols (labels, local labels, and constants),
+expressions sized by where they are used, segments and their roles, banks, the
+stack, shared and per instance segments, and data (including strings of one or
+two characters per word), assembled in two passes into a `Program`, with every
+error in a pass reported. Its syntax is in the style of Z80 and 8086 era
+assemblers (`;` comments, `.DW`, `0FFh`), and names are case-insensitive. It
+creates the wiki's assembler page, the public reference for the program syntax.
+
+Matching (see Matching in program_assembler.md) is the assembler's, as it needs
+the expression grammar: `InstructionSetSyntax` gives each name's forms, with
+their parsed patterns, and encodes the one matched. One approach worth
+weighing is a grammar built for each instruction set, combining its patterns
+with the assembler's own rules, and parsing whole statements with it. That
+depends on whether Game Bits' parser can report every alternative that matches
+(so an ambiguous statement is an error, never the first match), and match a
+pattern's literal number to any expression with that value.
 
 ## Program maps
 
