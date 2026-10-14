@@ -3,7 +3,7 @@
 The program assembler and the debugger both need an instruction set's syntax as
 a table: every way each instruction can be written, what code word each one
 is, and how many words it takes (see
-[program_assembler.md](../program_assembler.md), Instructions). This added that
+[assembler_design.md](../assembler_design.md), Instructions). This added that
 table to `tools` as `InstructionSetSyntax`, built from any `InstructionSetDef`.
 Each of its forms encodes argument values into words, and turns its words back
 into text. Matching a statement to a form is left to *Program assembler*, which

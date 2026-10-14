@@ -25,49 +25,13 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Program assembler
-
-- **Layers:** tools, wiki
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [program_assembler.md](program_assembler.md), and
-  `docs/worklog/instruction-forms.md`
-
-The assembler library: source files and includes, statements, matching each
-instruction to one form, symbols (labels, local labels, and constants),
-expressions sized by where they are used, segments and their roles, banks, the
-stack, shared and per instance segments, and data (including strings of one or
-two characters per word), assembled in two passes into a `Program`, with every
-error in a pass reported. Its syntax is in the style of Z80 and 8086 era
-assemblers (`;` comments, `.DW`, `0FFh`), and names are case-insensitive. It
-creates the wiki's assembler page, the public reference for the program syntax.
-
-Matching (see Matching in program_assembler.md) is the assembler's, as it needs
-the expression grammar: `InstructionSetSyntax` gives each name's forms, with
-their parsed patterns, and encodes the one matched. One approach worth
-weighing is a grammar built for each instruction set, combining its patterns
-with the assembler's own rules, and parsing whole statements with it. That
-depends on whether Game Bits' parser can report every alternative that matches
-(so an ambiguous statement is an error, never the first match), and match a
-pattern's literal number to any expression with that value.
-
-Matching must find ambiguity itself, even within one full name.
-`InstructionSetSyntax` only rejects macro codes written the same way part for
-part, so codes with different parts can still match one statement through an
-expression (`"$v"` and `"$v + 1"` both match `X + 1`).
-
-`InstructionForm::Disassemble` writes hex numbers as the program syntax does
-(`0FFFFh`, with a leading `0` before a letter). That rule moves into one helper
-beside the assembler's number syntax, rather than being written twice.
-
 ## Program maps
 
 - **Layers:** tools
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** *Program assembler*
-- **Background:** [program_assembler.md](program_assembler.md) (Program map)
+- **Background:** [assembler_design.md](assembler_design.md) (Program map)
 
 The `.oz3map` file that the assembler writes beside a program: its source
 files, its segments, where each statement's words came from, and every symbol.
@@ -80,7 +44,7 @@ and symbols.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *Program assembler*, *Program maps*
-- **Background:** [program_assembler.md](program_assembler.md) (Library and
+- **Background:** [assembler_design.md](assembler_design.md) (Library and
   tool)
 
 The command line program assembler: a source file and an instruction set (the
@@ -95,7 +59,7 @@ order, which CLAUDE.md's directory structure gains.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *Program assembler*
-- **Background:** [program_assembler.md](program_assembler.md), and the wiki's
+- **Background:** [assembler_design.md](assembler_design.md), and the wiki's
   Default Instruction Set page
 
 Tests that assemble every form of the default instruction set, as the wiki's
@@ -166,11 +130,25 @@ files. Ozzy integrates the library.
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** *Program assembler*
-- **Background:** [program_assembler.md](program_assembler.md)
+- **Background:** [assembler_design.md](assembler_design.md)
 
 Macros in program source (`.MACRO`), for the boilerplate the instruction set
 doesn't cover, and conditional assembly (`.IF`), such as for building one
 source for different hardware configurations.
+
+## Low and high words
+
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Program assembler*
+- **Background:** [assembler_design.md](assembler_design.md) (Expressions)
+
+A way to write a dword's low or high word where a word is used, such as
+`LOW(X)` and `HIGH(X)`, which evaluate `X` as a dword. An expression is checked
+at every step against the width where it is used, so `X & 0FFFFh` is an error
+in a word wherever `X` doesn't fit one. Functions would be the first names an
+expression reserves, besides the registers.
 
 ## Case-sensitive programs
 
@@ -178,7 +156,7 @@ source for different hardware configurations.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *Program assembler*
-- **Background:** [program_assembler.md](program_assembler.md) (Source)
+- **Background:** [assembler_design.md](assembler_design.md) (Source)
 
 An assembler option for case-sensitive names, which must then be written as
 the instruction set and the specification write them. Without it, every name is
@@ -190,7 +168,7 @@ turned to upper case as it is read.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** [program_assembler.md](program_assembler.md) (Program file);
+- **Background:** [assembler_design.md](assembler_design.md) (Program file);
   the wiki's Program Files page; `oz3/tools/program_file.h`
 
 A program file records which instruction set it was assembled for, such as a

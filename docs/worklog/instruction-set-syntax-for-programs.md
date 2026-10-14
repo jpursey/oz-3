@@ -3,7 +3,7 @@
 The program assembler matches a program's statements against the source
 patterns of an instruction set, and needs the instruction set to declare
 everything about its syntax that a program can't otherwise know (see
-[program_assembler.md](../program_assembler.md), What the instruction set
+[assembler_design.md](../assembler_design.md), What the instruction set
 declares). This added three things to instruction set source, in
 `InstructionSetDef`, the `.izm` syntax, and the exporter:
 - **Named values:** names for the values of a code word argument, which a

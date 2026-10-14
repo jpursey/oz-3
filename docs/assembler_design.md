@@ -53,18 +53,18 @@ the item that builds it.
 
 ## The model at a glance
 
-| Part            | What it is                                                                  | In code                         |
-| --------------- | --------------------------------------------------------------------------- | ------------------------------- |
-| Program         | Banks, segments, the segments' roles, and instances                        | `Program` (program.h)           |
-| Segment         | An address space starting at 0, in a bank: ROM or RAM, fixed or anywhere    | `Program::Segment`              |
-| Statement       | One line: a label, an instruction or a directive, and a comment             | New                             |
-| Symbol          | A label, a local label, or a constant: a name for an integer                | New                             |
-| Expression      | Integer arithmetic over numbers, characters, and symbols                    | New                             |
+| Part             | What it is                                                                          | In code                      |
+| ---------------- | ----------------------------------------------------------------------------------- | ---------------------------- |
+| Program          | Banks, segments, the segments' roles, and instances                                 | `Program` (program.h)        |
+| Segment          | An address space starting at 0, in a bank: ROM or RAM, fixed or anywhere            | `Program::Segment`           |
+| Statement        | One line: a label, an instruction or a directive, and a comment                     | New                          |
+| Symbol           | A label, a local label, or a constant: a name for an integer                        | New                          |
+| Expression       | Integer arithmetic over numbers, characters, and symbols                            | New                          |
 | Instruction form | An instruction with one of its macro's codes: a pattern, its encoding, and its size | New (`InstructionSetSyntax`) |
-| Named values    | Names an instruction set gives the values of a code word argument          | New, in `InstructionSetDef`     |
-| Program file    | A `Program` as words, for any loader, including one written in OZ-3 code    | New                             |
-| Program map     | Where each word came from, and every symbol, for the debugger               | New                             |
-| Listing         | The source beside the words it assembled to, as text                        | New                             |
+| Named values     | Names an instruction set gives the values of a code word argument                   | New, in `InstructionSetDef`  |
+| Program file     | A `Program` as words, for any loader, including one written in OZ-3 code            | New                          |
+| Program map      | Where each word came from, and every symbol, for the debugger                       | New                          |
+| Listing          | The source beside the words it assembled to, as text                                | New                          |
 
 ## Programs
 
@@ -138,21 +138,22 @@ it has its own stack and variables, while sharing code, constant data, and
 anything else the program wants shared.
 
 - A segment is either **shared** by every instance or **per instance**. Code is
-  always shared, so instances never offset `BC`. The stack is always per
-  instance. Data and extra are either: for example, a program might give each
-  instance its own variables in data, and share a buffer between them in extra.
-- The source describes **one instance's copy** of a per instance segment, so its
-  labels are offsets within one copy. The assembler sizes the segment to hold a
-  copy for every instance, and sets each instance's offset to its own copy, so
-  the same labels work for every instance.
+  always shared, so instances never offset `BC`. With more than one instance,
+  the stack must be per instance, or the instances would share it. Data and
+  extra are either: for example, a program might give each instance its own
+  variables in data, and share a buffer between them in extra.
+- The source describes **one instance's words** of a per instance segment, so
+  its labels are offsets within them. The assembler sizes the segment to
+  reserve those words for every instance, and sets each instance's offset to
+  its own, so the same labels work for every instance. Nothing is copied.
 - A per instance segment can only **reserve** space (`.DS`), never give words.
-  The loader writes a program's data once, so only one copy could get it, and a
-  copy is only fresh once anyway: an instance that runs again finds what the
+  The loader writes a program's data once, so only one instance could get it,
+  and it is only fresh once anyway: an instance that runs again finds what the
   last run left. Each instance sets up its own variables, and initialized
   tables go in a shared segment.
 - A program has one instance unless it says how many (`.INSTANCES 4`). Running
-  several needs declared segments, as the default program's one segment holds
-  its code.
+  several needs declared segments, as the default program's one segment is
+  shared, holding its code and its stack.
 
 ## Source
 
@@ -162,7 +163,7 @@ anything else the program wants shared.
   included is an error.
 - **Lines:** a statement is one line: an optional label, then an optional
   instruction or directive, then an optional comment. A label on a line of its
-  own labels the next statement.
+  own labels the next statement in its segment.
 - **Comments:** `;` starts a comment, which runs to the end of the line.
 - **Case:** names are case-insensitive: instruction names, registers, the
   words patterns write literally, named values, directives, and symbols.
@@ -173,10 +174,8 @@ anything else the program wants shared.
   a later backlog item.
 - **Numbers:** decimal (`15`), hexadecimal with an `h` suffix (`0Fh`), or
   binary with a `b` suffix (`1111b`). A hexadecimal number starts with a digit,
-  so `0FFh` and not `FFh`, which is a name. Game Bits' lexer has number
-  suffixes, and can turn names to upper case. Whether it tells `1011b` from a
-  hexadecimal number still to come, and needs that leading digit, is for
-  *Program assembler* to confirm.
+  so `0FFh` and not `FFh`, which is a name. A suffix is in either case
+  (`0FFH`).
 - **Strings:** the OZ-3 has no bytes, so a string is either one character per
   word, or two packed into each word, and the quotes say which, one mark or
   two:
@@ -220,6 +219,7 @@ A **symbol** is a name for an integer. There are three kinds:
   (`.CONST LINES = 25`).
 
 `$` in an expression is the offset of the current statement, in its segment.
+In a constant, it is the offset where the constant is defined.
 
 A symbol's value is just a number. A label remembers its segment for the map
 and the listing, but an expression can use any label with any other, as no
@@ -257,14 +257,17 @@ As on the machine, arithmetic is in words unless it is in dwords, and **where a
 value is used sets its width**, with no syntax for it:
 - A **word**: `$v`, a code word argument (`$#5`, or named values), and `.DW`.
 - A **dword**: `$V` and `.DD`.
-- A **constant** is a dword, and a word wherever it is used as one.
+- A **constant** is its expression, evaluated where it is used, in that width:
+  `.CONST MASK = ~1` is `0FFFEh` as a word, and `0FFFFFFFEh` as a dword. Its
+  value in the map is its dword value.
 
 Every step of an expression, not just its result, must fit its width, or it is
 an error, never a silent wrap. A word is -32768 to 65535, so `-1` is `0FFFFh`,
 and a dword is -2^31 to 2^32 - 1. A code word argument must also fit its bits,
 from 0 to its largest unsigned value. So `.DW A * B / C` is an error if `A * B`
-doesn't fit a word, even if the result would, and a program that wants the low
-word of a dword constant writes `X & 0FFFFh`.
+doesn't fit a word, even if the result would. That makes a dword's low or high
+word impossible to write in a word (`X & 0FFFFh` is an error where `X` doesn't
+fit one), which is left to *Low and high words*.
 
 ## Instructions
 
@@ -299,9 +302,11 @@ instructions, token by token. Spacing doesn't matter.
 - **`$r` and `$R`** match a register name the argument can hold: `$r` is `R0`
   to `R7`, `$r2` only `R0` to `R3`, and `$r4` adds `BC`, `BS`, `BD`, `BE`,
   `MB`, `IP`, `FP`, and `SP`. `$R` is `D0` to `D3`.
-- **`$#`, named values, `$v`, and `$V`** match an expression: every token up to
-  the pattern's next literal, outside brackets. The tokens must be a valid
-  expression, so a register never matches a value.
+- **`$#`, named values, `$v`, and `$V`** match an expression: the longest one
+  at that point. A pattern can't follow a value with a binary operator, which
+  would continue the expression, so a value always ends at the pattern's next
+  literal. Registers are never part of an expression, so a register never
+  matches a value.
 - **Brackets are the pattern's.** A value can't be wrapped in brackets as a
   whole. Otherwise `JP (5)` would quietly match `JP $v` and jump to 5, where
   the program meant the word in memory at 5, which the default instruction set
@@ -356,6 +361,9 @@ too, so they never change either.
   need a copy of `GetWord` with the same layout, kept in sync by hand.
 - **Patterns can't contain `;` or `@`**, so that comments and local labels never
   collide with an instruction's syntax.
+- **A value can't be followed by a binary operator** (`+`, `-`, `*`, `/`, `%`,
+  `&`, `|`, `^`, `<`, or `>`) in a pattern, as the value's expression would
+  take it (see [Matching](#matching)).
 - **Sizes match the microcode.** The assembler sizes an instruction from its
   pattern, so assembling an instruction set checks that each form's size in its
   pattern is the size the compiled instruction decodes to (see Arguments in the
@@ -473,7 +481,7 @@ class AsmProgram final {
 };
 
 std::unique_ptr<AsmProgram> AssembleProgramFile(
-    const InstructionSetDef& instruction_set, gb::FileSystem& file_system,
+    const InstructionSetSyntax& syntax, gb::FileSystem& file_system,
     std::string_view path, std::vector<gb::ParseError>* errors);
 
 bool WriteProgramFile(gb::FileSystem& file_system, std::string_view path,
@@ -482,9 +490,11 @@ std::optional<Program> ReadProgramFile(gb::FileSystem& file_system,
                                        std::string_view path);
 ```
 
-- The assembler takes an `InstructionSetDef`, so it works the same for the
-  default instruction set (compiled in), and one assembled from source at run
-  time (`AsmInstructionSet`).
+- The assembler takes an `InstructionSetSyntax`, built from any
+  `InstructionSetDef`, so it works the same for the default instruction set
+  (compiled in), and one assembled from source at run time
+  (`AsmInstructionSet`). A host creates the syntax once for every program it
+  assembles, and handles its error.
 - `InstructionSetSyntax` is built once per instruction set, and indexes forms
   by instruction name, so matching a statement only tries that name's forms. It
   has no `Asm` prefix, as the debugger uses it too.
@@ -544,15 +554,15 @@ in lower case (`mov r1, message`), it assembles the same.
 
 ## Names
 
-| Name                | Candidates                                         | Avoids                                                        | Recommendation                                         |
-| ------------------- | -------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
-| Source file         | `.oza`, `.asm`, `.oz3s`                            | `.izm` (instruction set source); `.asm` is every assembler's  | `.oza`                                                 |
-| Program file        | `.oz3`, `.ozp`, `.oz3prg`                          | `.oz3map`, which it pairs with                                | `.oz3` (`hello.oz3` and `hello.oz3map`)                |
-| Table of forms      | `InstructionSetSyntax`, `InstructionSetForms`      | `InstructionSet` (compiled microcode), `InstructionSetDef` (its source data) | `InstructionSetSyntax`, holding `InstructionForm`s |
-| Assembled result    | `AsmProgram`, `AssembledProgram`                   | `Program`, `LoadedProgram`                                    | `AsmProgram`, after `AsmInstructionSet`                |
-| Map                 | `ProgramMap`, `SourceMap`, `DebugMap`              | `MemoryMap` (core's memory mapped devices)                    | `ProgramMap`, after `.oz3map`                          |
-| Named values        | `values`, `enum`, `names` (`ValueSetDef`)          | `$v`/`$V` placeholders, which are values in words             | `values`, with `ValueSetDef` in `InstructionSetDef`    |
-| Executables         | `apps`, `cli`, `cmd`                               | `bin/` (where executables are built), `tools` (libraries)     | `apps`, as the debugger may not be command line only   |
+| Name             | Candidates                                    | Avoids                                                                       | Recommendation                                       |
+| ---------------- | --------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Source file      | `.oza`, `.asm`, `.oz3s`                       | `.izm` (instruction set source); `.asm` is every assembler's                 | `.oza`                                               |
+| Program file     | `.oz3`, `.ozp`, `.oz3prg`                     | `.oz3map`, which it pairs with                                               | `.oz3` (`hello.oz3` and `hello.oz3map`)              |
+| Table of forms   | `InstructionSetSyntax`, `InstructionSetForms` | `InstructionSet` (compiled microcode), `InstructionSetDef` (its source data) | `InstructionSetSyntax`, holding `InstructionForm`s   |
+| Assembled result | `AsmProgram`, `AssembledProgram`              | `Program`, `LoadedProgram`                                                   | `AsmProgram`, after `AsmInstructionSet`              |
+| Map              | `ProgramMap`, `SourceMap`, `DebugMap`         | `MemoryMap` (core's memory mapped devices)                                   | `ProgramMap`, after `.oz3map`                        |
+| Named values     | `values`, `enum`, `names` (`ValueSetDef`)     | `$v`/`$V` placeholders, which are values in words                            | `values`, with `ValueSetDef` in `InstructionSetDef`  |
+| Executables      | `apps`, `cli`, `cmd`                          | `bin/` (where executables are built), `tools` (libraries)                    | `apps`, as the debugger may not be command line only |
 
 "Form" is already the wiki's word for one code of a macro ("each form is a
 `code` block"), so an instruction form is the instruction with one of them.
