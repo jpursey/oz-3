@@ -331,7 +331,7 @@ Depends on: nothing.
   `@`, `#`, unknown placeholder, bad size).
 - The instruction assembler's tests pass unchanged.
 
-### CL3 [ ] tools, wiki: case-insensitive names in `.izm`
+### CL3 [x] tools, wiki: case-insensitive names in `.izm`
 
 Depends on: nothing.
 

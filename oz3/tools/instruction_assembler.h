@@ -53,10 +53,15 @@ class AsmInstructionSet final {
 };
 
 // Assembles an instruction set from a text definition.
+//
+// Instruction names (with their extensions) and value names are
+// case-insensitive, as programs write them in any case, so they are upper case
+// in the InstructionSetDef.
 std::unique_ptr<AsmInstructionSet> AssembleInstructionSet(
     std::string text, gb::ParseError* error = nullptr);
 
-// Assembles an instruction set from a file.
+// Assembles an instruction set from a file, as AssembleInstructionSet does from
+// text.
 std::unique_ptr<AsmInstructionSet> AssembleInstructionSetFile(
     gb::FileSystem& file_system, std::string_view path,
     gb::ParseError* error = nullptr);

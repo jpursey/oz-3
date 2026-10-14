@@ -14,6 +14,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/memory/memory.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
@@ -323,7 +324,8 @@ bool InstructionSetAssembler::AssembleValueSet(
   auto& named_value_defs = result_->named_value_defs_.emplace_back();
   absl::flat_hash_set<std::string_view> value_names;
   for (const auto& parsed_value : parsed_values) {
-    std::string_view name = AddString(parsed_value.GetString("name"));
+    std::string_view name =
+        AddString(absl::AsciiStrToUpper(parsed_value.GetString("name")));
     if (!value_names.insert(name).second) {
       return ErrorAt(parsed_value, "Duplicate value name ", name);
     }
@@ -543,6 +545,7 @@ bool InstructionSetAssembler::AssembleInstruction(
       !ext.empty()) {
     absl::StrAppend(&op_name, ".", ext);
   }
+  absl::AsciiStrToUpper(&op_name);
   instruction_def.op_name = AddString(op_name);
   if (!instruction_map_.insert({instruction_def.op_name, instruction_index})
            .second) {

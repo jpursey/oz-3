@@ -382,6 +382,33 @@ TEST(InstructionAssemblerTest, DuplicateOpcodeNamesWithExtensions) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(4, 4));
 }
 
+TEST(InstructionAssemblerTest, OpcodeNamesAreUpperCase) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) alpha { UL; }
+    instruction(opcode:1) Alpha.Beta { UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().instructions.size(), 2);
+  EXPECT_EQ(asm_set->GetInstructionSetDef().instructions[0].op_name, "ALPHA");
+  EXPECT_EQ(asm_set->GetInstructionSetDef().instructions[1].op_name,
+            "ALPHA.BETA");
+}
+
+TEST(InstructionAssemblerTest, DuplicateOpcodeNamesIgnoringCase) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) ALPHA.BETA { UL; }
+    instruction(opcode:1) alpha.Beta { UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              AllOf(HasSubstr("already defined"), HasSubstr("ALPHA.BETA")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 4));
+}
+
 TEST(InstructionAssemblerTest, InstructionFirstMacroArgument) {
   gb::ParseError error;
   std::string source = R"---(
@@ -1328,6 +1355,34 @@ TEST(InstructionAssemblerTest, DuplicateValueName) {
   std::string source = R"---(
     instruction(opcode:0) NOP { UL; }
     values(bits:3) Condition { Z = 4, Z = 5 }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("Duplicate value name Z"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 38));
+}
+
+TEST(InstructionAssemblerTest, ValueNamesAreUpperCase) {
+  gb::ParseError error;
+  std::string source = R"---(
+    values(bits:3) Condition { nz = 0, Zero = 4 }
+    instruction(opcode:0) JUMP "$Condition" { UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  const InstructionSetDef& def = asm_set->GetInstructionSetDef();
+  ASSERT_EQ(def.value_sets.size(), 1);
+  EXPECT_EQ(def.value_sets[0].name, "Condition");
+  ASSERT_EQ(def.value_sets[0].values.size(), 2);
+  EXPECT_EQ(def.value_sets[0].values[0].name, "NZ");
+  EXPECT_EQ(def.value_sets[0].values[1].name, "ZERO");
+}
+
+TEST(InstructionAssemblerTest, DuplicateValueNameIgnoringCase) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) NOP { UL; }
+    values(bits:3) Condition { Z = 4, z = 5 }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
   EXPECT_EQ(asm_set, nullptr);
