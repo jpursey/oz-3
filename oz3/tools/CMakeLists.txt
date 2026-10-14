@@ -16,6 +16,7 @@ set(oz3_tools_DEPS
   absl::flat_hash_set
   absl::status
   absl::statusor
+  absl::str_format
   gb_file
   gb_parse
   oz3_core

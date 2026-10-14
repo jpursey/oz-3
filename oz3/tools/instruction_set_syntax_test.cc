@@ -638,5 +638,216 @@ TEST(InstructionSetSyntaxTest, SizeDisagreesWithCompiledInstructionSet) {
               HasSubstr("has size 4, but the microcode has size 3"));
 }
 
+//==============================================================================
+// Encoding and disassembly
+//==============================================================================
+
+// Every kind of argument. GetWord's codes are laid out as:
+//   0 r r r  "$r"
+//   1 r r r  "($r + $v)"
+constexpr std::string_view kEncodingSet = R"---(
+  values(bits:2) Flags { Z = 1, ZERO = 1, C = 2 }
+
+  macro GetWord:r {
+    code:m "$r" { UL; }
+    code:C2 "($r + $v)" { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(C2); UL; }
+  }
+
+  instruction(opcode:1) ADD.W "$r, $m" { $GetWord; ADD(a,r); MSR(ZSCO,ZSCO); }
+  instruction(opcode:2) MOV "$r4, $r4" { UL; MOV(a,b); }
+  instruction(opcode:3) MOV.D "$R, $V" { LD(a0); LD(a1); UL; }
+  instruction(opcode:4) CLRF "$Flags" { UL; }
+  instruction(opcode:5) MVQ "$r, $#5" { UL; MOV(a,C1); }
+  instruction(opcode:6, relative) JPR "$v" { LD(C0); UL; ADD(IP,C0); }
+  instruction(opcode:7) PUSH "$m" {
+    $GetWord; LK(STACK); ADR(SP); STP(r); LAD(SP); UL;
+  }
+)---";
+
+class EncodingTest : public ::testing::Test {
+ protected:
+  EncodingTest() : def_(kEncodingSet) {
+    syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+    CHECK(syntax_ != nullptr);
+  }
+
+  // Returns a form by its full name, and its index among the name's forms.
+  const InstructionForm& GetForm(std::string_view name, int index = 0) {
+    auto forms = syntax_->GetForms(name);
+    CHECK(index < static_cast<int>(forms.size())) << name;
+    return *forms[index];
+  }
+
+  // Encodes `values` with a form at `address`, which must succeed.
+  std::vector<uint16_t> Encode(const InstructionForm& form,
+                               std::vector<int64_t> values,
+                               uint16_t address = 0) {
+    std::vector<uint16_t> words;
+    std::string error;
+    EXPECT_TRUE(form.Encode(values, address, words, &error)) << error;
+    return words;
+  }
+
+  // Encodes `values` with a form, which must fail, and returns the error.
+  std::string EncodeError(const InstructionForm& form,
+                          std::vector<int64_t> values) {
+    std::vector<uint16_t> words = {0x1234};
+    std::string error;
+    EXPECT_FALSE(form.Encode(values, 0, words, &error));
+    EXPECT_THAT(words, ElementsAre(0x1234)) << "Encode appended to words";
+    return error;
+  }
+
+  TestDef def_;
+  std::unique_ptr<InstructionSetSyntax> syntax_;
+};
+
+TEST_F(EncodingTest, EncodeWordRegisters) {
+  EXPECT_THAT(Encode(GetForm("ADD.W"), {3, 5}), ElementsAre(0x012B));
+  EXPECT_THAT(Encode(GetForm("MOV"), {15, 9}), ElementsAre(0x029F));
+}
+
+TEST_F(EncodingTest, EncodeDwordRegisterAndDword) {
+  EXPECT_THAT(Encode(GetForm("MOV.D"), {2, 0x12345678}),
+              ElementsAre(0x0302, 0x5678, 0x1234));
+}
+
+TEST_F(EncodingTest, EncodeCodeValues) {
+  EXPECT_THAT(Encode(GetForm("CLRF"), {3}), ElementsAre(0x0403));
+  EXPECT_THAT(Encode(GetForm("MVQ"), {7, 31}), ElementsAre(0x05FF));
+}
+
+TEST_F(EncodingTest, EncodeMacroCodeAndWord) {
+  EXPECT_THAT(Encode(GetForm("ADD.W", 1), {1, 2, 0x1234}),
+              ElementsAre(0x0151, 0x1234));
+  EXPECT_THAT(Encode(GetForm("PUSH", 1), {5, 0x0042}),
+              ElementsAre(0x070D, 0x0042));
+}
+
+TEST_F(EncodingTest, EncodeValueLimits) {
+  const InstructionForm& add = GetForm("ADD.W", 1);
+  EXPECT_THAT(Encode(add, {0, 0, -0x8000}), ElementsAre(0x0140, 0x8000));
+  EXPECT_THAT(Encode(add, {0, 0, 0xFFFF}), ElementsAre(0x0140, 0xFFFF));
+  const InstructionForm& mov = GetForm("MOV.D");
+  EXPECT_THAT(Encode(mov, {0, -0x80000000LL}),
+              ElementsAre(0x0300, 0x0000, 0x8000));
+  EXPECT_THAT(Encode(mov, {0, 0xFFFFFFFFLL}),
+              ElementsAre(0x0300, 0xFFFF, 0xFFFF));
+}
+
+TEST_F(EncodingTest, EncodeAppendsToWords) {
+  std::vector<uint16_t> words = {0x1234};
+  EXPECT_TRUE(GetForm("ADD.W", 1).Encode({1, 2, 5}, 0, words));
+  EXPECT_THAT(words, ElementsAre(0x1234, 0x0151, 0x0005));
+}
+
+TEST_F(EncodingTest, EncodeRelative) {
+  const InstructionForm& jpr = GetForm("JPR");
+  EXPECT_THAT(Encode(jpr, {0x0120}, 0x0100), ElementsAre(0x0600, 0x001E));
+  EXPECT_THAT(Encode(jpr, {0x0100}, 0x0100), ElementsAre(0x0600, 0xFFFE));
+  EXPECT_THAT(Encode(jpr, {0x0010}, 0xFFFF), ElementsAre(0x0600, 0x000F));
+  EXPECT_THAT(Encode(jpr, {0xFFF0}, 0x0000), ElementsAre(0x0600, 0xFFEE));
+}
+
+TEST_F(EncodingTest, EncodeValuesThatDontFit) {
+  EXPECT_THAT(EncodeError(GetForm("ADD.W"), {8, 0}),
+              HasSubstr("Register 8 is not R0 to R7"));
+  EXPECT_THAT(EncodeError(GetForm("ADD.W"), {0, -1}),
+              HasSubstr("Register -1 is not R0 to R7"));
+  EXPECT_THAT(EncodeError(GetForm("MOV"), {16, 0}),
+              HasSubstr("Register 16 is not R0 to SP"));
+  EXPECT_THAT(EncodeError(GetForm("MOV.D"), {4, 0}),
+              HasSubstr("Register 4 is not D0 to D3"));
+  EXPECT_THAT(EncodeError(GetForm("CLRF"), {4}),
+              HasSubstr("Value 4 does not fit in 2 bits"));
+  EXPECT_THAT(EncodeError(GetForm("MVQ"), {0, 32}),
+              HasSubstr("Value 32 does not fit in 5 bits"));
+  EXPECT_THAT(EncodeError(GetForm("MVQ"), {0, -1}),
+              HasSubstr("Value -1 does not fit in 5 bits"));
+  EXPECT_THAT(EncodeError(GetForm("ADD.W", 1), {0, 0, 0x10000}),
+              HasSubstr("Value 65536 does not fit in a word"));
+  EXPECT_THAT(EncodeError(GetForm("ADD.W", 1), {0, 0, -0x8001}),
+              HasSubstr("Value -32769 does not fit in a word"));
+  EXPECT_THAT(EncodeError(GetForm("JPR"), {0x10000}),
+              HasSubstr("Value 65536 does not fit in a word"));
+  EXPECT_THAT(EncodeError(GetForm("MOV.D"), {0, 0x100000000LL}),
+              HasSubstr("Value 4294967296 does not fit in a dword"));
+  EXPECT_THAT(EncodeError(GetForm("MOV.D"), {0, -0x80000001LL}),
+              HasSubstr("Value -2147483649 does not fit in a dword"));
+  EXPECT_THAT(EncodeError(GetForm("MOV.D"), {0}),
+              HasSubstr("Expected 2 values, but got 1"));
+}
+
+TEST_F(EncodingTest, DisassembleRegisters) {
+  EXPECT_EQ(GetForm("ADD.W").Disassemble({{0x012B}}, 0), "ADD.W R3, R5");
+  EXPECT_EQ(GetForm("MOV").Disassemble({{0x029F}}, 0), "MOV SP, BS");
+  EXPECT_EQ(GetForm("MOV.D").Disassemble({{0x0302, 0, 0}}, 0),
+            "MOV.D D2, 00000000h");
+}
+
+TEST_F(EncodingTest, DisassembleCodeValues) {
+  const InstructionForm& clrf = GetForm("CLRF");
+  EXPECT_EQ(clrf.Disassemble({{0x0400}}, 0), "CLRF 0");
+  EXPECT_EQ(clrf.Disassemble({{0x0401}}, 0), "CLRF Z");
+  EXPECT_EQ(clrf.Disassemble({{0x0402}}, 0), "CLRF C");
+  EXPECT_EQ(clrf.Disassemble({{0x0403}}, 0), "CLRF 3");
+  EXPECT_EQ(GetForm("MVQ").Disassemble({{0x05FF}}, 0), "MVQ R7, 31");
+}
+
+TEST_F(EncodingTest, DisassembleValues) {
+  const InstructionForm& add = GetForm("ADD.W", 1);
+  EXPECT_EQ(add.Disassemble({{0x0151, 0x0005}}, 0), "ADD.W R1, (R2 + 0005h)");
+  EXPECT_EQ(add.Disassemble({{0x0151, 0x9ABC}}, 0), "ADD.W R1, (R2 + 9ABCh)");
+  EXPECT_EQ(add.Disassemble({{0x0151, 0xFFFF}}, 0), "ADD.W R1, (R2 + 0FFFFh)");
+  const InstructionForm& mov = GetForm("MOV.D");
+  EXPECT_EQ(mov.Disassemble({{0x0300, 0x5678, 0x1234}}, 0),
+            "MOV.D D0, 12345678h");
+  EXPECT_EQ(mov.Disassemble({{0x0300, 0x0000, 0xA000}}, 0),
+            "MOV.D D0, 0A0000000h");
+}
+
+TEST_F(EncodingTest, DisassembleRelative) {
+  const InstructionForm& jpr = GetForm("JPR");
+  EXPECT_EQ(jpr.Disassemble({{0x0600, 0x001E}}, 0x0100), "JPR 0120h");
+  EXPECT_EQ(jpr.Disassemble({{0x0600, 0xFFFE}}, 0x0100), "JPR 0100h");
+  EXPECT_EQ(jpr.Disassemble({{0x0600, 0x000F}}, 0xFFFF), "JPR 0010h");
+}
+
+TEST(InstructionSetSyntaxTest, DisassembleKeepsPatternSpacing) {
+  TestDef def(R"---(
+    instruction(opcode:0) MVQ "$r,$#5" { UL; MOV(a,C1); }
+  )---");
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  EXPECT_EQ(syntax->GetForms("MVQ")[0]->Disassemble({{0x000A}}, 0), "MVQ R2,1");
+}
+
+TEST_F(EncodingTest, DisassembleEncodedForms) {
+  struct Case {
+    std::string_view name;
+    int index;
+    std::vector<int64_t> values;
+    std::string_view text;
+  };
+  const Case cases[] = {
+      {"ADD.W", 0, {7, 6}, "ADD.W R7, R6"},
+      {"ADD.W", 1, {4, 3, 0xBEEF}, "ADD.W R4, (R3 + 0BEEFh)"},
+      {"MOV", 0, {13, 0}, "MOV IP, R0"},
+      {"MOV.D", 0, {3, 0x00C0FFEE}, "MOV.D D3, 00C0FFEEh"},
+      {"CLRF", 0, {2}, "CLRF C"},
+      {"MVQ", 0, {1, 17}, "MVQ R1, 17"},
+      {"JPR", 0, {0x2000}, "JPR 2000h"},
+      {"PUSH", 0, {2}, "PUSH R2"},
+      {"PUSH", 1, {5, 0x0042}, "PUSH (R5 + 0042h)"},
+  };
+  for (const Case& test_case : cases) {
+    const InstructionForm& form = GetForm(test_case.name, test_case.index);
+    std::vector<uint16_t> words = Encode(form, test_case.values, 0x1234);
+    ASSERT_EQ(static_cast<int>(words.size()), form.GetSize()) << test_case.text;
+    EXPECT_EQ(syntax_->FindForm(words[0]), &form) << test_case.text;
+    EXPECT_EQ(form.Disassemble(words, 0x1234), test_case.text);
+  }
+}
+
 }  // namespace
 }  // namespace oz3

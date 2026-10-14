@@ -15,13 +15,16 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/log/check.h"
 #include "absl/memory/memory.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/parse/token.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/core/instruction_set.h"
@@ -90,6 +93,30 @@ bool IsSameArgument(const Argument& placeholder, const Argument& def_arg) {
           (placeholder.type == ArgType::kMacro && placeholder.size == 0));
 }
 
+// Returns the name of the register a register argument's value is, as
+// InstructionSet::Decode decodes it.
+std::string_view GetRegisterName(const InstructionForm::Arg& arg, int value) {
+  return arg.kind == InstructionForm::Arg::Kind::kWordReg
+             ? CpuCore::GetWordRegName(CpuCore::R0 + value)
+             : CpuCore::GetDwordRegName(CpuCore::D0 + value * 2);
+}
+
+// Returns the value of a register or code value argument in a code word.
+int GetCodeValue(const InstructionForm::Arg& arg,
+                 absl::Span<const uint16_t> words) {
+  return (words[0] >> arg.shift) & ((1 << arg.bits) - 1);
+}
+
+// Returns a value as a program writes it in hex: `digits` digits and an "h",
+// with a leading 0 if the first digit is a letter, so it isn't a name.
+std::string FormatHex(uint32_t value, int digits) {
+  std::string text = absl::StrFormat("%0*Xh", digits, value);
+  if (text[0] >= 'A') {
+    text.insert(0, 1, '0');
+  }
+  return text;
+}
+
 InstructionForm::Arg::Kind GetArgKind(const Part& part) {
   using Kind = InstructionForm::Arg::Kind;
   if (part.kind == Part::Kind::kWord) {
@@ -109,6 +136,128 @@ InstructionForm::Arg::Kind GetArgKind(const Part& part) {
 }
 
 }  // namespace
+
+//==============================================================================
+// InstructionForm
+//==============================================================================
+
+bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
+                             std::vector<uint16_t>& words,
+                             std::string* error) const {
+  const int start = static_cast<int>(words.size());
+  auto fail = [&](const auto&... message) {
+    words.resize(start);
+    if (error != nullptr) {
+      *error = absl::StrCat(message...);
+    }
+    return false;
+  };
+  if (values.size() != args_.size()) {
+    return fail("Expected ", args_.size(), " values, but got ", values.size());
+  }
+
+  words.push_back(code_word_);
+  for (int i = 0; i < static_cast<int>(args_.size()); ++i) {
+    const Arg& arg = args_[i];
+    const int64_t value = values[i];
+    switch (arg.kind) {
+      case Arg::Kind::kWordReg:
+      case Arg::Kind::kDwordReg:
+      case Arg::Kind::kCodeValue:
+        if (value < 0 || value >= (int64_t{1} << arg.bits)) {
+          if (arg.kind == Arg::Kind::kCodeValue) {
+            return fail("Value ", value, " does not fit in ", arg.bits,
+                        " bits");
+          }
+          return fail("Register ", value, " is not ", GetRegisterName(arg, 0),
+                      " to ", GetRegisterName(arg, (1 << arg.bits) - 1));
+        }
+        words[start] |= static_cast<uint16_t>(value << arg.shift);
+        break;
+      case Arg::Kind::kWord: {
+        if (value < -0x8000 || value > 0xFFFF) {
+          return fail("Value ", value, " does not fit in a word");
+        }
+        uint16_t word = static_cast<uint16_t>(value);
+        if (arg.relative) {
+          // The offset from the next instruction, wrapping as IP does.
+          word -= static_cast<uint16_t>(address + size_);
+        }
+        words.push_back(word);
+      } break;
+      case Arg::Kind::kDword: {
+        if (value < -0x80000000LL || value > 0xFFFFFFFFLL) {
+          return fail("Value ", value, " does not fit in a dword");
+        }
+        const uint32_t dword = static_cast<uint32_t>(value);
+        words.push_back(static_cast<uint16_t>(dword));
+        words.push_back(static_cast<uint16_t>(dword >> 16));
+      } break;
+    }
+  }
+  return true;
+}
+
+std::string InstructionForm::Disassemble(absl::Span<const uint16_t> words,
+                                         uint16_t address) const {
+  DCHECK_EQ(static_cast<int>(words.size()), size_);
+  std::string text(instruction_->op_name);
+  if (!pattern_.empty()) {
+    text.push_back(' ');
+  }
+
+  // Each placeholder is replaced by its value, and the text around them is
+  // written as the pattern writes it.
+  const std::string_view pattern = pattern_;
+  int pattern_pos = 0;
+  int arg_index = 0;
+  int word_index = 1;
+  for (const Part& part : parts_) {
+    if (part.kind == Part::Kind::kLiteral) {
+      continue;
+    }
+    absl::StrAppend(&text,
+                    pattern.substr(pattern_pos, part.offset - pattern_pos));
+    pattern_pos = part.offset + part.size;
+
+    const Arg& arg = args_[arg_index++];
+    switch (arg.kind) {
+      case Arg::Kind::kWordReg:
+      case Arg::Kind::kDwordReg:
+        absl::StrAppend(&text, GetRegisterName(arg, GetCodeValue(arg, words)));
+        break;
+      case Arg::Kind::kCodeValue: {
+        const int code_value = GetCodeValue(arg, words);
+        std::string value_text = absl::StrCat(code_value);
+        if (arg.value_set != nullptr) {
+          for (const NamedValueDef& value : arg.value_set->values) {
+            if (value.value == code_value) {
+              value_text = value.name;
+              break;
+            }
+          }
+        }
+        absl::StrAppend(&text, value_text);
+      } break;
+      case Arg::Kind::kWord: {
+        uint16_t word = words[word_index++];
+        if (arg.relative) {
+          word += static_cast<uint16_t>(address + size_);
+        }
+        absl::StrAppend(&text, FormatHex(word, 4));
+      } break;
+      case Arg::Kind::kDword: {
+        const uint32_t dword =
+            words[word_index] |
+            (static_cast<uint32_t>(words[word_index + 1]) << 16);
+        word_index += 2;
+        absl::StrAppend(&text, FormatHex(dword, 8));
+      } break;
+    }
+  }
+  absl::StrAppend(&text, pattern.substr(pattern_pos));
+  return text;
+}
 
 //==============================================================================
 // InstructionSetSyntaxBuilder

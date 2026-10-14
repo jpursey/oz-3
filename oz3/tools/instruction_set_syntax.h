@@ -91,6 +91,20 @@ class InstructionForm final {
   // after it for each $v and $V.
   int GetSize() const { return size_; }
 
+  // Appends the form's words for a statement at `address` to `words`, given a
+  // value for each of GetArgs(), in order: a register's number (R1 is 1, D1 is
+  // 1), or a value. A relative $v's value is its target address. Returns false,
+  // sets `error` if it isn't null, and appends nothing, if a value doesn't fit
+  // its argument.
+  bool Encode(absl::Span<const int64_t> values, uint16_t address,
+              std::vector<uint16_t>& words, std::string* error = nullptr) const;
+
+  // Returns the instruction at `address` as a program writes it, which
+  // assembles to the same words at the same address. `words` are its GetSize()
+  // words, starting with a code word of this form.
+  std::string Disassemble(absl::Span<const uint16_t> words,
+                          uint16_t address) const;
+
  private:
   friend class InstructionSetSyntaxBuilder;
 

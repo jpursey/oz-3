@@ -385,7 +385,7 @@ Depends on: CL1, CL2.
 - The instruction assembler's tests for the moved checks still pass, at the
   same locations (apart from errors in one value of a set).
 
-### CL5 [ ] tools: encoding and disassembly
+### CL5 [x] tools: encoding and disassembly
 
 Depends on: CL4.
 
