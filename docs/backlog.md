@@ -30,8 +30,9 @@ Each item carries:
 - **Layers:** tools, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Instruction forms*
-- **Background:** [program_assembler.md](program_assembler.md)
+- **Depends on:** nothing
+- **Background:** [program_assembler.md](program_assembler.md), and
+  `docs/worklog/instruction-forms.md`
 
 The assembler library: source files and includes, statements, matching each
 instruction to one form, symbols (labels, local labels, and constants),
@@ -50,6 +51,15 @@ with the assembler's own rules, and parsing whole statements with it. That
 depends on whether Game Bits' parser can report every alternative that matches
 (so an ambiguous statement is an error, never the first match), and match a
 pattern's literal number to any expression with that value.
+
+Matching must find ambiguity itself, even within one full name.
+`InstructionSetSyntax` only rejects macro codes written the same way part for
+part, so codes with different parts can still match one statement through an
+expression (`"$v"` and `"$v + 1"` both match `X + 1`).
+
+`InstructionForm::Disassemble` writes hex numbers as the program syntax does
+(`0FFFFh`, with a leading `0` before a letter). That rule moves into one helper
+beside the assembler's number syntax, rather than being written twice.
 
 ## Program maps
 
@@ -97,7 +107,7 @@ assembled programs on a core.
 - **Layers:** core, tools, instruction_sets
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Instruction forms*
+- **Depends on:** nothing
 - **Background:** the `MVI` and `MVD` headers in `default_instruction_set.izm`,
   and the Repeating instructions section of
   `docs/worklog/finish-default-instruction-set.md`
@@ -119,12 +129,30 @@ as that its two register arguments must differ, or that one can't be `R7`),
 in `InstructionDef` and the `.izm` source, so the program assembler rejects
 them. Then declare them on the instructions above.
 
+## Flag value sets
+
+- **Layers:** core, tools, instruction_sets, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** Text in `docs/worklog/instruction-forms.md`, and the `Flags`
+  and `Banks` value sets in `default_instruction_set.izm`
+
+Some value sets name bits that a program combines, such as `Flags` and `Banks`
+in the default instruction set (`CLRF Z | C`). `InstructionForm::Disassemble`
+writes a value by its name only when one name has it, so `CLRF Z | C`
+disassembles as `CLRF 5`, which assembles the same but reads worse. Let a value
+set be marked as flags, in `ValueSetDef`, the `.izm` source, and the exporter,
+so a value is disassembled as its names joined by `|`. Then mark the default
+instruction set's flag sets, whose pin test fingerprint includes its value
+sets.
+
 ## Debugger (oz3dbg)
 
 - **Layers:** core, tools
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Program maps*, *Instruction forms*
+- **Depends on:** *Program maps*
 - **Background:** the wiki's Home page, and the `T` (trap) flag in
   `2-Specifications.md`
 

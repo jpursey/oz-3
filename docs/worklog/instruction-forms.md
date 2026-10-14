@@ -3,32 +3,31 @@
 The program assembler and the debugger both need an instruction set's syntax as
 a table: every way each instruction can be written, what code word each one
 is, and how many words it takes (see
-[program_assembler.md](../program_assembler.md), Instructions). This adds that
+[program_assembler.md](../program_assembler.md), Instructions). This added that
 table to `tools` as `InstructionSetSyntax`, built from any `InstructionSetDef`.
-Each form encodes its arguments into words, and turns its words back into
-text. Matching a statement to a form is left to *Program assembler*, which owns
-the statement and expression grammar, so this gives it each name's forms with
+Each of its forms encodes argument values into words, and turns its words back
+into text. Matching a statement to a form is left to *Program assembler*, which
+owns the statement and expression grammar, and gets each name's forms with
 their parsed patterns.
 
 Building it is also what checks that the tools can use an `InstructionSetDef`,
 whether it was assembled from `.izm` source or written by hand.
 `CompileInstructionSet` only checks what cores need, so the rules for patterns,
-value sets, and sizes that the instruction assembler checks today move into
+value sets, and sizes that the instruction assembler checked moved into
 `InstructionSetSyntax`, and the instruction assembler builds one to check its
-result. The two places that parse patterns today share one pattern parser.
+result. The two places that parsed patterns now share one pattern parser,
+`SourcePattern`.
 
 Programs are case-insensitive, so the names they write from an instruction set
-become case-insensitive in `.izm` source too.
+became case-insensitive in `.izm` source too.
 
 Nothing assembles programs yet, so the only visible changes are to `.izm`
-source (see Behavior).
-
-This goes beyond the backlog item's **Layers** (tools only): it adds a value
-set location to `InstructionError` in `core`, and updates the wiki's
-Instruction Set Source page.
+source (see Behavior), and the wiki's Instruction Set Source page describes
+them. It went beyond the backlog item's **Layers** (tools only) by adding a
+value set location to `InstructionError` in `core`.
 
 The backlog item suggested the default instruction set's pin test fingerprint
-forms instead of scanning patterns for value sets itself. It stays as it is:
+forms instead of scanning patterns for value sets itself. It stayed as it was:
 its fingerprint already covers everything forms are built from, so any change
 to a form changes it, and fingerprinting forms would tie the pin to how
 `tools` presents them, so a refactor there could break it with no code word
@@ -57,8 +56,11 @@ changed. `IsPlaceholderName` stays in `core` for it, where it states a rule of
   Since an instruction uses one macro, this is what keeps every statement that
   names a full instruction to one form. Different instructions with the same
   root may still overlap, and a program names the full instruction there.
+- **A duplicate value name, or a value that doesn't fit its set's bits, is an
+  error at the set**, rather than at the value.
 
-The default instruction set already follows both, and its def doesn't change.
+The default instruction set already followed both rules, and its def didn't
+change.
 
 ### Forms
 
@@ -70,19 +72,26 @@ order: the instruction's pattern with `$m` replaced by the code's.
 Each form knows:
 - Its instruction, and its macro code if it has one.
 - Its pattern (`$r, ($r + $v)`), and its parts: the parsed pattern, with the
-  macro code's parts in place of `$m`.
+  macro code's parts in place of `$m`, and offsets into the form's pattern. A
+  macro code's placeholder is a whole argument only if the `$m` was.
 - Its arguments, which are its placeholders in order: each register and code
-  word value, with its bits, where they are in the code word, and its value set
-  if it has one, and each `$v` and `$V`, with whether it is relative.
+  word value, with its bits, where they start in the code word, and its value
+  set if it has one, and each `$v` and `$V`, with whether it is relative (a
+  `$v` that is a whole argument of a relative instruction).
 - Its code word with every argument 0, and the mask of the bits that say which
   form it is (the opcode, and the macro code's prefix).
 - Its size in words: the code word, one for each `$v`, and two for each `$V`.
+
+`InstructionSetSyntax` gives every form in the def's order, the forms of a full
+name (`ADD.W`) or of a root (`ADD`, for every `ADD` instruction), ignoring
+case, and the form of a code word (`FindForm`), or null for a code word no
+form uses (which a core runs as `NOP`).
 
 ### Checking an instruction set
 
 `InstructionSetSyntax::Create` fails with an `InstructionError` if the def
 breaks any rule the tools need, which are the rules the wiki's Instruction Set
-Source page gives, now checked for any `InstructionSetDef`:
+Source page gives, checked for any `InstructionSetDef`:
 - Every instruction's and macro code's pattern parses, with balanced brackets,
   and none of `;`, `@`, or a `#` outside `$#`.
 - Each pattern's placeholders agree with the def: an instruction's code word
@@ -103,32 +112,24 @@ Source page gives, now checked for any `InstructionSetDef`:
 
 ### Encoding
 
-```
-InstructionForm::Encode(values, address, &words, &error)
-```
-
-Takes a value for each argument, in the form's order, and the address of the
-statement, and writes the form's words: the code word with each register and
-code word value in its bits, then each `$v` and `$V`, low word first for a
-dword. A register is its number, and must be one the argument can hold. A code
-word value must fit its bits (0 to its largest unsigned value), a word must be
--32768 to 65535, and a dword -2^31 to 2^32 - 1, or it is an error. A relative
-`$v` is a target address, and is encoded as its offset from the next
+`InstructionForm::Encode(values, address, words, error)` takes a value for each
+argument, in the form's order, and the address of the statement, and appends
+the form's words: the code word with each register and code word value in its
+bits, then each `$v` and `$V`, low word first for a dword. A register is its
+number (`R1` and `D1` are both 1). A register or code word value must fit its
+bits, a word must be -32768 to 65535, and a dword -2^31 to 2^32 - 1, and the
+number of values must match, or it returns false, sets the error ("Register 8
+is not R0 to R7", "Value 32 does not fit in 5 bits"), and appends nothing. A
+relative `$v` is a target address, and is encoded as its offset from the next
 instruction (`address` plus the form's size), wrapping as `IP` does.
 
 ### Text
 
-```
-InstructionSetSyntax::FindForm(code_word)
-InstructionForm::Disassemble(words, address)
-```
-
-`FindForm` returns the form a code word is, or null if it is none (a code word
-no instruction or macro code uses, which a core runs as `NOP`). `Disassemble`
-writes the form's words as a program would write them, with its full name and
-its pattern's own spacing: `MOV.LW R1, (SP + 0005h)`. Assembled at the same
-address, the text gives the same words.
-- Registers are their names.
+`InstructionForm::Disassemble(words, address)` writes the form's `GetSize()`
+words as a program would write them, with its full name and its pattern's own
+spacing: `MOV.LW R1, (SP + 0005h)`. Assembled at the same address, the text
+gives the same words.
+- Registers are their names, as `InstructionSet::Decode` decodes them.
 - A code word value is decimal, or the name with that value if its value set
   has one (the first, if several do). Without a name, it is the number, as a
   named value is still an expression, so `CLRF 5` assembles as `CLRF Z | C`
@@ -142,260 +143,89 @@ address, the text gives the same words.
 
 ### Names
 
-| Name           | Candidates                                | Avoids                                                | Recommendation                                      |
-| -------------- | ----------------------------------------- | ----------------------------------------------------- | --------------------------------------------------- |
-| Parsed pattern | `SourcePattern`, `ArgPattern`, `Pattern`  | `InstructionDef::source` (the text), microcode `code` | `SourcePattern`, after "source pattern" in the docs |
-| Words to text  | `Disassemble`, `ToText`, `Format`         | `InstructionSet::Decode` (to microcode)               | `Disassemble`                                       |
+| Name           | Candidates                                    | Avoids                                                     | Choice                                                                   |
+| -------------- | --------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Table of forms | `InstructionSetSyntax`, `InstructionSetForms` | `InstructionSet` (compiled microcode), `InstructionSetDef` | `InstructionSetSyntax`, holding `InstructionForm`s (from the design doc) |
+| Parsed pattern | `SourcePattern`, `ArgPattern`, `Pattern`      | `InstructionDef::source` (the text), microcode `code`      | `SourcePattern`, after "source pattern" in the docs                      |
+| Words to text  | `Disassemble`, `ToText`, `Format`             | `InstructionSet::Decode` (to microcode)                    | `Disassemble`                                                            |
 
-`InstructionSetSyntax` and `InstructionForm` are already decided in
-program_assembler.md.
+### core
 
-### core: `InstructionError`
-
-`InstructionError::Def` gains `kValueSet`, with `def_name` the set's name.
-`InstructionSetSyntax::Create` reports where its errors are with it, so the
-instruction assembler maps them to its source with the code it already has for
-compile errors. An error in one value of a set is at the set.
+`InstructionError::Def` has `kValueSet`, with `def_name` the set's name, so
+`InstructionSetSyntax` can say where its errors are, and the instruction
+assembler maps them back to its source with the code it has for compile
+errors. `CompileInstructionSet` never returns it.
 
 ### tools: `SourcePattern`
 
-```
-// A source pattern, parsed: how an instruction's arguments, or a macro code's,
-// are written in a program (InstructionDef::source, MacroCodeDef::source).
-class SourcePattern final {
- public:
-  // One part of a pattern: literal text, or a placeholder.
-  struct Part {
-    enum class Kind {
-      kLiteral,   // An identifier, number, string, or symbol, written as is.
-      kArgument,  // A code word argument: $r, $R, $#, $m, or a value set.
-      kWord,      // $v
-      kDword,     // $V
-    };
-    Kind kind = Kind::kLiteral;
-    int offset = 0;  // Where it is in the source text.
-    int size = 0;
-    gb::TokenType literal_type = gb::kTokenNone;  // For kLiteral.
-    gb::TokenValue literal;                       // For kLiteral.
-    Argument arg;                                 // For kArgument.
-    const ValueSetDef* value_set = nullptr;       // For a value set.
-    bool whole_arg = false;  // It is all of one comma-separated argument.
-  };
+`source_pattern.h` parses a source pattern (`InstructionDef::source` or
+`MacroCodeDef::source`) into its parts, with the gb parser to check its syntax,
+and then lexes it again for the parts:
+- `ParseInstruction` and `ParseMacroCode` own the rules for how many code word
+  arguments each kind of pattern has (at most two, one of them `$m`, for an
+  instruction, and one, not `$m`, for a macro code), so the instruction
+  assembler (deriving the def's arguments) and `InstructionSetSyntax` (checking
+  them) share them.
+- Each `Part` is a literal (with its token type and value), a code word
+  argument (`$r`, `$R`, `$#`, `$m`, or a value set, with its `Argument` and
+  `ValueSetDef`), `$v`, or `$V`, with its offset and size in the source, and
+  whether it is a whole argument. `GetArgs()` gives the code word arguments in
+  order, and `GetValueWords()` the words its `$v` and `$V` add.
+- A placeholder name is one of `core`'s (`IsPlaceholderName`), or else a value
+  set's, or else an error.
+- Parsing creates a parser from the shared parser program each time, which is
+  once per instruction and macro code.
 
-  // Parse an instruction's source (at most two code word arguments, at most
-  // one of them $m) or a macro code's (at most one, not $m), whose
-  // placeholders may name any of `value_sets`. Return an error if it breaks a
-  // pattern rule.
-  static absl::StatusOr<SourcePattern> ParseInstruction(
-      std::string_view source, absl::Span<const ValueSetDef> value_sets);
-  static absl::StatusOr<SourcePattern> ParseMacroCode(
-      std::string_view source, absl::Span<const ValueSetDef> value_sets);
-
-  absl::Span<const Part> GetParts() const;
-  absl::Span<const Argument> GetArgs() const;  // Its code word arguments.
-  int GetValueWords() const;  // Words its $v and $V add after the code word.
-};
-```
-
-- In `tools`, beside the instruction assembler, which uses it for both
-  instruction and macro code patterns, replacing its two copies of the parse
-  and its `AssembleArgument`, `IsValuePlaceholder`, and `GetWholeArgPlaceholder`.
-  `InstructionSetSyntax` uses it too, and its forms give their parts to the
-  program assembler for matching.
-- It tells a placeholder's own name from a value set's with `core`'s
-  `IsPlaceholderName`.
-- It owns the rules for how many code word arguments each kind of pattern
-  has, so the instruction assembler (deriving the def's arguments) and
-  `InstructionSetSyntax` (checking them) share them. Part offsets let a form
-  splice its macro code's source in place of the `$m`, and let `Disassemble`
-  fill in its placeholders.
-- Parsing creates a parser from the shared parser program each time, as the
-  assembler does today. That is once per instruction and macro code.
+The gb lexer returns a re-read user token's whole text rather than its capture,
+so the placeholder regex captures the whole token, and the `$` is dropped from
+it. Game Bits' backlog has the fix (*Re-read user tokens keep their capture*).
 
 ### tools: `InstructionSetSyntax`
 
-```
-// One form of an instruction: the instruction with one of its macro's codes,
-// or the instruction alone if it has no macro.
-class InstructionForm final {
- public:
-  // An argument: one of the form's placeholders, in order.
-  struct Arg {
-    enum class Kind { kWordReg, kDwordReg, kCodeValue, kWord, kDword };
-    Kind kind;
-    int bits = 0;   // For registers and code values: its bits in the code word.
-    int shift = 0;  // For registers and code values: where its bits start.
-    const ValueSetDef* value_set = nullptr;  // For a named code value.
-    bool relative = false;                   // For a target address $v.
-  };
+`instruction_set_syntax.h` holds `InstructionForm` and `InstructionSetSyntax`.
+`Create` builds it with an `InstructionSetSyntaxBuilder` (in the `.cc`), which:
+1. Compiles the def, unless given its compiled set (the instruction assembler,
+   which has just compiled it, passes it).
+2. Checks the value sets and instruction names.
+3. Parses each macro's code patterns, checking each against its `arg`, and
+   that no two are written the same way.
+4. Parses each instruction's pattern, checks it against the def, and adds a
+   form for each macro code. A form's pattern splices the code's source in
+   place of `$m`, shifting the offsets of the parts after it. Its code word
+   comes from `InstructionDef::Encode` and `MacroDef::Encode`, so the layout
+   rule stays in `core`.
+5. Checks each form's size by decoding its code word with the compiled set,
+   and that a relative instruction has a relative `$v`.
+6. Indexes the forms by upper case full name and root, and by opcode for
+   `FindForm`, which checks each of that opcode's forms against its mask.
 
-  const InstructionDef& GetInstruction() const;
-  const MacroCodeDef* GetMacroCode() const;  // Null without a macro.
-  std::string_view GetPattern() const;       // "$r, ($r + $v)"
-  absl::Span<const SourcePattern::Part> GetParts() const;  // Without $m.
-  absl::Span<const Arg> GetArgs() const;  // By placeholder part, in order.
-  uint16_t GetCodeWord() const;           // With every argument 0.
-  uint16_t GetCodeWordMask() const;       // The bits that say which form.
-  int GetSize() const;                    // In words.
+It is const after `Create`, so it is safe to share between threads. The def
+must outlive it.
 
-  // Writes the form's words for the statement at `address`, given a value for
-  // each of GetArgs(). Returns false, and sets `error`, if a value doesn't fit.
-  bool Encode(absl::Span<const int64_t> values, uint16_t address,
-              std::vector<uint16_t>& words, std::string* error) const;
-
-  // Returns the instruction at `address` as a program writes it. `words` are
-  // its GetSize() words, starting with a code word of this form.
-  std::string Disassemble(absl::Span<const uint16_t> words,
-                          uint16_t address) const;
-};
-
-// Every form of every instruction in an instruction set, for matching
-// statements to code words, and code words back to text.
-class InstructionSetSyntax final {
- public:
-  // Returns null and sets `error` if the tools can't use `def`. Checking it
-  // compiles it, unless `instruction_set` gives it already compiled (which is
-  // only used for the check, and not kept). `def` must outlive this.
-  static std::unique_ptr<InstructionSetSyntax> Create(
-      const InstructionSetDef& def,
-      const InstructionSet* instruction_set = nullptr,
-      InstructionError* error = nullptr);
-
-  // Every form, by instruction in the def's order, then by macro code.
-  absl::Span<const InstructionForm> GetForms() const;
-
-  // The forms of a full name, or of every instruction with a root, ignoring
-  // case.
-  absl::Span<const InstructionForm* const> GetForms(
-      std::string_view name) const;
-
-  // Returns the form of a code word, or null if it is no form.
-  const InstructionForm* FindForm(uint16_t code_word) const;
-};
-```
-
-- In `tools`, as the assembler and debugger are. It has no `Asm` prefix, as the
-  debugger uses it too.
-- `Create` checks each form's size by decoding its code word with the compiled
-  instruction set. It takes the def, rather than an `AsmInstructionSet`, as the
-  default instruction set isn't one, and `instruction_sets` can't link `tools`
-  to make one. Without a compiled set, it compiles the def, failing on
-  anything `CompileInstructionSet` would. The instruction assembler, which has
-  just compiled the def, passes its compiled set so it isn't compiled twice.
-- Forms are indexed by upper case full name and root, and by opcode for
-  `FindForm`, which checks each of that opcode's forms against its mask.
-- Const after `Create`, so it is safe to share between threads.
-
-**Brittleness:**
-- An `instruction_set` given to `Create` must be compiled from `def`. A
-  mismatch would most likely fail the size check, but isn't guaranteed to.
-  Leaving it out avoids this, at the cost of compiling.
-- `Encode` takes values in the order of `GetArgs()`, which the caller must
-  keep, as the program assembler will when it matches parts to arguments.
-- The def must outlive the syntax, as for every other user of an
-  `InstructionSetDef`.
+The building blocks the program assembler and debugger use are a form's parts
+and arguments (for matching a statement, and filling in its values), `Encode`,
+`Disassemble`, `GetForms(name)`, and `FindForm`.
 
 ### tools: instruction assembler
 
-`InstructionSetAssembler` still derives each instruction's `arg1`, `arg2`, and
-macro, and each macro code's `arg`, from its pattern, now through
-`SourcePattern`. It turns instruction and value names to upper case as it reads
-them. After compiling, it creates an `InstructionSetSyntax` to check the
-result, passing the compiled set, and reports its error at the definition,
-macro code, or microcode the `InstructionError` names. It drops `CheckSizes`,
-its relative check, the value set rules in `AssembleValueSet`, and its check
-that macro code sources are unique ignoring spacing.
+`InstructionSetAssembler` derives each instruction's `arg1`, `arg2`, and macro,
+and each macro code's `arg`, from its pattern with `SourcePattern`, and turns
+instruction and value names to upper case as it reads them. After compiling,
+it creates an `InstructionSetSyntax` to check the result, passing the compiled
+set, and reports its error at the value set, instruction, macro code, or
+microcode the `InstructionError` names.
 
 It keeps what it needs before compiling: valid bits for a value set, as a
 pattern that uses it takes them as its argument's size; values that fit in a
 byte; and instruction names and macro code sources that are exactly unique,
 as errors are mapped back to the source by them.
 
-Errors stay at the same places, mostly with the same messages, apart from an
-error in one value of a set, which is now at the set.
+### Brittleness
 
-### To confirm
-
-- Whether any of the instruction assembler's tests use lower case instruction
-  or value names, or macro codes that are the same under the new rule (CL3,
-  CL4).
-
-## CLs
-
-### CL1 [x] core: value set errors
-
-Depends on: nothing.
-
-- `InstructionError::Def::kValueSet`.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-
-### CL2 [x] tools: `SourcePattern`
-
-Depends on: nothing.
-
-- `source_pattern.h`/`.cc`: `SourcePattern`.
-- The instruction assembler parses instruction and macro code patterns with it.
-- No visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests: every part kind, literal types, whole arguments, value words,
-  value sets, and each pattern error (bad syntax, `;`,
-  `@`, `#`, unknown placeholder, bad size).
-- The instruction assembler's tests pass unchanged.
-
-### CL3 [x] tools, wiki: case-insensitive names in `.izm`
-
-Depends on: nothing.
-
-- The instruction assembler turns instruction names, extensions, and value
-  names to upper case as it reads them.
-- Wiki: Instruction Set Source says which names are case-insensitive.
-
-**Verify**
-- Standard checks.
-- Unit tests: lower and mixed case instruction and value names assemble to
-  upper case, and names that differ only in case are already defined.
-- `default_instruction_set.inc` is unchanged.
-
-### CL4 [x] tools, wiki: `InstructionSetSyntax` and its checks
-
-Depends on: CL1, CL2.
-
-- `instruction_set_syntax.h`/`.cc`: `InstructionForm` (without `Encode` and
-  `Disassemble`) and `InstructionSetSyntax::Create`, `GetForms`, and
-  `FindForm`, with every check in Checking an instruction set.
-- The instruction assembler creates one after compiling, passing its compiled
-  set, and maps its errors,
-  dropping `CheckSizes`, the value set rules, and its macro code source check.
-- Wiki: Instruction Set Source's rule for macro code sources becomes the rule
-  that a macro's codes can't be written the same way.
-
-**Verify**
-- Standard checks.
-- Unit tests: forms for instructions with and without macros, and a macro as
-  either argument (patterns, parts, args, code words, masks, sizes); names
-  ignoring case; `FindForm` for every form and for unused code words; each
-  check, on defs written in the test, including defs whose patterns disagree
-  with their args, and lower case names; `Create` with and without a compiled
-  set.
-- The instruction assembler's tests for the moved checks still pass, at the
-  same locations (apart from errors in one value of a set).
-
-### CL5 [x] tools: encoding and disassembly
-
-Depends on: CL4.
-
-- `InstructionForm::Encode` and `InstructionForm::Disassemble`.
-
-**Verify**
-- Standard checks.
-- Unit tests: encoding every argument kind, relative values (forward,
-  backward, and wrapping), and values that don't fit; disassembling registers,
-  code values, named values (including a value with no name, and one with
-  several), `$v` and `$V` with and without a leading `0`, and relative
-  targets; and that disassembling the words of an encoded form gives back its
-  values.
+- An `instruction_set` given to `Create` must be compiled from the def. A
+  mismatch would most likely fail the size check, but isn't guaranteed to.
+  Leaving it out avoids this, at the cost of compiling.
+- `Encode` takes values in the order of `GetArgs()`, which the program
+  assembler keeps by matching parts to arguments in order.
+- `Disassemble` needs the form's `GetSize()` words, which is only checked in
+  debug builds.
