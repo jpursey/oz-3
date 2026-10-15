@@ -177,6 +177,8 @@ Create the worktree from the local `main`, not `origin/main`, which is behind wh
 git worktree add -b <branch> .claude/worktrees/<branch> main
 ```
 
+EnterWorktree looks for the worktree in the repository that holds the session's working directory, and a `cd` in the shell moves that directory. Game Bits and `wiki/` are separate repositories, so run git in them with `git -C <dir>` instead of `cd`. If the shell has left the main checkout, `cd` back before calling EnterWorktree.
+
 The worktree builds against Game Bits through `GB_DIR` like the main checkout, so it needs no other setup. It has its own `out/` and `bin/`, so its first build in each configuration is a full build.
 
 To land the change, leave the worktree first, keeping it (ExitWorktree with `keep`), since a session in a worktree can't run git against the main checkout. Then merge from the main checkout as above.
