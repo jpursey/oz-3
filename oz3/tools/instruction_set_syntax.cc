@@ -21,13 +21,13 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/parse/token.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/core/instruction_set.h"
+#include "oz3/tools/program_lexer.h"
 #include "oz3/tools/source_pattern.h"
 
 namespace oz3 {
@@ -105,16 +105,6 @@ std::string_view GetRegisterName(const InstructionForm::Arg& arg, int value) {
 int GetCodeValue(const InstructionForm::Arg& arg,
                  absl::Span<const uint16_t> words) {
   return (words[0] >> arg.shift) & ((1 << arg.bits) - 1);
-}
-
-// Returns a value as a program writes it in hex: `digits` digits and an "h",
-// with a leading 0 if the first digit is a letter, so it isn't a name.
-std::string FormatHex(uint32_t value, int digits) {
-  std::string text = absl::StrFormat("%0*Xh", digits, value);
-  if (text[0] >= 'A') {
-    text.insert(0, 1, '0');
-  }
-  return text;
 }
 
 InstructionForm::Arg::Kind GetArgKind(const Part& part) {
@@ -244,14 +234,14 @@ std::string InstructionForm::Disassemble(absl::Span<const uint16_t> words,
         if (arg.relative) {
           word += static_cast<uint16_t>(address + size_);
         }
-        absl::StrAppend(&text, FormatHex(word, 4));
+        absl::StrAppend(&text, FormatHexNumber(word, 4));
       } break;
       case Arg::Kind::kDword: {
         const uint32_t dword =
             words[word_index] |
             (static_cast<uint32_t>(words[word_index + 1]) << 16);
         word_index += 2;
-        absl::StrAppend(&text, FormatHex(dword, 8));
+        absl::StrAppend(&text, FormatHexNumber(dword, 8));
       } break;
     }
   }

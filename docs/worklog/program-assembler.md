@@ -250,11 +250,8 @@ std::string FormatHexNumber(uint32_t value, int digits);
   double quoted, with doubled quotes (`kQuoteQuoteEscape`, decoded). Which
   quote a string used comes from its token text.
 - `;` is a line comment, newlines are tokens (`kLineBreak`), and `@name` is a
-  local label token. Its regex captures the whole token, `@` and all, as
-  `source_pattern.cc`'s placeholders do: a user token read again after the
-  parser backtracks, which matching every form does, has its whole text as
-  its value rather than its capture (Game Bits *Re-read user tokens keep their
-  capture*).
+  local label token, whose value is the whole token, `@` and all, so a local
+  label's name can't be a label's.
 - Symbols are the pattern lexer's (`source_pattern.cc`), `$` (the current
   offset), and `<<` and `>>`.
 - `FormatHexNumber` is the rule `InstructionForm::Disassemble` uses, which moves
@@ -309,6 +306,11 @@ class ExpressionContext {
   walk the parse tree's maps.
 - A string is a value if it makes one word (`GetStringWords`).
 - Evaluating checks every node's result against the width.
+- A number token with a negative value is a hex or binary number with its top
+  bit set (numbers have no sign), so it is "too big" rather than a negative
+  value that would fit a word.
+- Local label tokens aren't upper case (only identifiers are), so `Create`
+  turns their names to upper case.
 
 ### tools, wiki: values followed by operators
 
@@ -414,12 +416,16 @@ and scope).
 ### To confirm
 
 - A gb parser token literal that is a keyword (`"SP"`) matches the keyword
-  token, and `%ident` doesn't match a keyword (CL1).
+  token, and `%ident` doesn't match a keyword (CL4, as it needs a grammar).
 - Case-insensitive keywords with `kIdentForceUpper` match `sp` and `Sp`, and
-  `R10` is an identifier, not `R1` and `0` (CL1).
+  `R10` is an identifier, not `R1` and `0` (CL1). **Confirmed:** a keyword's
+  value is the keyword as configured (`sp` is `SP`), and `R10`, `R8`, `D4`,
+  and `SPX` are identifiers.
 - `kIdentForceUpper` leaves strings and user tokens as written, and
   `kQuoteQuoteEscape` with `kDecodeEscape` decodes `'It''s'` (CL1).
+  **Confirmed.**
 - Newline tokens with `kLineBreak` come after a line comment (CL1).
+  **Confirmed**, and every line ends with one, including the last.
 - A repeated group that fails partway (`5 + R1` as an expression) rewinds to
   before the group, so the expression is `5`. The parser's `MatchGroup` reads
   as if it does (CL2).
@@ -428,7 +434,7 @@ and scope).
 
 ## CLs
 
-### CL1 [ ] tools: program lexer
+### CL1 [x] tools: program lexer
 
 Depends on: Game Bits *Number suffixes in either case, and hex numbers that
 start with a digit*.

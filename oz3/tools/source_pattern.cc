@@ -19,6 +19,7 @@
 #include "gb/parse/lexer.h"
 #include "gb/parse/parser.h"
 #include "gb/parse/parser_program.h"
+#include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 #include "oz3/core/instruction_def.h"
 
@@ -163,6 +164,8 @@ absl::StatusOr<SourcePattern> SourcePattern::ParseMacroCode(
   }
   return pattern;
 }
+
+absl::Span<const gb::Symbol> SourcePattern::GetSymbols() { return kSymbols; }
 
 absl::StatusOr<SourcePattern> SourcePattern::Parse(
     std::string_view source, absl::Span<const ValueSetDef> value_sets) {

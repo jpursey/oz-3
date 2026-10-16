@@ -11,6 +11,7 @@
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 #include "oz3/core/instruction_def.h"
 
@@ -72,6 +73,11 @@ class SourcePattern final {
   // which isn't a $m. Otherwise, as ParseInstruction().
   static absl::StatusOr<SourcePattern> ParseMacroCode(
       std::string_view source, absl::Span<const ValueSetDef> value_sets);
+
+  // Returns the symbols a pattern can write as literal text. A program's lexer
+  // must read each of them as the same symbol, or no statement could match a
+  // pattern that writes it.
+  static absl::Span<const gb::Symbol> GetSymbols();
 
   SourcePattern(const SourcePattern&) = default;
   SourcePattern(SourcePattern&&) = default;
