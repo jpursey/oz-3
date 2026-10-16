@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_tools_SOURCE
+  expression.cc expression.h
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
   instruction_set_syntax.cc instruction_set_syntax.h
@@ -30,6 +31,7 @@ set(oz3_tools_LIBS
 )
 
 set(oz3_tools_TEST_SOURCE
+  expression_test.cc
   instruction_assembler_test.cc
   instruction_def_exporter_test.cc
   instruction_set_syntax_test.cc
@@ -38,6 +40,9 @@ set(oz3_tools_TEST_SOURCE
   program_loader_test.cc
   program_test.cc
   source_pattern_test.cc
+)
+set(oz3_tools_TEST_DEPS
+  absl::flat_hash_map
 )
 
 gb_add_library(oz3_tools)

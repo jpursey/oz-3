@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/status/statusor.h"
@@ -22,12 +23,17 @@ namespace oz3 {
 // upper case, so code that names local labels by their value does that itself.
 inline constexpr gb::TokenType kTokenLocalLabel = gb::kTokenUser + 0;
 
+// Declares the program lexer's user tokens for a gb parser program, as
+// %local_label. The number is the token type's offset from gb::kTokenUser.
+inline constexpr std::string_view kProgramParserTokens = "%local_label = 0;\n";
+static_assert(kTokenLocalLabel == gb::kTokenUser + 0);
+
 // Returns the lexer configuration for program source:
 // - Decimal numbers, hex numbers with an "h" suffix that start with a digit
 //   ("0FFh"), and binary numbers with a "b" suffix ("1011b"), with suffixes
 //   in either case. Numbers have no sign: "-1" is the symbol '-' and 1. Hex
-//   and binary numbers are unsigned 64-bit values, so one with its top bit
-//   set has a negative value, which means it is too big.
+//   and binary numbers are 64 unsigned bits, so one with its top bit set has
+//   a negative int64 value, which is its bits as a uint64_t.
 // - Identifiers, turned to upper case. The registers a program names (R0 to
 //   R7, BC, BS, BD, BE, MB, IP, FP, SP, and D0 to D3) are keywords in any
 //   case, so they are never identifiers.

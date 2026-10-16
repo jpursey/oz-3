@@ -103,17 +103,16 @@ std::unique_ptr<AsmProgram> AssembleProgram(
 
 ### Expressions
 
-- **Widths:** an expression is evaluated in the width where it is used, and
-  each step must fit that width. So in a dword (`$V`, `.DD`), the arithmetic is
-  dword arithmetic, and in a word it is word arithmetic.
-- Arithmetic (unary `-`, `*`, `/`, `%`, `+`, `-`) is on the integers as
-  written. `/` and `%` round toward zero, as in C, and dividing by zero is an
-  error.
-- Bitwise operators (`~`, `&`, `|`, `^`, `<<`, `>>`) work on the bits of the
-  width: each operand is first taken as its unsigned bits in the width (so `-1`
-  is `0FFFFh` as a word), and the result is unsigned. So `~0FF00h` is `00FFh`
-  as a word, and `-1 & 0FFh` is `0FFh`. `<<` is an error if it shifts out a set
-  bit, and `>>` is logical. `!` is 1 for 0 and 0 otherwise.
+- **Widths:** an expression is evaluated in the width where it is used. So in
+  a dword (`$V`, `.DD`), the arithmetic is dword arithmetic, and in a word it
+  is word arithmetic.
+- **Machine arithmetic** (replacing the design doc's "every step must fit, never
+  a silent wrap"): a value is the width's bits, and each operator works on them
+  as the CPU would. `+`, `-`, `*`, and unary `-` wrap (`-1` is `0FFFFh` as a
+  word), `/` and `%` are unsigned, `<<` and `>>` are logical and give 0 for a
+  count of the width or more, `~`, `&`, `|`, and `^` are bitwise, and `!` is 1
+  for 0 and 0 otherwise. The only errors are a number, character, or symbol
+  that doesn't fit the width, and dividing by zero.
 - **A constant is evaluated where it is used, in that width.** A constant is
   its expression, so `.CONST MASK = ~1` is `0FFFEh` as a word, and
   `0FFFFFFFEh` as a dword. Its value as a symbol (for the map) is its dword
@@ -128,12 +127,9 @@ std::unique_ptr<AsmProgram> AssembleProgram(
       .CONST TABLE_SIZE = $ - table   ; 3, wherever TABLE_SIZE is used
 
 - **A dword's low or high word can't be written in a word.** As a word,
-  `X & 0FFFFh` is an error where `X` doesn't fit a word, as `X` is a step of
-  the word expression. Evaluating the steps as dwords and checking only the
-  result would fix that, but bitwise operators take their bits from the width,
-  so `~MASK` as a word would then be `0FFFFFFxxh`, which doesn't fit. Masks are
-  far more common than splitting dwords, so that is left to a backlog item,
-  *Low and high words*, which suggests `LOW(X)` and `HIGH(X)`.
+  `X & 0FFFFh` is an error where `X` doesn't fit a word, as the constant is
+  evaluated as a word. That is left to a backlog item, *Low and high words*,
+  which suggests `LOW(X)` and `HIGH(X)`.
 - An expression used in the first pass (a code word argument, a literal
   number in a pattern, and the directive values above) can only use labels and
   constants defined above it, and an expression that uses one that isn't is an
@@ -260,18 +256,30 @@ std::string FormatHexNumber(uint32_t value, int digits);
 ### tools: `Expression`
 
 ```
+enum class ExpressionWidth { kWord, kDword };
+
+// The result of evaluating: a value, a symbol not defined (yet), or an error.
+struct ExpressionResult { ... };
+
+// What an expression's names and $ are, where it is evaluated.
+class ExpressionContext {
+ public:
+  virtual ~ExpressionContext() = default;
+  virtual uint16_t GetOffset() const = 0;  // $
+
+  // Returns nullopt if there is no such symbol (yet), or else the symbol's
+  // result, which passes through as it is (a constant's kUndefined names the
+  // symbol its own expression is missing).
+  virtual std::optional<ExpressionResult> GetSymbol(
+      std::string_view name, ExpressionWidth width) const = 0;
+};
+
 // An integer expression in program source.
 class Expression final {
  public:
-  enum class Width { kWord, kDword };
-
-  // The result of evaluating: a value, a symbol not defined (yet), or an
-  // error.
-  struct Result { ... };
-
   // Parser rules for an expression, as the rule "Expression", for a parser
-  // program with the program lexer.
-  static constexpr std::string_view kParserRules = ...;
+  // program with the program lexer and its tokens (kProgramParserTokens).
+  static std::string_view GetParserRules();
 
   // Creates the expression an "Expression" rule matched. `lexer` holds its
   // tokens, and must outlive the expression.
@@ -280,19 +288,8 @@ class Expression final {
   // Returns true if the expression is in brackets as a whole: "(5)".
   bool IsBracketed() const;
 
-  // Evaluates the expression in `width`. A name in `value_set` is its value,
-  // ahead of any symbol.
-  Result Evaluate(Width width, const ExpressionContext& context,
-                  const ValueSetDef* value_set = nullptr) const;
-};
-
-// What an expression's names and $ are, where it is evaluated.
-class ExpressionContext {
- public:
-  virtual ~ExpressionContext() = default;
-  virtual uint16_t GetOffset() const = 0;  // $
-  virtual Expression::Result GetSymbol(std::string_view name,
-                                       Expression::Width width) const = 0;
+  ExpressionResult Evaluate(ExpressionWidth width,
+                            const ExpressionContext& context) const;
 };
 ```
 
@@ -305,12 +302,22 @@ class ExpressionContext {
   errors, so an expression outlives its `ParseResult`, and evaluating doesn't
   walk the parse tree's maps.
 - A string is a value if it makes one word (`GetStringWords`).
-- Evaluating checks every node's result against the width.
-- A number token with a negative value is a hex or binary number with its top
-  bit set (numbers have no sign), so it is "too big" rather than a negative
-  value that would fit a word.
+- Evaluating works on `uint64_t`s holding the width's bits, and masks each
+  step's result to the width, so nothing wider than the machine shows through.
+  Two values of 32 bits multiply within 64, so no step needs more.
+- A number token's value is read as its 64 unsigned bits (the lexer gives a
+  hex or binary number with its top bit set a negative int64), so it is
+  checked against the width like any other number.
 - Local label tokens aren't upper case (only identifiers are), so `Create`
   turns their names to upper case.
+- Named values aren't `Expression`'s: a value set's names are in scope through
+  a `ValueSetContext` (CL4), which looks a name up in the set first, and then
+  in the context it wraps. That keeps `Expression` free of instruction sets,
+  for the debugger's watches.
+- Constants are evaluated where they are used, so the assembler's context
+  (CL5) evaluates a constant's expression on each use, and may cache it by
+  width. An error in a constant's own expression comes back at each use, so
+  the assembler reports a constant's errors once, where it is defined.
 
 ### tools, wiki: values followed by operators
 
@@ -330,6 +337,11 @@ struct InstructionMatch {
   const InstructionForm* form;
   std::vector<InstructionArg> args;
 };
+
+// A context in which a value set's names are its values, ahead of any symbol
+// of the same name in the context it wraps, for a code word argument that
+// takes named values ($Condition).
+class ValueSetContext final : public ExpressionContext { ... };
 
 // The grammar of programs for one instruction set.
 class ProgramGrammar final {
@@ -356,7 +368,7 @@ The parser program's text is built from the syntax, so it is a gb grammar like
 the instruction assembler's, written for one instruction set:
 - **The assembler's rules:** `Label` (a name or local label, then `:`),
   `Directive` (`.` and each directive's operands, with `Expression` from
-  `Expression::kParserRules`), `InstructionName` (a name, with an optional `.`
+  `Expression::GetParserRules()`), `InstructionName` (a name, with an optional `.`
   and extension), and `EndOfLine` (a line break or the end).
 - **Register rules** for each register size, as alternatives of the register
   keywords: `$r2` is `"R0"` to `"R3"`, `$r` adds `"R4"` to `"R7"`, `$r4` adds
@@ -428,7 +440,8 @@ and scope).
   **Confirmed**, and every line ends with one, including the last.
 - A repeated group that fails partway (`5 + R1` as an expression) rewinds to
   before the group, so the expression is `5`. The parser's `MatchGroup` reads
-  as if it does (CL2).
+  as if it does (CL2). **Confirmed:** parsing `5 + R1` as an expression takes
+  `5`, and leaves the lexer at the `+`.
 - `Parser::Parse` of a form's rule leaves the lexer just past the match, and
   `SetNextToken` to `args` works after a failed parse (CL4).
 
@@ -454,7 +467,7 @@ start with a digit*.
 - The To confirm items for CL1, with the findings recorded here.
 - Disassemble's tests pass unchanged.
 
-### CL2 [ ] tools: `Expression`
+### CL2 [x] tools: `Expression`
 
 Depends on: CL1.
 
@@ -464,12 +477,13 @@ Depends on: CL1.
 **Verify**
 - Standard checks.
 - Unit tests, parsing with a test grammar of the program lexer and
-  `kParserRules`: every operator and precedence level, left to right, and
+  `GetParserRules()`: every operator and precedence level, left to right, and
   brackets; `IsBracketed`; an expression ending where the next token can't
-  continue it (`5 + R1`, `N ROM`); each width's limits, at every step
-  (`A * B / C`); bitwise operators on negative values; division by zero and
-  shifts out; characters and strings; `$`; symbols defined, undefined, and in
-  error; a value set ahead of a symbol; registers rejected, with locations.
+  continue it (`5 + R1`, `N ROM`); wrapping in each width; unsigned division;
+  logical shifts, and counts of the width or more; numbers and symbols that
+  don't fit; division by zero; characters and strings; `$`; symbols defined, undefined, and in
+  error, and a symbol whose own expression is missing a symbol; registers
+  rejected, with locations.
 
 ### CL3 [ ] tools, wiki: values followed by operators
 
@@ -490,8 +504,8 @@ Depends on: nothing.
 
 Depends on: CL2, CL3.
 
-- `program_grammar.h`/`.cc`: `ProgramGrammar`, `InstructionMatch`, and
-  `InstructionArg`.
+- `program_grammar.h`/`.cc`: `ProgramGrammar`, `InstructionMatch`,
+  `InstructionArg`, and `ValueSetContext`.
 - Unused, so no visible change.
 
 **Verify**
@@ -501,8 +515,8 @@ Depends on: CL2, CL3.
   full names and roots; registers by size (`$r2`, `$r4`, `$R`); literal words
   and registers in patterns, in any case; literal numbers by value, and with a
   symbol not yet defined; brackets inside a value, and around a whole value;
-  a register never matching a value; value set names, and a symbol of the same
-  name; forms sharing a rule; ambiguity across a root (`PUSH 5`) and through a
+  a register never matching a value; value set names (`ValueSetContext`), in
+  any case, ahead of a symbol of the same name; forms sharing a rule; ambiguity across a root (`PUSH 5`) and through a
   literal word (`RST SELF, 1`); no match; text after a matched form.
 - The To confirm item for CL4.
 - Performance: building the grammar for the default instruction set, and

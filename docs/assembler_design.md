@@ -261,13 +261,21 @@ value is used sets its width**, with no syntax for it:
   `.CONST MASK = ~1` is `0FFFEh` as a word, and `0FFFFFFFEh` as a dword. Its
   value in the map is its dword value.
 
-Every step of an expression, not just its result, must fit its width, or it is
-an error, never a silent wrap. A word is -32768 to 65535, so `-1` is `0FFFFh`,
-and a dword is -2^31 to 2^32 - 1. A code word argument must also fit its bits,
-from 0 to its largest unsigned value. So `.DW A * B / C` is an error if `A * B`
-doesn't fit a word, even if the result would. That makes a dword's low or high
-word impossible to write in a word (`X & 0FFFFh` is an error where `X` doesn't
-fit one), which is left to *Low and high words*.
+**The arithmetic is the machine's.** A value is its width's bits, 16 or 32, and
+every operator works on them as the CPU would, with nothing wider underneath:
+- `+`, `-`, `*`, and unary `-` wrap, as `ADD` does, so `-1` is `0FFFFh` as a
+  word, and `65535 + 1` is 0. `.DW A * B / C` divides whatever `A * B` wrapped
+  to, as the same code would on the machine.
+- `/` and `%` are unsigned, as `DIV` and `MOD` are, so `-2 / 2` is `7FFFh`.
+- `<<` and `>>` are logical, and a shift by the width or more gives 0, as `SHL`
+  and `SHR` do.
+- `~`, `&`, `|`, and `^` are bitwise, so `~0FF00h` is `00FFh` as a word.
+
+A number, a character, and a symbol's value must fit the width, from 0 to its
+largest unsigned value, and dividing by zero is an error. A code word argument
+must also fit its bits. A dword's low or high word can't be written in a word,
+as `X & 0FFFFh` is an error where `X` doesn't fit one, which is left to *Low
+and high words*.
 
 ## Instructions
 
