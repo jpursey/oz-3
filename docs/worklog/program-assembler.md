@@ -133,7 +133,8 @@ std::unique_ptr<AsmProgram> AssembleProgram(
 - An expression used in the first pass (a code word argument, a literal
   number in a pattern, and the directive values above) can only use labels and
   constants defined above it, and an expression that uses one that isn't is an
-  error naming it, rather than a statement that doesn't match.
+  error naming it, rather than a statement that doesn't match (see
+  Instructions for where another form matches).
 
 ### Instructions
 
@@ -146,15 +147,23 @@ Matching follows the design doc's Matching section, except where a value ends:
   it is how the parser reads an expression. The two agree for every pattern
   once patterns follow a new rule: **a value (a placeholder for one, or a
   literal number) can't be followed by a binary operator** (`+`, `-`, `*`,
-  `/`, `%`, `&`, `|`, `^`, `<`, or `>`), which would continue the expression. Without it, a pattern like
-  `"$v + 1"` could never match, as `$v` would take the `+ 1`. The default
-  instruction set follows it: every value in it is followed by `)`, `]`, `,`,
-  or the end.
+  `/`, `%`, `&`, `|`, `^`, `<`, or `>`), which would continue the expression.
+  Without it, a pattern like `"$v + 1"` could never match, as `$v` would take
+  the `+ 1`. The default instruction set follows it: every value in it is
+  followed by `)`, `]`, `,`, or the end.
 - A value wrapped in brackets as a whole still doesn't match (`JP (5)`).
 - No form matching lists the instruction's forms, as `ADD.W $r, $v`, and
   matching several lists those it matched.
-- An error in a value that decides the match (a literal number's expression
-  using a symbol not yet defined) is that error, not "no form matches".
+- **A form matches only if its first pass values have values** (its code word
+  values, and literal numbers, evaluated where the statement is), and a
+  literal number's is the number. This is what makes the design doc's `SELF`
+  example work: `RST SELF, CODE` matches only the `SELF` form, unless `SELF` is
+  a symbol, when it matches the `$#3` form too, and is ambiguous. Without it,
+  the default instruction set's `RST SELF` could never be written, as an
+  undefined symbol would still match `$#3`.
+- If no form matches, but a form had a first pass value with an error or a
+  symbol not yet defined, the statement's error is that value's error, not
+  "no form matches".
 
 ### Segments, instances, and the stack
 
@@ -213,12 +222,12 @@ after 100 errors, with a last error saying so.
 
 ### Game Bits: lexer numbers
 
-The gb lexer's integer formats nearly fit, but its suffixes are matched
+The Game Bits lexer's integer formats nearly fit, but its suffixes are matched
 exactly (so `0FFH` and `1011B` aren't numbers), and a hex number doesn't need
 a leading digit (so `FFh`, and a label `BEh`, would be numbers, as a number
 wins a tie with an identifier). A Game Bits backlog item adds both as lexer
 flags, which this feature depends on: *Number suffixes in either case, and hex
-numbers that start with a digit*. With them, every number is a gb integer
+numbers that start with a digit*. With them, every number is an integer
 token, and the longest match tells `1011b` (binary) from `1011` (decimal).
 
 ### tools: program lexer
@@ -293,7 +302,7 @@ class Expression final {
 };
 ```
 
-- The grammar is the gb parser's: each precedence level is a rule with a
+- The grammar is a parser program's: each precedence level is a rule with a
   repeated group (`$args=Shift ($ops=('<<' | '>>') $args=Shift)*`), as the
   parser doesn't allow left recursion, and `Create` folds each level left to
   right. Primaries are numbers, strings, identifiers, local labels, `$`, and a
@@ -333,7 +342,10 @@ Instruction Set Source page gains the rule.
 ```
 // One argument of a matched form: a register's number, or a value's
 // expression, in the order of InstructionForm::GetArgs().
-struct InstructionArg { ... };
+struct InstructionArg {
+  int reg = 0;
+  std::optional<Expression> value;
+};
 
 struct InstructionMatch {
   const InstructionForm* form;
@@ -348,30 +360,73 @@ class ValueSetContext final : public ExpressionContext { ... };
 // The grammar of programs for one instruction set.
 class ProgramGrammar final {
  public:
-  // Creates the grammar for `syntax`, which must outlive it.
-  static std::unique_ptr<ProgramGrammar> Create(
+  // The rule for a line: an optional $label, then a $directive or an
+  // $instruction (its name, and its $args: every token to the end of the
+  // line, with brackets balanced), or nothing, then the $end of the line.
+  static constexpr std::string_view kLineRule = "Line";
+
+  // Creates the grammar for `syntax`, which must outlive it. Returns an error
+  // if a pattern has literal text the program lexer can't read as one token.
+  static absl::StatusOr<std::unique_ptr<ProgramGrammar>> Create(
       const InstructionSetSyntax& syntax);
+
+  // Return a line's directive name ("CONST") or instruction name ("ADD.W"),
+  // or empty with an error if it has a space around its '.'.
+  static std::string_view GetDirectiveName(const gb::Lexer& lexer,
+                                           const gb::ParsedItem& directive,
+                                           gb::ParseError& error);
+  static std::string_view GetInstructionName(const gb::Lexer& lexer,
+                                             const gb::ParsedItem& instruction,
+                                             gb::ParseError& error);
 
   // Returns the parser program, for a gb::Parser to parse with.
   std::shared_ptr<const gb::ParserProgram> GetParserProgram() const;
 
-  // Matches the arguments of an instruction named `name` ("ADD" or
-  // "ADD.W"), which start at `args` (the token after the name) and run to the
-  // end of the line, against each of the name's forms. Literal numbers in a
-  // pattern are evaluated in `context`. Returns every form that matches, or
-  // the error in a value that decides a match.
-  absl::StatusOr<std::vector<InstructionMatch>> MatchInstruction(
-      gb::Parser& parser, gb::LexerContentId content, std::string_view name,
-      gb::Token args, const ExpressionContext& context) const;
+  // Matches the instruction of a parsed line against each of its name's
+  // forms, from its first argument, evaluating first pass values in
+  // `context`. Returns true with every form that matches, or false with an
+  // error: in its name, an unknown name, or in a first pass value if no form
+  // matches. Leaves the lexer where it was.
+  bool MatchInstruction(gb::Parser& parser, gb::LexerContentId content,
+                        const gb::ParsedItem& line,
+                        const ExpressionContext& context,
+                        std::vector<InstructionMatch>& matches,
+                        gb::ParseError& error) const;
 };
 ```
 
-The parser program's text is built from the syntax, so it is a gb grammar like
+- `MatchInstruction`, `GetDirectiveName`, and `GetInstructionName` set a
+  `gb::ParseError`, rather than returning an `absl::StatusOr`, so the error
+  keeps its location, as `InstructionForm::Encode` returns a bool and an
+  error. A directive's name and an instruction's name both have no spaces
+  around their `.`, which the grammar can't say, so these check it. Game Bits
+  *Adjacent rule items* (requested for this) would put it in the grammar, and
+  then these two go.
+- `GetInstructionName` returns the name as written, a view of the lexer's
+  text from the name to the extension, which `InstructionSetSyntax::GetForms`
+  looks up ignoring case, and errors quote as the program wrote it.
+- `Create` returns an error rather than null, as a pattern's literal text could
+  be something the program lexer doesn't read (a float, such as `2.5`).
+
+The parser program's text is built from the syntax, so it is a grammar like
 the instruction assembler's, written for one instruction set:
-- **The assembler's rules:** `Label` (a name or local label, then `:`),
-  `Directive` (`.` and each directive's operands, with `Expression` from
-  `Expression::GetParserRules()`), `InstructionName` (a name, with an optional `.`
-  and extension), and `EndOfLine` (a line break or the end).
+- **`Line`**, the one rule the assembler parses with: an optional `Label` (a
+  name or local label, then `:`), then a `Directive` or an `Instruction`, or
+  nothing, then `EndOfLine` (a line break or the end).
+- **`Directive`** is `.` and one alternative for each directive, with its
+  operands, so the parser tells the directives apart. As the parser reports
+  the error that gets furthest into the line, a directive with a bad operand
+  gets that operand's error (`.CONST X 5` expects `=` at the `5`), and an
+  unknown one gets `Directive`'s own ("Unknown directive"). Its values are
+  `Expression`, from `Expression::GetParserRules()`.
+- **`Instruction`** is the name, with an optional `.` and extension, then its
+  arguments as any tokens (`ArgToken*`), with brackets balanced. `ArgToken` is
+  built from the program lexer's symbols and keywords, as the parser has no
+  token type for any token. Game Bits *Negated rule items and position
+  markers* (requested for this) would make it a fixed rule, with a negation
+  for "any token but a line break or closing bracket", and a marker would name
+  where the arguments start even when there are none. Once it lands, the
+  generated rule goes.
 - **Register rules** for each register size, as alternatives of the register
   keywords: `$r2` is `"R0"` to `"R3"`, `$r` adds `"R4"` to `"R7"`, `$r4` adds
   `"BC"` to `"SP"`, and `$R` is `"D0"` to `"D3"`.
@@ -381,23 +436,37 @@ the instruction assembler's, written for one instruction set:
   are each an `Expression`, named by their order (`$a0`, `$a1`). Forms with the
   same pattern (`"$r, $m"` with the same macro code) share a rule.
 
-`MatchInstruction` is what the gb parser can't do itself: it reports every
-alternative that matches, rather than the first. For each of the name's forms,
-it sets the lexer back to `args` (`gb::Lexer::SetNextToken`), and parses with
-the form's rule. A parse that succeeds is a match once its literal numbers
-have their values and no value is bracketed as a whole. A form whose rule
-doesn't parse doesn't match, and its parse error isn't reported.
+A program is parsed with `Line` a line at a time, rather than as one parse of
+the whole program, as a parse stops at its first error, and the assembler
+reports every error in a pass. A line that doesn't parse leaves the lexer at
+its start, so the assembler reports it and goes on at the next line
+(`gb::Lexer::NextLine`).
 
-The assembler reads a line as: an optional `Label`, then a `Directive`, or an
-`InstructionName` and its forms, or nothing, then `EndOfLine`. Each is a
-separate parse from where the last ended, so the grammar never needs one rule
-for every instruction.
+`MatchInstruction` is what the parser can't do itself: it reports every form
+that matches, rather than the first. For each of the name's forms, it sets the
+lexer back to the instruction's first argument (`gb::Lexer::SetNextToken`),
+and parses with the form's rule (once for each rule, for all the forms that
+share it). A parse that succeeds is a match once no value is bracketed as a
+whole, and its first pass values have values, with literal numbers' values the
+numbers (see Instructions). A form whose rule doesn't parse doesn't match, and
+its parse error isn't reported.
 
 **Performance:** the grammar is built for each assembly, with a rule for each
-distinct form pattern, and matching parses a line once for each of its name's
-forms. CL4 measures both for the default instruction set. If
-building is slow, a host could create the `ProgramGrammar` once and pass it
-in, in place of the syntax.
+distinct form pattern, and matching parses a line once with `Line`, and then
+once for each distinct rule of its name's forms. CL4 measured both for the
+default instruction set (1335 forms), with a temporary test that parses and
+matches each form's disassembly:
+
+| Build          | Syntax  | Grammar | A line (`Line`, then 17.4 forms per name) |
+| -------------- | ------- | ------- | ----------------------------------------- |
+| RelWithDebInfo | 7.5 ms  | 4.9 ms  | 34 µs (`Line` is 13 µs)                   |
+| Debug          | 98 ms   | 75 ms   | 570 µs (`Line` is 170 µs)                 |
+
+Building the grammar costs less than creating the syntax, so it stays per
+assembly. A release build reads about 30,000 instruction lines a second. Every
+form's disassembly matched its own form, and only it. If parsing ever becomes
+a bottleneck, the fix is to make the Game Bits parser faster (a Game Bits
+backlog item), not to work around it here.
 
 ### tools: program assembler
 
@@ -426,11 +495,17 @@ and scope).
   set has one; it can if one ever does.
 - Two literal `<` (or `>`) parts in a row in a pattern lex as `<<` in a
   program, so they can't match. No pattern has them.
+- A literal string in a pattern matches a program's string of the same text
+  in either kind of quote, though the two make different words. No pattern
+  has a string.
 
 ### To confirm
 
-- A gb parser token literal that is a keyword (`"SP"`) matches the keyword
+- A parser program's token literal that is a keyword (`"SP"`) matches the keyword
   token, and `%ident` doesn't match a keyword (CL4, as it needs a grammar).
+  **Confirmed:** a token literal is read with the program lexer, so `"SP"` is
+  the keyword and matches `sp`, `"SELF"` matches `self`, and `PUSH.W R1`
+  doesn't match `$v`.
 - Case-insensitive keywords with `kIdentForceUpper` match `sp` and `Sp`, and
   `R10` is an identifier, not `R1` and `0` (CL1). **Confirmed:** a keyword's
   value is the keyword as configured (`sp` is `SP`), and `R10`, `R8`, `D4`,
@@ -445,7 +520,7 @@ and scope).
   as if it does (CL2). **Confirmed:** parsing `5 + R1` as an expression takes
   `5`, and leaves the lexer at the `+`.
 - `Parser::Parse` of a form's rule leaves the lexer just past the match, and
-  `SetNextToken` to `args` works after a failed parse (CL4).
+  `SetNextToken` to `args` works after a failed parse (CL4). **Confirmed.**
 
 ## CLs
 
@@ -503,7 +578,7 @@ Depends on: nothing.
   the reverse; patterns that follow the rule (`")"`, `"]"`, `","`, a word).
 - The default instruction set still builds its syntax (its tests pass).
 
-### CL4 [ ] tools: `ProgramGrammar`
+### CL4 [x] tools: `ProgramGrammar`
 
 Depends on: CL2, CL3.
 
@@ -514,13 +589,16 @@ Depends on: CL2, CL3.
 **Verify**
 - Standard checks.
 - Unit tests, on small instruction sets assembled from `.izm` text in the
-  test: the generated rules parse (labels, each directive, instruction names);
+  test: lines parse (labels, each directive and its errors, instructions and
+  their arguments, and the line after one with an error);
   full names and roots; registers by size (`$r2`, `$r4`, `$R`); literal words
   and registers in patterns, in any case; literal numbers by value, and with a
   symbol not yet defined; brackets inside a value, and around a whole value;
   a register never matching a value; value set names (`ValueSetContext`), in
-  any case, ahead of a symbol of the same name; forms sharing a rule; ambiguity across a root (`PUSH 5`) and through a
-  literal word (`RST SELF, 1`); no match; text after a matched form.
+  any case, ahead of a symbol of the same name; code word values with errors;
+  forms sharing a rule; ambiguity across a root (`PUSH 5`) and through a
+  literal word (`RST SELF, 1`, only where `SELF` is a symbol); no match; text
+  after a matched form; where the lexer is left.
 - The To confirm item for CL4.
 - Performance: building the grammar for the default instruction set, and
   matching its forms, measured (with a temporary test in `instruction_sets`,

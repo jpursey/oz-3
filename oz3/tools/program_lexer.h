@@ -23,7 +23,7 @@ namespace oz3 {
 // upper case, so code that names local labels by their value does that itself.
 inline constexpr gb::TokenType kTokenLocalLabel = gb::kTokenUser + 0;
 
-// Declares the program lexer's user tokens for a gb parser program, as
+// Declares the program lexer's user tokens for a parser program, as
 // %local_label. The number is the token type's offset from gb::kTokenUser.
 inline constexpr std::string_view kProgramParserTokens = "%local_label = 0;\n";
 static_assert(kTokenLocalLabel == gb::kTokenUser + 0);

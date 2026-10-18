@@ -77,7 +77,7 @@ class ExpressionContext {
 // symbols, and "$", with C's unary operators (-, ~, !), and binary operators
 // (*, /, %, +, -, <<, >>, &, ^, |) and their precedence, and parentheses.
 //
-// An expression is parsed by the gb parser, with a grammar that includes
+// An expression is parsed by a gb::Parser, with a grammar that includes
 // GetParserRules(), and evaluated in the width where it is used, as the
 // machine would: values are the width's bits, and arithmetic wraps. Division
 // is unsigned, and shifts are logical, giving 0 for a count of the width or

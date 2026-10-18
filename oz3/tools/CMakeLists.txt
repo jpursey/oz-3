@@ -10,15 +10,18 @@ set(oz3_tools_SOURCE
   instruction_set_syntax.cc instruction_set_syntax.h
   program.h program.cc
   program_file.h program_file.cc
+  program_grammar.h program_grammar.cc
   program_lexer.h program_lexer.cc
   program_loader.h program_loader.cc
   source_pattern.h source_pattern.cc
 )
 set(oz3_tools_DEPS
+  absl::flat_hash_map
   absl::flat_hash_set
   absl::status
   absl::statusor
   absl::str_format
+  absl::strings
   gb_base
   gb_file
   gb_parse
@@ -36,6 +39,7 @@ set(oz3_tools_TEST_SOURCE
   instruction_def_exporter_test.cc
   instruction_set_syntax_test.cc
   program_file_test.cc
+  program_grammar_test.cc
   program_lexer_test.cc
   program_loader_test.cc
   program_test.cc
