@@ -144,9 +144,9 @@ Matching follows the design doc's Matching section, except where a value ends:
   `$v`, a `$V`, or a literal number in a pattern). This replaces the design
   doc's "every token up to the pattern's next literal, outside brackets", as
   it is how the parser reads an expression. The two agree for every pattern
-  once patterns follow a new rule: **a placeholder for a value can't be
-  followed by a binary operator** (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `<`,
-  or `>`), which would continue the expression. Without it, a pattern like
+  once patterns follow a new rule: **a value (a placeholder for one, or a
+  literal number) can't be followed by a binary operator** (`+`, `-`, `*`,
+  `/`, `%`, `&`, `|`, `^`, `<`, or `>`), which would continue the expression. Without it, a pattern like
   `"$v + 1"` could never match, as `$v` would take the `+ 1`. The default
   instruction set follows it: every value in it is followed by `)`, `]`, `,`,
   or the end.
@@ -321,9 +321,11 @@ class Expression final {
 
 ### tools, wiki: values followed by operators
 
-`InstructionSetSyntax::Create` checks the new pattern rule (see Instructions),
-in instruction and macro code patterns, and in each form, where a macro code's
-value can be followed by the instruction's literal after its `$m`. The wiki's
+`SourcePattern` checks the new pattern rule (see Instructions) as it parses
+each instruction and macro code pattern, as one of the rules every pattern
+follows. `InstructionSetSyntax::Create` checks it again in each form, where a
+macro code's value can be followed by the instruction's literal after its
+`$m`, or the instruction's value by the macro code's first literal. The wiki's
 Instruction Set Source page gains the rule.
 
 ### tools: `ProgramGrammar`
@@ -485,19 +487,20 @@ Depends on: CL1.
   error, and a symbol whose own expression is missing a symbol; registers
   rejected, with locations.
 
-### CL3 [ ] tools, wiki: values followed by operators
+### CL3 [x] tools, wiki: values followed by operators
 
 Depends on: nothing.
 
-- `InstructionSetSyntax::Create` rejects a value placeholder followed by a
-  binary operator, in an instruction's or macro code's pattern, or in a form.
+- `SourcePattern::Parse` rejects a value placeholder or literal number
+  followed by a binary operator, through `SourcePattern::CheckValueEnds`, which
+  `InstructionSetSyntax::Create` also calls on each form.
 - Wiki: Instruction Set Source gains the rule.
 
 **Verify**
 - Standard checks.
-- Unit tests: each operator after `$v`, `$V`, `$#`, and a value set; one
-  after a macro code's value, from the instruction's pattern; patterns that
-  follow the rule (`")"`, `"]"`, `","`, a word).
+- Unit tests: each operator after `$v`, `$V`, `$#`, a value set, and a
+  number; one after a macro code's value, from the instruction's pattern, and
+  the reverse; patterns that follow the rule (`")"`, `"]"`, `","`, a word).
 - The default instruction set still builds its syntax (its tests pass).
 
 ### CL4 [ ] tools: `ProgramGrammar`

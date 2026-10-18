@@ -17,6 +17,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
 #include "absl/memory/memory.h"
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
@@ -36,24 +37,18 @@ namespace {
 
 using Part = SourcePattern::Part;
 
-// Returns true if a program writes the part as an expression: $#, a value set,
-// $v, or $V.
+// Returns true if the part is a placeholder for a value: $#, a value set, $v,
+// or $V.
 bool IsValuePart(const Part& part) {
-  return part.kind == Part::Kind::kWord || part.kind == Part::Kind::kDword ||
-         (part.kind == Part::Kind::kArgument &&
-          part.arg.type == ArgType::kImmediate);
+  return part.IsValue() && part.kind != Part::Kind::kLiteral;
 }
 
 // Returns true if every statement that matches one part could match the other.
 // A literal number matches any expression with its value, so it is the same as
 // any value part.
 bool IsWrittenTheSameWay(const Part& a, const Part& b) {
-  const bool a_is_number =
-      a.kind == Part::Kind::kLiteral && a.literal_type == gb::kTokenInt;
-  const bool b_is_number =
-      b.kind == Part::Kind::kLiteral && b.literal_type == gb::kTokenInt;
   if (IsValuePart(a) || IsValuePart(b)) {
-    return (IsValuePart(a) || a_is_number) && (IsValuePart(b) || b_is_number);
+    return a.IsValue() && b.IsValue();
   }
   if (a.kind != b.kind) {
     return false;
@@ -105,6 +100,18 @@ std::string_view GetRegisterName(const InstructionForm::Arg& arg, int value) {
 int GetCodeValue(const InstructionForm::Arg& arg,
                  absl::Span<const uint16_t> words) {
   return (words[0] >> arg.shift) & ((1 << arg.bits) - 1);
+}
+
+// Returns how errors name a form's source: the instruction's source, and its
+// macro code's if it has one.
+std::string GetSourceName(const InstructionForm& form) {
+  std::string name =
+      absl::StrCat("Source \"", form.GetInstruction().source, "\"");
+  if (form.GetMacroCode() != nullptr) {
+    absl::StrAppend(&name, " with macro code \"", form.GetMacroCode()->source,
+                    "\"");
+  }
+  return name;
 }
 
 InstructionForm::Arg::Kind GetArgKind(const Part& part) {
@@ -479,6 +486,17 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
   bool has_relative_arg = false;
   for (int i = first_form; i < static_cast<int>(syntax_->forms_.size()); ++i) {
     const InstructionForm& form = syntax_->forms_[i];
+
+    // Each pattern was checked as it was parsed, but a form's value can still
+    // be followed by an operator from the other pattern, where a macro code's
+    // value ends at the instruction's $m, or the instruction's value comes
+    // just before it.
+    if (absl::Status status =
+            SourcePattern::CheckValueEnds(form.GetPattern(), form.GetParts());
+        !status.ok()) {
+      return InstructionDefError(instruction, GetSourceName(form), ": ",
+                                 status.message());
+    }
     if (!CheckSize(form, instruction_set)) {
       return false;
     }
@@ -599,15 +617,9 @@ bool InstructionSetSyntaxBuilder::CheckSize(
   if (decoded.size == form.GetSize()) {
     return true;
   }
-  std::string macro_context;
-  if (form.GetMacroCode() != nullptr) {
-    macro_context =
-        absl::StrCat(" with macro code \"", form.GetMacroCode()->source, "\"");
-  }
   return InstructionDefError(
-      instruction, "Source \"", instruction.source, "\"", macro_context,
-      " has size ", form.GetSize(), ", but the microcode has size ",
-      static_cast<int>(decoded.size),
+      instruction, GetSourceName(form), " has size ", form.GetSize(),
+      ", but the microcode has size ", static_cast<int>(decoded.size),
       " (the code word, and a word for each LD in the fetch phase)");
 }
 

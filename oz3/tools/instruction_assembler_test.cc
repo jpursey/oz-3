@@ -226,6 +226,19 @@ TEST(InstructionAssemblerTest, InstructionInvalidArgSource) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
 }
 
+TEST(InstructionAssemblerTest, InstructionSourceValueFollowedByOperator) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(opcode:0) ALPHA "$v + 1" {
+      LD(C0); UL;
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("$v is followed by '+'"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 4));
+}
+
 TEST(InstructionAssemblerTest, InstructionArgsExceedLowByte) {
   gb::ParseError error;
   std::string source = R"---(
@@ -793,7 +806,7 @@ TEST(InstructionAssemblerTest, MacroCodeSourceWithCodeValues) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro {
-      code "$V + $v" { MOV(R0,R1); }
+      code "$V, $v" { MOV(R0,R1); }
     }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
@@ -802,7 +815,7 @@ TEST(InstructionAssemblerTest, MacroCodeSourceWithCodeValues) {
   const auto& macro = asm_set->GetInstructionSetDef().macros[0];
   ASSERT_EQ(macro.code.size(), 1);
   auto code = macro.code[0];
-  EXPECT_EQ(code.source, "$V + $v");
+  EXPECT_EQ(code.source, "$V, $v");
 }
 
 TEST(InstructionAssemblerTest, MacroCodeSourceWithMacroArgInvalid) {
@@ -831,6 +844,19 @@ TEST(InstructionAssemblerTest,
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(absl::AsciiStrToLower(error.GetMessage()),
               AllOf(HasSubstr("invalid"), HasSubstr("$r + $#3")));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
+}
+
+TEST(InstructionAssemblerTest, MacroCodeSourceValueFollowedByOperator) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code "$v * 2" { LD(C0); UL; }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("$v is followed by '*'"));
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
@@ -1521,7 +1547,7 @@ TEST(InstructionAssemblerTest, RelativeInstructionWithoutWholeArgValue) {
   const Case cases[] = {
       {.instruction = "instruction(relative) TEST { UL; }"},
       {.instruction = "instruction(relative) TEST \"D($v)\" { LD(C0); UL; }"},
-      {.instruction = "instruction(relative) TEST \"$v + 1\" { LD(C0); UL; }"},
+      {.instruction = "instruction(relative) TEST \"R1 + $v\" { LD(C0); UL; }"},
       {.instruction = "instruction(relative) TEST \"$V\" "
                       "{ LD(C0); LD(C1); UL; }"},
       {.source = "macro Value { code \"($v)\" { LD(C0); UL; } }",

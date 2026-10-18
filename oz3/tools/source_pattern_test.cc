@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 #include "gmock/gmock.h"
@@ -182,7 +184,7 @@ TEST(SourcePatternTest, Values) {
 
 TEST(SourcePatternTest, WholeArgsAreOnlyAPlaceholder) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::ParseInstruction("$v + 1, D($v), $v $v, $m", {});
+      SourcePattern::ParseInstruction("R1 + $v, D($v), $v $v, $m", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   int whole_args = 0;
   for (const SourcePattern::Part& part : pattern->GetParts()) {
@@ -277,6 +279,52 @@ TEST(SourcePatternTest, Errors) {
   ExpectError("$r; $r", "");
   ExpectError("@x", "");
   ExpectError("#5", "");
+}
+
+TEST(SourcePatternTest, ValueFollowedByOperator) {
+  for (std::string_view op :
+       {"+", "-", "*", "/", "%", "&", "|", "^", "<", ">"}) {
+    const std::string expected =
+        absl::StrCat(" is followed by '", op, "', which would continue");
+    ExpectError(absl::StrCat("$v ", op, " 1"), absl::StrCat("$v", expected));
+    ExpectError(absl::StrCat("$R, $V", op, "1"), absl::StrCat("$V", expected));
+    ExpectError(absl::StrCat("($#5 ", op, " $r)"),
+                absl::StrCat("$#5", expected));
+    ExpectError(absl::StrCat("$Condition ", op, " 1"),
+                absl::StrCat("$Condition", expected));
+    ExpectError(absl::StrCat("D(2 ", op, " $v)"), absl::StrCat("2", expected));
+  }
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseMacroCode("$v + 1", {});
+  ASSERT_FALSE(pattern.ok());
+  EXPECT_THAT(pattern.status().message(), HasSubstr("$v is followed by '+'"));
+}
+
+TEST(SourcePatternTest, ValueFollowedByOtherTokens) {
+  for (std::string_view source :
+       {"$v", "($v)", "[$v]", "$v, $r", "$v TIMES", "$v = 1", "$v ~1", "$v !1",
+        "$v :", "$v $v", "($r + $v)", "1, $v", "\"a\" + $v"}) {
+    absl::StatusOr<SourcePattern> pattern =
+        SourcePattern::ParseInstruction(source, kValueSets);
+    EXPECT_TRUE(pattern.ok()) << source << ": " << pattern.status();
+  }
+}
+
+TEST(SourcePatternTest, CheckValueEnds) {
+  // Parts put together from two patterns, as an instruction's form puts its
+  // macro code's in place of its $m.
+  absl::StatusOr<SourcePattern> code = SourcePattern::ParseMacroCode("$v", {});
+  absl::StatusOr<SourcePattern> rest = SourcePattern::ParseMacroCode("+ 1", {});
+  ASSERT_TRUE(code.ok() && rest.ok());
+  std::vector<SourcePattern::Part> parts(code->GetParts().begin(),
+                                         code->GetParts().end());
+  for (SourcePattern::Part part : rest->GetParts()) {
+    part.offset += 3;
+    parts.push_back(part);
+  }
+  EXPECT_THAT(SourcePattern::CheckValueEnds("$v + 1", parts).message(),
+              HasSubstr("$v is followed by '+'"));
+  EXPECT_TRUE(SourcePattern::CheckValueEnds("$v", code->GetParts()).ok());
 }
 
 }  // namespace

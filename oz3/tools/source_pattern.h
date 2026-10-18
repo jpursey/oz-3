@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "gb/parse/symbol.h"
@@ -22,8 +23,9 @@ namespace oz3 {
 // MacroCodeDef::source).
 //
 // Parsing checks the rules every pattern follows: its syntax, that each
-// placeholder is a valid one or names a value set, and how many code word
-// arguments it has.
+// placeholder is a valid one or names a value set, how many code word
+// arguments it has, and that no value is followed by a binary operator (see
+// CheckValueEnds()).
 class SourcePattern final {
  public:
   // One part of a pattern: literal text, or a placeholder.
@@ -60,6 +62,14 @@ class SourcePattern final {
     // comma-separated arguments, such as the "$v" in "$r, $v", but not in
     // "D($v)".
     bool whole_arg = false;
+
+    // Returns true if a program writes the part as an expression: a $#, a
+    // value set, $v, $V, or a literal number.
+    bool IsValue() const {
+      return kind == Kind::kWord || kind == Kind::kDword ||
+             (kind == Kind::kArgument && arg.type == ArgType::kImmediate) ||
+             (kind == Kind::kLiteral && literal_type == gb::kTokenInt);
+    }
   };
 
   // Parses an instruction's source, which has at most two code word arguments,
@@ -78,6 +88,15 @@ class SourcePattern final {
   // must read each of them as the same symbol, or no statement could match a
   // pattern that writes it.
   static absl::Span<const gb::Symbol> GetSymbols();
+
+  // Returns an error if a value in `parts` (a $#, a value set, $v, $V, or a
+  // literal number) is followed by a binary operator, as no statement could
+  // match it: a program writes the value as an expression, which would go on
+  // past the operator. `pattern` is the text the parts' offsets are in.
+  // Parsing checks each pattern, and this checks patterns put together, such
+  // as an instruction's with a macro code's in place of its $m.
+  static absl::Status CheckValueEnds(std::string_view pattern,
+                                     absl::Span<const Part> parts);
 
   SourcePattern(const SourcePattern&) = default;
   SourcePattern(SourcePattern&&) = default;

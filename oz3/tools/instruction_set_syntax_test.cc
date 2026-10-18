@@ -638,6 +638,44 @@ TEST(InstructionSetSyntaxTest, SizeDisagreesWithCompiledInstructionSet) {
               HasSubstr("has size 4, but the microcode has size 3"));
 }
 
+TEST(InstructionSetSyntaxTest, InstructionValueFollowedByOperator) {
+  TestDef def(kInstructionSet);
+  def.instructions[6].source = "$r, $#5 + 1";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "MVQ", def.GetCompiled());
+  EXPECT_THAT(error.message, HasSubstr("$#5 is followed by '+'"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeValueFollowedByOperator) {
+  TestDef def(kInstructionSet);
+  def.codes[0][2].source = "$v + 1";
+  InstructionError error = ExpectError(def, InstructionError::Def::kMacro,
+                                       "GetWord", def.GetCompiled());
+  EXPECT_EQ(error.macro_source_name, "$v + 1");
+  EXPECT_THAT(error.message, HasSubstr("$v is followed by '+'"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeValueFollowedByInstructionOperator) {
+  // Each code is fine on its own, but the form "[$v + 1]" isn't.
+  TestDef def(kInstructionSet);
+  def.instructions[7].source = "[$m + 1]";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "PEEK", def.GetCompiled());
+  EXPECT_THAT(error.message, AllOf(HasSubstr("with macro code \"$v\""),
+                                   HasSubstr("$v is followed by '+'")));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionValueFollowedByMacroCodeOperator) {
+  // The pattern and code are fine on their own, but the form "[1 +$v]" isn't.
+  TestDef def(kInstructionSet);
+  def.instructions[7].source = "[1 $m]";
+  def.codes[0][3].source = "+$v";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "PEEK", def.GetCompiled());
+  EXPECT_THAT(error.message, AllOf(HasSubstr("with macro code \"+$v\""),
+                                   HasSubstr("1 is followed by '+'")));
+}
+
 //==============================================================================
 // Encoding and disassembly
 //==============================================================================

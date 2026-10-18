@@ -6,10 +6,12 @@
 #include "oz3/tools/source_pattern.h"
 
 #include <algorithm>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 
 #include "absl/base/no_destructor.h"
 #include "absl/status/status.h"
@@ -34,6 +36,12 @@ constexpr gb::TokenType kTokenPlaceholder = gb::kTokenUser + 0;
 constexpr gb::Symbol kSymbols[] = {'(', ')', '[', ']', '{', '}', ',', '+',
                                    '-', '*', '/', '%', '&', '|', '^', '~',
                                    '!', '<', '>', '=', ':', '.', '?'};
+
+// The symbols above that a program's expression goes on past, as binary
+// operators. A program's lexer reads "<<" and ">>" as one symbol, so '<' and
+// '>' are taken as the shifts they could start.
+constexpr gb::Symbol kBinaryOperators[] = {'+', '-', '*', '/', '%',
+                                           '&', '|', '^', '<', '>'};
 
 // A placeholder: "$#" with its size, or "$" and a name, which is either one of
 // the built-in placeholders (IsPlaceholderName) or a value set. The capture is
@@ -167,6 +175,24 @@ absl::StatusOr<SourcePattern> SourcePattern::ParseMacroCode(
 
 absl::Span<const gb::Symbol> SourcePattern::GetSymbols() { return kSymbols; }
 
+absl::Status SourcePattern::CheckValueEnds(std::string_view pattern,
+                                           absl::Span<const Part> parts) {
+  for (int i = 0; i + 1 < static_cast<int>(parts.size()); ++i) {
+    const Part& part = parts[i];
+    const Part& next = parts[i + 1];
+    if (!part.IsValue() || next.literal_type != gb::kTokenSymbol) {
+      continue;
+    }
+    const gb::Symbol op = std::get<gb::Symbol>(next.literal);
+    if (std::ranges::find(kBinaryOperators, op) != std::end(kBinaryOperators)) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          pattern.substr(part.offset, part.size), " is followed by '",
+          op.GetString(), "', which would continue its expression"));
+    }
+  }
+  return absl::OkStatus();
+}
+
 absl::StatusOr<SourcePattern> SourcePattern::Parse(
     std::string_view source, absl::Span<const ValueSetDef> value_sets) {
   auto parser = gb::Parser::Create(GetParserProgram());
@@ -220,6 +246,10 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
     pattern.parts_.push_back(*std::move(part));
   }
   pattern.EndArg(arg_start);
+  if (absl::Status status = CheckValueEnds(source, pattern.parts_);
+      !status.ok()) {
+    return status;
+  }
   return pattern;
 }
 

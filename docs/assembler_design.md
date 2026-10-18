@@ -371,7 +371,8 @@ too, so they never change either.
   collide with an instruction's syntax.
 - **A value can't be followed by a binary operator** (`+`, `-`, `*`, `/`, `%`,
   `&`, `|`, `^`, `<`, or `>`) in a pattern, as the value's expression would
-  take it (see [Matching](#matching)).
+  take it (see [Matching](#matching)). A literal number is a value here too,
+  as it matches an expression.
 - **Sizes match the microcode.** The assembler sizes an instruction from its
   pattern, so assembling an instruction set checks that each form's size in its
   pattern is the size the compiled instruction decodes to (see Arguments in the
