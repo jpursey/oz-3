@@ -35,6 +35,10 @@ struct InstructionArg {
 
   // For a value ($#, a value set, $v, or $V), its expression.
   std::optional<Expression> value;
+
+  // For a code word value ($# or a value set), its value as a word, which
+  // matching evaluated. It may not fit the argument's bits.
+  uint32_t code_value = 0;
 };
 
 // A form that a statement matched, with its arguments.
@@ -49,17 +53,17 @@ struct InstructionMatch {
 class ValueSetContext final : public ExpressionContext {
  public:
   // `value_set` and `context` must outlive this.
-  ValueSetContext(const ValueSetDef& value_set,
-                  const ExpressionContext& context)
+  ValueSetContext(const ValueSetDef* value_set,
+                  const ExpressionContext* context)
       : value_set_(value_set), context_(context) {}
 
-  uint16_t GetOffset() const override { return context_.GetOffset(); }
+  uint16_t GetOffset() const override { return context_->GetOffset(); }
   std::optional<ExpressionResult> GetSymbol(
       std::string_view name, ExpressionWidth width) const override;
 
  private:
-  const ValueSetDef& value_set_;
-  const ExpressionContext& context_;
+  const ValueSetDef* const value_set_;
+  const ExpressionContext* const context_;
 };
 
 // The grammar of programs for one instruction set: a parser program, whose

@@ -17,6 +17,7 @@
 
 #include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_map.h"
+#include "absl/log/check.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -310,12 +311,13 @@ std::optional<InstructionMatch> MatchForm(
     if (arg.kind != ArgKind::kCodeValue) {
       continue;
     }
-    const Expression& value = *match.args[i].value;
-    if (arg.value_set != nullptr) {
-      evaluate(value, ValueSetContext(*arg.value_set, context));
-    } else {
-      evaluate(value, context);
-    }
+    InstructionArg& match_arg = match.args[i];
+    const std::optional<uint32_t> value =
+        arg.value_set != nullptr
+            ? evaluate(*match_arg.value,
+                       ValueSetContext(arg.value_set, &context))
+            : evaluate(*match_arg.value, context);
+    match_arg.code_value = value.value_or(0);
   }
   if (form_error.has_value()) {
     if (!error.has_value()) {
@@ -334,12 +336,12 @@ std::optional<InstructionMatch> MatchForm(
 
 std::optional<ExpressionResult> ValueSetContext::GetSymbol(
     std::string_view name, ExpressionWidth width) const {
-  for (const NamedValueDef& value : value_set_.values) {
+  for (const NamedValueDef& value : value_set_->values) {
     if (absl::EqualsIgnoreCase(value.name, name)) {
       return ExpressionResult{.value = value.value};
     }
   }
-  return context_.GetSymbol(name, width);
+  return context_->GetSymbol(name, width);
 }
 
 //==============================================================================
@@ -448,7 +450,9 @@ bool ProgramGrammar::MatchInstruction(gb::Parser& parser,
   std::vector<std::pair<int, gb::ParseResult>> results;
   std::optional<gb::ParseError> value_error;
   for (const InstructionForm* form : forms) {
-    const int rule = form_rules_.at(form);
+    auto rule_it = form_rules_.find(form);
+    CHECK(rule_it != form_rules_.end());
+    const int rule = rule_it->second;
     auto result =
         std::find_if(results.begin(), results.end(),
                      [rule](const auto& r) { return r.first == rule; });

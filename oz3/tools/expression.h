@@ -64,7 +64,8 @@ class ExpressionContext {
   // ("@LOOP"). Returns nullopt if there is no such symbol (yet), which the
   // expression reports as kUndefined. Any result is the expression's, so a
   // symbol with its own expression (a constant) returns that expression's
-  // kUndefined or kError as it is.
+  // kUndefined or kError as it is. An error without a location is reported
+  // where the symbol is used.
   virtual std::optional<ExpressionResult> GetSymbol(
       std::string_view name, ExpressionWidth width) const = 0;
 };
@@ -107,6 +108,14 @@ class Expression final {
   // Returns true if the expression is in parentheses as a whole, such as
   // "(5)" or "((A + 1))", but not "(A) + (B)".
   bool IsBracketed() const { return nodes_.back().bracketed; }
+
+  // Returns true if the expression is a string on its own, such as 'Hello',
+  // and not in parentheses, which a list of words takes as the string's words
+  // rather than as a value.
+  bool IsString() const {
+    return nodes_.size() == 1 && !nodes_[0].bracketed &&
+           token_.GetType() == gb::kTokenString;
+  }
 
   // Evaluates the expression as a value of `width`, in `context`.
   ExpressionResult Evaluate(ExpressionWidth width,

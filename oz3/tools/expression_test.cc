@@ -202,6 +202,17 @@ TEST_F(ExpressionTest, IsBracketed) {
   EXPECT_FALSE(Parse("(A + 1) * 2")->IsBracketed());
 }
 
+TEST_F(ExpressionTest, IsString) {
+  EXPECT_TRUE(Parse("'Hello'")->IsString());
+  EXPECT_TRUE(Parse("\"Hello\"")->IsString());
+  EXPECT_TRUE(Parse("''")->IsString());
+  EXPECT_FALSE(Parse("('A')")->IsString());
+  EXPECT_FALSE(Parse("'A' + 1")->IsString());
+  EXPECT_FALSE(Parse("-'A'")->IsString());
+  EXPECT_FALSE(Parse("5")->IsString());
+  EXPECT_FALSE(Parse("A")->IsString());
+}
+
 TEST_F(ExpressionTest, ExpressionEndsWhereTheNextTokenCantContinueIt) {
   for (std::string_view text : {"5 + R1", "N ROM", "5 )", "5 , 6", "5 6"}) {
     EXPECT_FALSE(Parse(text).has_value()) << text;
@@ -347,6 +358,12 @@ TEST_F(ExpressionTest, SymbolErrorsPassThrough) {
   EXPECT_EQ(result.kind, Kind::kError);
   EXPECT_EQ(result.error.GetMessage(), "Bad constant");
   EXPECT_EQ(result.error.GetLocation().line, 7);
+}
+
+TEST_F(ExpressionTest, SymbolErrorsWithoutALocationAreAtTheUse) {
+  context_.symbols["BAD"] = {.kind = Kind::kError,
+                             .error = gb::ParseError("Bad here")};
+  EXPECT_EQ(Error("1 + BAD"), "4: Bad here");
 }
 
 TEST_F(ExpressionTest, UndefinedInASymbolsOwnExpressionPassesThrough) {

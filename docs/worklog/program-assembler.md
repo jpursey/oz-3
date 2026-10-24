@@ -326,7 +326,10 @@ class Expression final {
 - Constants are evaluated where they are used, so the assembler's context
   (CL5) evaluates a constant's expression on each use, and may cache it by
   width. An error in a constant's own expression comes back at each use, so
-  the assembler reports a constant's errors once, where it is defined.
+  the assembler reports a constant's errors once, where it is defined, except
+  one that is only an error as a word, which is the use's (see CL5's notes
+  under program assembler). A symbol's error without a location is reported
+  at its use.
 
 ### tools, wiki: values followed by operators
 
@@ -483,9 +486,49 @@ backlog item), not to work around it here.
    segments with their data blocks (each run of written words, widened to
    aligned pairs, with unwritten words in a pair as 0), roles, and instances.
 
-Symbols are one table by upper case name, with local labels keyed by their
-scope. Each recorded statement has the context its expressions need (offset
-and scope).
+Labels are one table by upper case name, with local labels keyed by their
+scope, and constants are another, in the order they are defined. A name is a
+label or a constant, never both. Each recorded statement is an instruction or
+data, with the context its expressions need (offset and scope).
+
+CL5 settled the details:
+- **Errors are reported once each**, by their formatted message, which is how
+  a constant's error is reported once: each use evaluates the constant again,
+  and gets the same error at the same place in the constant.
+- **A `.CONST` is a statement too**, so the second pass checks each
+  constant's dword value in the order of the source, along with encoding the
+  statements that write words. Statements are a variant of an instruction,
+  data, or a constant, which another kind of statement can join.
+- **A scope of local labels is its label's name**, a view of the label's
+  token, which lives as long as the lexer, so statements and constants keep
+  their scope without a table of scopes. A local label's key is its scope's
+  label and then its name, which starts with `@`, which no label's name can
+  have, so no key is another's.
+- **A constant that has a value, but can't be evaluated as a word, is an error
+  where it is used as one**, as the constant itself is fine: `.CONST BIG =
+  70000`, then `.DW BIG`, is "BIG can't be evaluated as a word: Value 70000
+  does not fit in a word" at the `BIG` of each `.DW`. The assembler's context
+  returns that error without a location, which `Expression` puts at the
+  symbol's use. A constant with no dword value is reported once, at the
+  constant.
+- A constant's results are cached by width, except a symbol not yet defined,
+  which can be defined later. A constant that is being evaluated when it is
+  reached again depends on itself.
+- **Code word values are evaluated once.** `MatchInstruction` keeps each one's
+  value (`InstructionArg::code_value`), and the first pass reports one that
+  doesn't fit its bits, at its expression. The second pass evaluates only `$v`
+  and `$V`.
+- `.DW` takes a string on its own as its words, which `Expression::IsString`
+  tells it, and anything else as an expression.
+- An absolute include path is read as written, and a relative one is joined to
+  the including file's folder.
+- A first pass use of a symbol not yet defined has `Expression`'s own message
+  ("X is not defined"), whether or not X is defined later.
+- `.SEGMENT`, `.BANK`, and `.INSTANCES` parse, but are errors ("not supported
+  yet") until CL7.
+- With a temporary test (not checked in), the design doc's example program,
+  without its segments, assembled for the default instruction set, and each
+  instruction disassembled to the form it was written as.
 
 **Brittleness:**
 - Expressions and recorded statements hold tokens of the assembler's lexer,
@@ -604,7 +647,7 @@ Depends on: CL2, CL3.
   matching its forms, measured (with a temporary test in `instruction_sets`,
   not checked in), and recorded here.
 
-### CL5 [ ] tools, wiki: assembling the default program
+### CL5 [x] tools, wiki: assembling the default program
 
 Depends on: CL4.
 
@@ -628,13 +671,27 @@ Depends on: CL4.
   in a pass, carrying on after a line with a parse error, and the limit; the
   output passing `ValidateProgram`.
 
-### CL6 [ ] tools, wiki: segments, banks, and instances
+### CL6 [ ] tools: `ExpressionContext::GetSymbolValue`
 
 Depends on: CL5.
 
+- `ExpressionContext::GetSymbol` is `GetSymbolValue`, as it returns a symbol's
+  value where it is used, not the symbol, and so are the assembler's and the
+  tests' overrides. No other change.
+
+**Verify**
+- Standard checks.
+
+### CL7 [ ] tools, wiki: segments, banks, and instances
+
+Depends on: CL6.
+
 - `.SEGMENT`, `.BANK`, and `.INSTANCES`: declared segments and their
   attributes, roles, sizes, per instance segments, and instance offsets.
-- Wiki: Program Source's segments, banks, and instances.
+- Wiki: Program Source's segments, banks, and instances. The assembler is
+  complete with this CL, so Instruction Set Source's "[OZ-3 assembler](home)
+  (planned)" links to Program Source, without "(planned)" (`oz3asm` stays
+  planned until *oz3asm*).
 
 **Verify**
 - Standard checks.

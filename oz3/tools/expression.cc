@@ -117,7 +117,7 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
   }
 
   // A unary operator.
-  if (const gb::ParsedItem* arg = item.GetItem("arg")) {
+  if (const gb::ParsedItem* arg = item.GetItem("arg"); arg != nullptr) {
     const int operand = AddNodes(*arg);
     const gb::Token op = item.GetToken("op");
     return AddNode({.kind = NodeKind::kUnary,
@@ -132,7 +132,7 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
 }
 
 int Expression::AddValueNode(const gb::ParsedItem& item) {
-  if (const gb::ParsedItem* group = item.GetItem("group")) {
+  if (const gb::ParsedItem* group = item.GetItem("group"); group != nullptr) {
     const int index = AddNodes(*group);
     nodes_[index].bracketed = true;
     return index;
@@ -274,6 +274,12 @@ ExpressionResult Expression::EvaluateSymbol(ExpressionWidth width,
   }
   if (IsValue(*result)) {
     return CheckValue(width, result->value, node.token);
+  }
+
+  // An error without a location is the use's.
+  if (result->error.GetLocation().line < 0) {
+    result->error = gb::ParseError(lexer_->GetTokenLocation(node.token),
+                                   result->error.GetMessage());
   }
   return *std::move(result);
 }

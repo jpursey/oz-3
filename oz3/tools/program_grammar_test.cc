@@ -550,17 +550,28 @@ TEST_F(ProgramGrammarTest, LiteralNumberWithError) {
 TEST_F(ProgramGrammarTest, ValueSetNames) {
   EXPECT_THAT(Match("SETC Z"), ElementsAre("SETC $Condition"));
   ASSERT_NE(matches_[0].form->GetArgs()[0].value_set, nullptr);
-  const ValueSetDef& condition = *matches_[0].form->GetArgs()[0].value_set;
-  EXPECT_EQ(ArgValue(0, ValueSetContext(condition, context_)), 4);
+  const ValueSetDef* condition = matches_[0].form->GetArgs()[0].value_set;
+  EXPECT_EQ(ArgValue(0, ValueSetContext(condition, &context_)), 4);
 
   // The set's names are ahead of symbols, in any case.
   context_.symbols["Z"] = 9;
   context_.symbols["N"] = 2;
   EXPECT_THAT(Match("SETC z"), ElementsAre("SETC $Condition"));
-  EXPECT_EQ(ArgValue(0, ValueSetContext(condition, context_)), 4);
+  EXPECT_EQ(ArgValue(0, ValueSetContext(condition, &context_)), 4);
   EXPECT_EQ(ArgValue(0), 9);
   EXPECT_THAT(Match("SETC nz | N"), ElementsAre("SETC $Condition"));
-  EXPECT_EQ(ArgValue(0, ValueSetContext(condition, context_)), 2);
+  EXPECT_EQ(ArgValue(0, ValueSetContext(condition, &context_)), 2);
+}
+
+TEST_F(ProgramGrammarTest, CodeValues) {
+  // A code word value is kept as matching evaluated it, with a value set's
+  // names, and whether it fits its bits or not.
+  context_.symbols["Z"] = 9;
+  EXPECT_THAT(Match("SETC Z"), ElementsAre("SETC $Condition"));
+  EXPECT_EQ(matches_[0].args[0].code_value, 4);
+  EXPECT_THAT(Match("RST.C 2 + 3, 9"), ElementsAre("RST.C $#3, $#2"));
+  EXPECT_EQ(matches_[0].args[0].code_value, 5);
+  EXPECT_EQ(matches_[0].args[1].code_value, 9);
 }
 
 TEST_F(ProgramGrammarTest, TextAfterAForm) {
