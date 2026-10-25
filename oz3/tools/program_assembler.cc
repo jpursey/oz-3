@@ -145,6 +145,16 @@ class ProgramAssembler final {
   struct Segment {
     std::optional<gb::Token> name;  // Its name where it is declared.
 
+    // Its access (ROM), and its fixed start page (PAGE), or 0xFFFF for any.
+    Program::Segment::Access access = Program::Segment::Access::kReadWrite;
+    uint16_t page_start = 0xFFFF;
+    std::optional<gb::Token> page_token;
+
+    // Its size in pages, which PAGES gives, or else its reserved size does
+    // once the first pass ends.
+    uint16_t page_count = 0;
+    std::optional<gb::Token> pages_token;
+
     // Its size in words so far: every word its statements reserve, written or
     // not, which is the offset of its next statement. Once the first pass
     // ends, it is the segment's size, with the stack in the stack segment.
@@ -243,6 +253,12 @@ class ProgramAssembler final {
   // where the statement is.
   std::optional<uint32_t> EvaluateNow(const gb::ParsedItem& item);
 
+  // Returns the value of a first pass expression (see EvaluateNow), or reports
+  // an error and returns nullopt if it has none, or if it isn't from `min` to
+  // `max`, which names it as `what` ("A segment's page").
+  std::optional<int> EvaluateInRange(const gb::ParsedItem& item, int min,
+                                     int max, std::string_view what);
+
   // First pass.
   void ReadContent(gb::LexerContentId content);
   void ReadLine(gb::LexerContentId content, const gb::ParsedItem& line);
@@ -272,7 +288,13 @@ class ProgramAssembler final {
   // segment's reserved size past the end of a segment, where it wasn't before.
   void CheckSegmentEnd(const Segment& segment, int64_t size,
                        const gb::Token& token, std::string_view what);
+
+  // Ends the first pass: adds the stack to the stack segment's reserved size,
+  // and sets each segment's page count, checking that it is no more than
+  // PAGES gives, and that it doesn't pass the end of the bank from PAGE.
   void EndFirstPass();
+  void ReserveStack();
+  void SetPageCount(Segment& segment);
 
   // Second pass.
   void FinishStatement(const Statement& statement);
@@ -588,6 +610,22 @@ std::optional<uint32_t> ProgramAssembler::EvaluateNow(
                   StatementContext(this, GetSegment().reserved_size, scope_));
 }
 
+std::optional<int> ProgramAssembler::EvaluateInRange(const gb::ParsedItem& item,
+                                                     int min, int max,
+                                                     std::string_view what) {
+  const std::optional<uint32_t> value = EvaluateNow(item);
+  if (!value.has_value()) {
+    return std::nullopt;
+  }
+  if (*value < static_cast<uint32_t>(min) ||
+      *value > static_cast<uint32_t>(max)) {
+    Error(item.GetToken(),
+          absl::StrCat(what, " must be from ", min, " to ", max));
+    return std::nullopt;
+  }
+  return static_cast<int>(*value);
+}
+
 //------------------------------------------------------------------------------
 // First pass
 //------------------------------------------------------------------------------
@@ -773,15 +811,35 @@ void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
     roles_.fill(-1);
   }
   segment_ = static_cast<int>(segments_.size());
-  segments_.push_back({.name = name});
+  Segment& segment = segments_.emplace_back(Segment{.name = name});
   segment_indices_[name.GetString()] = segment_;
 
+  absl::flat_hash_set<std::string_view> given;
   for (const gb::ParsedItem& attribute : attributes) {
-    if (const gb::ParsedItem* role = attribute.GetItem("role");
-        role != nullptr) {
-      ReadSegmentRole(role->GetToken());
+    const gb::Token token = attribute.GetToken();
+    if (!given.insert(token.GetString()).second) {
+      Error(token, absl::StrCat(token.GetString(), " is already given"));
+    } else if (attribute.GetItem("role") != nullptr) {
+      ReadSegmentRole(token);
+    } else if (attribute.GetItem("rom") != nullptr) {
+      segment.access = Program::Segment::Access::kReadOnly;
+    } else if (const gb::ParsedItem* page = attribute.GetItem("page");
+               page != nullptr) {
+      const std::optional<int> value = EvaluateInRange(
+          *page, 0, kMemoryBankPageCount - 1, "A segment's page");
+      if (value.has_value()) {
+        segment.page_start = static_cast<uint16_t>(*value);
+        segment.page_token = token;
+      }
+    } else if (const gb::ParsedItem* pages = attribute.GetItem("pages");
+               pages != nullptr) {
+      const std::optional<int> value = EvaluateInRange(
+          *pages, 1, kMemoryBankPageCount, "A segment's size in pages");
+      if (value.has_value()) {
+        segment.page_count = static_cast<uint16_t>(*value);
+        segment.pages_token = token;
+      }
     } else {
-      const gb::Token token = attribute.GetToken();
       Error(token, absl::StrCat(token.GetString(), " is not supported yet"));
     }
   }
@@ -793,9 +851,7 @@ void ProgramAssembler::ReadSegmentRole(const gb::Token& role) {
       static_cast<int>(absl::c_find(kRoleNames, name) - kRoleNames.begin());
   DCHECK_LT(index, static_cast<int>(kRoleNames.size()));
   const int other = roles_[index];
-  if (other == segment_) {
-    Error(role, absl::StrCat(name, " is already given"));
-  } else if (other >= 0) {
+  if (other >= 0) {
     Error(role, absl::StrCat("The ", name, " role is already the segment ",
                              segments_[other].name->GetString(), "'s"));
   } else {
@@ -895,6 +951,13 @@ void ProgramAssembler::CheckSegmentEnd(const Segment& segment, int64_t size,
 }
 
 void ProgramAssembler::EndFirstPass() {
+  ReserveStack();
+  for (Segment& segment : segments_) {
+    SetPageCount(segment);
+  }
+}
+
+void ProgramAssembler::ReserveStack() {
   // The stack segment needs a size for the stack, which is after its
   // contents, and only it has one.
   const int stack_segment = roles_[CpuCore::STACK];
@@ -918,6 +981,35 @@ void ProgramAssembler::EndFirstPass() {
   }
   CheckSegmentEnd(segment, stack_words_, *stack_token_, "The stack");
   segment.reserved_size += stack_words_;
+}
+
+void ProgramAssembler::SetPageCount(Segment& segment) {
+  // A segment past the end of a bank is already reported where it passes it.
+  if (segment.reserved_size > kMemoryBankMaxSize) {
+    return;
+  }
+
+  // Its reserved size in whole pages, which PAGES may give more of, at the
+  // end.
+  const int64_t pages =
+      std::max<int64_t>(1, (segment.reserved_size + kMemoryBankPageSize - 1) /
+                               kMemoryBankPageSize);
+  if (!segment.pages_token.has_value()) {
+    segment.page_count = static_cast<uint16_t>(pages);
+  } else if (pages > segment.page_count) {
+    Error(*segment.pages_token,
+          absl::StrCat(segment.name->GetString(), " needs ", pages, " pages (",
+                       segment.reserved_size, " words), but PAGES gives it ",
+                       segment.page_count));
+  }
+  if (segment.page_token.has_value() &&
+      segment.page_start + segment.page_count > kMemoryBankPageCount) {
+    Error(*segment.page_token,
+          absl::StrCat(segment.name->GetString(), "'s ", segment.page_count,
+                       " pages from page ", segment.page_start,
+                       " pass the end of the bank, at page ",
+                       kMemoryBankPageCount));
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -1050,13 +1142,10 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
 }
 
 Program::Segment ProgramAssembler::BuildSegment(int index) const {
-  // Its size is its words, with the stack in the stack segment, in whole
-  // pages.
   const Segment& segment = segments_[index];
-  Program::Segment result = {
-      .page_count = static_cast<uint16_t>(std::max<int64_t>(
-          1, (segment.reserved_size + kMemoryBankPageSize - 1) /
-                 kMemoryBankPageSize))};
+  Program::Segment result = {.access = segment.access,
+                             .page_start = segment.page_start,
+                             .page_count = segment.page_count};
 
   // The data is each run of aligned pairs of words with a word written, as
   // blocks. The words are whole pairs, so a word in a pair that isn't written

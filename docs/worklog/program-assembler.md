@@ -553,6 +553,24 @@ CL7 settled segments' details:
   segment before.
 - Segment names are their own, apart from symbols.
 
+CL8 settled the segment attributes' details:
+- **Each attribute is given at most once**, which one check covers for every
+  attribute, roles included.
+- `PAGE` and `PAGES` are first pass word expressions, evaluated at the
+  segment's start, so `$` is 0 in them.
+- **A segment's page count is set at the end of the first pass**, from
+  `PAGES` or its reserved size, after the stack is added. `PAGES` too small
+  is an error at `PAGES`, and a segment with `PAGE` past the end of the bank
+  is an error at `PAGE`. A segment that passes 64 Kiw is only reported where
+  it passes it.
+- Segments with more than 16 pages in a bank between them, and overlapping
+  fixed pages, are left to `ValidateProgram`.
+- `ROM` is allowed with any role, the stack's included, as the loader allows
+  it.
+- With a temporary test (not checked in), the design doc's example program,
+  with its segments and `ROM`, assembled for the default instruction set, and
+  each instruction disassembled to the form it was written as.
+
 **Brittleness:**
 - Expressions and recorded statements hold tokens of the assembler's lexer,
   which lives as long as the assembly.
@@ -729,7 +747,7 @@ Depends on: CL6.
 - A program with several segments loads with `ProgramLoader` (in a `tools`
   test, as `program_loader_test.cc` does).
 
-### CL8 [ ] tools, wiki: `ROM`, `PAGE`, and `PAGES`
+### CL8 [x] tools, wiki: `ROM`, `PAGE`, and `PAGES`
 
 Depends on: CL7.
 

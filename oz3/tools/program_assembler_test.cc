@@ -663,7 +663,7 @@ TEST_F(ProgramAssemblerTest, SegmentsLoad) {
     .SEGMENT stack STACK
     .SEGMENT main CODE
       .DW 1, 2, 3
-    .SEGMENT vars DATA
+    .SEGMENT vars DATA PAGE(10)
       .DS 4096
       .DW 4, 5
   )---");
@@ -674,6 +674,7 @@ TEST_F(ProgramAssemblerTest, SegmentsLoad) {
   const CpuCore::ResetParams params = loader.GetResetParams(handle);
   MemoryBank& memory = *processor.GetMemory(0);
   EXPECT_THAT(memory.GetMem(params.bc, 3), ElementsAre(1, 2, 3));
+  EXPECT_EQ(params.bd, 10 * kMemoryBankPageSize);
   EXPECT_THAT(memory.GetMem(params.bd + 4096, 2), ElementsAre(4, 5));
 
   // The stack is a page of its own, and its top is the end of the page.
@@ -684,17 +685,127 @@ TEST_F(ProgramAssemblerTest, SegmentsLoad) {
   EXPECT_NE(stack_page, params.bd / kMemoryBankPageSize + 1);
 }
 
-TEST_F(ProgramAssemblerTest, NotSupportedYet) {
+TEST_F(ProgramAssemblerTest, SegmentAttributes) {
+  Program program = Assemble(
+      ".CONST BASE = 4\n"
+      ".SEGMENT fixed ROM PAGE(2) PAGES(3)\n"
+      ".SEGMENT expressions PAGES(BASE / 2) "
+      "PAGE(BASE + 1)\n");
+  ASSERT_THAT(program.segments, SizeIs(2));
+  EXPECT_EQ(program.segments[0].access, Program::Segment::Access::kReadOnly);
+  EXPECT_EQ(program.segments[0].page_start, 2);
+  EXPECT_EQ(program.segments[0].page_count, 3);
+  EXPECT_EQ(program.segments[1].access, Program::Segment::Access::kReadWrite);
+  EXPECT_EQ(program.segments[1].page_start, 5);
+  EXPECT_EQ(program.segments[1].page_count, 2);
+}
+
+TEST_F(ProgramAssemblerTest, SegmentAttributeErrors) {
+  EXPECT_THAT(AssembleErrors(".SEGMENT a PAGE(N)\n.CONST N = 1\n"),
+              ElementsAre(IsErrorAt(0, 16, "N is not defined")));
   EXPECT_THAT(
-      AssembleErrors(".SEGMENT a ROM PAGE(1) PAGES(2) BANK(x) INSTANCE\n"
-                     ".BANK video\n.INSTANCES 2\n"),
-      ElementsAre(IsErrorAt(0, 11, "ROM is not supported yet"),
-                  IsErrorAt(0, 15, "PAGE is not supported yet"),
-                  IsErrorAt(0, 23, "PAGES is not supported yet"),
-                  IsErrorAt(0, 32, "BANK is not supported yet"),
-                  IsErrorAt(0, 40, "INSTANCE is not supported yet"),
-                  IsErrorAt(1, 0, ".BANK is not supported yet"),
-                  IsErrorAt(2, 0, ".INSTANCES is not supported yet")));
+      AssembleErrors(".SEGMENT a PAGE(16)\n"
+                     ".SEGMENT b PAGES(0)\n"
+                     ".SEGMENT c PAGES(17)\n"),
+      ElementsAre(
+          IsErrorAt(0, 16, "A segment's page must be from 0 to 15"),
+          IsErrorAt(1, 17, "A segment's size in pages must be from 1 to 16"),
+          IsErrorAt(2, 17, "A segment's size in pages must be from 1 to 16")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT a ROM rom PAGE(1) PAGE(2) PAGES(1) "
+                             "PAGES(1)\n"),
+              ElementsAre(IsErrorAt(0, 15, "ROM is already given"),
+                          IsErrorAt(0, 27, "PAGE is already given"),
+                          IsErrorAt(0, 44, "PAGES is already given")));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentPages) {
+  // PAGES gives a segment more pages than its contents need, at the end, so
+  // the stack gets them.
+  Program program = Assemble(
+      ".STACK 10\n"
+      ".SEGMENT stack STACK PAGES(3)\n"
+      ".DW 1\n");
+  ASSERT_THAT(program.segments, SizeIs(1));
+  EXPECT_EQ(program.segments[0].page_count, 3);
+  EXPECT_THAT(GetWords(program.segments[0]), ElementsAre(1, 0));
+
+  EXPECT_THAT(AssembleErrors(".SEGMENT main PAGES(1)\n.DS 4097\n"),
+              ElementsAre(IsErrorAt(0, 14,
+                                    "MAIN needs 2 pages (4097 words), but "
+                                    "PAGES gives it 1")));
+  EXPECT_THAT(AssembleErrors(".STACK 2\n"
+                             ".SEGMENT stack STACK PAGES(1)\n"
+                             ".DS 4095\n"),
+              ElementsAre(IsErrorAt(1, 21,
+                                    "STACK needs 2 pages (4097 words), but "
+                                    "PAGES gives it 1")));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentPastTheEndOfTheBank) {
+  EXPECT_THAT(AssembleErrors(".SEGMENT a PAGE(15) PAGES(2)\n"),
+              ElementsAre(IsErrorAt(0, 11,
+                                    "A's 2 pages from page 15 pass the end of "
+                                    "the bank, at page 16")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT a PAGE(15)\n.DS 4097\n"),
+              ElementsAre(IsErrorAt(0, 11,
+                                    "A's 2 pages from page 15 pass the end of "
+                                    "the bank, at page 16")));
+
+  // A segment too big for any bank is reported once.
+  EXPECT_THAT(
+      AssembleErrors(".SEGMENT a PAGE(0) PAGES(1)\n"
+                     ".DS 65535\n"
+                     ".DW 1, 2\n"),
+      ElementsAre(IsErrorAt(2, 0, "This passes the end of the segment")));
+
+  // Segments with more pages than a bank between them are left to
+  // ValidateProgram.
+  EXPECT_THAT(AssembleErrors(".SEGMENT a PAGES(9)\n.SEGMENT b PAGES(8)\n"),
+              ElementsAre(IsErrorAt(0, 0, "The program isn't valid: ")));
+}
+
+TEST_F(ProgramAssemblerTest, ExampleProgram) {
+  // The design doc's example, for this instruction set.
+  Program program = Assemble(R"---(
+    ; Pushes a message, a word at a time.
+    .CONST COUNT = 2
+    .STACK 64
+
+    .SEGMENT main CODE
+    start:
+        PUSH.W message
+        PUSH.W message + 1
+        JPR start
+
+    .SEGMENT strings DATA ROM
+    message:
+        .DW 'Hi', COUNT
+
+    .SEGMENT stack STACK
+  )---");
+  ASSERT_THAT(program.segments, SizeIs(3));
+  std::vector<uint16_t> code = GetWords(program.segments[0]);
+  ASSERT_THAT(code, SizeIs(6));
+  EXPECT_EQ(Disassemble(code, 0), "PUSH.W 0000h");
+  EXPECT_EQ(Disassemble(code, 2), "PUSH.W 0001h");
+  EXPECT_EQ(Disassemble(code, 4), "JPR 0000h");
+  EXPECT_EQ(program.segments[1].access, Program::Segment::Access::kReadOnly);
+  EXPECT_THAT(GetWords(program.segments[1]), ElementsAre('H', 'i', 2, 0));
+  EXPECT_THAT(program.segments[2].data, IsEmpty());
+  EXPECT_EQ(program.segments[2].page_count, 1);
+  EXPECT_EQ(program.code_segment, 0);
+  EXPECT_EQ(program.stack_segment, 2);
+  EXPECT_EQ(program.data_segment, 1);
+  EXPECT_EQ(program.extra_segment, 0xFFFF);
+}
+
+TEST_F(ProgramAssemblerTest, NotSupportedYet) {
+  EXPECT_THAT(AssembleErrors(".SEGMENT a BANK(x) INSTANCE\n"
+                             ".BANK video\n.INSTANCES 2\n"),
+              ElementsAre(IsErrorAt(0, 11, "BANK is not supported yet"),
+                          IsErrorAt(0, 19, "INSTANCE is not supported yet"),
+                          IsErrorAt(1, 0, ".BANK is not supported yet"),
+                          IsErrorAt(2, 0, ".INSTANCES is not supported yet")));
 }
 
 TEST_F(ProgramAssemblerTest, EveryErrorInAPass) {
