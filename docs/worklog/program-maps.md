@@ -35,7 +35,7 @@ class ProgramMap final {
   // A statement that wrote words: an instruction, .DW, or .DD.
   struct Statement {
     int segment = 0;  // An index into GetSegments().
-    uint16_t offset = 0;
+    int offset = 0;
     int size = 0;  // In words, at least 1.
     Location location;
   };
@@ -237,7 +237,7 @@ of the program in the map could, if it turns out to be needed.
 The status is `[ ]` not started, `[~]` in progress (set by the CL's first
 edit), or `[x]` submitted (set in the CL's own commit).
 
-### CL1 [ ] tools: `ProgramMap`
+### CL1 [x] tools: `ProgramMap`
 
 Depends on: nothing.
 
