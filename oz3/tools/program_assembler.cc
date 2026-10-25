@@ -160,9 +160,13 @@ class ProgramAssembler final {
     uint16_t page_count = 0;
     std::optional<gb::Token> pages_token;
 
+    // Where INSTANCE makes it per instance, if it does.
+    std::optional<gb::Token> instance_token;
+
     // Its size in words so far: every word its statements reserve, written or
     // not, which is the offset of its next statement. Once the first pass
-    // ends, it is the segment's size, with the stack in the stack segment.
+    // ends, it is the segment's size, with the stack in the stack segment, or
+    // if it is per instance, one instance's words.
     int64_t reserved_size = 0;
 
     // Its size up to the end of its last statement that writes words.
@@ -280,6 +284,7 @@ class ProgramAssembler final {
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
   void ReadStorage(const gb::ParsedItem& directive);
   void ReadStack(const gb::ParsedItem& directive);
+  void ReadInstances(const gb::ParsedItem& directive);
   void ReadBank(const gb::ParsedItem& directive);
   void ReadSegment(const gb::ParsedItem& directive);
   void ReadSegmentRole(const gb::Token& role);
@@ -301,13 +306,19 @@ class ProgramAssembler final {
   void CheckSegmentEnd(const Segment& segment, int64_t size,
                        const gb::Token& token, std::string_view what);
 
-  // Ends the first pass: adds the stack to the stack segment's reserved size,
-  // looks up each segment's bank, and sets each segment's page count,
-  // checking that it is no more than PAGES gives, and that it doesn't pass the
-  // end of the bank from PAGE.
+  // Ends the first pass, with each of the functions after it.
   void EndFirstPass();
+
+  // Adds the stack to the stack segment's reserved size. The stack segment
+  // must be per instance if the program has more than one instance.
   void ReserveStack();
+
+  // Looks up the segment's bank, which BANK names.
   void SetBank(Segment& segment);
+
+  // Sets the segment's page count from its size, which is for every instance
+  // if it is per instance. It can't be more than PAGES gives, or pass the end
+  // of the bank from PAGE.
   void SetPageCount(Segment& segment);
 
   // Second pass.
@@ -324,6 +335,10 @@ class ProgramAssembler final {
   // Returns the segment with the role of bank index `bank`, as a Program has
   // it: its index, or 0xFFFF for none.
   uint16_t GetRoleSegment(int bank) const;
+
+  // Returns `instance`'s offset for the role of bank index `bank` (see
+  // Program::Instance).
+  uint16_t GetInstanceOffset(int bank, int instance) const;
 
   const InstructionSetSyntax* const syntax_;
   gb::FileSystem* const file_system_;
@@ -376,6 +391,10 @@ class ProgramAssembler final {
   std::vector<Statement> statements_;
   uint16_t stack_words_ = 0;
   std::optional<gb::Token> stack_token_;
+
+  // The number of instances (.INSTANCES), and where it is given.
+  int instance_count_ = 1;
+  std::optional<gb::Token> instances_token_;
 };
 
 std::unique_ptr<AsmProgram> ProgramAssembler::AssembleFile(
@@ -719,8 +738,8 @@ void ProgramAssembler::ReadDirective(const gb::ParsedItem& directive) {
   } else if (name == "SEGMENT") {
     ReadSegment(directive);
   } else {
-    Error(directive.GetToken(),
-          absl::StrCat(".", name, " is not supported yet"));
+    DCHECK_EQ(name, "INSTANCES");
+    ReadInstances(directive);
   }
 }
 
@@ -805,6 +824,20 @@ void ProgramAssembler::ReadStack(const gb::ParsedItem& directive) {
   }
 }
 
+void ProgramAssembler::ReadInstances(const gb::ParsedItem& directive) {
+  const gb::Token token = directive.GetToken();
+  if (instances_token_.has_value()) {
+    Error(token, "The program's .INSTANCES is already given");
+    return;
+  }
+  instances_token_ = token;
+  const std::optional<int> count = EvaluateInRange(
+      *directive.GetItem("count"), 1, kMaxCores, "The number of instances");
+  if (count.has_value()) {
+    instance_count_ = *count;
+  }
+}
+
 void ProgramAssembler::ReadBank(const gb::ParsedItem& directive) {
   const gb::Token name = directive.GetToken("name");
   if (bank_indices_.contains(name.GetString())) {
@@ -884,12 +917,18 @@ void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
         segment.page_count = static_cast<uint16_t>(*value);
         segment.pages_token = token;
       }
-    } else if (const gb::ParsedItem* bank = attribute.GetItem("bank");
-               bank != nullptr) {
-      segment.bank_name = bank->GetToken();
+    } else if (attribute.GetItem("instance") != nullptr) {
+      segment.instance_token = token;
     } else {
-      Error(token, absl::StrCat(token.GetString(), " is not supported yet"));
+      segment.bank_name = attribute.GetToken("bank");
     }
+  }
+
+  // Code is shared by every instance, so instances never offset BC.
+  if (segment.instance_token.has_value() && roles_[CpuCore::CODE] == segment_) {
+    Error(*segment.instance_token,
+          absl::StrCat("Code is shared by every instance, so ",
+                       name.GetString(), " can't have both CODE and INSTANCE"));
   }
 }
 
@@ -986,6 +1025,15 @@ void ProgramAssembler::Write(int64_t size, const gb::Token& token) {
   Reserve(size, token);
   Segment& segment = GetSegment();
   segment.written_size = segment.reserved_size;
+
+  // The loader writes a program's words once, so only one instance would get
+  // them.
+  if (segment.instance_token.has_value()) {
+    Error(token,
+          absl::StrCat("This writes words, but ", segment.name->GetString(),
+                       " is per instance, so it can only reserve them, "
+                       "with .DS"));
+  }
 }
 
 void ProgramAssembler::CheckSegmentEnd(const Segment& segment, int64_t size,
@@ -1018,6 +1066,21 @@ void ProgramAssembler::ReserveStack() {
     return;
   }
   Segment& segment = segments_[stack_segment];
+
+  // With more than one instance, a shared stack would be every instance's.
+  if (instance_count_ > 1 && !segment.instance_token.has_value()) {
+    if (segment.name.has_value()) {
+      Error(*segment.name,
+            absl::StrCat("The program has ", instance_count_,
+                         " instances, so its stack segment, ",
+                         segment.name->GetString(), ", needs INSTANCE"));
+    } else {
+      Error(*instances_token_,
+            absl::StrCat("The program has ", instance_count_,
+                         " instances, so it needs segments, with a per "
+                         "instance stack segment"));
+    }
+  }
   if (!stack_token_.has_value()) {
     constexpr std::string_view kMessage =
         "The program has a stack, so it needs its size, with .STACK";
@@ -1065,18 +1128,30 @@ void ProgramAssembler::SetPageCount(Segment& segment) {
     return;
   }
 
-  // Its reserved size in whole pages, which PAGES may give more of, at the
-  // end.
-  const int64_t pages =
-      std::max<int64_t>(1, (segment.reserved_size + kMemoryBankPageSize - 1) /
-                               kMemoryBankPageSize);
+  // Its size is its reserved size, for each instance if it is per instance.
+  int64_t size = segment.reserved_size;
+  if (segment.instance_token.has_value()) {
+    size *= instance_count_;
+    if (size > kMemoryBankMaxSize) {
+      Error(*segment.instance_token,
+            absl::StrCat(segment.name->GetString(), "'s ", instance_count_,
+                         " instances of ", segment.reserved_size,
+                         " words pass the end of the segment, at ",
+                         kMemoryBankMaxSize, " words"));
+      return;
+    }
+  }
+
+  // Its size in whole pages, which PAGES may give more of, at the end.
+  const int64_t pages = std::max<int64_t>(
+      1, (size + kMemoryBankPageSize - 1) / kMemoryBankPageSize);
   if (!segment.pages_token.has_value()) {
     segment.page_count = static_cast<uint16_t>(pages);
   } else if (pages > segment.page_count) {
-    Error(*segment.pages_token,
-          absl::StrCat(segment.name->GetString(), " needs ", pages, " pages (",
-                       segment.reserved_size, " words), but PAGES gives it ",
-                       segment.page_count));
+    Error(
+        *segment.pages_token,
+        absl::StrCat(segment.name->GetString(), " needs ", pages, " pages (",
+                     size, " words), but PAGES gives it ", segment.page_count));
   }
   if (segment.page_token.has_value() &&
       segment.page_start + segment.page_count > kMemoryBankPageCount) {
@@ -1191,9 +1266,8 @@ void ProgramAssembler::EncodeData(const Statement& statement,
 }
 
 std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
-  // The declared banks, or one bank that may be any physical bank, and one
-  // instance, with every offset 0: code and data from the start of their
-  // segments, and the stack down from the end of its.
+  // The declared banks, or one bank that may be any physical bank, the
+  // segments, their roles, and the instances.
   auto result = absl::WrapUnique(new AsmProgram);
   Program& program = result->program_;
   if (banks_.empty()) {
@@ -1209,7 +1283,13 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
   program.stack_segment = GetRoleSegment(CpuCore::STACK);
   program.data_segment = GetRoleSegment(CpuCore::DATA);
   program.extra_segment = GetRoleSegment(CpuCore::EXTRA);
-  program.instances.emplace_back();
+  for (int i = 0; i < instance_count_; ++i) {
+    program.instances.push_back(
+        {.code = GetInstanceOffset(CpuCore::CODE, i),
+         .stack = GetInstanceOffset(CpuCore::STACK, i),
+         .data = GetInstanceOffset(CpuCore::DATA, i),
+         .extra = GetInstanceOffset(CpuCore::EXTRA, i)});
+  }
 
   // The assembler reports what a program breaks itself, but this is a last
   // check of the rest.
@@ -1255,6 +1335,25 @@ Program::Segment ProgramAssembler::BuildSegment(int index) const {
 uint16_t ProgramAssembler::GetRoleSegment(int bank) const {
   const int segment = roles_[bank];
   return segment < 0 ? 0xFFFF : static_cast<uint16_t>(segment);
+}
+
+uint16_t ProgramAssembler::GetInstanceOffset(int bank, int instance) const {
+  // Every instance's offset in a shared segment is 0: code and data from its
+  // start, and the stack down from its end.
+  const int index = roles_[bank];
+  if (index < 0 || !segments_[index].instance_token.has_value()) {
+    return 0;
+  }
+
+  // A per instance segment has each instance's words in turn, so an
+  // instance's offset is the start of its words, and the stack's offset from
+  // the segment's end is to the end of its words.
+  const Segment& segment = segments_[index];
+  if (bank == CpuCore::STACK) {
+    return static_cast<uint16_t>(segment.page_count * kMemoryBankPageSize -
+                                 (instance + 1) * segment.reserved_size);
+  }
+  return static_cast<uint16_t>(instance * segment.reserved_size);
 }
 
 //==============================================================================

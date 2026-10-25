@@ -583,6 +583,21 @@ CL9 settled banks' details:
 - Bank names are their own, apart from symbols and segments.
 - More than 16 banks is left to `ValidateProgram`.
 
+CL10 settled instances' details:
+- **A per instance segment's reserved size is one instance's words**, and its
+  size is that times the instance count, set with its page count when the
+  first pass ends, once the count is known wherever `.INSTANCES` is. Its
+  instances passing 64 Kiw is an error at its `INSTANCE`.
+- **Each statement that writes words in a per instance segment is an error**,
+  like every other statement error, rather than once for the segment.
+- A segment with both `CODE` and `INSTANCE` is an error at `INSTANCE`, as the
+  roles are known by the end of the attributes.
+- A shared stack segment with more than one instance is an error at the
+  segment's name, or for the default program, at `.INSTANCES`.
+- An instance's offset is 0 in a shared segment. In a per instance segment it
+  is the start of its words, and the stack's is from the segment's end to the
+  end of its words, so `PAGES`' extra space is after the last instance.
+
 **Brittleness:**
 - Expressions and recorded statements hold tokens of the assembler's lexer,
   which lives as long as the assembly.
@@ -789,7 +804,7 @@ Depends on: CL8.
   declared twice, and one not declared; a segment without `BANK`; segments in
   several banks.
 
-### CL10 [ ] tools, wiki: instances
+### CL10 [x] tools, wiki: instances
 
 Depends on: CL9.
 

@@ -867,10 +867,141 @@ TEST_F(ProgramAssemblerTest, BanksLoad) {
   EXPECT_EQ(loaded->pages[1].bank, 1);
 }
 
-TEST_F(ProgramAssemblerTest, NotSupportedYet) {
-  EXPECT_THAT(AssembleErrors(".SEGMENT a INSTANCE\n.INSTANCES 2\n"),
-              ElementsAre(IsErrorAt(0, 11, "INSTANCE is not supported yet"),
-                          IsErrorAt(1, 0, ".INSTANCES is not supported yet")));
+// A program with three instances, each with its own data and stack, sharing
+// code and extra.
+constexpr std::string_view kInstancesProgram = R"---(
+  .INSTANCES 3
+  .STACK 100
+  .SEGMENT main CODE
+    NOP
+  .SEGMENT vars DATA INSTANCE
+    .DS 10
+  .SEGMENT shared EXTRA
+    .DW 1
+  .SEGMENT stack STACK INSTANCE
+    .DS 20
+)---";
+
+TEST_F(ProgramAssemblerTest, Instances) {
+  // A per instance segment has each instance's words in turn, and its stack
+  // is at the end of each instance's words.
+  Program program = Assemble(kInstancesProgram);
+  ASSERT_THAT(program.segments, SizeIs(4));
+  EXPECT_EQ(program.segments[1].page_count, 1);
+  EXPECT_THAT(program.segments[1].data, IsEmpty());
+  EXPECT_EQ(program.segments[3].page_count, 1);
+  EXPECT_THAT(program.instances,
+              ElementsAre(Program::Instance{.stack = 4096 - 120, .data = 0},
+                          Program::Instance{.stack = 4096 - 240, .data = 10},
+                          Program::Instance{.stack = 4096 - 360, .data = 20}));
+
+  // With one instance, a per instance segment is the same as a shared one,
+  // and a shared stack is fine.
+  program = Assemble(".STACK 10\n.SEGMENT stack STACK INSTANCE\n");
+  EXPECT_THAT(program.instances, ElementsAre(Program::Instance{.stack = 4086}));
+  program = Assemble(".INSTANCES 1\n.STACK 10\n.SEGMENT stack STACK\n");
+  EXPECT_THAT(program.instances, ElementsAre(Program::Instance{}));
+}
+
+TEST_F(ProgramAssemblerTest, InstanceSizes) {
+  // A per instance segment's size is its words for every instance, and PAGES
+  // gives the extra space at the end.
+  Program program = Assemble(
+      ".INSTANCES 2\n"
+      ".SEGMENT vars DATA INSTANCE\n"
+      ".DS 3000\n");
+  EXPECT_EQ(program.segments[0].page_count, 2);
+  EXPECT_THAT(program.instances, ElementsAre(Program::Instance{.data = 0},
+                                             Program::Instance{.data = 3000}));
+  program = Assemble(
+      ".INSTANCES 2\n"
+      ".STACK 10\n"
+      ".SEGMENT stack STACK INSTANCE PAGES(2)\n");
+  EXPECT_THAT(program.instances,
+              ElementsAre(Program::Instance{.stack = 8192 - 10},
+                          Program::Instance{.stack = 8192 - 20}));
+
+  EXPECT_THAT(AssembleErrors(".INSTANCES 2\n"
+                             ".SEGMENT vars DATA INSTANCE PAGES(1)\n"
+                             ".DS 3000\n"),
+              ElementsAre(IsErrorAt(1, 28,
+                                    "VARS needs 2 pages (6000 words), but "
+                                    "PAGES gives it 1")));
+  EXPECT_THAT(AssembleErrors(".INSTANCES 2\n"
+                             ".SEGMENT vars DATA INSTANCE\n"
+                             ".DS 40000\n"),
+              ElementsAre(IsErrorAt(1, 19,
+                                    "VARS's 2 instances of 40000 words pass "
+                                    "the end of the segment, at 65536 words")));
+}
+
+TEST_F(ProgramAssemblerTest, PerInstanceSegmentErrors) {
+  // A per instance segment can only reserve words, and is never code.
+  EXPECT_THAT(AssembleErrors(".SEGMENT vars DATA INSTANCE\n"
+                             ".DW 1\n"
+                             "NOP\n"
+                             ".DS 1\n"),
+              ElementsAre(IsErrorAt(1, 0,
+                                    "This writes words, but VARS is per "
+                                    "instance, so it can only reserve them, "
+                                    "with .DS"),
+                          IsErrorAt(2, 0, "This writes words")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT main CODE INSTANCE\n"
+                             ".SEGMENT other INSTANCE CODE\n"),
+              ElementsAre(IsErrorAt(0, 19,
+                                    "Code is shared by every instance, so MAIN "
+                                    "can't have both CODE and INSTANCE"),
+                          IsErrorAt(1, 24, "The CODE role is already")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT main INSTANCE CODE\n"),
+              ElementsAre(IsErrorAt(0, 14,
+                                    "Code is shared by every instance, so MAIN "
+                                    "can't have both CODE and INSTANCE")));
+}
+
+TEST_F(ProgramAssemblerTest, SharedStackWithInstances) {
+  EXPECT_THAT(AssembleErrors(".INSTANCES 2\n"
+                             ".STACK 1\n"
+                             ".SEGMENT stack STACK\n"),
+              ElementsAre(IsErrorAt(2, 9,
+                                    "The program has 2 instances, so its stack "
+                                    "segment, STACK, needs INSTANCE")));
+  EXPECT_THAT(AssembleErrors(".INSTANCES 2\n.STACK 1\nNOP\n"),
+              ElementsAre(IsErrorAt(0, 0,
+                                    "The program has 2 instances, so it needs "
+                                    "segments, with a per instance stack "
+                                    "segment")));
+}
+
+TEST_F(ProgramAssemblerTest, InstanceCount) {
+  EXPECT_THAT(AssembleErrors(".INSTANCES 0\n.STACK 1\n"),
+              ElementsAre(IsErrorAt(
+                  0, 11, "The number of instances must be from 1 to 8")));
+  EXPECT_THAT(AssembleErrors(".INSTANCES 9\n.STACK 1\n"),
+              ElementsAre(IsErrorAt(
+                  0, 11, "The number of instances must be from 1 to 8")));
+  EXPECT_THAT(AssembleErrors(".INSTANCES N\n.STACK 1\n.CONST N = 2\n"),
+              ElementsAre(IsErrorAt(0, 11, "N is not defined")));
+  EXPECT_THAT(AssembleErrors(".INSTANCES 1\n.INSTANCES 1\n.STACK 1\n"),
+              ElementsAre(IsErrorAt(
+                  1, 0, "The program's .INSTANCES is already given")));
+}
+
+TEST_F(ProgramAssemblerTest, InstancesLoad) {
+  Program program = Assemble(kInstancesProgram);
+  Processor processor(ProcessorConfig::MultiBank(1));
+  ProgramLoader loader(&processor);
+  const ProgramLoader::Handle handle = loader.Load(program);
+  ASSERT_NE(handle, ProgramLoader::kInvalidHandle);
+  // The instances share code and extra, and each one's data and stack are its
+  // own words in turn.
+  const CpuCore::ResetParams first = loader.GetResetParams(handle, 0);
+  for (int i = 1; i < 3; ++i) {
+    const CpuCore::ResetParams params = loader.GetResetParams(handle, i);
+    EXPECT_EQ(params.bc, first.bc) << "Instance " << i;
+    EXPECT_EQ(params.be, first.be) << "Instance " << i;
+    EXPECT_EQ(params.bd, first.bd + i * 10) << "Instance " << i;
+    EXPECT_EQ(params.bs, first.bs + i * 120) << "Instance " << i;
+  }
 }
 
 TEST_F(ProgramAssemblerTest, EveryErrorInAPass) {
