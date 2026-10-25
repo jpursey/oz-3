@@ -58,7 +58,7 @@ class ValueSetContext final : public ExpressionContext {
       : value_set_(value_set), context_(context) {}
 
   uint16_t GetOffset() const override { return context_->GetOffset(); }
-  std::optional<ExpressionResult> GetSymbol(
+  std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const override;
 
  private:

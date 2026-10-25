@@ -265,7 +265,8 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
 ExpressionResult Expression::EvaluateSymbol(ExpressionWidth width,
                                             const ExpressionContext& context,
                                             const Node& node) const {
-  std::optional<ExpressionResult> result = context.GetSymbol(node.name, width);
+  std::optional<ExpressionResult> result =
+      context.GetSymbolValue(node.name, width);
   if (!result.has_value()) {
     ExpressionResult undefined =
         Error(node.token, absl::StrCat(node.name, " is not defined"));

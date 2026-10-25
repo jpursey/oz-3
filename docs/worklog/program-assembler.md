@@ -279,7 +279,7 @@ class ExpressionContext {
   // Returns nullopt if there is no such symbol (yet), or else the symbol's
   // result, which passes through as it is (a constant's kUndefined names the
   // symbol its own expression is missing).
-  virtual std::optional<ExpressionResult> GetSymbol(
+  virtual std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const = 0;
 };
 
@@ -671,7 +671,7 @@ Depends on: CL4.
   in a pass, carrying on after a line with a parse error, and the limit; the
   output passing `ValidateProgram`.
 
-### CL6 [ ] tools: `ExpressionContext::GetSymbolValue`
+### CL6 [x] tools: `ExpressionContext::GetSymbolValue`
 
 Depends on: CL5.
 

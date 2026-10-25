@@ -143,9 +143,9 @@ class ProgramAssembler final {
     uint16_t GetOffset() const override {
       return static_cast<uint16_t>(offset_);
     }
-    std::optional<ExpressionResult> GetSymbol(
+    std::optional<ExpressionResult> GetSymbolValue(
         std::string_view name, ExpressionWidth width) const override {
-      return assembler_->GetSymbol(scope_, name, width);
+      return assembler_->GetSymbolValue(scope_, name, width);
     }
 
    private:
@@ -189,9 +189,9 @@ class ProgramAssembler final {
   std::string GetLabelKey(std::string_view scope, std::string_view name) const;
 
   // Returns the value of the symbol with an upper case name, used in `scope`.
-  std::optional<ExpressionResult> GetSymbol(std::string_view scope,
-                                            std::string_view name,
-                                            ExpressionWidth width);
+  std::optional<ExpressionResult> GetSymbolValue(std::string_view scope,
+                                                 std::string_view name,
+                                                 ExpressionWidth width);
   ExpressionResult EvaluateConstant(Constant& constant, ExpressionWidth width);
 
   // Defines a label or constant at its name's `token`, with the upper case
@@ -422,7 +422,7 @@ std::string ProgramAssembler::GetLabelKey(std::string_view scope,
   return std::string(name);
 }
 
-std::optional<ExpressionResult> ProgramAssembler::GetSymbol(
+std::optional<ExpressionResult> ProgramAssembler::GetSymbolValue(
     std::string_view scope, std::string_view name, ExpressionWidth width) {
   // Only a local label needs a key built, and a constant is never local.
   auto label = name.starts_with('@') ? labels_.find(GetLabelKey(scope, name))

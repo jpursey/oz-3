@@ -38,7 +38,7 @@ class FakeContext : public ExpressionContext {
  public:
   uint16_t GetOffset() const override { return offset; }
 
-  std::optional<ExpressionResult> GetSymbol(
+  std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const override {
     requests.push_back(absl::StrCat(name, width == kWord ? ":W" : ":D"));
     auto it = symbols.find(name);

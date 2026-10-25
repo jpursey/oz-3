@@ -66,7 +66,7 @@ class ExpressionContext {
   // symbol with its own expression (a constant) returns that expression's
   // kUndefined or kError as it is. An error without a location is reported
   // where the symbol is used.
-  virtual std::optional<ExpressionResult> GetSymbol(
+  virtual std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const = 0;
 };
 

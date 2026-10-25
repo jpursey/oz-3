@@ -334,14 +334,14 @@ std::optional<InstructionMatch> MatchForm(
 // ValueSetContext
 //==============================================================================
 
-std::optional<ExpressionResult> ValueSetContext::GetSymbol(
+std::optional<ExpressionResult> ValueSetContext::GetSymbolValue(
     std::string_view name, ExpressionWidth width) const {
   for (const NamedValueDef& value : value_set_->values) {
     if (absl::EqualsIgnoreCase(value.name, name)) {
       return ExpressionResult{.value = value.value};
     }
   }
-  return context_->GetSymbol(name, width);
+  return context_->GetSymbolValue(name, width);
 }
 
 //==============================================================================
