@@ -455,9 +455,10 @@ chunk file (`gb/file`'s chunk reader and writer), and holds:
 - Every symbol: its name, its value, its segment (for a label), and where it is
   defined.
 
-With `ProgramLoader`'s record of where each segment was loaded, the debugger
-can turn any address into a segment offset, and from there into source and
-symbols.
+The map works in segment offsets, as every address is one: `IP` is already an
+offset in the code segment. To turn any other address in a bank into a segment
+offset, the debugger needs where each segment was loaded, which `ProgramLoader`
+doesn't record yet (see *Debugger (oz3dbg)* in the backlog).
 
 ### Listing
 

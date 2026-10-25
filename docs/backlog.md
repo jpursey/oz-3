@@ -25,19 +25,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Program maps
-
-- **Layers:** tools
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [assembler_design.md](assembler_design.md) (Program map)
-
-The `.oz3map` file that the assembler writes beside a program: its source
-files, its segments, where each statement's words came from, and every symbol.
-Read back, it lets the debugger turn an address in a loaded program into source
-and symbols.
-
 ## oz3asm
 
 - **Layers:** apps (new), wiki
@@ -123,6 +110,11 @@ sets.
 The debugger for OZ-3 programs, as a library and a tool: stepping (through the
 `T` flag), breakpoints, watches, and source level debugging from `.oz3map`
 files. Ozzy integrates the library.
+
+A program map works in segment offsets, so turning an address in a bank (such
+as a memory view's) into source needs where each segment was loaded.
+`ProgramLoader::LoadedProgram` only records each program bank's page spans, so
+it gains each segment's physical bank and start page.
 
 ## Program macros and conditional assembly
 
@@ -213,6 +205,19 @@ A program file records which instruction set it was assembled for, such as a
 fingerprint of its code word layout, so loading it for a core with a different
 instruction set can be caught. It is a new version of the program file format,
 which readers of version 1 reject.
+
+## Corrupt program maps
+
+- **Layers:** tools
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Game Bits *Validate chunk contents*
+- **Background:** `docs/worklog/program-maps.md` (Map files)
+
+`ReadProgramMapFile` trusts the offsets in a map file's `ChunkPtr`s, and that
+each string they point to ends, as `ChunkReader` does, so a corrupt `.oz3map`
+can make reading go out of bounds. Once `ChunkReader` checks them, test that
+reading a map file with a bad offset or an unterminated string fails.
 
 ## Coprocessors
 
