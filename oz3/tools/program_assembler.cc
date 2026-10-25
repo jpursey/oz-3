@@ -20,11 +20,13 @@
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/log/check.h"
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/file/path.h"
 #include "gb/parse/lexer.h"
@@ -33,6 +35,7 @@
 #include "gb/parse/parser.h"
 #include "gb/parse/token.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/tools/expression.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
@@ -48,6 +51,11 @@ using ArgKind = InstructionForm::Arg::Kind;
 // The filename of a program assembled from text.
 constexpr std::string_view kTextFilename = "program";
 
+// The names of the four bank roles in .SEGMENT, by bank index (CpuCore::CODE
+// to CpuCore::EXTRA).
+constexpr std::array<std::string_view, 4> kRoleNames = {"CODE", "STACK", "DATA",
+                                                        "EXTRA"};
+
 // Returns a form as an error lists it ("ADD.W $r, $v").
 std::string GetFormText(const InstructionForm& form) {
   return absl::StrCat(form.GetInstruction().op_name,
@@ -59,11 +67,11 @@ std::string GetFormText(const InstructionForm& form) {
 // Assembles one program, in two passes:
 // 1. Reads each line of the source, following includes, defining labels and
 //    constants, and matching each instruction to its form. Each statement
-//    that writes words is recorded, with its offset, so that every label has
-//    its value by the end, as is each constant.
+//    that writes words is recorded, with its segment and offset, so that
+//    every label has its value by the end, as is each constant.
 // 2. Finishes each recorded statement, now that every symbol is defined:
 //    encodes each one that writes words, and checks each constant's value.
-//    Then builds the program from the words.
+//    Then builds the program from each segment's words.
 class ProgramAssembler final {
  public:
   // `syntax`, and `file_system` if it isn't null, must outlive this.
@@ -126,9 +134,29 @@ class ProgramAssembler final {
       std::variant<InstructionStatement, DataStatement, ConstantStatement>;
   struct Statement {
     gb::Token token;  // Its first token, for errors.
+    int segment = 0;
     uint16_t offset = 0;
     std::string_view scope;
     StatementContents contents;
+  };
+
+  // A segment declared with .SEGMENT, or the default program's one segment,
+  // which has no name.
+  struct Segment {
+    std::optional<gb::Token> name;  // Its name where it is declared.
+
+    // Its size in words so far: every word its statements reserve, written or
+    // not, which is the offset of its next statement. Once the first pass
+    // ends, it is the segment's size, with the stack in the stack segment.
+    int64_t reserved_size = 0;
+
+    // Its size up to the end of its last statement that writes words.
+    int64_t written_size = 0;
+
+    // Its words up to `written_size`, and which are written, which the second
+    // pass fills in.
+    std::vector<uint16_t> words;
+    std::vector<bool> written;
   };
 
   // The context of a statement's expressions: its offset, and the scope of
@@ -156,6 +184,9 @@ class ProgramAssembler final {
 
   gb::Lexer& GetLexer() { return parser_->GetLexer(); }
   const gb::Lexer& GetLexer() const { return parser_->GetLexer(); }
+
+  // Returns the current segment, which statements assemble into.
+  Segment& GetSegment() { return segments_[segment_]; }
 
   // Adds an error, unless it is already reported (as an error in a constant
   // comes back at each use), and stops once there are kMaxProgramErrors.
@@ -222,16 +253,25 @@ class ProgramAssembler final {
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
   void ReadStorage(const gb::ParsedItem& directive);
   void ReadStack(const gb::ParsedItem& directive);
+  void ReadSegment(const gb::ParsedItem& directive);
+  void ReadSegmentRole(const gb::Token& role);
   void ReadInstruction(gb::LexerContentId content, const gb::ParsedItem& line);
   void AddStatement(const gb::Token& token, StatementContents contents);
 
-  // Moves the offset past `size` words of the statement at `token`.
-  void Reserve(int64_t size, const gb::Token& token);
+  // Notes that the statement or label at `token` is in a segment, which is an
+  // error if it is before the first .SEGMENT.
+  void UseSegment(const gb::Token& token);
 
-  // Reports an error at `token`, about `what`, if `size` words from the offset
-  // pass the end of the segment, where they didn't before.
-  void CheckSegmentEnd(int64_t size, const gb::Token& token,
-                       std::string_view what);
+  // Adds `size` words of the statement at `token` to the current segment's
+  // reserved size. Reserve() is for words the statement only reserves (.DS),
+  // and Write() for words it writes, which sets the written size too.
+  void Reserve(int64_t size, const gb::Token& token);
+  void Write(int64_t size, const gb::Token& token);
+
+  // Reports an error at `token`, about `what`, if `size` more words take the
+  // segment's reserved size past the end of a segment, where it wasn't before.
+  void CheckSegmentEnd(const Segment& segment, int64_t size,
+                       const gb::Token& token, std::string_view what);
   void EndFirstPass();
 
   // Second pass.
@@ -243,6 +283,11 @@ class ProgramAssembler final {
   void EncodeData(const Statement& statement, const DataStatement& data,
                   std::vector<uint16_t>& words);
   std::unique_ptr<AsmProgram> BuildProgram();
+  Program::Segment BuildSegment(int index) const;
+
+  // Returns the segment with the role of bank index `bank`, as a Program has
+  // it: its index, or 0xFFFF for none.
+  uint16_t GetRoleSegment(int bank) const;
 
   const InstructionSetSyntax* const syntax_;
   gb::FileSystem* const file_system_;
@@ -270,16 +315,26 @@ class ProgramAssembler final {
   // label's token, which lives as long as the lexer.
   std::string_view scope_;
 
-  // The offset of the next statement, the statements the second pass
-  // finishes, and the stack's size (.STACK) and where it is given.
-  int64_t offset_ = 0;
+  // The segments in the order they are declared, starting as the default
+  // program's one segment, until a .SEGMENT replaces it. Then each segment's
+  // index by name, and the current segment.
+  std::vector<Segment> segments_ = std::vector<Segment>(1);
+  absl::flat_hash_map<std::string_view, int> segment_indices_;
+  int segment_ = 0;
+
+  // The first statement or label in a segment. The first .SEGMENT reports it,
+  // as it was in the default program's segment.
+  std::optional<gb::Token> first_segment_use_;
+
+  // The segment with each role, by bank index, or -1 for none.
+  // The default program's segment has every role.
+  std::array<int, 4> roles_ = {0, 0, 0, 0};
+
+  // The statements the second pass finishes, and the stack's size (.STACK)
+  // and where it is given.
   std::vector<Statement> statements_;
   uint16_t stack_words_ = 0;
   std::optional<gb::Token> stack_token_;
-
-  // The words, and which are written, which the second pass fills in.
-  std::vector<uint16_t> words_;
-  std::vector<bool> written_;
 };
 
 std::unique_ptr<AsmProgram> ProgramAssembler::AssembleFile(
@@ -367,12 +422,15 @@ std::unique_ptr<AsmProgram> ProgramAssembler::Assemble(
     return nullptr;
   }
 
-  // Second pass. The words are whole aligned pairs (see BuildProgram).
+  // Second pass. Each segment's words are whole aligned pairs (see
+  // BuildSegment).
   constexpr int kAlignment = Program::Segment::Data::kAlignment;
-  const int size =
-      static_cast<int>((offset_ + kAlignment - 1) / kAlignment * kAlignment);
-  words_.resize(size);
-  written_.resize(size);
+  for (Segment& segment : segments_) {
+    const int size = static_cast<int>(
+        ((segment.written_size + kAlignment - 1) / kAlignment) * kAlignment);
+    segment.words.resize(size);
+    segment.written.resize(size);
+  }
   for (const Statement& statement : statements_) {
     if (stopped_) {
       break;
@@ -483,7 +541,9 @@ bool ProgramAssembler::DefineLabel(const gb::Token& token,
   if (!CheckNotDefined(token, key, name)) {
     return false;
   }
-  labels_[std::move(key)] = {.token = token, .offset = offset_};
+  UseSegment(token);
+  labels_[std::move(key)] = {.token = token,
+                             .offset = GetSegment().reserved_size};
   return true;
 }
 
@@ -495,7 +555,7 @@ bool ProgramAssembler::DefineConstant(const gb::Token& token,
   }
   constants_.try_emplace(
       name, Constant{.token = token,
-                     .offset = offset_,
+                     .offset = GetSegment().reserved_size,
                      .scope = scope_,
                      .expression = Expression::Create(GetLexer(), value)});
   return true;
@@ -525,7 +585,7 @@ std::optional<uint32_t> ProgramAssembler::Evaluate(
 std::optional<uint32_t> ProgramAssembler::EvaluateNow(
     const gb::ParsedItem& item) {
   return Evaluate(Expression::Create(GetLexer(), item), ExpressionWidth::kWord,
-                  StatementContext(this, offset_, scope_));
+                  StatementContext(this, GetSegment().reserved_size, scope_));
 }
 
 //------------------------------------------------------------------------------
@@ -597,6 +657,8 @@ void ProgramAssembler::ReadDirective(const gb::ParsedItem& directive) {
     ReadStorage(directive);
   } else if (name == "STACK") {
     ReadStack(directive);
+  } else if (name == "SEGMENT") {
+    ReadSegment(directive);
   } else {
     Error(directive.GetToken(),
           absl::StrCat(".", name, " is not supported yet"));
@@ -659,7 +721,7 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
     }
   }
   AddStatement(directive.GetToken(), std::move(data));
-  Reserve(size, directive.GetToken());
+  Write(size, directive.GetToken());
 }
 
 void ProgramAssembler::ReadStorage(const gb::ParsedItem& directive) {
@@ -684,13 +746,71 @@ void ProgramAssembler::ReadStack(const gb::ParsedItem& directive) {
   }
 }
 
+void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
+  const gb::Token name = directive.GetToken("name");
+  const absl::Span<const gb::ParsedItem> attributes =
+      directive.GetItems("attributes");
+  if (auto it = segment_indices_.find(name.GetString());
+      it != segment_indices_.end()) {
+    segment_ = it->second;
+    if (!attributes.empty()) {
+      Error(attributes.front().GetToken(),
+            absl::StrCat("A segment's attributes are only given where it is "
+                         "first declared, and ",
+                         name.GetString(), " is already declared"));
+    }
+    return;
+  }
+
+  // The first declared segment replaces the default program's.
+  if (segment_indices_.empty()) {
+    if (first_segment_use_.has_value()) {
+      Error(*first_segment_use_,
+            "The program declares segments, so this must be in one, after a "
+            ".SEGMENT");
+    }
+    segments_.clear();
+    roles_.fill(-1);
+  }
+  segment_ = static_cast<int>(segments_.size());
+  segments_.push_back({.name = name});
+  segment_indices_[name.GetString()] = segment_;
+
+  for (const gb::ParsedItem& attribute : attributes) {
+    if (const gb::ParsedItem* role = attribute.GetItem("role");
+        role != nullptr) {
+      ReadSegmentRole(role->GetToken());
+    } else {
+      const gb::Token token = attribute.GetToken();
+      Error(token, absl::StrCat(token.GetString(), " is not supported yet"));
+    }
+  }
+}
+
+void ProgramAssembler::ReadSegmentRole(const gb::Token& role) {
+  const std::string_view name = role.GetString();
+  const int index =
+      static_cast<int>(absl::c_find(kRoleNames, name) - kRoleNames.begin());
+  DCHECK_LT(index, static_cast<int>(kRoleNames.size()));
+  const int other = roles_[index];
+  if (other == segment_) {
+    Error(role, absl::StrCat(name, " is already given"));
+  } else if (other >= 0) {
+    Error(role, absl::StrCat("The ", name, " role is already the segment ",
+                             segments_[other].name->GetString(), "'s"));
+  } else {
+    roles_[index] = segment_;
+  }
+}
+
 void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
                                        const gb::ParsedItem& line) {
   std::vector<InstructionMatch> matches;
   gb::ParseError error;
-  if (!grammar_->MatchInstruction(*parser_, content, line,
-                                  StatementContext(this, offset_, scope_),
-                                  matches, error)) {
+  if (!grammar_->MatchInstruction(
+          *parser_, content, line,
+          StatementContext(this, GetSegment().reserved_size, scope_), matches,
+          error)) {
     AddError(std::move(error));
     return;
   }
@@ -732,39 +852,72 @@ void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
   AddStatement(
       instruction->GetToken(),
       InstructionStatement{.form = match.form, .args = std::move(match.args)});
-  Reserve(size, instruction->GetToken());
+  Write(size, instruction->GetToken());
 }
 
 void ProgramAssembler::AddStatement(const gb::Token& token,
                                     StatementContents contents) {
-  statements_.push_back({.token = token,
-                         .offset = static_cast<uint16_t>(offset_),
-                         .scope = scope_,
-                         .contents = std::move(contents)});
+  statements_.push_back(
+      {.token = token,
+       .segment = segment_,
+       .offset = static_cast<uint16_t>(GetSegment().reserved_size),
+       .scope = scope_,
+       .contents = std::move(contents)});
+}
+
+void ProgramAssembler::UseSegment(const gb::Token& token) {
+  if (!first_segment_use_.has_value()) {
+    first_segment_use_ = token;
+  }
 }
 
 void ProgramAssembler::Reserve(int64_t size, const gb::Token& token) {
-  CheckSegmentEnd(size, token, "This");
-  offset_ += size;
+  UseSegment(token);
+  Segment& segment = GetSegment();
+  CheckSegmentEnd(segment, size, token, "This");
+  segment.reserved_size += size;
 }
 
-void ProgramAssembler::CheckSegmentEnd(int64_t size, const gb::Token& token,
+void ProgramAssembler::Write(int64_t size, const gb::Token& token) {
+  Reserve(size, token);
+  Segment& segment = GetSegment();
+  segment.written_size = segment.reserved_size;
+}
+
+void ProgramAssembler::CheckSegmentEnd(const Segment& segment, int64_t size,
+                                       const gb::Token& token,
                                        std::string_view what) {
-  if (offset_ <= kMemoryBankMaxSize && offset_ + size > kMemoryBankMaxSize) {
+  if (segment.reserved_size <= kMemoryBankMaxSize &&
+      segment.reserved_size + size > kMemoryBankMaxSize) {
     Error(token, absl::StrCat(what, " passes the end of the segment, at ",
                               kMemoryBankMaxSize, " words"));
   }
 }
 
 void ProgramAssembler::EndFirstPass() {
-  // The program's one segment has the stack role, so it needs a size for it.
-  if (!stack_token_.has_value()) {
-    AddError(gb::ParseError(
-        GetMainLocation(),
-        "The program has a stack, so it needs its size, with .STACK"));
+  // The stack segment needs a size for the stack, which is after its
+  // contents, and only it has one.
+  const int stack_segment = roles_[CpuCore::STACK];
+  if (stack_segment < 0) {
+    if (stack_token_.has_value()) {
+      Error(*stack_token_,
+            "No segment has the STACK role, so the program can't have .STACK");
+    }
     return;
   }
-  CheckSegmentEnd(stack_words_, *stack_token_, "The stack");
+  Segment& segment = segments_[stack_segment];
+  if (!stack_token_.has_value()) {
+    constexpr std::string_view kMessage =
+        "The program has a stack, so it needs its size, with .STACK";
+    if (segment.name.has_value()) {
+      Error(*segment.name, kMessage);
+    } else {
+      AddError(gb::ParseError(GetMainLocation(), kMessage));
+    }
+    return;
+  }
+  CheckSegmentEnd(segment, stack_words_, *stack_token_, "The stack");
+  segment.reserved_size += stack_words_;
 }
 
 //------------------------------------------------------------------------------
@@ -785,9 +938,10 @@ void ProgramAssembler::FinishStatement(const Statement& statement) {
              constant != nullptr) {
     CheckConstant(*constant);
   }
+  Segment& segment = segments_[statement.segment];
   for (int i = 0; i < static_cast<int>(words.size()); ++i) {
-    words_[statement.offset + i] = words[i];
-    written_[statement.offset + i] = true;
+    segment.words[statement.offset + i] = words[i];
+    segment.written[statement.offset + i] = true;
   }
 }
 
@@ -869,42 +1023,19 @@ void ProgramAssembler::EncodeData(const Statement& statement,
 }
 
 std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
-  // The default program: one segment in one bank, placed anywhere, with every
-  // role, and one instance, whose stack is at the end of the segment.
-  const int64_t size = offset_ + stack_words_;
-  Program::Segment segment = {
-      .page_count = static_cast<uint16_t>(std::max<int64_t>(
-          1, (size + kMemoryBankPageSize - 1) / kMemoryBankPageSize))};
-
-  // The data is each run of aligned pairs of words with a word written, as
-  // blocks. The words are whole pairs, so a word in a pair that isn't written
-  // is 0.
-  constexpr int kAlignment = Program::Segment::Data::kAlignment;
-  const int word_count = static_cast<int>(words_.size());
-  for (int offset = 0; offset < word_count; offset += kAlignment) {
-    const auto start = written_.begin() + offset;
-    if (std::find(start, start + kAlignment, true) == start + kAlignment) {
-      continue;
-    }
-    if (segment.data.empty() ||
-        segment.data.back().offset +
-                static_cast<int>(segment.data.back().data.size()) !=
-            offset) {
-      segment.data.push_back({.offset = static_cast<uint16_t>(offset)});
-    }
-    std::vector<uint16_t>& data = segment.data.back().data;
-    data.insert(data.end(), words_.begin() + offset,
-                words_.begin() + offset + kAlignment);
-  }
-
+  // One bank, with every segment in it, and one instance, with every offset 0:
+  // code and data from the start of their segments, and the stack down from
+  // the end of its.
   auto result = absl::WrapUnique(new AsmProgram);
   Program& program = result->program_;
   program.banks.emplace_back();
-  program.segments.push_back(std::move(segment));
-  program.code_segment = 0;
-  program.stack_segment = 0;
-  program.data_segment = 0;
-  program.extra_segment = 0;
+  for (int i = 0; i < static_cast<int>(segments_.size()); ++i) {
+    program.segments.push_back(BuildSegment(i));
+  }
+  program.code_segment = GetRoleSegment(CpuCore::CODE);
+  program.stack_segment = GetRoleSegment(CpuCore::STACK);
+  program.data_segment = GetRoleSegment(CpuCore::DATA);
+  program.extra_segment = GetRoleSegment(CpuCore::EXTRA);
   program.instances.emplace_back();
 
   // The assembler reports what a program breaks itself, but this is a last
@@ -916,6 +1047,43 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
     return nullptr;
   }
   return result;
+}
+
+Program::Segment ProgramAssembler::BuildSegment(int index) const {
+  // Its size is its words, with the stack in the stack segment, in whole
+  // pages.
+  const Segment& segment = segments_[index];
+  Program::Segment result = {
+      .page_count = static_cast<uint16_t>(std::max<int64_t>(
+          1, (segment.reserved_size + kMemoryBankPageSize - 1) /
+                 kMemoryBankPageSize))};
+
+  // The data is each run of aligned pairs of words with a word written, as
+  // blocks. The words are whole pairs, so a word in a pair that isn't written
+  // is 0.
+  constexpr int kAlignment = Program::Segment::Data::kAlignment;
+  const int word_count = static_cast<int>(segment.words.size());
+  for (int offset = 0; offset < word_count; offset += kAlignment) {
+    const auto start = segment.written.begin() + offset;
+    if (std::find(start, start + kAlignment, true) == start + kAlignment) {
+      continue;
+    }
+    if (result.data.empty() ||
+        result.data.back().offset +
+                static_cast<int>(result.data.back().data.size()) !=
+            offset) {
+      result.data.push_back({.offset = static_cast<uint16_t>(offset)});
+    }
+    std::vector<uint16_t>& data = result.data.back().data;
+    data.insert(data.end(), segment.words.begin() + offset,
+                segment.words.begin() + offset + kAlignment);
+  }
+  return result;
+}
+
+uint16_t ProgramAssembler::GetRoleSegment(int bank) const {
+  const int segment = roles_[bank];
+  return segment < 0 ? 0xFFFF : static_cast<uint16_t>(segment);
 }
 
 //==============================================================================

@@ -525,10 +525,33 @@ CL5 settled the details:
 - A first pass use of a symbol not yet defined has `Expression`'s own message
   ("X is not defined"), whether or not X is defined later.
 - `.SEGMENT`, `.BANK`, and `.INSTANCES` parse, but are errors ("not supported
-  yet") until CL7.
+  yet") until the CLs that add them (CL7 to CL10).
 - With a temporary test (not checked in), the design doc's example program,
   without its segments, assembled for the default instruction set, and each
   instruction disassembled to the form it was written as.
+
+CL7 settled segments' details:
+- **The default program's segment is a segment like any other**, unnamed and
+  with every role, which the first `.SEGMENT` replaces. The first label or
+  statement placed in a segment is kept, and the first `.SEGMENT` reports it,
+  once, as being before it.
+- **Each segment has its own reserved size**, which is the offset of its next
+  statement, so labels, `$`, and statements take their offsets from the
+  current segment, and each statement records its segment.
+- **The stack is part of the stack segment's size.** At the end of the first
+  pass, its `.STACK` words are added to the segment's reserved size, after
+  its contents, so a segment's size is its reserved size, which is what
+  `PAGES` and per instance sizes build on.
+- **A segment's words are only as long as its written size** (the end of its
+  last statement that writes words), so a segment that only reserves words
+  (the stack, `.DS`) has no buffer.
+- **Roles are indexed by `CpuCore`'s bank indices** (`CpuCore::CODE` and the
+  others), for their names in `.SEGMENT` and their segments.
+- A constant before the first `.SEGMENT` is defined at offset 0, so `$` is 0
+  in it.
+- A label on a `.SEGMENT` line is read before the directive, so it is in the
+  segment before.
+- Segment names are their own, apart from symbols.
 
 **Brittleness:**
 - Expressions and recorded statements hold tokens of the assembler's lexer,
@@ -682,24 +705,73 @@ Depends on: CL5.
 **Verify**
 - Standard checks.
 
-### CL7 [ ] tools, wiki: segments, banks, and instances
+### CL7 [x] tools, wiki: declared segments and roles
 
 Depends on: CL6.
 
-- `.SEGMENT`, `.BANK`, and `.INSTANCES`: declared segments and their
-  attributes, roles, sizes, per instance segments, and instance offsets.
-- Wiki: Program Source's segments, banks, and instances. The assembler is
-  complete with this CL, so Instruction Set Source's "[OZ-3 assembler](home)
-  (planned)" links to Program Source, without "(planned)" (`oz3asm` stays
-  planned until *oz3asm*).
+- `.SEGMENT name` with role attributes (`CODE`, `STACK`, `DATA`, `EXTRA`):
+  declaring segments, and switching between them, each with its own offsets,
+  words, and data blocks; roles; and the stack in the stack segment. A program
+  without `.SEGMENT` is the default program, as before.
+- The other attributes (`ROM`, `PAGE`, `PAGES`, `BANK`, `INSTANCE`), `.BANK`,
+  and `.INSTANCES` stay errors ("not supported yet"), so a program has one
+  bank and one instance.
+- Wiki: Program Source's segments and roles.
 
 **Verify**
 - Standard checks.
-- Unit tests: each attribute, with expressions; switching between segments;
-  statements before the first `.SEGMENT`; roles (none, several in one segment,
-  one in two); sizes from contents, stack, instances, and `PAGES`, and too
-  big; per instance rules; a shared stack with one and several instances;
-  instance offsets for each role; banks and masks; the design doc's example
-  program; a program that `ValidateProgram` rejects.
-- A program with several segments and instances loads with `ProgramLoader`
-  (in a `tools` test, as `program_loader_test.cc` does).
+- Unit tests: switching between segments, and back; attributes only where a
+  segment is first declared; statements and labels before the first
+  `.SEGMENT`, and constants and `.STACK` there; roles (none, several in one
+  segment, one in two, one twice); sizes from contents and the stack, and too
+  big; a stack segment without `.STACK`, and `.STACK` without one; a label's
+  value in its segment; segments in the order declared.
+- A program with several segments loads with `ProgramLoader` (in a `tools`
+  test, as `program_loader_test.cc` does).
+
+### CL8 [ ] tools, wiki: `ROM`, `PAGE`, and `PAGES`
+
+Depends on: CL7.
+
+- The segment attributes `ROM`, `PAGE(n)` (a fixed start page), and `PAGES(n)`
+  (its size, laid out the same, with the extra space at the end).
+- Wiki: Program Source's segment attributes.
+
+**Verify**
+- Standard checks.
+- Unit tests: each attribute, with expressions, used in the first pass;
+  `PAGES` too small, and giving a shared stack the extra space; a page out of
+  range; the design doc's example program; a program that `ValidateProgram`
+  rejects (a fixed page and size past the end of a bank).
+
+### CL9 [ ] tools, wiki: banks
+
+Depends on: CL8.
+
+- `.BANK name[, mask]` and the segment attribute `BANK(name)`. Banks are in
+  the program in the order declared, and with any `.BANK`, a segment without
+  `BANK` is an error.
+- Wiki: Program Source's banks.
+
+**Verify**
+- Standard checks.
+- Unit tests: banks and masks, with expressions; the default mask; a bank
+  declared twice, and one not declared; a segment without `BANK`; segments in
+  several banks.
+
+### CL10 [ ] tools, wiki: instances
+
+Depends on: CL9.
+
+- `.INSTANCES count` and the segment attribute `INSTANCE`: per instance
+  segments, their sizes, and each instance's offsets.
+- Wiki: Program Source's instances. The assembler is complete with this CL, so
+  Instruction Set Source's "[OZ-3 assembler](home) (planned)" links to Program
+  Source, without "(planned)" (`oz3asm` stays planned until *oz3asm*).
+
+**Verify**
+- Standard checks.
+- Unit tests: per instance rules (only reserving, never `CODE`); a shared
+  stack with one and several instances; sizes from instances; instance offsets
+  for each role, shared and per instance; the count's range.
+- A program with several segments and instances loads with `ProgramLoader`.

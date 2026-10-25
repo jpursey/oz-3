@@ -20,10 +20,16 @@
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/core_types.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
+#include "oz3/core/memory_bank.h"
+#include "oz3/core/processor.h"
+#include "oz3/core/processor_config.h"
 #include "oz3/tools/instruction_assembler.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
+#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 namespace {
@@ -104,16 +110,22 @@ class ProgramAssemblerTest : public ::testing::Test {
     return errors;
   }
 
-  // Returns the words of the program assembled from `text`, from 0 to the end
-  // of its last data block, with words that aren't written as 0.
+  // Returns the words of the program assembled from `text`, which has one
+  // segment (see GetWords).
   std::vector<uint16_t> AssembleWords(std::string_view text) {
     Program program = Assemble(text);
-    std::vector<uint16_t> words;
     if (program.segments.size() != 1) {
       ADD_FAILURE() << "Expected one segment";
-      return words;
+      return {};
     }
-    for (const Program::Segment::Data& data : program.segments[0].data) {
+    return GetWords(program.segments[0]);
+  }
+
+  // Returns a segment's words, from 0 to the end of its last data block, with
+  // words that aren't written as 0.
+  static std::vector<uint16_t> GetWords(const Program::Segment& segment) {
+    std::vector<uint16_t> words;
+    for (const Program::Segment::Data& data : segment.data) {
       words.resize(data.offset);
       words.insert(words.end(), data.data.begin(), data.data.end());
     }
@@ -515,12 +527,174 @@ TEST_F(ProgramAssemblerTest, LineErrors) {
               ElementsAre(IsErrorAt(1, 0, "")));
 }
 
+TEST_F(ProgramAssemblerTest, Segments) {
+  // Statements assemble into the current segment, which .SEGMENT switches,
+  // and a label is an offset in its segment.
+  Program program = Assemble(R"---(.STACK 4
+    .SEGMENT main CODE
+    start:
+      NOP
+      .DW value
+    .SEGMENT vars DATA
+      .DW 1
+    value:
+      .DW 2
+    .SEGMENT Main
+      .DW start, $
+    .SEGMENT stack STACK
+  )---");
+  ASSERT_THAT(program.segments, SizeIs(3));
+  EXPECT_THAT(GetWords(program.segments[0]), ElementsAre(0, 1, 0, 2));
+  EXPECT_THAT(GetWords(program.segments[1]), ElementsAre(1, 2));
+  EXPECT_THAT(program.segments[2].data, IsEmpty());
+  for (const Program::Segment& segment : program.segments) {
+    EXPECT_EQ(segment.bank, 0);
+    EXPECT_EQ(segment.access, Program::Segment::Access::kReadWrite);
+    EXPECT_EQ(segment.page_start, 0xFFFF);
+    EXPECT_EQ(segment.page_count, 1);
+  }
+  EXPECT_THAT(program.banks, ElementsAre(Program::Bank{}));
+  EXPECT_EQ(program.code_segment, 0);
+  EXPECT_EQ(program.stack_segment, 2);
+  EXPECT_EQ(program.data_segment, 1);
+  EXPECT_EQ(program.extra_segment, 0xFFFF);
+  EXPECT_THAT(program.instances, ElementsAre(Program::Instance{}));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentRoles) {
+  // A segment can have several roles, or none, and a role can have no
+  // segment, as a data only program has no code.
+  Program program = Assemble(
+      ".STACK 1\n"
+      ".SEGMENT empty\n"
+      ".SEGMENT all EXTRA CODE STACK DATA\n");
+  EXPECT_THAT(program.segments, SizeIs(2));
+  EXPECT_EQ(program.code_segment, 1);
+  EXPECT_EQ(program.stack_segment, 1);
+  EXPECT_EQ(program.data_segment, 1);
+  EXPECT_EQ(program.extra_segment, 1);
+  program = Assemble(".SEGMENT vars DATA\n.DW 5\n");
+  EXPECT_EQ(program.code_segment, 0xFFFF);
+  EXPECT_EQ(program.stack_segment, 0xFFFF);
+  EXPECT_EQ(program.data_segment, 0);
+  EXPECT_EQ(program.extra_segment, 0xFFFF);
+
+  EXPECT_THAT(AssembleErrors(".SEGMENT a CODE\n.SEGMENT b DATA CODE\n"),
+              ElementsAre(IsErrorAt(
+                  1, 16, "The CODE role is already the segment A's")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT a DATA data\n"),
+              ElementsAre(IsErrorAt(0, 16, "DATA is already given")));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentAttributesOnlyWhereDeclared) {
+  EXPECT_THAT(AssembleErrors(".SEGMENT a DATA\n.SEGMENT a DATA\n"),
+              ElementsAre(IsErrorAt(1, 11,
+                                    "A segment's attributes are only given "
+                                    "where it is first declared, and A is "
+                                    "already declared")));
+}
+
+TEST_F(ProgramAssemblerTest, BeforeTheFirstSegment) {
+  // Constants and .STACK can be before the first .SEGMENT, but nothing in a
+  // segment can.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".CONST N = 5\n"
+                            ".SEGMENT main CODE STACK\n"
+                            ".DW N\n"),
+              ElementsAre(5, 0));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             "NOP\n"
+                             ".DW 1\n"
+                             ".SEGMENT main CODE STACK\n"),
+              ElementsAre(IsErrorAt(1, 0,
+                                    "The program declares segments, so this "
+                                    "must be in one, after a .SEGMENT")));
+  EXPECT_THAT(AssembleErrors("start:\n.SEGMENT main CODE\n"),
+              ElementsAre(IsErrorAt(0, 0, "The program declares segments")));
+  EXPECT_THAT(AssembleErrors(".DS 0\n.SEGMENT main CODE\n"),
+              ElementsAre(IsErrorAt(0, 0, "The program declares segments")));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentStack) {
+  EXPECT_THAT(AssembleErrors(".SEGMENT main CODE\n.SEGMENT stack STACK\n"),
+              ElementsAre(IsErrorAt(1, 9, "needs its size, with .STACK")));
+  EXPECT_THAT(AssembleErrors(".STACK 4\n.SEGMENT main CODE DATA\n"),
+              ElementsAre(IsErrorAt(0, 0,
+                                    "No segment has the STACK role, so the "
+                                    "program can't have .STACK")));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentSizes) {
+  // Each segment is its contents, and the stack segment its stack too, in
+  // whole pages.
+  Program program = Assemble(
+      ".STACK 100\n"
+      ".SEGMENT main CODE\n"
+      ".DS 4097\n"
+      ".SEGMENT stack STACK\n"
+      ".DS 3996\n"
+      ".SEGMENT vars DATA\n"
+      ".DS 3996\n");
+  ASSERT_THAT(program.segments, SizeIs(3));
+  EXPECT_EQ(program.segments[0].page_count, 2);
+  EXPECT_EQ(program.segments[1].page_count, 1);
+  EXPECT_EQ(program.segments[2].page_count, 1);
+  program = Assemble(".STACK 100\n.SEGMENT stack STACK\n.DS 3997\n");
+  EXPECT_EQ(program.segments[0].page_count, 2);
+
+  EXPECT_THAT(AssembleErrors(".SEGMENT main CODE\n"
+                             ".DS 65535\n"
+                             ".SEGMENT vars DATA\n"
+                             ".DS 65535\n"
+                             ".SEGMENT main\n"
+                             ".DW 1, 2\n"),
+              ElementsAre(IsErrorAt(
+                  5, 0, "This passes the end of the segment, at 65536 words")));
+  EXPECT_THAT(AssembleErrors(".STACK 2\n"
+                             ".SEGMENT stack STACK\n"
+                             ".DS 65535\n"),
+              ElementsAre(IsErrorAt(0, 0,
+                                    "The stack passes the end of the "
+                                    "segment, at 65536 words")));
+}
+
+TEST_F(ProgramAssemblerTest, SegmentsLoad) {
+  Program program = Assemble(R"---(.STACK 4
+    .SEGMENT stack STACK
+    .SEGMENT main CODE
+      .DW 1, 2, 3
+    .SEGMENT vars DATA
+      .DS 4096
+      .DW 4, 5
+  )---");
+  Processor processor(ProcessorConfig::MultiBank(1));
+  ProgramLoader loader(&processor);
+  const ProgramLoader::Handle handle = loader.Load(program);
+  ASSERT_NE(handle, ProgramLoader::kInvalidHandle);
+  const CpuCore::ResetParams params = loader.GetResetParams(handle);
+  MemoryBank& memory = *processor.GetMemory(0);
+  EXPECT_THAT(memory.GetMem(params.bc, 3), ElementsAre(1, 2, 3));
+  EXPECT_THAT(memory.GetMem(params.bd + 4096, 2), ElementsAre(4, 5));
+
+  // The stack is a page of its own, and its top is the end of the page.
+  EXPECT_EQ(params.bs % kMemoryBankPageSize, 0);
+  const int stack_page = params.bs / kMemoryBankPageSize - 1;
+  EXPECT_NE(stack_page, params.bc / kMemoryBankPageSize);
+  EXPECT_NE(stack_page, params.bd / kMemoryBankPageSize);
+  EXPECT_NE(stack_page, params.bd / kMemoryBankPageSize + 1);
+}
+
 TEST_F(ProgramAssemblerTest, NotSupportedYet) {
-  EXPECT_THAT(AssembleErrors(".STACK 1\n.SEGMENT main CODE\n"
-                             ".BANK video\n.INSTANCES 2\n"),
-              ElementsAre(IsErrorAt(1, 0, ".SEGMENT is not supported yet"),
-                          IsErrorAt(2, 0, ".BANK is not supported yet"),
-                          IsErrorAt(3, 0, ".INSTANCES is not supported yet")));
+  EXPECT_THAT(
+      AssembleErrors(".SEGMENT a ROM PAGE(1) PAGES(2) BANK(x) INSTANCE\n"
+                     ".BANK video\n.INSTANCES 2\n"),
+      ElementsAre(IsErrorAt(0, 11, "ROM is not supported yet"),
+                  IsErrorAt(0, 15, "PAGE is not supported yet"),
+                  IsErrorAt(0, 23, "PAGES is not supported yet"),
+                  IsErrorAt(0, 32, "BANK is not supported yet"),
+                  IsErrorAt(0, 40, "INSTANCE is not supported yet"),
+                  IsErrorAt(1, 0, ".BANK is not supported yet"),
+                  IsErrorAt(2, 0, ".INSTANCES is not supported yet")));
 }
 
 TEST_F(ProgramAssemblerTest, EveryErrorInAPass) {
