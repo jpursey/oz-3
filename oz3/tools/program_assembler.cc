@@ -145,6 +145,11 @@ class ProgramAssembler final {
   struct Segment {
     std::optional<gb::Token> name;  // Its name where it is declared.
 
+    // Its bank's name (BANK), and the bank's index, which the first pass
+    // looks up when it ends, as a bank can be declared after the segment.
+    std::optional<gb::Token> bank_name;
+    uint16_t bank = 0;
+
     // Its access (ROM), and its fixed start page (PAGE), or 0xFFFF for any.
     Program::Segment::Access access = Program::Segment::Access::kReadWrite;
     uint16_t page_start = 0xFFFF;
@@ -167,6 +172,12 @@ class ProgramAssembler final {
     // pass fills in.
     std::vector<uint16_t> words;
     std::vector<bool> written;
+  };
+
+  // A bank declared with .BANK.
+  struct Bank {
+    gb::Token name;  // Its name where it is declared.
+    uint16_t assign_mask = 0xFFFF;
   };
 
   // The context of a statement's expressions: its offset, and the scope of
@@ -269,6 +280,7 @@ class ProgramAssembler final {
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
   void ReadStorage(const gb::ParsedItem& directive);
   void ReadStack(const gb::ParsedItem& directive);
+  void ReadBank(const gb::ParsedItem& directive);
   void ReadSegment(const gb::ParsedItem& directive);
   void ReadSegmentRole(const gb::Token& role);
   void ReadInstruction(gb::LexerContentId content, const gb::ParsedItem& line);
@@ -290,10 +302,12 @@ class ProgramAssembler final {
                        const gb::Token& token, std::string_view what);
 
   // Ends the first pass: adds the stack to the stack segment's reserved size,
-  // and sets each segment's page count, checking that it is no more than
-  // PAGES gives, and that it doesn't pass the end of the bank from PAGE.
+  // looks up each segment's bank, and sets each segment's page count,
+  // checking that it is no more than PAGES gives, and that it doesn't pass the
+  // end of the bank from PAGE.
   void EndFirstPass();
   void ReserveStack();
+  void SetBank(Segment& segment);
   void SetPageCount(Segment& segment);
 
   // Second pass.
@@ -343,6 +357,11 @@ class ProgramAssembler final {
   std::vector<Segment> segments_ = std::vector<Segment>(1);
   absl::flat_hash_map<std::string_view, int> segment_indices_;
   int segment_ = 0;
+
+  // The banks in the order they are declared, and each one's index by name.
+  // Without any, the program has one bank, which may be any physical bank.
+  std::vector<Bank> banks_;
+  absl::flat_hash_map<std::string_view, int> bank_indices_;
 
   // The first statement or label in a segment. The first .SEGMENT reports it,
   // as it was in the default program's segment.
@@ -695,6 +714,8 @@ void ProgramAssembler::ReadDirective(const gb::ParsedItem& directive) {
     ReadStorage(directive);
   } else if (name == "STACK") {
     ReadStack(directive);
+  } else if (name == "BANK") {
+    ReadBank(directive);
   } else if (name == "SEGMENT") {
     ReadSegment(directive);
   } else {
@@ -784,6 +805,30 @@ void ProgramAssembler::ReadStack(const gb::ParsedItem& directive) {
   }
 }
 
+void ProgramAssembler::ReadBank(const gb::ParsedItem& directive) {
+  const gb::Token name = directive.GetToken("name");
+  if (bank_indices_.contains(name.GetString())) {
+    Error(name,
+          absl::StrCat("The bank ", name.GetString(), " is already declared"));
+    return;
+  }
+
+  // A mask with an error is reported, and the bank is still declared, so its
+  // segments aren't errors too.
+  Bank bank = {.name = name};
+  if (const gb::ParsedItem* mask = directive.GetItem("mask"); mask != nullptr) {
+    const std::optional<uint32_t> value = EvaluateNow(*mask);
+    if (value.has_value() && *value == 0) {
+      Error(mask->GetToken(),
+            "A bank's mask needs a bit for at least one physical bank");
+    } else if (value.has_value()) {
+      bank.assign_mask = static_cast<uint16_t>(*value);
+    }
+  }
+  bank_indices_[name.GetString()] = static_cast<int>(banks_.size());
+  banks_.push_back(bank);
+}
+
 void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
   const gb::Token name = directive.GetToken("name");
   const absl::Span<const gb::ParsedItem> attributes =
@@ -839,6 +884,9 @@ void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
         segment.page_count = static_cast<uint16_t>(*value);
         segment.pages_token = token;
       }
+    } else if (const gb::ParsedItem* bank = attribute.GetItem("bank");
+               bank != nullptr) {
+      segment.bank_name = bank->GetToken();
     } else {
       Error(token, absl::StrCat(token.GetString(), " is not supported yet"));
     }
@@ -953,6 +1001,7 @@ void ProgramAssembler::CheckSegmentEnd(const Segment& segment, int64_t size,
 void ProgramAssembler::EndFirstPass() {
   ReserveStack();
   for (Segment& segment : segments_) {
+    SetBank(segment);
     SetPageCount(segment);
   }
 }
@@ -981,6 +1030,33 @@ void ProgramAssembler::ReserveStack() {
   }
   CheckSegmentEnd(segment, stack_words_, *stack_token_, "The stack");
   segment.reserved_size += stack_words_;
+}
+
+void ProgramAssembler::SetBank(Segment& segment) {
+  // Without .BANK, every segment is in the program's one bank. With it, each
+  // segment names its bank.
+  if (!segment.bank_name.has_value()) {
+    if (banks_.empty()) {
+      return;
+    }
+    if (segment.name.has_value()) {
+      Error(*segment.name,
+            absl::StrCat("The program declares banks, so ",
+                         segment.name->GetString(), " needs a BANK"));
+    } else {
+      Error(banks_.front().name,
+            "The program declares banks, so it needs segments, each with a "
+            "BANK");
+    }
+    return;
+  }
+  const std::string_view name = segment.bank_name->GetString();
+  auto it = bank_indices_.find(name);
+  if (it == bank_indices_.end()) {
+    Error(*segment.bank_name, absl::StrCat("No bank ", name, " is declared"));
+    return;
+  }
+  segment.bank = static_cast<uint16_t>(it->second);
 }
 
 void ProgramAssembler::SetPageCount(Segment& segment) {
@@ -1115,12 +1191,17 @@ void ProgramAssembler::EncodeData(const Statement& statement,
 }
 
 std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
-  // One bank, with every segment in it, and one instance, with every offset 0:
-  // code and data from the start of their segments, and the stack down from
-  // the end of its.
+  // The declared banks, or one bank that may be any physical bank, and one
+  // instance, with every offset 0: code and data from the start of their
+  // segments, and the stack down from the end of its.
   auto result = absl::WrapUnique(new AsmProgram);
   Program& program = result->program_;
-  program.banks.emplace_back();
+  if (banks_.empty()) {
+    program.banks.emplace_back();
+  }
+  for (const Bank& bank : banks_) {
+    program.banks.push_back({.assign_mask = bank.assign_mask});
+  }
   for (int i = 0; i < static_cast<int>(segments_.size()); ++i) {
     program.segments.push_back(BuildSegment(i));
   }
@@ -1143,7 +1224,8 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
 
 Program::Segment ProgramAssembler::BuildSegment(int index) const {
   const Segment& segment = segments_[index];
-  Program::Segment result = {.access = segment.access,
+  Program::Segment result = {.bank = segment.bank,
+                             .access = segment.access,
                              .page_start = segment.page_start,
                              .page_count = segment.page_count};
 

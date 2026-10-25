@@ -799,13 +799,78 @@ TEST_F(ProgramAssemblerTest, ExampleProgram) {
   EXPECT_EQ(program.extra_segment, 0xFFFF);
 }
 
+TEST_F(ProgramAssemblerTest, Banks) {
+  // Banks are in the order they are declared, and a segment's bank can be
+  // declared after it.
+  Program program = Assemble(
+      ".CONST VRAM0 = 4\n"
+      ".CONST VRAM1 = 8\n"
+      ".BANK video, VRAM0 | VRAM1\n"
+      ".BANK main\n"
+      ".SEGMENT code CODE BANK(main)\n"
+      ".SEGMENT screen DATA BANK(Video)\n"
+      ".SEGMENT late EXTRA BANK(later)\n"
+      ".BANK later, 1\n");
+  EXPECT_THAT(program.banks, ElementsAre(Program::Bank{.assign_mask = 0x000C},
+                                         Program::Bank{.assign_mask = 0xFFFF},
+                                         Program::Bank{.assign_mask = 0x0001}));
+  ASSERT_THAT(program.segments, SizeIs(3));
+  EXPECT_EQ(program.segments[0].bank, 1);
+  EXPECT_EQ(program.segments[1].bank, 0);
+  EXPECT_EQ(program.segments[2].bank, 2);
+}
+
+TEST_F(ProgramAssemblerTest, BankErrors) {
+  EXPECT_THAT(AssembleErrors(".BANK a\n.BANK A\n.SEGMENT s BANK(a)\n"),
+              ElementsAre(IsErrorAt(1, 6, "The bank A is already declared")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT s BANK(a)\n"),
+              ElementsAre(IsErrorAt(0, 16, "No bank A is declared")));
+  EXPECT_THAT(AssembleErrors(".BANK a\n.SEGMENT s BANK(b)\n"),
+              ElementsAre(IsErrorAt(1, 16, "No bank B is declared")));
+  EXPECT_THAT(AssembleErrors(".BANK a\n.SEGMENT s BANK(a)\n.SEGMENT t\n"),
+              ElementsAre(IsErrorAt(
+                  2, 9, "The program declares banks, so T needs a BANK")));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n.BANK a\n"),
+              ElementsAre(IsErrorAt(1, 6,
+                                    "The program declares banks, so it needs "
+                                    "segments, each with a BANK")));
+
+  // A mask is used in the first pass, and a bank with an error in its mask is
+  // still declared.
+  EXPECT_THAT(AssembleErrors(".BANK a, M\n"
+                             ".CONST M = 1\n"
+                             ".SEGMENT s BANK(a)\n"),
+              ElementsAre(IsErrorAt(0, 9, "M is not defined")));
+
+  // A mask must allow at least one physical bank.
+  EXPECT_THAT(AssembleErrors(".BANK a, 1 - 1\n.SEGMENT s BANK(a)\n"),
+              ElementsAre(IsErrorAt(0, 9,
+                                    "A bank's mask needs a bit for at least "
+                                    "one physical bank")));
+}
+
+TEST_F(ProgramAssemblerTest, BanksLoad) {
+  // Segments with more pages than a bank between them load into two banks.
+  Program program = Assemble(
+      ".BANK first, 1\n"
+      ".BANK second, 2\n"
+      ".SEGMENT a CODE BANK(first) PAGES(9)\n"
+      ".SEGMENT b DATA BANK(second) PAGES(9)\n");
+  Processor processor(ProcessorConfig::MultiBank(2));
+  ProgramLoader loader(&processor);
+  const ProgramLoader::Handle handle = loader.Load(program);
+  ASSERT_NE(handle, ProgramLoader::kInvalidHandle);
+  const ProgramLoader::LoadedProgram* loaded = loader.GetProgram(handle);
+  ASSERT_NE(loaded, nullptr);
+  ASSERT_THAT(loaded->pages, SizeIs(2));
+  EXPECT_EQ(loaded->pages[0].bank, 0);
+  EXPECT_EQ(loaded->pages[1].bank, 1);
+}
+
 TEST_F(ProgramAssemblerTest, NotSupportedYet) {
-  EXPECT_THAT(AssembleErrors(".SEGMENT a BANK(x) INSTANCE\n"
-                             ".BANK video\n.INSTANCES 2\n"),
-              ElementsAre(IsErrorAt(0, 11, "BANK is not supported yet"),
-                          IsErrorAt(0, 19, "INSTANCE is not supported yet"),
-                          IsErrorAt(1, 0, ".BANK is not supported yet"),
-                          IsErrorAt(2, 0, ".INSTANCES is not supported yet")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT a INSTANCE\n.INSTANCES 2\n"),
+              ElementsAre(IsErrorAt(0, 11, "INSTANCE is not supported yet"),
+                          IsErrorAt(1, 0, ".INSTANCES is not supported yet")));
 }
 
 TEST_F(ProgramAssemblerTest, EveryErrorInAPass) {

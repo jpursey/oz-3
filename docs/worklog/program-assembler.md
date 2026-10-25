@@ -571,6 +571,18 @@ CL8 settled the segment attributes' details:
   with its segments and `ROM`, assembled for the default instruction set, and
   each instruction disassembled to the form it was written as.
 
+CL9 settled banks' details:
+- **A segment's bank is looked up when the first pass ends**, so a `.BANK`
+  can be after the segments that name it, as `.BANK` changes no offset. A
+  segment without `BANK` in a program with banks is an error then too, at
+  the segment's name, and a program with banks and no segments is an error at
+  its first `.BANK`.
+- A mask is a first pass word expression, and a bank with an error in its
+  mask is still declared, so its segments aren't errors too. A mask of 0 is
+  an error, as the bank could never be loaded.
+- Bank names are their own, apart from symbols and segments.
+- More than 16 banks is left to `ValidateProgram`.
+
 **Brittleness:**
 - Expressions and recorded statements hold tokens of the assembler's lexer,
   which lives as long as the assembly.
@@ -762,7 +774,7 @@ Depends on: CL7.
   range; the design doc's example program; a program that `ValidateProgram`
   rejects (a fixed page and size past the end of a bank).
 
-### CL9 [ ] tools, wiki: banks
+### CL9 [x] tools, wiki: banks
 
 Depends on: CL8.
 
