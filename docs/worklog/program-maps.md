@@ -159,19 +159,22 @@ It doesn't check the map against a `Program`, which a map file doesn't hold.
 ### Map files
 
 - A Game Bits chunk file (`gb/file`'s `WriteChunkFile` and `ReadChunkFile`) of
-  type `OZMP`, with one chunk each for the files (`FILE`), segments (`SEGM`),
-  statements (`STMT`), labels (`LABL`), and constants (`CNST`), each at
-  version 1. Strings are `ChunkPtr<const char>`s (null for an empty one), and
+  type `OZMP`, with at most one chunk each for the files (`FILE`), segments
+  (`SEGM`), statements (`STMT`), labels (`LABL`), and constants (`CNST`), each
+  at version 1. A chunk the file doesn't have is empty; the writer writes all
+  five. Strings are null terminated `ChunkPtr<const char>`s (an empty
+  one is written as just its terminator, and a null one reads as empty), and
   the rest are fixed size fields (a constant's word value with a flag for
   whether it has one).
-- Reading fails if a chunk is missing or given twice, is a version this
-  doesn't read, or is too small for its count of entries, or if `Create`
-  rejects the map. Other chunk types are skipped, so a later version can add
-  chunks that older readers ignore.
-- `ChunkReader` trusts the offset in a `ChunkPtr`, and that the string there
-  ends, so a corrupt map file can still make reading go out of bounds. That
-  is Game Bits *Validate chunk contents*, after which *Corrupt program maps*
-  (in the backlog) tests that reading such a file fails.
+- Reading fails if a chunk is given twice, is a version this
+  doesn't read, is too small for its count of entries, or has a string that
+  isn't in the chunk or doesn't end there, or if `Create` rejects the map.
+  Other chunk types are skipped, so a later version can add chunks that older
+  readers ignore.
+- `ChunkReader` checks entries and strings against the chunk's size (Game Bits
+  *Validate chunk contents*, which landed while this was planned), so a
+  corrupt map file fails to read rather than reading out of bounds. That was
+  the backlog's *Corrupt program maps*, which CL2 does.
 - The `.oz3map` extension is for `oz3asm` to choose paths with. Nothing here
   depends on it.
 
@@ -200,11 +203,16 @@ All of it is in `tools`, beside the program assembler and program files.
 ### Map files (`program_map_file.h`)
 
 - Each chunk's entries are trivially copyable structs of sized integers, laid
-  out in 8-byte blocks as `ChunkWriter`'s comment asks, private to
-  `program_map_file.cc`.
-- Writing opens the file through `gb::FileSystem::OpenFile`, and reading reads
-  every chunk with `gb::ReadChunkFile`, then checks each chunk's count against
-  its size, as `ResourceFileReader` does, before reading its entries.
+  out in 8-byte blocks as `ChunkWriter`'s comment asks. They and the chunk
+  types are in `program_map_chunks.h`, as the format's documentation, and so
+  tests can write corrupt chunks. It is apart from `program_map_file.h` (as
+  Game Bits' `resource_chunks.h` is), so users of the API don't see the
+  format.
+- Writing opens the file through `gb::FileSystem::OpenFile`. Reading reads
+  every chunk with `gb::ReadChunkFile`, then reads each by its type, with a
+  flag for each type already read, through `ChunkReader::GetChunkData` and
+  `ConvertToPtr`, which fail on a corrupt chunk. A private `MapFileReader`
+  keeps the path and the error.
 
 ### The assembler's map (`program_assembler.cc`)
 
@@ -229,8 +237,12 @@ of the program in the map could, if it turns out to be needed.
 
 - `ChunkWriter::AddString("")` gives a null `ChunkPtr`, and `ConvertToPtr`
   turns it back into null, which the reader reads as an empty string (CL2).
+  **Found:** it doesn't. `AddString("")` writes the terminator alone, at a
+  real offset, so an empty string round trips as one. The reader still reads
+  a null `ChunkPtr` as empty.
 - A memory file system (`gb/file/memory_file_protocol.h`) can open a file for
-  writing and reading chunks, for the tests (CL2).
+  writing and reading chunks, for the tests (CL2). **Found:** it can, through
+  `OpenFile`, with `WriteChunkFile` and `ReadChunkFile`.
 
 ## CLs
 
@@ -254,20 +266,26 @@ Depends on: nothing.
   a label, a label and its local label at one offset, and ignoring other
   segments' labels.
 
-### CL2 [ ] tools: map files
+### CL2 [x] tools: map files
 
-Depends on: CL1.
+Depends on: CL1, and Game Bits *Validate chunk contents*.
 
 - `program_map_file.h`/`.cc`: `WriteProgramMapFile` and `ReadProgramMapFile`.
+- `program_map_chunks.h`: the chunk types and entries of the format.
+- *Corrupt program maps* comes out of the backlog, as this does it.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
 - Unit tests, on a memory file system: a map round trips, including an empty
-  segment name, a constant with and without a word value, and an empty map; reading fails for a file that isn't a chunk
-  file, another chunk file type, a missing or repeated chunk, an unknown
-  version, a chunk too small for its count, and a map `Create` rejects;
-  unknown chunks are skipped; writing to a path that can't be opened fails.
+  segment name, a constant with and without a word value, and an empty map;
+  reading fails for a missing file, a file that isn't a chunk file, a
+  truncated one, another chunk file type, a repeated chunk, an unknown
+  version, a chunk too small for its count, a string past the end of its
+  chunk or with no terminator, a bad word value flag, and a map `Create`
+  rejects; missing chunks (or none) read as empty; a null string reads as
+  empty; unknown chunks are skipped; writing to a path that can't be opened
+  fails.
 - The To confirm items for CL2, with the findings recorded here.
 
 ### CL3 [ ] tools: the assembler's map

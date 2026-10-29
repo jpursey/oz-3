@@ -206,19 +206,6 @@ fingerprint of its code word layout, so loading it for a core with a different
 instruction set can be caught. It is a new version of the program file format,
 which readers of version 1 reject.
 
-## Corrupt program maps
-
-- **Layers:** tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Game Bits *Validate chunk contents*
-- **Background:** `docs/worklog/program-maps.md` (Map files)
-
-`ReadProgramMapFile` trusts the offsets in a map file's `ChunkPtr`s, and that
-each string they point to ends, as `ChunkReader` does, so a corrupt `.oz3map`
-can make reading go out of bounds. Once `ChunkReader` checks them, test that
-reading a map file with a bad offset or an unterminated string fails.
-
 ## Coprocessors
 
 - **Layers:** core, wiki

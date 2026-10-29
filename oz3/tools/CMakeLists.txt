@@ -15,6 +15,8 @@ set(oz3_tools_SOURCE
   program_lexer.h program_lexer.cc
   program_loader.h program_loader.cc
   program_map.h program_map.cc
+  program_map_chunks.h
+  program_map_file.h program_map_file.cc
   source_pattern.h source_pattern.cc
 )
 set(oz3_tools_DEPS
@@ -46,6 +48,7 @@ set(oz3_tools_TEST_SOURCE
   program_grammar_test.cc
   program_lexer_test.cc
   program_loader_test.cc
+  program_map_file_test.cc
   program_map_test.cc
   program_test.cc
   source_pattern_test.cc

@@ -187,7 +187,8 @@ absl::StatusOr<ProgramMap> ProgramMap::Create(std::vector<std::string> files,
     }
   }
 
-  // Statements can only be checked for overlaps once they are in order.
+  // Statements can only be validated as not overlapping once they are in
+  // order.
   absl::c_sort(statements, [](const Statement& a, const Statement& b) {
     return GetSegmentOffset(a) < GetSegmentOffset(b);
   });
