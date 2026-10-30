@@ -30,7 +30,7 @@ Each item carries:
 - **Layers:** apps (new), wiki
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Program maps*
+- **Depends on:** nothing
 - **Background:** [assembler_design.md](assembler_design.md) (Library and
   tool)
 
@@ -103,7 +103,7 @@ sets.
 - **Layers:** core, tools
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Program maps*
+- **Depends on:** nothing
 - **Background:** the wiki's Home page, and the `T` (trap) flag in
   `2-Specifications.md`
 
