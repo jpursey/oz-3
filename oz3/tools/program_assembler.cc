@@ -41,6 +41,7 @@
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_grammar.h"
 #include "oz3/tools/program_lexer.h"
+#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 
@@ -71,7 +72,7 @@ std::string GetFormText(const InstructionForm& form) {
 //    every label has its value by the end, as is each constant.
 // 2. Finishes each recorded statement, now that every symbol is defined:
 //    encodes each one that writes words, and checks each constant's value.
-//    Then builds the program from each segment's words.
+//    Then builds the program from each segment's words, and its map.
 class ProgramAssembler final {
  public:
   // `syntax`, and `file_system` if it isn't null, must outlive this.
@@ -88,9 +89,10 @@ class ProgramAssembler final {
                                            std::vector<gb::ParseError>* errors);
 
  private:
-  // A label or local label, whose value is its offset.
+  // A label or local label, whose value is its offset in its segment.
   struct Label {
     gb::Token token;  // Its name where it is defined.
+    int segment = 0;
     int64_t offset = 0;
   };
 
@@ -136,6 +138,7 @@ class ProgramAssembler final {
     gb::Token token;  // Its first token, for errors.
     int segment = 0;
     uint16_t offset = 0;
+    int size = 0;  // The words it writes, if any.
     std::string_view scope;
     StatementContents contents;
   };
@@ -226,10 +229,11 @@ class ProgramAssembler final {
 
   // Returns the content of a file, which is read once, and read again from
   // its start each time it is included, or reports an error at `location`
-  // and returns kNoLexerContent.
-  gb::LexerContentId LoadFile(const std::string& path,
+  // and returns kNoLexerContent. AddContent() adds the `text` read from
+  // `path`, which is one of the map's files.
+  gb::LexerContentId LoadFile(std::string_view path,
                               const gb::LexerLocation& location);
-  gb::LexerContentId AddContent(std::string_view filename, std::string text,
+  gb::LexerContentId AddContent(std::string_view path, std::string text,
                                 const gb::LexerLocation& location);
 
   // Assembles the main file's content, and returns the program, or null if
@@ -289,7 +293,10 @@ class ProgramAssembler final {
   void ReadSegment(const gb::ParsedItem& directive);
   void ReadSegmentRole(const gb::Token& role);
   void ReadInstruction(gb::LexerContentId content, const gb::ParsedItem& line);
-  void AddStatement(const gb::Token& token, StatementContents contents);
+
+  // Adds a statement at the current offset, which writes `size` words.
+  void AddStatement(const gb::Token& token, StatementContents contents,
+                    int64_t size);
 
   // Notes that the statement or label at `token` is in a segment, which is an
   // error if it is before the first .SEGMENT.
@@ -297,9 +304,10 @@ class ProgramAssembler final {
 
   // Adds `size` words of the statement at `token` to the current segment's
   // reserved size. Reserve() is for words the statement only reserves (.DS),
-  // and Write() for words it writes, which sets the written size too.
+  // and Write() for words it writes, which adds the statement with its
+  // `contents`, and sets the written size too.
   void Reserve(int64_t size, const gb::Token& token);
-  void Write(int64_t size, const gb::Token& token);
+  void Write(int64_t size, const gb::Token& token, StatementContents contents);
 
   // Reports an error at `token`, about `what`, if `size` more words take the
   // segment's reserved size past the end of a segment, where it wasn't before.
@@ -331,6 +339,10 @@ class ProgramAssembler final {
                   std::vector<uint16_t>& words);
   std::unique_ptr<AsmProgram> BuildProgram();
   Program::Segment BuildSegment(int index) const;
+  ProgramMap BuildMap();
+
+  // Returns where `token` is, as the map has it.
+  ProgramMap::Location GetMapLocation(const gb::Token& token) const;
 
   // Returns the segment with the role of bank index `bank`, as a Program has
   // it: its index, or 0xFFFF for none.
@@ -350,6 +362,11 @@ class ProgramAssembler final {
   // the main file to the current one (none for text).
   absl::flat_hash_map<std::string, gb::LexerContentId> files_;
   std::vector<std::string> including_;
+
+  // The path of each content in the order added, which are the map's files,
+  // and each content's index in them.
+  std::vector<std::string> file_paths_;
+  absl::flat_hash_map<gb::LexerContentId, int> file_indices_;
 
   // Errors, and each one's formatted message, to report each error once.
   std::vector<gb::ParseError> errors_;
@@ -441,7 +458,7 @@ bool ProgramAssembler::Init() {
 }
 
 gb::LexerContentId ProgramAssembler::LoadFile(
-    const std::string& path, const gb::LexerLocation& location) {
+    std::string_view path, const gb::LexerLocation& location) {
   if (auto it = files_.find(path); it != files_.end()) {
     GetLexer().RewindContent(it->second);
     return it->second;
@@ -453,7 +470,7 @@ gb::LexerContentId ProgramAssembler::LoadFile(
     return gb::kNoLexerContent;
   }
   const gb::LexerContentId content =
-      AddContent(gb::RemoveProtocol(path), std::move(text), location);
+      AddContent(path, std::move(text), location);
   if (content != gb::kNoLexerContent) {
     files_[path] = content;
   }
@@ -461,15 +478,21 @@ gb::LexerContentId ProgramAssembler::LoadFile(
 }
 
 gb::LexerContentId ProgramAssembler::AddContent(
-    std::string_view filename, std::string text,
+    std::string_view path, std::string text,
     const gb::LexerLocation& location) {
+  // Errors name the file without its protocol, but the map has the path it
+  // was read from.
+  const std::string_view filename = gb::RemoveProtocol(path);
   const gb::LexerContentId content =
       GetLexer().AddFileContent(filename, std::move(text));
   if (content == gb::kNoLexerContent) {
     AddError(gb::ParseError(
         location,
         absl::StrCat(filename, " has too many lines, or a line too long")));
+    return content;
   }
+  file_indices_[content] = static_cast<int>(file_paths_.size());
+  file_paths_.emplace_back(path);
   return content;
 }
 
@@ -603,6 +626,7 @@ bool ProgramAssembler::DefineLabel(const gb::Token& token,
   }
   UseSegment(token);
   labels_[std::move(key)] = {.token = token,
+                             .segment = segment_,
                              .offset = GetSegment().reserved_size};
   return true;
 }
@@ -773,7 +797,7 @@ void ProgramAssembler::ReadInclude(const gb::ParsedItem& directive) {
 void ProgramAssembler::ReadConst(const gb::ParsedItem& directive) {
   const gb::Token name = directive.GetToken("name");
   if (DefineConstant(name, *directive.GetItem("value"))) {
-    AddStatement(directive.GetToken(), ConstantStatement{.name = name});
+    AddStatement(directive.GetToken(), ConstantStatement{.name = name}, 0);
   }
 }
 
@@ -798,8 +822,7 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
       data.items.emplace_back(std::move(expression));
     }
   }
-  AddStatement(directive.GetToken(), std::move(data));
-  Write(size, directive.GetToken());
+  Write(size, directive.GetToken(), std::move(data));
 }
 
 void ProgramAssembler::ReadStorage(const gb::ParsedItem& directive) {
@@ -991,19 +1014,18 @@ void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
                          " bits"));
     }
   }
-  const int size = match.form->GetSize();
-  AddStatement(
-      instruction->GetToken(),
+  Write(
+      match.form->GetSize(), instruction->GetToken(),
       InstructionStatement{.form = match.form, .args = std::move(match.args)});
-  Write(size, instruction->GetToken());
 }
 
 void ProgramAssembler::AddStatement(const gb::Token& token,
-                                    StatementContents contents) {
+                                    StatementContents contents, int64_t size) {
   statements_.push_back(
       {.token = token,
        .segment = segment_,
        .offset = static_cast<uint16_t>(GetSegment().reserved_size),
+       .size = static_cast<int>(size),
        .scope = scope_,
        .contents = std::move(contents)});
 }
@@ -1021,7 +1043,9 @@ void ProgramAssembler::Reserve(int64_t size, const gb::Token& token) {
   segment.reserved_size += size;
 }
 
-void ProgramAssembler::Write(int64_t size, const gb::Token& token) {
+void ProgramAssembler::Write(int64_t size, const gb::Token& token,
+                             StatementContents contents) {
+  AddStatement(token, std::move(contents), size);
   Reserve(size, token);
   Segment& segment = GetSegment();
   segment.written_size = segment.reserved_size;
@@ -1299,6 +1323,7 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
         absl::StrCat("The program isn't valid: ", status.message())));
     return nullptr;
   }
+  result->map_ = BuildMap();
   return result;
 }
 
@@ -1330,6 +1355,72 @@ Program::Segment ProgramAssembler::BuildSegment(int index) const {
                 segment.words.begin() + offset + kAlignment);
   }
   return result;
+}
+
+ProgramMap ProgramAssembler::BuildMap() {
+  std::vector<std::string> segments;
+  segments.reserve(segments_.size());
+  for (const Segment& segment : segments_) {
+    segments.emplace_back(segment.name.has_value() ? segment.name->GetString()
+                                                   : "");
+  }
+
+  // Statements that write no words, such as .CONST, aren't in the map.
+  std::vector<ProgramMap::Statement> statements;
+  statements.reserve(statements_.size());
+  for (const Statement& statement : statements_) {
+    if (statement.size > 0) {
+      statements.push_back({.segment = statement.segment,
+                            .offset = statement.offset,
+                            .size = statement.size,
+                            .location = GetMapLocation(statement.token)});
+    }
+  }
+
+  std::vector<ProgramMap::Label> labels;
+  labels.reserve(labels_.size());
+  for (const auto& [key, label] : labels_) {
+    labels.push_back({.name = key,
+                      .segment = label.segment,
+                      .offset = static_cast<int>(label.offset),
+                      .location = GetMapLocation(label.token)});
+  }
+
+  // Every constant has a dword value, which CheckConstant() evaluated, but a
+  // word value is only an error where it is used as a word.
+  std::vector<ProgramMap::Constant> constants;
+  constants.reserve(constants_.size());
+  for (auto& [name, constant] : constants_) {
+    const ExpressionResult dword =
+        EvaluateConstant(constant, ExpressionWidth::kDword);
+    CHECK(dword.kind == ExpressionResult::Kind::kValue);
+    const ExpressionResult word =
+        EvaluateConstant(constant, ExpressionWidth::kWord);
+    std::optional<uint16_t> word_value;
+    if (word.kind == ExpressionResult::Kind::kValue) {
+      word_value = static_cast<uint16_t>(word.value);
+    }
+    constants.push_back({.name = name,
+                         .word_value = word_value,
+                         .dword_value = dword.value,
+                         .location = GetMapLocation(constant.token)});
+  }
+
+  // The assembler made the map, so it is valid.
+  absl::StatusOr<ProgramMap> map = ProgramMap::Create(
+      file_paths_, std::move(segments), std::move(statements),
+      std::move(labels), std::move(constants));
+  CHECK_OK(map.status());
+  return *std::move(map);
+}
+
+ProgramMap::Location ProgramAssembler::GetMapLocation(
+    const gb::Token& token) const {
+  // Every token is in a content AddContent() added.
+  const gb::LexerLocation location = GetLexer().GetTokenLocation(token);
+  auto it = file_indices_.find(location.id);
+  CHECK(it != file_indices_.end());
+  return {.file = it->second, .line = location.line};
 }
 
 uint16_t ProgramAssembler::GetRoleSegment(int bank) const {

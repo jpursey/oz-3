@@ -63,7 +63,7 @@ the item that builds it.
 | Instruction form | An instruction with one of its macro's codes: a pattern, its encoding, and its size | New (`InstructionSetSyntax`) |
 | Named values     | Names an instruction set gives the values of a code word argument                   | New, in `InstructionSetDef`  |
 | Program file     | A `Program` as words, for any loader, including one written in OZ-3 code            | New                          |
-| Program map      | Where each word came from, and every symbol, for the debugger                       | New                          |
+| Program map      | Where each word came from, and every symbol, for the debugger                       | `ProgramMap` (program_map.h) |
 | Listing          | The source beside the words it assembled to, as text                                | New                          |
 
 ## Programs
@@ -447,13 +447,24 @@ separate (`oz3/tools/program_file.h`).
 
 The map is a separate file, so a program loads without it. Only the debugger
 reads it, which is always a host tool written in C++, so it is a Game Bits
-chunk file (`gb/file`'s chunk reader and writer), and holds:
-- The source files, by path.
-- Every segment's name.
-- For every statement that wrote words: its segment, offset, size, and source
-  location.
-- Every symbol: its name, its value, its segment (for a label), and where it is
-  defined.
+chunk file (`gb/file`'s chunk reader and writer). The assembler builds the map
+along with the program, as a `ProgramMap` (`oz3/tools/program_map.h`), and
+writing and reading the file is separate (`oz3/tools/program_map_file.h`). It
+holds:
+- The source files, by the path each was read from, in the order first read.
+- Every segment's name, in the program's order.
+- For every statement that wrote words: its segment, offset, size, and line.
+  `.DS` and the stack only reserve words, so they aren't in it.
+- Every label, with its segment, offset, and line. A local label is named by
+  its scope's label and its own name (`START@LOOP`).
+- Every constant, with its line, and its value in each width it has one. A
+  constant is evaluated where it is used, and its word value isn't always its
+  dword value's low word (`/`, `%`, `>>`, and `!` bring down bits from above
+  it), so the map has both.
+
+Locations are lines, not columns, as the assembler is line based. A debugger
+finds the statement that wrote a word (`FindStatement`), and the label nearest
+at or before an offset (`FindLabel`), to show an address as `label+n`.
 
 The map works in segment offsets, as every address is one: `IP` is already an
 offset in the code segment. To turn any other address in a bank into a segment
@@ -498,6 +509,26 @@ bool WriteProgramFile(gb::FileSystem& file_system, std::string_view path,
                       const Program& program);
 std::optional<Program> ReadProgramFile(gb::FileSystem& file_system,
                                        std::string_view path);
+
+// Where the words of an assembled program came from, and its symbols, by
+// segment offset.
+class ProgramMap final {
+ public:
+  absl::Span<const std::string> GetFiles() const;
+  absl::Span<const std::string> GetSegments() const;
+  absl::Span<const Statement> GetStatements() const;
+  absl::Span<const Label> GetLabels() const;
+  absl::Span<const Constant> GetConstants() const;
+
+  const Statement* FindStatement(int segment, int offset) const;
+  const Label* FindLabel(int segment, int offset) const;
+  ...
+};
+
+absl::Status WriteProgramMapFile(gb::FileSystem& file_system,
+                                 std::string_view path, const ProgramMap& map);
+absl::StatusOr<ProgramMap> ReadProgramMapFile(gb::FileSystem& file_system,
+                                              std::string_view path);
 ```
 
 - The assembler takes an `InstructionSetSyntax`, built from any

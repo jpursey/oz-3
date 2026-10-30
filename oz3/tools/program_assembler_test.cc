@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,6 +31,7 @@
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_loader.h"
+#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 namespace {
@@ -39,6 +41,10 @@ using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
 using ::testing::SizeIs;
+
+using MapConstant = ProgramMap::Constant;
+using MapLabel = ProgramMap::Label;
+using MapStatement = ProgramMap::Statement;
 
 constexpr std::string_view kInstructionSet = R"---(
   values(bits:3) Condition { NZ = 0, Z = 4 }
@@ -85,8 +91,9 @@ class ProgramAssemblerTest : public ::testing::Test {
     file_system_.Register(std::make_unique<gb::MemoryFileProtocol>());
   }
 
-  // Assembles `text`, which must assemble, and returns its program.
-  Program Assemble(std::string_view text) {
+  // Assembles `text`, which must assemble, and returns it, or null if it
+  // doesn't.
+  std::unique_ptr<AsmProgram> AssembleAsmProgram(std::string_view text) {
     std::vector<gb::ParseError> errors;
     std::unique_ptr<AsmProgram> program =
         AssembleProgram(*syntax_, std::string(text), &errors);
@@ -95,10 +102,21 @@ class ProgramAssemblerTest : public ::testing::Test {
     }
     if (program == nullptr) {
       ADD_FAILURE() << "No program for: " << text;
-      return {};
+      return nullptr;
     }
     EXPECT_TRUE(ValidateProgram(program->GetProgram()).ok());
-    return program->GetProgram();
+    return program;
+  }
+
+  // Assembles `text`, which must assemble, and returns its program, or its
+  // map.
+  Program Assemble(std::string_view text) {
+    std::unique_ptr<AsmProgram> program = AssembleAsmProgram(text);
+    return program != nullptr ? program->GetProgram() : Program{};
+  }
+  ProgramMap AssembleMap(std::string_view text) {
+    std::unique_ptr<AsmProgram> program = AssembleAsmProgram(text);
+    return program != nullptr ? program->GetMap() : ProgramMap{};
   }
 
   // Assembles `text`, which must not assemble, and returns its errors.
@@ -1133,6 +1151,228 @@ TEST_F(ProgramAssemblerTest, IncludeFromText) {
   EXPECT_THAT(AssembleErrors(".STACK 1\n.INCLUDE \"a.oza\"\n"),
               ElementsAre(IsErrorAt(
                   1, 9, "A program assembled from text can't include files")));
+}
+
+TEST_F(ProgramAssemblerTest, MapOfTextProgram) {
+  // A program from text has one file, and the default program's one segment,
+  // which has no name.
+  const ProgramMap map = AssembleMap(".STACK 1\nNOP\n");
+  EXPECT_THAT(map.GetFiles(), ElementsAre("program"));
+  EXPECT_THAT(map.GetSegments(), ElementsAre(""));
+  EXPECT_THAT(map.GetStatements(),
+              ElementsAre(MapStatement{.segment = 0,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 1}}));
+  EXPECT_THAT(map.GetLabels(), IsEmpty());
+  EXPECT_THAT(map.GetConstants(), IsEmpty());
+}
+
+TEST_F(ProgramAssemblerTest, MapStatements) {
+  // Each statement that writes words is in the map with its size, but words
+  // that are only reserved aren't, by .DS or the stack.
+  const ProgramMap map = AssembleMap(R"---(.STACK 4
+    NOP
+    PUSH.W 1
+    PUSH.D 1
+    .DW 1, "AB", 'Hi'
+    .DS 2
+    .DD 1, 2
+    .CONST C = 1
+    .DW ''
+  )---");
+  EXPECT_THAT(map.GetStatements(),
+              ElementsAre(MapStatement{.segment = 0,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 1}},
+                          MapStatement{.segment = 0,
+                                       .offset = 1,
+                                       .size = 2,
+                                       .location = {.file = 0, .line = 2}},
+                          MapStatement{.segment = 0,
+                                       .offset = 3,
+                                       .size = 3,
+                                       .location = {.file = 0, .line = 3}},
+                          MapStatement{.segment = 0,
+                                       .offset = 6,
+                                       .size = 4,
+                                       .location = {.file = 0, .line = 4}},
+                          MapStatement{.segment = 0,
+                                       .offset = 12,
+                                       .size = 4,
+                                       .location = {.file = 0, .line = 6}}));
+  EXPECT_EQ(map.FindStatement(0, 10), nullptr);
+  EXPECT_EQ(map.FindStatement(0, 11), nullptr);
+  EXPECT_EQ(map.FindStatement(0, 16), nullptr);
+  EXPECT_EQ(map.FindStatement(0, 19), nullptr);
+}
+
+TEST_F(ProgramAssemblerTest, MapSegments) {
+  // Statements and labels are in their segments, which are in the program's
+  // order.
+  const ProgramMap map = AssembleMap(R"---(.STACK 4
+    .SEGMENT main CODE
+    start:
+      NOP
+    .SEGMENT vars DATA
+    value:
+      .DW 1
+    .SEGMENT main
+    next:
+      .DW start
+    .SEGMENT stack STACK
+  )---");
+  EXPECT_THAT(map.GetSegments(), ElementsAre("MAIN", "VARS", "STACK"));
+  EXPECT_THAT(map.GetStatements(),
+              ElementsAre(MapStatement{.segment = 0,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 3}},
+                          MapStatement{.segment = 0,
+                                       .offset = 1,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 9}},
+                          MapStatement{.segment = 1,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 6}}));
+  EXPECT_THAT(map.GetLabels(),
+              ElementsAre(MapLabel{.name = "START",
+                                   .segment = 0,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 2}},
+                          MapLabel{.name = "NEXT",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 8}},
+                          MapLabel{.name = "VALUE",
+                                   .segment = 1,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 5}}));
+}
+
+TEST_F(ProgramAssemblerTest, MapLabels) {
+  // A local label's name is its scope's label and then its own, or just its
+  // own before the first label.
+  const ProgramMap map = AssembleMap(R"---(.STACK 1
+    @start: NOP
+    first:
+    @loop: NOP
+      NOP
+    second: .DW 1
+    @loop:
+  )---");
+  EXPECT_THAT(map.GetLabels(),
+              ElementsAre(MapLabel{.name = "@START",
+                                   .segment = 0,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 1}},
+                          MapLabel{.name = "FIRST",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 2}},
+                          MapLabel{.name = "FIRST@LOOP",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 3}},
+                          MapLabel{.name = "SECOND",
+                                   .segment = 0,
+                                   .offset = 3,
+                                   .location = {.file = 0, .line = 5}},
+                          MapLabel{.name = "SECOND@LOOP",
+                                   .segment = 0,
+                                   .offset = 4,
+                                   .location = {.file = 0, .line = 6}}));
+}
+
+TEST_F(ProgramAssemblerTest, MapConstants) {
+  // A constant has a value in each width, and the word value isn't always the
+  // dword value's low word. A constant that can't be a word has only a dword
+  // value. $ and local labels are where the constant is defined.
+  const ProgramMap map = AssembleMap(R"---(.STACK 1
+    NOP
+    .CONST MASK = ~1
+    .CONST HALF = (0FFFFh + 1) / 2
+    .CONST BIG = 10000h
+    .CONST HERE = $
+    first:
+    @a: NOP
+    .CONST LOCAL = @a
+    second:
+    @a: NOP
+  )---");
+  EXPECT_THAT(map.GetConstants(),
+              ElementsAre(MapConstant{.name = "BIG",
+                                      .word_value = std::nullopt,
+                                      .dword_value = 0x10000,
+                                      .location = {.file = 0, .line = 4}},
+                          MapConstant{.name = "HALF",
+                                      .word_value = 0,
+                                      .dword_value = 0x8000,
+                                      .location = {.file = 0, .line = 3}},
+                          MapConstant{.name = "HERE",
+                                      .word_value = 1,
+                                      .dword_value = 1,
+                                      .location = {.file = 0, .line = 5}},
+                          MapConstant{.name = "LOCAL",
+                                      .word_value = 1,
+                                      .dword_value = 1,
+                                      .location = {.file = 0, .line = 8}},
+                          MapConstant{.name = "MASK",
+                                      .word_value = 0xFFFE,
+                                      .dword_value = 0xFFFFFFFE,
+                                      .location = {.file = 0, .line = 2}}));
+}
+
+TEST_F(ProgramAssemblerTest, MapIncludes) {
+  // Each file is in the map once, by the path it was read from, in the order
+  // first read. A statement in a file included twice is in the map twice, at
+  // the same line.
+  ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza",
+                                     ".STACK 1\n"
+                                     ".INCLUDE \"lib/a.oza\"\n"
+                                     "start: .INCLUDE \"nop.oza\"\n"
+                                     ".INCLUDE \"nop.oza\"\n"
+                                     ".DW A\n"));
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/lib"));
+  ASSERT_TRUE(file_system_.WriteFile("mem:/lib/a.oza", "NOP\n.CONST A = 5\n"));
+  ASSERT_TRUE(file_system_.WriteFile("mem:/nop.oza", "\nNOP\n"));
+  std::vector<gb::ParseError> errors;
+  std::unique_ptr<AsmProgram> program =
+      AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza", &errors);
+  EXPECT_THAT(errors, IsEmpty());
+  ASSERT_NE(program, nullptr);
+  const ProgramMap& map = program->GetMap();
+  EXPECT_THAT(map.GetFiles(),
+              ElementsAre("mem:/main.oza", "mem:/lib/a.oza", "mem:/nop.oza"));
+  EXPECT_THAT(map.GetStatements(),
+              ElementsAre(MapStatement{.segment = 0,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 1, .line = 0}},
+                          MapStatement{.segment = 0,
+                                       .offset = 1,
+                                       .size = 1,
+                                       .location = {.file = 2, .line = 1}},
+                          MapStatement{.segment = 0,
+                                       .offset = 2,
+                                       .size = 1,
+                                       .location = {.file = 2, .line = 1}},
+                          MapStatement{.segment = 0,
+                                       .offset = 3,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 4}}));
+  EXPECT_THAT(map.GetLabels(),
+              ElementsAre(MapLabel{.name = "START",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 2}}));
+  EXPECT_THAT(map.GetConstants(),
+              ElementsAre(MapConstant{.name = "A",
+                                      .word_value = 5,
+                                      .dword_value = 5,
+                                      .location = {.file = 1, .line = 1}}));
 }
 
 }  // namespace

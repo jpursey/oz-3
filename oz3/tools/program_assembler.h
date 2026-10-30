@@ -15,6 +15,7 @@
 #include "gb/parse/parse_error.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
+#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 
@@ -22,7 +23,7 @@ namespace oz3 {
 // with a last error saying so.
 inline constexpr int kMaxProgramErrors = 100;
 
-// An assembled program.
+// An assembled program, and its map.
 class AsmProgram final {
  public:
   AsmProgram(const AsmProgram&) = delete;
@@ -32,12 +33,17 @@ class AsmProgram final {
   // Returns the program, which is valid (see ValidateProgram).
   const Program& GetProgram() const { return program_; }
 
+  // Returns the program's map: its source files, where each statement's words
+  // are, and its labels and constants.
+  const ProgramMap& GetMap() const { return map_; }
+
  private:
   friend class ProgramAssembler;
 
   AsmProgram() = default;
 
   Program program_;
+  ProgramMap map_;
 };
 
 // Assembles the program whose main source file is at `path`, for the

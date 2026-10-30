@@ -217,7 +217,8 @@ All of it is in `tools`, beside the program assembler and program files.
 ### The assembler's map (`program_assembler.cc`)
 
 - The private `Statement` gains its size in words, which `Write()` already
-  has, so the second pass doesn't recompute it.
+  has, so the second pass doesn't recompute it. `Write()` adds the statement
+  too, so the size is given once.
 - `BuildProgram` builds the map with the program: files from each lexer
   content's index in the order added, segment names, statements from the
   recorded statements that wrote words, labels from `labels_` (whose keys are
@@ -288,7 +289,7 @@ Depends on: CL1, and Game Bits *Validate chunk contents*.
   fails.
 - The To confirm items for CL2, with the findings recorded here.
 
-### CL3 [ ] tools: the assembler's map
+### CL3 [x] tools: the assembler's map
 
 Depends on: CL1.
 
