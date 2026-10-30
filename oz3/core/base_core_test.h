@@ -196,6 +196,13 @@ class BaseCoreTest : public testing::Test {
   // registers are all left at zero. Interrupts are enabled.
   bool InitAndReset(InitConfig config = {});
 
+  // Returns the processor, such as to load a program into it. Init() must have
+  // been called.
+  Processor& GetProcessor() {
+    CHECK(processor_ != nullptr);
+    return *processor_;
+  }
+
   // Returns the core state for the specified core
   CoreState& GetState(int core_index = 0) {
     CHECK(core_index >= 0 && core_index < processor_->GetNumCores());

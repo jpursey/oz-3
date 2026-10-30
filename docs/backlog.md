@@ -26,19 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Assemble the default instruction set
-
-- **Layers:** instruction_sets
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [assembler_design.md](assembler_design.md), and the wiki's
-  Default Instruction Set page
-
-Tests that assemble every form of the default instruction set, as the wiki's
-reference writes it, and check each against its code word, and that run small
-assembled programs on a core.
-
 ## Invalid register arguments
 
 - **Layers:** core, tools, instruction_sets

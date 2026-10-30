@@ -13,6 +13,7 @@ set(oz3_instruction_sets_DEPS
 )
 
 set(oz3_instruction_sets_TEST_SOURCE
+  default_instruction_set_assemble_test.cc
   default_instruction_set_test.cc
   instruction_test.h
   instruction_test_bits.cc
@@ -30,9 +31,12 @@ set(oz3_instruction_sets_TEST_SOURCE
   instruction_test_shift.cc
 )
 set(oz3_instruction_sets_TEST_DEPS
+  absl::flat_hash_set
   absl::span
   absl::strings
+  gb_parse
   oz3_core_testing
+  oz3_tools
 )
 
 gb_add_library(oz3_instruction_sets)
