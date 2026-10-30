@@ -156,6 +156,7 @@ TEST_F(ProgramListingTest, LabelsWithoutWords) {
 
 TEST_F(ProgramListingTest, Files) {
   // Each file is listed, and a line included twice has a row for each time.
+  // A listing file reads the files by the map's paths.
   ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza",
                                      ".STACK 1\n"
                                      ".INCLUDE \"nop.oza\"\n"
@@ -166,14 +167,13 @@ TEST_F(ProgramListingTest, Files) {
       AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza", &errors);
   EXPECT_THAT(errors, IsEmpty());
   ASSERT_NE(program, nullptr);
-  std::vector<std::string> sources;
-  for (const std::string& path : program->GetMap().GetFiles()) {
-    ASSERT_TRUE(file_system_.ReadFile(path, &sources.emplace_back())) << path;
-  }
-  absl::StatusOr<std::string> listing =
-      FormatProgramListing(program->GetProgram(), program->GetMap(), sources);
-  ASSERT_TRUE(listing.ok()) << listing.status();
-  EXPECT_EQ(*listing,
+  const absl::Status status =
+      WriteProgramListingFile(file_system_, "mem:/main.oz3lst",
+                              program->GetProgram(), program->GetMap());
+  ASSERT_TRUE(status.ok()) << status;
+  std::string listing;
+  ASSERT_TRUE(file_system_.ReadFile("mem:/main.oz3lst", &listing));
+  EXPECT_EQ(listing,
             "/main.oza\n"
             "                           .STACK 1\n"
             "                           .INCLUDE \"nop.oza\"\n"
@@ -182,6 +182,26 @@ TEST_F(ProgramListingTest, Files) {
             "/nop.oza\n"
             "0000  0000                 NOP\n"
             "0001  0000\n");
+}
+
+TEST_F(ProgramListingTest, FileErrors) {
+  // A program assembled from text has no file to read.
+  std::unique_ptr<AsmProgram> program = Assemble(".STACK 1\nNOP\n");
+  ASSERT_NE(program, nullptr);
+  absl::Status status =
+      WriteProgramListingFile(file_system_, "mem:/program.oz3lst",
+                              program->GetProgram(), program->GetMap());
+  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_THAT(status.message(), HasSubstr("Could not read file: program"));
+
+  ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza", ".STACK 1\nNOP\n"));
+  program = AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza");
+  ASSERT_NE(program, nullptr);
+  status = WriteProgramListingFile(file_system_, "mem:/missing/main.oz3lst",
+                                   program->GetProgram(), program->GetMap());
+  EXPECT_EQ(status.code(), absl::StatusCode::kUnavailable);
+  EXPECT_THAT(status.message(),
+              HasSubstr("Could not write file: mem:/missing/main.oz3lst"));
 }
 
 TEST_F(ProgramListingTest, WrongSourceCount) {

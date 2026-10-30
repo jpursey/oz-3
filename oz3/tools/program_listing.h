@@ -7,9 +7,12 @@
 #define OZ3_TOOLS_PROGRAM_LISTING_H_
 
 #include <string>
+#include <string_view>
 
+#include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "gb/file/file_system.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_map.h"
 
@@ -42,6 +45,15 @@ namespace oz3 {
 absl::StatusOr<std::string> FormatProgramListing(
     const Program& program, const ProgramMap& map,
     absl::Span<const std::string> sources);
+
+// Writes the listing of `program` (see FormatProgramListing) as a text file at
+// `path`, reading the map's files from `file_system` by the paths the map has.
+// Returns an error if a file can't be read or written, or from
+// FormatProgramListing.
+absl::Status WriteProgramListingFile(gb::FileSystem& file_system,
+                                     std::string_view path,
+                                     const Program& program,
+                                     const ProgramMap& map);
 
 }  // namespace oz3
 

@@ -475,7 +475,10 @@ doesn't record yet (see *Debugger (oz3dbg)* in the backlog).
 
 A listing is text for people: each source line, with its segment offset and the
 words it assembled to. It is optional, and is what a programmer reads to check
-what an instruction became.
+what an instruction became. `FormatProgramListing`
+(`oz3/tools/program_listing.h`) formats it from a program, its map, and its
+source files' text, and `WriteProgramListingFile` writes it, reading the source
+files by the map's paths. `oz3asm` writes it beside the program file (`.oz3lst`).
 
 ## Library and tool
 
@@ -552,10 +555,10 @@ absl::StatusOr<ProgramMap> ReadProgramMapFile(gb::FileSystem& file_system,
 - `oz3asm` takes a source file and an instruction set, and writes the program
   file, and optionally the map and the listing. With no instruction set given,
   it uses the default one, so it links `oz3_instruction_sets`, which `tools`
-  can't. So it lives in a new `apps` directory, for executables, after
-  `instruction_sets` in the dependency order, where `oz3dbg` goes too. The
-  libraries keep their order, and `oz3ism` stays in `tools`, as it must build
-  when the default instruction set doesn't.
+  can't. So it lives in an `apps` directory, which holds every executable,
+  after the libraries in the dependency order, where `oz3dbg` goes too.
+  `oz3ism` moved there with it, and still builds when the default instruction
+  set doesn't, as it doesn't link `oz3_instruction_sets`.
 
 ## Example
 
@@ -602,6 +605,7 @@ in lower case (`mov r1, message`), it assembles the same.
 | Table of forms   | `InstructionSetSyntax`, `InstructionSetForms` | `InstructionSet` (compiled microcode), `InstructionSetDef` (its source data) | `InstructionSetSyntax`, holding `InstructionForm`s   |
 | Assembled result | `AsmProgram`, `AssembledProgram`              | `Program`, `LoadedProgram`                                                   | `AsmProgram`, after `AsmInstructionSet`              |
 | Map              | `ProgramMap`, `SourceMap`, `DebugMap`         | `MemoryMap` (core's memory mapped devices)                                   | `ProgramMap`, after `.oz3map`                        |
+| Listing file     | `.oz3lst`, `.ozl`, `.lst`                     | `.lst`, which is every assembler's                                           | `.oz3lst`, as `.oz3map` pairs with `.oz3`            |
 | Named values     | `values`, `enum`, `names` (`ValueSetDef`)     | `$v`/`$V` placeholders, which are values in words                            | `values`, with `ValueSetDef` in `InstructionSetDef`  |
 | Executables      | `apps`, `cli`, `cmd`                          | `bin/` (where executables are built), `tools` (libraries)                    | `apps`, as the debugger may not be command line only |
 

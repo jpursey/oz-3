@@ -60,19 +60,3 @@ set(oz3_tools_TEST_DEPS
 )
 
 gb_add_library(oz3_tools)
-
-set(oz3ism_SOURCE
-  oz3ism.cc
-)
-
-set(oz3ism_DEPS
-  oz3_core
-  oz3_tools
-)
-
-set(oz3ism_LIBS
-  absl::check
-  absl::log
-)
-
-gb_add_executable(oz3ism)

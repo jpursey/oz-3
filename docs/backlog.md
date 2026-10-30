@@ -11,8 +11,9 @@ bottom are the rest of the roadmap in README.md and the wiki.
 Each item carries:
 
 - **Layers**: the OZ-3 libraries it touches (`core`, `tools`,
-  `instruction_sets`), in dependency order, and the wiki if it changes the
-  specification. More than one usually means more than one CL.
+  `instruction_sets`, and `apps` for executables), in dependency order, and the
+  wiki if it changes the specification. More than one usually means more than
+  one CL.
 - **Size**: a guess. *Small* is a single CL. *Medium* is a few. *Large* is
   many, usually after a design.
 - **Feature workflow**: whether the item follows the feature workflow, with a
@@ -24,21 +25,6 @@ Each item carries:
 - **Requested by**: the project and item that need it, for items another
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
-
-## oz3asm
-
-- **Layers:** apps (new), wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [assembler_design.md](assembler_design.md) (Library and
-  tool)
-
-The command line program assembler: a source file and an instruction set (the
-default one unless given a `.izm` file) to a program file, and optionally its
-map and a listing. It links the default instruction set, so it starts a new
-`apps` directory for executables, after `instruction_sets` in the dependency
-order, which CLAUDE.md's directory structure gains.
 
 ## Assemble the default instruction set
 
@@ -205,6 +191,18 @@ A program file records which instruction set it was assembled for, such as a
 fingerprint of its code word layout, so loading it for a core with a different
 instruction set can be caught. It is a new version of the program file format,
 which readers of version 1 reject.
+
+## Command lines on Game Bits
+
+- **Layers:** apps, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Game Bits *Command line library*
+- **Background:** `oz3/apps/oz3ism.cc` and `oz3/apps/oz3asm.cc`
+
+`oz3ism` and `oz3asm` parse their command lines by hand. Define each one's
+interface with the Game Bits command line library instead, with its help text,
+keeping the arguments the wiki documents.
 
 ## Coprocessors
 

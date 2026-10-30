@@ -22,6 +22,7 @@
 #include "absl/strings/str_replace.h"
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
+#include "gb/file/file_system.h"
 #include "gb/file/path.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_map.h"
@@ -279,6 +280,27 @@ absl::StatusOr<std::string> FormatProgramListing(
     const Program& program, const ProgramMap& map,
     absl::Span<const std::string> sources) {
   return ProgramLister(&program, &map).Format(sources);
+}
+
+absl::Status WriteProgramListingFile(gb::FileSystem& file_system,
+                                     std::string_view path,
+                                     const Program& program,
+                                     const ProgramMap& map) {
+  std::vector<std::string> sources;
+  for (const std::string& file : map.GetFiles()) {
+    if (!file_system.ReadFile(file, &sources.emplace_back())) {
+      return absl::NotFoundError(absl::StrCat("Could not read file: ", file));
+    }
+  }
+  absl::StatusOr<std::string> listing =
+      FormatProgramListing(program, map, sources);
+  if (!listing.ok()) {
+    return listing.status();
+  }
+  if (!file_system.WriteFile(path, *listing)) {
+    return absl::UnavailableError(absl::StrCat("Could not write file: ", path));
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace oz3
