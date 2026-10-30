@@ -204,6 +204,20 @@ which readers of version 1 reject.
 interface with the Game Bits command line library instead, with its help text,
 keeping the arguments the wiki documents.
 
+## Native paths in the command line tools
+
+- **Layers:** apps, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Game Bits *Native file paths*
+- **Background:** `oz3/apps/oz3ism.cc` and `oz3/apps/oz3asm.cc`; CLAUDE.md
+  (Default instruction set), and the wiki's `oz3ism` and `oz3asm` sections
+
+`oz3ism` and `oz3asm` only open paths relative to the current directory, as
+their file system can't open an absolute path with a drive letter. Open native
+paths with Game Bits instead, so they take any path, and drop the limit from
+CLAUDE.md and the wiki.
+
 ## Coprocessors
 
 - **Layers:** core, wiki
