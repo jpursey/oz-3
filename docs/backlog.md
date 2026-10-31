@@ -26,6 +26,130 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Byte swap instruction
+
+- **Layers:** instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (New instructions, Packed
+  strings)
+
+`SWPB <reg>`, which swaps a register's bytes, so packed text is cheap to unpack
+and pack: the high byte is a `SWPB` and an `AND`, rather than a shift by 8. A
+new instruction at the end of the `.izm`, built from `MVB`.
+
+## Core signal instructions
+
+- **Layers:** instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (New instructions, Calls)
+
+Instructions for one core to signal another, naming the core as `RST` does:
+`INTC` raises an interrupt on it, and `WAKE` ends its `WAIT` or starts it from
+its `IP`. They are how Ozzy programs call the OS, and how it answers. New
+instructions at the end of the `.izm`, built from `CLK`, `INT`, `CRUN`, and
+`CUL`. Nothing reads or writes another core's registers: data between cores
+goes through memory and ports.
+
+## Devices in core
+
+- **Layers:** core, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (Device support in core);
+  the Interrupts section of `2-Specifications.md`
+
+Devices that the `Processor` runs in step with the cores, added through
+`ProcessorConfig`: each is given its ports, can lock memory banks to read and
+write memory, and raises interrupts on the cores its line is connected to.
+
+Raising an interrupt must report whether it was a duplicate (already pending),
+as the Interrupts section of `2-Specifications.md` promises. Today
+`CpuCore::RaiseInterrupt` and `Processor::RaiseInterrupt` return nothing. The
+design's answer is that a raise is a duplicate only if it was already pending
+on every core its line is connected to.
+
+## Console devices
+
+- **Layers:** devices (new)
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Devices in core*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Screen, Keyboard,
+  Teletype)
+
+The new `devices` library, with the memory mapped screen (character and
+attribute cells, control words, a scroll row, and a refresh rate with a frame
+counter), the keyboard (a queue of key
+events on a port, with an interrupt), and the teletype (packed text written to
+the host, for an Ozzy without a screen).
+
+## Ozzy machine
+
+- **Layers:** ozzy (new), apps, wiki
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Console devices*
+- **Background:** [ozzy_design.md](ozzy_design.md)
+
+The first Ozzy anyone can run: the `ozzy` library builds a machine from a
+`gb::Config` text file, writes the machine table and the boot ROM, and starts
+core 0, and the `ozzy` app runs it in the Windows console in real time. The
+boot ROM prints a banner and echoes keys. Creates Ozzy's wiki page.
+
+## Timer device
+
+- **Layers:** devices, ozzy
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Ozzy machine*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Timer)
+
+A periodic interrupt at a configured rate, and a port to read the cycle count
+and the host's date and time.
+
+## Disk drive device
+
+- **Layers:** devices, ozzy, wiki
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Ozzy machine*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Disk drive, File names)
+
+The smart drive, which owns its file system: a flat directory of 12.3 named
+files on a host folder, requests as blocks in memory with the port as a
+doorbell, transfers straight to memory in simulated time, and text files as
+packed host bytes.
+
+## Ozzy OS
+
+- **Layers:** ozzy, wiki
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Byte swap instruction*, *Core signal instructions*, *Timer
+  device*, *Disk drive device*
+- **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
+
+The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
+loader, running programs in the foreground and in parallel on other cores, and
+the shell.
+
+## Fixed size strings
+
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (File names); the wiki's
+  Program Source page (Values)
+
+A way to write a string padded with zeros to a fixed number of words, such as
+an 8 word file name field, where `.DW "A.TXT"` writes only 3 words today.
+
 ## Debugger (oz3dbg)
 
 - **Layers:** core, tools
@@ -158,35 +282,5 @@ identifiers (up to 16 coprocessors), with the low byte as the coprocessor's own
 opcode (up to 256 each). That would leave the core instruction sets, including
 the default one, below `0xF0`.
 
-Raising an interrupt must report whether it was a duplicate (already pending),
-as the Interrupts section of `2-Specifications.md` promises. Today
-`CpuCore::RaiseInterrupt` and `Processor::RaiseInterrupt` return nothing.
-Since `Processor::RaiseInterrupt` raises on every core, what it reports when
-the trigger is new on some cores and a duplicate on others is decided here or
-in *Devices*, whichever comes first.
-
-## Devices
-
-- **Layers:** devices (new), wiki
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** README.md
-
-A `devices` library of independent virtual devices that attach to the OZ-3
-through ports, as used by the Ozzy computer. Which devices are needed comes
-from Ozzy's design.
-
-Raising an interrupt must report whether it was a duplicate, as the spec
-promises (see *Coprocessors*, which shares this, for the details).
-
-## Ozzy computer
-
-- **Layers:** ozzy (new), wiki
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** *Devices*, *Debugger (oz3dbg)*
-- **Background:** README.md, and the wiki's Home page
-
-Ozzy is a virtual computer and "OS" built from the OZ-3 core and the devices,
-that runs OZ-3 programs and integrates the debugger.
+Coprocessors raise interrupts as devices do, reporting duplicates (see
+*Devices in core*), and join Ozzy's config once they exist.
