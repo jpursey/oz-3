@@ -29,10 +29,12 @@ constexpr oz3::ValueSetDef kValueSets[] = {
      .values = kValues_Condition},
     {.name = "Flags",
      .size = 4,
-     .values = kValues_Flags},
+     .values = kValues_Flags,
+     .flags = true},
     {.name = "Banks",
      .size = 4,
-     .values = kValues_Banks},
+     .values = kValues_Banks,
+     .flags = true},
 };
 
 constexpr oz3::MacroCodeDef kMacroCode_GetWord[] = {

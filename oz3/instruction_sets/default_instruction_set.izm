@@ -7,10 +7,10 @@ values(bits:3) Condition { NZ = 0, NS = 1, NC = 2, NO = 3,
                            Z = 4, S = 5, C = 6, O = 7 }
 
 # A mask of status flags (CLRF, SETF, and NOTF).
-values(bits:4) Flags { Z = 1, S = 2, C = 4, O = 8 }
+values(bits:4, flags) Flags { Z = 1, S = 2, C = 4, O = 8 }
 
 # A mask of memory banks (RST).
-values(bits:4) Banks { CODE = 1, STACK = 2, DATA = 4, EXTRA = 8 }
+values(bits:4, flags) Banks { CODE = 1, STACK = 2, DATA = 4, EXTRA = 8 }
 
 ################################################################################
 ## Shared macros to fetch word and dword values

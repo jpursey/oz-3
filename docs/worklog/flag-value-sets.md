@@ -149,7 +149,7 @@ Depends on: CL1.
 - Unit tests (`instruction_def_exporter_test.cc`): `.flags = true` is written
   for a flag set, and nothing for one without the mark.
 
-### CL3 [ ] instruction_sets: mark `Flags` and `Banks`
+### CL3 [x] instruction_sets: mark `Flags` and `Banks`
 
 Depends on: CL2.
 
@@ -160,8 +160,7 @@ Depends on: CL2.
 **Verify**
 - Standard checks, including the `.inc` diff showing only the two `.flags =
   true` lines, and the pin test passing with `kPinnedFingerprint` unchanged.
-- Unit tests (`program_assembler_test.cc`, which disassembles with the default
-  instruction set): `RST SELF, 2` and `RST.C 5, 3` now disassemble as
-  `RST SELF, STACK` and `RST.C 5, CODE | STACK`, and new cases cover `CLRF Z |
-  C` and a value with no name (`CLRF 0`). Each disassembled text assembles back
-  to the same words.
+- Unit tests (`default_instruction_set_assemble_test.cc`): `CLRF Z | C`,
+  `SETF 0`, `NOTF O | S | Z | C`, `RST SELF, STACK`, and `RST 0, DATA | CODE`
+  disassemble with their names in each set's order, and the disassembled text
+  assembles to the same words.

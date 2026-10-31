@@ -504,6 +504,54 @@ TEST_F(AssembleFormTest, EveryForm) {
 }
 
 //==============================================================================
+// Flag values
+//
+// Values of the flag sets (Flags and Banks) disassemble as their names joined
+// by "|", which assemble to the same words.
+//==============================================================================
+
+// Assembles `statements` as one program, and returns its words: those of the
+// statements, followed by the stack.
+std::vector<uint16_t> AssembleStatements(
+    const InstructionSetSyntax& syntax,
+    absl::Span<const std::string> statements) {
+  std::unique_ptr<AsmProgram> program = AssembleOrFail(
+      syntax, absl::StrCat(".STACK 1\n", absl::StrJoin(statements, "\n")));
+  if (program == nullptr) {
+    return {};
+  }
+  const Program::Segment& segment = program->GetProgram().segments[0];
+  if (segment.data.size() != 1) {
+    ADD_FAILURE() << "Expected one data block";
+    return {};
+  }
+  return segment.data[0].data;
+}
+
+TEST(FlagValuesTest, DisassembleAsNames) {
+  const std::unique_ptr<InstructionSetSyntax> syntax = CreateDefaultSyntax();
+  const std::vector<std::string> statements = {
+      "CLRF Z | C", "SETF 0", "NOTF O | S | Z | C", "RST SELF, STACK",
+      "RST 0, DATA | CODE"};
+  const std::vector<uint16_t> words = AssembleStatements(*syntax, statements);
+
+  std::vector<std::string> texts;
+  int offset = 0;
+  for (int i = 0; i < static_cast<int>(statements.size()); ++i) {
+    ASSERT_LT(offset, static_cast<int>(words.size()));
+    const InstructionForm* form = syntax->FindForm(words[offset]);
+    ASSERT_NE(form, nullptr);
+    texts.push_back(form->Disassemble(
+        absl::MakeConstSpan(words).subspan(offset, form->GetSize()),
+        static_cast<uint16_t>(offset)));
+    offset += form->GetSize();
+  }
+  EXPECT_THAT(texts, ElementsAre("CLRF Z | C", "SETF 0", "NOTF Z | S | C | O",
+                                 "RST SELF, STACK", "RST 0, CODE | DATA"));
+  EXPECT_EQ(AssembleStatements(*syntax, texts), words);
+}
+
+//==============================================================================
 // Register rules
 //
 // Registers that are encodable but never useful, which the instruction set
