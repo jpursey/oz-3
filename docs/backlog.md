@@ -26,24 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Flag value sets
-
-- **Layers:** core, tools, instruction_sets, wiki
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** Text in `docs/worklog/instruction-forms.md`, and the `Flags`
-  and `Banks` value sets in `default_instruction_set.izm`
-
-Some value sets name bits that a program combines, such as `Flags` and `Banks`
-in the default instruction set (`CLRF Z | C`). `InstructionForm::Disassemble`
-writes a value by its name only when one name has it, so `CLRF Z | C`
-disassembles as `CLRF 5`, which assembles the same but reads worse. Let a value
-set be marked as flags, in `ValueSetDef`, the `.izm` source, and the exporter,
-so a value is disassembled as its names joined by `|`. Then mark the default
-instruction set's flag sets, whose pin test fingerprint includes its value
-sets.
-
 ## Debugger (oz3dbg)
 
 - **Layers:** core, tools
