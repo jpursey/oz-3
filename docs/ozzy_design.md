@@ -50,18 +50,18 @@ to make the model concrete, and each is settled in the item that builds it.
 
 ## The machine at a glance
 
-| Part            | What it is                                                                       | Where                    |
-| --------------- | -------------------------------------------------------------------------------- | ------------------------ |
-| Device support  | Devices run by the `Processor` in step with the cores, on ports and interrupts   | `core` (new)             |
-| Screen          | A memory mapped page of character cells, each a character and an attribute       | `devices` (new library)  |
-| Keyboard        | A queue of key events read through a port, with an interrupt                     | `devices`                |
-| Teletype        | A port that writes text to the host, for an Ozzy without a screen                | `devices`                |
-| Timer           | A periodic interrupt and a clock                                                 | `devices`                |
-| Disk drive      | A smart drive: named files in a flat directory, read and written to memory       | `devices`                |
-| New instructions | Byte swap, and signals to other cores (interrupt, wake)                          | `instruction_sets`       |
-| Machine         | The hardware built from a config file, with its machine table and boot ROM       | `ozzy` (new library)     |
-| Boot ROM, OS    | The system code, in OZ-3 assembly                                                | `ozzy`                   |
-| `ozzy`          | The host application: the console frontend, real-time pacing                    | `apps`                   |
+| Part             | What it is                                                                     | Where                   |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------------- |
+| Device support   | Devices run by the `Processor` in step with the cores, on ports and interrupts | `core` (new)            |
+| Screen           | A memory mapped page of character cells, each a character and an attribute     | `devices` (new library) |
+| Keyboard         | A queue of key events read through a port, with an interrupt                   | `devices`               |
+| Teletype         | A port that writes text to the host, for an Ozzy without a screen              | `devices`               |
+| Timer            | A periodic interrupt and a clock                                               | `devices`               |
+| Disk drive       | A smart drive: named files in a flat directory, read and written to memory     | `devices`               |
+| New instructions | Byte swap, and signals to other cores (interrupt, wake)                        | `instruction_sets`      |
+| Machine          | The hardware built from a config file, with its machine table and boot ROM     | `ozzy` (new library)    |
+| Boot ROM, OS     | The system code, in OZ-3 assembly                                              | `ozzy`                  |
+| `ozzy`           | The host application: the console frontend, real-time pacing                   | `apps`                  |
 
 `devices` and `ozzy` come after `instruction_sets` in the dependency order, and
 before `apps`, as CLAUDE.md already says.
@@ -86,12 +86,12 @@ the host fills at power on.
 
 The default layout is a single bank, which holds everything:
 
-| Pages | What                                                              |
-| ----- | ----------------------------------------------------------------- |
-| 0     | Boot ROM, and the machine table                                   |
-| 1-3   | The OS: its code, data, buffers, and stack (12 Kiw at most)       |
-| 4-14  | Programs                                                          |
-| 15    | The screen                                                        |
+| Pages | What                                                        |
+| ----- | ----------------------------------------------------------- |
+| 0     | Boot ROM, and the machine table                             |
+| 1-3   | The OS: its code, data, buffers, and stack (12 Kiw at most) |
+| 4-14  | Programs                                                    |
+| 15    | The screen                                                  |
 
 More banks are all RAM, for programs. The OS allocates pages to programs,
 honoring each program file's assign masks and page requests, and puts them in
@@ -104,17 +104,19 @@ Each device in the config is given its ports and interrupt line. A sketch of
 the defaults, in order of interrupt priority (the lowest line is handled
 first):
 
-| Interrupt | Port | Device                                   |
-| --------- | ---- | ---------------------------------------- |
-| 0         | 0    | Timer                                    |
-| 1         | 1    | Keyboard                                 |
-| -         | 2    | Teletype (when there is no screen)       |
-| 2-5       | 8-11 | Disk drives `A:` to `D:`                 |
-| 24-31     | 16-23 | OS calls from cores 0 to 7              |
+| Interrupt | Port  | Device                             |
+| --------- | ----- | ---------------------------------- |
+| 0         | 0     | Timer                              |
+| 1         | 1     | Keyboard                           |
+| -         | 2     | Teletype (when there is no screen) |
+| 2-5       | 8-11  | Disk drives `A:` to `D:`           |
+| 6         | -     | Screen refresh                     |
+| 24-31     | 16-23 | OS calls from cores 0 to 7         |
 
 A device's interrupt goes to the cores its line is connected to, which is the
-OS core by default. A program that wants a device's interrupts directly (a game
-reading the keyboard, say) can be connected too, and sets its own handler.
+OS core by default (every core, for the screen's refresh). A program that
+wants a device's interrupts directly (a game reading the keyboard, say) can be
+connected too, and sets its own handler.
 
 ### Machine table
 
@@ -144,7 +146,7 @@ banks: [
   { ram: "0-15" },            // Bank 1: programs
 ]
 devices: [
-  { type: "screen", bank: 0, page: 15, columns: 80, rows: 24 },
+  { type: "screen", bank: 0, page: 15, columns: 80, rows: 24, interrupt: 6 },
   { type: "keyboard", port: 1, interrupt: 1 },
   { type: "timer", port: 0, interrupt: 0, hz: 60 },
   { type: "drive", letter: "A", port: 8, interrupt: 2, folder: "disks/system" },
@@ -205,9 +207,10 @@ between two refreshes and have them all appear at once.
 - A **frame counter** control word counts refreshes, so a program can wait for
   the next one by watching it change, then draw in the time until the one
   after.
-- The screen can also have an interrupt line, raised at each refresh, for
-  programs that would rather be told (like a vertical blank interrupt).
-  It is left unconnected by default.
+- The screen also has an interrupt line, raised at each refresh, for programs
+  that would rather be told (like a vertical blank interrupt). It is connected
+  to every core by default, so a program on any core can sync to the screen
+  by setting a handler. A core without one drops the interrupt at no cost.
 
 ### Keyboard
 
@@ -309,11 +312,11 @@ The default instruction set gains a few instructions, at the end of the `.izm`
 after `RST` (from opcode 8Ah), each built only from microcode ops that already
 exist. No microcode changes, and no existing code word changes.
 
-| Instruction     | What it does                                                         | Microcode                       |
-| --------------- | -------------------------------------------------------------------- | ------------------------------- |
-| `SWPB <reg>`    | Swaps a register's bytes, to unpack and pack text                    | `MVB` three times               |
-| `INTC <core>, <interrupt>` | Raises an interrupt on another core, to call the OS      | `CLK`, `INT`, `CUL`             |
-| `WAKE <core>`   | Ends another core's `WAIT`, or starts it if idle, from its `IP`      | `CLK`, `CRUN`, `CUL`            |
+| Instruction                | What it does                                                    | Microcode            |
+| -------------------------- | --------------------------------------------------------------- | -------------------- |
+| `SWPB <reg>`               | Swaps a register's bytes, to unpack and pack text               | `MVB` three times    |
+| `INTC <core>, <interrupt>` | Raises an interrupt on another core, to call the OS             | `CLK`, `INT`, `CUL`  |
+| `WAKE <core>`              | Ends another core's `WAIT`, or starts it if idle, from its `IP` | `CLK`, `CRUN`, `CUL` |
 
 A core is named as `RST` names it, with its `$LockCore` macro: a number, `R2`,
 or `SELF`.
@@ -431,16 +434,16 @@ assembled system code is checked in.
 
 ## Names
 
-| Name                  | Candidates                              | Avoids                                                         | Recommendation                         |
-| --------------------- | --------------------------------------- | -------------------------------------------------------------- | -------------------------------------- |
-| Byte swap             | `SWPB`, `BSWP`, `XCHB`                  | `SWP` (swap a register with a value), which it reads beside    | `SWPB`                                 |
-| Interrupt a core      | `INTC`, `CINT`, `IRQ`                   | `INT` (this core); `IRQ` is a hardware line, not an instruction | `INTC`                                 |
-| Resume a core         | `WAKE`, `RUN`, `CRUN`                   | `CRUN` (the microcode op), `RST` (resets banks)                | `WAKE`                                 |
-| OS call memory        | call block, parameter block, mailbox    | the drive's request block, CP/M's FCB                          | call block                             |
-| Console without screen | teletype, terminal, serial console      | the Windows console (the frontend), `Port`                     | teletype                               |
-| Hardware table        | machine table, system table, device table | `InstructionSet` tables, `ProgramMap`                          | machine table                          |
-| Config file           | `.ozzy`, `.ozc`, `.cfg`                 | `.oz3`, `.oza`, `.izm`                                         | `.ozzy` (`hello.ozzy`)                 |
-| Drive and disk        | drive (the device), disk (its folder)   | `MemoryBank`                                                   | both, as they were                     |
+| Name                   | Candidates                                | Avoids                                                          | Recommendation         |
+| ---------------------- | ----------------------------------------- | --------------------------------------------------------------- | ---------------------- |
+| Byte swap              | `SWPB`, `BSWP`, `XCHB`                    | `SWP` (swap a register with a value), which it reads beside     | `SWPB`                 |
+| Interrupt a core       | `INTC`, `CINT`, `IRQ`                     | `INT` (this core); `IRQ` is a hardware line, not an instruction | `INTC`                 |
+| Resume a core          | `WAKE`, `RUN`, `CRUN`                     | `CRUN` (the microcode op), `RST` (resets banks)                 | `WAKE`                 |
+| OS call memory         | call block, parameter block, mailbox      | the drive's request block, CP/M's FCB                           | call block             |
+| Console without screen | teletype, terminal, serial console        | the Windows console (the frontend), `Port`                      | teletype               |
+| Hardware table         | machine table, system table, device table | `InstructionSet` tables, `ProgramMap`                           | machine table          |
+| Config file            | `.ozzy`, `.ozc`, `.cfg`                   | `.oz3`, `.oza`, `.izm`                                          | `.ozzy` (`hello.ozzy`) |
+| Drive and disk         | drive (the device), disk (its folder)     | `MemoryBank`                                                    | both, as they were     |
 
 ## To confirm
 
