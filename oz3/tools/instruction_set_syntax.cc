@@ -5,6 +5,7 @@
 
 #include "oz3/tools/instruction_set_syntax.h"
 
+#include <bit>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -105,6 +106,56 @@ std::string_view GetRegisterName(const InstructionForm::Arg& arg, int value) {
 int GetCodeValue(const InstructionForm::Arg& arg,
                  absl::Span<const uint16_t> words) {
   return (words[0] >> arg.shift) & ((1 << arg.bits) - 1);
+}
+
+// Returns the name in a flag set with the most bits set, all of them in
+// `value`, or null if no name with any bits fits. Ties go to the first name.
+const NamedValueDef* FindFlagWithMostSetBits(const ValueSetDef& value_set,
+                                             int value) {
+  const NamedValueDef* best = nullptr;
+  int best_bits = 0;
+  for (const NamedValueDef& named_value : value_set.values) {
+    const int bits = std::popcount(named_value.value);
+    if (bits > best_bits && (named_value.value & ~value) == 0) {
+      best = &named_value;
+      best_bits = bits;
+    }
+  }
+  return best;
+}
+
+// Returns a code value argument's value as a program would write it: the first
+// name in its value set with the value, or else the number. A nonzero value of
+// a flag set is instead names joined by " | ", taking the name with the most
+// bits left in the value each time, then any bits no name has as a number.
+std::string FormatCodeValue(const ValueSetDef* value_set, int value) {
+  if (value_set == nullptr) {
+    return absl::StrCat(value);
+  }
+  if (!value_set->flags || value == 0) {
+    for (const NamedValueDef& named_value : value_set->values) {
+      if (named_value.value == value) {
+        return std::string(named_value.name);
+      }
+    }
+    return absl::StrCat(value);
+  }
+
+  // Each name taken has only bits still left, so the names share no bits.
+  std::string text;
+  int left = value;
+  while (left != 0) {
+    const NamedValueDef* flag = FindFlagWithMostSetBits(*value_set, left);
+    if (flag == nullptr) {
+      break;
+    }
+    absl::StrAppend(&text, text.empty() ? "" : " | ", flag->name);
+    left &= ~flag->value;
+  }
+  if (left != 0) {
+    absl::StrAppend(&text, text.empty() ? "" : " | ", left);
+  }
+  return text;
 }
 
 // Returns how errors name a form's source: the instruction's source, and its
@@ -280,19 +331,10 @@ std::string InstructionForm::Disassemble(absl::Span<const uint16_t> words,
       case Arg::Kind::kDwordReg:
         absl::StrAppend(&text, GetRegisterName(arg, GetCodeValue(arg, words)));
         break;
-      case Arg::Kind::kCodeValue: {
-        const int code_value = GetCodeValue(arg, words);
-        std::string value_text = absl::StrCat(code_value);
-        if (arg.value_set != nullptr) {
-          for (const NamedValueDef& value : arg.value_set->values) {
-            if (value.value == code_value) {
-              value_text = value.name;
-              break;
-            }
-          }
-        }
-        absl::StrAppend(&text, value_text);
-      } break;
+      case Arg::Kind::kCodeValue:
+        absl::StrAppend(
+            &text, FormatCodeValue(arg.value_set, GetCodeValue(arg, words)));
+        break;
       case Arg::Kind::kWord: {
         uint16_t word = words[word_index++];
         if (arg.relative) {

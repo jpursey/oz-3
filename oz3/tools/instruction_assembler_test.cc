@@ -1260,7 +1260,7 @@ TEST(InstructionAssemblerTest, ValueSetsInAnyOrder) {
       code "$r" { }
     }
     values(bits:3) Condition { NZ = 0, Z = 4, EQ = 4, O = 0x7 }
-    values(bits:4) Flags { Z = 1, O = 8 }
+    values(bits:4, flags) Flags { Z = 1, O = 8 }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
   ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
@@ -1268,6 +1268,7 @@ TEST(InstructionAssemblerTest, ValueSetsInAnyOrder) {
   ASSERT_EQ(def.value_sets.size(), 2);
   EXPECT_EQ(def.value_sets[0].name, "Condition");
   EXPECT_EQ(def.value_sets[0].size, 3);
+  EXPECT_FALSE(def.value_sets[0].flags);
   ASSERT_EQ(def.value_sets[0].values.size(), 4);
   EXPECT_EQ(def.value_sets[0].values[0].name, "NZ");
   EXPECT_EQ(def.value_sets[0].values[0].value, 0);
@@ -1279,6 +1280,7 @@ TEST(InstructionAssemblerTest, ValueSetsInAnyOrder) {
   EXPECT_EQ(def.value_sets[0].values[3].value, 7);
   EXPECT_EQ(def.value_sets[1].name, "Flags");
   EXPECT_EQ(def.value_sets[1].size, 4);
+  EXPECT_TRUE(def.value_sets[1].flags);
   ASSERT_EQ(def.value_sets[1].values.size(), 2);
   EXPECT_EQ(def.value_sets[1].values[0].name, "Z");
   EXPECT_EQ(def.value_sets[1].values[0].value, 1);
@@ -1361,6 +1363,15 @@ TEST(InstructionAssemblerTest, ValueSetBitsInvalid) {
     EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid bits value")) << bits;
     EXPECT_THAT(error.GetLocation(), AtLineCol(0, 0)) << bits;
   }
+}
+
+TEST(InstructionAssemblerTest, ValueSetFlagsBeforeBits) {
+  gb::ParseError error;
+  auto asm_set =
+      AssembleInstructionSet("values(flags, bits:4) Flags { Z = 1 }", &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("bits"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(0, 7));
 }
 
 TEST(InstructionAssemblerTest, ValueSetBitsInvalidWhereUsed) {

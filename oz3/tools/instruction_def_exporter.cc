@@ -71,7 +71,11 @@ void InstructionDefExporter::ExportValueSet(const ValueSetDef& value_set) {
   absl::StrAppend(&result_, "    {.name = \"", value_set.name,
                   "\",\n     .size = ", value_set.size,
                   ",\n     .values = ", const_prefix_, "Values_",
-                  value_set.name, "},\n");
+                  value_set.name);
+  if (value_set.flags) {
+    absl::StrAppend(&result_, ",\n     .flags = true");
+  }
+  absl::StrAppend(&result_, "},\n");
 }
 
 void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,

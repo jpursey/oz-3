@@ -130,6 +130,10 @@ class InstructionForm final {
   // assembles to the same words at the same address. `words` are its GetSize()
   // words, starting with a code word of this form.
   //
+  // A code word value is written by name where its value set has one, or as
+  // names joined by " | " for a flag set (see ValueSetDef::flags), and
+  // otherwise as a number.
+  //
   // A code word with registers ValidateCodeWordValues() rejects still runs, so
   // it is disassembled too, followed by a comment with the error, such as
   // "MVI (R1), (R1) ; MVI can't use R1 for both registers". That text doesn't

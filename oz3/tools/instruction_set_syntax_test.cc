@@ -1063,6 +1063,41 @@ TEST_F(EncodingTest, DisassembleRelative) {
   EXPECT_EQ(jpr.Disassemble({{0x0600, 0x000F}}, 0xFFFF), "JPR 0010h");
 }
 
+TEST(InstructionSetSyntaxTest, DisassembleFlags) {
+  TestDef def(R"---(
+    values(bits:4, flags) Flags {
+      Z = 1, S = 2, C = 4, NONE = 0, ZS = 3, SC = 6
+    }
+    values(bits:4, flags) Bits { A = 1, B = 2 }
+    instruction(opcode:0) SETF "$Flags" { UL; }
+    instruction(opcode:1) SETB "$Bits" { UL; }
+  )---");
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+
+  // Exact names, including 0 and names with several bits after their bits.
+  const InstructionForm* setf = syntax->GetForms("SETF")[0];
+  EXPECT_EQ(setf->Disassemble({{0x0000}}, 0), "SETF NONE");
+  EXPECT_EQ(setf->Disassemble({{0x0004}}, 0), "SETF C");
+  EXPECT_EQ(setf->Disassemble({{0x0003}}, 0), "SETF ZS");
+  EXPECT_EQ(setf->Disassemble({{0x0006}}, 0), "SETF SC");
+
+  // Names with the most bits first, then ties in the set's order, then bits
+  // no name has.
+  EXPECT_EQ(setf->Disassemble({{0x0005}}, 0), "SETF Z | C");
+  EXPECT_EQ(setf->Disassemble({{0x0007}}, 0), "SETF ZS | C");
+  EXPECT_EQ(setf->Disassemble({{0x000D}}, 0), "SETF Z | C | 8");
+  EXPECT_EQ(setf->Disassemble({{0x000F}}, 0), "SETF ZS | C | 8");
+  EXPECT_EQ(setf->Disassemble({{0x0008}}, 0), "SETF 8");
+
+  // Without a name for 0, or for any of the bits.
+  const InstructionForm* setb = syntax->GetForms("SETB")[0];
+  EXPECT_EQ(setb->Disassemble({{0x0100}}, 0), "SETB 0");
+  EXPECT_EQ(setb->Disassemble({{0x0103}}, 0), "SETB A | B");
+  EXPECT_EQ(setb->Disassemble({{0x0105}}, 0), "SETB A | 4");
+  EXPECT_EQ(setb->Disassemble({{0x010C}}, 0), "SETB 12");
+}
+
 TEST(InstructionSetSyntaxTest, DisassembleKeepsPatternSpacing) {
   TestDef def(R"---(
     instruction(opcode:0) MVQ "$r,$#5" { UL; MOV(a,C1); }

@@ -37,7 +37,7 @@ TEST(InstructionDefExporterTest, ValueSetsAndRelativeInstructions) {
   const NamedValueDef flags[] = {{"C", 4}};
   const ValueSetDef value_sets[] = {
       {.name = "Condition", .size = 3, .values = conditions},
-      {.name = "Flags", .size = 4, .values = flags},
+      {.name = "Flags", .size = 4, .values = flags, .flags = true},
   };
   const InstructionDef instructions[] = {
       {.op = 1,
@@ -68,7 +68,8 @@ constexpr oz3::ValueSetDef kTestValueSets[] = {
      .values = kTestValues_Condition},
     {.name = "Flags",
      .size = 4,
-     .values = kTestValues_Flags},
+     .values = kTestValues_Flags,
+     .flags = true},
 };
 
 constexpr oz3::InstructionDef kTestInstructions[] = {

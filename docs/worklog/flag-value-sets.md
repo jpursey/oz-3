@@ -126,7 +126,7 @@ Depends on: nothing.
 **Verify**
 - Standard checks (see CLAUDE.md).
 
-### CL2 [ ] tools: flag sets in `.izm`, the exporter, and disassembly
+### CL2 [x] tools: flag sets in `.izm`, the exporter, and disassembly
 
 Depends on: CL1.
 

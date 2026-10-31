@@ -62,7 +62,7 @@ constexpr std::string_view kParserProgram = R"---(
   }
 
   ValueSet {
-    "values" "(" "bits" ":" $bits=%int ")" $name=%ident
+    "values" "(" "bits" ":" $bits=%int ["," $flags="flags"] ")" $name=%ident
     "{" $values=NamedValue,* "}";
   }
 
@@ -296,6 +296,7 @@ bool InstructionSetAssembler::AssembleValueSet(
     return ErrorAt(parsed_value_set, "Invalid bits value: ", bits);
   }
   value_set_def.size = static_cast<uint8_t>(bits);
+  value_set_def.flags = (parsed_value_set.GetItem("flags") != nullptr);
 
   auto& named_value_defs = result_->named_value_defs_.emplace_back();
   for (const auto& parsed_value : parsed_value_set.GetItems("values")) {
