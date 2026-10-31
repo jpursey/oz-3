@@ -115,7 +115,7 @@ reads, and the round trip holds for any values.
 
 ## CLs
 
-### CL1 [ ] core: `ValueSetDef::flags`
+### CL1 [x] core: `ValueSetDef::flags`
 
 Depends on: nothing.
 

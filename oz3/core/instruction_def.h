@@ -310,8 +310,8 @@ struct NamedValueDef {
 // ("$Condition") in place of "$#", and the names are only in scope for that
 // argument.
 //
-// Only the assembler uses value sets, and checks the rules below.
-// CompileInstructionSet ignores them.
+// Only the tools use value sets, to read values by name and to write them back
+// as text, and they check the rules below. CompileInstructionSet ignores them.
 struct ValueSetDef {
   // The name of the set, which is a C identifier, unique within the
   // instruction set. It is case-sensitive, and can't be the name of another
@@ -323,6 +323,12 @@ struct ValueSetDef {
 
   // The named values. There must be at least one.
   absl::Span<const NamedValueDef> values;
+
+  // Whether the names are bits that a program combines with "|" (such as
+  // status flags), rather than one choice each (such as a condition). The
+  // tools write a value of a flag set as names joined by "|", taking the name
+  // with the most of its bits first, instead of as one name or a number.
+  bool flags = false;
 };
 
 //------------------------------------------------------------------------------
