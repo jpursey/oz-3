@@ -174,7 +174,7 @@ copy the rules from the def they are built from.
 
 ## CLs
 
-### CL1 [ ] core: register rules in InstructionDef
+### CL1 [x] core: register rules in InstructionDef
 
 Depends on: nothing.
 

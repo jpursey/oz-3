@@ -267,6 +267,21 @@ struct InstructionDef {
   Argument arg1;  // First argument definition.
   Argument arg2;  // Second argument definition.
 
+  // Registers a program can't write for each argument, which must then be a
+  // register: bit n is set if it can't be register n (R7 is bit 7, D3 is bit
+  // 3).
+  //
+  // Only the OZ-3 assembler uses these, and checks their rules (see
+  // InstructionSetSyntax). CompileInstructionSet ignores them, and a core runs
+  // any code word.
+  uint16_t arg1_excluded = 0;
+  uint16_t arg2_excluded = 0;
+
+  // If true, a program can't write the same register for both arguments,
+  // which must then be registers of the same type. Only the OZ-3 assembler
+  // uses this, as for arg1_excluded.
+  bool distinct_args = false;
+
   // The name of the macro for the macro arg, if there is one.
   std::string_view arg_macro_name;  // Empty if no macro arg.
 
@@ -316,9 +331,10 @@ struct ValueSetDef {
 // Defines a set of instructions and macros for the OZ-3 CPU.
 //
 // CompileInstructionSet checks only what cores need to run the instructions.
-// The sources, value sets, and relative marks are for the OZ-3 assembler and
-// debugger, which have rules of their own for them (see InstructionDef::source,
-// MacroCodeDef::source, and ValueSetDef). CompileInstructionSet doesn't check
+// The sources, value sets, relative marks, and register exclusions are for the
+// OZ-3 assembler and debugger, which have rules of their own for them (see
+// InstructionDef::source, InstructionDef::arg1_excluded, MacroCodeDef::source,
+// and ValueSetDef). CompileInstructionSet doesn't check
 // those rules, so an instruction set that compiles may not be one the
 // assembler can use.
 //
