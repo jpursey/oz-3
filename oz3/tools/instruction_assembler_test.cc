@@ -1567,6 +1567,75 @@ TEST(InstructionAssemblerTest, RelativeInstructionWithoutWholeArgValue) {
   }
 }
 
+TEST(InstructionAssemblerTest, RegisterRules) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(distinct, exclude_a:R7, exclude_b:R6, exclude_b:R7, opcode:3)
+        MVIR "($r), ($r)" { UL; }
+    instruction(exclude_b:SP, exclude_a:R0) MOV "$r4, $r4" { UL; }
+    instruction(exclude_a:D3) MOV.D "$R, $v" { LD(C0); UL; }
+    instruction MVI "($r), ($r)" { UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  const InstructionSetDef& def = asm_set->GetInstructionSetDef();
+  ASSERT_EQ(def.instructions.size(), 4);
+  EXPECT_EQ(def.instructions[0].op, 3);
+  EXPECT_EQ(def.instructions[0].arg1_excluded, 0x0080);
+  EXPECT_EQ(def.instructions[0].arg2_excluded, 0x00C0);
+  EXPECT_TRUE(def.instructions[0].distinct_args);
+  EXPECT_EQ(def.instructions[1].arg1_excluded, 0x0001);
+  EXPECT_EQ(def.instructions[1].arg2_excluded, 0x8000);
+  EXPECT_FALSE(def.instructions[1].distinct_args);
+  EXPECT_EQ(def.instructions[2].arg1_excluded, 0x0008);
+  EXPECT_EQ(def.instructions[2].arg2_excluded, 0);
+  EXPECT_EQ(def.instructions[3].arg1_excluded, 0);
+  EXPECT_EQ(def.instructions[3].arg2_excluded, 0);
+  EXPECT_FALSE(def.instructions[3].distinct_args);
+}
+
+TEST(InstructionAssemblerTest, RegisterRuleErrors) {
+  struct Case {
+    std::string_view instruction;
+    std::string_view message;
+    int column;
+  };
+  const Case cases[] = {
+      {"instruction(exclude_a:R7) TEST \"$#3\" { UL; }",
+       "exclude_a is for a register argument", 22},
+      {"instruction(exclude_b:R7) TEST \"$r\" { UL; }",
+       "exclude_b is for a register argument", 22},
+      {"instruction(exclude_a:R4) TEST \"$r2\" { UL; }",
+       "exclude_a: R4 isn't a register the argument can hold", 22},
+      {"instruction(exclude_a:SP) TEST \"$r\" { UL; }",
+       "exclude_a: SP isn't a register the argument can hold", 22},
+      {"instruction(exclude_a:D1) TEST \"$r\" { UL; }",
+       "exclude_a: D1 isn't a register the argument can hold", 22},
+      {"instruction(exclude_a:R1) TEST \"$R\" { UL; }",
+       "exclude_a: R1 isn't a register the argument can hold", 22},
+      {"instruction(exclude_a:r7) TEST \"$r\" { UL; }",
+       "exclude_a: r7 isn't a register the argument can hold", 22},
+      {"instruction(exclude_a:R7, exclude_a:R7) TEST \"$r\" { UL; }",
+       "exclude_a: R7 is already excluded", 36},
+      {"instruction(exclude_a:R0, exclude_a:R1) TEST \"$r1\" { UL; }",
+       "The first argument excludes every register", 0},
+      {"instruction(distinct) TEST \"$r, $#3\" { UL; }",
+       "Distinct arguments must be two registers of the same type", 0},
+      {"instruction(distinct) TEST \"$r, $R\" { UL; }",
+       "Distinct arguments must be two registers of the same type", 0},
+  };
+  for (const Case& test : cases) {
+    gb::ParseError error;
+    auto asm_set =
+        AssembleInstructionSet(std::string(test.instruction), &error);
+    EXPECT_EQ(asm_set, nullptr) << test.instruction;
+    EXPECT_THAT(error.GetMessage(), HasSubstr(test.message))
+        << test.instruction;
+    EXPECT_THAT(error.GetLocation(), AtLineCol(0, test.column))
+        << test.instruction;
+  }
+}
+
 TEST(InstructionAssemblerTest, SourceCannotUseCommentOrLabelSymbols) {
   for (std::string_view source : {"$r; $v", "@$r", "#$v"}) {
     gb::ParseError error;

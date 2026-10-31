@@ -143,6 +143,19 @@ InstructionForm::Arg::Kind GetArgKind(const Part& part) {
 // InstructionForm
 //==============================================================================
 
+int GetRegisterNumber(ArgType type, std::string_view name) {
+  int reg = -1;
+  if (type == ArgType::kWordReg) {
+    reg = CpuCore::GetWordRegFromName(name) - CpuCore::R0;
+  } else if (type == ArgType::kDwordReg) {
+    reg = CpuCore::GetDwordRegFromName(name);
+    if (reg >= CpuCore::D0) {
+      reg = (reg - CpuCore::D0) / 2;
+    }
+  }
+  return reg >= 0 ? reg : -1;
+}
+
 bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
                              std::vector<uint16_t>& words,
                              std::string* error) const {

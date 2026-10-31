@@ -63,6 +63,9 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:6, relative) JPR "$v" { LD(C0); UL; }
   instruction(opcode:7) RST "SELF, $#2" { UL; }
   instruction(opcode:8) RST.C "$#3, $#2" { UL; }
+  instruction(opcode:9, distinct, exclude_a:R7, exclude_b:R7)
+      MVIR "($r), ($r)" { UL; }
+  instruction(opcode:10, exclude_b:R7) CPIR "$r, ($r)" { UL; }
 )---";
 
 // Matches a gb::ParseError at a line and column (from 0), whose message has
@@ -455,6 +458,23 @@ TEST_F(ProgramAssemblerTest, ValueSetNames) {
 TEST_F(ProgramAssemblerTest, CodeValueTooBig) {
   EXPECT_THAT(AssembleErrors(".STACK 1\nMVQ R1, 4 + 4\n"),
               ElementsAre(IsErrorAt(1, 8, "Value 8 does not fit in 3 bits")));
+}
+
+TEST_F(ProgramAssemblerTest, RegisterRules) {
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     "MVIR (R1), (R1)\n"
+                     "MVIR (R7), (R1)\n"
+                     "MVIR (R1), (R7)\n"
+                     "CPIR R7, (R7)\n"),
+      ElementsAre(IsErrorAt(1, 12, "MVIR can't use R1 for both registers"),
+                  IsErrorAt(2, 6, "MVIR can't use R7 for this argument"),
+                  IsErrorAt(3, 12, "MVIR can't use R7 for this argument"),
+                  IsErrorAt(4, 10, "CPIR can't use R7 for this argument")));
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            "MVIR (R1), (R2)\n"
+                            "CPIR R7, (R6)\n"),
+              ElementsAre(0x0911, 0x0A37));
 }
 
 TEST_F(ProgramAssemblerTest, Data) {

@@ -63,6 +63,31 @@ std::string GetFormText(const InstructionForm& form) {
                       form.GetPattern().empty() ? "" : " ", form.GetPattern());
 }
 
+// Returns a value for each of a form's arguments, as InstructionForm takes
+// them: the register or code word value from `args`, and 0 for each $v and $V,
+// which are evaluated separately.
+std::vector<int64_t> GetCodeWordValues(const InstructionForm& form,
+                                       absl::Span<const InstructionArg> args) {
+  std::vector<int64_t> values;
+  values.reserve(args.size());
+  for (int i = 0; i < static_cast<int>(args.size()); ++i) {
+    switch (form.GetArgs()[i].kind) {
+      case ArgKind::kWordReg:
+      case ArgKind::kDwordReg:
+        values.push_back(args[i].reg);
+        break;
+      case ArgKind::kCodeValue:
+        values.push_back(args[i].code_value);
+        break;
+      case ArgKind::kWord:
+      case ArgKind::kDword:
+        values.push_back(0);
+        break;
+    }
+  }
+  return values;
+}
+
 }  // namespace
 
 // Assembles one program, in two passes:
@@ -1002,17 +1027,14 @@ void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
     return;
   }
 
-  // Encode() checks that a code word value fits its bits too, but this says
-  // which value doesn't.
+  // Encode() validates the code word values too, but this says which value or
+  // register is at fault. The values after the code word aren't known yet.
   InstructionMatch& match = matches.front();
-  for (int i = 0; i < static_cast<int>(match.args.size()); ++i) {
-    const InstructionForm::Arg& arg = match.form->GetArgs()[i];
-    const uint32_t value = match.args[i].code_value;
-    if (arg.kind == ArgKind::kCodeValue && value >= (uint32_t{1} << arg.bits)) {
-      Error(match.args[i].value->GetToken(),
-            absl::StrCat("Value ", value, " does not fit in ", arg.bits,
-                         " bits"));
-    }
+  int arg_index = -1;
+  if (std::string error; !match.form->ValidateCodeWordValues(
+          GetCodeWordValues(*match.form, match.args), &arg_index, &error)) {
+    DCHECK_GE(arg_index, 0);
+    Error(match.args[arg_index].token, error);
   }
   Write(
       match.form->GetSize(), instruction->GetToken(),
@@ -1233,30 +1255,20 @@ void ProgramAssembler::EncodeInstruction(
   // and $V are evaluated now.
   const InstructionForm& form = *instruction.form;
   const StatementContext context(this, statement.offset, statement.scope);
-  std::vector<int64_t> values;
-  values.reserve(instruction.args.size());
+  std::vector<int64_t> values = GetCodeWordValues(form, instruction.args);
   bool ok = true;
   for (int i = 0; i < static_cast<int>(instruction.args.size()); ++i) {
-    const InstructionArg& arg = instruction.args[i];
-    switch (form.GetArgs()[i].kind) {
-      case ArgKind::kWordReg:
-      case ArgKind::kDwordReg:
-        values.push_back(arg.reg);
-        break;
-      case ArgKind::kCodeValue:
-        values.push_back(arg.code_value);
-        break;
-      case ArgKind::kWord:
-      case ArgKind::kDword: {
-        const std::optional<uint32_t> value = Evaluate(
-            *arg.value,
-            form.GetArgs()[i].kind == ArgKind::kWord ? ExpressionWidth::kWord
-                                                     : ExpressionWidth::kDword,
-            context);
-        ok = ok && value.has_value();
-        values.push_back(value.value_or(0));
-      } break;
+    const ArgKind kind = form.GetArgs()[i].kind;
+    if (kind != ArgKind::kWord && kind != ArgKind::kDword) {
+      continue;
     }
+    const std::optional<uint32_t> value =
+        Evaluate(*instruction.args[i].value,
+                 kind == ArgKind::kWord ? ExpressionWidth::kWord
+                                        : ExpressionWidth::kDword,
+                 context);
+    ok = ok && value.has_value();
+    values[i] = value.value_or(0);
   }
   std::string error;
   if (ok && !form.Encode(values, statement.offset, words, &error)) {

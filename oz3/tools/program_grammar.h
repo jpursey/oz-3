@@ -30,6 +30,9 @@ namespace oz3 {
 // One argument of a matched form, for one of InstructionForm::GetArgs(), in
 // the same order.
 struct InstructionArg {
+  // The argument's first token, for errors.
+  gb::Token token;
+
   // For a register, its number, as the code word holds it (R1 is 1, D1 is 1).
   int reg = 0;
 
@@ -151,7 +154,7 @@ class ProgramGrammar final {
   // it was.
   //
   // `parser` must have parsed `line` from `content`, with GetParserProgram(),
-  // and its lexer must outlive the matches' expressions.
+  // and its lexer must outlive the matches' tokens and expressions.
   bool MatchInstruction(gb::Parser& parser, gb::LexerContentId content,
                         const gb::ParsedItem& line,
                         const ExpressionContext& context,

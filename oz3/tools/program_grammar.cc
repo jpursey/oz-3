@@ -238,12 +238,13 @@ std::vector<InstructionArg> GetArgs(const gb::Lexer& lexer,
     const gb::ParsedItem& arg_item = *item.GetItem(GetArgName(i));
     const std::string_view text = arg_item.GetToken().GetString();
     InstructionArg& arg = args.emplace_back();
+    arg.token = arg_item.GetToken();
     switch (form.GetArgs()[i].kind) {
       case ArgKind::kWordReg:
-        arg.reg = CpuCore::GetWordRegFromName(text) - CpuCore::R0;
+        arg.reg = GetRegisterNumber(ArgType::kWordReg, text);
         break;
       case ArgKind::kDwordReg:
-        arg.reg = (CpuCore::GetDwordRegFromName(text) - CpuCore::D0) / 2;
+        arg.reg = GetRegisterNumber(ArgType::kDwordReg, text);
         break;
       default:
         arg.value = Expression::Create(lexer, arg_item);

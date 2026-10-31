@@ -26,6 +26,12 @@ namespace oz3 {
 // InstructionForm
 //==============================================================================
 
+// Returns the number a code word holds for a register argument of `type`
+// (kWordReg or kDwordReg), from the register's name as microcode writes it:
+// "R1" and "D1" are 1, and "SP" is 15. Returns -1 if `name` isn't a register of
+// that type. The number may not fit an argument with fewer bits.
+int GetRegisterNumber(ArgType type, std::string_view name);
+
 // One form of an instruction: the instruction with one of its macro's codes,
 // or the instruction alone if it has no macro. This is one way a program can
 // write the instruction.

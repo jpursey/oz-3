@@ -138,6 +138,21 @@ void ExpectForm(const InstructionForm& form, std::string_view pattern,
 // Forms
 //==============================================================================
 
+TEST(InstructionSetSyntaxTest, GetRegisterNumber) {
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, "R0"), 0);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, "R7"), 7);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, "BC"), 8);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, "SP"), 15);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kDwordReg, "D0"), 0);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kDwordReg, "D3"), 3);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, "D1"), -1);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, "r1"), -1);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kWordReg, ""), -1);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kDwordReg, "R1"), -1);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kDwordReg, "XYZ"), -1);
+  EXPECT_EQ(GetRegisterNumber(ArgType::kImmediate, "R1"), -1);
+}
+
 TEST(InstructionSetSyntaxTest, InstructionWithoutArguments) {
   TestDef def(kInstructionSet);
   auto syntax = InstructionSetSyntax::Create(def.GetDef());

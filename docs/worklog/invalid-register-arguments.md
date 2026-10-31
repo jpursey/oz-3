@@ -208,13 +208,16 @@ Depends on: CL1.
   dword arguments, a macro code's register being unaffected, and `$v` and `$V`
   being ignored; the exporter writing the fields only when set.
 
-### CL3 [ ] tools: register rules in .izm and programs
+### CL3 [x] tools: register rules in .izm and programs
 
 Depends on: CL2.
 
 - `InstructionAssembler`: the option syntax, and its errors.
 - `ProgramAssembler`: the error at the register, with `InstructionArg`'s
-  token.
+  token, from `ValidateCodeWordValues` in place of its own check that code
+  values fit.
+- `GetRegisterNumber` (in `instruction_set_syntax.h`): a register's number
+  from its name, which the `.izm` options and program matching share.
 
 **Verify**
 - Standard checks.

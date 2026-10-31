@@ -99,6 +99,9 @@ constexpr std::string_view kParserProgram = R"---(
   InstructionConfig {
     "opcode" ":" $opcode=%int;
     $relative="relative";
+    $distinct="distinct";
+    "exclude_a" ":" $exclude_a=%ident;
+    "exclude_b" ":" $exclude_b=%ident;
   }
 
   MicroCode {
@@ -191,6 +194,9 @@ class InstructionSetAssembler {
   bool AssembleInstructionCodeSource(const gb::ParsedItem& parsed_instruction,
                                      std::string_view source,
                                      InstructionDef& instruction_def);
+  bool AssembleExcludedRegisters(const gb::ParsedItem& parsed_instruction,
+                                 std::string_view option, const Argument& arg,
+                                 uint16_t& excluded);
   bool AssembleMicrocode(absl::Span<const gb::ParsedItem> parsed_micro_codes,
                          CodeTokens& code_tokens, std::string& code_string,
                          Argument* macro_arg = nullptr,
@@ -504,7 +510,13 @@ bool InstructionSetAssembler::AssembleInstruction(
 
   instruction_def.source = AddString(parsed_instruction.GetString("source"));
   if (!AssembleInstructionCodeSource(parsed_instruction, instruction_def.source,
-                                     instruction_def)) {
+                                     instruction_def) ||
+      !AssembleExcludedRegisters(parsed_instruction, "exclude_a",
+                                 instruction_def.arg1,
+                                 instruction_def.arg1_excluded) ||
+      !AssembleExcludedRegisters(parsed_instruction, "exclude_b",
+                                 instruction_def.arg2,
+                                 instruction_def.arg2_excluded)) {
     return false;
   }
   Argument* macro_arg = nullptr;
@@ -527,6 +539,8 @@ bool InstructionSetAssembler::AssembleInstruction(
 
   instruction_def.relative =
       (parsed_instruction.GetItem("relative") != nullptr);
+  instruction_def.distinct_args =
+      (parsed_instruction.GetItem("distinct") != nullptr);
   return true;
 }
 
@@ -545,6 +559,35 @@ bool InstructionSetAssembler::AssembleInstructionCodeSource(
   }
   if (args.size() > 1) {
     instruction_def.arg2 = args[1];
+  }
+  return true;
+}
+
+// Each register an option names is held in `excluded`, as its number in `arg`.
+// The registers are validated here, so each error is at its name, and
+// InstructionSetSyntax validates the rest of the rules, such as leaving the
+// argument at least one register.
+bool InstructionSetAssembler::AssembleExcludedRegisters(
+    const gb::ParsedItem& parsed_instruction, std::string_view option,
+    const Argument& arg, uint16_t& excluded) {
+  for (const gb::ParsedItem& parsed_register :
+       parsed_instruction.GetItems(option)) {
+    if (arg.type != ArgType::kWordReg && arg.type != ArgType::kDwordReg) {
+      return ErrorAt(parsed_register, option,
+                     " is for a register argument, but the argument isn't a "
+                     "register");
+    }
+    const std::string_view name = parsed_register.GetToken().GetString();
+    const int reg = GetRegisterNumber(arg.type, name);
+    if (reg < 0 || reg >= (1 << arg.size)) {
+      return ErrorAt(parsed_register, option, ": ", name,
+                     " isn't a register the argument can hold");
+    }
+    if ((excluded & (1 << reg)) != 0) {
+      return ErrorAt(parsed_register, option, ": ", name,
+                     " is already excluded");
+    }
+    excluded |= static_cast<uint16_t>(1 << reg);
   }
   return true;
 }
