@@ -150,7 +150,7 @@ TEST_F(ProgramLexerTest, NamesLikeRegistersAreIdentifiers) {
 
 TEST_F(ProgramLexerTest, LocalLabels) {
   gb::Token token = LexOne("@loop");
-  EXPECT_TRUE(token.IsUser(kTokenLocalLabel, "@loop"));
+  EXPECT_TRUE(token.IsUser(kTokenLocalLabel, "@LOOP"));
   EXPECT_EQ(lexer_->GetTokenText(token), "@loop");
 }
 

@@ -552,11 +552,10 @@ TEST_F(ProgramAssemblerTest, MoreThanOneFormMatches) {
 TEST_F(ProgramAssemblerTest, LineErrors) {
   EXPECT_THAT(AssembleErrors(".STACK 1\nFOO R1\n"),
               ElementsAre(IsErrorAt(1, 0, "Unknown instruction FOO")));
-  EXPECT_THAT(
-      AssembleErrors(".STACK 1\nADD . W R1, R2\n"),
-      ElementsAre(IsErrorAt(1, 4, "can't have a space around its '.'")));
+  EXPECT_THAT(AssembleErrors(".STACK 1\nADD . W R1, R2\n"),
+              ElementsAre(IsErrorAt(1, 0, "No form of ADD matches")));
   EXPECT_THAT(AssembleErrors(".STACK 1\n. DW 1\n"),
-              ElementsAre(IsErrorAt(1, 2, "can't have a space before it")));
+              ElementsAre(IsErrorAt(1, 2, "with no space after the '.'")));
   EXPECT_THAT(AssembleErrors(".STACK 1\n.FOO 1\n"),
               ElementsAre(IsErrorAt(1, 1, "Unknown directive")));
   EXPECT_THAT(AssembleErrors(".STACK 1\n.CONST X 5\n"),

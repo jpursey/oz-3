@@ -39,7 +39,8 @@ constexpr std::string_view kLineComments[] = {";"};
 constexpr gb::LexerConfig::UserToken kUserTokens[] = {
     {.name = "local label",
      .type = kTokenLocalLabel,
-     .regex = R"-((@[a-zA-Z_]\w*))-"},
+     .regex = R"-((@[a-zA-Z_]\w*))-",
+     .value_case = gb::LexerCase::kUpper},
 };
 
 // The registers a program can name, which are the word registers R0 to SP,

@@ -14,7 +14,6 @@
 
 #include "absl/log/check.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "gb/parse/lexer.h"
@@ -55,8 +54,7 @@ constexpr std::string_view kParserRules = R"---(
   ExpressionValue {
     $number=%int;
     $string=%string;
-    $name=%ident;
-    $local_label=%local_label;
+    $name=(%ident | %local_label);
     $offset='$';
     '(' $group=Expression ')';
   }
@@ -158,9 +156,6 @@ int Expression::AddValueNode(const gb::ParsedItem& item) {
   } else if (item.GetItem("name") != nullptr) {
     node.kind = NodeKind::kSymbol;
     node.name = node.token.GetString();
-  } else if (item.GetItem("local_label") != nullptr) {
-    node.kind = NodeKind::kSymbol;
-    node.name = absl::AsciiStrToUpper(node.token.GetString());
   } else {
     DCHECK(item.GetItem("offset") != nullptr);
     node.kind = NodeKind::kOffset;

@@ -26,14 +26,12 @@
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "gb/parse/lexer.h"
-#include "gb/parse/lexer_config.h"
 #include "gb/parse/lexer_program.h"
 #include "gb/parse/parse_error.h"
 #include "gb/parse/parse_result.h"
 #include "gb/parse/parse_types.h"
 #include "gb/parse/parser.h"
 #include "gb/parse/parser_program.h"
-#include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_def.h"
@@ -49,13 +47,13 @@ namespace {
 using Part = SourcePattern::Part;
 using ArgKind = InstructionForm::Arg::Kind;
 
-// The assembler's rules, which every instruction set's grammar has, besides
-// ArgToken, which is built from the program lexer's tokens.
+// The assembler's rules, which every instruction set's grammar has.
 //
 // Each directive is an alternative in Directive, whose names are promoted to
 // it. The parser reports the error that got furthest into the line, so a
 // directive with a bad operand gets that operand's error, and an unknown one
-// gets Directive's.
+// gets Directive's. A '.' followed by a space gets the same error whether a
+// name or the end of the line comes after it.
 constexpr std::string_view kRules = R"---(
   Line {
     [$label=Label] [$directive=Directive | $instruction=Instruction]
@@ -70,10 +68,11 @@ constexpr std::string_view kRules = R"---(
     %end;
   }
   Directive {
-    $dot='.' (<DirectiveInclude> | <DirectiveConst> | <DirectiveDw> |
-              <DirectiveDd> | <DirectiveDs> | <DirectiveStack> |
-              <DirectiveInstances> | <DirectiveBank> |
-              <DirectiveSegment>):"Unknown directive";
+    '.' ^%here:"Expected a directive name, with no space after the '.'"
+        (<DirectiveInclude> | <DirectiveConst> | <DirectiveDw> |
+         <DirectiveDd> | <DirectiveDs> | <DirectiveStack> |
+         <DirectiveInstances> | <DirectiveBank> |
+         <DirectiveSegment>):"Unknown directive";
   }
   DirectiveInclude {
     $directive="INCLUDE" $path=%string;
@@ -111,13 +110,15 @@ constexpr std::string_view kRules = R"---(
     "BANK" '(' $bank=%ident ')';
   }
   Instruction {
-    $name=%ident [$dot='.' $extension=%ident] $args=ArgToken*;
+    $name=%ident [^'.' $extension=^%ident] $args=%here ArgToken*;
+  }
+  ArgToken {
+    !(%linebreak | '(' | ')' | '[' | ']' | '{' | '}');
+    '(' ArgToken* ')';
+    '[' ArgToken* ']';
+    '{' ArgToken* '}';
   }
 )---";
-
-// Brackets, which an instruction's arguments must balance.
-constexpr std::string_view kOpenBrackets = "([{";
-constexpr std::string_view kCloseBrackets = ")]}";
 
 // Register sizes have a rule each, named by kind and bits ("WordReg3"), of
 // the registers that many bits can hold.
@@ -134,30 +135,6 @@ std::shared_ptr<const gb::LexerProgram> GetLexerProgram() {
 // backslash escapes, and hex escapes for any other character.
 std::string Quote(std::string_view text) {
   return absl::StrCat("\"", absl::CHexEscape(text), "\"");
-}
-
-// Returns the ArgToken rule: any token of the program lexer but the end of a
-// line, with brackets balanced.
-std::string GetArgTokenRule() {
-  const gb::LexerConfig& config = GetProgramLexerConfig();
-  std::string rule = "ArgToken {\n";
-  for (int i = 0; i < static_cast<int>(kOpenBrackets.size()); ++i) {
-    absl::StrAppend(&rule, "  ", Quote(kOpenBrackets.substr(i, 1)),
-                    " ArgToken* ", Quote(kCloseBrackets.substr(i, 1)), ";\n");
-  }
-  absl::StrAppend(&rule, "  %int; %string; %ident; %local_label;\n");
-  for (std::string_view keyword : config.keywords) {
-    absl::StrAppend(&rule, "  ", Quote(keyword), ";\n");
-  }
-  for (const gb::Symbol& symbol : config.symbols) {
-    const std::string_view text = symbol.GetString();
-    if (text.size() != 1 || (!absl::StrContains(kOpenBrackets, text) &&
-                             !absl::StrContains(kCloseBrackets, text))) {
-      absl::StrAppend(&rule, "  ", Quote(text), ";\n");
-    }
-  }
-  absl::StrAppend(&rule, "}\n");
-  return rule;
 }
 
 std::string GetRegisterRules() {
@@ -178,17 +155,6 @@ std::string GetRegisterRules() {
     return CpuCore::GetDwordRegName(CpuCore::D0 + i * 2);
   });
   return rules;
-}
-
-// Returns true if `after` starts where `before` ends, on the same line.
-bool IsAdjacent(const gb::Lexer& lexer, const gb::Token& before,
-                const gb::Token& after) {
-  const gb::LexerLocation before_location = lexer.GetTokenLocation(before);
-  const gb::LexerLocation after_location = lexer.GetTokenLocation(after);
-  return after_location.line == before_location.line &&
-         after_location.column ==
-             before_location.column +
-                 static_cast<int>(lexer.GetTokenText(before).size());
 }
 
 // Returns the name a form's rule gives the expression of its literal number
@@ -354,7 +320,7 @@ absl::StatusOr<std::unique_ptr<ProgramGrammar>> ProgramGrammar::Create(
   auto grammar = absl::WrapUnique(new ProgramGrammar(&syntax));
   std::string text =
       absl::StrCat(kProgramParserTokens, Expression::GetParserRules(), kRules,
-                   GetArgTokenRule(), GetRegisterRules());
+                   GetRegisterRules());
 
   // Forms written the same way share a rule.
   absl::flat_hash_map<std::string, int> rules_by_body;
@@ -380,59 +346,35 @@ absl::StatusOr<std::unique_ptr<ProgramGrammar>> ProgramGrammar::Create(
   return grammar;
 }
 
-std::string_view ProgramGrammar::GetDirectiveName(
-    const gb::Lexer& lexer, const gb::ParsedItem& directive,
-    gb::ParseError& error) {
-  const gb::Token name = directive.GetToken("directive");
-  if (!IsAdjacent(lexer, directive.GetToken("dot"), name)) {
-    error = gb::ParseError(lexer.GetTokenLocation(name),
-                           "A directive's name can't have a space before it");
-    return {};
-  }
-  return name.GetString();
-}
-
 std::string_view ProgramGrammar::GetInstructionName(
-    const gb::Lexer& lexer, const gb::ParsedItem& instruction,
-    gb::ParseError& error) {
+    const gb::Lexer& lexer, const gb::ParsedItem& instruction) {
   const std::string_view name =
       lexer.GetTokenText(instruction.GetToken("name"));
   const gb::ParsedItem* extension = instruction.GetItem("extension");
   if (extension == nullptr) {
     return name;
   }
-  const gb::Token dot = instruction.GetToken("dot");
-  for (auto [before, after] : {std::pair{instruction.GetToken("name"), dot},
-                               std::pair{dot, extension->GetToken()}}) {
-    if (!IsAdjacent(lexer, before, after)) {
-      error = gb::ParseError(
-          lexer.GetTokenLocation(after),
-          "An instruction name can't have a space around its '.'");
-      return {};
-    }
-  }
 
-  // The tokens are adjacent, so the name is the text from the first to the
-  // end of the last.
+  // The grammar allows no space around the '.', so the name is the text from
+  // the first token to the end of the last.
   const std::string_view extension_text =
       lexer.GetTokenText(extension->GetToken());
+  DCHECK(extension_text.data() == name.data() + name.size() + 1)
+      << "Instruction name and extension aren't \"" << name << "."
+      << extension_text << "\"";
   return std::string_view(name.data(),
                           extension_text.data() + extension_text.size());
 }
 
 bool ProgramGrammar::MatchInstruction(gb::Parser& parser,
                                       gb::LexerContentId content,
-                                      const gb::ParsedItem& line,
+                                      const gb::ParsedItem& instruction,
                                       const ExpressionContext& context,
                                       std::vector<InstructionMatch>& matches,
                                       gb::ParseError& error) const {
   matches.clear();
   gb::Lexer& lexer = parser.GetLexer();
-  const gb::ParsedItem& instruction = *line.GetItem("instruction");
-  const std::string_view name = GetInstructionName(lexer, instruction, error);
-  if (name.empty()) {
-    return false;
-  }
+  const std::string_view name = GetInstructionName(lexer, instruction);
   absl::Span<const InstructionForm* const> forms = syntax_->GetForms(name);
   if (forms.empty()) {
     error = gb::ParseError(lexer.GetTokenLocation(instruction.GetToken()),
@@ -440,11 +382,7 @@ bool ProgramGrammar::MatchInstruction(gb::Parser& parser,
     return false;
   }
 
-  // The arguments start at the first token after the name, which is the end
-  // of the line if there are none.
-  absl::Span<const gb::ParsedItem> args = instruction.GetItems("args");
-  const gb::Token args_token =
-      args.empty() ? line.GetToken("end") : args.front().GetToken();
+  const gb::Token args_token = instruction.GetToken("args");
   const gb::Token next_token = lexer.NextToken(content, false);
 
   // Each rule is parsed once, for every form that shares it.

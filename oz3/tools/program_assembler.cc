@@ -24,7 +24,6 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
@@ -317,7 +316,8 @@ class ProgramAssembler final {
   void ReadBank(const gb::ParsedItem& directive);
   void ReadSegment(const gb::ParsedItem& directive);
   void ReadSegmentRole(const gb::Token& role);
-  void ReadInstruction(gb::LexerContentId content, const gb::ParsedItem& line);
+  void ReadInstruction(gb::LexerContentId content,
+                       const gb::ParsedItem& instruction);
 
   // Adds a statement at the current offset, which writes `size` words.
   void AddStatement(const gb::Token& token, StatementContents contents,
@@ -747,8 +747,9 @@ void ProgramAssembler::ReadLine(gb::LexerContentId content,
   if (const gb::ParsedItem* directive = line.GetItem("directive");
       directive != nullptr) {
     ReadDirective(*directive);
-  } else if (line.GetItem("instruction") != nullptr) {
-    ReadInstruction(content, line);
+  } else if (const gb::ParsedItem* instruction = line.GetItem("instruction");
+             instruction != nullptr) {
+    ReadInstruction(content, *instruction);
   }
 }
 
@@ -761,16 +762,12 @@ void ProgramAssembler::ReadLabel(const gb::ParsedItem& label) {
     return;
   }
   const gb::Token token = label.GetToken("local_label");
-  DefineLabel(token, absl::AsciiStrToUpper(token.GetString()));
+  DefineLabel(token, token.GetString());
 }
 
 void ProgramAssembler::ReadDirective(const gb::ParsedItem& directive) {
-  gb::ParseError error;
-  const std::string_view name =
-      ProgramGrammar::GetDirectiveName(GetLexer(), directive, error);
-  if (name.empty()) {
-    AddError(std::move(error));
-  } else if (name == "INCLUDE") {
+  const std::string_view name = directive.GetString("directive");
+  if (name == "INCLUDE") {
     ReadInclude(directive);
   } else if (name == "CONST") {
     ReadConst(directive);
@@ -995,20 +992,19 @@ void ProgramAssembler::ReadSegmentRole(const gb::Token& role) {
 }
 
 void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
-                                       const gb::ParsedItem& line) {
+                                       const gb::ParsedItem& instruction) {
   std::vector<InstructionMatch> matches;
   gb::ParseError error;
   if (!grammar_->MatchInstruction(
-          *parser_, content, line,
+          *parser_, content, instruction,
           StatementContext(this, GetSegment().reserved_size, scope_), matches,
           error)) {
     AddError(std::move(error));
     return;
   }
-  const gb::ParsedItem* instruction = line.GetItem("instruction");
   if (matches.size() != 1) {
     const std::string_view name =
-        ProgramGrammar::GetInstructionName(GetLexer(), *instruction, error);
+        ProgramGrammar::GetInstructionName(GetLexer(), instruction);
     std::vector<const InstructionForm*> forms;
     std::string message;
     if (matches.empty()) {
@@ -1023,7 +1019,7 @@ void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
     for (const InstructionForm* form : forms) {
       absl::StrAppend(&message, "\n  ", GetFormText(*form));
     }
-    Error(instruction->GetToken(), message);
+    Error(instruction.GetToken(), message);
     return;
   }
 
@@ -1037,7 +1033,7 @@ void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
     Error(match.args[arg_index].token, error);
   }
   Write(
-      match.form->GetSize(), instruction->GetToken(),
+      match.form->GetSize(), instruction.GetToken(),
       InstructionStatement{.form = match.form, .args = std::move(match.args)});
 }
 

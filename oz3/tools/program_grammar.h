@@ -83,13 +83,17 @@ class ProgramGrammar final {
   // read. A line's items are:
   //   $label        Optional: $name (%ident) or $local_label (%local_label),
   //                 then ':'.
-  //   $directive    Optional: '.' as $dot, then a directive (see below).
+  //   $directive    Optional: '.', then with no space after it, a directive
+  //                 (see below).
   //   $instruction  Optional, if there is no directive: $name (%ident), then
-  //                 optionally '.' as $dot and $extension (%ident), then $args,
-  //                 every token to the end of the line, with brackets balanced.
+  //                 optionally '.' and $extension (%ident) with no space
+  //                 around the '.', then any tokens to the end of the line,
+  //                 with brackets balanced. $args (%here) is the first of
+  //                 them, or the line's end if there are none.
   //   $end          The line break, or the end of the content.
   //
-  // A directive's name is $directive, and its operands are:
+  // A directive's name is $directive, in upper case ("CONST"), and its
+  // operands are:
   //   INCLUDE    $path (%string)
   //   CONST      $name (%ident) '=' $value
   //   DW         $items, one or more separated by commas
@@ -115,28 +119,19 @@ class ProgramGrammar final {
   ProgramGrammar& operator=(const ProgramGrammar&) = delete;
   ~ProgramGrammar() = default;
 
-  // Returns the name of a line's directive, in upper case ("CONST"). `lexer`
-  // holds its tokens, and the name is valid as long as it is. Returns an empty
-  // string and sets `error` if there is a space between the '.' and the name.
-  static std::string_view GetDirectiveName(const gb::Lexer& lexer,
-                                           const gb::ParsedItem& directive,
-                                           gb::ParseError& error);
-
   // Returns the name of a line's instruction as written ("ADD" or "add.w"),
   // which InstructionSetSyntax::GetForms() looks up ignoring case. `lexer`
-  // holds its tokens, and the name is a view of its text. Returns an empty
-  // string and sets `error` if there is a space around its '.'.
+  // holds its tokens, and the name is a view of its text.
   static std::string_view GetInstructionName(const gb::Lexer& lexer,
-                                             const gb::ParsedItem& instruction,
-                                             gb::ParseError& error);
+                                             const gb::ParsedItem& instruction);
 
   // Returns the parser program, for a gb::Parser to parse with.
   std::shared_ptr<const gb::ParserProgram> GetParserProgram() const {
     return program_;
   }
 
-  // Matches the instruction of a kLineRule match, `line`, against each of its
-  // name's forms, from its first argument to the end of the line. No value
+  // Matches `instruction`, a kLineRule match's $instruction, against each of
+  // its name's forms, from its first argument to the end of the line. No value
   // matches an expression in brackets as a whole.
   //
   // A form's first pass values (its code word values, and its literal numbers)
@@ -147,16 +142,16 @@ class ProgramGrammar final {
   // SELF is a symbol.
   //
   // Returns true and sets `matches` to every form that matches, which may be
-  // none. Returns false and sets `error` if the instruction's name has an
-  // error (see GetInstructionName), or is no instruction's, or if no form
-  // matches, but one would have if not for a first pass value with an error or
-  // a symbol that isn't defined. Either way, the parser's lexer is left where
-  // it was.
+  // none. Returns false and sets `error` if the instruction's name is no
+  // instruction's, or if no form matches, but one would have if not for a
+  // first pass value with an error or a symbol that isn't defined. Either way,
+  // the parser's lexer is left where it was.
   //
-  // `parser` must have parsed `line` from `content`, with GetParserProgram(),
-  // and its lexer must outlive the matches' tokens and expressions.
+  // `parser` must have parsed `instruction` from `content`, with
+  // GetParserProgram(), and its lexer must outlive the matches' tokens and
+  // expressions.
   bool MatchInstruction(gb::Parser& parser, gb::LexerContentId content,
-                        const gb::ParsedItem& line,
+                        const gb::ParsedItem& instruction,
                         const ExpressionContext& context,
                         std::vector<InstructionMatch>& matches,
                         gb::ParseError& error) const;

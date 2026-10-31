@@ -97,29 +97,6 @@ Files), but the assembler always gives a program at least one: `.INSTANCES` is
 `.INSTANCES 0`), which a program with no code or stack segment could, for data
 an operating system loads for programs to share.
 
-## Program grammar on newer Game Bits parser features
-
-- **Layers:** tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Game Bits *Negated rule items and position markers*,
-  *Adjacent rule items*, and *Case of user tokens*
-- **Background:** `docs/worklog/program-assembler.md` (`ProgramGrammar`)
-
-`ProgramGrammar` works around three things the Game Bits parser and lexer
-can't yet say, which each of those items adds:
-- An instruction's arguments are any tokens to the end of the line, with
-  brackets balanced, which needs a generated `ArgToken` rule of every symbol
-  and keyword. A negated rule item ("any token but a line break or closing
-  bracket") makes it a fixed rule, and a position marker names where the
-  arguments start, even when there are none.
-- A directive's name and an instruction's extension can't have spaces around
-  their `.`, which `GetDirectiveName` and `GetInstructionName` check by token
-  positions (`IsAdjacent`). Adjacent rule items put it in the grammar.
-- Local label tokens keep their case, so `Expression` and the assembler turn
-  their names to upper case themselves. A per user token case option lets the
-  lexer do it.
-
 ## Instruction set identity in program files
 
 - **Layers:** tools, wiki

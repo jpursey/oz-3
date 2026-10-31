@@ -19,8 +19,7 @@
 namespace oz3 {
 
 // The token type of a local label, such as "@loop". Its value is the whole
-// token as written, with the "@". Unlike an identifier, it isn't turned to
-// upper case, so code that names local labels by their value does that itself.
+// token turned to upper case, with the "@" ("@LOOP"), as an identifier's is.
 inline constexpr gb::TokenType kTokenLocalLabel = gb::kTokenUser + 0;
 
 // Declares the program lexer's user tokens for a parser program, as
@@ -38,7 +37,7 @@ static_assert(kTokenLocalLabel == gb::kTokenUser + 0);
 //   R7, BC, BS, BD, BE, MB, IP, FP, SP, and D0 to D3) are keywords in any
 //   case, so they are never identifiers.
 // - Strings in single or double quotes, with a quote inside doubled.
-// - Local labels (kTokenLocalLabel).
+// - Local labels (kTokenLocalLabel), turned to upper case.
 // - Comments from ';' to the end of the line, and line breaks as tokens.
 const gb::LexerConfig& GetProgramLexerConfig();
 

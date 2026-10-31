@@ -65,6 +65,7 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:10) RST.C "$#3, $#2" { UL; }
   instruction(opcode:11) BIT "$r, $m" { $Bit; MOV(a,r); }
   instruction(opcode:12) OUTQ "$#3, 1" { UL; }
+  instruction(opcode:13) DOT ".$r" { UL; }
 )---";
 
 // Symbols by name.
@@ -145,9 +146,10 @@ class ProgramGrammarTest : public ::testing::Test {
   bool MatchInstruction(std::string_view text, gb::ParseError& error) {
     line_ = std::make_unique<gb::ParseResult>(ParseLine(text));
     CHECK(line_->IsOk()) << text;
-    CHECK((*line_)->GetItem("instruction") != nullptr) << text;
-    return grammar_->MatchInstruction(*parser_, content_, **line_, context_,
-                                      matches_, error);
+    const gb::ParsedItem* instruction = (*line_)->GetItem("instruction");
+    CHECK(instruction != nullptr) << text;
+    return grammar_->MatchInstruction(*parser_, content_, *instruction,
+                                      context_, matches_, error);
   }
 
   // Matches the instruction of the line `text`, and returns the forms it
@@ -224,7 +226,7 @@ TEST_F(ProgramGrammarTest, Lines) {
 
   line = ParseNextLine();
   ASSERT_TRUE(line.IsOk());
-  EXPECT_EQ(line->GetItem("label")->GetString("local_label"), "@next");
+  EXPECT_EQ(line->GetItem("label")->GetString("local_label"), "@NEXT");
   EXPECT_EQ(line->GetItem("instruction")->GetString("name"), "NOP");
 
   line = ParseNextLine();
@@ -330,18 +332,21 @@ TEST_F(ProgramGrammarTest, DirectiveErrors) {
 }
 
 TEST_F(ProgramGrammarTest, DirectiveNames) {
-  gb::ParseError error;
   gb::ParseResult line = ParseDirective(".Const X = 1");
-  EXPECT_EQ(ProgramGrammar::GetDirectiveName(
-                GetLexer(), *line->GetItem("directive"), error),
-            "CONST");
+  EXPECT_EQ(line->GetItem("directive")->GetString("directive"), "CONST");
 
-  line = ParseDirective(". CONST X = 1");
-  EXPECT_EQ(ProgramGrammar::GetDirectiveName(
-                GetLexer(), *line->GetItem("directive"), error),
-            "");
-  EXPECT_THAT(error.GetMessage(), HasSubstr("space"));
-  EXPECT_EQ(error.GetLocation().column, 2);
+  // With nothing after the '.', the error is at the line's end.
+  for (auto [text, column] : {std::pair{". CONST X = 1", 2},
+                              {". 5", 2},
+                              {". ", 2},
+                              {". ; comment", 11}}) {
+    gb::ParseError error = ParseLineError(text);
+    EXPECT_THAT(error.GetMessage(),
+                HasSubstr("Expected a directive name, with no space after "
+                          "the '.'"))
+        << text;
+    EXPECT_EQ(error.GetLocation().column, column) << text;
+  }
 }
 
 TEST_F(ProgramGrammarTest, SegmentAttributes) {
@@ -366,12 +371,20 @@ TEST_F(ProgramGrammarTest, SegmentAttributes) {
 }
 
 TEST_F(ProgramGrammarTest, InstructionArgs) {
-  gb::ParseResult line = ParseLine("NOP");
-  EXPECT_THAT(line->GetItem("instruction")->GetItems("args"), IsEmpty());
+  // Without arguments, they start at the line's end.
+  for (std::string_view text : {"NOP", "NOP\n", "NOP ; comment"}) {
+    gb::ParseResult line = ParseLine(text);
+    EXPECT_EQ(line->GetItem("instruction")->GetToken("args"),
+              line->GetToken("end"))
+        << text;
+  }
 
-  // Any tokens, with brackets balanced.
-  line = ParseLine("ADD.W R1, (SP + [x * {2}]) $ @local 'a' << ~ ? :");
-  EXPECT_EQ(line->GetItem("instruction")->GetItems("args").size(), 10);
+  // Any tokens, of every kind, with brackets balanced.
+  gb::ParseResult line =
+      ParseLine("ADD.W R1, (SP + [x * {2}]) $ @local 'a' << ~ ? : .");
+  EXPECT_EQ(
+      GetLexer().GetTokenText(line->GetItem("instruction")->GetToken("args")),
+      "R1");
 
   EXPECT_EQ(ParseLineError("ADD R1, (5").GetLocation().column, 10);
   EXPECT_EQ(ParseLineError("ADD R1, 5)").GetLocation().column, 9);
@@ -387,22 +400,28 @@ TEST_F(ProgramGrammarTest, InstructionNames) {
                                 {"ADD R1", "ADD"},
                                 {"loop: ADD.W", "ADD.W"}}) {
     gb::ParseResult line = ParseLine(text);
-    gb::ParseError error;
-    EXPECT_EQ(ProgramGrammar::GetInstructionName(
-                  GetLexer(), *line->GetItem("instruction"), error),
-              expected)
-        << error.FormatMessage();
+    EXPECT_EQ(ProgramGrammar::GetInstructionName(GetLexer(),
+                                                 *line->GetItem("instruction")),
+              expected);
   }
-  for (auto [text, column] :
-       {std::pair{"ADD .W", 4}, {"ADD. W", 5}, {"ADD . W", 4}}) {
+
+  // A '.' with a space around it isn't part of the name, so it starts the
+  // arguments.
+  for (std::string_view text : {"ADD .W R1", "ADD. W R1", "ADD . W R1"}) {
     gb::ParseResult line = ParseLine(text);
-    gb::ParseError error;
-    EXPECT_EQ(ProgramGrammar::GetInstructionName(
-                  GetLexer(), *line->GetItem("instruction"), error),
-              "");
-    EXPECT_THAT(error.GetMessage(), HasSubstr("space around its '.'")) << text;
-    EXPECT_EQ(error.GetLocation().column, column) << text;
-    EXPECT_EQ(MatchError(text).GetLocation().column, column) << text;
+    const gb::ParsedItem* instruction = line->GetItem("instruction");
+    EXPECT_EQ(ProgramGrammar::GetInstructionName(GetLexer(), *instruction),
+              "ADD")
+        << text;
+    EXPECT_EQ(GetLexer().GetTokenText(instruction->GetToken("args")), ".")
+        << text;
+    EXPECT_THAT(Match(text), IsEmpty()) << text;
+  }
+
+  // So a form whose pattern starts with '.' matches after a space.
+  for (std::string_view text : {"DOT .R1", "DOT . R1"}) {
+    EXPECT_THAT(Match(text), ElementsAre("DOT .$r")) << text;
+    EXPECT_EQ(ArgReg(0), 1) << text;
   }
 }
 

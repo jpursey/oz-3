@@ -157,8 +157,9 @@ reported once, by its formatted message. A pass with errors is the last.
 The Game Bits lexer gained suffixes in either case and hex numbers that start
 with a digit (Game Bits *Number suffixes in either case, and hex numbers that
 start with a digit*), so every program number is an integer token. Three more
-Game Bits items would simplify the grammar and are in OZ-3's backlog as
-*Program grammar on newer Game Bits parser features*.
+items later simplified the grammar (*Program grammar on newer Game Bits parser
+features*): Game Bits *Negated rule items and position markers*, *Adjacent
+rule items*, and *Case of user tokens*.
 
 ### Program lexer (`program_lexer.h`)
 
@@ -167,7 +168,7 @@ Game Bits items would simplify the grammar and are in OZ-3's backlog as
   (`kIdentForceUpper`); the registers as case-insensitive keywords; single and
   double quoted strings with doubled quotes; `;` comments; line break tokens;
   and `@name` as one local label token (`kTokenLocalLabel`), whose value is
-  the whole token, `@` and all.
+  the whole token in upper case, `@` and all (`LexerCase::kUpper`).
 - `GetStringWords()` turns a string token into its words: one character per
   word for `'...'`, or two for `"..."`.
 - `FormatHexNumber()` writes a number as a program would (`0FFFFh`), which
@@ -207,11 +208,14 @@ A parser program built from an `InstructionSetSyntax`:
   of the line. A program is parsed a line at a time, as a parse stops at its
   first error, and a line that doesn't parse leaves the lexer at its start, so
   the assembler goes on at the next line.
-- **`Directive`** is `.` and an alternative for each directive with its
-  operands, including every segment attribute, so a directive with a bad
-  operand gets that operand's error.
-- **`Instruction`** is the name, an optional `.` and extension, and its
-  arguments as any tokens (`ArgToken*`), with brackets balanced.
+- **`Directive`** is `.`, no space (`^%here`, with its own error), and an
+  alternative for each directive with its operands, including every segment
+  attribute, so a directive with a bad operand gets that operand's error.
+- **`Instruction`** is the name, an optional `.` and extension with no space
+  around the `.` (`[^'.' ^%ident]`), and its arguments as any tokens to the end
+  of the line, with brackets balanced (`ArgToken*`, built on a negated item),
+  starting at a position marker (`$args=%here`). With a space around it, the
+  `.` starts the arguments, so `ADD .W` is `ADD` with no form that matches.
 - **A rule for each distinct form pattern**, from its parts in order: literal
   text, register rules by size, and an `Expression` for each value.
 
@@ -219,9 +223,7 @@ A parser program built from an `InstructionSetSyntax`:
 matches. It parses the instruction's arguments with each distinct rule of its
 name's forms (`gb::Lexer::SetNextToken`), and a parse is a match once no value
 is bracketed as a whole, and its first pass values have values, which it keeps
-(`InstructionArg::code_value`). `GetDirectiveName()` and
-`GetInstructionName()` check there are no spaces around a name's `.`, which
-the grammar can't say.
+(`InstructionArg::code_value`).
 
 **Performance**, measured for the default instruction set (1335 forms):
 
@@ -229,6 +231,10 @@ the grammar can't say.
 | -------------- | ------- | ------- | ----------------------------------------- |
 | RelWithDebInfo | 7.5 ms  | 4.9 ms  | 34 µs (`Line` is 13 µs)                   |
 | Debug          | 98 ms   | 75 ms   | 570 µs (`Line` is 170 µs)                 |
+
+These were measured with a generated `ArgToken` of every token type, symbol,
+and keyword. Trying a negated item first parses a line with long arguments
+about 40% faster (26 µs rather than 43 µs in RelWithDebInfo).
 
 Building the grammar costs less than creating the syntax, so it is built for
 each assembly. A release build reads about 30,000 instruction lines a second.
