@@ -619,6 +619,65 @@ TEST(InstructionSetSyntaxTest, RelativeWithoutWholeValue) {
               HasSubstr("has no form where $v is a whole argument"));
 }
 
+TEST(InstructionSetSyntaxTest, ExcludedRegistersOfArgumentThatIsNoRegister) {
+  TestDef def(kInstructionSet);
+  def.instructions[3].arg1_excluded = 0x0001;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "SETC");
+  EXPECT_THAT(error.message, HasSubstr("The first argument excludes registers, "
+                                       "but isn't a register"));
+}
+
+TEST(InstructionSetSyntaxTest, ExcludedRegistersOfMacroArgument) {
+  TestDef def(kInstructionSet);
+  def.instructions[1].arg2_excluded = 0x0001;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "ADD.W");
+  EXPECT_THAT(error.message, HasSubstr("The second argument excludes "
+                                       "registers, but isn't a register"));
+}
+
+TEST(InstructionSetSyntaxTest, ExcludedRegistersPastArgumentBits) {
+  TestDef def(kInstructionSet);
+  def.instructions[6].arg1_excluded = 0x0100;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "MVQ");
+  EXPECT_THAT(error.message,
+              HasSubstr("The first argument excludes a register its 3 bits "
+                        "can't hold"));
+}
+
+TEST(InstructionSetSyntaxTest, ExcludedRegistersAreEveryRegister) {
+  TestDef def(kInstructionSet);
+  def.instructions[6].arg1_excluded = 0x00FF;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "MVQ");
+  EXPECT_THAT(error.message,
+              HasSubstr("The first argument excludes every register"));
+}
+
+TEST(InstructionSetSyntaxTest, DistinctArgumentsThatAreNotTwoRegisters) {
+  TestDef def(kInstructionSet);
+  def.instructions[1].distinct_args = true;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "ADD.W");
+  EXPECT_THAT(error.message,
+              HasSubstr("Distinct arguments must be two registers of the same "
+                        "type"));
+}
+
+TEST(InstructionSetSyntaxTest, DistinctArgumentsOfDifferentTypes) {
+  TestDef def(kInstructionSet);
+  def.instructions[6].source = "$r, $R";
+  def.instructions[6].arg2 = {ArgType::kDwordReg, 2};
+  def.instructions[6].distinct_args = true;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "MVQ");
+  EXPECT_THAT(error.message,
+              HasSubstr("Distinct arguments must be two registers of the same "
+                        "type"));
+}
+
 TEST(InstructionSetSyntaxTest, SizeDisagreesWithMicrocode) {
   TestDef def(kInstructionSet);
   def.codes[0][3].source = "D($v), $v";
@@ -700,6 +759,8 @@ constexpr std::string_view kEncodingSet = R"---(
   instruction(opcode:7) PUSH "$m" {
     $GetWord; LK(STACK); ADR(SP); STP(r); LAD(SP); UL;
   }
+  instruction(opcode:8) SWP.D "$R, $R" { UL; }
+  instruction(opcode:9) POKE "$m, $r" { $GetWord; MOV(b,r); }
 )---";
 
 class EncodingTest : public ::testing::Test {
@@ -814,6 +875,142 @@ TEST_F(EncodingTest, EncodeValuesThatDontFit) {
               HasSubstr("Value -2147483649 does not fit in a dword"));
   EXPECT_THAT(EncodeError(GetForm("MOV.D"), {0}),
               HasSubstr("Expected 2 values, but got 1"));
+}
+
+TEST_F(EncodingTest, RegisterRulesAreOnInstructionArguments) {
+  def_.instructions[0].arg1_excluded = 0x0080;  // ADD.W: not R7
+  def_.instructions[1].arg1_excluded = 0x8000;  // MOV: not SP, or R7
+  def_.instructions[1].arg2_excluded = 0x0080;
+  def_.instructions[1].distinct_args = true;
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+
+  auto mov_args = GetForm("MOV").GetArgs();
+  ASSERT_EQ(static_cast<int>(mov_args.size()), 2);
+  EXPECT_EQ(mov_args[0].excluded, 0x8000);
+  EXPECT_TRUE(mov_args[0].distinct);
+  EXPECT_EQ(mov_args[1].excluded, 0x0080);
+  EXPECT_TRUE(mov_args[1].distinct);
+
+  // A macro code's register has no rules.
+  auto add_args = GetForm("ADD.W", 1).GetArgs();
+  ASSERT_EQ(static_cast<int>(add_args.size()), 3);
+  EXPECT_EQ(add_args[0].excluded, 0x0080);
+  EXPECT_FALSE(add_args[0].distinct);
+  EXPECT_EQ(add_args[1].excluded, 0);
+  EXPECT_EQ(add_args[2].excluded, 0);
+}
+
+TEST_F(EncodingTest, RegisterRulesAfterMacroArgument) {
+  def_.instructions[8].arg2_excluded = 0x0080;  // POKE: not R7
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+
+  // The macro code's register (and value) come before the instruction's own.
+  auto args = GetForm("POKE", 1).GetArgs();
+  ASSERT_EQ(static_cast<int>(args.size()), 3);
+  EXPECT_EQ(args[0].excluded, 0);
+  EXPECT_EQ(args[1].excluded, 0);
+  EXPECT_EQ(args[2].excluded, 0x0080);
+  EXPECT_THAT(EncodeError(GetForm("POKE", 1), {1, 0, 7}),
+              HasSubstr("POKE can't use R7 for this argument"));
+  EXPECT_THAT(Encode(GetForm("POKE", 1), {7, 0, 1}),
+              ElementsAre(0x091F, 0x0000));
+}
+
+TEST_F(EncodingTest, EncodeExcludedRegisters) {
+  def_.instructions[0].arg1_excluded = 0x0080;  // ADD.W: not R7
+  def_.instructions[1].arg1_excluded = 0x8000;  // MOV: not SP, or R7
+  def_.instructions[1].arg2_excluded = 0x0080;
+  def_.instructions[2].arg1_excluded = 0x0008;  // MOV.D: not D3
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+
+  EXPECT_THAT(EncodeError(GetForm("ADD.W"), {7, 1}),
+              HasSubstr("ADD.W can't use R7 for this argument"));
+  EXPECT_THAT(EncodeError(GetForm("MOV"), {15, 0}),
+              HasSubstr("MOV can't use SP for this argument"));
+  EXPECT_THAT(EncodeError(GetForm("MOV"), {0, 7}),
+              HasSubstr("MOV can't use R7 for this argument"));
+  EXPECT_THAT(EncodeError(GetForm("MOV.D"), {3, 0}),
+              HasSubstr("MOV.D can't use D3 for this argument"));
+
+  // Every other register, including a macro code's R7.
+  EXPECT_THAT(Encode(GetForm("ADD.W"), {6, 7}), ElementsAre(0x013E));
+  EXPECT_THAT(Encode(GetForm("ADD.W", 1), {1, 7, 5}),
+              ElementsAre(0x0179, 0x0005));
+  EXPECT_THAT(Encode(GetForm("MOV"), {7, 15}), ElementsAre(0x02F7));
+  EXPECT_THAT(Encode(GetForm("MOV.D"), {2, 0}),
+              ElementsAre(0x0302, 0x0000, 0x0000));
+}
+
+TEST_F(EncodingTest, EncodeDistinctRegisters) {
+  def_.instructions[1].distinct_args = true;  // MOV
+  def_.instructions[7].distinct_args = true;  // SWP.D
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+
+  EXPECT_THAT(EncodeError(GetForm("MOV"), {3, 3}),
+              HasSubstr("MOV can't use R3 for both registers"));
+  EXPECT_THAT(EncodeError(GetForm("SWP.D"), {2, 2}),
+              HasSubstr("SWP.D can't use D2 for both registers"));
+  EXPECT_THAT(Encode(GetForm("MOV"), {3, 4}), ElementsAre(0x0243));
+  EXPECT_THAT(Encode(GetForm("SWP.D"), {2, 1}), ElementsAre(0x0806));
+}
+
+TEST_F(EncodingTest, ValidateCodeWordValues) {
+  def_.instructions[1].arg2_excluded = 0x0080;  // MOV: not R7
+  def_.instructions[1].distinct_args = true;
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+  const InstructionForm& mov = GetForm("MOV");
+
+  int arg_index = -1;
+  std::string error;
+  EXPECT_FALSE(mov.ValidateCodeWordValues({{0, 7}}, &arg_index, &error));
+  EXPECT_EQ(arg_index, 1);
+  EXPECT_EQ(error, "MOV can't use R7 for this argument");
+  EXPECT_FALSE(mov.ValidateCodeWordValues({{5, 5}}, &arg_index, &error));
+  EXPECT_EQ(arg_index, 1);
+  EXPECT_EQ(error, "MOV can't use R5 for both registers");
+  EXPECT_FALSE(mov.ValidateCodeWordValues({{16, 0}}, &arg_index, &error));
+  EXPECT_EQ(arg_index, 0);
+  EXPECT_EQ(error, "Register 16 is not R0 to SP");
+  EXPECT_FALSE(mov.ValidateCodeWordValues({{5}}, &arg_index, &error));
+  EXPECT_EQ(arg_index, -1);
+  EXPECT_EQ(error, "Expected 2 values, but got 1");
+  EXPECT_FALSE(mov.ValidateCodeWordValues({{5, 5}}));
+  EXPECT_TRUE(mov.ValidateCodeWordValues({{5, 6}}));
+
+  const InstructionForm& mvq = GetForm("MVQ");
+  EXPECT_FALSE(mvq.ValidateCodeWordValues({{0, 32}}, &arg_index, &error));
+  EXPECT_EQ(arg_index, 1);
+  EXPECT_EQ(error, "Value 32 does not fit in 5 bits");
+}
+
+TEST_F(EncodingTest, ValidateCodeWordValuesIgnoresValues) {
+  EXPECT_TRUE(GetForm("ADD.W", 1).ValidateCodeWordValues({{1, 2, 0x10000}}));
+  EXPECT_TRUE(GetForm("MOV.D").ValidateCodeWordValues({{3, -0x80000001LL}}));
+}
+
+TEST_F(EncodingTest, DisassembleRegistersThatBreakRules) {
+  def_.instructions[1].arg2_excluded = 0x0080;  // MOV: not R7
+  def_.instructions[1].distinct_args = true;
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+  EXPECT_EQ(GetForm("MOV").Disassemble({{0x0233}}, 0),
+            "MOV R3, R3 ; MOV can't use R3 for both registers");
+  EXPECT_EQ(GetForm("MOV").Disassemble({{0x0270}}, 0),
+            "MOV R0, R7 ; MOV can't use R7 for this argument");
+  EXPECT_EQ(GetForm("MOV").Disassemble({{0x0234}}, 0), "MOV R4, R3");
+}
+
+TEST_F(EncodingTest, DisassembleRegistersThatBreakRulesWithValues) {
+  def_.instructions[8].arg2_excluded = 0x0080;  // POKE: not R7
+  syntax_ = InstructionSetSyntax::Create(def_.GetDef());
+  ASSERT_NE(syntax_, nullptr);
+  EXPECT_EQ(GetForm("POKE", 1).Disassemble({{0x097F, 0xFFFF}}, 0),
+            "POKE (R7 + 0FFFFh), R7 ; POKE can't use R7 for this argument");
 }
 
 TEST_F(EncodingTest, DisassembleRegisters) {

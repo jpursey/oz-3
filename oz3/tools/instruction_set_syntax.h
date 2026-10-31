@@ -56,6 +56,15 @@ class InstructionForm final {
     // from the next instruction. This is a $v that is a whole argument of a
     // relative instruction.
     bool relative = false;
+
+    // For a register, the registers a program can't write for it (bit n for
+    // register n), from the instruction's rules for its own arguments (see
+    // InstructionDef::arg1_excluded).
+    uint16_t excluded = 0;
+
+    // For a register, whether it can't be the same register as the form's
+    // other distinct argument. A form has two of these, or none.
+    bool distinct = false;
   };
 
   InstructionForm(const InstructionForm&) = default;
@@ -95,13 +104,30 @@ class InstructionForm final {
   // value for each of GetArgs(), in order: a register's number (R1 is 1, D1 is
   // 1), or a value. A relative $v's value is its target address. Returns false,
   // sets `error` if it isn't null, and appends nothing, if a value doesn't fit
-  // its argument.
+  // its argument, or fails ValidateCodeWordValues().
   bool Encode(absl::Span<const int64_t> values, uint16_t address,
               std::vector<uint16_t>& words, std::string* error = nullptr) const;
+
+  // Validates the values of the arguments in the code word: that each fits its
+  // bits, and that the registers are ones a program can write (none that its
+  // argument excludes, and not the same register for both distinct
+  // arguments). `values` has a value for each of GetArgs(), as for Encode, but
+  // those of $v and $V are ignored, and may be anything. Returns false, and
+  // sets `arg_index` to the argument at fault (the second, for distinct
+  // arguments, or -1 if there are too few or too many values) and `error` to
+  // why, for each that isn't null.
+  bool ValidateCodeWordValues(absl::Span<const int64_t> values,
+                              int* arg_index = nullptr,
+                              std::string* error = nullptr) const;
 
   // Returns the instruction at `address` as a program writes it, which
   // assembles to the same words at the same address. `words` are its GetSize()
   // words, starting with a code word of this form.
+  //
+  // A code word with registers ValidateCodeWordValues() rejects still runs, so
+  // it is disassembled too, followed by a comment with the error, such as
+  // "MVI (R1), (R1) ; MVI can't use R1 for both registers". That text doesn't
+  // assemble.
   std::string Disassemble(absl::Span<const uint16_t> words,
                           uint16_t address) const;
 

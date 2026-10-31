@@ -88,6 +88,11 @@ bool IsSameArgument(const Argument& placeholder, const Argument& def_arg) {
           (placeholder.type == ArgType::kMacro && placeholder.size == 0));
 }
 
+// Returns true if an argument's type is a word or dword register.
+bool IsRegister(ArgType type) {
+  return type == ArgType::kWordReg || type == ArgType::kDwordReg;
+}
+
 // Returns the name of the register a register argument's value is, as
 // InstructionSet::Decode decodes it.
 std::string_view GetRegisterName(const InstructionForm::Arg& arg, int value) {
@@ -149,8 +154,8 @@ bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
     }
     return false;
   };
-  if (values.size() != args_.size()) {
-    return fail("Expected ", args_.size(), " values, but got ", values.size());
+  if (!ValidateCodeWordValues(values, nullptr, error)) {
+    return false;
   }
 
   words.push_back(code_word_);
@@ -161,14 +166,6 @@ bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
       case Arg::Kind::kWordReg:
       case Arg::Kind::kDwordReg:
       case Arg::Kind::kCodeValue:
-        if (value < 0 || value >= (int64_t{1} << arg.bits)) {
-          if (arg.kind == Arg::Kind::kCodeValue) {
-            return fail("Value ", value, " does not fit in ", arg.bits,
-                        " bits");
-          }
-          return fail("Register ", value, " is not ", GetRegisterName(arg, 0),
-                      " to ", GetRegisterName(arg, (1 << arg.bits) - 1));
-        }
         words[start] |= static_cast<uint16_t>(value << arg.shift);
         break;
       case Arg::Kind::kWord: {
@@ -190,6 +187,53 @@ bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
         words.push_back(static_cast<uint16_t>(dword));
         words.push_back(static_cast<uint16_t>(dword >> 16));
       } break;
+    }
+  }
+  return true;
+}
+
+bool InstructionForm::ValidateCodeWordValues(absl::Span<const int64_t> values,
+                                             int* arg_index,
+                                             std::string* error) const {
+  auto fail = [&](int index, const auto&... message) {
+    if (arg_index != nullptr) {
+      *arg_index = index;
+    }
+    if (error != nullptr) {
+      *error = absl::StrCat(message...);
+    }
+    return false;
+  };
+  if (values.size() != args_.size()) {
+    return fail(-1, "Expected ", args_.size(), " values, but got ",
+                values.size());
+  }
+  int64_t distinct_value = -1;
+  for (int i = 0; i < static_cast<int>(args_.size()); ++i) {
+    const Arg& arg = args_[i];
+    const int64_t value = values[i];
+    if (arg.kind == Arg::Kind::kWord || arg.kind == Arg::Kind::kDword) {
+      continue;
+    }
+    if (value < 0 || value >= (int64_t{1} << arg.bits)) {
+      if (arg.kind == Arg::Kind::kCodeValue) {
+        return fail(i, "Value ", value, " does not fit in ", arg.bits, " bits");
+      }
+      return fail(i, "Register ", value, " is not ", GetRegisterName(arg, 0),
+                  " to ", GetRegisterName(arg, (1 << arg.bits) - 1));
+    }
+    if (((arg.excluded >> value) & 1) != 0) {
+      return fail(i, instruction_->op_name, " can't use ",
+                  GetRegisterName(arg, static_cast<int>(value)),
+                  " for this argument");
+    }
+    if (arg.distinct) {
+      if (value == distinct_value) {
+        return fail(i, instruction_->op_name, " can't use ",
+                    GetRegisterName(arg, static_cast<int>(value)),
+                    " for both registers");
+      }
+      distinct_value = value;
     }
   }
   return true;
@@ -253,6 +297,19 @@ std::string InstructionForm::Disassemble(absl::Span<const uint16_t> words,
     }
   }
   absl::StrAppend(&text, pattern.substr(pattern_pos));
+
+  // A code word that no program could write still runs, so the text says why
+  // it doesn't assemble. The values after the code word are always valid.
+  std::vector<int64_t> values;
+  values.reserve(args_.size());
+  for (const Arg& arg : args_) {
+    const bool in_code_word =
+        (arg.kind != Arg::Kind::kWord && arg.kind != Arg::Kind::kDword);
+    values.push_back(in_code_word ? GetCodeValue(arg, words) : 0);
+  }
+  if (std::string error; !ValidateCodeWordValues(values, nullptr, &error)) {
+    absl::StrAppend(&text, " ; ", error);
+  }
   return text;
 }
 
@@ -316,6 +373,10 @@ class InstructionSetSyntaxBuilder final {
                       const InstructionSet& instruction_set);
   bool CheckInstructionArgs(const InstructionDef& instruction,
                             const SourcePattern& pattern);
+  bool CheckRegisterRules(const InstructionDef& instruction);
+  bool CheckExcludedRegisters(const InstructionDef& instruction,
+                              const Argument& arg, uint16_t excluded,
+                              std::string_view arg_name);
   void AddForm(const InstructionDef& instruction, const SourcePattern& pattern,
                const MacroSyntax* macro, int code_index);
   void AddPart(InstructionForm& form, const InstructionDef& instruction,
@@ -464,7 +525,8 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
         instruction, "Invalid instruction code source: \"", instruction.source,
         "\". ", pattern.status().message());
   }
-  if (!CheckInstructionArgs(instruction, *pattern)) {
+  if (!CheckInstructionArgs(instruction, *pattern) ||
+      !CheckRegisterRules(instruction)) {
     return false;
   }
 
@@ -536,6 +598,50 @@ bool InstructionSetSyntaxBuilder::CheckInstructionArgs(
   return true;
 }
 
+bool InstructionSetSyntaxBuilder::CheckRegisterRules(
+    const InstructionDef& instruction) {
+  if (!CheckExcludedRegisters(instruction, instruction.arg1,
+                              instruction.arg1_excluded, "first") ||
+      !CheckExcludedRegisters(instruction, instruction.arg2,
+                              instruction.arg2_excluded, "second")) {
+    return false;
+  }
+  if (instruction.distinct_args &&
+      (!IsRegister(instruction.arg1.type) ||
+       instruction.arg1.type != instruction.arg2.type)) {
+    return InstructionDefError(
+        instruction,
+        "Distinct arguments must be two registers of the same type");
+  }
+  return true;
+}
+
+bool InstructionSetSyntaxBuilder::CheckExcludedRegisters(
+    const InstructionDef& instruction, const Argument& arg, uint16_t excluded,
+    std::string_view arg_name) {
+  if (excluded == 0) {
+    return true;
+  }
+  if (!IsRegister(arg.type)) {
+    return InstructionDefError(instruction, "The ", arg_name,
+                               " argument excludes registers, but isn't a "
+                               "register");
+  }
+
+  // A bit for each register the argument's bits can hold.
+  const int all = (1 << (1 << arg.size)) - 1;
+  if ((excluded & ~all) != 0) {
+    return InstructionDefError(instruction, "The ", arg_name,
+                               " argument excludes a register its ",
+                               static_cast<int>(arg.size), " bits can't hold");
+  }
+  if (excluded == all) {
+    return InstructionDefError(instruction, "The ", arg_name,
+                               " argument excludes every register");
+  }
+  return true;
+}
+
 void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
                                           const SourcePattern& pattern,
                                           const MacroSyntax* macro,
@@ -560,7 +666,17 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     }
     if (part.kind != Part::Kind::kArgument ||
         part.arg.type != ArgType::kMacro) {
+      const bool is_code_word_arg = (part.kind == Part::Kind::kArgument);
       AddPart(form, instruction, std::move(part), shift);
+
+      // The register rules are only for the instruction's own arguments, which
+      // CheckRegisterRules checked are registers if they have any.
+      if (is_code_word_arg) {
+        InstructionForm::Arg& arg = form.args_.back();
+        arg.excluded = (arg_index == 1 ? instruction.arg1_excluded
+                                       : instruction.arg2_excluded);
+        arg.distinct = instruction.distinct_args;
+      }
       continue;
     }
 

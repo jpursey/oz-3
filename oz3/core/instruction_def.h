@@ -269,7 +269,8 @@ struct InstructionDef {
 
   // Registers a program can't write for each argument, which must then be a
   // register: bit n is set if it can't be register n (R7 is bit 7, D3 is bit
-  // 3).
+  // 3). Registers the argument's bits can't hold are already out of reach, so
+  // they are never set (R4 to R7 of a 2-bit "$r2").
   //
   // Only the OZ-3 assembler uses these, and checks their rules (see
   // InstructionSetSyntax). CompileInstructionSet ignores them, and a core runs

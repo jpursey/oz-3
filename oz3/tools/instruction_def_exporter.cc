@@ -137,6 +137,17 @@ void InstructionDefExporter::ExportInstruction(
   }
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);
+  if (instruction.arg1_excluded != 0) {
+    absl::StrAppend(&result_, ",\n     .arg1_excluded = 0x",
+                    absl::Hex(instruction.arg1_excluded, absl::kZeroPad4));
+  }
+  if (instruction.arg2_excluded != 0) {
+    absl::StrAppend(&result_, ",\n     .arg2_excluded = 0x",
+                    absl::Hex(instruction.arg2_excluded, absl::kZeroPad4));
+  }
+  if (instruction.distinct_args) {
+    absl::StrAppend(&result_, ",\n     .distinct_args = true");
+  }
   if (!instruction.arg_macro_name.empty()) {
     absl::StrAppend(&result_, ",\n     .arg_macro_name = \"",
                     instruction.arg_macro_name, "\"");

@@ -34,7 +34,8 @@ instruction(exclude_b:R7) CPIR "$r, ($r)" { ... }
   can't be that register. It names a register the argument can hold: `R0` to
   `R7` for `$r`, the 4-bit registers (`SP` and so on) too for `$r4`, and `D0`
   to `D3` for `$R`. Each takes one register, and is repeated for more
-  (`exclude_a:R6, exclude_a:R7`).
+  (`exclude_a:R6, exclude_a:R7`). Registers the argument's bits can't hold are
+  already out of reach, so they are never listed (`R4` to `R7` of a `$r2`).
 - `a` and `b` are the instruction's own code word arguments, as the microcode
   names them (`a`/`A` for the first, `b`/`B` for the second), and must be
   registers in its source. A macro code's register (the `$r` in `($r)` of
@@ -55,8 +56,9 @@ MVIR (R7), (R1)      ; MVIR can't use R7 for this argument
 ```
 
 `InstructionForm::Encode` fails the same way. `InstructionForm::Disassemble`
-still turns such a code word into text (which then doesn't assemble), as the
-debugger may find one in memory.
+still turns such a code word into text, as the debugger may find one in
+memory, and ends it with a comment saying why it doesn't assemble:
+`MVI (R1), (R1) ; MVI can't use R1 for both registers`.
 
 ### Default instruction set
 
@@ -146,8 +148,11 @@ struct InstructionForm::Arg {
   argument of the instruction's source, `excluded` has no bits past the
   argument's size and leaves at least one register, and `distinct_args` has
   two register arguments of the same type.
-- `Encode` fails on a value a rule excludes, with the program assembler's
-  message.
+- `InstructionForm::ValidateCodeWordValues(values, &arg_index, &error)`
+  validates every code word value: that it fits its bits (which `Encode`
+  checked itself before), and keeps the register rules. It ignores the values
+  of `$v` and `$V`, which matching doesn't know yet, and says which argument is
+  at fault. `Encode` calls it before writing anything.
 - The exporter writes the three fields.
 
 ### tools: InstructionAssembler and ProgramAssembler
@@ -158,9 +163,10 @@ struct InstructionForm::Arg {
   `CpuCore` (as a word or dword register, by the argument's type), and reports
   errors at the instruction, as for `opcode`. `InstructionSetSyntax` reports
   the rest, as for any def.
-- `InstructionArg` gets the argument's token, and `ReadInstruction` checks the
-  rules after matching, beside its check that code values fit, so each error
-  points at the register. Encoding checks them again, as a backstop.
+- `InstructionArg` gets the argument's token, and `ReadInstruction` replaces
+  its own check that code values fit with `ValidateCodeWordValues`, so each
+  error points at the value or register at fault. Encoding checks them again,
+  as a backstop.
 
 **Brittleness:** the rules are enforced only where a program is assembled, and
 a hand-built `InstructionSetDef` gets them checked by `InstructionSetSyntax`
@@ -185,21 +191,22 @@ Depends on: nothing.
 **Verify**
 - Standard checks (see CLAUDE.md).
 
-### CL2 [ ] tools: validate and encode register rules
+### CL2 [x] tools: validate and encode register rules
 
 Depends on: CL1.
 
-- `InstructionSetSyntax`: validates the rules, copies them onto each form's
-  arguments, and `Encode` rejects values that break them.
+- `InstructionSetSyntax`: validates the rules, and copies them onto each
+  form's arguments. `ValidateCodeWordValues` checks code word values, and
+  `Encode` rejects values it fails.
 - `InstructionDefExporter`: writes the fields.
 - Nothing sets them yet, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests: each validation error; `Encode` with an excluded register and
-  with the same register twice, for word and dword arguments, and a macro
-  code's register being unaffected; the exporter writing the fields only when
-  set.
+- Unit tests: each validation error; `Encode` and `ValidateCodeWordValues`
+  with an excluded register and with the same register twice, for word and
+  dword arguments, a macro code's register being unaffected, and `$v` and `$V`
+  being ignored; the exporter writing the fields only when set.
 
 ### CL3 [ ] tools: register rules in .izm and programs
 

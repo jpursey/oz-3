@@ -102,6 +102,33 @@ TEST(InstructionDefExporterTest, NoValueSetsOrRelativeInstructions) {
   EXPECT_THAT(text, Not(HasSubstr("ValueSet")));
   EXPECT_THAT(text, Not(HasSubstr("value_sets")));
   EXPECT_THAT(text, Not(HasSubstr("relative")));
+  EXPECT_THAT(text, Not(HasSubstr("excluded")));
+  EXPECT_THAT(text, Not(HasSubstr("distinct")));
+}
+
+TEST(InstructionDefExporterTest, RegisterRules) {
+  const InstructionDef instructions[] = {
+      {.op = 1,
+       .op_name = "MVIR",
+       .source = "($r), ($r)",
+       .arg1 = ArgType::kWordReg,
+       .arg2 = ArgType::kWordReg,
+       .arg1_excluded = 0x0080,
+       .arg2_excluded = 0x0041,
+       .distinct_args = true,
+       .code = "UL;"},
+  };
+  EXPECT_THAT(Export({.instructions = instructions}), HasSubstr(R"---(
+    {.op = 1,
+     .op_name = "MVIR",
+     .source = "($r), ($r)",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0041,
+     .distinct_args = true,
+     .code = "UL;"},
+)---"));
 }
 
 }  // namespace
