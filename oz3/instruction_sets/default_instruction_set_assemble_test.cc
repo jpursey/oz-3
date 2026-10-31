@@ -356,7 +356,7 @@ TEST_F(AssembleFormTest, EveryForm) {
   AddForm("MVI", {RegAt(CpuCore::R1), RegAt(CpuCore::R4)});
   AddForm("MVD", {RegAt(CpuCore::R2), RegAt(CpuCore::R5)});
   AddForm("MVIR", {RegAt(CpuCore::R3), RegAt(CpuCore::R6)});
-  AddForm("MVDR", {RegAt(CpuCore::R0), RegAt(CpuCore::R7)});
+  AddForm("MVDR", {RegAt(CpuCore::R0), RegAt(CpuCore::R5)});
 
   //----------------------------------------------------------------------------
   // Arithmetic
@@ -486,7 +486,7 @@ TEST_F(AssembleFormTest, EveryForm) {
   }
   for (std::string_view op : {"INR", "OUTR"}) {
     AddForm(absl::StrCat(op, ".RW"), {Reg(CpuCore::R5), RegAt(CpuCore::R6)});
-    AddForm(absl::StrCat(op, ".IW"), {Word(12), RegAt(CpuCore::R7)});
+    AddForm(absl::StrCat(op, ".IW"), {Word(12), RegAt(CpuCore::R6)});
     AddForm(absl::StrCat(op, ".RD"),
             {Reg(CpuCore::R0), DwordRegAt(CpuCore::R1)});
     AddForm(absl::StrCat(op, ".ID"), {Word(34), DwordRegAt(CpuCore::R2)});
@@ -501,6 +501,62 @@ TEST_F(AssembleFormTest, EveryForm) {
   AddForm("RST", {Code("0", "$#3", 0), Named("STACK | DATA", 6)});
 
   ExpectStatementsAssemble();
+}
+
+//==============================================================================
+// Register rules
+//
+// Registers that are encodable but never useful, which the instruction set
+// excludes, don't assemble.
+//==============================================================================
+
+TEST(RegisterRulesTest, ExcludedRegistersDontAssemble) {
+  struct Case {
+    std::string statement;
+    std::string message;
+  };
+  std::vector<Case> cases = {
+      {"MVI (R1), (R1)", "MVI can't use R1 for both registers"},
+      {"MVD (R2), (R2)", "MVD can't use R2 for both registers"},
+      {"CPIR R1, (R7)", "CPIR can't use R7 for this argument"},
+      {"CPDR R1, (R7)", "CPDR can't use R7 for this argument"},
+  };
+  for (std::string_view op : {"MVIR", "MVDR"}) {
+    cases.push_back({absl::StrCat(op, " (R3), (R3)"),
+                     absl::StrCat(op, " can't use R3 for both registers")});
+    cases.push_back({absl::StrCat(op, " (R7), (R1)"),
+                     absl::StrCat(op, " can't use R7 for this argument")});
+    cases.push_back({absl::StrCat(op, " (R1), (R7)"),
+                     absl::StrCat(op, " can't use R7 for this argument")});
+  }
+  for (std::string_view op : {"INR", "OUTR"}) {
+    for (std::string_view variant : {".RW", ".RD"}) {
+      const std::string name = absl::StrCat(op, variant);
+      const std::string_view open = (variant == ".RD" ? "[" : "(");
+      const std::string_view close = (variant == ".RD" ? "]" : ")");
+      cases.push_back({absl::StrCat(name, " R2, ", open, "R2", close),
+                       absl::StrCat(name, " can't use R2 for both registers")});
+      cases.push_back({absl::StrCat(name, " R7, ", open, "R1", close),
+                       absl::StrCat(name, " can't use R7 for this argument")});
+      cases.push_back({absl::StrCat(name, " R1, ", open, "R7", close),
+                       absl::StrCat(name, " can't use R7 for this argument")});
+    }
+    cases.push_back({absl::StrCat(op, ".IW 5, (R7)"),
+                     absl::StrCat(op, ".IW can't use R7 for this argument")});
+    cases.push_back({absl::StrCat(op, ".ID 5, [R7]"),
+                     absl::StrCat(op, ".ID can't use R7 for this argument")});
+  }
+
+  const std::unique_ptr<InstructionSetSyntax> syntax = CreateDefaultSyntax();
+  for (const Case& test : cases) {
+    std::vector<gb::ParseError> errors;
+    EXPECT_EQ(AssembleProgram(
+                  *syntax, absl::StrCat(".STACK 1\n", test.statement), &errors),
+              nullptr)
+        << test.statement;
+    ASSERT_THAT(errors, SizeIs(1)) << test.statement;
+    EXPECT_EQ(errors[0].GetMessage(), test.message) << test.statement;
+  }
 }
 
 //==============================================================================

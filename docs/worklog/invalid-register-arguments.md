@@ -226,7 +226,7 @@ Depends on: CL2.
   register.
 - Wiki: `2.3-Instruction-Set-Source.md` and `2.5-Program-Source.md`.
 
-### CL4 [ ] instruction_sets: declare the default instruction set's rules
+### CL4 [x] instruction_sets: declare the default instruction set's rules
 
 Depends on: CL3.
 

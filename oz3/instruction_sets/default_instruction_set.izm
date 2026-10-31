@@ -821,12 +821,12 @@ instruction SWP.D "$R, $m" {
 ## first (each in the memory bank its register implies), then steps both
 ## address registers up by one.
 ##
-## The second register is stepped before the first is used, so if they are the
-## same register, the word is copied to the next address, and the register is
-## stepped by two.
+## The assembler rejects the same register for both. The second register is
+## stepped before the first is used, so a code word with the same register for
+## both copies the word to the next address, and steps the register by two.
 ################################################################################
 
-instruction MVI "($r), ($r)" {
+instruction(distinct) MVI "($r), ($r)" {
   UL;
   LKR(b); ADR(b); LD(C0); LAD(b); UL;
   LKR(a); ADR(a); ST(C0); LAD(a); UL;
@@ -842,12 +842,13 @@ instruction MVI "($r), ($r)" {
 ## first (each in the memory bank its register implies), then steps both
 ## address registers down by one.
 ##
-## The second register is stepped before the first is used, so if they are the
-## same register, the word is copied to the next address down, and the
-## register is stepped by two.
+## The assembler rejects the same register for both. The second register is
+## stepped before the first is used, so a code word with the same register for
+## both copies the word to the next address down, and steps the register by
+## two.
 ################################################################################
 
-instruction MVD "($r), ($r)" {
+instruction(distinct) MVD "($r), ($r)" {
   UL;
   LKR(b); ADR(b); LD(C0); UL;
   ADDI(b,-1);
@@ -867,9 +868,13 @@ instruction MVD "($r), ($r)" {
 ## cycles.
 ##
 ## If R7 is 0, nothing is copied, and it takes 6 cycles.
+##
+## The assembler rejects R7 for either address register, as well as the same
+## register for both (see MVI). A code word with R7 as an address decrements it
+## as the count before using it as the address.
 ################################################################################
 
-instruction MVIR "($r), ($r)" {
+instruction(distinct, exclude_a:R7, exclude_b:R7) MVIR "($r), ($r)" {
   UL;
 
   # R7 is decremented first, which clears C if it was 0, and sets Z if this is
@@ -899,9 +904,13 @@ instruction MVIR "($r), ($r)" {
 ## cycles.
 ##
 ## If R7 is 0, nothing is copied, and it takes 6 cycles.
+##
+## The assembler rejects R7 for either address register, as well as the same
+## register for both (see MVD). A code word with R7 as an address decrements it
+## as the count before using it as the address.
 ################################################################################
 
-instruction MVDR "($r), ($r)" {
+instruction(distinct, exclude_a:R7, exclude_b:R7) MVDR "($r), ($r)" {
   UL;
   ADDI(R7,-1);  # As MVIR
   JC(NC,@restore);
@@ -3903,9 +3912,13 @@ instruction CPD "$r, ($r)" {
 ##
 ## If R7 is 0, nothing is compared, the "Z", "S", "C", and "O" flags are
 ## cleared, and it takes 5 cycles.
+##
+## The assembler rejects R7 for the address register. A code word with R7 as
+## the address uses it as the address, and then steps it up and decrements it
+## as the count.
 ################################################################################
 
-instruction CPIR "$r, ($r)" {
+instruction(exclude_b:R7) CPIR "$r, ($r)" {
   UL;
   TST(R7);
   JC(Z,@empty);
@@ -3939,9 +3952,13 @@ instruction CPIR "$r, ($r)" {
 ##
 ## If R7 is 0, nothing is compared, the "Z", "S", "C", and "O" flags are
 ## cleared, and it takes 5 cycles.
+##
+## The assembler rejects R7 for the address register. A code word with R7 as
+## the address uses it as the address, and then steps it down and decrements it
+## as the count.
 ################################################################################
 
-instruction CPDR "$r, ($r)" {
+instruction(exclude_b:R7) CPDR "$r, ($r)" {
   UL;
   TST(R7);
   JC(Z,@empty);
@@ -4757,9 +4774,14 @@ instruction INS.ID "$v, $m" {
 ## If R7 is 0, nothing is read, and it takes 6 cycles (7 for INR.IW and
 ## INR.ID). If the port status isn't set, it takes 7 cycles for INR.RW, 8 for
 ## INR.IW and INR.RD, and 9 for INR.ID.
+##
+## The assembler rejects R7 (the count) for either register, and for INR.RW
+## and INR.RD, the same register for the port and the address. A code word with
+## them still runs, decrementing R7 before it is used, and stepping the address
+## register even when it is also the port.
 ################################################################################
 
-instruction INR.RW "$r, ($r)" {
+instruction(distinct, exclude_a:R7, exclude_b:R7) INR.RW "$r, ($r)" {
   UL;
   MSS(S); MSR(_,S);
 
@@ -4779,7 +4801,7 @@ instruction INR.RW "$r, ($r)" {
   ADDI(R7,1);
 }
 
-instruction INR.IW "$v, ($r)" {
+instruction(exclude_a:R7) INR.IW "$v, ($r)" {
   LD(MB); UL;  # As INR.RW, with the port in MB and the address in a
   MSS(S); MSR(_,S);
   ADDI(R7,-1);
@@ -4795,7 +4817,7 @@ instruction INR.IW "$v, ($r)" {
   ADDI(R7,1);
 }
 
-instruction INR.RD "$r, [$r]" {
+instruction(distinct, exclude_a:R7, exclude_b:R7) INR.RD "$r, [$r]" {
   UL;  # As INR.RW, a dword at a time
   MSS(S); MSR(_,S);
   ADDI(R7,-1);
@@ -4811,7 +4833,7 @@ instruction INR.RD "$r, [$r]" {
   ADDI(R7,1);
 }
 
-instruction INR.ID "$v, [$r]" {
+instruction(exclude_a:R7) INR.ID "$v, [$r]" {
   LD(MB); UL;  # As INR.IW, a dword at a time
   MSS(S); MSR(_,S);
   ADDI(R7,-1);
@@ -5205,9 +5227,15 @@ instruction OUTS.ID "$v, $m" {
 ## If R7 is 0, nothing is written, and it takes 6 cycles (7 for OUTR.IW and
 ## OUTR.ID). The word is loaded before the port status is known, so when the
 ## port status is set, it takes two cycles more than a word.
+##
+## The assembler rejects R7 (the count) for either register, and for OUTR.RW
+## and OUTR.RD, the same register for the port and the address. A code word
+## with them still runs, decrementing R7 before it is used (so a port in R7
+## changes before the word is even written), and stepping the address register
+## even when it is also the port.
 ################################################################################
 
-instruction OUTR.RW "$r, ($r)" {
+instruction(distinct, exclude_a:R7, exclude_b:R7) OUTR.RW "$r, ($r)" {
   UL;
   MSS(S); MSR(_,S);
   ADDI(R7,-1);  # As INR.RW
@@ -5226,7 +5254,7 @@ instruction OUTR.RW "$r, ($r)" {
   ADDI(R7,1);
 }
 
-instruction OUTR.IW "$v, ($r)" {
+instruction(exclude_a:R7) OUTR.IW "$v, ($r)" {
   LD(MB); UL;  # As OUTR.RW, with the port in MB and the address in a
   MSS(S); MSR(_,S);
   ADDI(R7,-1);
@@ -5245,7 +5273,7 @@ instruction OUTR.IW "$v, ($r)" {
   ADDI(R7,1);
 }
 
-instruction OUTR.RD "$r, [$r]" {
+instruction(distinct, exclude_a:R7, exclude_b:R7) OUTR.RD "$r, [$r]" {
   UL;  # As OUTR.RW, a dword at a time
   MSS(S); MSR(_,S);
   ADDI(R7,-1);
@@ -5264,7 +5292,7 @@ instruction OUTR.RD "$r, [$r]" {
   ADDI(R7,1);
 }
 
-instruction OUTR.ID "$v, [$r]" {
+instruction(exclude_a:R7) OUTR.ID "$v, [$r]" {
   LD(MB); UL;  # As OUTR.IW, a dword at a time
   MSS(S); MSR(_,S);
   ADDI(R7,-1);

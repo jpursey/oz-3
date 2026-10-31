@@ -158,12 +158,12 @@ next instruction is the same one again:
   and `CPDR` test `R7` and decrement it after the compare instead, as `Z` must
   come from the compare.
 - `R7` is the count for every repeating instruction, and the address registers
-  are encoded, so `R7` can also be named as an address. That is allowed, and
-  does what the microcode does: `CPIR` and `CPDR` use it as the address and
-  then step and decrement it, while the others decrement it first. For the
-  instructions that don't repeat, `R7` is an address like any other. The
-  backlog's *Invalid register arguments* would let the assembler reject this,
-  and the other combinations that are never useful.
+  are encoded, so a code word can also name `R7` as an address. It does what
+  the microcode does: `CPIR` and `CPDR` use it as the address and then step
+  and decrement it, while the others decrement it first. The assembler rejects
+  it, along with the other combinations that are never useful (see
+  [invalid-register-arguments.md](invalid-register-arguments.md)). For the
+  instructions that don't repeat, `R7` is an address like any other.
 
 ### Wiki
 

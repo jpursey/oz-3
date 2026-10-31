@@ -2521,6 +2521,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "($r), ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .distinct_args = true,
      .code = "UL;LKR(b);ADR(b);LD(C0);LAD(b);UL;LKR(a);ADR(a);ST(C0);"
              "LAD(a);UL;"},
     {.op = 19,
@@ -2528,6 +2529,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "($r), ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .distinct_args = true,
      .code = "UL;LKR(b);ADR(b);LD(C0);UL;ADDI(b,-1);LKR(a);ADR(a);ST(C0);"
              "UL;ADDI(a,-1);"},
     {.op = 20,
@@ -2535,6 +2537,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "($r), ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0080,
+     .distinct_args = true,
      .code = "UL;ADDI(R7,-1);JC(NC,@restore);LKR(b);ADR(b);LD(C0);LAD(b);"
              "UL;LKR(a);ADR(a);ST(C0);LAD(a);UL;JC(Z,@done);ADDI(IP,-1);"
              "@done:END;@restore:ADDI(R7,1);"},
@@ -2543,6 +2548,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "($r), ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0080,
+     .distinct_args = true,
      .code = "UL;ADDI(R7,-1);JC(NC,@restore);LKR(b);ADR(b);LD(C0);UL;"
              "JD(b,@source_stepped);@source_stepped:LKR(a);ADR(a);ST(C0);"
              "UL;JD(a,@stepped);@stepped:JC(Z,@done);ADDI(IP,-1);@done:END;"
@@ -3084,6 +3092,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg2_excluded = 0x0080,
      .code = "UL;TST(R7);JC(Z,@empty);LKR(b);ADR(b);LD(C0);CMP(a,C0);"
              "LAD(b);UL;MSR(ZSCO,ZSCO);JD(R7,@more);END;@more:JC(Z,@done);"
              "ADDI(IP,-1);@done:END;@empty:MSC(ZSCO);MSR(ZSCO,ZSCO);"},
@@ -3092,6 +3101,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg2_excluded = 0x0080,
      .code = "UL;TST(R7);JC(Z,@empty);LKR(b);ADR(b);LD(C0);CMP(a,C0);UL;"
              "MSR(ZSCO,ZSCO);JD(b,@stepped);@stepped:JD(R7,@more);END;"
              "@more:JC(Z,@done);ADDI(IP,-1);@done:END;@empty:MSC(ZSCO);"
@@ -3278,6 +3288,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0080,
+     .distinct_args = true,
      .code = "UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);PLK(a);"
              "PLD(TS,C0);MSR(S,S);PUL;JC(NS,@restore);LKR(b);ADR(b);ST(C0);"
              "LAD(b);UL;JC(Z,@done);ADDI(IP,-1);@done:END;"
@@ -3286,6 +3299,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "INR.IW",
      .source = "$v, ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
      .code = "LD(MB);UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);"
              "PLK(MB);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@restore);LKR(a);"
              "ADR(a);ST(C0);LAD(a);UL;JC(Z,@done);ADDI(IP,-2);@done:END;"
@@ -3295,6 +3309,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, [$r]",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0080,
+     .distinct_args = true,
      .code = "UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);PLK(a);"
              "PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@restore);LKR(b);"
              "ADR(b);ST(C0);ST(C1);LAD(b);UL;JC(Z,@done);ADDI(IP,-1);"
@@ -3303,6 +3320,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "INR.ID",
      .source = "$v, [$r]",
      .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
      .code = "LD(MB);UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);"
              "PLK(MB);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;JC(NS,@restore);"
              "LKR(a);ADR(a);ST(C0);ST(C1);LAD(a);UL;JC(Z,@done);"
@@ -3364,6 +3382,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0080,
+     .distinct_args = true,
      .code = "UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);LKR(b);ADR(b);"
              "LD(C0);LAD(b);UL;PLK(a);PST(TS,C0);PUL;MSX(S);MSR(S,S);"
              "JC(NS,@not_written);JC(Z,@done);ADDI(IP,-1);@done:END;"
@@ -3372,6 +3393,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "OUTR.IW",
      .source = "$v, ($r)",
      .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
      .code = "LD(MB);UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);LKR(a);"
              "ADR(a);LD(C0);LAD(a);UL;PLK(MB);PST(TS,C0);PUL;MSX(S);"
              "MSR(S,S);JC(NS,@not_written);JC(Z,@done);ADDI(IP,-2);"
@@ -3381,6 +3403,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .source = "$r, [$r]",
      .arg1 = {oz3::ArgType::kWordReg, 3},
      .arg2 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
+     .arg2_excluded = 0x0080,
+     .distinct_args = true,
      .code = "UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);LKR(b);ADR(b);"
              "LD(C0);LD(C1);LAD(b);UL;PLK(a);PST(TA,C0);PST(TS,C1);PUL;"
              "MSX(S);MSR(S,S);JC(NS,@not_written);JC(Z,@done);ADDI(IP,-1);"
@@ -3389,6 +3414,7 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .op_name = "OUTR.ID",
      .source = "$v, [$r]",
      .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg1_excluded = 0x0080,
      .code = "LD(MB);UL;MSS(S);MSR(_,S);ADDI(R7,-1);JC(NC,@restore);LKR(a);"
              "ADR(a);LD(C0);LD(C1);LAD(a);UL;PLK(MB);PST(TA,C0);PST(TS,C1);"
              "PUL;MSX(S);MSR(S,S);JC(NS,@not_written);JC(Z,@done);"
