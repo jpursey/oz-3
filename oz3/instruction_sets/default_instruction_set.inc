@@ -3435,6 +3435,11 @@ constexpr oz3::InstructionDef kInstructions[] = {
              "@data:MSKI(C1,4);JC(Z,@extra);MVN(C0:0,R3:2);CBK(DATA,C0);"
              "CST(BD,R6);@extra:MSKI(C1,8);JC(Z,@end);MVN(C0:0,R3:3);"
              "CBK(EXTRA,C0);CST(BE,R7);@end:CUL;"},
+    {.op = 138,
+     .op_name = "SWPB",
+     .source = "$r",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;MVB(C0:L,a:H);MVB(a:H,a:L);MVB(a:L,C0:L);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

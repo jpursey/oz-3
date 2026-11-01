@@ -5406,3 +5406,18 @@ instruction RST "$m, $Banks" {
 @end:
   CUL;
 }
+
+################################################################################
+## SWPB <register>
+##
+## Cycles: 6
+## ZSCO: ----
+##
+## Swaps the high and low bytes of the specified register. This is the same as
+## a word rotate by 8, but cheaper, and leaves the flags unchanged.
+################################################################################
+
+instruction SWPB "$r" {
+  UL;
+  MVB(C0:L,a:H); MVB(a:H,a:L); MVB(a:L,C0:L);
+}

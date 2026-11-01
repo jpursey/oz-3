@@ -26,19 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Byte swap instruction
-
-- **Layers:** instruction_sets, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (New instructions, Packed
-  strings)
-
-`SWPB <reg>`, which swaps a register's bytes, so packed text is cheap to unpack
-and pack: the high byte is a `SWPB` and an `AND`, rather than a shift by 8. A
-new instruction at the end of the `.izm`, built from `MVB`.
-
 ## Core signal instructions
 
 - **Layers:** instruction_sets, wiki
@@ -130,8 +117,8 @@ packed host bytes.
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Byte swap instruction*, *Core signal instructions*, *Timer
-  device*, *Disk drive device*
+- **Depends on:** *Core signal instructions*, *Timer device*, *Disk drive
+  device*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program

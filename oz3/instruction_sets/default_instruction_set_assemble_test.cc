@@ -353,6 +353,7 @@ TEST_F(AssembleFormTest, EveryForm) {
   AddForms("POP.D", DwordRegOrAddresses());
   AddForms("SWP.W", {Reg(CpuCore::R5)}, WordRegOrAddresses());
   AddForms("SWP.D", {DReg(0)}, DwordRegOrAddresses());
+  AddForm("SWPB", {Reg(CpuCore::R3)});
   AddForm("MVI", {RegAt(CpuCore::R1), RegAt(CpuCore::R4)});
   AddForm("MVD", {RegAt(CpuCore::R2), RegAt(CpuCore::R5)});
   AddForm("MVIR", {RegAt(CpuCore::R3), RegAt(CpuCore::R6)});

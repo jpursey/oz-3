@@ -1183,5 +1183,41 @@ TEST_F(InstructionTest, SWP_Cycles) {
   });
 }
 
+TEST_F(InstructionTest, SWPB) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, CpuCore::ZSCO},
+                      {CpuCore::R0, 0x1234},
+                      {CpuCore::R1, 0x5678},
+                      {CpuCore::R7, 0x00FF}});
+
+  state.code.AddValue(Encode("SWPB", CpuCore::R0));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CLRF", CpuCore::ZSCO));
+  state.code.AddValue(Encode("SWPB", CpuCore::R7));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SWPB", CpuCore::R7));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // SWPB R0
+  EXPECT_EQ(state.r0, 0x3412);
+  EXPECT_EQ(state.r1, 0x5678);
+  EXPECT_EQ(state.st, CpuCore::ZSCO);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // SWPB R7
+  EXPECT_EQ(state.r7, 0xFF00);
+  EXPECT_EQ(state.st, 0);
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SWPB R7
+  EXPECT_EQ(state.r7, 0x00FF);
+  EXPECT_EQ(state.st, 0);
+}
+
+TEST_F(InstructionTest, SWPB_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"SWPB R0", 6, {Encode("SWPB", CpuCore::R0)}},
+  });
+}
+
 }  // namespace
 }  // namespace oz3
