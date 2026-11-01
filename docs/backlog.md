@@ -26,25 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Devices in core
-
-- **Layers:** core, wiki
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (Device support in core);
-  the Interrupts section of `2-Specifications.md`
-
-Devices that the `Processor` runs in step with the cores, added through
-`ProcessorConfig`: each is given its ports, can lock memory banks to read and
-write memory, and raises interrupts on the cores its line is connected to.
-
-Raising an interrupt must report whether it was a duplicate (already pending),
-as the Interrupts section of `2-Specifications.md` promises. Today
-`CpuCore::RaiseInterrupt` and `Processor::RaiseInterrupt` return nothing. The
-design's answer is that a raise is a duplicate only if it was already pending
-on every core its line is connected to.
-
 ## Console devices
 
 - **Layers:** devices (new)
