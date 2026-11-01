@@ -319,7 +319,9 @@ exist. No microcode changes, and no existing code word changes.
 | `WAKE <core>`              | Ends another core's `WAIT`, or starts it if idle, from its `IP` | `CLK`, `CRUN`, `CUL` |
 
 A core is named as `RST` names it, with its `$LockCore` macro: a number, `R2`,
-or `SELF`.
+or `SELF`. `INTC` has two forms, `INTC.I` taking the interrupt as an integer
+(for fixed lines), and `INTC.R` taking it in a register (for a line computed at
+run time).
 
 `SWPB` makes packed text cheap: getting the high byte takes a `SWPB` and an
 `AND`, where a shift by 8 takes about 12 cycles. `INTC` and `WAKE` are how
@@ -449,6 +451,12 @@ assembled system code is checked in.
 
 - The call sequence's race between `INTC` and `WAIT` (see [Calls](#calls)),
   settled in the *Ozzy OS* item.
+- Which interrupts OS calls raise, settled in the *Ozzy OS* item. Either each
+  core has its own call interrupt (24 to 31), which a program computes from
+  its core number in `R0` at start and raises with `INTC.R`, or every core
+  raises one fixed call interrupt with `INTC.I`, and the OS checks every call
+  port for requests. With one interrupt, two calls at once merge into one
+  interrupt, but checking the ports still finds both.
 
 ## Getting there
 

@@ -26,21 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Core signal instructions
-
-- **Layers:** instruction_sets, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (New instructions, Calls)
-
-Instructions for one core to signal another, naming the core as `RST` does:
-`INTC` raises an interrupt on it, and `WAKE` ends its `WAIT` or starts it from
-its `IP`. They are how Ozzy programs call the OS, and how it answers. New
-instructions at the end of the `.izm`, built from `CLK`, `INT`, `CRUN`, and
-`CUL`. Nothing reads or writes another core's registers: data between cores
-goes through memory and ports.
-
 ## Devices in core
 
 - **Layers:** core, wiki
@@ -117,8 +102,7 @@ packed host bytes.
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Core signal instructions*, *Timer device*, *Disk drive
-  device*
+- **Depends on:** *Timer device*, *Disk drive device*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program

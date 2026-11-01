@@ -5421,3 +5421,73 @@ instruction SWPB "$r" {
   UL;
   MVB(C0:L,a:H); MVB(a:H,a:L); MVB(a:L,C0:L);
 }
+
+################################################################################
+## INTC <core-index> <interrupt>
+##
+## Cycles: 3-5
+## ZSCO: ----
+##
+## Variants:
+##    INTC.I <0..7>, <integer>    (4 cycles)
+##    INTC.I R2, <integer>        (4 cycles)
+##    INTC.I SELF, <integer>      (5 cycles)
+##    INTC.R <0..7>, <reg>        (3 cycles)
+##    INTC.R R2, <reg>            (3 cycles)
+##    INTC.R SELF, <reg>          (4 cycles)
+##
+## Raises the specified interrupt on a core, which handles it as for INT: after
+## the instruction it is running, if its interrupts are enabled. Only the low 5
+## bits of <interrupt> are used.
+##
+## The core is specified as for RST: an immediate value 0-7, the special keyword
+## SELF (the running core, as INT does), or register R2 (0..7, or -1 to
+## indicate self). If the core does not exist, nothing happens.
+################################################################################
+
+instruction INTC.I "$m, $v" {
+  LD(C1);
+  UL;
+  $LockCore;
+  INT(C1);
+  CUL;
+}
+
+instruction INTC.R "$m, $r" {
+  UL;
+  $LockCore;
+  INT(b);
+  CUL;
+}
+
+################################################################################
+## WAKE <core-index>
+##
+## Cycles: 4-5
+## ZSCO: ----
+##
+## Variants:
+##    WAKE <0..7>    (4 cycles)
+##    WAKE R2        (4 cycles)
+##    WAKE SELF      (5 cycles)
+##
+## Ends a core's WAIT, or starts it running from its current IP if it is idle.
+## If the core is handling an interrupt that interrupted a WAIT, that WAIT is
+## ended, so the interrupt returns to the instruction after it. A WAIT ended
+## this way does not complete, so its register is not updated.
+##
+## The core is specified as for RST: an immediate value 0-7, the special keyword
+## SELF (the running core), or register R2 (0..7, or -1 to indicate self). If
+## the core does not exist, nothing happens.
+##
+## A core idle from HALT runs the HALT again, and stays idle, as HALT moves IP
+## back to itself. On the running core, WAKE only ends the WAIT an interrupt
+## handler interrupted.
+################################################################################
+
+instruction WAKE "$m" {
+  UL;
+  $LockCore;
+  CRUN;
+  CUL;
+}

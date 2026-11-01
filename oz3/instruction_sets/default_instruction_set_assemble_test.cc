@@ -497,9 +497,13 @@ TEST_F(AssembleFormTest, EveryForm) {
   // Cores
   //----------------------------------------------------------------------------
 
-  AddForms("RST", {Code("5", "$#3", 5), Code("R2", "R2"), Code("SELF", "SELF")},
-           {Named("CODE | EXTRA", 9)});
+  const std::vector<Operand> cores = {Code("5", "$#3", 5), Code("R2", "R2"),
+                                      Code("SELF", "SELF")};
+  AddForms("RST", cores, {Named("CODE | EXTRA", 9)});
   AddForm("RST", {Code("0", "$#3", 0), Named("STACK | DATA", 6)});
+  AddForms("INTC.I", cores, {Word(24)});
+  AddForms("INTC.R", cores, {Reg(CpuCore::R1)});
+  AddForms("WAKE", cores);
 
   ExpectStatementsAssemble();
 }
