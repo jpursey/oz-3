@@ -177,11 +177,11 @@ bool BaseCoreTest::ExecuteUntil(int core, absl::FunctionRef<bool()> condition) {
   auto& state = states_[core];
   do {
     processor_->Execute(1);
-    if (state.core.GetState() == CpuCore::State::kIdle) {
-      return false;
-    }
     for (int i = 0; i < states_.size(); ++i) {
       states_[i].Update();
+    }
+    if (state.core.GetState() == CpuCore::State::kIdle) {
+      return false;
     }
     if (state.ip > 1000) {
       return false;

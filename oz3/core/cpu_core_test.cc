@@ -3965,6 +3965,108 @@ TEST_F(CpuCoreTest, RaiseInterruptsThatAreNotMapped) {
   EXPECT_EQ(state.r3, 42);
 }
 
+// An interrupt with no handler is dropped, and the WAIT goes on to complete.
+TEST_F(CpuCoreTest, UnmappedInterruptDuringWait) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  state.code.AddValue(Encode(kTestOp_EI));
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R3)).AddValue(1000);
+  state.code.AddValue(Encode(kTestOp_WAIT, CpuCore::R3));
+  const uint16_t ip1 = state.code.GetAddress();
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R2)).AddValue(3);
+  state.code.AddValue(Encode(kTestOp_HALT));
+  const uint16_t ip2 = state.code.GetAddress();
+
+  ASSERT_TRUE(ExecuteUntil(
+      [&] { return state.core.GetState() == CpuCore::State::kWaiting; }));
+  const Cycles wait_start =
+      state.core.GetCycles() - (kCpuCoreFetchAndDecodeCycles + 1);
+  Execute(100);
+
+  state.core.RaiseInterrupt(1);
+  Execute(10);
+  EXPECT_EQ(state.core.GetState(), CpuCore::State::kWaiting);
+  EXPECT_EQ(state.core.GetInterrupts(), 0);
+  EXPECT_EQ(state.ip, ip1);
+
+  ASSERT_TRUE(ExecuteUntil(
+      [&] { return state.core.GetState() != CpuCore::State::kWaiting; }));
+  EXPECT_EQ(state.core.GetCycles() - wait_start, 1000);
+  EXPECT_EQ(state.r3, 0);
+  EXPECT_EQ(state.st & CpuCore::W, 0);
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.ip, ip2);
+  EXPECT_EQ(state.r2, 3);
+}
+
+// An interrupt with no handler is dropped, and the core stays idle.
+TEST_F(CpuCoreTest, UnmappedInterruptDuringHalt) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  state.code.AddValue(Encode(kTestOp_EI));
+  state.code.AddValue(Encode(kTestOp_HALT));
+  const uint16_t ip1 = state.code.GetAddress();
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R2)).AddValue(3);
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.ip, ip1);
+
+  state.core.RaiseInterrupt(1);
+  Execute(10);
+  EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
+  EXPECT_EQ(state.core.GetInterrupts(), 0);
+  EXPECT_EQ(state.ip, ip1);
+  EXPECT_EQ(state.r2, 0);
+}
+
+// Core 1 is idle, and can't drop its interrupt until it can prevent locks on
+// itself. Core 0 locks it first and starts it with CRUN, so core 1 runs once it
+// drops the interrupt, rather than going back to being idle.
+TEST_F(CpuCoreTest, CrunWhileDroppingUnmappedInterrupt) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  MemAccessor mem0 = GetMemory(0);
+  MemAccessor mem1 = GetMemory(1);
+
+  // Core 1 runs from bank 0, and core 0 from bank 1.
+  mem0.AddValue(Encode(kTestOp_EI));
+  mem0.AddValue(Encode(kTestOp_HALT));
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(42);
+  mem0.AddValue(Encode(kTestOp_HALT));
+  const uint16_t end_ip1 = mem0.GetAddress();
+  mem1.AddValue(Encode(kTestOp_CRUN));
+  mem1.AddValue(Encode(kTestOp_HALT));
+
+  state1.ResetCore();
+  ExecuteUntilHalt(1);
+
+  // Core 1 is stuck in kHandleInterrupt while the test holds its lock.
+  auto lock = state1.core.RequestLock();
+  ASSERT_TRUE(lock->IsLocked());
+  state1.core.RaiseInterrupt(1);
+  Execute(1);
+  EXPECT_EQ(state1.core.GetState(), CpuCore::State::kHandleInterrupt);
+
+  // Core 0 waits for core 1's lock, which it gets next.
+  state0.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
+  state0.SetRegisters({{CpuCore::R6, 1}});
+  Execute(10);
+  EXPECT_EQ(state1.core.GetState(), CpuCore::State::kHandleInterrupt);
+  lock = nullptr;
+
+  ExecuteUntilHalt(0);
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(state1.ip, end_ip1);
+  EXPECT_EQ(state1.r0, 42);
+  EXPECT_EQ(state1.core.GetInterrupts(), 0);
+}
+
 TEST_F(CpuCoreTest, InterruptAddressUsesLowBitsOfIndex) {
   ASSERT_TRUE(Init());
   CoreState& state = GetState();
@@ -4802,7 +4904,6 @@ TEST_F(CpuCoreTest, OtherCoreInterrupt) {
 
   // Execute code
   ExecuteUntilHalt();
-  state1.Update();
   EXPECT_EQ(state1.ip, end_ip1);
   EXPECT_EQ(state0.ip, end_ip0);
   EXPECT_EQ(state1.core.GetInterrupts(), 1 << 7);
@@ -5091,7 +5192,6 @@ TEST_F(CpuCoreTest, CoreLockBlocks) {
   lock.reset();
 
   ExecuteUntilHalt();
-  state1.Update();
   EXPECT_EQ(state0.ip, end_ip0);
   EXPECT_EQ(state0.mb, 0);
   EXPECT_EQ(state1.ip, end_ip1);

@@ -312,6 +312,7 @@ void CpuCore::Execute() {
 
 void CpuCore::Idle() {
   if (IsInterruptPending()) {
+    resume_state_ = State::kIdle;
     state_ = State::kHandleInterrupt;
     return;
   }
@@ -321,6 +322,7 @@ void CpuCore::Idle() {
 void CpuCore::Waiting() {
   DCHECK(r_[ST] & W);
   if (IsInterruptPending()) {
+    resume_state_ = State::kWaiting;
     state_ = State::kHandleInterrupt;
     return;
   }
@@ -349,8 +351,14 @@ void CpuCore::HandleInterrupt() {
     }
   }
   if (interrupt_ == kInterruptCount) {
+    // No raised interrupt has a handler, so they are dropped, and the core goes
+    // back to what it was doing. Only a running core keeps the lock prevented,
+    // as StartInstruction prevents it anyway.
     interrupt_ = -1;
-    state_ = State::kStartInstruction;
+    state_ = resume_state_;
+    if (state_ != State::kStartInstruction) {
+      AllowLock();
+    }
     return;
   }
   DCHECK(lock_ == nullptr);
@@ -406,6 +414,7 @@ void CpuCore::ReturnFromInterrupt() {
 
 void CpuCore::StartInstruction() {
   if (IsInterruptPending()) {
+    resume_state_ = State::kStartInstruction;
     state_ = State::kHandleInterrupt;
     return;
   }
@@ -1044,6 +1053,10 @@ void CpuCore::RunInstructionLoop() {
         } else if (locked_core_->state_ == State::kIdle ||
                    locked_core_->state_ == State::kWaiting) {
           locked_core_->state_ = State::kStartInstruction;
+        } else if (locked_core_->state_ == State::kHandleInterrupt) {
+          // The core starts running if it goes back to what it was doing,
+          // because none of its interrupts has a handler.
+          locked_core_->resume_state_ = State::kStartInstruction;
         }
       } break;
       case kMicro_END:

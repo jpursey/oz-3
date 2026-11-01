@@ -239,6 +239,8 @@ class CpuCore final : public ExecutionComponent {
     // The core is starting to handle an interrupt request.
     // Transitions to:
     //   - kPushInterruptState after locking STACK memory
+    //   - kIdle, kWaiting, or kStartInstruction (whichever it came from) if
+    //     no raised interrupt has a handler
     kHandleInterrupt,
 
     // The core is pushing the current state onto the stack.
@@ -523,6 +525,11 @@ class CpuCore final : public ExecutionComponent {
   // Current execution state.
   State state_ = State::kIdle;
   Cycles exec_cycles_ = 0;  // Cycles accumulated during Execute.
+
+  // State to return to from kHandleInterrupt if no raised interrupt has a
+  // handler.
+  State resume_state_ = State::kIdle;
+
   Cycles fetch_start_ = 0;  // Cycle count when fetch started
 
   // Wait state
