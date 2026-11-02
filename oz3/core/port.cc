@@ -5,6 +5,8 @@
 
 #include "oz3/core/port.h"
 
+#include <algorithm>
+
 #include "absl/memory/memory.h"
 #include "oz3/core/core_types.h"
 
@@ -18,8 +20,15 @@ void PortLockable::OnUnlocked() { bank_->OnPortUnlocked(port_index_); }
 
 }  // namespace internal
 
+void Port::AddComponent(CoreInternal, ExecutionComponent* component) {
+  if (std::ranges::find(components_, component) == components_.end()) {
+    components_.push_back(component);
+  }
+}
+
 uint16_t Port::LoadWord(const Lock& lock, uint16_t mode, uint16_t& value) {
   DCHECK(lock.IsLocked(*lockable_));
+  WakeComponents();
   const uint16_t status = status_;
   if (mode & T & (~status & 1)) {
     return 0;
@@ -36,6 +45,7 @@ uint16_t Port::LoadWord(const Lock& lock, uint16_t mode, uint16_t& value) {
 
 uint16_t Port::StoreWord(const Lock& lock, uint16_t mode, uint16_t value) {
   DCHECK(lock.IsLocked(*lockable_));
+  WakeComponents();
   const uint16_t status = status_;
   if (mode & T & status) {
     return 1;

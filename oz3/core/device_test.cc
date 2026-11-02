@@ -28,11 +28,13 @@ namespace {
 
 using ::testing::ElementsAre;
 
-// STW stores R0 at EXTRA address R1, and LDW loads R2 from it.
+// STW stores R0 at EXTRA address R1, and LDW loads R2 from it. PSTW stores R0
+// to port R3.
 constexpr InstructionDef kTestInstructions[] = {
     {.op = 0, .op_name = "NOP", .code = "UL;"},
     {.op = 1, .op_name = "STW", .code = "UL;LK(EXTRA);ADR(R1);ST(R0);UL;"},
     {.op = 2, .op_name = "LDW", .code = "UL;LK(EXTRA);ADR(R1);LD(R2);UL;"},
+    {.op = 3, .op_name = "PSTW", .code = "UL;PLK(R3);PST(___,R0);PUL;"},
 };
 
 std::shared_ptr<const InstructionSet> GetTestInstructionSet() {
@@ -256,6 +258,79 @@ TEST(DeviceTest, DevicesSharingALineMergeRaises) {
   EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), 1u << 3);
 }
 
+TEST(DeviceTest, HostLoadFromPortWakesDevice) {
+  auto factory = std::make_shared<FakeDeviceFactory>(
+      DeviceConfig{.name = "Fake", .ports = {3}});
+  Processor processor(ProcessorConfig().SetPortCount(4).AddDevice(factory));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  device->SetStep(FakeDevice::SleepForever);
+  processor.Execute(5);
+
+  // A load counts, as a device may wait for a core to take what it put there.
+  {
+    auto lock = processor.LockPort(3);
+    uint16_t value = 0;
+    processor.GetPort(3).LoadWord(*lock, 0, value);
+  }
+  processor.Execute(5);
+  EXPECT_THAT(device->GetRunCycles(), ElementsAre(0, 5));
+}
+
+TEST(DeviceTest, PortWakesOnlyDevicesWiredToIt) {
+  Processor processor(ProcessorConfig()
+                          .SetPortCount(2)
+                          .AddDevice(std::make_shared<FakeDeviceFactory>(
+                              DeviceConfig{.name = "A", .ports = {0}}))
+                          .AddDevice(std::make_shared<FakeDeviceFactory>(
+                              DeviceConfig{.name = "B", .ports = {1, 0}}))
+                          .AddDevice(std::make_shared<FakeDeviceFactory>(
+                              DeviceConfig{.name = "C", .ports = {1}})));
+  FakeDevice* a = GetFakeDevice(processor, "A");
+  FakeDevice* b = GetFakeDevice(processor, "B");
+  FakeDevice* c = GetFakeDevice(processor, "C");
+  a->SetStep(FakeDevice::SleepForever);
+  b->SetStep(FakeDevice::SleepForever);
+  c->SetStep(FakeDevice::SleepForever);
+  processor.Execute(2);
+
+  {
+    auto lock = processor.LockPort(0);
+    processor.GetPort(0).StoreWord(*lock, 0, 1);
+  }
+  processor.Execute(2);
+  EXPECT_THAT(a->GetRunCycles(), ElementsAre(0, 2));
+  EXPECT_THAT(b->GetRunCycles(), ElementsAre(0, 2));
+  EXPECT_THAT(c->GetRunCycles(), ElementsAre(0));
+}
+
+TEST(DeviceTest, DeviceStoreToPortWakesOthersOnIt) {
+  Processor processor(ProcessorConfig()
+                          .SetPortCount(1)
+                          .AddDevice(std::make_shared<FakeDeviceFactory>(
+                              DeviceConfig{.name = "Sender", .ports = {0}}))
+                          .AddDevice(std::make_shared<FakeDeviceFactory>(
+                              DeviceConfig{.name = "Receiver", .ports = {0}})));
+  FakeDevice* sender = GetFakeDevice(processor, "Sender");
+  FakeDevice* receiver = GetFakeDevice(processor, "Receiver");
+  receiver->SetStep(FakeDevice::SleepForever);
+
+  // The sender's store doesn't wake itself, as it is awake when it stores.
+  sender->SetStep([](FakeDevice& device) {
+    if (device.GetCycles() == 3) {
+      auto lock = device.LockPort(0);
+      EXPECT_TRUE(lock->IsLocked());
+      device.GetPort(0).StoreWord(*lock, 0, 1);
+      device.Sleep();
+      return Cycles{0};
+    }
+    return Cycles{1};
+  });
+
+  processor.Execute(10);
+  EXPECT_THAT(sender->GetRunCycles(), ElementsAre(0, 1, 2, 3));
+  EXPECT_THAT(receiver->GetRunCycles(), ElementsAre(0, 4));
+}
+
 TEST(DeviceTest, PagesAreReadAndWrittenThroughTheirBank) {
   Processor processor(ProcessorConfig::MultiBank(1).AddDevice(
       std::make_shared<FakeDeviceFactory>(DeviceConfig{
@@ -454,6 +529,91 @@ TEST_F(DevicePagesTest, CoreGetsPagesCycleAfterDeviceReleasesThem) {
   EXPECT_EQ(CyclesUntilIp(end_ip),
             kReleaseCycle + 1 + kCpuCoreCycles_ADR + kCpuCoreCycles_LD);
   EXPECT_EQ(state.r2, 99);
+}
+
+TEST_F(DevicePagesTest, MapWriteWakesDevice) {
+  CoreState& state = GetState();
+  state.SetRegisters({{CpuCore::R0, 42}});
+  const uint16_t end_ip = state.code.AddValue(Encode("STW")).AddNopGetAddress();
+
+  // The device sleeps until its map is written, and then reads what was
+  // written under the lock, and sleeps again.
+  device_->GetMemoryMap()->SetOnWrite([this] { device_->Wake(); });
+  std::unique_ptr<Lock> lock;
+  Cycles read_cycle = 0;
+  uint16_t word = 0;
+  device_->SetStep([&](FakeDevice& device) {
+    if (device.GetCycles() > 0) {
+      if (lock == nullptr) {
+        lock = device.GetMemoryMap()->RequestLock();
+      }
+      if (!lock->IsLocked()) {
+        return Cycles{1};
+      }
+      read_cycle = device.GetCycles();
+      word = device.GetMemoryMap()->GetMem()[kAddress];
+      lock.reset();
+    }
+    device.Sleep();
+    return Cycles{0};
+  });
+
+  // The core stores in the step after STW is fetched, which wakes the device
+  // for the next cycle. The core still holds the bank then, so the device
+  // waits for it, and gets it in the cycle the core releases it.
+  constexpr Cycles kStoreCycle = kCpuCoreFetchAndDecodeCycles;
+  constexpr Cycles kUnlockCycle =
+      kStoreCycle + kCpuCoreCycles_ADR + kCpuCoreCycles_ST;
+  EXPECT_EQ(CyclesUntilIp(end_ip), kUnlockCycle);
+  Execute(5);
+  EXPECT_THAT(device_->GetRunCycles(),
+              ElementsAre(0, kStoreCycle + 1, kUnlockCycle));
+  EXPECT_EQ(read_cycle, kUnlockCycle);
+  EXPECT_EQ(word, 42);
+}
+
+// Runs core 0 with a device asleep on port 0, which loads the port's value
+// whenever it is woken.
+class DevicePortTest : public BaseCoreTest {
+ protected:
+  DevicePortTest()
+      : BaseCoreTest({kTestInstructions}, GetTestInstructionSet()) {}
+
+  void SetUp() override {
+    ASSERT_TRUE(
+        InitAndReset({.num_ports = 1,
+                      .devices = {std::make_shared<FakeDeviceFactory>(
+                          DeviceConfig{.name = "Fake", .ports = {0}})}}));
+    device_ = GetFakeDevice(GetProcessor(), "Fake");
+    device_->SetStep([this](FakeDevice& device) {
+      if (device.GetCycles() > 0) {
+        auto lock = device.LockPort(0);
+        EXPECT_TRUE(lock->IsLocked());
+        uint16_t value = 0;
+        device.GetPort(0).LoadWord(*lock, 0, value);
+        values_.push_back(value);
+      }
+      device.Sleep();
+      return Cycles{0};
+    });
+  }
+
+  FakeDevice* device_ = nullptr;
+  std::vector<uint16_t> values_;
+};
+
+TEST_F(DevicePortTest, CoreStoreToPortWakesDevice) {
+  CoreState& state = GetState();
+  state.SetRegisters({{CpuCore::R0, 42}, {CpuCore::R3, 0}});
+  state.code.AddValue(Encode("PSTW"));
+
+  // The core stores in the step after PSTW is fetched, which wakes the device
+  // for the next cycle. The core releases the port at the start of that cycle,
+  // before the device runs, so the device gets it then.
+  constexpr Cycles kStoreCycle = kCpuCoreFetchAndDecodeCycles;
+  Execute(10);
+  EXPECT_THAT(device_->GetRunCycles(), ElementsAre(0, kStoreCycle + 1));
+  EXPECT_THAT(values_, ElementsAre(42));
 }
 
 }  // namespace

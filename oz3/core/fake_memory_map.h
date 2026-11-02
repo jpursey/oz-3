@@ -7,6 +7,8 @@
 #define OZ3_CORE_FAKE_MEMORY_MAP_H_
 
 #include <cstdint>
+#include <functional>
+#include <utility>
 #include <vector>
 
 #include "absl/types/span.h"
@@ -30,6 +32,12 @@ class FakeMemoryMap final : public MemoryMap {
   // test can set it up and check it directly.
   absl::Span<uint16_t> GetMem() { return absl::MakeSpan(mem_); }
 
+  // Sets a function the map calls after each Write, such as to wake its
+  // device.
+  void SetOnWrite(std::function<void()> on_write) {
+    on_write_ = std::move(on_write);
+  }
+
  protected:
   // MemoryMap implementation.
   void Read(int address, uint16_t* data, int size) override;
@@ -37,6 +45,7 @@ class FakeMemoryMap final : public MemoryMap {
 
  private:
   std::vector<uint16_t> mem_;
+  std::function<void()> on_write_;
 };
 
 }  // namespace oz3

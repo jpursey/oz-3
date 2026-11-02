@@ -168,8 +168,10 @@ void Sleep(Cycles max_cycles = kSleepForever);
 
 What wakes a sleeping component:
 - **Its ports:** any `LoadWord` or `StoreWord` on a port it is wired to, by
-  anyone. Loads count, as a keyboard waits for a core to read its key before
-  it puts the next one there. A device using its own port is already awake.
+  anyone, even one that its mode skips (a `T` load with the status clear).
+  Loads count, as a keyboard waits for a core to read its key before it puts
+  the next one there. A device using its own port is already awake, so that
+  doesn't wake it once it sleeps.
 - **Its pages:** a device's own `MemoryMap` overrides call `Wake()` when it
   matters to the device, such as a write to a doorbell word.
 - **The host:** a device's public API calls `Wake()`, between `Execute()`
@@ -214,6 +216,7 @@ the backlog's *Sleeping cores*, added in the wrap-up).
 | One interrupt's wiring | `DeviceInterrupt`, `InterruptLine`, `InterruptWiring`          | `CpuCore::kInterruptCount` lines, the `INT` microcode                      | `DeviceInterrupt` |
 | Its pages' wiring      | `DeviceMemory`, `DevicePages`, `MemoryPlacement`               | `MemoryBank`, `MemoryPageRange` (which it holds), `MemoryMap`              | `DeviceMemory`    |
 | Resting until needed   | `Sleep`/`Wake`, `Suspend`/`Resume`, `Park`/`Unpark`            | `CpuCore::State::kIdle` (halted), the `WAIT` instruction                   | `Sleep`/`Wake`    |
+| When to run next       | `GetDueCycle`, `GetRunCycle`, `GetNextRunCycle`                | `FakeDevice::GetRunCycles` (cycles it ran at), `GetWakeCycle` (awake)      | `GetDueCycle`     |
 
 `Device` is the spec's word, and the comments in `memory_bank.h` and
 `memory_map.h` already use it. `DeviceFactory` says what it does: each
@@ -232,6 +235,11 @@ core, where a `DeviceInterrupt` is one line across several cores.
 means the same for a component, and the two never meet in code: one is C++,
 the other an instruction. `Suspend`/`Resume` would avoid it, but read as
 something done to a component, where a component chooses to sleep.
+
+`GetDueCycle` says when a component is scheduled to run, whether it is awake
+(its cycles) or asleep (its deadline, or the cycle after a wake). `GetRunCycle`
+would read as when it ran, beside `FakeDevice::GetRunCycles`, the cycles it
+did run at. `GetWakeCycle` would be wrong for an awake component.
 
 ### core: interrupts
 
@@ -537,47 +545,57 @@ class ExecutionComponent : public Component {
   void Wake();
 
   // For the Processor: gives the component the processor's cycle count, which
-  // Wake() needs, and runs one step when the processor reaches GetRunCycle():
+  // Wake() needs, and runs one step when the processor reaches GetDueCycle():
   // catches a woken component's cycles up, then calls Execute().
   void AttachClock(CoreInternal, const Cycles* processor_cycles);
-  Cycles GetRunCycle() const;
+  Cycles GetDueCycle() const;
   void Step(CoreInternal);
 
+ protected:
+  // Called only by Step().
   virtual void Execute() = 0;
 
- protected:
   void AdvanceCycles(Cycles cycles);
+
+  // Called last in Execute(), after any AdvanceCycles(). `max_cycles` must be
+  // at least one.
   void Sleep(Cycles max_cycles = kSleepForever);
 
  private:
   Cycles cycles_ = 0;      // Cycles executed.
-  Cycles run_cycle_ = 0;   // When to run next: cycles_, unless asleep.
-  bool asleep_ = false;
+  Cycles due_cycle_ = 0;   // When to run next: cycles_, unless asleep.
   const Cycles* clock_ = nullptr;
 };
 ```
 
-- `run_cycle_` is the one value the `Processor` loop compares, for cores and
+- `due_cycle_` is the one value the `Processor` loop compares, for cores and
   devices alike. `AdvanceCycles` keeps it equal to `cycles_`, one extra store.
   `Sleep` sets it to the deadline, and `Wake` to the processor's next cycle if
-  that is sooner. So the loop needs no `IsAsleep()`: a sleeping component's
-  run cycle is simply later (`kSleepForever` is the largest `Cycles`), and
-  the one compare covers both. `asleep_` is only for `Step`, to know to catch
-  the cycles up. Nothing outside needs to ask, so there is no public
-  `IsAsleep()` until something does (the debugger, say).
-- `Step` replaces the `Processor`'s direct calls to `Execute()`, so the
-  catch-up lives in one place for every component.
+  that is sooner, but never before the cycle the component fell asleep at (a
+  component can advance its cycles, then sleep). So the loop needs no
+  `IsAsleep()`: a sleeping component's due cycle is simply later
+  (`kSleepForever` is the largest `Cycles`), and the one compare covers both.
+- Asleep is `due_cycle_ > cycles_`, as a sleep is at least one cycle, so no
+  flag tracks it. `Sleep` is called last, after any `AdvanceCycles`. Nothing
+  outside needs to ask, so there is no public `IsAsleep()` until something
+  does (the debugger, say).
+- `Step` replaces the `Processor`'s direct calls to `Execute()`, which is now
+  protected, as nothing else calls it. `Step` sets `cycles_` to `due_cycle_`
+  before each, which catches a woken component up and changes nothing for an
+  awake one. So the catch-up lives in one place for every component, with no
+  branch. `Wake` is inline, as ports call it on every load and store.
   `AdvanceCycles` is the only way cycles move, so they never go backward.
 - `AttachClock` is separate from `Component::AttachProcessor`, and non-virtual,
   so no derived class has to remember to call a base version. The `Processor`
   calls both for each core and device. `Wake()` on a component that has no
   clock (not attached to a processor) does nothing.
 - Each `Port` holds the `ExecutionComponent`s wired to it, which the
-  `Processor` sets when it attaches devices, and `LoadWord` and `StoreWord`
+  `Processor` adds with `Port::AddComponent` as it creates each device (once
+  per port, even for a device wired to it twice), and `LoadWord` and `StoreWord`
   wake them. `port.h` includes `execution_component.h`, with no cycle.
-- Performance: the cores' check in the loop reads `run_cycle_` instead of
-  `cycles_`, and `AdvanceCycles` stores both. CL5 measures this in Release,
-  with no devices and with one sleeping device.
+- Performance: the cores' check in the loop reads `due_cycle_` instead of
+  `cycles_`, and `AdvanceCycles` stores both. Measured in CL5: nothing
+  measurable.
 
 **Brittleness:**
 - A component can't fall asleep and miss its own work: `Sleep` only ends the
@@ -593,7 +611,8 @@ class ExecutionComponent : public Component {
 
 - ~~That an empty device loop costs nothing measurable in `Execute()` (CL3).~~
   Confirmed: see CL3.
-- That the cores' loop reading `run_cycle_` costs nothing measurable (CL5).
+- ~~That the cores' loop reading `due_cycle_` costs nothing measurable (CL5).~~
+  Confirmed: see CL5.
 
 ## CLs
 
@@ -738,31 +757,43 @@ Depends on: CL2, CL3.
 - Unit tests (`program_loader_test.cc`), back from CL2 with a fake device: a
   device's pages are not free, whether its map is read-only or write-only.
 
-### CL5 [ ] core: sleeping components
+### CL5 [x] core: sleeping components
 
 Depends on: CL3.
 
-- `execution_component.h/.cc` (new `.cc`): `Sleep`, `Wake`, `AttachClock`,
-  `GetRunCycle`, and `Step`.
-- `processor.cc`: attaches each component's clock, compares `GetRunCycle()`,
-  and calls `Step()`. Sets each port's components when it attaches devices.
-- `port.h/.cc`: a port's components, woken by `LoadWord` and `StoreWord`.
+- `execution_component.h`: `Sleep`, `Wake`, `AttachClock`,
+  `GetDueCycle`, and `Step`.
+- `processor.cc`: attaches each component's clock, compares `GetDueCycle()`,
+  and calls `Step()`. Adds each device to its ports as it creates it.
+- `port.h/.cc`: a port's components, from `AddComponent`, woken by `LoadWord`
+  and `StoreWord`.
 - `core_types.h`: `kSleepForever`.
+- `fake_device.h/.cc`: a step can sleep, or advance its own cycles first, and
+  then returns 0. `fake_memory_map.h/.cc`: `SetOnWrite`, so a test can wake
+  the map's device from its `Write`.
 
 **Verify**
 - Standard checks.
-- Unit tests (`execution_component_test.cc`, new), with a fake component run
-  by a `Processor`: a sleeping component isn't run; `Wake` runs it at the next
-  cycle with its cycles caught up, whether called during a core's step,
-  another component's step before or after it, or between `Execute()` calls;
-  a deadline wakes it; `Wake` on an awake component changes nothing.
+- Unit tests (`execution_component_test.cc`, new), with a fake device run by a
+  `Processor`: a sleeping component isn't run; `Wake` runs it at the next
+  cycle with its cycles caught up, whether called during another component's
+  step before or after it, or between `Execute()` calls (the host's call); a
+  deadline wakes it, and a wake before it; a wake in the cycle it is due
+  doesn't put it off; `Wake` on an awake component changes nothing; a wake
+  never moves cycles backward; `Wake` without a processor does nothing.
 - Unit tests (`device_test.cc`): a sleeping device is woken by a core's store
-  to its port and by the host's load from it, by its own map's `Write`, and by
-  a call from the host; two devices on one port both wake.
+  to its port, by the host's load from it, and by its own map's `Write` from a
+  core's store, where it then waits for the core to release the bank; a port
+  wakes every device wired to it and no other; a device's store wakes the
+  others on its port, but not itself.
 - Unit tests: the existing core and instruction set tests pass unchanged, as
   cores never sleep.
-- Performance: the tight loop from CL3, in Release, before and after, with no
-  devices and with one sleeping device.
+- Performance: a tight loop like CL3's (two `ADD.W`s and a `JP`), in
+  Release, before and after. Measured with a temporary test, not checked in,
+  outside one noisy run: with no devices, 48.4 to 49.4 M cycles a second
+  before, and 48.2 to 49.2 after; with one idle device (advanced far ahead
+  before, asleep after), 48.6 to 49.0 before, and 47.8 to 49.1 after. So
+  sleeping costs nothing measurable.
 
 ### CL6 [ ] Wrap-up: summary
 

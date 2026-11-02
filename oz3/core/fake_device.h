@@ -33,9 +33,16 @@ class FakeDevice final : public Device {
   // Types
   //----------------------------------------------------------------------------
 
-  // Does one step of the device's work, and returns the cycles it took, which
-  // must be at least one.
+  // Does one step of the device's work, and returns the cycles it took. A step
+  // that advances its cycles or sleeps itself returns 0 instead, and must do
+  // one or the other.
   using Step = std::function<Cycles(FakeDevice& device)>;
+
+  // A step that sleeps with no deadline.
+  static Cycles SleepForever(FakeDevice& device) {
+    device.Sleep();
+    return 0;
+  }
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -56,6 +63,11 @@ class FakeDevice final : public Device {
   using Device::LockPort;
   using Device::RaiseInterrupt;
 
+  // ExecutionComponent interface, for a step to sleep, or to advance its cycles
+  // first.
+  using Device::AdvanceCycles;
+  using Device::Sleep;
+
   // Returns the device's pages, or null if its config gives it none.
   FakeMemoryMap* GetMemoryMap() override { return memory_map_.get(); }
 
@@ -70,6 +82,7 @@ class FakeDevice final : public Device {
   // Returns the cycles the device ran at, in order.
   const std::vector<Cycles>& GetRunCycles() const { return run_cycles_; }
 
+ protected:
   //----------------------------------------------------------------------------
   // ExecutionComponent implementation
   //----------------------------------------------------------------------------

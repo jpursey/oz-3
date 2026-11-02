@@ -7,6 +7,7 @@
 #define OZ3_CORE_CORE_TYPES_H_
 
 #include <cstdint>
+#include <limits>
 
 #include "gb/base/access_token.h"
 
@@ -22,6 +23,14 @@ using Cycles = int64_t;
 //==============================================================================
 // Constants
 //==============================================================================
+
+//------------------------------------------------------------------------------
+// ExecutionComponent constants
+//------------------------------------------------------------------------------
+
+// A sleep with no deadline (see ExecutionComponent::Sleep), and the cycle a
+// component in one runs at, which the Processor never reaches.
+inline constexpr Cycles kSleepForever = std::numeric_limits<Cycles>::max();
 
 //------------------------------------------------------------------------------
 // MemoryBank constants

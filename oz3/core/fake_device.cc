@@ -22,10 +22,16 @@ FakeDevice::FakeDevice(DeviceConfig config) : Device(config) {
 }
 
 void FakeDevice::Execute() {
-  run_cycles_.push_back(GetCycles());
+  const Cycles start = GetCycles();
+  run_cycles_.push_back(start);
   const Cycles cycles = step_(*this);
-  CHECK(cycles > 0);
-  AdvanceCycles(cycles);
+  CHECK(cycles >= 0);
+  CHECK(cycles == 0 || GetDueCycle() == GetCycles())
+      << "A step that sleeps must return 0";
+  if (cycles > 0) {
+    AdvanceCycles(cycles);
+  }
+  CHECK(GetDueCycle() > start) << "The step must advance its cycles or sleep";
 }
 
 FakeDeviceFactory::FakeDeviceFactory(DeviceConfig config)

@@ -39,6 +39,7 @@ set(oz3_core_LIBS
 set(oz3_core_TEST_SOURCE
   cpu_core_test.cc
   device_test.cc
+  execution_component_test.cc
   instruction_compiler_test.cc
   instruction_def_test.cc
   instruction_set_test.cc

@@ -42,6 +42,9 @@ Processor::Processor(const ProcessorConfig& config)
       DCHECK(map == nullptr)
           << device_config.name << " has a memory map, but no pages";
     }
+    for (int port : device_config.ports) {
+      ports_.GetPort(port).AddComponent({}, device.get());
+    }
     devices_.push_back(std::move(device));
   }
   auto bank_configs = config.GetMemoryBankConfigs();
@@ -52,10 +55,12 @@ Processor::Processor(const ProcessorConfig& config)
   for (const CpuCoreConfig& core_config : config.GetCpuCoreConfigs()) {
     cores_[num_cores_] = std::make_unique<CpuCore>(core_config);
     cores_[num_cores_]->AttachProcessor({}, this);
+    cores_[num_cores_]->AttachClock({}, &cycles_);
     ++num_cores_;
   }
   for (const std::unique_ptr<Device>& device : devices_) {
     device->AttachProcessor({}, this);
+    device->AttachClock({}, &cycles_);
   }
 }
 
@@ -75,13 +80,13 @@ void Processor::Execute(Cycles cycles) {
     --cycles;
     ++cycles_;
     for (int i = 0; i < num_cores_; ++i) {
-      if (cores_[i]->GetCycles() < cycles_) {
-        cores_[i]->Execute();
+      if (cores_[i]->GetDueCycle() < cycles_) {
+        cores_[i]->Step({});
       }
     }
     for (const std::unique_ptr<Device>& device : devices_) {
-      if (device->GetCycles() < cycles_) {
-        device->Execute();
+      if (device->GetDueCycle() < cycles_) {
+        device->Step({});
       }
     }
   }

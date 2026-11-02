@@ -86,7 +86,7 @@ class Processor final {
   //
   // This simulates all executable components of the processor in sync. Each
   // cycle runs the cores in index order, and then the devices in the order
-  // they were added.
+  // they were added, skipping any that are asleep.
   //
   // This is a public function for the game, and components must therefore *not*
   // execute this function.

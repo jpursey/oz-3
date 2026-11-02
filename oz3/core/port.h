@@ -13,6 +13,7 @@
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/execution_component.h"
 #include "oz3/core/lockable.h"
 
 namespace oz3 {
@@ -87,12 +88,19 @@ class Port final {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Loads thhe port value honoring the specified mode.
+  // Wires a component to this port, so LoadWord and StoreWord wake it. Called
+  // by the Processor as it creates devices. Does nothing if the component is
+  // already wired to it.
+  void AddComponent(CoreInternal, ExecutionComponent* component);
+
+  // Loads the port value honoring the specified mode, and wakes the components
+  // wired to the port, even if nothing is loaded.
   //
   // Returns the port status (zero or 1) prior to the load.
   uint16_t LoadWord(const Lock& lock, uint16_t mode, uint16_t& value);
 
-  // Stores the port value honoring the specified mode.
+  // Stores the port value honoring the specified mode, and wakes the
+  // components wired to the port, even if nothing is stored.
   //
   // Returns the port status (zero or 1) prior to the store.
   uint16_t StoreWord(const Lock& lock, uint16_t mode, uint16_t value);
@@ -103,10 +111,17 @@ class Port final {
   //----------------------------------------------------------------------------
   friend class PortBank;
 
+  void WakeComponents() {
+    for (ExecutionComponent* component : components_) {
+      component->Wake();
+    }
+  }
+
   uint16_t address_ = 0;        // Address of the port value (0 or 1).
   uint16_t status_ = 0;         // Status of the port (0 or 1).
   uint16_t value_[2] = {0, 0};  // Value of the port.
   std::unique_ptr<internal::PortLockable> lockable_;
+  std::vector<ExecutionComponent*> components_;  // Woken by Load and Store.
 };
 
 //==============================================================================

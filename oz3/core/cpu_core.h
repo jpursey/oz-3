@@ -500,6 +500,12 @@ class CpuCore final : public ExecutionComponent {
   //----------------------------------------------------------------------------
 
   void AttachProcessor(CoreInternal, Processor* processor) override;
+
+ protected:
+  //----------------------------------------------------------------------------
+  // ExecutionComponent implementation
+  //----------------------------------------------------------------------------
+
   void Execute() override;
 
  private:

@@ -23,6 +23,9 @@ void FakeMemoryMap::Read(int address, uint16_t* data, int size) {
 void FakeMemoryMap::Write(int address, const uint16_t* data, int size) {
   CHECK(address >= 0 && address + size <= static_cast<int>(mem_.size()));
   std::memcpy(mem_.data() + address, data, size * sizeof(uint16_t));
+  if (on_write_ != nullptr) {
+    on_write_();
+  }
 }
 
 }  // namespace oz3
