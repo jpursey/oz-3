@@ -8,6 +8,9 @@ set(oz3_core_SOURCE
   core_types.h
   cpu_core.cc cpu_core.h
   cpu_core_config.cc cpu_core_config.h
+  device.cc device.h
+  device_config.h
+  device_factory.h
   execution_component.h
   instruction_def.cc instruction_def.h
   instruction_compiler.cc instruction_compiler.h
@@ -24,6 +27,7 @@ set(oz3_core_SOURCE
 set(oz3_core_DEPS
   absl::memory
   absl::span
+  absl::status
   absl::strings
   gb_container
 )
@@ -34,12 +38,14 @@ set(oz3_core_LIBS
 
 set(oz3_core_TEST_SOURCE
   cpu_core_test.cc
+  device_test.cc
   instruction_compiler_test.cc
   instruction_def_test.cc
   instruction_set_test.cc
   lockable_test.cc
   memory_bank_test.cc
   port_test.cc
+  processor_config_test.cc
   processor_test.cc
 )
 set(oz3_core_TEST_DEPS
@@ -48,9 +54,11 @@ set(oz3_core_TEST_DEPS
 
 gb_add_library(oz3_core)
 
-# Test support for libraries that run cores, such as instruction set tests.
+# Test support for libraries that run cores, such as instruction set tests, and
+# a fake device for tests that need one.
 set(oz3_core_testing_SOURCE
   base_core_test.cc base_core_test.h
+  fake_device.cc fake_device.h
 )
 set(oz3_core_testing_DEPS
   absl::flat_hash_map

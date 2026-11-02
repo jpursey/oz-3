@@ -9,7 +9,9 @@
 #include <memory>
 #include <vector>
 
+#include "absl/status/status.h"
 #include "absl/types/span.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/instruction_set.h"
 #include "oz3/core/memory_bank_config.h"
@@ -66,6 +68,24 @@ class ProcessorConfig {
   // The port count must be in the range [0, kMaxPorts].
   ProcessorConfig& SetPortCount(int count);
 
+  // Adds a device, which each Processor created from this config creates from
+  // `factory`. The factory must not be null.
+  ProcessorConfig& AddDevice(std::shared_ptr<const DeviceFactory> factory);
+
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
+
+  // Returns an error naming the device if a device's config doesn't fit this
+  // one: no name, or a name another device has (as a factory added twice
+  // does), a port the config doesn't have, or an interrupt the cores don't
+  // have. Devices with pages of their own are not supported yet, and are an
+  // error too.
+  //
+  // This checks the config as a whole, so it doesn't matter what order it was
+  // built in. A Processor must be created from a valid config.
+  absl::Status Validate() const;
+
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
@@ -78,6 +98,10 @@ class ProcessorConfig {
 
   int GetPortCount() const { return port_count_; }
 
+  absl::Span<const std::shared_ptr<const DeviceFactory>> GetDevices() const {
+    return devices_;
+  }
+
  private:
   //----------------------------------------------------------------------------
   // Implementation
@@ -86,6 +110,7 @@ class ProcessorConfig {
   std::vector<MemoryBankConfig> banks_;
   std::vector<CpuCoreConfig> cores_;
   int port_count_ = 0;
+  std::vector<std::shared_ptr<const DeviceFactory>> devices_;
 };
 
 }  // namespace oz3

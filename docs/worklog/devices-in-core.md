@@ -83,35 +83,39 @@ they move there, with a fake device.
 ```
 // A keyboard on port 1, raising interrupt 1 on core 0.
 auto keyboard = std::make_shared<KeyboardFactory>(
-    /*port=*/1, DeviceInterrupt{.interrupt = 1, .cores = 0b0000'0001});
+    "Keyboard", /*port=*/1,
+    DeviceInterrupt{.interrupt = 1, .cores = 0b0000'0001});
 
 // A screen in page 15 of bank 0, raising interrupt 6 on every core.
 auto screen = std::make_shared<ScreenFactory>(
-    DeviceMemory{.bank = 0, .start_page = 15}, DeviceInterrupt{.interrupt = 6},
-    ScreenOptions{.columns = 80, .rows = 24});
+    "Screen", DeviceMemory{.bank = 0, .start_page = 15},
+    DeviceInterrupt{.interrupt = 6}, ScreenOptions{.columns = 80, .rows = 24});
 
 ProcessorConfig config = ProcessorConfig::OneCore(instructions);
 config.SetPortCount(16).AddDevice(keyboard).AddDevice(screen);
 if (absl::Status status = config.Validate(); !status.ok()) { ... }
 Processor processor(config);
-Screen* screen_device = screen->GetScreen(processor);
+Screen* screen_device = GetScreen(processor, "Screen");
 ```
 
 - A derived `DeviceFactory`'s constructor takes its wiring in its own terms (a
   keyboard takes one port and one interrupt), so the wiring always matches
-  what the device needs. It `DCHECK`s what it can check alone, such as a port
-  below `kMaxPorts`, or a screen that fits its pages.
-- `ProcessorConfig::Validate()` checks what needs the whole machine: each
-  device's ports exist, its pages are in range and don't overlap another
-  device's, and no `DeviceFactory` is added twice. It returns an error naming
-  the device. The `Processor` `DCHECK`s that its config is valid.
+  what the device needs. `DeviceFactory` is an interface: a derived factory
+  checks its own rules, such as a screen that fits its pages, then builds its
+  `DeviceConfig` in its constructor's body, and returns it from `GetConfig()`.
+- `ProcessorConfig::Validate()` checks every `DeviceConfig`: each device has a
+  name no other device has, its ports and interrupts exist, and its pages are
+  in range and don't overlap another device's. It returns an error naming the
+  device, so a host building its machine from data gets an error, not a
+  `DCHECK`. The `Processor` `DCHECK`s that its config is valid.
 - A `DeviceFactory` is immutable, and shared: the config holds a
   `std::shared_ptr<const DeviceFactory>`, as `CpuCoreConfig` holds its
   instruction set. So `ProcessorConfig` stays copyable, and each `Processor`
   built from it creates its own device from each factory.
-- A factory has fixed ports and pages, so a processor has at most one device
-  per factory, and the factory finds it: `Processor::GetDevice(factory)`, and
-  a derived factory's typed version (`ScreenFactory::GetScreen`).
+- Each device has a name in its `DeviceConfig` ("Keyboard", "Screen 2"),
+  which no other device in the config has, and `Processor::GetDevice(name)`
+  finds it, so a host doesn't hold onto factories to find its devices. A
+  device type may wrap it in a typed lookup (`GetScreen(processor, name)`).
 - Each cycle, the `Processor` runs its cores in index order, then its devices
   in the order they were added. A device runs whenever the processor has
   reached its cycle count, exactly as a core does, so a device that is busy
@@ -345,6 +349,10 @@ struct DeviceMemory {
 };
 
 struct DeviceConfig {
+  // The device's name, which the processor finds it by. Not empty, and unique
+  // in its ProcessorConfig.
+  std::string name;
+
   // The processor port for each of the device's ports.
   std::vector<int> ports;
 
@@ -374,27 +382,25 @@ class DeviceFactory {
   DeviceFactory& operator=(const DeviceFactory&) = delete;
   virtual ~DeviceFactory();
 
-  // The device's name, such as "Keyboard", for errors and the debugger.
-  std::string_view GetName() const;
+  // The device's name and wiring, which is the same config for the factory's
+  // whole life. ProcessorConfig::Validate checks it.
+  virtual const DeviceConfig& GetConfig() const = 0;
 
-  // The device's wiring.
-  const DeviceConfig& GetConfig() const;
-
-  // Creates a device for one Processor, which keeps this factory alive as long
-  // as the device.
+  // Creates a device for one Processor, wired as GetConfig(). The device holds
+  // its own copy of what it needs, so it doesn't depend on this factory.
   virtual std::unique_ptr<Device> CreateDevice() const = 0;
 
  protected:
-  DeviceFactory(std::string_view name, DeviceConfig config);
-
-  // Returns the device `processor` created from this factory, or null if it
-  // has none. For a derived factory's typed lookup.
-  Device* GetDevice(Processor& processor) const;
+  DeviceFactory() = default;
 };
 ```
 
 - A derived factory is immutable once constructed, so it can be shared
   between configs, and processors.
+- `GetConfig()` is virtual, so a derived factory can build its config in its
+  constructor's body rather than before its base, at the cost of a `config_`
+  member and a one-line override. It is called only by `Validate()` and when
+  a `Processor` creates the device, never while it runs.
 - `CreateDevice()` does nothing with the processor; the device is attached
   after the processor has created its banks and cores.
 
@@ -408,6 +414,9 @@ class Device : public ExecutionComponent {
   Device& operator=(const Device&) = delete;
   ~Device() override;
 
+  // The device's name, from its DeviceConfig.
+  std::string_view GetName() const;
+
   // Component implementation.
   void AttachProcessor(CoreInternal, Processor* processor) final;
 
@@ -415,10 +424,8 @@ class Device : public ExecutionComponent {
   // work, and advances its cycles by at least one.
 
  protected:
-  // `factory` is the factory creating this device.
-  explicit Device(const DeviceFactory* factory);
-
-  const DeviceFactory* GetFactory() const;
+  // `config` is the config of the factory creating this device.
+  explicit Device(DeviceConfig config);
 
   // The device's ports, as numbered in its DeviceConfig.
   int GetPortCount() const;
@@ -444,21 +451,24 @@ class Device : public ExecutionComponent {
  private:
   friend class Processor;  // For GetMemoryMap().
 
-  const DeviceFactory* const factory_;
+  const DeviceConfig config_;
   Processor* processor_ = nullptr;
-  std::vector<uint8_t> interrupt_cores_;  // Resolved when attached.
 };
 ```
 
 - Lives in `core`, beside `CpuCore`, as the `Processor` runs it and its
   interface is built from core's ports, banks, and interrupts.
-- A derived device keeps its own typed pointer to its factory, from its
-  constructor, for its settings (a screen's size).
+- A device holds its own copy of its wiring, and a derived device is given its
+  settings (a screen's size) by its factory's `CreateDevice()`, so a device
+  never depends on its factory.
 - The accessors are protected, as they are for the device's own use. Each one
-  `DCHECK`s that the device is attached.
-- The port, memory, and interrupt accessors are thin calls to the `Processor`,
-  and each port and interrupt is a vector index, so a device pays nothing for
-  the indirection beyond what a core pays.
+  that uses the processor `DCHECK`s that the device is attached.
+- The port, memory, and interrupt accessors are inline, thin calls to the
+  `Processor`, and each port and interrupt is an index into its
+  `DeviceConfig`, so a device pays nothing for the indirection beyond what a
+  core pays. `RaiseInterrupt` passes the line's cores as wired, as the
+  `Processor` ignores cores it doesn't have, and `GetInterruptCores` masks
+  them to the processor's cores when asked.
 
 ### core: ProcessorConfig and Processor
 
@@ -469,29 +479,28 @@ class Device : public ExecutionComponent {
 ProcessorConfig& AddDevice(std::shared_ptr<const DeviceFactory> factory);
 absl::Span<const std::shared_ptr<const DeviceFactory>> GetDevices() const;
 
-// Returns an error if a device's wiring doesn't fit this config: a port it
-// doesn't have, pages past the end of a bank or overlapping another device's,
-// or a factory added twice.
+// Returns an error if a device's config doesn't fit this one: no name, or a
+// name another device has, a port or interrupt that doesn't exist, or pages
+// past the end of a bank or overlapping another device's.
 absl::Status Validate() const;
 
 // processor.h
-// Returns the device created from `factory`, or null if this processor has
-// none. See DeviceFactory::GetDevice for a typed lookup.
-Device* GetDevice(const DeviceFactory& factory);
+// Returns the device with the specified name, or null if this processor has
+// none.
+Device* GetDevice(std::string_view name);
 ```
 
 - `ProcessorConfig` stays copyable, so every existing caller is unchanged.
 - The `Processor` constructor `DCHECK`s `config.Validate()`. Then it creates
   each device from its factory, creates each bank with the memory maps of the
   devices in it, creates the cores, and attaches the devices last.
-- It keeps each factory with its device, so the factory lives as long as the
-  device. The devices are declared before the banks, so they are destroyed
+- It uses the factories only to create the devices, and keeps just the
+  devices. The devices are declared before the banks, so they are destroyed
   after them, and their maps outlive the banks. Locks a device still holds on a
   bank or port are safe, as a `Lockable`'s destructor clears its lock.
-- `Execute()` runs the devices after the cores, and `DCHECK`s that each
-  device's `Execute()` advanced its cycles, as one that doesn't would run every
-  cycle with its clock stopped. The check moves into `ExecutionComponent`'s
-  step in CL5, where it covers cores too.
+- `Execute()` runs the devices after the cores. It doesn't check that a
+  device's `Execute()` advanced its cycles: that depends on the device's own
+  state, so it is weak, and each device's own tests cover it.
 - `Component::AttachProcessor`'s comment still holds: a device is owned solely
   by its processor.
 - `oz3_core` gains `absl::status`, for `Validate()`.
@@ -523,8 +532,7 @@ class ExecutionComponent : public Component {
 
   // For the Processor: gives the component the processor's cycle count, which
   // Wake() needs, and runs one step when the processor reaches GetRunCycle():
-  // catches a woken component's cycles up, then calls Execute(), and DCHECKs
-  // that it advanced its cycles or went to sleep.
+  // catches a woken component's cycles up, then calls Execute().
   void AttachClock(CoreInternal, const Cycles* processor_cycles);
   Cycles GetRunCycle() const;
   void Step(CoreInternal);
@@ -552,7 +560,7 @@ class ExecutionComponent : public Component {
   the cycles up. Nothing outside needs to ask, so there is no public
   `IsAsleep()` until something does (the debugger, say).
 - `Step` replaces the `Processor`'s direct calls to `Execute()`, so the
-  catch-up and the `DCHECK` live in one place for every component.
+  catch-up lives in one place for every component.
   `AdvanceCycles` is the only way cycles move, so they never go backward.
 - `AttachClock` is separate from `Component::AttachProcessor`, and non-virtual,
   so no derived class has to remember to call a base version. The `Processor`
@@ -577,7 +585,8 @@ class ExecutionComponent : public Component {
 
 ### To confirm
 
-- That an empty device loop costs nothing measurable in `Execute()` (CL3).
+- ~~That an empty device loop costs nothing measurable in `Execute()` (CL3).~~
+  Confirmed: see CL3.
 - That the cores' loop reading `run_cycle_` costs nothing measurable (CL5).
 
 ## CLs
@@ -636,20 +645,25 @@ Depends on: nothing.
   on its own bank; a map's masks are clamped to its pages; a map can be in a
   new bank once its first is destroyed.
 
-### CL3 [ ] core: devices
+### CL3 [x] core: devices
 
 Depends on: CL1.
 
 - New `device_config.h` (`DeviceInterrupt`, `DeviceMemory`, `DeviceConfig`),
-  `device_factory.h/.cc` (`DeviceFactory`), and `device.h/.cc` (`Device`),
+  `device_factory.h` (`DeviceFactory`), and `device.h/.cc` (`Device`),
   added to `CMakeLists.txt` with `absl::status`, and `Device` and
   `DeviceFactory` added to `core_types.h`'s forward declarations.
 - `processor_config.h/.cc`: `AddDevice`, `GetDevices`, `Validate`, which
-  checks ports and factories added twice.
-- `processor.h/.cc`: creates, attaches, and runs devices, and `GetDevice`.
+  checks names, ports, and interrupts.
+- `processor.h/.cc`: creates, attaches, and runs devices, and `GetDevice`,
+  which finds a device by name.
 - Devices have ports, shared memory, and interrupts. Their own pages come in
   CL4: `DeviceMemory` is in `DeviceConfig`, and `Validate` rejects a device
   with pages until then.
+- New `fake_device.h/.cc` in `oz3_core_testing`: `FakeDevice`, which runs a
+  step its test gives it and records the cycles it ran at, with its `Device`
+  interface public, and `FakeDeviceFactory` for any wiring. It is shared, as
+  CL4's `ProgramLoader` tests in `tools` need it too.
 - Wiki: `2-Specifications.md`, *Overview*, the **Devices** bullet.
 
 **Verify**
@@ -657,8 +671,8 @@ Depends on: CL1.
 - Unit tests (`device_test.cc`), with a fake factory and device, which holds
   what it did (cycles it ran at, words it read and wrote):
   - A factory creates a device for each processor built from a config, and
-    `GetDevice` finds each processor's own, and null for a factory it doesn't
-    have.
+    `GetDevice` finds each processor's own by name, and null for a name it
+    doesn't have. A device keeps working after its factory is gone.
   - It runs in step with the cores: a device advancing 3 cycles a step runs at
     cycles 0, 3, 6, and 9 in `Execute(10)`, and two devices run in the order
     added, after the cores.
@@ -671,10 +685,14 @@ Depends on: CL1.
     exist, returning the cores newly raised on, and two devices sharing a line
     merge their raises.
 - Unit tests (`processor_config_test.cc`, new): `Validate` accepts a valid
-  config whichever order it was built in, and names the device for a port it
-  doesn't have and a factory added twice.
+  config whichever order it was built in, rejects a device without a name,
+  and names the device for a port or interrupt that doesn't exist (negative or
+  past the end), and for a name another device has (two factories, or one
+  added twice).
 - Performance: a tight `ADD`/`MOV`/`JP` loop on one core in Release, before
-  and after, with no devices.
+  and after, with no devices. Measured with a temporary test, not checked in:
+  49.2 to 49.4 M cycles a second before, and 49.3 to 49.9 after, so the empty
+  device loop costs nothing measurable.
 
 ### CL4 [ ] core: device pages
 
@@ -706,7 +724,7 @@ Depends on: CL2, CL3.
 Depends on: CL3.
 
 - `execution_component.h/.cc` (new `.cc`): `Sleep`, `Wake`, `AttachClock`,
-  `GetRunCycle`, and `Step`, and the `DCHECK` moved from the `Processor`.
+  `GetRunCycle`, and `Step`.
 - `processor.cc`: attaches each component's clock, compares `GetRunCycle()`,
   and calls `Step()`. Sets each port's components when it attaches devices.
 - `port.h/.cc`: a port's components, woken by `LoadWord` and `StoreWord`.

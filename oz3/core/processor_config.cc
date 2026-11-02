@@ -7,9 +7,13 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "absl/log/check.h"
+#include "absl/strings/str_cat.h"
+#include "oz3/core/cpu_core.h"
+#include "oz3/core/device_factory.h"
 
 namespace oz3 {
 
@@ -70,6 +74,51 @@ ProcessorConfig& ProcessorConfig::SetPortCount(int count) {
   DCHECK(count >= 0 && count <= kMaxPorts);
   port_count_ = count;
   return *this;
+}
+
+ProcessorConfig& ProcessorConfig::AddDevice(
+    std::shared_ptr<const DeviceFactory> factory) {
+  DCHECK(factory != nullptr);
+  devices_.push_back(std::move(factory));
+  return *this;
+}
+
+absl::Status ProcessorConfig::Validate() const {
+  for (int i = 0; i < static_cast<int>(devices_.size()); ++i) {
+    const DeviceConfig& device_config = devices_[i]->GetConfig();
+    if (device_config.name.empty()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Device ", i, " has no name"));
+    }
+    const std::string device =
+        absl::StrCat("Device ", i, " (", device_config.name, ")");
+    for (int port : device_config.ports) {
+      if (port < 0 || port >= port_count_) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(device, " uses port ", port, ", but there are only ",
+                         port_count_, " ports"));
+      }
+    }
+    for (const DeviceInterrupt& interrupt : device_config.interrupts) {
+      if (interrupt.interrupt < 0 ||
+          interrupt.interrupt >= CpuCore::kInterruptCount) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            device, " uses interrupt ", interrupt.interrupt,
+            ", but there are only ", CpuCore::kInterruptCount, " interrupts"));
+      }
+    }
+    if (device_config.memory.page_count != 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(device, " has pages, which are not supported yet"));
+    }
+    for (int j = 0; j < i; ++j) {
+      if (devices_[j]->GetConfig().name == device_config.name) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(device, " has the same name as device ", j));
+      }
+    }
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace oz3

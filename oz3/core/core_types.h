@@ -138,6 +138,8 @@ inline constexpr Cycles kCpuCoreCycles_CRUN = 1;
 class Component;
 class CpuCore;
 class CpuCoreConfig;
+class Device;
+class DeviceFactory;
 class ExecutionComponent;
 class InstructionCompiler;
 class InstructionSet;

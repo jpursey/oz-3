@@ -7,6 +7,8 @@
 #define OZ3_CORE_PROCESSOR_H_
 
 #include <memory>
+#include <string_view>
+#include <vector>
 
 #include "gb/container/array.h"
 #include "oz3/core/core_types.h"
@@ -27,7 +29,8 @@ class Processor final {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Creates a new Processor with the specified configuration.
+  // Creates a new Processor with the specified configuration, which must be
+  // valid (see ProcessorConfig::Validate).
   explicit Processor(const ProcessorConfig& config);
 
   Processor(const Processor&) = delete;
@@ -68,6 +71,10 @@ class Processor final {
   // The index must be in the range [0, GetNumPorts()-1].
   std::unique_ptr<Lock> LockPort(int port_index);
 
+  // Returns the device with the specified name, or null if this processor has
+  // none.
+  Device* GetDevice(std::string_view name);
+
   // Returns the number of cycles that have been executed.
   Cycles GetCycles() const;
 
@@ -77,7 +84,9 @@ class Processor final {
 
   // Executes the processor for the specified number of cycles.
   //
-  // This simulates all executable components of the processor in sync.
+  // This simulates all executable components of the processor in sync. Each
+  // cycle runs the cores in index order, and then the devices in the order
+  // they were added.
   //
   // This is a public function for the game, and components must therefore *not*
   // execute this function.
@@ -95,6 +104,10 @@ class Processor final {
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
+
+  // The devices are declared first, so they are destroyed after everything
+  // they use.
+  std::vector<std::unique_ptr<Device>> devices_;
 
   gb::Array<std::unique_ptr<MemoryBank>, kMaxMemoryBanks> banks_;
   gb::Array<std::unique_ptr<CpuCore>, kMaxCores> cores_;
