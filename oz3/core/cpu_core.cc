@@ -253,9 +253,14 @@ void CpuCore::SetDwordRegister(const Lock& lock, int reg, uint32_t value) {
   r_[reg + 1] = static_cast<uint16_t>(value >> 16);
 }
 
-void CpuCore::RaiseInterrupt(int interrupt) {
+bool CpuCore::RaiseInterrupt(int interrupt) {
   DCHECK(interrupt >= 0 && interrupt < kInterruptCount);
-  it_ |= 1 << interrupt;
+  const uint32_t bit = uint32_t{1} << interrupt;
+  if ((it_ & bit) != 0) {
+    return false;
+  }
+  it_ |= bit;
+  return true;
 }
 
 void CpuCore::InitBanks() {

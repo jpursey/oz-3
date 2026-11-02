@@ -562,7 +562,7 @@ class ExecutionComponent : public Component {
 
 ## CLs
 
-### CL1 [ ] core: interrupts report the cores they were raised on
+### CL1 [x] core: interrupts report the cores they were raised on
 
 Depends on: nothing.
 

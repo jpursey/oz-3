@@ -5,6 +5,9 @@
 
 #include "oz3/core/processor.h"
 
+#include <cstdint>
+
+#include "absl/log/check.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/memory_bank.h"
 
@@ -38,10 +41,16 @@ void Processor::Execute(Cycles cycles) {
   }
 }
 
-void Processor::RaiseInterrupt(int interrupt_index) {
+uint8_t Processor::RaiseInterrupt(int interrupt, uint8_t cores) {
+  DCHECK(interrupt >= 0 && interrupt < CpuCore::kInterruptCount);
+  uint8_t raised = 0;
   for (int i = 0; i < num_cores_; ++i) {
-    cores_[i]->RaiseInterrupt(interrupt_index);
+    const uint8_t core_bit = static_cast<uint8_t>(1 << i);
+    if ((cores & core_bit) != 0 && cores_[i]->RaiseInterrupt(interrupt)) {
+      raised |= core_bit;
+    }
   }
+  return raised;
 }
 
 }  // namespace oz3

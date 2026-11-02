@@ -83,8 +83,13 @@ class Processor final {
   // execute this function.
   void Execute(Cycles cycles);
 
-  // Raise interrupt on all cores.
-  void RaiseInterrupt(int interrupt_index);
+  // Raises the interrupt on the cores in `cores`, a mask with one bit for each
+  // core index, ignoring bits for cores the processor doesn't have.
+  //
+  // The interrupt must be in the range [0, CpuCore::kInterruptCount). Returns
+  // the mask of cores it was newly raised on, so 0 means it was a duplicate on
+  // all of them (already pending on each, or `cores` names none of its cores).
+  uint8_t RaiseInterrupt(int interrupt, uint8_t cores = kAllCores);
 
  private:
   //----------------------------------------------------------------------------

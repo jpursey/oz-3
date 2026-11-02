@@ -4024,6 +4024,50 @@ TEST_F(CpuCoreTest, UnmappedInterruptDuringHalt) {
   EXPECT_EQ(state.r2, 0);
 }
 
+// A raise is a duplicate while the interrupt is pending, whether or not
+// interrupts are enabled, and is new again once the core takes it, whether it
+// runs a handler or drops it.
+TEST_F(CpuCoreTest, RaiseInterruptReportsDuplicates) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  // Main program
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  state.code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode(kTestOp_EI));
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  // Interrupt 1
+  state.code.SetAddress(100);
+  state.code.AddValue(Encode(kTestOp_IRET));
+
+  // Interrupts are disabled, so interrupt 1 stays pending.
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_TRUE(state.core.RaiseInterrupt(1));
+  EXPECT_FALSE(state.core.RaiseInterrupt(1));
+  EXPECT_EQ(state.core.GetInterrupts(), 1u << 1);
+
+  // EI lets the core take it, and the handler runs with interrupts disabled.
+  ASSERT_TRUE(ExecuteUntilIp(100));
+  EXPECT_EQ(state.core.GetInterrupts(), 0);
+  EXPECT_TRUE(state.core.RaiseInterrupt(1));
+  EXPECT_FALSE(state.core.RaiseInterrupt(1));
+
+  // The handler runs again after IRET, then the core halts with interrupts
+  // enabled, and drops interrupt 2, which has no handler.
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.core.GetInterrupts(), 0);
+  EXPECT_TRUE(state.core.RaiseInterrupt(2));
+  EXPECT_FALSE(state.core.RaiseInterrupt(2));
+  Execute(10);
+  EXPECT_EQ(state.core.GetInterrupts(), 0);
+  EXPECT_TRUE(state.core.RaiseInterrupt(2));
+}
+
 // Core 1 is idle, and can't drop its interrupt until it can prevent locks on
 // itself. Core 0 locks it first and starts it with CRUN, so core 1 runs once it
 // drops the interrupt, rather than going back to being idle.

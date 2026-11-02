@@ -52,6 +52,10 @@ inline constexpr Cycles kMemoryBankAccessWordCycles = 1;
 // The maximum number of cores that can managed by a single Processor.
 inline constexpr int kMaxCores = 8;
 
+// A mask of cores, with one bit for each core index, that names every core.
+static_assert(kMaxCores <= 8, "Core masks are 8 bits");
+inline constexpr uint8_t kAllCores = static_cast<uint8_t>((1 << kMaxCores) - 1);
+
 // The maximum number of ports that can be managed by a single Processor.
 inline constexpr int kMaxPorts = 256;
 

@@ -104,15 +104,48 @@ TEST(ProcessorTest, RaiseInterrupt) {
   config.AddCpuCore(CpuCoreConfig(GetNopInstructionSet()));
   Processor processor(config);
 
-  processor.RaiseInterrupt(1);
+  EXPECT_EQ(processor.RaiseInterrupt(1), 0b11);
   uint32_t interrupts = (1 << 1);
   EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), interrupts);
   EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), interrupts);
 
-  processor.RaiseInterrupt(20);
+  EXPECT_EQ(processor.RaiseInterrupt(20), 0b11);
   interrupts |= (1 << 20);
   EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), interrupts);
   EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), interrupts);
+}
+
+TEST(ProcessorTest, RaiseInterruptOnSomeCores) {
+  Processor processor(ProcessorConfig::MultiCore(3, GetNopInstructionSet()));
+
+  EXPECT_EQ(processor.RaiseInterrupt(1, 0b101), 0b101);
+  EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), 1u << 1);
+  EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), 0);
+  EXPECT_EQ(processor.GetCore(2)->GetInterrupts(), 1u << 1);
+}
+
+TEST(ProcessorTest, RaiseInterruptReturnsCoresNewlyRaisedOn) {
+  Processor processor(ProcessorConfig::MultiCore(3, GetNopInstructionSet()));
+
+  EXPECT_EQ(processor.RaiseInterrupt(1, 0b001), 0b001);
+  EXPECT_EQ(processor.RaiseInterrupt(1), 0b110);
+  EXPECT_EQ(processor.RaiseInterrupt(1), 0);
+  EXPECT_EQ(processor.RaiseInterrupt(1, 0b010), 0);
+  EXPECT_EQ(processor.RaiseInterrupt(2, 0b010), 0b010);
+}
+
+TEST(ProcessorTest, RaiseInterruptIgnoresMissingCores) {
+  Processor processor(ProcessorConfig::MultiCore(2, GetNopInstructionSet()));
+
+  EXPECT_EQ(processor.RaiseInterrupt(3, 0b1110), 0b0010);
+  EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), 0);
+  EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), 1u << 3);
+
+  // Only missing cores, or none at all, is always a duplicate.
+  EXPECT_EQ(processor.RaiseInterrupt(4, 0b1100), 0);
+  EXPECT_EQ(processor.RaiseInterrupt(4, 0), 0);
+  EXPECT_EQ(processor.GetCore(0)->GetInterrupts(), 0);
+  EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), 1u << 3);
 }
 
 }  // namespace

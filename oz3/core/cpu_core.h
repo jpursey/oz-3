@@ -485,10 +485,12 @@ class CpuCore final : public ExecutionComponent {
   // It must be a valid 32-bit register index (see constants above).
   void SetDwordRegister(const Lock& lock, int reg, uint32_t value);
 
-  // Sets the interrupt vector for the specified interrupt.
+  // Raises the specified interrupt, setting its bit in the IT register.
   //
-  // It must be a valid interrupt index: [0, kInterruptCount).
-  void RaiseInterrupt(int interrupt);
+  // It must be a valid interrupt index: [0, kInterruptCount). Returns false if
+  // the interrupt was already pending (a duplicate), whether or not interrupts
+  // are enabled.
+  bool RaiseInterrupt(int interrupt);
 
   // Returns true if an interrupt is pending (will be handled next).
   bool IsInterruptPending() const;
