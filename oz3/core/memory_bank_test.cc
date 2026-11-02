@@ -5,12 +5,12 @@
 
 #include "oz3/core/memory_bank.h"
 
-#include <cstring>
 #include <memory>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/fake_memory_map.h"
 
 namespace oz3 {
 namespace {
@@ -43,30 +43,6 @@ void AltInitMemory(absl::Span<uint16_t> buffer) {
         GetAltInitWord(i / kMemoryBankPageSize, i % kMemoryBankPageSize);
   }
 }
-
-// A memory map with `page_count` pages of memory of its own.
-class FakeMemoryMap : public MemoryMap {
- public:
-  explicit FakeMemoryMap(int page_count = kMemoryBankPageCount)
-      : mem_(page_count * kMemoryBankPageSize) {}
-  ~FakeMemoryMap() override = default;
-
-  absl::Span<uint16_t> GetMem() { return absl::MakeSpan(mem_); }
-
- protected:
-  void Read(int address, uint16_t* data, int size) override {
-    CHECK(address >= 0 && address + size <= mem_.size());
-    std::memcpy(data, mem_.data() + address, size * sizeof(uint16_t));
-  }
-
-  void Write(int address, const uint16_t* data, int size) override {
-    CHECK(address >= 0 && address + size <= mem_.size());
-    std::memcpy(mem_.data() + address, data, size * sizeof(uint16_t));
-  }
-
- private:
-  std::vector<uint16_t> mem_;
-};
 
 TEST(MemoryBankTest, CreateWithDefaultConfig) {
   MemoryBank bank;  // Default options.

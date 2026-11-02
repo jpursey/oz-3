@@ -55,14 +55,16 @@ set(oz3_core_TEST_DEPS
 gb_add_library(oz3_core)
 
 # Test support for libraries that run cores, such as instruction set tests, and
-# a fake device for tests that need one.
+# a fake device and memory map for tests that need them.
 set(oz3_core_testing_SOURCE
   base_core_test.cc base_core_test.h
   fake_device.cc fake_device.h
+  fake_memory_map.cc fake_memory_map.h
 )
 set(oz3_core_testing_DEPS
   absl::flat_hash_map
   absl::function_ref
+  absl::span
   gtest
   oz3_core
 )

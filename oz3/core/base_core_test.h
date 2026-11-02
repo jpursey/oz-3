@@ -6,6 +6,9 @@
 #ifndef OZ3_CORE_BASE_CORE_TEST_H_
 #define OZ3_CORE_BASE_CORE_TEST_H_
 
+#include <memory>
+#include <vector>
+
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/function_ref.h"
 #include "absl/log/log.h"
@@ -23,6 +26,7 @@ class BaseCoreTest : public testing::Test {
     int num_cores = 1;
     int num_memory_banks = 1;
     int num_ports = 0;
+    std::vector<std::shared_ptr<const DeviceFactory>> devices;
   };
 
   struct RegisterValue {

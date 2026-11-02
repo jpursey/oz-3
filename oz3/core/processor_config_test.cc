@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "absl/status/status.h"
 #include "gmock/gmock.h"
@@ -119,13 +120,70 @@ TEST(ProcessorConfigTest, ValidateNamesFactoryAddedTwice) {
       AllOf(HasSubstr("Device 1"), HasSubstr("Screen"), HasSubstr("device 0")));
 }
 
-TEST(ProcessorConfigTest, ValidateRejectsDevicePages) {
-  auto factory = std::make_shared<FakeDeviceFactory>(
-      DeviceConfig{.name = "Screen", .memory = {.page_count = 1}});
-  const absl::Status status = ProcessorConfig().AddDevice(factory).Validate();
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(status.message(), AllOf(HasSubstr("Device 0"),
-                                      HasSubstr("Screen"), HasSubstr("pages")));
+TEST(ProcessorConfigTest, ValidateDevicePages) {
+  // Pages next to another device's, or on the same pages of another bank, are
+  // fine, and a device without pages can name any bank.
+  const auto add_device = [](ProcessorConfig& config, std::string_view name,
+                             DeviceMemory memory) -> ProcessorConfig& {
+    return config.AddDevice(std::make_shared<FakeDeviceFactory>(
+        DeviceConfig{.name = std::string(name), .memory = memory}));
+  };
+  ProcessorConfig config;
+  add_device(config, "A",
+             {.bank = 0, .pages = {.start_page = 0, .page_count = 4}});
+  add_device(config, "B",
+             {.bank = 0, .pages = {.start_page = 4, .page_count = 12}});
+  add_device(config, "C",
+             {.bank = 1, .pages = {.start_page = 0, .page_count = 4}});
+  add_device(config, "D",
+             {.bank = 99, .pages = {.start_page = -1, .page_count = 0}});
+  EXPECT_TRUE(config.Validate().ok());
+}
+
+TEST(ProcessorConfigTest, ValidateNamesDeviceForPagesOutsideBank) {
+  const DeviceMemory memories[] = {
+      {.bank = kMaxMemoryBanks, .pages = {.page_count = 1}},
+      {.bank = -1, .pages = {.page_count = 1}},
+      {.pages = {.start_page = kMemoryBankPageCount - 1, .page_count = 2}},
+      {.pages = {.start_page = -1, .page_count = 1}},
+      {.pages = {.page_count = -1}},
+  };
+  for (const DeviceMemory& memory : memories) {
+    const absl::Status status =
+        ProcessorConfig()
+            .AddDevice(std::make_shared<FakeDeviceFactory>(
+                DeviceConfig{.name = "Screen", .memory = memory}))
+            .Validate();
+    EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument)
+        << memory.bank << " " << memory.pages.start_page << " "
+        << memory.pages.page_count;
+    EXPECT_THAT(status.message(),
+                AllOf(HasSubstr("Device 0"), HasSubstr("Screen")));
+  }
+}
+
+TEST(ProcessorConfigTest, ValidateNamesDeviceForOverlappingPages) {
+  const DeviceMemory memories[] = {
+      {.bank = 1, .pages = {.start_page = 4, .page_count = 1}},
+      {.bank = 1, .pages = {.start_page = 0, .page_count = 3}},
+      {.bank = 1,
+       .pages = {.start_page = 0, .page_count = kMemoryBankPageCount}},
+  };
+  for (const DeviceMemory& memory : memories) {
+    const absl::Status status =
+        ProcessorConfig()
+            .AddDevice(std::make_shared<FakeDeviceFactory>(DeviceConfig{
+                .name = "A",
+                .memory = {.bank = 1,
+                           .pages = {.start_page = 2, .page_count = 3}}}))
+            .AddDevice(std::make_shared<FakeDeviceFactory>(
+                DeviceConfig{.name = "B", .memory = memory}))
+            .Validate();
+    EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument)
+        << memory.pages.start_page << " " << memory.pages.page_count;
+    EXPECT_THAT(status.message(), AllOf(HasSubstr("Device 1"), HasSubstr("B"),
+                                        HasSubstr("device 0")));
+  }
 }
 
 }  // namespace

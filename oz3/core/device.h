@@ -28,9 +28,9 @@ namespace oz3 {
 // Each Processor creates its own device from a DeviceFactory in its config,
 // and runs it after its cores, in the order the devices were added. A device
 // sees only what this class gives it: the ports and interrupts it is wired to,
-// and any memory bank as shared memory. It uses them as a core does: through
-// their locks, at its current cycle, at the start of an Execute(), and then it
-// advances its cycles past what it did.
+// its own pages, and any memory bank as shared memory. It uses them as a core
+// does: through their locks, at its current cycle, at the start of an
+// Execute(), and then it advances its cycles past what it did.
 class Device : public ExecutionComponent {
  public:
   //----------------------------------------------------------------------------
@@ -45,6 +45,13 @@ class Device : public ExecutionComponent {
 
   // Returns the device's name, from its DeviceConfig.
   std::string_view GetName() const { return config_.name; }
+
+  // Returns the map of the device's own pages, which cores read and write them
+  // through, and the device locks to use them, or null for a device without
+  // pages. A device has pages if its DeviceConfig gives it any, and must return
+  // its map once constructed: the Processor puts it in its memory bank as it
+  // creates the banks, before the device is attached.
+  virtual MemoryMap* GetMemoryMap() { return nullptr; }
 
   //----------------------------------------------------------------------------
   // Component implementation

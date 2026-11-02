@@ -57,6 +57,7 @@ set(oz3_tools_TEST_SOURCE
 )
 set(oz3_tools_TEST_DEPS
   absl::flat_hash_map
+  oz3_core_testing
 )
 
 gb_add_library(oz3_tools)

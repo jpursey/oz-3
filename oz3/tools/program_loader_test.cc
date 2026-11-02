@@ -9,6 +9,8 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/device_config.h"
+#include "oz3/core/fake_device.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor.h"
@@ -118,6 +120,29 @@ TEST(ProgramLoaderTest, ReadWriteInterlevedMemoryProcessor) {
               ElementsAre(PageSpan(4, 8), PageSpan(12, 16)));
   EXPECT_THAT(free_pages[0].read_write,
               ElementsAre(PageSpan(0, 4), PageSpan(8, 12)));
+}
+
+TEST(ProgramLoaderTest, DevicePagesProcessor) {
+  // A device's pages are not free, whether its map is read-only or
+  // write-only.
+  for (const MemoryPageMasks& masks :
+       {MemoryPageMasks::ReadOnly(), MemoryPageMasks::WriteOnly()}) {
+    Processor processor(
+        ProcessorConfig::Empty()
+            .SetMemoryBank(0, MemoryBankConfig::MaxRam())
+            .AddDevice(std::make_shared<FakeDeviceFactory>(DeviceConfig{
+                .name = "Fake",
+                .memory = {.bank = 0,
+                           .pages = {.start_page = 4, .page_count = 8},
+                           .masks = masks}})));
+    ProgramLoader loader(&processor);
+
+    auto free_pages = loader.GetFreePages();
+    ASSERT_EQ(free_pages.size(), kMaxMemoryBanks);
+    EXPECT_THAT(free_pages[0].read_only, IsEmpty());
+    EXPECT_THAT(free_pages[0].read_write,
+                ElementsAre(PageSpan(0, 4), PageSpan(12, 16)));
+  }
 }
 
 TEST(ProgramLoaderTest, LoadEmptyProgramIntoEmptyProcessor) {

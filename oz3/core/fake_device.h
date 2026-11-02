@@ -14,6 +14,7 @@
 #include "oz3/core/core_types.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_factory.h"
+#include "oz3/core/fake_memory_map.h"
 
 namespace oz3 {
 
@@ -22,10 +23,10 @@ namespace oz3 {
 //==============================================================================
 
 // A device for tests, which runs whatever step a test gives it, and records
-// the cycles it ran at.
+// the cycles it ran at. It has a FakeMemoryMap if its config gives it pages.
 //
 // Its Device interface is public, so a step (or the test) can use its ports,
-// memory, and interrupts directly.
+// pages, memory, and interrupts directly.
 class FakeDevice final : public Device {
  public:
   //----------------------------------------------------------------------------
@@ -55,6 +56,9 @@ class FakeDevice final : public Device {
   using Device::LockPort;
   using Device::RaiseInterrupt;
 
+  // Returns the device's pages, or null if its config gives it none.
+  FakeMemoryMap* GetMemoryMap() override { return memory_map_.get(); }
+
   //----------------------------------------------------------------------------
   // Test interface
   //----------------------------------------------------------------------------
@@ -73,6 +77,7 @@ class FakeDevice final : public Device {
   void Execute() override;
 
  private:
+  std::unique_ptr<FakeMemoryMap> memory_map_;
   Step step_ = [](FakeDevice&) { return Cycles{1}; };
   std::vector<Cycles> run_cycles_;
 };

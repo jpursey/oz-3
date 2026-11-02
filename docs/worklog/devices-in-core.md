@@ -136,8 +136,15 @@ Screen* screen_device = GetScreen(processor, "Screen");
   with no cycles, as if it had its own bus to them. The lock only puts it in
   turn with the cores. Taking the lock while the bank is free, using its
   pages, and releasing it all in one `Execute()` costs the cores nothing. When
-  a core holds the bank, the device waits its turn, and the cores behind it
-  wait about a cycle.
+  a core holds the bank, the device waits its turn.
+- A lock's handoff depends on the order components run in each cycle, cores
+  first. A lock a core releases is granted to a device waiting for it, which
+  uses it in that same cycle. A lock a device releases is granted to a core
+  waiting for it in that cycle too, but after the core ran, so the core uses
+  it a cycle later. The same holds between cores, by index, and between
+  devices, by the order added. This is as cores already behave, and CL4's
+  tests pin it down; making the handoff independent of the order is a backlog
+  item (see CL6).
 
 ### Sleeping
 
@@ -337,14 +344,13 @@ struct DeviceInterrupt {
 };
 
 struct DeviceMemory {
-  // Where the device's pages start: a bank in [0, kMaxMemoryBanks), and its
-  // first page.
+  // The bank the device's pages are in, in [0, kMaxMemoryBanks), and its
+  // pages (an empty range for none).
   int bank = 0;
-  int start_page = 0;
+  MemoryPageRange pages = {.start_page = 0, .page_count = 0};
 
-  // How many pages the device has (0 for none), and which of them cores can
-  // read and write, with bit 0 for its first page. Set by the device's factory.
-  int page_count = 0;
+  // Which of the device's pages cores can read and write, with bit 0 for its
+  // first page. Set by the device's factory, as is its page count.
   MemoryPageMasks masks;
 };
 
@@ -417,6 +423,12 @@ class Device : public ExecutionComponent {
   // The device's name, from its DeviceConfig.
   std::string_view GetName() const;
 
+  // The device's own pages: the map cores read and write them through, and
+  // the device locks to use them, or null for a device without pages. The
+  // Processor puts it in its bank as it creates the banks, before the device
+  // is attached.
+  virtual MemoryMap* GetMemoryMap();
+
   // Component implementation.
   void AttachProcessor(CoreInternal, Processor* processor) final;
 
@@ -432,11 +444,6 @@ class Device : public ExecutionComponent {
   Port& GetPort(int port);
   std::unique_ptr<Lock> LockPort(int port);
 
-  // The device's own pages: the map cores read and write them through, and
-  // the device locks to use them, or null for a device without pages. Called
-  // once, before the device is attached.
-  virtual MemoryMap* GetMemoryMap();
-
   // Any memory bank, in [0, kMaxMemoryBanks), to lock and use as shared
   // memory.
   MemoryBank* GetMemory(int bank);
@@ -449,8 +456,6 @@ class Device : public ExecutionComponent {
   uint8_t RaiseInterrupt(int interrupt);
 
  private:
-  friend class Processor;  // For GetMemoryMap().
-
   const DeviceConfig config_;
   Processor* processor_ = nullptr;
 };
@@ -463,6 +468,7 @@ class Device : public ExecutionComponent {
   never depends on its factory.
 - The accessors are protected, as they are for the device's own use. Each one
   that uses the processor `DCHECK`s that the device is attached.
+  `GetMemoryMap` is public, as the `Processor` uses it.
 - The port, memory, and interrupt accessors are inline, thin calls to the
   `Processor`, and each port and interrupt is an index into its
   `DeviceConfig`, so a device pays nothing for the indirection beyond what a
@@ -694,26 +700,39 @@ Depends on: CL1.
   49.2 to 49.4 M cycles a second before, and 49.3 to 49.9 after, so the empty
   device loop costs nothing measurable.
 
-### CL4 [ ] core: device pages
+### CL4 [x] core: device pages
 
 Depends on: CL2, CL3.
 
-- `device.h/.cc`: `GetMemoryMap`.
+- `device.h`: `GetMemoryMap`, null by default.
+- `device_config.h`: `DeviceMemory` holds its pages as a `MemoryPageRange`,
+  empty by default.
+- `memory_bank_config.h`: `MemoryPageRange::IsValid`, which `Validate` and
+  the `MemoryBank` constructor's `DCHECK` share.
 - `processor_config.cc`: `Validate` checks each device's pages fit its bank,
-  and don't overlap another device's.
-- `processor.cc`: creates each bank with the maps of the devices in it.
+  and don't overlap another device's (by their masks).
+- `processor.cc`: creates each bank with the maps of the devices in it, and
+  `DCHECK`s that a device has a map exactly when it has pages.
+- New `fake_memory_map.h/.cc` in `oz3_core_testing`: `FakeMemoryMap`, moved
+  from `memory_bank_test.cc`, pages that hold what is written to them. A
+  `FakeDevice` has one if its config gives it pages.
+- `base_core_test.h/.cc`: `InitConfig` takes devices, so a test can run cores
+  with them.
+- `program_loader_test.cc`: its two map tests are back, with a `FakeDevice`,
+  and `oz3_tools_test` links `oz3_core_testing`.
 
 **Verify**
 - Standard checks.
-- Unit tests (`device_test.cc`): a core reads and writes a device's pages
-  through the bank, at the device's own addresses, honoring the device's
-  masks; two devices in one bank; a device without pages leaves the bank as
-  configured.
-- Unit tests (`device_test.cc`), on timing: the device's next lock sees a
-  core's write; the device waits for the lock while a core holds the bank,
-  and gets it in the cycle the core releases it; a device that locks a free
-  bank and releases it in one `Execute()` doesn't delay a core's next lock;
-  the next core to lock the bank sees a write the device made under its lock.
+- Unit tests (`device_test.cc`): the host reads and writes a device's pages
+  through the bank, as a core does, at the device's own addresses, honoring
+  the device's masks; two devices in one bank; a device without pages leaves
+  the bank as configured.
+- Unit tests (`device_test.cc`), on timing, with a core: a device that locks
+  the free bank and releases it each cycle doesn't delay the core's lock; it
+  waits while the core holds the bank, and gets it in the cycle the core
+  releases it, seeing the core's store; a core waiting for a bank the device
+  holds gets it the cycle after the device releases it, and loads what the
+  device wrote under its lock.
 - Unit tests (`processor_config_test.cc`): `Validate` names the device for
   pages past the end of the bank, and for pages overlapping another device's.
 - Unit tests (`program_loader_test.cc`), back from CL2 with a fake device: a
@@ -761,6 +780,11 @@ Depends on: CL4, CL5.
 - A new backlog item, *Sleeping cores*: an idle core sleeps until an
   interrupt, `CRUN`, or `Reset` wakes it, and a waiting core also until its
   wait ends, so a machine of mostly idle cores costs little to run.
+- A new backlog item, *Order-independent lock handoff*: a lock released in a
+  cycle can be used in that cycle by whichever component it is granted to,
+  whatever order the components run in, so a core waiting behind a device
+  (or a lower-index core) no longer loses a cycle. Only if it costs the
+  processor loop nothing measurable, as the run order was kept for speed.
 
 **Verify**
 - Docs only.

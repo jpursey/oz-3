@@ -46,6 +46,13 @@ struct MemoryPageRange {
   // Convenience factory methods to generate ranges for the common cases.
   static MemoryPageRange Max() { return {0, kMemoryBankPageCount}; }
 
+  // Returns true if the range is within a bank (which an empty range at any
+  // page in it is).
+  bool IsValid() const {
+    return start_page >= 0 && page_count >= 0 &&
+           start_page + page_count <= kMemoryBankPageCount;
+  }
+
   // Returns a mask of the pages in the range, with bit 0 for page 0 of the
   // bank. The range must be valid.
   uint16_t GetMask() const {

@@ -107,14 +107,33 @@ absl::Status ProcessorConfig::Validate() const {
             ", but there are only ", CpuCore::kInterruptCount, " interrupts"));
       }
     }
-    if (device_config.memory.page_count != 0) {
-      return absl::InvalidArgumentError(
-          absl::StrCat(device, " has pages, which are not supported yet"));
+    const DeviceMemory& memory = device_config.memory;
+    if (memory.pages.page_count != 0) {
+      if (memory.bank < 0 || memory.bank >= kMaxMemoryBanks) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(device, " has pages in bank ", memory.bank,
+                         ", but there are only ", kMaxMemoryBanks, " banks"));
+      }
+      if (!memory.pages.IsValid()) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            device, " has ", memory.pages.page_count, " pages from page ",
+            memory.pages.start_page, ", but a bank has only ",
+            kMemoryBankPageCount, " pages"));
+      }
     }
     for (int j = 0; j < i; ++j) {
-      if (devices_[j]->GetConfig().name == device_config.name) {
+      const DeviceConfig& other_config = devices_[j]->GetConfig();
+      if (other_config.name == device_config.name) {
         return absl::InvalidArgumentError(
             absl::StrCat(device, " has the same name as device ", j));
+      }
+      const DeviceMemory& other = other_config.memory;
+      if (memory.pages.page_count > 0 && other.pages.page_count > 0 &&
+          memory.bank == other.bank &&
+          (memory.pages.GetMask() & other.pages.GetMask()) != 0) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(device, " has pages in bank ", memory.bank,
+                         " that overlap the pages of device ", j));
       }
     }
   }

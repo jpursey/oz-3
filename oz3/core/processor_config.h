@@ -78,9 +78,8 @@ class ProcessorConfig {
 
   // Returns an error naming the device if a device's config doesn't fit this
   // one: no name, or a name another device has (as a factory added twice
-  // does), a port the config doesn't have, or an interrupt the cores don't
-  // have. Devices with pages of their own are not supported yet, and are an
-  // error too.
+  // does), a port the config doesn't have, an interrupt the cores don't have,
+  // or pages that don't fit in their bank or overlap another device's.
   //
   // This checks the config as a whole, so it doesn't matter what order it was
   // built in. A Processor must be created from a valid config.

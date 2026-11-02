@@ -57,6 +57,9 @@ bool BaseCoreTest::Init(InitConfig config) {
     processor_config.SetMemoryBank(i, MemoryBankConfig::MaxRam());
   }
   processor_config.SetPortCount(config.num_ports);
+  for (const std::shared_ptr<const DeviceFactory>& device : config.devices) {
+    processor_config.AddDevice(device);
+  }
   processor_ = std::make_unique<Processor>(processor_config);
   states_.reserve(config.num_cores);
   for (int i = 0; i < config.num_cores; ++i) {

@@ -5,6 +5,7 @@
 
 #include "oz3/core/fake_device.h"
 
+#include <memory>
 #include <string_view>
 #include <utility>
 
@@ -13,7 +14,12 @@
 
 namespace oz3 {
 
-FakeDevice::FakeDevice(DeviceConfig config) : Device(std::move(config)) {}
+FakeDevice::FakeDevice(DeviceConfig config) : Device(config) {
+  if (config.memory.pages.page_count > 0) {
+    memory_map_ =
+        std::make_unique<FakeMemoryMap>(config.memory.pages.page_count);
+  }
+}
 
 void FakeDevice::Execute() {
   run_cycles_.push_back(GetCycles());

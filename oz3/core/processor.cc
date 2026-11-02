@@ -5,29 +5,48 @@
 
 #include "oz3/core/processor.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "absl/log/check.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/device.h"
+#include "oz3/core/device_config.h"
 #include "oz3/core/device_factory.h"
 #include "oz3/core/memory_bank.h"
+#include "oz3/core/memory_map.h"
 
 namespace oz3 {
 
 Processor::Processor(const ProcessorConfig& config)
     : ports_(config.GetPortCount()) {
   DCHECK_OK(config.Validate());
+  std::array<std::vector<MemoryMapPages>, kMaxMemoryBanks> bank_maps;
   for (const std::shared_ptr<const DeviceFactory>& factory :
        config.GetDevices()) {
-    devices_.push_back(factory->CreateDevice());
-    DCHECK(devices_.back() != nullptr) << factory->GetConfig().name;
+    const DeviceConfig& device_config = factory->GetConfig();
+    std::unique_ptr<Device> device = factory->CreateDevice();
+    DCHECK(device != nullptr) << device_config.name;
+    MemoryMap* const map = device->GetMemoryMap();
+    const DeviceMemory& memory = device_config.memory;
+    if (memory.pages.page_count > 0) {
+      DCHECK(map != nullptr)
+          << device_config.name << " has pages, but no memory map";
+      bank_maps[memory.bank].push_back(
+          {.map = map, .pages = memory.pages, .masks = memory.masks});
+    } else {
+      DCHECK(map == nullptr)
+          << device_config.name << " has a memory map, but no pages";
+    }
+    devices_.push_back(std::move(device));
   }
   auto bank_configs = config.GetMemoryBankConfigs();
   for (int i = 0; i < kMaxMemoryBanks; ++i) {
-    banks_[i] = std::make_unique<MemoryBank>(bank_configs[i]);
+    banks_[i] = std::make_unique<MemoryBank>(bank_configs[i], bank_maps[i]);
     banks_[i]->AttachProcessor({}, this);
   }
   for (const CpuCoreConfig& core_config : config.GetCpuCoreConfigs()) {

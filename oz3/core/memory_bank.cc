@@ -21,8 +21,7 @@ MemoryBank::MemoryBank(const MemoryBankConfig& config,
     MemoryMap* const map = map_pages.map;
     const MemoryPageRange& pages = map_pages.pages;
     DCHECK(map != nullptr && map->bank_ == nullptr);
-    DCHECK(pages.start_page >= 0 && pages.page_count > 0 &&
-           pages.start_page + pages.page_count <= kMemoryBankPageCount);
+    DCHECK(pages.IsValid() && pages.page_count > 0);
     map->bank_ = this;
     const PageMap page_map = {.map = map, .start = MemoryRange(pages).start};
     for (int i = 0; i < pages.page_count; ++i) {

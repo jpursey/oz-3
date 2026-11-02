@@ -33,17 +33,15 @@ struct DeviceInterrupt {
 // DeviceMemory
 //==============================================================================
 
-// The wiring of a device's own pages in a memory bank.
+// The wiring of a device's own pages in a memory bank, which must fit in the
+// bank, and not overlap another device's (see ProcessorConfig::Validate).
 struct DeviceMemory {
   // The bank the device's pages are in, in the range [0, kMaxMemoryBanks).
   int bank = 0;
 
-  // The bank page the device's pages start at.
-  int start_page = 0;
-
-  // The number of pages the device has, which is 0 for a device without
-  // pages. This is set by the device's factory.
-  int page_count = 0;
+  // The bank pages the device has, where an empty range is a device without
+  // pages. The page count is set by the device's factory.
+  MemoryPageRange pages = {.start_page = 0, .page_count = 0};
 
   // Which of the device's pages cores can read and write, with bit 0 for its
   // first page. This is set by the device's factory.
