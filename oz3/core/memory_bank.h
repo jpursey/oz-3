@@ -7,6 +7,7 @@
 #define OZ3_CORE_MEMORY_BANK_H_
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -22,6 +23,22 @@
 namespace oz3 {
 
 //==============================================================================
+// MemoryMapPages
+//==============================================================================
+
+// Defines a memory map over a range of pages within a memory bank.
+struct MemoryMapPages {
+  // The memory map, which owns the pages.
+  MemoryMap* map = nullptr;
+
+  // The pages the map is over.
+  MemoryPageRange pages;
+
+  // The map's own read/write permissions, with bit 0 for its first page.
+  MemoryPageMasks masks;
+};
+
+//==============================================================================
 // MemoryBank
 //==============================================================================
 
@@ -30,18 +47,28 @@ namespace oz3 {
 // MemoryBanks are 16-bit addressable and are accessible from any OZ3 CpuCore,
 // Coprocessor, or Device. Each memory bank is divided into 16 pages of 4096
 // 16-bit words of storage. Each page has separate read/write permissions, and
-// may be backed by physical memory and/or a memory map callback (typical use is
-// for a Coprocessor or Device).
+// may be backed by physical memory or a memory map (typical use is for a
+// Coprocessor or Device).
 class MemoryBank final : public Component {
  public:
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Constructs a memory bank with the specified options.
-  explicit MemoryBank(const MemoryBankConfig& config = {});
+  // Constructs a memory bank with the specified options, and the memory maps
+  // over its pages.
+  //
+  // Each map must be over a non-empty range of valid pages that doesn't
+  // overlap another map's, and must not be in another memory bank. A map owns
+  // its pages, hiding any physical memory on them: a mapped page the map can't
+  // read reads as 0, and writes to one it can't write are ignored. A map's
+  // masks are clamped to its pages, and it is given addresses from 0 at its
+  // first page. Each map must outlive the MemoryBank.
+  explicit MemoryBank(const MemoryBankConfig& config = {},
+                      absl::Span<const MemoryMapPages> maps = {});
 
-  // MemoryBank is move-only.
+  // MemoryBank is neither copyable nor movable, as its memory maps point to
+  // it.
   MemoryBank(const MemoryBank&) = delete;
   MemoryBank& operator=(const MemoryBank&) = delete;
   ~MemoryBank();
@@ -88,18 +115,15 @@ class MemoryBank final : public Component {
   // Returns the size of the memory bank in 16-bit words.
   int GetMemorySize() const { return mem_range_.count; }
 
-  // Returns the page masks for physical memory.
+  // Returns the page masks for the physical memory that reads and writes reach.
   //
-  // Not all of the physical memory may be accessible via read/write methods, if
-  // there is a corresponding read or write memory map as well for some or all
-  // of the physical pages. However, GetMem() can be used to access the physical
-  // memory ignoring any memory map.
+  // Mapped pages are left out, as they belong wholly to their memory map.
+  // However, GetMem() can be used to access the physical memory ignoring any
+  // memory map.
   MemoryPageMasks GetMemPageMasks() const { return mem_masks_; }
 
-  // Returns the page masks for mapped memory.
-  //
-  // Any mapped memory will implicitly mask corresponding reads and writes to
-  // physical memory according to the map read and write masks.
+  // Returns the page masks for mapped memory, with a bit for each page of the
+  // bank that a memory map can read or write.
   MemoryPageMasks GetMapPageMasks() const { return map_masks_; }
 
   // Returns direct access to the physical memory of the MemoryBank.
@@ -127,6 +151,12 @@ class MemoryBank final : public Component {
     int count = 0;
   };
 
+  // The memory map that owns a page, and the address of the map's first page.
+  struct PageMap {
+    MemoryMap* map = nullptr;
+    int start = 0;
+  };
+
   // Reads/write `size` bytes from current address, wrapping around address
   // space as needed.
   void ReadWrap(uint16_t* data, int size);
@@ -141,17 +171,21 @@ class MemoryBank final : public Component {
   uint16_t ReadWord();
   void WriteWord(uint16_t value);
 
-  // Configuration set at initialization.
+  // Configuration set at initialization. The physical memory masks leave out
+  // mapped pages, so a page is in at most one of each pair of masks.
   const MemoryRange mem_range_;
-  const MemoryPageMasks mem_masks_;
-  MemoryMap* const map_ = nullptr;
-  const MemoryPageMasks map_masks_;
+  MemoryPageMasks mem_masks_;
+  MemoryPageMasks map_masks_ = {0, 0};
 
   // Physical memory backing the memory bank.
   std::vector<uint16_t> mem_;
 
   // Value of address bus for the MemoryBank.
   uint16_t address_ = 0;
+
+  // The memory map that owns each page, if any. This is last, so it doesn't
+  // separate the fields every read and write uses.
+  std::array<PageMap, kMemoryBankPageCount> page_maps_;
 };
 
 //==============================================================================

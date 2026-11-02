@@ -20,11 +20,8 @@ ProgramLoader::ProgramLoader(Processor* processor) : processor_(processor) {
 
     const MemoryBank* memory_bank = processor_->GetMemory(b);
     const MemoryPageMasks masks = memory_bank->GetMemPageMasks();
-    const MemoryPageMasks map_masks = memory_bank->GetMapPageMasks();
-    const uint16_t read_mask = masks.read_mask & ~map_masks.read_mask;
-    const uint16_t read_write_mask =
-        read_mask & masks.write_mask & ~map_masks.write_mask;
-    const uint16_t read_only_mask = read_mask & ~read_write_mask;
+    const uint16_t read_write_mask = masks.read_mask & masks.write_mask;
+    const uint16_t read_only_mask = masks.read_mask & ~masks.write_mask;
     if (read_only_mask == 0 && read_write_mask == 0) {
       continue;
     }

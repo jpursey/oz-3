@@ -21,9 +21,10 @@ MemoryBankConfig MemoryBankConfig::RomRam(int rom_pages, int ram_pages) {
   return MemoryBankConfig().SetMemPages(
       MemoryPageRange{.page_count = total_pages},
       MemoryPageMasks{
-          .read_mask = static_cast<uint16_t>((1 << total_pages) - 1),
+          .read_mask = MemoryPageRange{.page_count = total_pages}.GetMask(),
           .write_mask =
-              static_cast<uint16_t>(((1 << ram_pages) - 1) << rom_pages)});
+              MemoryPageRange{.start_page = rom_pages, .page_count = ram_pages}
+                  .GetMask()});
 }
 
 MemoryBankConfig& MemoryBankConfig::SetMemPages(MemoryPageRange range,
@@ -31,23 +32,9 @@ MemoryBankConfig& MemoryBankConfig::SetMemPages(MemoryPageRange range,
   mem_pages_.start_page = std::clamp(range.start_page, 0, 15);
   mem_pages_.page_count =
       std::clamp(range.page_count, 0, std::max(0, 16 - range.start_page));
-  uint16_t pages_mask = 0xFFFF;
-  if (mem_pages_.start_page > 0) {
-    pages_mask &= ~((1 << mem_pages_.start_page) - 1);
-  }
-  if (int mem_page_end = mem_pages_.start_page + mem_pages_.page_count;
-      mem_page_end < 16) {
-    pages_mask &= (1 << mem_page_end) - 1;
-  }
+  const uint16_t pages_mask = mem_pages_.GetMask();
   mem_masks_.read_mask = (masks.read_mask & pages_mask);
   mem_masks_.write_mask = (masks.write_mask & pages_mask);
-  return *this;
-}
-
-MemoryBankConfig& MemoryBankConfig::SetMemoryMap(MemoryMap* map,
-                                                 MemoryPageMasks masks) {
-  map_ = map;
-  map_masks_ = masks;
   return *this;
 }
 

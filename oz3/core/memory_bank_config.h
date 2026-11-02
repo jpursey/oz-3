@@ -10,7 +10,6 @@
 #include <limits>
 
 #include "oz3/core/core_types.h"
-#include "oz3/core/memory_map.h"
 
 namespace oz3 {
 
@@ -27,9 +26,7 @@ struct MemoryPageMasks {
   static MemoryPageMasks ReadOnly(uint16_t mask = 0xFFFF) {
     return {mask, 0x0000};
   }
-  static MemoryPageMasks WriteOnly(uint16_t mask = 0xFFFF) {
-    return {0, 0xFFFF};
-  }
+  static MemoryPageMasks WriteOnly(uint16_t mask = 0xFFFF) { return {0, mask}; }
 
   // Restricts reading the memory page to the specified mask. Each set bit
   // indicates the corresponding page is readable.
@@ -41,13 +38,19 @@ struct MemoryPageMasks {
 };
 
 //==============================================================================
-// MemoryPageMasks
+// MemoryPageRange
 //==============================================================================
 
 // Defines a range of memory pages within a memory bank.
 struct MemoryPageRange {
   // Convenience factory methods to generate ranges for the common cases.
   static MemoryPageRange Max() { return {0, kMemoryBankPageCount}; }
+
+  // Returns a mask of the pages in the range, with bit 0 for page 0 of the
+  // bank. The range must be valid.
+  uint16_t GetMask() const {
+    return static_cast<uint16_t>(((1 << page_count) - 1) << start_page);
+  }
 
   // Page index of the first page of memory.
   //
@@ -72,8 +75,7 @@ class MemoryBankConfig {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Creates an empty memory bank configuration with no RAM and no memory
-  // mapping.
+  // Creates an empty memory bank configuration with no RAM.
   static MemoryBankConfig Empty() { return MemoryBankConfig{}; }
 
   // Creates a memory bank configuration with the maximum possible RAM memory.
@@ -86,7 +88,7 @@ class MemoryBankConfig {
                                  int ram_pages = kMemoryBankPageCount);
 
   // Creates a default memory bank configuration which represents an empty
-  // memory bank (no physical RAM or memory map).
+  // memory bank (no physical RAM).
   MemoryBankConfig() = default;
 
   // Sets the page range for the physically allocated memory backing this
@@ -96,21 +98,12 @@ class MemoryBankConfig {
       MemoryPageRange range,
       MemoryPageMasks masks = MemoryPageMasks::ReadWrite());
 
-  // Sets an optional memory map interface. This will be executed for any
-  // read/write attempt that is within the memory map read/write mask. If set,
-  // this is called before access to physical memory occurs. The MemoryMap
-  // must outlive the MemoryBank.
-  MemoryBankConfig& SetMemoryMap(MemoryMap* map,
-                                 MemoryPageMasks masks = {0xFFFF, 0xFFFF});
-
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
 
   const MemoryPageRange& GetMemPages() const { return mem_pages_; }
   const MemoryPageMasks& GetMemMasks() const { return mem_masks_; }
-  MemoryMap* GetMemoryMap() const { return map_; }
-  const MemoryPageMasks& GetMemoryMapMasks() const { return map_masks_; }
 
  private:
   //----------------------------------------------------------------------------
@@ -120,10 +113,6 @@ class MemoryBankConfig {
   // Physical memory configuration.
   MemoryPageRange mem_pages_ = {0, 0};
   MemoryPageMasks mem_masks_ = {0, 0};
-
-  // Memory map configuration.
-  MemoryMap* map_ = nullptr;
-  MemoryPageMasks map_masks_ = {0, 0};
 };
 
 }  // namespace oz3

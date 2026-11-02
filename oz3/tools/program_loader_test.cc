@@ -120,34 +120,6 @@ TEST(ProgramLoaderTest, ReadWriteInterlevedMemoryProcessor) {
               ElementsAre(PageSpan(0, 4), PageSpan(8, 12)));
 }
 
-TEST(ProgramLoaderTest, ReadOnlyMemoryMapProcessor) {
-  MemoryMap map;
-  Processor processor(ProcessorConfig::Empty().SetMemoryBank(
-      0, MemoryBankConfig::MaxRam().SetMemoryMap(
-             &map, {.read_mask = 0x0FF0, .write_mask = 0})));
-  ProgramLoader loader(&processor);
-
-  auto free_pages = loader.GetFreePages();
-  ASSERT_EQ(free_pages.size(), kMaxMemoryBanks);
-  EXPECT_THAT(free_pages[0].read_only, IsEmpty());
-  EXPECT_THAT(free_pages[0].read_write,
-              ElementsAre(PageSpan(0, 4), PageSpan(12, 16)));
-}
-
-TEST(ProgramLoaderTest, WriteOnlyMemoryMapProcessor) {
-  MemoryMap map;
-  Processor processor(ProcessorConfig::Empty().SetMemoryBank(
-      0, MemoryBankConfig::MaxRam().SetMemoryMap(
-             &map, {.read_mask = 0, .write_mask = 0x0FF0})));
-  ProgramLoader loader(&processor);
-
-  auto free_pages = loader.GetFreePages();
-  ASSERT_EQ(free_pages.size(), kMaxMemoryBanks);
-  EXPECT_THAT(free_pages[0].read_only, ElementsAre(PageSpan(4, 12)));
-  EXPECT_THAT(free_pages[0].read_write,
-              ElementsAre(PageSpan(0, 4), PageSpan(12, 16)));
-}
-
 TEST(ProgramLoaderTest, LoadEmptyProgramIntoEmptyProcessor) {
   Processor processor(ProcessorConfig::Empty());
   ProgramLoader loader(&processor);

@@ -6,7 +6,8 @@
 #ifndef OZ3_CORE_MEMORY_MAP_H_
 #define OZ3_CORE_MEMORY_MAP_H_
 
-#include <cstring>
+#include <cstdint>
+#include <memory>
 
 #include "oz3/core/core_types.h"
 
@@ -17,21 +18,63 @@ namespace oz3 {
 //==============================================================================
 
 // The MemoryMap interface provides a way for an external class (usually a
-// Coprocessor or Device derived class) to map functionality to specific
-// memory addresses in a MemoryBank. Memory maps always overlay full pages of
-// physical memory (it is not possible to memory map less than a page).
+// Coprocessor or Device derived class) to map functionality to a range of pages
+// in a MemoryBank. Memory maps always overlay full pages (it is not possible to
+// memory map less than a page), and each mapped page belongs wholly to its map.
+//
+// A map has addresses of its own: address 0 is the start of its first page, so
+// it works the same wherever it is placed in the bank.
+//
+// The bank calls Read and Write under the bank's lock, so whatever the map's
+// owner does with the map's storage must take the lock too. A derived map
+// enforces this by taking a Lock reference in its accessors, and verifying it
+// with IsLocked, as Lockable describes.
 class MemoryMap {
  public:
+  //----------------------------------------------------------------------------
+  // Construction / Destruction
+  //----------------------------------------------------------------------------
+
   MemoryMap() = default;
+  MemoryMap(const MemoryMap&) = delete;
+  MemoryMap& operator=(const MemoryMap&) = delete;
   virtual ~MemoryMap() = default;
 
-  // Read from the specified address `size` words into `data`.
-  virtual void Read(int address, uint16_t* data, int size) {
-    std::memset(data, 0, size * sizeof(uint16_t));
-  }
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
 
-  // Write into the specified address `size` words from `data`.
-  virtual void Write(int address, const uint16_t* data, int size) {}
+  // Requests a lock on the bank this map is in. The map must be in a bank.
+  std::unique_ptr<Lock> RequestLock();
+
+  // Returns true if `lock` is a lock on the bank this map is in.
+  bool IsLocked(const Lock& lock) const;
+
+ protected:
+  //----------------------------------------------------------------------------
+  // Derived class interface
+  //----------------------------------------------------------------------------
+
+  // Reads `size` words into `data` from the map's own `address`. This is
+  // called by the bank under its lock, and never reads past the end of the
+  // map's pages.
+  virtual void Read(int address, uint16_t* data, int size);
+
+  // Writes `size` words from `data` to the map's own `address`. This is called
+  // by the bank under its lock, and never writes past the end of the map's
+  // pages.
+  virtual void Write(int address, const uint16_t* data, int size);
+
+ private:
+  //----------------------------------------------------------------------------
+  // Implementation
+  //----------------------------------------------------------------------------
+
+  // The bank attaches itself to the map, and calls Read and Write.
+  friend class MemoryBank;
+
+  // The bank this map is in, or null if it is not in one.
+  MemoryBank* bank_ = nullptr;
 };
 
 }  // namespace oz3

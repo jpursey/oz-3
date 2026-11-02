@@ -6,6 +6,7 @@
 #include "oz3/core/memory_bank.h"
 
 #include <cstring>
+#include <memory>
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -43,21 +44,22 @@ void AltInitMemory(absl::Span<uint16_t> buffer) {
   }
 }
 
+// A memory map with `page_count` pages of memory of its own.
 class FakeMemoryMap : public MemoryMap {
  public:
-  FakeMemoryMap() : mem_(kMemoryBankMaxSize) {}
+  explicit FakeMemoryMap(int page_count = kMemoryBankPageCount)
+      : mem_(page_count * kMemoryBankPageSize) {}
   ~FakeMemoryMap() override = default;
 
-  absl::Span<uint16_t> GetMem() {
-    return absl::MakeSpan(mem_.data(), mem_.size());
-  }
+  absl::Span<uint16_t> GetMem() { return absl::MakeSpan(mem_); }
 
-  void Read(int address, uint16_t* data, int size) {
+ protected:
+  void Read(int address, uint16_t* data, int size) override {
     CHECK(address >= 0 && address + size <= mem_.size());
     std::memcpy(data, mem_.data() + address, size * sizeof(uint16_t));
   }
 
-  void Write(int address, const uint16_t* data, int size) {
+  void Write(int address, const uint16_t* data, int size) override {
     CHECK(address >= 0 && address + size <= mem_.size());
     std::memcpy(mem_.data() + address, data, size * sizeof(uint16_t));
   }
@@ -345,12 +347,18 @@ TEST(MemoryBankTest, WriteWordsOverEndOfMemory) {
   EXPECT_EQ(value, 0xDEF0);
 }
 
+TEST(MemoryBankTest, WriteOnlyMasks) {
+  const MemoryPageMasks masks = MemoryPageMasks::WriteOnly(0x00F0);
+  EXPECT_EQ(masks.read_mask, 0);
+  EXPECT_EQ(masks.write_mask, 0x00F0);
+}
+
 TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
   FakeMemoryMap memory_map;
   InitMemory(memory_map.GetMem());
-  MemoryBank bank(MemoryBankConfig()
-                      .SetMemPages(MemoryPageRange::Max())
-                      .SetMemoryMap(&memory_map));
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map, .pages = MemoryPageRange::Max()}};
+  MemoryBank bank(MemoryBankConfig::MaxRam(), maps);
   auto lock = bank.RequestLock();
   std::vector<uint16_t> words(kMemoryBankMaxSize);
   absl::Span<uint16_t> mapped_mem = memory_map.GetMem();
@@ -368,44 +376,43 @@ TEST(MemoryBankTest, MemoryMapMasksPhysicalMemory) {
   std::memset(words.data(), 0xFF, kMemoryBankMaxSize * sizeof(uint16_t));
   bank.WriteWords(*lock, words);
   EXPECT_THAT(mapped_mem, Each(0xFFFF));
+  EXPECT_THAT(bank.GetMem(0, kMemoryBankMaxSize), Each(0));
+}
+
+TEST(MemoryBankTest, MemoryMapMasksAreItsOwn) {
+  FakeMemoryMap memory_map(3);
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map,
+       .pages = {.start_page = 2, .page_count = 3},
+       .masks = {.read_mask = 0xFFFF, .write_mask = 0x0005}}};
+  MemoryBank bank(MemoryBankConfig::MaxRam(), maps);
+  EXPECT_EQ(bank.GetMapPageMasks().read_mask, 0x001C);
+  EXPECT_EQ(bank.GetMapPageMasks().write_mask, 0x0014);
+  EXPECT_EQ(bank.GetMemPageMasks().read_mask, 0xFFE3);
+  EXPECT_EQ(bank.GetMemPageMasks().write_mask, 0xFFE3);
 }
 
 TEST(MemoryBankTest, ReadWordFromWriteOnlyMappedMemory) {
   FakeMemoryMap memory_map;
   AltInitMemory(memory_map.GetMem());
-  MemoryBank bank(MemoryBankConfig()
-                      .SetMemPages(MemoryPageRange::Max())
-                      .SetMemoryMap(&memory_map, {.read_mask = 0x0FF0,
-                                                  .write_mask = 0xFFFF}));
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map,
+       .pages = MemoryPageRange::Max(),
+       .masks = {.read_mask = 0x0FF0, .write_mask = 0xFFFF}}};
+  MemoryBank bank(MemoryBankConfig::MaxRam(), maps);
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
   auto lock = bank.RequestLock();
-  int page = 0;
-  uint16_t value;
-  for (; page < 4; ++page) {
+  for (int page = 0; page < 16; ++page) {
+    const bool readable = (page >= 4 && page < 12);
+    uint16_t value;
     bank.SetAddress(*lock, page * kMemoryBankPageSize);
     bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
+    EXPECT_EQ(value, readable ? GetAltInitWord(page, 0) : 0)
         << "Page: " << page;
-  }
-  for (; page < 12; ++page) {
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetAltInitWord(page, 0)) << "Page: " << page;
     bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
     bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetAltInitWord(page, kMemoryBankPageSize - 1))
-        << "Page: " << page;
-  }
-  for (; page < 16; ++page) {
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetInitWord(page, 0)) << "Page: " << page;
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetInitWord(page, kMemoryBankPageSize - 1))
+    EXPECT_EQ(value,
+              readable ? GetAltInitWord(page, kMemoryBankPageSize - 1) : 0)
         << "Page: " << page;
   }
 }
@@ -413,66 +420,182 @@ TEST(MemoryBankTest, ReadWordFromWriteOnlyMappedMemory) {
 TEST(MemoryBankTest, WriteWordFromReadOnlyMappedMemory) {
   FakeMemoryMap memory_map;
   AltInitMemory(memory_map.GetMem());
-  MemoryBank bank(MemoryBankConfig()
-                      .SetMemPages(MemoryPageRange::Max())
-                      .SetMemoryMap(&memory_map, {.read_mask = 0xFFFF,
-                                                  .write_mask = 0x0FF0}));
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map,
+       .pages = MemoryPageRange::Max(),
+       .masks = {.read_mask = 0xFFFF, .write_mask = 0x0FF0}}};
+  MemoryBank bank(MemoryBankConfig::MaxRam(), maps);
   InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
   auto lock = bank.RequestLock();
-  int page = 0;
-  uint16_t value;
-  for (; page < 4; ++page) {
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
+  for (int page = 0; page < 16; ++page) {
+    const bool writable = (page >= 4 && page < 12);
+    const int first = page * kMemoryBankPageSize;
+    const int last = first + kMemoryBankPageSize - 1;
+    uint16_t value;
+    bank.SetAddress(*lock, first);
     bank.StoreWord(*lock, 0x1234);
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
+    bank.SetAddress(*lock, first);
     bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetAltInitWord(page, 0)) << "Page: " << page;
-    EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
+    EXPECT_EQ(value, writable ? 0x1234 : GetAltInitWord(page, 0))
         << "Page: " << page;
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
+    bank.SetAddress(*lock, last);
     bank.StoreWord(*lock, 0x5678);
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
+    bank.SetAddress(*lock, last);
     bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetAltInitWord(page, kMemoryBankPageSize - 1))
+    EXPECT_EQ(value,
+              writable ? 0x5678 : GetAltInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
-    EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
+
+    // Physical memory under the map is never written.
+    EXPECT_EQ(bank.GetMem(first, 1)[0], GetInitWord(page, 0))
         << "Page: " << page;
-  }
-  for (; page < 12; ++page) {
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    bank.StoreWord(*lock, 0x1234);
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, 0x1234) << "Page: " << page;
-    EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0],
-              GetInitWord(page, 0))
-        << "Page: " << page;
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    bank.StoreWord(*lock, 0x5678);
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, 0x5678) << "Page: " << page;
-    EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0],
+    EXPECT_EQ(bank.GetMem(last, 1)[0],
               GetInitWord(page, kMemoryBankPageSize - 1))
         << "Page: " << page;
   }
-  for (; page < 16; ++page) {
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    bank.StoreWord(*lock, 0x1234);
-    bank.SetAddress(*lock, page * kMemoryBankPageSize);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetAltInitWord(page, 0)) << "Page: " << page;
-    EXPECT_EQ(bank.GetMem(page * kMemoryBankPageSize, 1)[0], 0x1234)
-        << "Page: " << page;
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    bank.StoreWord(*lock, 0x5678);
-    bank.SetAddress(*lock, (page + 1) * kMemoryBankPageSize - 1);
-    bank.LoadWord(*lock, value);
-    EXPECT_EQ(value, GetAltInitWord(page, kMemoryBankPageSize - 1))
-        << "Page: " << page;
-    EXPECT_EQ(bank.GetMem((page + 1) * kMemoryBankPageSize - 1, 1)[0], 0x5678)
-        << "Page: " << page;
-  }
+}
+
+TEST(MemoryBankTest, MemoryMapsHaveTheirOwnAddresses) {
+  FakeMemoryMap map_a(2);
+  FakeMemoryMap map_b(4);
+  const MemoryMapPages maps[] = {
+      {.map = &map_a, .pages = {.start_page = 2, .page_count = 2}},
+      {.map = &map_b, .pages = {.start_page = 8, .page_count = 4}}};
+  MemoryBank bank(MemoryBankConfig::MaxRam(), maps);
+  EXPECT_EQ(bank.GetMapPageMasks().read_mask, 0x0F0C);
+  EXPECT_EQ(bank.GetMapPageMasks().write_mask, 0x0F0C);
+  auto lock = bank.RequestLock();
+
+  bank.SetAddress(*lock, 2 * kMemoryBankPageSize);
+  bank.StoreWord(*lock, 0x1111);
+  bank.SetAddress(*lock, 8 * kMemoryBankPageSize + 5);
+  bank.StoreWord(*lock, 0x2222);
+  bank.SetAddress(*lock, 12 * kMemoryBankPageSize - 1);
+  bank.StoreWord(*lock, 0x3333);
+  EXPECT_EQ(map_a.GetMem()[0], 0x1111);
+  EXPECT_EQ(map_b.GetMem()[5], 0x2222);
+  EXPECT_EQ(map_b.GetMem()[4 * kMemoryBankPageSize - 1], 0x3333);
+  EXPECT_THAT(bank.GetMem(0, kMemoryBankMaxSize), Each(0));
+
+  map_a.GetMem()[kMemoryBankPageSize] = 0x4444;
+  map_b.GetMem()[0] = 0x5555;
+  uint16_t value;
+  bank.SetAddress(*lock, 3 * kMemoryBankPageSize);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x4444);
+  bank.SetAddress(*lock, 8 * kMemoryBankPageSize);
+  bank.LoadWord(*lock, value);
+  EXPECT_EQ(value, 0x5555);
+}
+
+TEST(MemoryBankTest, ReadAndWriteWordsAcrossMemoryMaps) {
+  FakeMemoryMap map_a(2);
+  FakeMemoryMap map_b(2);
+  const MemoryMapPages maps[] = {
+      {.map = &map_a, .pages = {.start_page = 2, .page_count = 2}},
+      {.map = &map_b, .pages = {.start_page = 4, .page_count = 2}}};
+  MemoryBank bank(MemoryBankConfig::MaxRam(), maps);
+  auto lock = bank.RequestLock();
+  const uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
+  uint16_t read[4];
+
+  // From physical memory into map A.
+  bank.SetAddress(*lock, 2 * kMemoryBankPageSize - 2);
+  bank.WriteWords(*lock, words);
+  EXPECT_THAT(bank.GetMem(2 * kMemoryBankPageSize - 2, 2),
+              ElementsAre(0x1234, 0x5678));
+  EXPECT_THAT(map_a.GetMem().subspan(0, 2), ElementsAre(0x9ABC, 0xDEF0));
+  bank.SetAddress(*lock, 2 * kMemoryBankPageSize - 2);
+  bank.ReadWords(*lock, read);
+  EXPECT_THAT(read, ElementsAreArray(words));
+
+  // From map A into map B.
+  bank.SetAddress(*lock, 4 * kMemoryBankPageSize - 2);
+  bank.WriteWords(*lock, words);
+  EXPECT_THAT(map_a.GetMem().subspan(2 * kMemoryBankPageSize - 2, 2),
+              ElementsAre(0x1234, 0x5678));
+  EXPECT_THAT(map_b.GetMem().subspan(0, 2), ElementsAre(0x9ABC, 0xDEF0));
+  bank.SetAddress(*lock, 4 * kMemoryBankPageSize - 2);
+  bank.ReadWords(*lock, read);
+  EXPECT_THAT(read, ElementsAreArray(words));
+
+  // From map B into physical memory.
+  bank.SetAddress(*lock, 6 * kMemoryBankPageSize - 2);
+  bank.WriteWords(*lock, words);
+  EXPECT_THAT(map_b.GetMem().subspan(2 * kMemoryBankPageSize - 2, 2),
+              ElementsAre(0x1234, 0x5678));
+  EXPECT_THAT(bank.GetMem(6 * kMemoryBankPageSize, 2),
+              ElementsAre(0x9ABC, 0xDEF0));
+  bank.SetAddress(*lock, 6 * kMemoryBankPageSize - 2);
+  bank.ReadWords(*lock, read);
+  EXPECT_THAT(read, ElementsAreArray(words));
+}
+
+TEST(MemoryBankTest, ReadAndWriteWordsWrapIntoDifferentPermissions) {
+  FakeMemoryMap memory_map(1);
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map, .pages = {.start_page = 15, .page_count = 1}}};
+  MemoryBank bank(MemoryBankConfig().SetMemPages(MemoryPageRange::Max(),
+                                                 MemoryPageMasks::ReadOnly()),
+                  maps);
+  InitMemory(bank.GetMem(0, kMemoryBankMaxSize));
+  auto lock = bank.RequestLock();
+  const uint16_t words[4] = {0x1234, 0x5678, 0x9ABC, 0xDEF0};
+  uint16_t read[4];
+
+  // Page 15 is the map's, and writable, but page 0 after the wrap is read-only
+  // physical memory.
+  bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
+  bank.WriteWords(*lock, words);
+  EXPECT_THAT(memory_map.GetMem().subspan(kMemoryBankPageSize - 2, 2),
+              ElementsAre(0x1234, 0x5678));
+  EXPECT_THAT(bank.GetMem(0, 2), ElementsAre(0, 1));
+  bank.SetAddress(*lock, kMemoryBankMaxSize - 2);
+  bank.ReadWords(*lock, read);
+  EXPECT_THAT(read, ElementsAre(0x1234, 0x5678, 0, 1));
+}
+
+TEST(MemoryBankTest, MemoryMapRequestLockLocksItsBank) {
+  FakeMemoryMap memory_map(1);
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map, .pages = {.start_page = 0, .page_count = 1}}};
+  MemoryBank bank(MemoryBankConfig(), maps);
+  MemoryBank other_bank;
+
+  auto lock = memory_map.RequestLock();
+  EXPECT_TRUE(lock->IsLocked(bank));
+  EXPECT_TRUE(memory_map.IsLocked(*lock));
+  auto other_lock = other_bank.RequestLock();
+  EXPECT_TRUE(other_lock->IsLocked());
+  EXPECT_FALSE(memory_map.IsLocked(*other_lock));
+
+  // While the map's lock is held, the bank's next lock waits for it.
+  auto bank_lock = bank.RequestLock();
+  EXPECT_FALSE(bank_lock->IsLocked());
+  lock.reset();
+  EXPECT_TRUE(bank_lock->IsLocked());
+  EXPECT_TRUE(memory_map.IsLocked(*bank_lock));
+
+  // And the reverse.
+  lock = memory_map.RequestLock();
+  EXPECT_FALSE(lock->IsLocked());
+  EXPECT_FALSE(memory_map.IsLocked(*lock));
+  bank_lock.reset();
+  EXPECT_TRUE(lock->IsLocked(bank));
+  EXPECT_TRUE(memory_map.IsLocked(*lock));
+}
+
+TEST(MemoryBankTest, MemoryMapLeavesItsBankWithIt) {
+  FakeMemoryMap memory_map(1);
+  const MemoryMapPages maps[] = {
+      {.map = &memory_map, .pages = {.start_page = 0, .page_count = 1}}};
+  auto bank = std::make_unique<MemoryBank>(MemoryBankConfig(), maps);
+  bank.reset();
+
+  // The map can be in a new bank once its first bank is gone.
+  MemoryBank new_bank(MemoryBankConfig(), maps);
+  auto lock = memory_map.RequestLock();
+  EXPECT_TRUE(lock->IsLocked(new_bank));
 }
 
 }  // namespace

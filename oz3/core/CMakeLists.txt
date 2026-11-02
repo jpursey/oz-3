@@ -15,7 +15,7 @@ set(oz3_core_SOURCE
   lockable.cc lockable.h
   memory_bank.cc memory_bank.h
   memory_bank_config.cc memory_bank_config.h
-  memory_map.h
+  memory_map.cc memory_map.h
   microcode.cc microcode.h
   port.cc port.h
   processor.cc processor.h

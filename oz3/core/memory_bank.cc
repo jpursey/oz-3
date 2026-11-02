@@ -14,15 +14,39 @@ namespace oz3 {
 // MemoryBank
 //==============================================================================
 
-MemoryBank::MemoryBank(const MemoryBankConfig& config)
-    : mem_range_(config.GetMemPages()),
-      mem_masks_(config.GetMemMasks()),
-      map_(config.GetMemoryMap()),
-      map_masks_(config.GetMemoryMapMasks()) {
+MemoryBank::MemoryBank(const MemoryBankConfig& config,
+                       absl::Span<const MemoryMapPages> maps)
+    : mem_range_(config.GetMemPages()), mem_masks_(config.GetMemMasks()) {
+  for (const MemoryMapPages& map_pages : maps) {
+    MemoryMap* const map = map_pages.map;
+    const MemoryPageRange& pages = map_pages.pages;
+    DCHECK(map != nullptr && map->bank_ == nullptr);
+    DCHECK(pages.start_page >= 0 && pages.page_count > 0 &&
+           pages.start_page + pages.page_count <= kMemoryBankPageCount);
+    map->bank_ = this;
+    const PageMap page_map = {.map = map, .start = MemoryRange(pages).start};
+    for (int i = 0; i < pages.page_count; ++i) {
+      DCHECK(page_maps_[pages.start_page + i].map == nullptr);
+      page_maps_[pages.start_page + i] = page_map;
+    }
+    const uint16_t pages_mask = pages.GetMask();
+    mem_masks_.read_mask &= ~pages_mask;
+    mem_masks_.write_mask &= ~pages_mask;
+    map_masks_.read_mask |=
+        (map_pages.masks.read_mask << pages.start_page) & pages_mask;
+    map_masks_.write_mask |=
+        (map_pages.masks.write_mask << pages.start_page) & pages_mask;
+  }
   mem_.resize(mem_range_.count);
 }
 
-MemoryBank::~MemoryBank() = default;
+MemoryBank::~MemoryBank() {
+  for (const PageMap& page_map : page_maps_) {
+    if (page_map.map != nullptr) {
+      page_map.map->bank_ = nullptr;
+    }
+  }
+}
 
 absl::Span<uint16_t> MemoryBank::GetMem(int address, int size) {
   if (address < mem_range_.start ||
@@ -63,82 +87,61 @@ void MemoryBank::WriteWrap(const uint16_t* data, int size) {
 }
 
 void MemoryBank::Read(int address, uint16_t* data, int size) {
-  if (size == 0) {
-    return;
-  }
-  const int last_page = (address + size - 1) >> 12;
-  int page = address_ >> 12;
-  int page_address = page * kMemoryBankPageSize;
-  uint16_t page_bit = (1 << page);
-  while (true) {
-    int amount =
-        std::min(address + size, page_address + kMemoryBankPageSize) - address;
-    if ((map_masks_.read_mask & page_bit) != 0) {
-      map_->Read(address, data, amount);
-    } else if ((mem_masks_.read_mask & page_bit) != 0) {
+  while (size > 0) {
+    const int page = address >> 12;
+    const int amount =
+        std::min(size, (page + 1) * kMemoryBankPageSize - address);
+    const uint16_t page_bit = static_cast<uint16_t>(1 << page);
+    if ((mem_masks_.read_mask & page_bit) != 0) {
       std::memcpy(data, mem_.data() + (address - mem_range_.start),
                   amount * sizeof(uint16_t));
+    } else if ((map_masks_.read_mask & page_bit) != 0) {
+      const PageMap& page_map = page_maps_[page];
+      page_map.map->Read(address - page_map.start, data, amount);
     } else {
       std::memset(data, 0, amount * sizeof(uint16_t));
-    }
-    if (++page > last_page) {
-      break;
     }
     data += amount;
     address += amount;
     size -= amount;
-    page_address += kMemoryBankPageSize;
-    page_bit <<= 1;
   }
 }
 
 void MemoryBank::Write(int address, const uint16_t* data, int size) {
-  if (size == 0) {
-    return;
-  }
-  const int last_page = (address + size - 1) >> 12;
-  int page = address_ >> 12;
-  int page_address = page * kMemoryBankPageSize;
-  uint16_t page_bit = (1 << page);
-  while (true) {
-    int amount =
-        std::min(address + size, page_address + kMemoryBankPageSize) - address;
-    if ((map_masks_.write_mask & page_bit) != 0) {
-      map_->Write(address, data, amount);
-    } else if ((mem_masks_.write_mask & page_bit) != 0) {
+  while (size > 0) {
+    const int page = address >> 12;
+    const int amount =
+        std::min(size, (page + 1) * kMemoryBankPageSize - address);
+    const uint16_t page_bit = static_cast<uint16_t>(1 << page);
+    if ((mem_masks_.write_mask & page_bit) != 0) {
       std::memcpy(mem_.data() + (address - mem_range_.start), data,
                   amount * sizeof(uint16_t));
-    }
-    if (++page > last_page) {
-      break;
+    } else if ((map_masks_.write_mask & page_bit) != 0) {
+      const PageMap& page_map = page_maps_[page];
+      page_map.map->Write(address - page_map.start, data, amount);
     }
     data += amount;
     address += amount;
     size -= amount;
-    page_address += kMemoryBankPageSize;
-    page_bit <<= 1;
   }
 }
 
 uint16_t MemoryBank::ReadWord() {
   const uint16_t page_bit = (1 << (address_ >> 12));
-  if ((map_masks_.read_mask & page_bit) != 0) {
-    uint16_t value = 0;
-    map_->Read(address_, &value, 1);
-    return value;
-  }
   if ((mem_masks_.read_mask & page_bit) != 0) {
     return mem_[address_ - mem_range_.start];
   }
-  return 0;
+  uint16_t value = 0;
+  Read(address_, &value, 1);
+  return value;
 }
 
 void MemoryBank::WriteWord(uint16_t value) {
   const uint16_t page_bit = (1 << (address_ >> 12));
-  if ((map_masks_.write_mask & page_bit) != 0) {
-    map_->Write(address_, &value, 1);
-  } else if ((mem_masks_.write_mask & page_bit) != 0) {
+  if ((mem_masks_.write_mask & page_bit) != 0) {
     mem_[address_ - mem_range_.start] = value;
+  } else {
+    Write(address_, &value, 1);
   }
 }
 

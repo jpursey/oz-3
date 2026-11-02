@@ -48,9 +48,12 @@ Both returned nothing before, so existing callers are unaffected.
 
 A memory map now covers a range of pages, and a bank can have several, each on
 pages of its own:
-- `MemoryBankConfig::AddMemoryMap(map, pages, masks)` replaces
-  `SetMemoryMap(map, masks)`. The masks are the map's own, with bit 0 for its
-  first page.
+- Maps leave `MemoryBankConfig`: `SetMemoryMap(map, masks)` is gone, and the
+  `MemoryBank` constructor takes the maps over its pages instead, beside its
+  config. Only the `Processor` creates banks, and from CL4 it passes each bank
+  its devices' maps, so a host never adds a map of its own. Each
+  `MemoryMapPages` holds a map, its pages, and its masks, which are the map's
+  own, with bit 0 for its first page.
 - A map is given its own addresses: 0 is the start of its first page, so a
   device's memory works the same wherever it is placed.
 - A mapped page belongs wholly to its map. If the map doesn't allow reading
@@ -67,7 +70,13 @@ pages of its own:
 - Fixed in passing: a read or write that wraps past `FFFFh` used the starting
   page's permissions and map for everything after the wrap.
 
-Only `MemoryBank`'s own tests set a map today, so nothing else changes.
+So `MemoryBankConfig`, and with it `ProcessorConfig`, is plain data again,
+with no pointers in it. Only `MemoryBank`'s tests set a map until CL4. The one
+other user of maps is `ProgramLoader`, which loads programs only into pages
+that physical memory backs: a mapped page is no longer free for it whatever
+the map's masks, as `MemoryBank`'s `GetMemPageMasks()` now leaves mapped pages
+out. Its tests of maps can't set one up through a `Processor` until CL4, so
+they move there, with a fake device.
 
 ### Devices
 
@@ -243,12 +252,18 @@ that wants the misses has its wiring resolved to the existing cores (see
 ### core: memory maps
 
 ```
-// memory_bank_config.h
-// Adds a memory map over `pages`, which must not overlap another map's.
-// `masks` are the map's own, with bit 0 for its first page. The map is given
-// addresses from 0 at its first page, and must outlive the MemoryBank.
-MemoryBankConfig& AddMemoryMap(MemoryMap* map, MemoryPageRange pages,
-                               MemoryPageMasks masks = {});
+// memory_bank.h
+struct MemoryMapPages {
+  MemoryMap* map = nullptr;
+  MemoryPageRange pages;
+  MemoryPageMasks masks;  // The map's own, with bit 0 for its first page.
+};
+
+// Constructs a memory bank, with the memory maps over its pages, which must
+// not overlap. Each map is given addresses from 0 at its first page, and must
+// outlive the MemoryBank.
+explicit MemoryBank(const MemoryBankConfig& config = {},
+                    absl::Span<const MemoryMapPages> maps = {});
 
 // memory_map.h
 class MemoryMap {
@@ -256,11 +271,11 @@ class MemoryMap {
   // Locks the bank this map is in. Valid once the map is attached to a bank.
   std::unique_ptr<Lock> RequestLock();
 
- protected:
   // Whether `lock` holds this map's bank, for a derived map's lock-guarded
   // accessors to DCHECK, as MemoryBank and Port do.
   bool IsLocked(const Lock& lock) const;
 
+ protected:
   // Called by the bank, under its lock, in the map's own addresses.
   virtual void Read(int address, uint16_t* data, int size);
   virtual void Write(int address, const uint16_t* data, int size);
@@ -276,27 +291,33 @@ class MemoryMap {
   storage (`ScreenMemory::GetCells(lock)`), and `DCHECK`s it with `IsLocked`,
   the pattern `Lockable` describes. So the owner can't use its pages without
   the lock.
-- The `MemoryBank` constructor attaches each map its config added, and a map
-  can be attached to only one bank (a `DCHECK`).
+- Maps are not part of `MemoryBankConfig`, as a config is data a host builds
+  and copies, and a map is a live object one bank uses. The `Processor`, which
+  owns both the devices and the banks, joins them when it creates the banks.
+- The `MemoryBank` constructor attaches each map it is given, and a map can be
+  in only one bank at a time (a `DCHECK`): the bank detaches its maps when it
+  is destroyed.
 - `Read` and `Write` become protected, as virtuals meant to be overridden are,
   and only the bank calls them.
 - `MemoryBank` keeps, for each page, the map that owns it and the map's first
-  address, plus bank-wide masks of the pages mapped and of the mapped pages
-  readable and writable. Reading or writing a page checks one mask bit, as
-  now, and a mapped page subtracts its map's first address.
-- Overlapping maps are a `DCHECK` in `AddMemoryMap`, as the rest of
-  `MemoryBankConfig` clamps or checks its input there.
+  address, plus bank-wide masks of the mapped pages readable and writable,
+  and physical memory masks that leave out mapped pages. Reading or writing a
+  page checks one mask bit, as now, and a mapped page subtracts its map's
+  first address.
+- Overlapping maps, and pages out of range, are a `DCHECK` in the `MemoryBank`
+  constructor, which also clamps each map's masks to its pages. For devices,
+  `ProcessorConfig::Validate` reports them first, naming the device (CL4).
 - The wrap fix: `Read` and `Write` take the starting page from their `address`
   parameter rather than the bank's address register.
 
 **Brittleness:**
-- A map must outlive its bank, as before. Device maps are owned by devices
-  that the `Processor` owns and destroys after its banks (see below), so only
-  a host that adds a map of its own has to keep this rule.
+- A map must outlive its bank. Every map is a device's, owned by a device
+  that the `Processor` owns and destroys after its banks (see below), so no
+  host has to keep this rule.
 - A map's owner can't forget the lock, as its storage is only reachable with
-  one. A host's own map can be in only one bank, so a `ProcessorConfig` with
-  one builds only one `Processor`, which the attach `DCHECK` catches. Device
-  maps don't have this limit, as each processor creates its own devices.
+  one. A map can be in only one bank at a time, which the attach `DCHECK`
+  checks, and each processor creates its own devices, so one config still
+  builds any number of live processors.
 
 ### core: DeviceConfig
 
@@ -461,9 +482,8 @@ Device* GetDevice(const DeviceFactory& factory);
 
 - `ProcessorConfig` stays copyable, so every existing caller is unchanged.
 - The `Processor` constructor `DCHECK`s `config.Validate()`. Then it creates
-  each device from its factory, adds each device's memory map to a copy of its
-  bank's `MemoryBankConfig`, creates the banks and cores, and attaches the
-  devices last.
+  each device from its factory, creates each bank with the memory maps of the
+  devices in it, creates the cores, and attaches the devices last.
 - It keeps each factory with its device, so the factory lives as long as the
   device. The devices are declared before the banks, so they are destroyed
   after them, and their maps outlive the banks. Locks a device still holds on a
@@ -583,13 +603,20 @@ Depends on: nothing.
   bits for missing cores are ignored and never in the result; a mask with no
   existing cores returns 0.
 
-### CL2 [ ] core: memory maps over page ranges
+### CL2 [x] core: memory maps over page ranges
 
 Depends on: nothing.
 
-- `memory_bank_config.h/.cc`: `AddMemoryMap` replaces `SetMemoryMap`.
-- `memory_bank.h/.cc`: a map for each page, the map's own addresses and
-  masks, mapped pages that belong wholly to their map, and the wrap fix.
+- `memory_bank_config.h/.cc`: `SetMemoryMap` and the map are gone, and
+  `MemoryPageRange::GetMask()` replaces the mask math repeated across it.
+  Fixed in passing: `MemoryPageMasks::WriteOnly` ignored its mask.
+- `memory_bank.h/.cc`: `MemoryMapPages`, and the constructor takes the maps.
+  A map for each page, the map's own addresses and masks, mapped pages that
+  belong wholly to their map, and the wrap fix. `GetMemPageMasks()` leaves out
+  mapped pages, and `GetMapPageMasks()` is in the bank's pages. A bank
+  detaches its maps when it is destroyed, so a map is in one bank at a time.
+- `program_loader.cc`: free pages come from `GetMemPageMasks()` alone. Its
+  two map tests are removed, and come back in CL4.
 - `memory_map.h/.cc` (new `.cc`): the map knows its bank, with
   `RequestLock` and `IsLocked`, and `Read` and `Write` become protected. Its
   comment says addresses are the map's own, and the bank calls them under its
@@ -598,7 +625,7 @@ Depends on: nothing.
 
 **Verify**
 - Standard checks.
-- Unit tests (`memory_bank_test.cc`, its map tests moved to `AddMemoryMap`):
+- Unit tests (`memory_bank_test.cc`, its map tests moved to the constructor):
   two maps in one bank, each given addresses from 0; a map's read-only and
   write-only pages read 0 and ignore writes, and physical memory under them
   doesn't show through; a read and a write across the boundary of two maps,
@@ -606,7 +633,8 @@ Depends on: nothing.
   into a page with different permissions (the wrap fix).
 - Unit tests (`memory_bank_test.cc`): a map's `RequestLock` locks its bank,
   and waits while someone else holds it; `IsLocked` is true only for a lock
-  on its own bank.
+  on its own bank; a map's masks are clamped to its pages; a map can be in a
+  new bank once its first is destroyed.
 
 ### CL3 [ ] core: devices
 
@@ -655,7 +683,7 @@ Depends on: CL2, CL3.
 - `device.h/.cc`: `GetMemoryMap`.
 - `processor_config.cc`: `Validate` checks each device's pages fit its bank,
   and don't overlap another device's.
-- `processor.cc`: adds each device's map to its bank's config.
+- `processor.cc`: creates each bank with the maps of the devices in it.
 
 **Verify**
 - Standard checks.
@@ -670,6 +698,8 @@ Depends on: CL2, CL3.
   the next core to lock the bank sees a write the device made under its lock.
 - Unit tests (`processor_config_test.cc`): `Validate` names the device for
   pages past the end of the bank, and for pages overlapping another device's.
+- Unit tests (`program_loader_test.cc`), back from CL2 with a fake device: a
+  device's pages are not free, whether its map is read-only or write-only.
 
 ### CL5 [ ] core: sleeping components
 
