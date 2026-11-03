@@ -162,21 +162,29 @@ config when they exist.
 
 ### Device support in core
 
-Today the `Processor` runs only its cores, and nothing attaches to its ports.
-Core gains devices:
+Core runs devices beside the cores (see
+[Devices in core](worklog/devices-in-core.md)):
 - A **device** is an `ExecutionComponent` that the `Processor` runs in step
-  with the cores, cycle by cycle, as it runs cores. The host adds devices
-  through `ProcessorConfig`.
+  with the cores, cycle by cycle, as it runs cores. It is written as a
+  `DeviceFactory`, which holds its wiring (ports, interrupt lines, and pages)
+  and settings, and the `Device` it creates. The host adds factories to the
+  `ProcessorConfig`, and each `Processor` creates and owns its own devices
+  from them, and finds them by name.
 - A device is given its ports, and uses them as a core does, through their
   locks.
 - A device can lock any memory bank, as a core does, to read or write memory
   directly. Each lock costs it cycles and makes cores wait, so device
-  transfers contend for banks like everything else. Memory mapped devices use
-  `MemoryMap`, which exists already.
-- A device raises its interrupt on the cores its line is connected to, and
-  learns whether it was a duplicate, as the spec promises: it is a duplicate
-  only if it was already pending on every one of those cores. This settles the
-  question the *Coprocessors* and *Devices* backlog items share.
+  transfers contend for banks like everything else.
+- A memory mapped device owns pages of its own in a bank, through its
+  `MemoryMap`, at its own addresses. It uses them under the bank's lock, but
+  with no cycles, so it only waits while a core holds the bank, and no core
+  sees a change before it happens.
+- A device raises its interrupts on the cores each line is connected to, and
+  learns which of them it was newly raised on, as the spec promises: it is a
+  duplicate only if it was already pending on every one of those cores.
+- A device with nothing to do sleeps until its ports, its pages, the host, or
+  a deadline wake it, so an idle keyboard costs the `Processor` one compare a
+  cycle.
 
 ### Screen
 
@@ -198,12 +206,16 @@ A memory mapped page. An 80 by 24 screen is 1920 cells, which fits in one
 - The size is configurable, as long as the cells and control words fit the
   page.
 
-The CPU writes cells through the bank's lock, as any memory, and the screen
-never contends for its bank. It **refreshes** at a configured rate (60 Hz by
-default, counted in cycles of the Ozzy's clock, not host time): at each
-refresh it takes what is in the page as the picture, and the host shows that
-picture until the next one. So a program can change many parts of the screen
-between two refreshes and have them all appear at once.
+The CPU writes cells through the bank's lock, as any memory. The screen
+**refreshes** at a configured rate (60 Hz by default, counted in cycles of the
+Ozzy's clock, not host time): at each refresh it takes what is in the page as
+the picture, and the host shows that picture until the next one. So a program
+can change many parts of the screen between two refreshes and have them all
+appear at once.
+- The screen takes the bank's lock for each refresh, so it never sees half of
+  a core's write. It takes the lock, reads its page, and releases it in one
+  step, with no cycles, so it waits only while a core holds the bank, and
+  never makes a core wait.
 - A **frame counter** control word counts refreshes, so a program can wait for
   the next one by watching it change, then draw in the time until the one
   after.

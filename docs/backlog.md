@@ -31,7 +31,7 @@ Each item carries:
 - **Layers:** devices (new)
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Devices in core*
+- **Depends on:** nothing
 - **Background:** [ozzy_design.md](ozzy_design.md) (Screen, Keyboard,
   Teletype)
 
@@ -213,6 +213,43 @@ their file system can't open an absolute path with a drive letter. Open native
 paths with Game Bits instead, so they take any path, and drop the limit from
 CLAUDE.md and the wiki.
 
+## Sleeping cores
+
+- **Layers:** core
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [devices-in-core.md](worklog/devices-in-core.md) (Sleeping);
+  `CpuCore::State` in `oz3/core/cpu_core.h`
+
+An idle core (`HALT`, or never started) still runs every cycle, only to find
+it has nothing to do, as does a core in `WAIT`. Let them sleep as devices do:
+an idle core until an interrupt, `CRUN`, or `Reset` wakes it, and a waiting
+core also until its wait ends (a deadline), so a machine of mostly idle cores,
+as an Ozzy usually is, costs little to run. Cycle counts don't change: a
+woken core must run at the same cycle it would have by polling, which the
+existing core and instruction set tests check.
+
+## Order-independent lock handoff
+
+- **Layers:** core
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [devices-in-core.md](worklog/devices-in-core.md) (Devices,
+  the lock handoff); `oz3/core/lockable.h`
+
+Each cycle, the `Processor` runs its cores in index order, then its devices in
+the order added. A lock released in a cycle is granted to the next component
+waiting for it in that cycle, but one that has already run this cycle only
+uses it in the next. So a core waiting on a lock a device (or a higher-index
+core) releases loses a cycle that a device waiting on a core's lock doesn't.
+Make the handoff the same whatever the order: whoever a released lock is
+granted to can use it in that cycle. Do it only if it costs the processor loop
+nothing measurable, as the run order was kept for speed. It changes cycle
+counts where components contend for a lock, so the tests that pin the
+handoff down change with it.
+
 ## Coprocessors
 
 - **Layers:** core, wiki
@@ -234,5 +271,7 @@ identifiers (up to 16 coprocessors), with the low byte as the coprocessor's own
 opcode (up to 256 each). That would leave the core instruction sets, including
 the default one, below `0xF0`.
 
-Coprocessors raise interrupts as devices do, reporting duplicates (see
-*Devices in core*), and join Ozzy's config once they exist.
+Coprocessors raise interrupts as devices do, learning which cores they were
+newly raised on (see `Processor::RaiseInterrupt`), can sleep while they have
+nothing to do (see `ExecutionComponent::Sleep`), and join Ozzy's config once
+they exist.

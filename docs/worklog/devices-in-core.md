@@ -1,9 +1,8 @@
 # Devices in Core
 
-Today the `Processor` runs only its cores, and nothing but a core or the host
-uses its ports, memory banks, or interrupts. Core gains **devices**: hardware
-outside the OZ-3 (a screen, a keyboard, a disk drive) that runs in step with
-the cores, cycle by cycle.
+The `Processor` runs **devices** beside its cores: hardware outside the OZ-3 (a
+screen, a keyboard, a disk drive) that runs in step with the cores, cycle by
+cycle.
 
 A device is written as two classes: a `DeviceFactory`, which is one configured
 device (its wiring to ports, interrupt lines, and pages, plus its own
@@ -12,9 +11,9 @@ settings), and the `Device` it creates. The host adds `DeviceFactory`s to the
 them. A device:
 - Uses its ports through their locks, as a core does.
 - Owns pages of its own that cores see in a bank, such as a screen's cells,
-  with its own address space and its own rules for reading and writing. It
-  uses them under its bank's lock, as cores do, so no one sees a change before
-  it happens.
+  with its own addresses and its own rules for reading and writing. It uses
+  them under its bank's lock, as cores do, so no one sees a change before it
+  happens.
 - Can lock any memory bank to read and write shared memory, contending with
   the cores, such as a disk drive transferring a file.
 - Raises interrupts on the cores its lines are connected to, and learns which
@@ -23,10 +22,11 @@ them. A device:
 - Sleeps while it has nothing to do, costing the `Processor` one compare a
   cycle, until its ports, its pages, the host, or a deadline wake it. Sleeping
   belongs to every `ExecutionComponent`, so coprocessors can use it too, and
-  cores could later.
+  cores could later (the backlog's *Sleeping cores*).
 
-No device exists yet: the screen, keyboard, and teletype come next, in the
-*Console devices* item, in a new `devices` library.
+No real device exists yet: the screen, keyboard, and teletype are the
+backlog's *Console devices*, in a new `devices` library. Core's own tests use a
+fake device (see [Testing](#core-testing)).
 
 ## Behavior
 
@@ -36,30 +36,29 @@ No device exists yet: the screen, keyboard, and teletype come next, in the
   raised, or `false` if it was already pending on the core (a duplicate).
   "Pending" is its bit being set in `IT`: raised, and not yet taken by the
   core's interrupt handler mapping, whether or not interrupts are enabled.
-- `Processor::RaiseInterrupt(interrupt, cores)` gains a mask of the cores to
-  raise it on, which defaults to every core (as today). It returns the mask of
-  cores it was newly raised on, so 0 is a duplicate on all of them. Bits for
-  cores the processor doesn't have are ignored, and are never in the result.
-- The `INT` microcode ignores the result, so no instruction changes.
+- `Processor::RaiseInterrupt(interrupt, cores)` takes a mask of the cores to
+  raise it on, which defaults to every core. It returns the mask of cores it
+  was newly raised on, so 0 is a duplicate on all of them. Bits for cores the
+  processor doesn't have are ignored, and are never in the result.
+- The `INT` microcode ignores the result, so no instruction changed.
 
-Both returned nothing before, so existing callers are unaffected.
+Both returned nothing before, so no existing caller changed.
 
 ### Memory maps
 
-A memory map now covers a range of pages, and a bank can have several, each on
+A memory map covers a range of pages, and a bank can have several, each on
 pages of its own:
-- Maps leave `MemoryBankConfig`: `SetMemoryMap(map, masks)` is gone, and the
-  `MemoryBank` constructor takes the maps over its pages instead, beside its
-  config. Only the `Processor` creates banks, and from CL4 it passes each bank
-  its devices' maps, so a host never adds a map of its own. Each
-  `MemoryMapPages` holds a map, its pages, and its masks, which are the map's
-  own, with bit 0 for its first page.
+- Maps aren't part of `MemoryBankConfig`, so it, and with it
+  `ProcessorConfig`, is plain data with no pointers in it. The `MemoryBank`
+  constructor takes the maps over its pages beside its config, each as a
+  `MemoryMapPages`: a map, its pages, and its masks, which are the map's own,
+  with bit 0 for its first page. Only the `Processor` creates banks, and it
+  passes each bank its devices' maps, so a host never adds a map of its own.
 - A map is given its own addresses: 0 is the start of its first page, so a
   device's memory works the same wherever it is placed.
 - A mapped page belongs wholly to its map. If the map doesn't allow reading
   it, it reads as 0, and if it doesn't allow writing it, writes are ignored.
-  The bank's physical memory on that page is hidden, as before, but no longer
-  shows through for whichever of reads or writes the map leaves out.
+  The bank's physical memory on that page is hidden, and never shows through.
 - A map knows the bank it is in, and locks it with `RequestLock()`. What its
   owner does with the map's storage takes the lock, as reading and writing a
   `MemoryBank` or a `Port` does, so the owner never needs to know which bank
@@ -67,16 +66,12 @@ pages of its own:
 - The bank calls a map's `Read` and `Write` under the bank's lock, so a `Read`
   can have side effects (a register that clears when read): the map's owner
   only sees them once the core has released the bank.
-- Fixed in passing: a read or write that wraps past `FFFFh` used the starting
-  page's permissions and map for everything after the wrap.
-
-So `MemoryBankConfig`, and with it `ProcessorConfig`, is plain data again,
-with no pointers in it. Only `MemoryBank`'s tests set a map until CL4. The one
-other user of maps is `ProgramLoader`, which loads programs only into pages
-that physical memory backs: a mapped page is no longer free for it whatever
-the map's masks, as `MemoryBank`'s `GetMemPageMasks()` now leaves mapped pages
-out. Its tests of maps can't set one up through a `Processor` until CL4, so
-they move there, with a fake device.
+- A read or write that wraps past `FFFFh` uses each page's own permissions and
+  map. Before, it used the starting page's for everything after the wrap.
+- `ProgramLoader` loads programs only into pages that physical memory backs: a
+  mapped page is never free for it, whatever the map's masks, as
+  `MemoryBank::GetMemPageMasks()` leaves mapped pages out.
+  `GetMapPageMasks()` has them.
 
 ### Devices
 
@@ -118,8 +113,8 @@ Screen* screen_device = GetScreen(processor, "Screen");
   device type may wrap it in a typed lookup (`GetScreen(processor, name)`).
 - Each cycle, the `Processor` runs its cores in index order, then its devices
   in the order they were added. A device runs whenever the processor has
-  reached its cycle count, exactly as a core does, so a device that is busy
-  for a while (a screen between refreshes) advances its cycles past it, and a
+  reached its due cycle, exactly as a core does, so a device that is busy for
+  a while (a screen between refreshes) advances its cycles past it, and a
   device waiting for something sleeps (see [Sleeping](#sleeping)). Either way
   it costs one compare a cycle.
 - A device sees only what the `Device` base gives it: its ports, its own pages,
@@ -142,9 +137,9 @@ Screen* screen_device = GetScreen(processor, "Screen");
   uses it in that same cycle. A lock a device releases is granted to a core
   waiting for it in that cycle too, but after the core ran, so the core uses
   it a cycle later. The same holds between cores, by index, and between
-  devices, by the order added. This is as cores already behave, and CL4's
-  tests pin it down; making the handoff independent of the order is a backlog
-  item (see CL6).
+  devices, by the order added. This is as cores already behaved, and
+  `device_test.cc`'s timing tests pin it down. Making the handoff independent
+  of the order is the backlog's *Order-independent lock handoff*.
 
 ### Sleeping
 
@@ -156,13 +151,14 @@ just to look.
 ```
 // execution_component.h
 // Wakes the component if it is asleep, so it runs at the next cycle. Safe to
-// call from anywhere. Does nothing if it is awake.
+// call from anywhere. Does nothing if it is awake, or not attached to a
+// processor.
 void Wake();
 
 protected:
 // Ends this Execute() asleep: the component runs again only once woken, or
-// after `max_cycles` if given. Waking catches its cycles up to the
-// processor's.
+// after `max_cycles` (which must be at least one) if it is given. Called last
+// in Execute(), after any AdvanceCycles().
 void Sleep(Cycles max_cycles = kSleepForever);
 ```
 
@@ -191,14 +187,14 @@ order; waking only spares a component the cycles with nothing to do.
 
 While a component sleeps, its `GetCycles()` stays where it fell asleep, and
 waking catches it up to the processor, so its cycles never go backward. Cores
-never sleep yet: an idle or waiting core still runs every cycle, as today (see
-the backlog's *Sleeping cores*, added in the wrap-up).
+never sleep yet: an idle or waiting core still runs every cycle (see the
+backlog's *Sleeping cores*).
 
 ### Wiki
 
 - `2-Specifications.md`, *Overview*: the **Main memory** bullet says a bank's
   pages can be mapped to several devices or coprocessors, each on its own
-  range of pages, rather than one range to a single one. A new **Devices**
+  range of pages, rather than one range to a single one. The **Devices**
   bullet says what a device is and how it runs.
 - `2-Specifications.md`, *Interrupts*: step 1 says a raise is a duplicate on
   each core it was already pending on, and a device learns which cores it was
@@ -219,7 +215,7 @@ the backlog's *Sleeping cores*, added in the wrap-up).
 | When to run next       | `GetDueCycle`, `GetRunCycle`, `GetNextRunCycle`                | `FakeDevice::GetRunCycles` (cycles it ran at), `GetWakeCycle` (awake)      | `GetDueCycle`     |
 
 `Device` is the spec's word, and the comments in `memory_bank.h` and
-`memory_map.h` already use it. `DeviceFactory` says what it does: each
+`memory_map.h` already used it. `DeviceFactory` says what it does: each
 `Processor` calls its `CreateDevice()` for a `unique_ptr` to a device of its
 own, which is what "Create" means for a factory. It also holds the device's
 wiring and settings, which its class comment says. `DeviceInstance` would
@@ -250,9 +246,9 @@ did run at. `GetWakeCycle` would be wrong for an awake component.
 bool RaiseInterrupt(int interrupt);
 
 // core_types.h
-// A mask of cores, one bit for each core index.
-inline constexpr uint8_t kAllCores = 0xFF;
-static_assert(kMaxCores <= 8);
+// A mask of cores, with one bit for each core index, that names every core.
+static_assert(kMaxCores <= 8, "Core masks are 8 bits");
+inline constexpr uint8_t kAllCores = static_cast<uint8_t>((1 << kMaxCores) - 1);
 
 // processor.h
 // Raises the interrupt on the cores in `cores`, ignoring bits for cores the
@@ -287,7 +283,7 @@ explicit MemoryBank(const MemoryBankConfig& config = {},
 // memory_map.h
 class MemoryMap {
  public:
-  // Locks the bank this map is in. Valid once the map is attached to a bank.
+  // Locks the bank this map is in. The map must be in a bank.
   std::unique_ptr<Lock> RequestLock();
 
   // Whether `lock` holds this map's bank, for a derived map's lock-guarded
@@ -316,18 +312,19 @@ class MemoryMap {
 - The `MemoryBank` constructor attaches each map it is given, and a map can be
   in only one bank at a time (a `DCHECK`): the bank detaches its maps when it
   is destroyed.
-- `Read` and `Write` become protected, as virtuals meant to be overridden are,
+- `Read` and `Write` are protected, as virtuals meant to be overridden are,
   and only the bank calls them.
 - `MemoryBank` keeps, for each page, the map that owns it and the map's first
   address, plus bank-wide masks of the mapped pages readable and writable,
   and physical memory masks that leave out mapped pages. Reading or writing a
-  page checks one mask bit, as now, and a mapped page subtracts its map's
-  first address.
+  page checks one mask bit, and a mapped page subtracts its map's first
+  address. `MemoryPageRange::GetMask()` and `IsValid()` are shared by the
+  bank, its config, and `ProcessorConfig::Validate`.
 - Overlapping maps, and pages out of range, are a `DCHECK` in the `MemoryBank`
   constructor, which also clamps each map's masks to its pages. For devices,
-  `ProcessorConfig::Validate` reports them first, naming the device (CL4).
-- The wrap fix: `Read` and `Write` take the starting page from their `address`
-  parameter rather than the bank's address register.
+  `ProcessorConfig::Validate` reports them first, naming the device.
+- `Read` and `Write` take the starting page from their `address` parameter
+  rather than the bank's address register, which is the wrap fix.
 
 **Brittleness:**
 - A map must outlive its bank. Every map is a device's, owned by a device
@@ -394,7 +391,7 @@ class DeviceFactory {
  public:
   DeviceFactory(const DeviceFactory&) = delete;
   DeviceFactory& operator=(const DeviceFactory&) = delete;
-  virtual ~DeviceFactory();
+  virtual ~DeviceFactory() = default;
 
   // The device's name and wiring, which is the same config for the factory's
   // whole life. ProcessorConfig::Validate checks it.
@@ -424,9 +421,7 @@ class DeviceFactory {
 // device.h
 class Device : public ExecutionComponent {
  public:
-  Device(const Device&) = delete;
-  Device& operator=(const Device&) = delete;
-  ~Device() override;
+  ~Device() override = default;
 
   // The device's name, from its DeviceConfig.
   std::string_view GetName() const;
@@ -441,7 +436,7 @@ class Device : public ExecutionComponent {
   void AttachProcessor(CoreInternal, Processor* processor) final;
 
   // ExecutionComponent::Execute() stays pure virtual: the device does its
-  // work, and advances its cycles by at least one.
+  // work, and advances its cycles by at least one, or sleeps.
 
  protected:
   // `config` is the config of the factory creating this device.
@@ -495,7 +490,7 @@ absl::Span<const std::shared_ptr<const DeviceFactory>> GetDevices() const;
 
 // Returns an error if a device's config doesn't fit this one: no name, or a
 // name another device has, a port or interrupt that doesn't exist, or pages
-// past the end of a bank or overlapping another device's.
+// that don't fit in their bank or overlap another device's.
 absl::Status Validate() const;
 
 // processor.h
@@ -505,22 +500,25 @@ Device* GetDevice(std::string_view name);
 ```
 
 - `ProcessorConfig` stays copyable, so every existing caller is unchanged.
+  `oz3_core` links `absl::status`, for `Validate()`.
 - The `Processor` constructor `DCHECK`s `config.Validate()`. Then it creates
-  each device from its factory, creates each bank with the memory maps of the
-  devices in it, creates the cores, and attaches the devices last.
+  each device from its factory and adds it to its ports, creates each bank
+  with the memory maps of the devices in it, creates the cores, and attaches
+  the devices last. It `DCHECK`s that a device has a map exactly when it has
+  pages.
 - It uses the factories only to create the devices, and keeps just the
   devices. The devices are declared before the banks, so they are destroyed
   after them, and their maps outlive the banks. Locks a device still holds on a
   bank or port are safe, as a `Lockable`'s destructor clears its lock.
 - `Execute()` runs the devices after the cores. It doesn't check that a
-  device's `Execute()` advanced its cycles: that depends on the device's own
-  state, so it is weak, and each device's own tests cover it.
+  device's `Execute()` advanced its cycles or slept: that depends on the
+  device's own state, so it is weak, and each device's own tests cover it.
 - `Component::AttachProcessor`'s comment still holds: a device is owned solely
   by its processor.
-- `oz3_core` gains `absl::status`, for `Validate()`.
-- Performance: with no devices, `Execute()` gains an empty loop per cycle,
-  which isn't expected to be measurable. CL3 measures a tight loop in Release
-  against the ~46 M cycles a second in [ozzy_design.md](../ozzy_design.md).
+- Performance: with no devices, `Execute()` gains an empty loop per cycle. A
+  tight loop on one core in Release ran at 49.2 to 49.4 M cycles a second
+  before, and 49.3 to 49.9 after, so it costs nothing measurable (measured
+  with a temporary test, not checked in).
 
 **Brittleness:**
 - A derived factory's constructor makes its wiring, so its wiring can't
@@ -566,6 +564,10 @@ class ExecutionComponent : public Component {
   Cycles due_cycle_ = 0;   // When to run next: cycles_, unless asleep.
   const Cycles* clock_ = nullptr;
 };
+
+// port.h
+// Wires a component to this port, so LoadWord and StoreWord wake it.
+void AddComponent(CoreInternal, ExecutionComponent* component);
 ```
 
 - `due_cycle_` is the one value the `Processor` loop compares, for cores and
@@ -574,17 +576,18 @@ class ExecutionComponent : public Component {
   that is sooner, but never before the cycle the component fell asleep at (a
   component can advance its cycles, then sleep). So the loop needs no
   `IsAsleep()`: a sleeping component's due cycle is simply later
-  (`kSleepForever` is the largest `Cycles`), and the one compare covers both.
+  (`kSleepForever`, in `core_types.h`, is the largest `Cycles`), and the one
+  compare covers both.
 - Asleep is `due_cycle_ > cycles_`, as a sleep is at least one cycle, so no
-  flag tracks it. `Sleep` is called last, after any `AdvanceCycles`. Nothing
-  outside needs to ask, so there is no public `IsAsleep()` until something
-  does (the debugger, say).
-- `Step` replaces the `Processor`'s direct calls to `Execute()`, which is now
-  protected, as nothing else calls it. `Step` sets `cycles_` to `due_cycle_`
-  before each, which catches a woken component up and changes nothing for an
-  awake one. So the catch-up lives in one place for every component, with no
-  branch. `Wake` is inline, as ports call it on every load and store.
-  `AdvanceCycles` is the only way cycles move, so they never go backward.
+  flag tracks it. Nothing outside needs to ask, so there is no public
+  `IsAsleep()` until something does (the debugger, say).
+- `Step` replaced the `Processor`'s direct calls to `Execute()`, which is
+  protected, in `CpuCore` too, as nothing else calls it. `Step` sets `cycles_`
+  to `due_cycle_` before each, which catches a woken component up and changes
+  nothing for an awake one. So the catch-up lives in one place for every
+  component, with no branch. `Wake`, `Sleep`, and `Step` are inline, as ports
+  call `Wake` on every load and store. `AdvanceCycles` is the only way cycles
+  move, so they never go backward.
 - `AttachClock` is separate from `Component::AttachProcessor`, and non-virtual,
   so no derived class has to remember to call a base version. The `Processor`
   calls both for each core and device. `Wake()` on a component that has no
@@ -594,8 +597,12 @@ class ExecutionComponent : public Component {
   per port, even for a device wired to it twice), and `LoadWord` and `StoreWord`
   wake them. `port.h` includes `execution_component.h`, with no cycle.
 - Performance: the cores' check in the loop reads `due_cycle_` instead of
-  `cycles_`, and `AdvanceCycles` stores both. Measured in CL5: nothing
-  measurable.
+  `cycles_`, and `AdvanceCycles` stores both. A tight loop on one core in
+  Release (two `ADD.W`s and a `JP`), measured with a temporary test outside one
+  noisy run: with no devices, 48.4 to 49.4 M cycles a second before, and 48.2
+  to 49.2 after; with one idle device (advanced far ahead before, asleep
+  after), 48.6 to 49.0 before, and 47.8 to 49.1 after. So sleeping costs
+  nothing measurable.
 
 **Brittleness:**
 - A component can't fall asleep and miss its own work: `Sleep` only ends the
@@ -607,215 +614,26 @@ class ExecutionComponent : public Component {
   what matters to it. A device that forgets still runs at its deadline, if it
   gave one, and otherwise sleeps until a port wakes it, which its tests show.
 
-### To confirm
+### core: testing
 
-- ~~That an empty device loop costs nothing measurable in `Execute()` (CL3).~~
-  Confirmed: see CL3.
-- ~~That the cores' loop reading `due_cycle_` costs nothing measurable (CL5).~~
-  Confirmed: see CL5.
+`oz3_core_testing` has what a device's tests, and tests of other code with
+devices, build on:
+- `FakeDevice` (`fake_device.h`) runs whatever step a test gives it, and
+  records the cycles it ran at (`GetRunCycles()`). A step returns the cycles
+  it took, or advances its cycles or sleeps itself and returns 0
+  (`FakeDevice::SleepForever` is a step that sleeps). Its `Device` interface,
+  `AdvanceCycles`, and `Sleep` are public, so a step or the test can use them
+  directly. It checks that each step advanced its cycles or slept.
+- `FakeDeviceFactory` creates a `FakeDevice` with any name and wiring, and
+  `GetFakeDevice(processor, name)` finds one.
+- `FakeMemoryMap` (`fake_memory_map.h`) is pages that hold what is written to
+  them, which a `FakeDevice` has if its config gives it pages. `SetOnWrite`
+  runs a function after each write, such as to wake its device.
+- `BaseCoreTest::InitConfig` takes devices, so a test can run cores with them.
+  `oz3_tools_test` links `oz3_core_testing`, for `ProgramLoader`'s tests of
+  device pages.
 
-## CLs
-
-### CL1 [x] core: interrupts report the cores they were raised on
-
-Depends on: nothing.
-
-- `cpu_core.h/.cc`: `RaiseInterrupt` returns whether it was raised.
-- `core_types.h`: `kAllCores`.
-- `processor.h/.cc`: `RaiseInterrupt(interrupt, cores)`, returning the cores it
-  was newly raised on.
-- Wiki: `2-Specifications.md`, *Interrupts*, step 1.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests (`cpu_core_test.cc`): a raise returns true, a second raise before
-  the core takes it returns false (with interrupts enabled and disabled), and
-  a raise after the core takes it (handled, or dropped with no handler)
-  returns true again.
-- Unit tests (`processor_test.cc`): raising on a subset of cores sets only
-  their `IT` bits; the result has only the cores it wasn't already pending on;
-  bits for missing cores are ignored and never in the result; a mask with no
-  existing cores returns 0.
-
-### CL2 [x] core: memory maps over page ranges
-
-Depends on: nothing.
-
-- `memory_bank_config.h/.cc`: `SetMemoryMap` and the map are gone, and
-  `MemoryPageRange::GetMask()` replaces the mask math repeated across it.
-  Fixed in passing: `MemoryPageMasks::WriteOnly` ignored its mask.
-- `memory_bank.h/.cc`: `MemoryMapPages`, and the constructor takes the maps.
-  A map for each page, the map's own addresses and masks, mapped pages that
-  belong wholly to their map, and the wrap fix. `GetMemPageMasks()` leaves out
-  mapped pages, and `GetMapPageMasks()` is in the bank's pages. A bank
-  detaches its maps when it is destroyed, so a map is in one bank at a time.
-- `program_loader.cc`: free pages come from `GetMemPageMasks()` alone. Its
-  two map tests are removed, and come back in CL4.
-- `memory_map.h/.cc` (new `.cc`): the map knows its bank, with
-  `RequestLock` and `IsLocked`, and `Read` and `Write` become protected. Its
-  comment says addresses are the map's own, and the bank calls them under its
-  lock.
-- Wiki: `2-Specifications.md`, *Overview*, the **Main memory** bullet.
-
-**Verify**
-- Standard checks.
-- Unit tests (`memory_bank_test.cc`, its map tests moved to the constructor):
-  two maps in one bank, each given addresses from 0; a map's read-only and
-  write-only pages read 0 and ignore writes, and physical memory under them
-  doesn't show through; a read and a write across the boundary of two maps,
-  and of a map and physical memory; a read and a write that wrap past `FFFFh`
-  into a page with different permissions (the wrap fix).
-- Unit tests (`memory_bank_test.cc`): a map's `RequestLock` locks its bank,
-  and waits while someone else holds it; `IsLocked` is true only for a lock
-  on its own bank; a map's masks are clamped to its pages; a map can be in a
-  new bank once its first is destroyed.
-
-### CL3 [x] core: devices
-
-Depends on: CL1.
-
-- New `device_config.h` (`DeviceInterrupt`, `DeviceMemory`, `DeviceConfig`),
-  `device_factory.h` (`DeviceFactory`), and `device.h/.cc` (`Device`),
-  added to `CMakeLists.txt` with `absl::status`, and `Device` and
-  `DeviceFactory` added to `core_types.h`'s forward declarations.
-- `processor_config.h/.cc`: `AddDevice`, `GetDevices`, `Validate`, which
-  checks names, ports, and interrupts.
-- `processor.h/.cc`: creates, attaches, and runs devices, and `GetDevice`,
-  which finds a device by name.
-- Devices have ports, shared memory, and interrupts. Their own pages come in
-  CL4: `DeviceMemory` is in `DeviceConfig`, and `Validate` rejects a device
-  with pages until then.
-- New `fake_device.h/.cc` in `oz3_core_testing`: `FakeDevice`, which runs a
-  step its test gives it and records the cycles it ran at, with its `Device`
-  interface public, and `FakeDeviceFactory` for any wiring. It is shared, as
-  CL4's `ProgramLoader` tests in `tools` need it too.
-- Wiki: `2-Specifications.md`, *Overview*, the **Devices** bullet.
-
-**Verify**
-- Standard checks.
-- Unit tests (`device_test.cc`), with a fake factory and device, which holds
-  what it did (cycles it ran at, words it read and wrote):
-  - A factory creates a device for each processor built from a config, and
-    `GetDevice` finds each processor's own by name, and null for a name it
-    doesn't have. A device keeps working after its factory is gone.
-  - It runs in step with the cores: a device advancing 3 cycles a step runs at
-    cycles 0, 3, 6, and 9 in `Execute(10)`, and two devices run in the order
-    added, after the cores.
-  - Its port 0 is the processor port it is wired to: what it stores, the host
-    loads from that port, and the reverse. It waits for a port the host holds
-    locked, and gets it once the host lets go.
-  - It locks a bank as shared memory, waits while the host holds it, and its
-    reads and writes cost it the bank's cycles.
-  - Its interrupts raise on the cores they are wired to, among those that
-    exist, returning the cores newly raised on, and two devices sharing a line
-    merge their raises.
-- Unit tests (`processor_config_test.cc`, new): `Validate` accepts a valid
-  config whichever order it was built in, rejects a device without a name,
-  and names the device for a port or interrupt that doesn't exist (negative or
-  past the end), and for a name another device has (two factories, or one
-  added twice).
-- Performance: a tight `ADD`/`MOV`/`JP` loop on one core in Release, before
-  and after, with no devices. Measured with a temporary test, not checked in:
-  49.2 to 49.4 M cycles a second before, and 49.3 to 49.9 after, so the empty
-  device loop costs nothing measurable.
-
-### CL4 [x] core: device pages
-
-Depends on: CL2, CL3.
-
-- `device.h`: `GetMemoryMap`, null by default.
-- `device_config.h`: `DeviceMemory` holds its pages as a `MemoryPageRange`,
-  empty by default.
-- `memory_bank_config.h`: `MemoryPageRange::IsValid`, which `Validate` and
-  the `MemoryBank` constructor's `DCHECK` share.
-- `processor_config.cc`: `Validate` checks each device's pages fit its bank,
-  and don't overlap another device's (by their masks).
-- `processor.cc`: creates each bank with the maps of the devices in it, and
-  `DCHECK`s that a device has a map exactly when it has pages.
-- New `fake_memory_map.h/.cc` in `oz3_core_testing`: `FakeMemoryMap`, moved
-  from `memory_bank_test.cc`, pages that hold what is written to them. A
-  `FakeDevice` has one if its config gives it pages.
-- `base_core_test.h/.cc`: `InitConfig` takes devices, so a test can run cores
-  with them.
-- `program_loader_test.cc`: its two map tests are back, with a `FakeDevice`,
-  and `oz3_tools_test` links `oz3_core_testing`.
-
-**Verify**
-- Standard checks.
-- Unit tests (`device_test.cc`): the host reads and writes a device's pages
-  through the bank, as a core does, at the device's own addresses, honoring
-  the device's masks; two devices in one bank; a device without pages leaves
-  the bank as configured.
-- Unit tests (`device_test.cc`), on timing, with a core: a device that locks
-  the free bank and releases it each cycle doesn't delay the core's lock; it
-  waits while the core holds the bank, and gets it in the cycle the core
-  releases it, seeing the core's store; a core waiting for a bank the device
-  holds gets it the cycle after the device releases it, and loads what the
-  device wrote under its lock.
-- Unit tests (`processor_config_test.cc`): `Validate` names the device for
-  pages past the end of the bank, and for pages overlapping another device's.
-- Unit tests (`program_loader_test.cc`), back from CL2 with a fake device: a
-  device's pages are not free, whether its map is read-only or write-only.
-
-### CL5 [x] core: sleeping components
-
-Depends on: CL3.
-
-- `execution_component.h`: `Sleep`, `Wake`, `AttachClock`,
-  `GetDueCycle`, and `Step`.
-- `processor.cc`: attaches each component's clock, compares `GetDueCycle()`,
-  and calls `Step()`. Adds each device to its ports as it creates it.
-- `port.h/.cc`: a port's components, from `AddComponent`, woken by `LoadWord`
-  and `StoreWord`.
-- `core_types.h`: `kSleepForever`.
-- `fake_device.h/.cc`: a step can sleep, or advance its own cycles first, and
-  then returns 0. `fake_memory_map.h/.cc`: `SetOnWrite`, so a test can wake
-  the map's device from its `Write`.
-
-**Verify**
-- Standard checks.
-- Unit tests (`execution_component_test.cc`, new), with a fake device run by a
-  `Processor`: a sleeping component isn't run; `Wake` runs it at the next
-  cycle with its cycles caught up, whether called during another component's
-  step before or after it, or between `Execute()` calls (the host's call); a
-  deadline wakes it, and a wake before it; a wake in the cycle it is due
-  doesn't put it off; `Wake` on an awake component changes nothing; a wake
-  never moves cycles backward; `Wake` without a processor does nothing.
-- Unit tests (`device_test.cc`): a sleeping device is woken by a core's store
-  to its port, by the host's load from it, and by its own map's `Write` from a
-  core's store, where it then waits for the core to release the bank; a port
-  wakes every device wired to it and no other; a device's store wakes the
-  others on its port, but not itself.
-- Unit tests: the existing core and instruction set tests pass unchanged, as
-  cores never sleep.
-- Performance: a tight loop like CL3's (two `ADD.W`s and a `JP`), in
-  Release, before and after. Measured with a temporary test, not checked in,
-  outside one noisy run: with no devices, 48.4 to 49.4 M cycles a second
-  before, and 48.2 to 49.2 after; with one idle device (advanced far ahead
-  before, asleep after), 48.6 to 49.0 before, and 47.8 to 49.1 after. So
-  sleeping costs nothing measurable.
-
-### CL6 [ ] Wrap-up: summary
-
-Depends on: CL4, CL5.
-
-- This doc's plan becomes a summary of what was built.
-- [ozzy_design.md](../ozzy_design.md)'s *Device support in core* matches what
-  was built: devices from `DeviceFactory`s, owned by the `Processor`, pages
-  used under their bank's lock, and raises that report the cores they
-  reached. Its *Screen* section no longer says the screen never contends for
-  its bank: it takes a short lock at each refresh.
-- The backlog's *Coprocessors* item still points at this one for duplicate
-  reporting, which is now done; it names `Processor::RaiseInterrupt` instead,
-  and says coprocessors can sleep.
-- A new backlog item, *Sleeping cores*: an idle core sleeps until an
-  interrupt, `CRUN`, or `Reset` wakes it, and a waiting core also until its
-  wait ends, so a machine of mostly idle cores costs little to run.
-- A new backlog item, *Order-independent lock handoff*: a lock released in a
-  cycle can be used in that cycle by whichever component it is granted to,
-  whatever order the components run in, so a core waiting behind a device
-  (or a lower-index core) no longer loses a cycle. Only if it costs the
-  processor loop nothing measurable, as the run order was kept for speed.
-
-**Verify**
-- Docs only.
+The tests are in `device_test.cc` (devices, their pages, timing with cores,
+and what wakes them), `execution_component_test.cc` (sleeping and waking),
+`processor_config_test.cc` (`Validate`), `memory_bank_test.cc` (maps), and
+`cpu_core_test.cc` and `processor_test.cc` (interrupts).
