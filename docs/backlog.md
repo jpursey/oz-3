@@ -181,48 +181,18 @@ which readers of version 1 reject.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** Game Bits *Canonical local paths*
-- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`
+- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, and `Run()`
+  in `oz3/apps/oz3ism.cc`
 
-`oz3asm` won't write a file that is the source or another file it writes, but
-it only compares the paths as normalized text. Two paths to one file that are
+`oz3asm` won't write a file that is the source or another file it writes, nor
+`oz3ism` one that is its input, but they only compare the paths as normalized
+text. Two paths to one file that are
 written differently get past the check, and the file is overwritten: a
 relative and an absolute path, a drive and its `file:` form
 (`file:/c/src/a.oza` is `C:\src\a.oza`), a difference in case where the file
 system ignores it, or a link. Ask the file system whether two paths are the
 same file instead, once Game Bits' canonical paths resolve case and links, and
 `gb::FileSystem` lets a caller ask for one.
-
-## Command line errors found while running
-
-- **Layers:** apps
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Game Bits *Command line errors from run functions*
-- **Background:** `ReadOptions()` and `ValidateOutputPaths()` in
-  `oz3/apps/oz3asm.cc`, and `Run()` in `oz3/apps/oz3ism.cc`
-
-`oz3asm` and `oz3ism` find some mistakes on the command line only once they
-run: an output path that isn't a path, and in `oz3asm`, two arguments naming
-the same file. They write those errors themselves, without the
-`oz3asm: <message>. Run "oz3asm --help" for help.` form of the errors
-gb_cli finds. Report them as command line errors, so gb_cli writes them in
-that form.
-
-## Validated output paths
-
-- **Layers:** apps
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Game Bits *Parent folder validator*
-- **Background:** `kProgramFile` in `oz3/apps/oz3asm.cc`, and `kOutputFile` in
-  `oz3/apps/oz3ism.cc`
-
-The files `oz3asm` and `oz3ism` write aren't validated with the command line,
-so a path that isn't valid is caught by hand in their run functions, and a
-missing folder only once a file fails to be written, after assembling. List
-Game Bits' `kCliParentFolderExists` on `oz3asm`'s `<program file>` and
-`oz3ism`'s `<output file>`, and remove the checks by hand. The map and listing
-are written beside the program file, so they are in a folder it validates.
 
 ## Sleeping cores
 

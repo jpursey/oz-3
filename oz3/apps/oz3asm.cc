@@ -70,6 +70,7 @@ const gb::CliArg<std::string_view> kProgramFile = {
         "Where to write the program. Defaults to the source file's path "
         "with the extension .oz3.",
     .optional = true,
+    .validators = {&gb::kCliFileWritable},
 };
 
 bool Run(gb::ValidatedContext& context, const gb::CliCommandLine& command_line);
@@ -100,55 +101,58 @@ struct Options {
   std::string listing_path;  // Empty unless the listing is written.
 };
 
-// Reads the command line into `options`, or returns false after writing the
-// error if a path isn't valid.
-bool ReadOptions(const gb::CliWriter& writer,
-                 const gb::CliCommandLine& command_line, Options* options) {
-  options->instruction_set_path =
-      command_line.Get(kInstructionSet).value_or("");
+// Returns what the command line asks for.
+Options ReadOptions(const gb::CliCommandLine& command_line) {
+  Options options;
+  options.instruction_set_path = command_line.Get(kInstructionSet).value_or("");
 
-  // The source file exists (kCliFileExists), so its path normalizes.
-  options->source_path = gb::NormalizePath(*command_line.Get(kSourceFile));
+  // The validators of the source and program files check that their paths
+  // normalize.
+  options.source_path = gb::NormalizePath(*command_line.Get(kSourceFile));
   if (const std::optional<std::string_view> program_path =
           command_line.Get(kProgramFile);
       program_path.has_value()) {
-    options->program_path = gb::NormalizePath(*program_path);
-    if (options->program_path.empty()) {
-      writer(gb::CliText::kError,
-             absl::StrCat("\"", *program_path, "\" isn't a path"));
-      return false;
-    }
+    options.program_path = gb::NormalizePath(*program_path);
   } else {
-    options->program_path =
-        absl::StrCat(gb::RemoveExtension(options->source_path), ".oz3");
+    options.program_path =
+        absl::StrCat(gb::RemoveExtension(options.source_path), ".oz3");
   }
   if (command_line.Get(kMap)) {
-    options->map_path =
-        absl::StrCat(gb::RemoveExtension(options->program_path), ".oz3map");
+    options.map_path =
+        absl::StrCat(gb::RemoveExtension(options.program_path), ".oz3map");
   }
   if (command_line.Get(kListing)) {
-    options->listing_path =
-        absl::StrCat(gb::RemoveExtension(options->program_path), ".oz3lst");
+    options.listing_path =
+        absl::StrCat(gb::RemoveExtension(options.program_path), ".oz3lst");
   }
-  return true;
+  return options;
 }
 
 // Returns whether the paths of the files the options write are each different,
-// and not the source file's, writing the error if they aren't.
-bool ValidateOutputPaths(const gb::CliWriter& writer, const Options& options) {
-  std::vector<std::string_view> paths = {options.source_path};
-  for (const std::string_view path : {std::string_view(options.program_path),
-                                      std::string_view(options.map_path),
-                                      std::string_view(options.listing_path)}) {
-    if (path.empty()) {
+// and not the source file's. If they aren't, this sets the command line's usage
+// error (gb::kKeyCliUsageError), as it is the command line's mistake.
+bool ValidateOutputPaths(gb::ValidatedContext& context,
+                         const Options& options) {
+  struct File {
+    std::string_view name;
+    std::string_view path;
+  };
+  std::vector<File> files = {{"the source file", options.source_path}};
+  for (const File& file : {File{"the program file", options.program_path},
+                           File{"the map", options.map_path},
+                           File{"the listing", options.listing_path}}) {
+    if (file.path.empty()) {
       continue;
     }
-    if (absl::c_linear_search(paths, path)) {
-      writer(gb::CliText::kError,
-             absl::StrCat("Writing ", path, " would overwrite another file"));
+    if (const auto it = absl::c_find_if(
+            files, [&](const File& other) { return other.path == file.path; });
+        it != files.end()) {
+      context.SetValue<std::string>(gb::kKeyCliUsageError,
+                                    absl::StrCat("\"", file.path, "\" is both ",
+                                                 it->name, " and ", file.name));
       return false;
     }
-    paths.push_back(path);
+    files.push_back(file);
   }
   return true;
 }
@@ -201,9 +205,8 @@ bool Run(gb::ValidatedContext& context,
          const gb::CliCommandLine& command_line) {
   gb::FileSystem* file_system = context.GetPtr<gb::FileSystem>();
   const gb::CliWriter writer = *context.GetPtr<gb::CliWriter>();
-  Options options;
-  if (!ReadOptions(writer, command_line, &options) ||
-      !ValidateOutputPaths(writer, options)) {
+  const Options options = ReadOptions(command_line);
+  if (!ValidateOutputPaths(context, options)) {
     return false;
   }
 

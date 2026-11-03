@@ -39,6 +39,7 @@ const gb::CliArg<std::string_view> kOutputFile = {
     .help =
         "Where to write the C++ for its InstructionSetDef, a snippet to "
         "include in a source file.",
+    .validators = {&gb::kCliFileWritable},
 };
 
 bool Run(gb::ValidatedContext& context, const gb::CliCommandLine& command_line);
@@ -63,11 +64,15 @@ bool Run(gb::ValidatedContext& context,
   gb::FileSystem* file_system = context.GetPtr<gb::FileSystem>();
   const gb::CliWriter writer = *context.GetPtr<gb::CliWriter>();
   const std::string_view input_path = *command_line.Get(kInputFile);
-  const std::string_view output_arg = *command_line.Get(kOutputFile);
-  const std::string output_path = gb::NormalizePath(output_arg);
-  if (output_path.empty()) {
-    writer(gb::CliText::kError,
-           absl::StrCat("\"", output_arg, "\" isn't a path"));
+  const std::string_view output_path = *command_line.Get(kOutputFile);
+
+  // The validators of both files check that their paths normalize.
+  if (const std::string normalized_path = gb::NormalizePath(output_path);
+      normalized_path == gb::NormalizePath(input_path)) {
+    context.SetValue<std::string>(
+        gb::kKeyCliUsageError,
+        absl::StrCat("\"", normalized_path,
+                     "\" is both the input file and the output file"));
     return false;
   }
 
