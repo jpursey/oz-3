@@ -160,7 +160,7 @@ These add to the C++ style in the workflow.
 - Include order: the file's own header first, then C/C++ standard headers in angle brackets, then third-party, Game Bits, and OZ-3 headers in quotes (`"absl/..."`, `"gtest/gtest.h"`, `"gb/..."`, `"oz3/..."`), with blank lines between groups.
 - Unit tests live next to the code they test as `<file>_test.cc`, written with GoogleTest/GoogleMock inside `namespace oz3 { namespace { ... } }`. Tests of the default instruction set are split by instruction group (`instruction_test_<group>.cc`), built on `InstructionTest` in `instruction_test.h`, and check results, flags, and exact cycle counts.
 - Game Bits' libraries are in `$GB_DIR/src/gb/` (such as `gb/container`, `gb/file`, and `gb/parse`), and the third-party libraries it vendors are in `$GB_DIR/third_party/`.
-- Some code predates the workflow's C++ style (iostreams in `oz3ism.cc`, `size_t` in a couple of places). Bring it in line when otherwise changing it, rather than in sweeping cleanups.
+- Some code predates the workflow's C++ style (`size_t` in a couple of places). Bring it in line when otherwise changing it, rather than in sweeping cleanups.
 - C++20, built with both MSVC and clang-cl.
 
 ## Parallel sessions

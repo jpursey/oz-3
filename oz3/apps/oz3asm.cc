@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include <cstdio>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -12,8 +12,13 @@
 #include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_format.h"
-#include "absl/types/span.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
+#include "gb/cli/cli_path.h"
+#include "gb/cli/cli_writer.h"
+#include "gb/cli/run_command_line.h"
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
 #include "gb/file/path.h"
@@ -31,19 +36,59 @@
 namespace oz3 {
 namespace {
 
-constexpr std::string_view kUsage =
-    "Usage: oz3asm [-i <instruction set>] [-m] [-l] <source file> "
-    "[<program file>]\n"
-    "\n"
-    "Assembles a program, and writes its program file, by default the source\n"
-    "file's path with the extension .oz3.\n"
-    "\n"
-    "  -i <instruction set>  Assembles for the instruction set in this source\n"
-    "                        file (.izm), rather than the default one.\n"
-    "  -m                    Writes the program's map beside the program file\n"
-    "                        (.oz3map).\n"
-    "  -l                    Writes the program's listing beside the program\n"
-    "                        file (.oz3lst).\n";
+//==============================================================================
+// Command line
+//==============================================================================
+
+const gb::CliFlag<std::string_view> kInstructionSet = {
+    .name = "instruction-set",
+    .short_name = 'i',
+    .value_name = "instruction set",
+    .help =
+        "Assembles for the instruction set in this source file (.izm), "
+        "rather than the default one.",
+    .validators = {&gb::kCliFileExists},
+};
+const gb::CliFlag<bool> kMap = {
+    .name = "map",
+    .short_name = 'm',
+    .help = "Writes the program's map beside the program file (.oz3map).",
+};
+const gb::CliFlag<bool> kListing = {
+    .name = "listing",
+    .short_name = 'l',
+    .help = "Writes the program's listing beside the program file (.oz3lst).",
+};
+const gb::CliArg<std::string_view> kSourceFile = {
+    .name = "source file",
+    .help = "The program to assemble (.oza).",
+    .validators = {&gb::kCliFileExists},
+};
+const gb::CliArg<std::string_view> kProgramFile = {
+    .name = "program file",
+    .help =
+        "Where to write the program. Defaults to the source file's path "
+        "with the extension .oz3.",
+    .optional = true,
+};
+
+bool Run(gb::ValidatedContext& context, const gb::CliCommandLine& command_line);
+
+const gb::CliCommand kProgram = {
+    .name = "oz3asm",
+    .help =
+        "Assembles a program, and writes its program file. Paths are "
+        "written the operating system's way, absolute or relative to the "
+        "current directory.",
+    .flags = {&kInstructionSet, &kMap, &kListing},
+    .args = {&kSourceFile, &kProgramFile},
+    .constraints = {&gb::kConstraintCliFileSystem},
+    .run = Run,
+};
+
+//==============================================================================
+// Running
+//==============================================================================
 
 // What the command line asks for. The paths of the source file and the files
 // written are normalized (see gb::NormalizePath()).
@@ -55,48 +100,33 @@ struct Options {
   std::string listing_path;  // Empty unless the listing is written.
 };
 
-// Reads the command line into `options`, or returns false if it isn't valid.
-bool ReadOptions(absl::Span<const std::string_view> args, Options* options) {
-  const int arg_count = static_cast<int>(args.size());
-  std::vector<std::string_view> paths;
-  bool write_map = false;
-  bool write_listing = false;
-  for (int i = 0; i < arg_count; ++i) {
-    const std::string_view arg = args[i];
-    if (arg == "-i") {
-      if (i + 1 == arg_count || args[i + 1].empty() ||
-          !options->instruction_set_path.empty()) {
-        return false;
-      }
-      options->instruction_set_path = args[++i];
-    } else if (arg == "-m") {
-      write_map = true;
-    } else if (arg == "-l") {
-      write_listing = true;
-    } else if (arg.starts_with('-')) {
+// Reads the command line into `options`, or returns false after writing the
+// error if a path isn't valid.
+bool ReadOptions(const gb::CliWriter& writer,
+                 const gb::CliCommandLine& command_line, Options* options) {
+  options->instruction_set_path =
+      command_line.Get(kInstructionSet).value_or("");
+
+  // The source file exists (kCliFileExists), so its path normalizes.
+  options->source_path = gb::NormalizePath(*command_line.Get(kSourceFile));
+  if (const std::optional<std::string_view> program_path =
+          command_line.Get(kProgramFile);
+      program_path.has_value()) {
+    options->program_path = gb::NormalizePath(*program_path);
+    if (options->program_path.empty()) {
+      writer(gb::CliText::kError,
+             absl::StrCat("\"", *program_path, "\" isn't a path"));
       return false;
-    } else {
-      paths.push_back(arg);
     }
-  }
-  if (paths.empty() || paths.size() > 2) {
-    return false;
-  }
-  options->source_path = gb::NormalizePath(paths[0]);
-  if (paths.size() == 2) {
-    options->program_path = gb::NormalizePath(paths[1]);
   } else {
     options->program_path =
         absl::StrCat(gb::RemoveExtension(options->source_path), ".oz3");
   }
-  if (options->source_path.empty() || options->program_path.empty()) {
-    return false;
-  }
-  if (write_map) {
+  if (command_line.Get(kMap)) {
     options->map_path =
         absl::StrCat(gb::RemoveExtension(options->program_path), ".oz3map");
   }
-  if (write_listing) {
+  if (command_line.Get(kListing)) {
     options->listing_path =
         absl::StrCat(gb::RemoveExtension(options->program_path), ".oz3lst");
   }
@@ -104,8 +134,8 @@ bool ReadOptions(absl::Span<const std::string_view> args, Options* options) {
 }
 
 // Returns whether the paths of the files the options write are each different,
-// and not the source file's, printing the error if they aren't.
-bool ValidateOutputPaths(const Options& options) {
+// and not the source file's, writing the error if they aren't.
+bool ValidateOutputPaths(const gb::CliWriter& writer, const Options& options) {
   std::vector<std::string_view> paths = {options.source_path};
   for (const std::string_view path : {std::string_view(options.program_path),
                                       std::string_view(options.map_path),
@@ -114,7 +144,8 @@ bool ValidateOutputPaths(const Options& options) {
       continue;
     }
     if (absl::c_linear_search(paths, path)) {
-      absl::FPrintF(stderr, "Writing %s would overwrite another file\n", path);
+      writer(gb::CliText::kError,
+             absl::StrCat("Writing ", path, " would overwrite another file"));
       return false;
     }
     paths.push_back(path);
@@ -124,10 +155,10 @@ bool ValidateOutputPaths(const Options& options) {
 
 // Returns the syntax of the instruction set the options ask for. `asm_set`
 // is set to the instruction set assembled from source, which the syntax
-// needs, if there is one. Returns null after printing the error if it fails.
+// needs, if there is one. Returns null after writing the error if it fails.
 std::unique_ptr<InstructionSetSyntax> CreateSyntax(
-    gb::FileSystem& file_system, const Options& options,
-    std::unique_ptr<AsmInstructionSet>* asm_set) {
+    const gb::CliWriter& writer, gb::FileSystem& file_system,
+    const Options& options, std::unique_ptr<AsmInstructionSet>* asm_set) {
   const InstructionSetDef* def = nullptr;
   std::shared_ptr<const InstructionSet> instruction_set;
   if (options.instruction_set_path.empty()) {
@@ -138,7 +169,7 @@ std::unique_ptr<InstructionSetSyntax> CreateSyntax(
     *asm_set = AssembleInstructionSetFile(file_system,
                                           options.instruction_set_path, &error);
     if (*asm_set == nullptr) {
-      absl::FPrintF(stderr, "%s\n", error.FormatMessage());
+      writer(gb::CliText::kError, error.FormatMessage());
       return nullptr;
     }
     def = &(*asm_set)->GetInstructionSetDef();
@@ -148,67 +179,66 @@ std::unique_ptr<InstructionSetSyntax> CreateSyntax(
   std::unique_ptr<InstructionSetSyntax> syntax =
       InstructionSetSyntax::Create(*def, instruction_set.get(), &error);
   if (syntax == nullptr) {
-    absl::FPrintF(stderr, "Instruction set can't be used: %s\n", error.message);
+    writer(gb::CliText::kError,
+           absl::StrCat("Instruction set can't be used: ", error.message));
   }
   return syntax;
 }
 
 // Returns whether writing a file of the assembled program succeeded, from its
-// `status`, printing the error if it didn't.
-bool ReportWrite(std::string_view kind, const absl::Status& status) {
+// `status`, writing the error if it didn't.
+bool ReportWrite(const gb::CliWriter& writer, std::string_view kind,
+                 const absl::Status& status) {
   if (!status.ok()) {
-    absl::FPrintF(stderr, "Failed to write %s: %s\n", kind, status.message());
+    writer(gb::CliText::kError,
+           absl::StrCat("Failed to write ", kind, ": ", status.message()));
     return false;
   }
   return true;
 }
 
-bool Main(absl::Span<const std::string_view> args) {
+bool Run(gb::ValidatedContext& context,
+         const gb::CliCommandLine& command_line) {
+  gb::FileSystem* file_system = context.GetPtr<gb::FileSystem>();
+  const gb::CliWriter writer = *context.GetPtr<gb::CliWriter>();
   Options options;
-  if (!ReadOptions(args, &options)) {
-    absl::FPrintF(stderr, "%s", kUsage);
+  if (!ReadOptions(writer, command_line, &options) ||
+      !ValidateOutputPaths(writer, options)) {
     return false;
   }
-  if (!ValidateOutputPaths(options)) {
-    return false;
-  }
-
-  // Paths are written the operating system's way, absolute or relative to the
-  // current directory.
-  gb::FileSystem file_system;
-  file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
-  file_system.SetDefaultProtocol("file");
 
   std::unique_ptr<AsmInstructionSet> asm_set;
   std::unique_ptr<InstructionSetSyntax> syntax =
-      CreateSyntax(file_system, options, &asm_set);
+      CreateSyntax(writer, *file_system, options, &asm_set);
   if (syntax == nullptr) {
     return false;
   }
 
   std::vector<gb::ParseError> errors;
   std::unique_ptr<AsmProgram> program =
-      AssembleProgramFile(*syntax, file_system, options.source_path, &errors);
+      AssembleProgramFile(*syntax, *file_system, options.source_path, &errors);
   if (program == nullptr) {
     for (const gb::ParseError& error : errors) {
-      absl::FPrintF(stderr, "%s\n", error.FormatMessage());
+      writer(gb::CliText::kError, error.FormatMessage());
     }
     return false;
   }
 
-  if (!ReportWrite("program",
-                   WriteProgramFile(file_system, options.program_path,
+  if (!ReportWrite(writer, "program",
+                   WriteProgramFile(*file_system, options.program_path,
                                     program->GetProgram()))) {
     return false;
   }
   if (!options.map_path.empty() &&
-      !ReportWrite("map", WriteProgramMapFile(file_system, options.map_path,
-                                              program->GetMap()))) {
+      !ReportWrite(writer, "map",
+                   WriteProgramMapFile(*file_system, options.map_path,
+                                       program->GetMap()))) {
     return false;
   }
   if (!options.listing_path.empty() &&
-      !ReportWrite("listing", WriteProgramListingFile(
-                                  file_system, options.listing_path,
+      !ReportWrite(
+          writer, "listing",
+          WriteProgramListingFile(*file_system, options.listing_path,
                                   program->GetProgram(), program->GetMap()))) {
     return false;
   }
@@ -218,7 +248,12 @@ bool Main(absl::Span<const std::string_view> args) {
 }  // namespace
 }  // namespace oz3
 
-int main(int argc, const char* argv[]) {
-  std::vector<std::string_view> args(argv + 1, argv + argc);
-  return oz3::Main(args) ? 0 : 1;
+int main(int argc, char* argv[]) {
+  gb::FileSystem file_system;
+  file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
+  file_system.SetDefaultProtocol("file");
+  gb::Context context;
+  context.SetPtr<gb::FileSystem>(&file_system);
+  return gb::RunCommandLine(&context, &oz3::kProgram,
+                            gb::GetMainArgs(argc, argv));
 }

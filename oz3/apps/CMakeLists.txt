@@ -10,6 +10,11 @@ set(oz3ism_SOURCE
 )
 
 set(oz3ism_DEPS
+  absl::strings
+  gb_base
+  gb_cli
+  gb_file
+  gb_parse
   oz3_core
   oz3_tools
 )
@@ -28,8 +33,9 @@ set(oz3asm_SOURCE
 set(oz3asm_DEPS
   absl::algorithm_container
   absl::status
-  absl::str_format
   absl::strings
+  gb_base
+  gb_cli
   gb_file
   gb_parse
   oz3_core
