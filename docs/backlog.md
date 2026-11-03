@@ -26,21 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Console devices
-
-- **Layers:** devices (new)
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (Screen, Keyboard,
-  Teletype)
-
-The new `devices` library, with the memory mapped screen (character and
-attribute cells, control words, a scroll row, and a refresh rate with a frame
-counter), the keyboard (a queue of key
-events on a port, with an interrupt), and the teletype (packed text written to
-the host, for an Ozzy without a screen).
-
 ## Ozzy machine
 
 - **Layers:** ozzy (new), apps, wiki
@@ -52,7 +37,10 @@ the host, for an Ozzy without a screen).
 The first Ozzy anyone can run: the `ozzy` library builds a machine from a
 `gb::Config` text file, writes the machine table and the boot ROM, and starts
 core 0, and the `ozzy` app runs it in the Windows console in real time. The
-boot ROM prints a banner and echoes keys. Creates Ozzy's wiki page.
+boot ROM prints a banner and echoes keys. Creates Ozzy's wiki page, which
+documents the console devices for programmers (see
+[console-devices.md](worklog/console-devices.md)), and defines the screen's
+graphics characters (128 to 255), which the frontend draws.
 
 ## Timer device
 
