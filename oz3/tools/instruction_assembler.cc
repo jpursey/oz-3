@@ -734,8 +734,8 @@ std::unique_ptr<AsmInstructionSet> AssembleInstructionSetFile(
     }
     return nullptr;
   }
-  return InstructionSetAssembler(error).Assemble(
-      gb::RemoveProtocol(normalized_path), std::move(text));
+  return InstructionSetAssembler(error).Assemble(normalized_path,
+                                                 std::move(text));
 }
 
 }  // namespace oz3

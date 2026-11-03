@@ -23,8 +23,8 @@ namespace oz3 {
 // program's map, and `sources` is the text of each of the map's files, in its
 // order.
 //
-// The listing has each file in turn, the main file first, as its path (without
-// its protocol) and then a row for each line, with a blank line between files.
+// The listing has each file in turn, the main file first, as its path in the
+// map and then a row for each line, with a blank line between files.
 // A row is a location, up to four words in hex, and the source line:
 //
 //   CODE:0000  0105 0003            start:  ADD R1, 3

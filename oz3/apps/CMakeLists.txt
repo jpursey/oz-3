@@ -29,6 +29,7 @@ set(oz3asm_DEPS
   absl::algorithm_container
   absl::status
   absl::str_format
+  absl::strings
   gb_file
   gb_parse
   oz3_core

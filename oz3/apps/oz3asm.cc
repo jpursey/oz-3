@@ -4,7 +4,6 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include <cstdio>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -12,10 +11,12 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
+#include "gb/file/path.h"
 #include "gb/parse/parse_error.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_set.h"
@@ -44,21 +45,15 @@ constexpr std::string_view kUsage =
     "  -l                    Writes the program's listing beside the program\n"
     "                        file (.oz3lst).\n";
 
-// What the command line asks for.
+// What the command line asks for. The paths of the source file and the files
+// written are normalized (see gb::NormalizePath()).
 struct Options {
   std::string_view instruction_set_path;  // Empty for the default one.
-  std::string_view source_path;
+  std::string source_path;
   std::string program_path;
   std::string map_path;      // Empty unless the map is written.
   std::string listing_path;  // Empty unless the listing is written.
 };
-
-// Returns `path` with its file's extension, if it has one, replaced by
-// `extension` (which starts with a ".").
-std::string ReplaceExtension(std::string_view path,
-                             std::string_view extension) {
-  return std::filesystem::path(path).replace_extension(extension).string();
-}
 
 // Reads the command line into `options`, or returns false if it isn't valid.
 bool ReadOptions(absl::Span<const std::string_view> args, Options* options) {
@@ -87,36 +82,39 @@ bool ReadOptions(absl::Span<const std::string_view> args, Options* options) {
   if (paths.empty() || paths.size() > 2) {
     return false;
   }
-  options->source_path = paths[0];
-  options->program_path = paths.size() == 2
-                              ? std::string(paths[1])
-                              : ReplaceExtension(paths[0], ".oz3");
+  options->source_path = gb::NormalizePath(paths[0]);
+  if (paths.size() == 2) {
+    options->program_path = gb::NormalizePath(paths[1]);
+  } else {
+    options->program_path =
+        absl::StrCat(gb::RemoveExtension(options->source_path), ".oz3");
+  }
+  if (options->source_path.empty() || options->program_path.empty()) {
+    return false;
+  }
   if (write_map) {
-    options->map_path = ReplaceExtension(options->program_path, ".oz3map");
+    options->map_path =
+        absl::StrCat(gb::RemoveExtension(options->program_path), ".oz3map");
   }
   if (write_listing) {
-    options->listing_path = ReplaceExtension(options->program_path, ".oz3lst");
+    options->listing_path =
+        absl::StrCat(gb::RemoveExtension(options->program_path), ".oz3lst");
   }
   return true;
 }
 
-// Returns whether the files the options write are each a different file, and
-// not the source file, printing the error if they aren't.
+// Returns whether the paths of the files the options write are each different,
+// and not the source file's, printing the error if they aren't.
 bool ValidateOutputPaths(const Options& options) {
-  std::vector<std::filesystem::path> paths = {
-      std::filesystem::path(options.source_path).lexically_normal()};
-  for (const std::string_view output :
-       {std::string_view(options.program_path),
-        std::string_view(options.map_path),
-        std::string_view(options.listing_path)}) {
-    if (output.empty()) {
+  std::vector<std::string_view> paths = {options.source_path};
+  for (const std::string_view path : {std::string_view(options.program_path),
+                                      std::string_view(options.map_path),
+                                      std::string_view(options.listing_path)}) {
+    if (path.empty()) {
       continue;
     }
-    const std::filesystem::path path =
-        std::filesystem::path(output).lexically_normal();
     if (absl::c_linear_search(paths, path)) {
-      absl::FPrintF(stderr, "Writing %s would overwrite another file\n",
-                    output);
+      absl::FPrintF(stderr, "Writing %s would overwrite another file\n", path);
       return false;
     }
     paths.push_back(path);
@@ -175,8 +173,10 @@ bool Main(absl::Span<const std::string_view> args) {
     return false;
   }
 
+  // Paths are written the operating system's way, absolute or relative to the
+  // current directory.
   gb::FileSystem file_system;
-  file_system.Register(gb::LocalFileProtocol::Create("/"));
+  file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
   file_system.SetDefaultProtocol("file");
 
   std::unique_ptr<AsmInstructionSet> asm_set;

@@ -97,9 +97,8 @@ class AsmProgram final {
 
 - **Files:** every file the assembler read, by the path it read it from, with
   its protocol (`mem:/lib/a.oza`), in the order first read, once each however
-  often it is included. Errors name a file without its protocol, as the lexer
-  does, so a map's path and an error's filename differ by it. A program
-  assembled from text has one file, `program`, as its errors do.
+  often it is included. Errors and listings name a file by the same path. A
+  program assembled from text has one file, `program`, as its errors do.
 - **Segments:** each segment's name, in the program's order, so segment `i` in
   the map is `Program::segments[i]`. The default program's one segment has no
   name.

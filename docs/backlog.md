@@ -187,19 +187,22 @@ which readers of version 1 reject.
 interface with the Game Bits command line library instead, with its help text,
 keeping the arguments the wiki documents.
 
-## Native paths in the command line tools
+## Same-file check through the file system
 
-- **Layers:** apps, wiki
+- **Layers:** apps
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** Game Bits *Native file paths*
-- **Background:** `oz3/apps/oz3ism.cc` and `oz3/apps/oz3asm.cc`; CLAUDE.md
-  (Default instruction set), and the wiki's `oz3ism` and `oz3asm` sections
+- **Depends on:** Game Bits *Canonical local paths*
+- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`
 
-`oz3ism` and `oz3asm` only open paths relative to the current directory, as
-their file system can't open an absolute path with a drive letter. Open native
-paths with Game Bits instead, so they take any path, and drop the limit from
-CLAUDE.md and the wiki.
+`oz3asm` won't write a file that is the source or another file it writes, but
+it only compares the paths as normalized text. Two paths to one file that are
+written differently get past the check, and the file is overwritten: a
+relative and an absolute path, a drive and its `file:` form
+(`file:/c/src/a.oza` is `C:\src\a.oza`), a difference in case where the file
+system ignores it, or a link. Ask the file system whether two paths are the
+same file instead, once Game Bits' canonical paths resolve case and links, and
+`gb::FileSystem` lets a caller ask for one.
 
 ## Sleeping cores
 

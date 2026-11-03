@@ -23,7 +23,6 @@
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
-#include "gb/file/path.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_map.h"
 
@@ -179,12 +178,11 @@ ProgramLister::Line* ProgramLister::FindLine(
 
 std::string ProgramLister::FormatLine(
     const ProgramMap::Location& location) const {
-  return absl::StrCat(gb::RemoveProtocol(map_->GetFiles()[location.file]), ":",
-                      location.line + 1);
+  return absl::StrCat(map_->GetFiles()[location.file], ":", location.line + 1);
 }
 
 absl::Status ProgramLister::AddFileRows(int file) {
-  absl::StrAppend(&listing_, gb::RemoveProtocol(map_->GetFiles()[file]), "\n");
+  absl::StrAppend(&listing_, map_->GetFiles()[file], "\n");
   for (const Line& line : files_[file]) {
     if (line.statements.empty()) {
       std::string location;

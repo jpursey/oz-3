@@ -174,12 +174,12 @@ TEST_F(ProgramListingTest, Files) {
   std::string listing;
   ASSERT_TRUE(file_system_.ReadFile("mem:/main.oz3lst", &listing));
   EXPECT_EQ(listing,
-            "/main.oza\n"
+            "mem:/main.oza\n"
             "                           .STACK 1\n"
             "                           .INCLUDE \"nop.oza\"\n"
             "                           .INCLUDE \"nop.oza\"\n"
             "\n"
-            "/nop.oza\n"
+            "mem:/nop.oza\n"
             "0000  0000                 NOP\n"
             "0001  0000\n");
 }

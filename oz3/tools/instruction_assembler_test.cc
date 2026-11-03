@@ -80,6 +80,16 @@ TEST(InstructionAssemblerTest, FailToOpenFile) {
   EXPECT_EQ(error.GetLocation(), gb::LexerLocation());
 }
 
+TEST(InstructionAssemblerTest, ErrorNamesFileWithProtocol) {
+  gb::ParseError error;
+  gb::FileSystem file_system;
+  file_system.Register(std::make_unique<gb::MemoryFileProtocol>());
+  ASSERT_TRUE(file_system.WriteFile("mem:/test.oz3ism", "instruction NOP {"));
+  EXPECT_EQ(AssembleInstructionSetFile(file_system, "mem:/test.oz3ism", &error),
+            nullptr);
+  EXPECT_EQ(error.GetLocation().filename, "mem:/test.oz3ism");
+}
+
 TEST(InstructionAssemblerTest, AutoAssignOpcodes) {
   gb::ParseError error;
   std::string source = R"---(

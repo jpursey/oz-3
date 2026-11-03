@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "absl/types/span.h"
-#include "gb/base/context_builder.h"
 #include "gb/file/file_system.h"
 #include "gb/file/local_file_protocol.h"
 #include "oz3/tools/instruction_assembler.h"
@@ -22,9 +21,10 @@ bool Main(absl::Span<const std::string_view> args) {
     return false;
   }
 
+  // Paths are written the operating system's way, absolute or relative to the
+  // current directory.
   gb::FileSystem file_system;
-  file_system.Register(gb::LocalFileProtocol::Create(
-      gb::ContextBuilder().SetValue<std::string>("root", "/").Build()));
+  file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
   file_system.SetDefaultProtocol("file");
 
   gb::ParseError error;

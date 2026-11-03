@@ -506,15 +506,12 @@ gb::LexerContentId ProgramAssembler::LoadFile(
 gb::LexerContentId ProgramAssembler::AddContent(
     std::string_view path, std::string text,
     const gb::LexerLocation& location) {
-  // Errors name the file without its protocol, but the map has the path it
-  // was read from.
-  const std::string_view filename = gb::RemoveProtocol(path);
   const gb::LexerContentId content =
-      GetLexer().AddFileContent(filename, std::move(text));
+      GetLexer().AddFileContent(path, std::move(text));
   if (content == gb::kNoLexerContent) {
     AddError(gb::ParseError(
         location,
-        absl::StrCat(filename, " has too many lines, or a line too long")));
+        absl::StrCat(path, " has too many lines, or a line too long")));
     return content;
   }
   file_indices_[content] = static_cast<int>(file_paths_.size());

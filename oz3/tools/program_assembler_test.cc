@@ -1151,7 +1151,7 @@ TEST_F(ProgramAssemblerTest, IncludedTwice) {
       AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza", &errors),
       nullptr);
   ASSERT_THAT(errors, ElementsAre(IsErrorAt(1, 0, "LABEL is already defined")));
-  EXPECT_EQ(errors[0].GetLocation().filename, "/label.oza");
+  EXPECT_EQ(errors[0].GetLocation().filename, "mem:/label.oza");
 
   ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza",
                                      ".STACK 1\n"
@@ -1189,8 +1189,8 @@ TEST_F(ProgramAssemblerTest, IncludeErrors) {
                                             "Could not read file: "
                                             "mem:/missing.oza"),
                                   IsErrorAt(3, 0, "Unknown instruction FOO")));
-  EXPECT_EQ(errors[0].GetLocation().filename, "/a.oza");
-  EXPECT_EQ(errors[2].GetLocation().filename, "/main.oza");
+  EXPECT_EQ(errors[0].GetLocation().filename, "mem:/a.oza");
+  EXPECT_EQ(errors[2].GetLocation().filename, "mem:/main.oza");
 }
 
 TEST_F(ProgramAssemblerTest, MainFileMissing) {
