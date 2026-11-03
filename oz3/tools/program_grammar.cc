@@ -81,10 +81,10 @@ constexpr std::string_view kRules = R"---(
     $directive="CONST" $name=%ident '=' $value=Expression;
   }
   DirectiveDw {
-    $directive="DW" $items=Expression,+;
+    $directive="DW" ["SIZE" '(' $size=Expression ')'] $items=Expression,+;
   }
   DirectiveDd {
-    $directive="DD" $items=Expression,+;
+    $directive="DD" ["SIZE" '(' $size=Expression ')'] $items=Expression,+;
   }
   DirectiveDs {
     $directive="DS" $count=Expression;

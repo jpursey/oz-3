@@ -142,7 +142,8 @@ class ProgramAssembler final {
   };
 
   // Data of `width` (.DW or .DD): each item is a string's words, or an
-  // expression.
+  // expression. Any words of the statement after its items (from SIZE) are
+  // zeros.
   using DataItem = std::variant<std::vector<uint16_t>, Expression>;
   struct DataStatement {
     ExpressionWidth width = ExpressionWidth::kWord;
@@ -825,16 +826,30 @@ void ProgramAssembler::ReadConst(const gb::ParsedItem& directive) {
 
 void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
                                 ExpressionWidth width) {
+  // SIZE fixes the statement's size, in values of its width, and the items
+  // must fit in it. If SIZE has an error, the statement is the size of its
+  // items.
   DataStatement data = {.width = width};
   const int value_size = (width == ExpressionWidth::kWord ? 1 : 2);
+  std::optional<int64_t> fixed_words;
+  if (const gb::ParsedItem* size_item = directive.GetItem("size");
+      size_item != nullptr) {
+    if (const std::optional<uint32_t> count = EvaluateNow(*size_item);
+        count.has_value()) {
+      fixed_words = int64_t{*count} * value_size;
+    }
+  }
+
   int64_t size = 0;
   for (const gb::ParsedItem& item : directive.GetItems("items")) {
     Expression expression = Expression::Create(GetLexer(), item);
+    const gb::Token token = expression.GetToken();
+    const int64_t start = size;
     if (width == ExpressionWidth::kWord && expression.IsString()) {
       absl::StatusOr<std::vector<uint16_t>> words =
-          GetStringWords(GetLexer(), expression.GetToken());
+          GetStringWords(GetLexer(), token);
       if (!words.ok()) {
-        Error(expression.GetToken(), words.status().message());
+        Error(token, words.status().message());
         continue;
       }
       size += static_cast<int64_t>(words->size());
@@ -843,8 +858,14 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
       size += value_size;
       data.items.emplace_back(std::move(expression));
     }
+    if (fixed_words.has_value() && start <= *fixed_words &&
+        size > *fixed_words) {
+      Error(token, absl::StrCat("This passes the end of the data, at its "
+                                "SIZE of ",
+                                *fixed_words / value_size));
+    }
   }
-  Write(size, directive.GetToken(), std::move(data));
+  Write(fixed_words.value_or(size), directive.GetToken(), std::move(data));
 }
 
 void ProgramAssembler::ReadStorage(const gb::ParsedItem& directive) {
@@ -1295,6 +1316,11 @@ void ProgramAssembler::EncodeData(const Statement& statement,
       }
     }
   }
+
+  // SIZE pads the data with zeros. Items that pass it are a first pass error,
+  // so there is no second pass.
+  DCHECK_LE(static_cast<int>(words.size()), statement.size);
+  words.resize(statement.size, 0);
 }
 
 std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {

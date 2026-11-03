@@ -505,6 +505,43 @@ TEST_F(ProgramAssemblerTest, Strings) {
           IsErrorAt(2, 4, "A string in an expression must be one word")));
 }
 
+TEST_F(ProgramAssemblerTest, FixedSizeData) {
+  // SIZE pads .DW's items with zeros, and items that fill it exactly have
+  // none.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".CONST NAME_SIZE = 4\n"
+                            ".DW SIZE(NAME_SIZE) \"A.TXT\"\n"
+                            ".DW SIZE(4) 1, 'AB'\n"
+                            ".DW SIZE(2) \"ABCD\"\n"
+                            "end: .DW SIZE(0) ''\n"
+                            ".DW SIZE(2) end\n"),
+              ElementsAre(0x412E, 0x5458, 0x5400, 0, 1, 'A', 'B', 0, 0x4142,
+                          0x4344, 10, 0));
+
+  // SIZE can still be a symbol.
+  EXPECT_THAT(AssembleWords(".STACK 1\n.CONST SIZE = 7\n.DW SIZE, SIZE + 1\n"),
+              ElementsAre(7, 8));
+
+  // Only the item that passes the end is an error.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".DW SIZE(2) 1, 'AB', 3\n"
+                     ".DW SIZE(2) \"ABCDE\"\n"
+                     ".DW SIZE(LATER) 1\n"
+                     ".CONST LATER = 1\n"),
+      ElementsAre(
+          IsErrorAt(1, 15, "passes the end of the data, at its SIZE of 2"),
+          IsErrorAt(2, 12, "passes the end of the data, at its SIZE of 2"),
+          IsErrorAt(3, 9, "LATER is not defined")));
+
+  // In .DD, SIZE is in dwords.
+  EXPECT_THAT(AssembleWords(".STACK 1\n.DD SIZE(2) 12345678h\n"),
+              ElementsAre(0x5678, 0x1234, 0, 0));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n.DD SIZE(1) 1, 2\n"),
+              ElementsAre(IsErrorAt(
+                  1, 15, "passes the end of the data, at its SIZE of 1")));
+}
+
 TEST_F(ProgramAssemblerTest, DataBlocks) {
   // Each run of written words is a block, widened to aligned pairs, so
   // reserved words are left out.

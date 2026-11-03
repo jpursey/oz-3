@@ -314,9 +314,8 @@ fixed field, not a zero terminated string.
 - The drive rejects a name with a space, `*`, `?`, `:`, or a second `.`.
 - `.OZ3` is a program.
 
-The assembler writes `"A.TXT"` as 3 words, so an 8 word name field in source
-needs zeros after it by hand. A fixed size string form for the assembler would
-fix that, and is a small backlog item of its own.
+In source, a name field is `.DW SIZE(8) "A.TXT"`, which pads the name's 3
+words with zeros to fill the field's 8.
 
 ## New instructions
 
@@ -490,6 +489,5 @@ The backlog items build this in order, each updating the wiki as it goes:
    programs in the foreground and in parallel, and the shell.
 
 Then *Debugger (oz3dbg)*, which Ozzy integrates once there is a machine worth
-debugging. *Fixed size strings* in the assembler can be done any time before
-the OS needs them. Later, and waiting in the backlog: disk image files, and the
-DMA coprocessor for fast screen and disk transfers.
+debugging. Later, and waiting in the backlog: disk image files, and the DMA
+coprocessor for fast screen and disk transfers.

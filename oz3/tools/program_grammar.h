@@ -96,14 +96,16 @@ class ProgramGrammar final {
   // operands are:
   //   INCLUDE    $path (%string)
   //   CONST      $name (%ident) '=' $value
-  //   DW         $items, one or more separated by commas
-  //   DD         $items, one or more separated by commas
+  //   DW         Optionally "SIZE" '(' $size ')', then $items, one or more
+  //              separated by commas
+  //   DD         The same as DW
   //   DS         $count
   //   STACK      $words
   //   INSTANCES  $count
   //   BANK       $name (%ident), then optionally ',' $mask
   //   SEGMENT    $name (%ident), then zero or more $attributes
-  // Each value ($value, $items, $count, $words, and $mask) is an Expression.
+  // Each value ($value, $size, $items, $count, $words, and $mask) is an
+  // Expression.
   // Each segment attribute is one of $role ("CODE", "STACK", "DATA", or
   // "EXTRA"), $rom ("ROM"), $instance ("INSTANCE"), "PAGE" '(' $page ')',
   // "PAGES" '(' $pages ')', or "BANK" '(' $bank (%ident) ')'.

@@ -90,18 +90,6 @@ The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
-## Fixed size strings
-
-- **Layers:** tools, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (File names); the wiki's
-  Program Source page (Values)
-
-A way to write a string padded with zeros to a fixed number of words, such as
-an 8 word file name field, where `.DW "A.TXT"` writes only 3 words today.
-
 ## Debugger (oz3dbg)
 
 - **Layers:** core, tools

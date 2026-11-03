@@ -280,11 +280,25 @@ TEST_F(ProgramGrammarTest, Directives) {
   directive = line->GetItem("directive");
   EXPECT_EQ(directive->GetString("directive"), "DW");
   EXPECT_EQ(directive->GetItems("items").size(), 3);
+  EXPECT_EQ(directive->GetItem("size"), nullptr);
+
+  // SIZE is only the size when '(' follows it, so it can still be a symbol.
+  line = ParseDirective(".DW size(8) \"A.TXT\", 0");
+  directive = line->GetItem("directive");
+  EXPECT_NE(directive->GetItem("size"), nullptr);
+  EXPECT_EQ(directive->GetItems("items").size(), 2);
+  line = ParseDirective(".DW SIZE, 1");
+  directive = line->GetItem("directive");
+  EXPECT_EQ(directive->GetItem("size"), nullptr);
+  EXPECT_EQ(directive->GetItems("items").size(), 2);
 
   line = ParseDirective(".DD 1, 2");
   directive = line->GetItem("directive");
   EXPECT_EQ(directive->GetString("directive"), "DD");
   EXPECT_EQ(directive->GetItems("items").size(), 2);
+  EXPECT_EQ(directive->GetItem("size"), nullptr);
+  line = ParseDirective(".DD SIZE(4) 1");
+  EXPECT_NE(line->GetItem("directive")->GetItem("size"), nullptr);
 
   for (auto [text, name] :
        {std::pair{".DS 10", "DS"}, {".INSTANCES 2", "INSTANCES"}}) {
@@ -321,6 +335,8 @@ TEST_F(ProgramGrammarTest, DirectiveErrors) {
   EXPECT_EQ(error.GetLocation().column, 12);
   error = ParseLineError(".DW");
   EXPECT_EQ(error.GetLocation().column, 3);
+  error = ParseLineError(".DW SIZE(8)");
+  EXPECT_EQ(error.GetLocation().column, 11);
   error = ParseLineError(".DS 1, 2");
   EXPECT_EQ(error.GetLocation().column, 5);
 
