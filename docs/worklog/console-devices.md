@@ -480,7 +480,7 @@ Depends on: nothing.
   (`processor_config_test.cc`); a device reading its processor's rate
   (`device_test.cc`).
 
-### CL2 [~] devices: the library, and the teletype
+### CL2 [x] devices: the library, and the teletype
 
 Depends on: CL1.
 
