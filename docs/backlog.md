@@ -199,6 +199,29 @@ as an Ozzy usually is, costs little to run. Cycle counts don't change: a
 woken core must run at the same cycle it would have by polling, which the
 existing core and instruction set tests check.
 
+## Waking on lock grants
+
+- **Layers:** core
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [devices-in-core.md](worklog/devices-in-core.md) (Devices,
+  the lock handoff; Sleeping); `oz3/core/lockable.h`
+
+A device waiting for a lock checks it every cycle (`AdvanceCycles(1)`), as the
+teletype does for its port. Let it sleep instead, woken when the lock is
+granted: a lock can name the component that requested it (such as
+`Device::LockPort` naming the device), and `Lockable` wakes it when it grants
+a queued lock. This matters most for a device that contends with cores for a
+memory bank, such as the screen. Cycle counts don't change, as with *Sleeping
+cores*: a device must use the lock in the same cycle it would by checking. A
+woken component runs at the cycle after the wake, which is a cycle late for a
+device waiting on a core's lock (a core releases it earlier in the same
+cycle), so a grant wakes a component that hasn't run yet this cycle in time
+to run in it. The teletype's `OUTR` timing and `device_test.cc`'s handoff
+tests check this. *Order-independent lock handoff* changes the same timing,
+so whichever is done second follows the first.
+
 ## Order-independent lock handoff
 
 - **Layers:** core
