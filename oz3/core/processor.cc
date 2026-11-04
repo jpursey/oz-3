@@ -23,7 +23,7 @@
 namespace oz3 {
 
 Processor::Processor(const ProcessorConfig& config)
-    : ports_(config.GetPortCount()) {
+    : ports_(config.GetPortCount()), clock_hz_(config.GetClockHz()) {
   DCHECK_OK(config.Validate());
   std::array<std::vector<MemoryMapPages>, kMaxMemoryBanks> bank_maps;
   for (const std::shared_ptr<const DeviceFactory>& factory :

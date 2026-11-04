@@ -83,7 +83,16 @@ ProcessorConfig& ProcessorConfig::AddDevice(
   return *this;
 }
 
+ProcessorConfig& ProcessorConfig::SetClockHz(int64_t clock_hz) {
+  clock_hz_ = clock_hz;
+  return *this;
+}
+
 absl::Status ProcessorConfig::Validate() const {
+  if (clock_hz_ < 1) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "The clock rate is ", clock_hz_, " Hz, but it must be at least 1 Hz"));
+  }
   for (int i = 0; i < static_cast<int>(devices_.size()); ++i) {
     const DeviceConfig& device_config = devices_[i]->GetConfig();
     if (device_config.name.empty()) {

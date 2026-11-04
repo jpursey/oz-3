@@ -75,6 +75,10 @@ class Processor final {
   // none.
   Device* GetDevice(std::string_view name);
 
+  // Returns the clock rate, in cycles per second (see
+  // ProcessorConfig::SetClockHz).
+  int64_t GetClockHz() const { return clock_hz_; }
+
   // Returns the number of cycles that have been executed.
   Cycles GetCycles() const;
 
@@ -114,6 +118,7 @@ class Processor final {
   int num_cores_ = 0;
   PortBank ports_;
 
+  const int64_t clock_hz_;
   Cycles cycles_ = 0;
 };
 static_assert(sizeof(Processor) <= 1024, "Processor is too large");

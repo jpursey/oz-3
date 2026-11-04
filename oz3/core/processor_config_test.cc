@@ -25,6 +25,21 @@ TEST(ProcessorConfigTest, ValidateEmptyConfig) {
   EXPECT_TRUE(ProcessorConfig().Validate().ok());
 }
 
+TEST(ProcessorConfigTest, ClockRateDefaultsTo1MHz) {
+  EXPECT_EQ(ProcessorConfig().GetClockHz(), 1'000'000);
+  EXPECT_EQ(ProcessorConfig::kDefaultClockHz, 1'000'000);
+}
+
+TEST(ProcessorConfigTest, ValidateClockRate) {
+  EXPECT_TRUE(ProcessorConfig().SetClockHz(1).Validate().ok());
+  for (int64_t clock_hz : {0, -1}) {
+    const absl::Status status =
+        ProcessorConfig().SetClockHz(clock_hz).Validate();
+    EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+    EXPECT_THAT(status.message(), HasSubstr("clock rate"));
+  }
+}
+
 TEST(ProcessorConfigTest, ValidateDevicesInAnyOrder) {
   auto factory_a = std::make_shared<FakeDeviceFactory>(
       DeviceConfig{.name = "A", .ports = {0, 3}});

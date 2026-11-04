@@ -55,6 +55,7 @@ class FakeDevice final : public Device {
   // Device interface
   //----------------------------------------------------------------------------
 
+  using Device::GetClockHz;
   using Device::GetInterruptCores;
   using Device::GetInterruptCount;
   using Device::GetMemory;

@@ -6,6 +6,7 @@
 #ifndef OZ3_CORE_PROCESSOR_CONFIG_H_
 #define OZ3_CORE_PROCESSOR_CONFIG_H_
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -25,6 +26,13 @@ namespace oz3 {
 // The ProcessorConfig class is used to configure a Processor.
 class ProcessorConfig {
  public:
+  //----------------------------------------------------------------------------
+  // Constants
+  //----------------------------------------------------------------------------
+
+  // The clock rate a config has until it is set (see SetClockHz): 1 MHz.
+  static constexpr int64_t kDefaultClockHz = 1'000'000;
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -72,14 +80,21 @@ class ProcessorConfig {
   // `factory`. The factory must not be null.
   ProcessorConfig& AddDevice(std::shared_ptr<const DeviceFactory> factory);
 
+  // Sets the processor's clock rate, in cycles per second, which must be at
+  // least 1 (see Validate). Everything still runs in cycles: the clock rate
+  // is how devices turn rates in real time, such as a baud rate, into cycles,
+  // so their settings work the same at any clock rate.
+  ProcessorConfig& SetClockHz(int64_t clock_hz);
+
   //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
 
-  // Returns an error naming the device if a device's config doesn't fit this
-  // one: no name, or a name another device has (as a factory added twice
-  // does), a port the config doesn't have, an interrupt the cores don't have,
-  // or pages that don't fit in their bank or overlap another device's.
+  // Returns an error if the clock rate is less than 1, or one naming the device
+  // if a device's config doesn't fit this one: no name, or a name another
+  // device has (as a factory added twice does), a port the config doesn't
+  // have, an interrupt the cores don't have, or pages that don't fit in their
+  // bank or overlap another device's.
   //
   // This checks the config as a whole, so it doesn't matter what order it was
   // built in. A Processor must be created from a valid config.
@@ -100,6 +115,7 @@ class ProcessorConfig {
   absl::Span<const std::shared_ptr<const DeviceFactory>> GetDevices() const {
     return devices_;
   }
+  int64_t GetClockHz() const { return clock_hz_; }
 
  private:
   //----------------------------------------------------------------------------
@@ -110,6 +126,7 @@ class ProcessorConfig {
   std::vector<CpuCoreConfig> cores_;
   int port_count_ = 0;
   std::vector<std::shared_ptr<const DeviceFactory>> devices_;
+  int64_t clock_hz_ = kDefaultClockHz;
 };
 
 }  // namespace oz3

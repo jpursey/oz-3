@@ -9,21 +9,26 @@ The first real devices, in a new `devices` library: the **screen**, the
 
 ```
 absl::StatusOr<std::unique_ptr<ScreenFactory>> screen_factory =
-    ScreenFactory::Create("Screen", /*bank=*/0, /*page=*/15,
-                          DeviceInterrupt{.interrupt = 6},
-                          ScreenSettings{.columns = 80, .rows = 24});
+    ScreenFactory::Create("Screen", {.bank = 0,
+                                     .page = 15,
+                                     .interrupt = {.interrupt = 6},
+                                     .columns = 80,
+                                     .rows = 24});
 if (!screen_factory.ok()) { ... }
 
 ProcessorConfig config = ProcessorConfig::OneCore(instructions);
-config.SetPortCount(16)
+config.SetClockHz(1'000'000)
+    .SetPortCount(16)
     .AddDevice(std::make_shared<KeyboardFactory>(
-        "Keyboard", /*port=*/1, DeviceInterrupt{.interrupt = 1}))
+        "Keyboard",
+        KeyboardSettings{.port = 1, .interrupt = {.interrupt = 1}}))
     .AddDevice(*std::move(screen_factory));
 if (absl::Status status = config.Validate(); !status.ok()) { ... }
 Processor processor(config);
 
-Keyboard* keyboard = GetKeyboard(processor, "Keyboard");
-Screen* screen = GetScreen(processor, "Screen");
+// The host named each device, so it knows each one's type.
+auto* keyboard = static_cast<Keyboard*>(processor.GetDevice("Keyboard"));
+auto* screen = static_cast<Screen*>(processor.GetDevice("Screen"));
 keyboard->PressKey('A');
 processor.Execute(16'667);
 const ScreenPicture& picture = screen->GetPicture();
@@ -34,16 +39,28 @@ key queue, the text written) and leaves presenting it to the host. Ozzy's
 console frontend, which draws the picture and reads the host's keyboard, is the
 *Ozzy machine* item.
 
-There is no change to the specification: these devices are Ozzy's, and Ozzy's
-wiki page, which documents them for programmers, is written by *Ozzy machine*.
-Nothing outside `devices` changes.
+A device is configured in real time (a teletype's baud rate, a screen's
+refresh rate), which it turns into cycles with the processor's **clock rate**,
+new in `ProcessorConfig`. So the same device settings work at any clock rate.
 
-A factory whose settings can be invalid (a screen of 0 rows) is made by a
-static `Create`, which returns an error for them, so an invalid factory never
-exists (see [devices: the library](#devices-the-library)). Its wiring is
-checked by `ProcessorConfig::Validate`, as for any device.
+The devices themselves aren't in the specification: they are Ozzy's, and
+Ozzy's wiki page, which documents them for programmers, is written by *Ozzy
+machine*. The clock rate is, in a line of `2-Specifications.md`'s overview.
 
 ## Behavior
+
+### Clock rate
+
+- `ProcessorConfig::SetClockHz()` sets the processor's clock rate, in cycles
+  per second, 1 MHz by default (`ProcessorConfig::kDefaultClockHz`).
+  `Validate()` returns an error for a rate below 1 Hz.
+- `Processor::GetClockHz()` returns it, as does a protected
+  `Device::GetClockHz()`, for a device to turn its rates into cycles.
+- Nothing else changes: everything still runs in cycles, and the clock rate
+  only says how many make a second. A host paces the processor to real time
+  with it (Ozzy's frontend), or ignores it.
+- `BaseCoreTest::InitConfig` gains a `clock_hz`.
+- Wiki: `2-Specifications.md`'s overview gains a **Clock** bullet.
 
 ### Teletype
 
@@ -51,19 +68,35 @@ A port that writes text to the host, for an Ozzy without a screen.
 - Each word a core writes to the port is two packed characters, the high byte
   first, and a zero byte is skipped. So a single character is written as itself
   (`'A'` is 0041h), and a packed string goes straight from memory with `OUTR`.
-- The teletype takes a word as soon as the port's status is set (by `OUTS`,
-  `OUT`, or `OUTR`), and clears the status, so the next `OUTS` succeeds. It
-  takes it the cycle after the store, so an `OUTR` of a packed string runs to
-  the end without stopping.
-- The characters go to the host as they are, control characters included. The
+- A dword write is two words, word 0 first, so `OUTR.ID` writes a packed
+  string from memory in half the executions of `OUTR.IW` (11 cycles a dword,
+  against 9 a word). The teletype clears word 1 once it takes it, so a program
+  that only writes words never needs dwords, and a word written after a dword
+  isn't followed by the dword's characters again.
+- The teletype takes what is written as soon as the port's status is set (by
+  `OUTS`, `OUT`, or `OUTR`), and clears the status, so the next `OUTS`
+  succeeds. It takes it the cycle after the store, so an `OUTR` of a packed
+  string runs to the end without stopping.
+- At a **baud rate** (0, the default, is as fast as cores write), it is busy
+  printing what it took for 10 bits a character (a start bit, 8 data bits, and
+  a stop bit), and takes nothing more until it is done. The port holds one more
+  write meanwhile, as a serial line's holding register did, and then its
+  status stays set: `OUTS` fails, and `OUTR` stops early. A program paces
+  itself to the baud rate, or loops on `OUTS`. There is no interrupt for
+  "ready": the baud rate is fixed for a machine, so a program can time itself.
+  At 1 MHz, 9600 baud is 1041 cycles a character (rounded down for each take),
+  and 300 baud 33,333.
+- Characters are 7-bit ASCII: the eighth bit of each byte is dropped, as it was
+  a teletype's parity bit, and a byte that is then 0 is skipped, taking no
+  time. The rest go to the host as they are, control characters included. The
   host does what a terminal would with carriage return, line feed, backspace,
   and bell.
 - The teletype keeps what has been written until the host takes it with
   `Teletype::TakeOutput()`, up to a buffer size (4096 characters by default).
-  While the buffer is full, it takes no more words, so the port's status stays
-  set, `OUTS` fails, and `OUTR` stops early, until the host takes the text. A
-  program that writes faster than the host reads loops on `OUTS`, as it would
-  on a slow serial line.
+  Characters reach it when they are taken, not as each one finishes printing,
+  which no program can tell apart. Without room for a dword's characters (4),
+  it takes nothing, so the port's status stays set, `OUTS` fails, and `OUTR`
+  stops early, until the host takes the text.
 - Reading the port is not the teletype's business: a core that reads it gets
   whatever is there, and clears the status, which loses a word not yet taken.
 
@@ -140,8 +173,9 @@ a configured rate.
 - At power on, the page is all 0 apart from the read-only words: a blank
   screen, with the cursor hidden at the top left.
 
-The screen **refreshes** every `refresh_cycles` (16,667 by default: 60 Hz at
-1 MHz), the first at cycle `refresh_cycles`:
+The screen **refreshes** at `refresh_hz` (60 by default): refresh `n` is at
+cycle `n * clock_hz / refresh_hz`, so the schedule doesn't drift where a
+refresh isn't a whole number of cycles (16,666⅔ at 60 Hz and 1 MHz).
 - It takes its bank's lock, takes the page as the picture, adds one to the
   frame counter, and releases the lock, all in one cycle, with no cycles of
   its own. So it never sees half of a core's write, waits only while a core
@@ -162,18 +196,44 @@ didn't change.
 
 | Name                        | Candidates                                         | Avoids                                                        | Choice             |
 | --------------------------- | -------------------------------------------------- | ------------------------------------------------------------- | ------------------ |
-| A device's own settings     | `ScreenSettings`, `ScreenOptions`, `ScreenParams`  | `DeviceConfig` (wiring), `CpuCore::ResetParams`               | `ScreenSettings`   |
+| What a host sets about one  | `ScreenSettings`, `ScreenOptions`, `ScreenParams`  | `DeviceConfig` (core's wiring), `CpuCore::ResetParams`        | `ScreenSettings`   |
+| The processor's clock rate  | `ClockHz`, `ClockRate`, `CyclesPerSecond`          | `GetCycles` (a count), the Timer device's clock (the time)    | `SetClockHz`       |
+| A teletype's speed          | `baud`, `baud_rate`, `bits_per_sec`                | `refresh_hz` (a rate of whole events)                         | `baud`             |
 | What the host shows         | `ScreenPicture`, `ScreenFrame`, `ScreenImage`      | the frame counter (a count), stack frames in programs         | `ScreenPicture`    |
 | The screen's page           | `ScreenMemory`, `ScreenPage`, `ScreenMap`          | `MemoryBank`, `FakeMemoryMap`                                 | `ScreenMemory`     |
 | Host gives a key            | `PressKey`, `TypeKey`, `AddKey`                    | "Add" (the owner registers and keeps it)                      | `PressKey`         |
 | Host takes teletype text    | `TakeOutput`, `TakeText`, `ReadOutput`             | `Port::LoadWord`, the `IN` instruction                        | `TakeOutput`       |
-| Typed lookups               | `GetScreen`, `FindScreen`                          | `Processor::GetDevice`, which they wrap                       | `GetScreen`        |
 
 `DeviceFactory`'s comments already call a derived factory's own values its
 "settings" ("such as a screen's size"), so `ScreenSettings` follows them.
-"Picture" is the word
+`SetClockHz` names its unit, as the C++ style asks of a plain number, and
+`baud` is a unit itself. "Picture" is the word
 [ozzy_design.md](../ozzy_design.md) uses for what a refresh takes, and
 `ScreenFrame` would read as one count of the frame counter.
+
+### core: the clock rate
+
+```
+// processor_config.h
+static constexpr int64_t kDefaultClockHz = 1'000'000;
+ProcessorConfig& SetClockHz(int64_t clock_hz);
+int64_t GetClockHz() const;
+
+// processor.h
+int64_t GetClockHz() const;
+
+// device.h (protected)
+int64_t GetClockHz() const;
+```
+
+- A rate below 1 Hz is an error from `Validate()`, not a `DCHECK`, as a host
+  sets it from data (Ozzy's `clock_hz`).
+- The `Processor` copies it from its config. Nothing in core uses it.
+- A device reads it whenever it turns a rate into cycles, which is cheap
+  enough to do each time (a multiply and a divide), so a device caches
+  nothing that could disagree with it.
+
+**Brittleness:** none.
 
 ### devices: the library
 
@@ -183,20 +243,29 @@ didn't change.
   instruction set against the devices, assembled from source with
   `AssembleProgram` and loaded with `ProgramLoader`. So the tests show what a
   program sees, with real `INS`, `OUTS`, and `OUTR` cycle counts.
-- Each device is a `.h`/`.cc` with its factory, its settings, and a typed
-  lookup (`GetScreen(processor, name)`), which returns null if the processor
-  has no device of that name, or it isn't that type (`dynamic_cast`, the first
-  in OZ-3; a wrong type is a host's mistake with a name from data, so it
-  shouldn't be undefined behavior).
-- A factory with settings that can be invalid is made only by its static
-  `Create`, which returns an error naming the device and the setting, or the
-  factory as a `std::unique_ptr` (which `AddDevice` takes, as a
-  `std::shared_ptr` converts from it). Its constructor is private, so an
-  invalid factory never exists, and holds nothing for a failure: a host
-  building its machine from data gets the error at the one place that can
-  fail, and the factory, the `Processor`, and the device all rely on valid
-  settings. A factory with no such settings (the keyboard) has a public
-  constructor, as the wiring is `ProcessorConfig::Validate`'s to check.
+- Each device is a `.h`/`.cc` with its settings, its factory, and the device.
+- **Settings:** a device's name goes on its own, as its identity, which the
+  host chooses to find it by. Everything else a host sets about it, its wiring
+  (ports, interrupts, pages) and how it behaves (a baud rate, a size), is one
+  `<Device>Settings` struct, which is what a config file entry parses into.
+  The factory splits it: the wiring into core's `DeviceConfig`, which
+  `ProcessorConfig::Validate` checks against the machine, and the rest to the
+  device, which copies only what it uses. Settings are passed by const
+  reference.
+- **Factories:** a factory with settings that can be invalid is made only by
+  its static `Create(name, settings)`, which returns an error naming the device
+  and the setting, or the factory as a `std::unique_ptr` (which `AddDevice`
+  takes, as a `std::shared_ptr` converts from it). Its constructor is private,
+  so an invalid factory never exists, and holds nothing for a failure. A
+  factory whose settings can't be invalid (the keyboard) has a public
+  constructor taking the same two arguments.
+- **Rates** are in real time (`baud`, `refresh_hz`), turned into cycles with
+  `Device::GetClockHz()`.
+- **Finding a device:** a host finds a device with `Processor::GetDevice(name)`
+  and `static_cast`s it to the type it named. There are no typed lookups:
+  without RTTI (which Google style and Game Bits avoid) one could only cast,
+  hiding the same promise behind a function. The host built the config, so it
+  knows what each name is.
 - Every device's host API (`PressKey`, `TakeOutput`, `GetPicture`) is called
   between `Processor::Execute` calls, on the processor's thread, and calls
   `Wake()` where it changes what the device would do.
@@ -206,18 +275,22 @@ didn't change.
 
 ```
 struct TeletypeSettings {
-  // The most characters the teletype keeps for the host, at least 2.
-  int buffer_size = 4096;
+  static constexpr int kMinBufferSize = 4;  // One dword's characters
+  static constexpr int kBitsPerChar = 10;   // Start, 8 data, and stop bits
+
+  int port = 0;
+  int baud = 0;  // 0 is as fast as cores write; not negative
+  int buffer_size = 4096;  // At least kMinBufferSize
 };
 
 class TeletypeFactory final : public DeviceFactory {
  public:
   // Returns an error if `settings` are invalid.
   static absl::StatusOr<std::unique_ptr<TeletypeFactory>> Create(
-      std::string_view name, int port, TeletypeSettings settings = {});
+      std::string_view name, const TeletypeSettings& settings);
   ...
  private:
-  TeletypeFactory(std::string_view name, int port, TeletypeSettings settings);
+  TeletypeFactory(std::string_view name, const TeletypeSettings& settings);
 };
 
 class Teletype final : public Device {
@@ -227,15 +300,19 @@ class Teletype final : public Device {
  protected:
   void Execute() override;
 };
-
-Teletype* GetTeletype(Processor& processor, std::string_view name);
 ```
 
-- `Execute()`: with room for two characters, it locks its port (one cycle a
-  try, holding the request, until granted), loads with `T | S`, appends the
-  word's non-zero bytes, releases the lock, advances one cycle, and sleeps.
-  With no room, it sleeps without looking. A store to the port, or
-  `TakeOutput()`, wakes it.
+- `Execute()`: with room for four characters, it locks its port (one cycle a
+  try, holding the request, until granted). If the status is set, it loads
+  word 0 with `T | A` and word 1 with `S`, stores 0 to word 1, and appends
+  both words' non-zero 7-bit characters. Then it releases the lock. At a baud
+  rate, it advances its cycles by the characters' time
+  (`chars * kBitsPerChar * clock_hz / baud`). Then it sleeps. With no room, it
+  sleeps without looking.
+- A store to the port wakes it, as does `TakeOutput()` when the buffer was full
+  (so a host taking output every frame costs nothing otherwise). A wake while
+  it is busy runs it once it is done, as a wake never moves a component's
+  cycles back, so the busy time needs no state of its own.
 
 **Brittleness:** none. Waking is by the port, and by `TakeOutput()` itself.
 
@@ -246,9 +323,14 @@ Teletype* GetTeletype(Processor& processor, std::string_view name);
 inline constexpr uint16_t kKeyUp = 0x80;  ...
 inline constexpr uint16_t kKeyShift = 0x0100;  ...
 
+struct KeyboardSettings {
+  int port = 0;
+  DeviceInterrupt interrupt;
+};
+
 class KeyboardFactory final : public DeviceFactory {
  public:
-  KeyboardFactory(std::string_view name, int port, DeviceInterrupt interrupt);
+  KeyboardFactory(std::string_view name, const KeyboardSettings& settings);
 };
 
 class Keyboard final : public Device {
@@ -262,18 +344,16 @@ class Keyboard final : public Device {
  private:
   gb::Queue<uint16_t> keys_;  // kQueueSize, with no grow capacity.
 };
-
-Keyboard* GetKeyboard(Processor& processor, std::string_view name);
 ```
 
 - `Execute()`: with a key waiting, it locks its port, and if the status is
   clear, stores the key with `S`, and raises its interrupt after releasing the
-  lock. Then it advances one cycle and sleeps. With no key waiting, it sleeps
-  without looking. A load of the port (a core taking the key), or `PressKey`,
-  wakes it.
-- No settings, so a public constructor rather than `Create`: the queue's size
-  is fixed, as on the hardware. A `gb::Queue` with no grow capacity is a fixed circular
-  queue, and `PressKey` checks for room before pushing.
+  lock. Then it sleeps. With no key waiting, it sleeps without looking. A load
+  of the port (a core taking the key), or `PressKey`, wakes it.
+- Its settings are only wiring, which `ProcessorConfig::Validate` checks, so a
+  public constructor rather than `Create`. The queue's size is fixed, as on the
+  hardware. A `gb::Queue` with no grow capacity is a fixed circular queue, and
+  `PressKey` checks for room before pushing.
 
 **Brittleness:** none. As for the teletype.
 
@@ -284,12 +364,17 @@ Keyboard* GetKeyboard(Processor& processor, std::string_view name);
 inline constexpr uint16_t kScreenInverse = 0x0100;  ...
 
 struct ScreenSettings {
+  // The page, in its bank, and the interrupt raised at each refresh.
+  int bank = 0;
+  int page = 0;
+  DeviceInterrupt interrupt;
+
   // The size, whose cells must fit before the control words (4080 at most).
   int columns = 80;
   int rows = 24;
 
-  // The cycles between refreshes, at least 1.
-  Cycles refresh_cycles = 16'667;
+  // Refreshes a second, at least 1.
+  int refresh_hz = 60;
 };
 
 struct ScreenPicture {
@@ -320,12 +405,10 @@ class ScreenFactory final : public DeviceFactory {
  public:
   // Returns an error if `settings` are invalid.
   static absl::StatusOr<std::unique_ptr<ScreenFactory>> Create(
-      std::string_view name, int bank, int page, DeviceInterrupt interrupt,
-      ScreenSettings settings = {});
+      std::string_view name, const ScreenSettings& settings);
   ...
  private:
-  ScreenFactory(std::string_view name, int bank, int page,
-                DeviceInterrupt interrupt, ScreenSettings settings);
+  ScreenFactory(std::string_view name, const ScreenSettings& settings);
 };
 
 class Screen final : public Device {
@@ -338,8 +421,6 @@ class Screen final : public Device {
  protected:
   void Execute() override;
 };
-
-Screen* GetScreen(Processor& processor, std::string_view name);
 ```
 
 - The factory's `DeviceConfig` has one page in `bank`, at `page`, readable and
@@ -350,8 +431,8 @@ Screen* GetScreen(Processor& processor, std::string_view name);
 - `Execute()`: at a refresh, it requests the lock (one cycle a try, holding
   the request, until granted), takes the picture, sets the frame counter,
   releases the lock, raises its interrupt, and advances to the next scheduled
-  refresh. It never sleeps: it is busy until the next refresh, which costs
-  the `Processor` one compare a cycle.
+  refresh, `(frames + 1) * clock_hz / refresh_hz`. It never sleeps: it is busy
+  until the next refresh, which costs the `Processor` one compare a cycle.
 - Performance: a refresh copies one page (4096 words) and builds the picture,
   60 times a simulated second at the default rate, which is nothing beside the
   cores.
@@ -363,64 +444,97 @@ the host can read it whenever the processor isn't running.
 
 - That an `OUTR` of a packed string to the teletype runs to its end without
   stopping, as the teletype takes each word the cycle after it is stored, and
-  before the `OUTR`'s next word. CL1's tests check it.
+  before the `OUTR`'s next word. **Confirmed in CL2:** an `OUTR.IW` of 3 words
+  takes 27 cycles (9 a word, as for a port that is always ready), with `R7`
+  left at 0, and an `OUTR.ID` of 3 dwords takes 33 (11 a dword).
 - That `AssembleProgram` and `ProgramLoader` make small test programs simpler
-  than encoding them by hand, as the instruction set tests do. CL1 picks
-  whichever is simpler for all the devices' tests.
+  than encoding them by hand, as the instruction set tests do. **Confirmed in
+  CL2:** `DeviceProgramTest` (`device_program_test.h`, test only) assembles a
+  program, loads it for core 0, and finds a label's IP, so a test can run it
+  with `ExecuteUntilHalt` and time instructions with `CyclesUntilIp`. The
+  other devices' tests use it too. It duplicates the fixture in
+  `default_instruction_set_assemble_test.cc`, which `devices` can't link, and
+  that is fine.
 
 ## CLs
 
-### CL1 [ ] devices: the library, and the teletype
+Before CL2, an ordinary change to `BaseCoreTest` (not part of this plan) caps
+`ExecuteUntil` at a million cycles, failing the test rather than hanging, and
+makes `ExecuteUntilHalt` return whether the core halted. The devices' tests
+rely on both.
+
+### CL1 [x] core: the processor's clock rate
 
 Depends on: nothing.
 
+- `ProcessorConfig::SetClockHz`, `GetClockHz`, and `kDefaultClockHz`, checked
+  by `Validate()`. `Processor::GetClockHz`, and the protected
+  `Device::GetClockHz` (public in `FakeDevice`).
+- `BaseCoreTest::InitConfig::clock_hz`.
+- Wiki: the **Clock** bullet in `2-Specifications.md`'s overview.
+- Unused by any device yet, so no visible change.
+
+**Verify**
+- Standard checks (see CLAUDE.md).
+- Unit tests: the default rate, and `Validate` rejecting 0 and negative rates
+  (`processor_config_test.cc`); a device reading its processor's rate
+  (`device_test.cc`).
+
+### CL2 [~] devices: the library, and the teletype
+
+Depends on: CL1.
+
 - `oz3/devices/CMakeLists.txt`, added to `oz3/CMakeLists.txt` after
   `instruction_sets`.
-- `teletype.h`/`.cc`: `TeletypeSettings`, `TeletypeFactory`, `Teletype`,
-  `GetTeletype`.
+- `teletype.h`/`.cc`: `TeletypeSettings`, `TeletypeFactory`, and `Teletype`.
+- `device_program_test.h`: the `DeviceProgramTest` fixture.
 - CLAUDE.md: `devices` in the directory structure's library list, in the
   dependency order, and the sentence on `devices` and `ozzy` changes to say
   only `ozzy` doesn't exist yet.
 
 **Verify**
-- Standard checks (see CLAUDE.md).
+- Standard checks.
 - Unit tests (`teletype_test.cc`): `OUTS` of single characters and of packed
   words, with zero bytes skipped; an `OUTR` of a packed string runs to the end
-  with no stop, in its documented cycles; control characters pass through;
-  a full buffer leaves the status set and `OUTS` failing, until `TakeOutput`;
-  the teletype sleeps while nothing is written; `Create` failing for invalid
-  settings; and `GetTeletype` for a missing name and for another device type.
+  with no stop, in its documented cycles, and so does an `OUTR.ID`, with a word
+  written after it not followed by stale characters; control characters pass
+  through, and the eighth bit is dropped; at a baud rate, the exact cycle each
+  write is taken, with the port holding one write meanwhile, zero bytes taking
+  no time, and twice the clock rate taking twice the cycles; an `OUTR` stopping
+  early at a baud rate; a full buffer leaves the status set and `OUTS`
+  failing, until `TakeOutput`; the teletype sleeps while nothing is written;
+  and `Create` failing for invalid settings.
 
-### CL2 [ ] devices: the keyboard
+### CL3 [ ] devices: the keyboard
 
-Depends on: CL1.
+Depends on: CL2.
 
-- `keyboard.h`/`.cc`: the key code and modifier constants, `KeyboardFactory`,
-  `Keyboard`, `GetKeyboard`.
+- `keyboard.h`/`.cc`: the key code and modifier constants, `KeyboardSettings`,
+  `KeyboardFactory`, and `Keyboard`.
 
 **Verify**
 - Standard checks.
 - Unit tests (`keyboard_test.cc`): a pressed key is readable with `INS`, with
   its modifiers, and raises the interrupt once; keys come out in order, each
   the cycle after the last was read, each raising the interrupt; a full queue
-  drops keys; an interrupt handler reading keys sees each one; the keyboard
-  sleeps with no keys waiting; and `GetKeyboard`.
+  drops keys; an interrupt handler reading keys sees each one; and the
+  keyboard sleeps with no keys waiting.
 
-### CL3 [ ] devices: the screen
+### CL4 [ ] devices: the screen
 
-Depends on: CL1.
+Depends on: CL2.
 
 - `screen.h`/`.cc`: the attribute constants, `ScreenSettings`,
-  `ScreenPicture`, `ScreenMemory`, `ScreenFactory`, `Screen`, `GetScreen`.
+  `ScreenPicture`, `ScreenMemory`, `ScreenFactory`, and `Screen`.
 
 **Verify**
 - Standard checks.
 - Unit tests (`screen_test.cc`): cells written by a program appear in the
-  picture only at the next refresh; refreshes on schedule, counting frames in
-  the control word and `GetFrameCount`, and raising the interrupt; the scroll
-  row, including values past the rows; the cursor, shown, hidden, and out of
-  range; the read-only and reserved words ignore writes; unused words hold
-  what is written; a refresh while a core holds the bank waits for it, and
-  never makes the core wait; the screen anywhere in a bank; `Create` failing
-  for invalid settings, and succeeding for the largest size that fits; and
-  `GetScreen`.
+  picture only at the next refresh; refreshes on schedule, at the clock rate,
+  without drift where a refresh isn't a whole number of cycles, counting frames
+  in the control word and `GetFrameCount`, and raising the interrupt; the
+  scroll row, including values past the rows; the cursor, shown, hidden, and
+  out of range; the read-only and reserved words ignore writes; unused words
+  hold what is written; a refresh while a core holds the bank waits for it,
+  and never makes the core wait; the screen anywhere in a bank; and `Create`
+  failing for invalid settings, and succeeding for the largest size that fits.

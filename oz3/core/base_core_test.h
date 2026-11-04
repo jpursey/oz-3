@@ -6,6 +6,7 @@
 #ifndef OZ3_CORE_BASE_CORE_TEST_H_
 #define OZ3_CORE_BASE_CORE_TEST_H_
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor.h"
+#include "oz3/core/processor_config.h"
 
 namespace oz3 {
 
@@ -26,6 +28,7 @@ class BaseCoreTest : public testing::Test {
     int num_cores = 1;
     int num_memory_banks = 1;
     int num_ports = 0;
+    int64_t clock_hz = ProcessorConfig::kDefaultClockHz;
     std::vector<std::shared_ptr<const DeviceFactory>> devices;
   };
 

@@ -70,6 +70,15 @@ TEST(DeviceTest, ProcessorFindsDevicesByName) {
   EXPECT_EQ(processor.GetDevice("B")->GetName(), "B");
 }
 
+TEST(DeviceTest, GetsProcessorClockRate) {
+  Processor processor(ProcessorConfig().SetClockHz(4'000'000).AddDevice(
+      std::make_shared<FakeDeviceFactory>(DeviceConfig{.name = "Fake"})));
+  EXPECT_EQ(processor.GetClockHz(), 4'000'000);
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  ASSERT_NE(device, nullptr);
+  EXPECT_EQ(device->GetClockHz(), 4'000'000);
+}
+
 TEST(DeviceTest, DeviceOutlivesItsFactory) {
   auto factory = std::make_shared<FakeDeviceFactory>(
       DeviceConfig{.name = "Fake", .ports = {0}});

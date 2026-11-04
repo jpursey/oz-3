@@ -68,6 +68,10 @@ class Device : public ExecutionComponent {
   // creating it.
   explicit Device(DeviceConfig config);
 
+  // Returns the processor's clock rate, in cycles per second, for turning rates
+  // in real time (such as a baud rate) into cycles.
+  int64_t GetClockHz() const;
+
   // Returns the number of ports the device is wired to.
   int GetPortCount() const;
 
@@ -108,6 +112,11 @@ class Device : public ExecutionComponent {
 //==============================================================================
 // Device inlines
 //==============================================================================
+
+inline int64_t Device::GetClockHz() const {
+  DCHECK(processor_ != nullptr);
+  return processor_->GetClockHz();
+}
 
 inline int Device::GetPortCount() const {
   return static_cast<int>(config_.ports.size());
