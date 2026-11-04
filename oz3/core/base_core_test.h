@@ -241,7 +241,13 @@ class BaseCoreTest : public testing::Test {
   // Executes the specified number of cycles.
   void Execute(Cycles cycles) { processor_->Execute(cycles); }
 
-  // Executes the requested processor until a specified condition is met.
+  // The most cycles ExecuteUntil runs before it gives up, so a test whose
+  // program never reaches its condition fails rather than hangs.
+  static constexpr Cycles kMaxExecuteUntilCycles = 1'000'000;
+
+  // Executes the processor a cycle at a time until `condition` is met, which is
+  // checked after each cycle. Returns false if the core goes idle, its IP
+  // passes 1000, or kMaxExecuteUntilCycles pass first.
   bool ExecuteUntil(int core_index, absl::FunctionRef<bool()> condition);
   bool ExecuteUntil(absl::FunctionRef<bool()> condition) {
     return ExecuteUntil(0, condition);
@@ -252,8 +258,12 @@ class BaseCoreTest : public testing::Test {
     return ExecuteUntil(core_index, [&] { return state.ip == ip; });
   }
   bool ExecuteUntilIp(uint16_t ip) { return ExecuteUntilIp(0, ip); }
-  void ExecuteUntilHalt(int core_index = 0) {
+
+  // Executes until the core is idle (halted, or never started). Returns false
+  // if its IP passes 1000, or kMaxExecuteUntilCycles pass first.
+  bool ExecuteUntilHalt(int core_index = 0) {
     ExecuteUntil(core_index, [] { return false; });
+    return states_[core_index].core.GetState() == CpuCore::State::kIdle;
   }
 
   // Executes until core 0's IP reaches `ip`, which must be just past a NOP (as

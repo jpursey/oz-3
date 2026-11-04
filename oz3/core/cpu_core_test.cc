@@ -6,6 +6,7 @@
 #include "oz3/core/cpu_core.h"
 
 #include "gmock/gmock.h"
+#include "gtest/gtest-spi.h"
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/instruction_compiler.h"
@@ -1343,6 +1344,29 @@ TEST_F(CpuCoreTest, HaltOp) {
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 101);
   state.Update();
   EXPECT_EQ(state.ip, 1);
+}
+
+TEST_F(CpuCoreTest, ExecuteUntilHaltReturnsWhetherTheCoreHalted) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+  state.code.AddValue(Encode(kTestOp_HALT));
+  EXPECT_TRUE(ExecuteUntilHalt());
+}
+
+TEST_F(CpuCoreTest, ExecuteUntilGivesUpOnARunawayCore) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  // Jumps back to itself, so it never halts, and its IP never passes 1000.
+  state.code.AddValue(Encode(kTestOp_JMP)).AddValue(static_cast<uint16_t>(-2));
+
+  bool halted = true;
+  EXPECT_NONFATAL_FAILURE(halted = ExecuteUntilHalt(),
+                          "without meeting its condition");
+  EXPECT_FALSE(halted);
+  EXPECT_EQ(GetCycles(), kMaxExecuteUntilCycles);
 }
 
 TEST_F(CpuCoreTest, WaitOp) {

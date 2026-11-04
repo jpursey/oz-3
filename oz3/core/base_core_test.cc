@@ -178,7 +178,13 @@ uint16_t BaseCoreTest::Encode(std::string_view op_name, Arg a, Arg b) {
 bool BaseCoreTest::ExecuteUntil(int core, absl::FunctionRef<bool()> condition) {
   CHECK(core >= 0 && core < states_.size());
   auto& state = states_[core];
+  Cycles cycles = 0;
   do {
+    if (cycles++ == kMaxExecuteUntilCycles) {
+      ADD_FAILURE() << "ExecuteUntil ran " << kMaxExecuteUntilCycles
+                    << " cycles without meeting its condition";
+      return false;
+    }
     processor_->Execute(1);
     for (int i = 0; i < states_.size(); ++i) {
       states_[i].Update();
