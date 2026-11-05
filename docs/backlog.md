@@ -39,8 +39,8 @@ The first Ozzy anyone can run: the `ozzy` library builds a machine from a
 core 0, and the `ozzy` app runs it in the Windows console in real time. The
 boot ROM prints a banner and echoes keys. Creates Ozzy's wiki page, which
 documents the console devices for programmers (see
-[console-devices.md](worklog/console-devices.md)), and defines the screen's
-graphics characters (128 to 255), which the frontend draws.
+[console-devices.md](worklog/console-devices.md)), including the screen's
+built-in character set.
 
 ## Timer device
 

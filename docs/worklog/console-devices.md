@@ -164,8 +164,8 @@ marked: until a CL adds its control words, they are reserved.
 - Addresses are the screen's own, from the start of its page, wherever it is
   placed.
 - **Cells:** one word per cell. The low byte is the character, and the high
-  byte its attributes. Characters 0 to 127 are ASCII, and 128 to 255 Ozzy's
-  graphics characters (the built-in character set, CL8, defines them).
+  byte its attributes. The built-in character set (CL8) draws characters 0 to
+  127 as ASCII, and 128 to 255 as Ozzy's graphics characters.
 
 | Bit   | Attribute                                                       |
 | ----- | --------------------------------------------------------------- |
@@ -315,6 +315,49 @@ pixel rows overlap the next row's top two.
 - The picture's pixels stay `rows * 10` tall, with the rows packed from the
   top and the pixel rows they don't reach off. The picture also holds the
   height drawn: `rows * 10`, less 2 for each compact row but the bottom row.
+
+### The built-in character set (CL8)
+
+The built-in character set is **Ozzy's font**, which every screen starts with
+unless the host sets its own. It is in the style of the Osborne 1's: glyphs
+drawn after the Osborne's character generator, not a copy of its ROM, and not
+meant to match it exactly.
+
+| Characters | Glyphs                                                        |
+| ---------- | ------------------------------------------------------------- |
+| 00h to 1Fh | Block and line graphics, in the Osborne's style               |
+| 20h to 7Eh | ASCII, in the Osborne's style                                 |
+| 7Fh        | A hatch                                                       |
+| 80h to BFh | Sextants: 80h plus the sixths lit (see below)                 |
+| C0h to CAh | Single lines: ─ │ ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼                           |
+| CBh to D5h | Double lines: ═ ║ ╔ ╗ ╚ ╝ ╠ ╣ ╦ ╩ ╬                           |
+| D6h to D9h | Half lines: ╴ ╵ ╶ ╷                                           |
+| DAh to DDh | Rounded corners: ╭ ╮ ╯ ╰                                      |
+| DEh to E0h | Shades: ░ ▒ ▓                                                 |
+| E1h, E2h   | Halves: ▀ ▄                                                   |
+| E3h to E5h | Diagonals: ╱ ╲ ╳                                              |
+| E6h to E9h | Triangles: ◢ ◣ ◤ ◥                                            |
+| EAh to EDh | Arrows: ← ↑ → ↓                                               |
+| EEh to F1h | Suits: ♠ ♥ ♦ ♣                                                |
+| F2h to FFh | Symbols: • ● ○ ■ □ ✓ × ÷ ± ° £ ♪ ☺ ↕                          |
+| 100h–1FFh  | The alternates: the same as 00h to FFh                        |
+
+- The screen draws whatever is in a cell, so the control characters have
+  glyphs like any other: the Osborne's graphics, where the Osborne had them. A
+  program that prints text handles control characters before it writes cells.
+- Text is drawn in the left 6 or 7 pixels of the cell, from pixel row 1, with
+  descenders in rows 8 and 9, as on the Osborne.
+- **Sextants** divide the cell into 2 columns of 4 pixels, and rows of 3, 4,
+  and 3 pixels, so each sixth is about 4 by 7 square units: nearly square
+  blocks, 160 by 72 of them on an 80 by 24 screen. Bit 0 of the character is
+  the top left sixth, bit 1 the top right, and so on to bit 5, the bottom
+  right, the order Unicode's sextants use. 80h is blank, and BFh full.
+- **Lines** run through the middle of the cell, so they join from cell to cell:
+  a single line is 2 pixels wide (columns 3 and 4) and 1 tall (row 4), and a
+  double line two of them (columns 1, 2, 5, and 6, and rows 3 and 5).
+- The alternates are a copy, so the alternate attribute changes nothing until a
+  program redefines them. A program can take the alternates for its own
+  graphics without losing a character of the font.
 
 ## Design
 
@@ -651,8 +694,8 @@ class ScreenMemory final : public MemoryMap {
   sends a write below `kScreenCharacterSetSize` to the character set while
   the window's bit 0 is set, and `Read` never reads it.
 - `Create` returns an error for a `characters` that is set to anything but
-  `kScreenCharacterSetSize` words, an empty one included. Until CL8, an unset
-  one is a blank character set.
+  `kScreenCharacterSetSize` words, an empty one included. An unset one is the
+  built-in character set (CL8).
 - A refresh draws the pixels from the cells, the character set, and the
   cursor, under the lock, as Behavior's Pixels describes, with the blink
   phases from the frame count. At 80 by 24, that is 153,600 pixels (150 KB),
@@ -693,13 +736,24 @@ struct ScreenPicture {
 
 ### devices: the built-in character set
 
-- `screen_characters.h`/`.cc`, with `GetDefaultScreenCharacters()`: 512 glyphs
-  as a constant array, which an unset `ScreenSettings::characters` uses.
-- Characters 0 to 127 are ASCII in the Osborne 1's glyph shapes, if a source
-  for its character generator's pixels can be found, and its terms allow
-  using them. Otherwise, a public domain 8 by 10 font. The control characters,
-  128 to 255 (Ozzy's graphics characters), and the alternate 256 are decided
-  in CL8, along with how the glyphs are kept readable in the source.
+```
+// screen_characters.h
+absl::Span<const uint16_t> GetDefaultScreenCharacters();
+```
+
+- `GetDefaultScreenCharacters()` returns the 2560 words of the built-in
+  character set, which the `Screen` passes to its `ScreenMemory` when
+  `ScreenSettings::characters` is unset. Its header comment lists what each
+  character is, as Behavior does.
+- `screen_characters.cc` keeps the first 256 glyphs readable as pixel art:
+  bands of 8 glyphs, each band 10 strings of the 8 glyphs' rows side by side
+  (`#` lit and `.` unlit), under a comment naming the characters. It packs
+  them into words, and copies them to the alternates, at the first call.
+- The Osborne's shapes were drawn from its character generator (the late
+  stock font, CRC 6c1eab0d), with the user's approval: its pixels, not its ROM
+  image, are in the source, and the font is meant to be thematically the
+  Osborne's rather than an exact copy.
+- `ScreenMemory`'s constructor now always takes a whole character set.
 
 **Brittleness:** none.
 
@@ -857,7 +911,7 @@ Depends on: CL6.
   compact bottom row drawn whole; the band staying put as the cells scroll;
   rows of the band outside the screen ignored; and `drawn_height`.
 
-### CL8 [ ] devices: the built-in character set
+### CL8 [x] devices: the built-in character set
 
 Depends on: CL6.
 

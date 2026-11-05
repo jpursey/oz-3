@@ -15,6 +15,7 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "oz3/core/memory_bank_config.h"
+#include "oz3/devices/screen_characters.h"
 
 namespace oz3 {
 
@@ -99,7 +100,7 @@ ScreenMemory::ScreenMemory(int columns, int rows,
                            absl::Span<const uint16_t> characters) {
   mem_[kColumnsAddress] = static_cast<uint16_t>(columns);
   mem_[kRowsAddress] = static_cast<uint16_t>(rows);
-  DCHECK(characters.empty() || characters.size() == characters_.size());
+  DCHECK(characters.size() == characters_.size());
   std::copy(characters.begin(), characters.end(), characters_.begin());
 }
 
@@ -223,7 +224,7 @@ Screen::Screen(DeviceConfig config, const ScreenSettings& settings)
       memory_(settings.columns, settings.rows,
               settings.characters.has_value()
                   ? absl::Span<const uint16_t>(*settings.characters)
-                  : absl::Span<const uint16_t>()),
+                  : GetDefaultScreenCharacters()),
       picture_(
           {.columns = settings.columns,
            .rows = settings.rows,

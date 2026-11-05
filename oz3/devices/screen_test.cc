@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -25,6 +26,7 @@
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor_config.h"
 #include "oz3/devices/device_program_test.h"
+#include "oz3/devices/screen_characters.h"
 
 namespace oz3 {
 namespace {
@@ -650,6 +652,28 @@ TEST_F(ScreenTest, ChangedGlyphShowsAtTheNextRefresh) {
                                            "........",  //
                                            "########",  //
                                            "........"));
+}
+
+TEST_F(ScreenTest, UnsetCharactersAreTheBuiltInCharacterSet) {
+  // Every glyph, the alternates included, is drawn as the built-in character
+  // set packs it.
+  ASSERT_TRUE(InitScreen({.page = kPage, .columns = 32, .rows = 16}));
+  std::vector<uint16_t> cells(kScreenGlyphCount);
+  for (int glyph = 0; glyph < kScreenGlyphCount; ++glyph) {
+    cells[glyph] = static_cast<uint16_t>(
+        glyph < 256 ? glyph : kScreenAlternate | (glyph - 256));
+  }
+  WriteScreen(0, cells);
+  ExecuteUntilRefresh();
+  std::vector<uint16_t> characters;
+  for (int glyph = 0; glyph < kScreenGlyphCount; ++glyph) {
+    const std::vector<std::string> pixels =
+        GetCellPixels(glyph % 32, glyph / 32);
+    CellPixels cell_pixels;
+    std::ranges::copy(pixels, cell_pixels.begin());
+    std::ranges::copy(PackGlyph(cell_pixels), std::back_inserter(characters));
+  }
+  EXPECT_THAT(characters, ElementsAreArray(GetDefaultScreenCharacters()));
 }
 
 TEST_F(ScreenTest, CellIsDrawnFromItsGlyphWithItsAttributes) {

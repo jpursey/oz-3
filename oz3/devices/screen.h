@@ -29,8 +29,9 @@ namespace oz3 {
 //==============================================================================
 
 // A cell is a word: the low byte is the character, and the high byte its
-// attributes. Characters 0 to 127 are ASCII, and 128 to 255 graphics
-// characters, each drawn from its glyph in the character set.
+// attributes. Each character is drawn from its glyph in the character set,
+// which is the built-in one (see GetDefaultScreenCharacters) unless a host or
+// a program changes it.
 
 // Styles, which the screen applies to the glyph's pixels. Half intensity draws
 // them dim, rather than bright.
@@ -144,7 +145,7 @@ struct ScreenSettings {
   int fast_blink_hz = 4;
 
   // The character set at power on, which must be kScreenCharacterSetSize words,
-  // or unset for the built-in one.
+  // or unset for the built-in one (GetDefaultScreenCharacters).
   std::optional<std::vector<uint16_t>> characters;
 };
 
@@ -229,8 +230,7 @@ class ScreenMemory final : public MemoryMap {
   //----------------------------------------------------------------------------
 
   // Constructs a blank page for a screen of `columns` by `rows` cells, with
-  // `characters` as its character set (kScreenCharacterSetSize words), or a
-  // blank character set if it is empty.
+  // `characters` as its character set (kScreenCharacterSetSize words).
   ScreenMemory(int columns, int rows, absl::Span<const uint16_t> characters);
   ~ScreenMemory() override = default;
 

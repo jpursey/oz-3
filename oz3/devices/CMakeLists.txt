@@ -6,6 +6,7 @@
 set(oz3_devices_SOURCE
   keyboard.cc keyboard.h
   screen.cc screen.h
+  screen_characters.cc screen_characters.h
   teletype.cc teletype.h
 )
 set(oz3_devices_DEPS
@@ -23,6 +24,7 @@ set(oz3_devices_LIBS
 set(oz3_devices_TEST_SOURCE
   device_program_test.h
   keyboard_test.cc
+  screen_characters_test.cc
   screen_test.cc
   teletype_test.cc
 )
