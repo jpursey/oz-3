@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_devices_SOURCE
+  keyboard.cc keyboard.h
   teletype.cc teletype.h
 )
 set(oz3_devices_DEPS
@@ -11,10 +12,12 @@ set(oz3_devices_DEPS
   absl::status
   absl::statusor
   absl::strings
+  gb_container
   oz3_core
 )
 set(oz3_devices_TEST_SOURCE
   device_program_test.h
+  keyboard_test.cc
   teletype_test.cc
 )
 set(oz3_devices_TEST_DEPS

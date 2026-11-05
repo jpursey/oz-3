@@ -505,7 +505,7 @@ Depends on: CL1.
   failing, until `TakeOutput`; the teletype sleeps while nothing is written;
   and `Create` failing for invalid settings.
 
-### CL3 [ ] devices: the keyboard
+### CL3 [x] devices: the keyboard
 
 Depends on: CL2.
 
