@@ -842,7 +842,7 @@ Depends on: CL5.
   and mode, with the blink phases at the frames they change, at the default
   blink rates and others.
 
-### CL7 [ ] devices: compact rows
+### CL7 [x] devices: compact rows
 
 Depends on: CL6.
 

@@ -27,6 +27,9 @@ constexpr uint8_t kAllPixels = 0xFF;
 constexpr uint8_t kLeftPixel = 0x80;
 constexpr uint8_t kRightPixel = 0x01;
 
+// The pixel rows from a compact row's top to the next row's.
+constexpr int kCompactRowHeight = 8;
+
 // Swaps the lit and unlit pixels of a cell's `rows`.
 void Invert(CellRows& rows) {
   for (uint8_t& row : rows) {
@@ -227,9 +230,9 @@ Screen::Screen(DeviceConfig config, const ScreenSettings& settings)
            .cells = std::vector<uint16_t>(settings.columns * settings.rows),
            .pixel_width = settings.columns * kScreenGlyphWidth,
            .pixel_height = settings.rows * kScreenGlyphHeight,
-           .pixels =
-               std::vector<uint8_t>(settings.columns * kScreenGlyphWidth *
-                                    settings.rows * kScreenGlyphHeight)}) {}
+           .pixels = std::vector<uint8_t>(settings.columns * kScreenGlyphWidth *
+                                          settings.rows * kScreenGlyphHeight),
+           .drawn_height = settings.rows * kScreenGlyphHeight}) {}
 
 Cycles Screen::GetRefreshCycle() const {
   return (frame_count_ + 1) * GetClockHz() / refresh_hz_;
@@ -258,7 +261,8 @@ void Screen::Refresh(const Lock& lock) {
   picture_.cursor_style =
       static_cast<ScreenCursorStyle>(cursor & kScreenCursorStyleMask);
 
-  DrawPixels(memory_.GetCharacters(lock));
+  DrawPixels(memory_.GetCharacters(lock), mem[ScreenMemory::kCompactRowAddress],
+             mem[ScreenMemory::kCompactRowCountAddress]);
 }
 
 bool Screen::IsBlinkOn(int blink_hz) const {
@@ -279,12 +283,19 @@ bool Screen::IsCursorOn() const {
   return false;
 }
 
-void Screen::DrawPixels(absl::Span<const uint16_t> characters) {
+void Screen::DrawPixels(absl::Span<const uint16_t> characters, int compact_row,
+                        int compact_row_count) {
   const bool slow_blink_on = IsBlinkOn(slow_blink_hz_);
   const bool cursor_on = IsCursorOn();
   const int columns = picture_.columns;
+  const int rows = picture_.rows;
   const int width = picture_.pixel_width;
-  for (int row = 0; row < picture_.rows; ++row) {
+
+  // Compact rows overlap the row below, so each pixel is lit to the brightest
+  // level drawn on it, and the pixel rows no row reaches stay off.
+  std::ranges::fill(picture_.pixels, kScreenPixelOff);
+  int top = 0;  // The row's first pixel row.
+  for (int row = 0; row < rows; ++row) {
     for (int column = 0; column < columns; ++column) {
       const uint16_t cell = picture_.cells[row * columns + column];
       CellRows cell_rows = DrawCell(characters, cell, slow_blink_on);
@@ -297,15 +308,23 @@ void Screen::DrawPixels(absl::Span<const uint16_t> characters) {
       const uint8_t level = (cell & kScreenHalfIntensity) != 0
                                 ? kScreenPixelDim
                                 : kScreenPixelBright;
-      int index = row * kScreenGlyphHeight * width + column * kScreenGlyphWidth;
+      int index = top * width + column * kScreenGlyphWidth;
       for (const uint8_t pixel_row : cell_rows) {
         for (int x = 0; x < kScreenGlyphWidth; ++x) {
-          picture_.pixels[index + x] =
-              (pixel_row & (kLeftPixel >> x)) != 0 ? level : kScreenPixelOff;
+          uint8_t& pixel = picture_.pixels[index + x];
+          pixel = std::max(pixel, (pixel_row & (kLeftPixel >> x)) != 0
+                                      ? level
+                                      : kScreenPixelOff);
         }
         index += width;
       }
     }
+
+    // The drawing reaches the bottom of the last row, compact or not.
+    picture_.drawn_height = top + kScreenGlyphHeight;
+    const bool compact =
+        row >= compact_row && row < compact_row + compact_row_count;
+    top += compact ? kCompactRowHeight : kScreenGlyphHeight;
   }
 }
 

@@ -176,6 +176,10 @@ struct ScreenPicture {
   int pixel_width = 0;
   int pixel_height = 0;
   std::vector<uint8_t> pixels;
+
+  // The pixel rows drawn, from the top: pixel_height, less 2 for each compact
+  // row but the bottom one. The pixel rows below it are off.
+  int drawn_height = 0;
 };
 
 //==============================================================================
@@ -202,7 +206,9 @@ class ScreenMemory final : public MemoryMap {
   // positions, and the cursor word is its mode and style. Writing a row in
   // screen positions to clear row fills it with the fill word as it is written,
   // and clear row reads 0. The character set window word opens the window with
-  // kScreenCharacterWindowOpen. The rest of the page, from kReservedAddress, is
+  // kScreenCharacterWindowOpen. The first compact row and the compact row count
+  // are a band of rows, in screen positions, drawn 8 pixel rows apart rather
+  // than 10 (see Screen). The rest of the page, from kReservedAddress, is
   // reserved.
   static constexpr int kColumnsAddress = ScreenSettings::kMaxCells;
   static constexpr int kRowsAddress = 0xFF1;
@@ -214,7 +220,9 @@ class ScreenMemory final : public MemoryMap {
   static constexpr int kFillAddress = 0xFF7;
   static constexpr int kClearRowAddress = 0xFF8;
   static constexpr int kCharacterWindowAddress = 0xFF9;
-  static constexpr int kReservedAddress = 0xFFA;
+  static constexpr int kCompactRowAddress = 0xFFA;
+  static constexpr int kCompactRowCountAddress = 0xFFB;
+  static constexpr int kReservedAddress = 0xFFC;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -319,6 +327,12 @@ class ScreenFactory final : public DeviceFactory {
 // frames * 2 * blink_hz / refresh_hz is even, where frames is the frame counter
 // the refresh sets.
 //
+// Each row of cells is drawn from the pixel row below the last: 8 below a
+// compact row (see ScreenMemory), and 10 below any other, so a compact row's
+// bottom two pixel rows overlap the next row's top two, and each overlapping
+// pixel is the brighter of the two. A compact bottom row has nothing below it,
+// so it is drawn whole.
+//
 // The host reads the picture with GetPicture(), which changes only at a
 // refresh.
 class Screen final : public Device {
@@ -377,8 +391,10 @@ class Screen final : public Device {
   // if it has one, is in its on phase.
   bool IsCursorOn() const;
 
-  // Draws the picture's pixels from its cells and cursor, with `characters`.
-  void DrawPixels(absl::Span<const uint16_t> characters);
+  // Draws the picture's pixels from its cells and cursor, with `characters`,
+  // and the `compact_row_count` rows from `compact_row` compact.
+  void DrawPixels(absl::Span<const uint16_t> characters, int compact_row,
+                  int compact_row_count);
 
   const int refresh_hz_;
   const int slow_blink_hz_;

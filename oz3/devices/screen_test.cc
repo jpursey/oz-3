@@ -231,18 +231,28 @@ class ScreenTest : public DeviceProgramTest {
     return (GetState().core.GetInterrupts() & (1u << kInterrupt)) != 0;
   }
 
-  // Returns the picture's pixels of the cell at `column` and `row`, as
-  // CellPixels describes.
-  std::vector<std::string> GetCellPixels(int column = 0, int row = 0) {
+  // Returns every row of the picture's pixels, as CellPixels describes.
+  std::vector<std::string> GetPixelRows() {
     const ScreenPicture& picture = screen_->GetPicture();
     std::vector<std::string> pixels;
-    for (int y = 0; y < kScreenGlyphHeight; ++y) {
+    for (int y = 0; y < picture.pixel_height; ++y) {
       std::string& line = pixels.emplace_back();
-      const int start = (row * kScreenGlyphHeight + y) * picture.pixel_width +
-                        column * kScreenGlyphWidth;
-      for (int x = 0; x < kScreenGlyphWidth; ++x) {
-        line += std::string_view(".+#").at(picture.pixels[start + x]);
+      for (int x = 0; x < picture.pixel_width; ++x) {
+        line += std::string_view(".+#").at(
+            picture.pixels[y * picture.pixel_width + x]);
       }
+    }
+    return pixels;
+  }
+
+  // Returns the picture's pixels of the cell at `column` and `row`, with no
+  // compact rows, as CellPixels describes.
+  std::vector<std::string> GetCellPixels(int column = 0, int row = 0) {
+    const std::vector<std::string> pixel_rows = GetPixelRows();
+    std::vector<std::string> pixels;
+    for (int y = 0; y < kScreenGlyphHeight; ++y) {
+      pixels.push_back(pixel_rows[row * kScreenGlyphHeight + y].substr(
+          column * kScreenGlyphWidth, kScreenGlyphWidth));
     }
     return pixels;
   }
@@ -265,6 +275,7 @@ TEST_F(ScreenTest, IsBlankAtPowerOn) {
   EXPECT_EQ(picture.pixel_width, 640);
   EXPECT_EQ(picture.pixel_height, 240);
   EXPECT_EQ(picture.pixels, std::vector<uint8_t>(640 * 240));
+  EXPECT_EQ(picture.drawn_height, 240);
   EXPECT_EQ(screen_->GetFrameCount(), 0);
 
   EXPECT_EQ(ReadScreen(0, ScreenMemory::kColumnsAddress),
@@ -453,7 +464,7 @@ TEST_F(ScreenTest, ReadOnlyAndReservedWordsIgnoreWrites) {
   WriteScreen(ScreenMemory::kColumnsAddress, std::vector<uint16_t>(16, 0xFFFF));
   EXPECT_THAT(ReadScreen(ScreenMemory::kColumnsAddress, 16),
               ElementsAre(80, 24, 1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0,
-                          0xFFFF, 0, 0, 0, 0, 0, 0));
+                          0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0));
 }
 
 TEST_F(ScreenTest, UnusedWordsHoldWhatIsWritten) {
@@ -783,6 +794,151 @@ TEST_F(ScreenTest, CursorIsDrawnOverABlinkingCellInItsOffPhase) {
   ExecuteUntilRefresh();  // Frame 2 is on, and frame 3 off.
   ExecuteUntilRefresh();
   EXPECT_THAT(GetCellPixels(), ElementsAreArray(kBlockPixels));
+}
+
+TEST_F(ScreenTest, CompactRowsArePacked8PixelRowsApart) {
+  ASSERT_TRUE(InitScreen(1, 3));
+  WriteScreen(0, {kScreenHalfIntensity | kScreenLineBottom | 'A',
+                  kScreenLineTop | 'A', kScreenLineBottom | 'A'});
+  ExecuteUntilRefresh();
+  EXPECT_EQ(screen_->GetPicture().drawn_height, 30);
+
+  // Row 0's bottom two pixel rows overlap row 1's top two, where each pixel is
+  // the brighter of the two, and the bottom two pixel rows, which row 2 lit at
+  // the last refresh, are off.
+  WriteScreen(ScreenMemory::kCompactRowAddress, {0, 1});
+  ExecuteUntilRefresh();
+  EXPECT_EQ(screen_->GetPicture().drawn_height, 28);
+  EXPECT_THAT(GetPixelRows(), ElementsAre("........",  // Row 0
+                                          "...++...",  //
+                                          "..+..+..",  //
+                                          ".+....+.",  //
+                                          ".+....+.",  //
+                                          ".++++++.",  //
+                                          ".+....+.",  //
+                                          ".+....+.",  //
+                                          "########",  // Row 0 and row 1
+                                          "+++##+++",  //
+                                          "..#..#..",  // Row 1
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          ".######.",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  // Row 2
+                                          "...##...",  //
+                                          "..#..#..",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          ".######.",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          "........",  //
+                                          "########",  //
+                                          "........",  // Not drawn
+                                          "........"));
+}
+
+TEST_F(ScreenTest, CompactBottomRowIsDrawnWhole) {
+  ASSERT_TRUE(InitScreen(1, 2));
+  WriteScreen(0, {kScreenLineBottom | 'A', kScreenLineBottom | 'A'});
+  WriteScreen(ScreenMemory::kCompactRowAddress, {0, 2});
+  ExecuteUntilRefresh();
+  EXPECT_EQ(screen_->GetPicture().drawn_height, 18);
+  EXPECT_THAT(GetPixelRows(), ElementsAre("........",  // Row 0
+                                          "...##...",  //
+                                          "..#..#..",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          ".######.",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          "........",  // Row 0 and row 1
+                                          "########",  //
+                                          "..#..#..",  // Row 1
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          ".######.",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          "........",  //
+                                          "########",  //
+                                          "........",  // Not drawn
+                                          "........"));
+}
+
+TEST_F(ScreenTest, CompactRowsStayPutAsTheCellsScroll) {
+  // Screen row 0 is compact, and shows the cells' row 1, while the cells' row
+  // 0, which would be compact if the band were in the cells' rows, is shown on
+  // the bottom row.
+  ASSERT_TRUE(InitScreen(1, 3));
+  WriteScreen(0, {kScreenLineBottom | 'A', kScreenLineTop});
+  WriteScreen(ScreenMemory::kScrollRowAddress, {1});
+  WriteScreen(ScreenMemory::kCompactRowAddress, {0, 1});
+  ExecuteUntilRefresh();
+  EXPECT_EQ(screen_->GetPicture().drawn_height, 28);
+  EXPECT_THAT(GetPixelRows(), ElementsAre("########",  // Row 0
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  // Row 0 and row 1
+                                          "........",  //
+                                          "........",  // Row 1
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  //
+                                          "........",  // Row 2
+                                          "...##...",  //
+                                          "..#..#..",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          ".######.",  //
+                                          ".#....#.",  //
+                                          ".#....#.",  //
+                                          "........",  //
+                                          "########",  //
+                                          "........",  // Not drawn
+                                          "........"));
+}
+
+TEST_F(ScreenTest, DrawnHeightCountsTheCompactRowsAboveTheBottom) {
+  ASSERT_TRUE(InitScreen(1, 3));
+  const struct {
+    uint16_t compact_row;
+    uint16_t compact_row_count;
+    int drawn_height;
+  } bands[] = {
+      {0, 0, 30},
+      {1, 0, 30},
+      {0, 1, 28},
+      {1, 1, 28},
+      {2, 1, 30},
+      {0, 2, 26},
+      {0, 3, 26},
+      {1, 2, 28},
+      // Rows of the band outside the screen are ignored.
+      {0, 0xFFFF, 26},
+      {2, 5, 30},
+      {3, 1, 30},
+      {0xFFFF, 0xFFFF, 30},
+  };
+  for (const auto& [compact_row, compact_row_count, drawn_height] : bands) {
+    WriteScreen(ScreenMemory::kCompactRowAddress,
+                {compact_row, compact_row_count});
+    ExecuteUntilRefresh();
+    EXPECT_EQ(screen_->GetPicture().drawn_height, drawn_height)
+        << "Band " << compact_row << ", " << compact_row_count;
+  }
 }
 
 class ScreenBlinkTest : public ScreenTest {
