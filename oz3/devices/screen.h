@@ -143,8 +143,10 @@ class ScreenMemory final : public MemoryMap {
   // Addresses of the control words, in the screen's own addresses. Columns,
   // rows, and the frame counter are read only. The scroll row is the row of
   // cells shown at the top of the screen, the cursor's position is in screen
-  // positions, and the cursor word is its mode and style. The rest of the
-  // page, from kReservedAddress, is reserved.
+  // positions, and the cursor word is its mode and style. Writing a row in
+  // screen positions to clear row fills it with the fill word as it is written,
+  // and clear row reads 0. The rest of the page, from kReservedAddress, is
+  // reserved.
   static constexpr int kColumnsAddress = ScreenSettings::kMaxCells;
   static constexpr int kRowsAddress = 0xFF1;
   static constexpr int kFrameCountAddress = 0xFF2;
@@ -152,7 +154,9 @@ class ScreenMemory final : public MemoryMap {
   static constexpr int kCursorColumnAddress = 0xFF4;
   static constexpr int kCursorRowAddress = 0xFF5;
   static constexpr int kCursorAddress = 0xFF6;
-  static constexpr int kReservedAddress = 0xFF7;
+  static constexpr int kFillAddress = 0xFF7;
+  static constexpr int kClearRowAddress = 0xFF8;
+  static constexpr int kReservedAddress = 0xFF9;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -184,6 +188,10 @@ class ScreenMemory final : public MemoryMap {
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
+
+  // Fills `row`, in screen positions, with the fill word. A row outside the
+  // screen clears nothing.
+  void ClearRow(int row);
 
   std::array<uint16_t, kMemoryBankPageSize> mem_ = {};
 };

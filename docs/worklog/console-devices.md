@@ -792,7 +792,7 @@ Depends on: CL2.
   refreshes it missed catch up; the screen anywhere in a bank; and `Create`
   failing for invalid settings, and succeeding for the largest size that fits.
 
-### CL5 [ ] devices: clearing rows
+### CL5 [x] devices: clearing rows
 
 Depends on: CL4.
 

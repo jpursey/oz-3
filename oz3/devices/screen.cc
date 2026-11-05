@@ -42,12 +42,25 @@ void ScreenMemory::Read(int address, uint16_t* data, int size) {
 
 void ScreenMemory::Write(int address, const uint16_t* data, int size) {
   for (int i = 0; i < size; ++i, ++address) {
-    // The read-only and reserved words are only the screen's to set.
-    if (address < kColumnsAddress ||
-        (address >= kScrollRowAddress && address < kReservedAddress)) {
+    // Clear row stores nothing, and the read-only and reserved words are only
+    // the screen's to set.
+    if (address == kClearRowAddress) {
+      ClearRow(data[i]);
+    } else if (address < kColumnsAddress ||
+               (address >= kScrollRowAddress && address < kReservedAddress)) {
       mem_[address] = data[i];
     }
   }
+}
+
+void ScreenMemory::ClearRow(int row) {
+  const int columns = mem_[kColumnsAddress];
+  const int rows = mem_[kRowsAddress];
+  if (row >= rows) {
+    return;
+  }
+  const int cells_row = (mem_[kScrollRowAddress] + row) % rows;
+  std::fill_n(mem_.begin() + cells_row * columns, columns, mem_[kFillAddress]);
 }
 
 //==============================================================================

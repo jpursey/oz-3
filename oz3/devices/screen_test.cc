@@ -327,8 +327,8 @@ TEST_F(ScreenTest, ReadOnlyAndReservedWordsIgnoreWrites) {
   ExecuteUntilRefresh();
   WriteScreen(ScreenMemory::kColumnsAddress, std::vector<uint16_t>(16, 0xFFFF));
   EXPECT_THAT(ReadScreen(ScreenMemory::kColumnsAddress, 16),
-              ElementsAre(80, 24, 1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0,
-                          0, 0, 0, 0, 0));
+              ElementsAre(80, 24, 1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0,
+                          0, 0, 0, 0, 0, 0, 0));
 }
 
 TEST_F(ScreenTest, UnusedWordsHoldWhatIsWritten) {
@@ -358,6 +358,76 @@ TEST_F(ScreenTest, PictureIsUnchangedWithoutWrites) {
   WriteScreen(ScreenMemory::kCursorAddress, {0});
   ExecuteUntilRefresh();
   EXPECT_NE(screen_->GetPicture(), picture);
+}
+
+TEST_F(ScreenTest, ClearRowFillsARowWithTheFillWord) {
+  ASSERT_TRUE(InitScreen(2, 3));
+  WriteScreen(0, {0x10, 0x11, 0x20, 0x21, 0x30, 0x31});
+
+  // The fill word is 0 at power on.
+  WriteScreen(ScreenMemory::kClearRowAddress, {0});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0, 0, 0x20, 0x21, 0x30, 0x31));
+
+  // The row is cleared as clear row is written, after the fill word before it
+  // in the same write. Clear row reads 0, and the next refresh shows the row.
+  const uint16_t fill = kScreenInverse | ' ';
+  WriteScreen(ScreenMemory::kFillAddress, {fill, 2});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0, 0, 0x20, 0x21, fill, fill));
+  EXPECT_THAT(ReadScreen(ScreenMemory::kFillAddress, 2), ElementsAre(fill, 0));
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0, 0, 0x20, 0x21, fill, fill));
+}
+
+TEST_F(ScreenTest, ClearRowIsInScreenPositions) {
+  ASSERT_TRUE(InitScreen(2, 3));
+
+  // With the cells' row 1 at the top, screen row 0 is the cells' row 1, and
+  // screen row 2 wraps to the cells' row 0.
+  WriteScreen(ScreenMemory::kScrollRowAddress, {1});
+  WriteScreen(ScreenMemory::kFillAddress, {1, 0});
+  WriteScreen(ScreenMemory::kFillAddress, {2, 2});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(2, 2, 1, 1, 0, 0));
+
+  // The scroll row is taken modulo the rows: 0FFFEh % 3 is 2.
+  WriteScreen(ScreenMemory::kScrollRowAddress, {0xFFFE});
+  WriteScreen(ScreenMemory::kFillAddress, {3, 0});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(2, 2, 1, 1, 3, 3));
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells, ElementsAre(3, 3, 2, 2, 1, 1));
+}
+
+TEST_F(ScreenTest, ClearRowOutsideTheScreenClearsNothing) {
+  ASSERT_TRUE(InitScreen(2, 3));
+  WriteScreen(0, {1, 2, 3, 4, 5, 6});
+  WriteScreen(ScreenMemory::kFillAddress, {0xFF});
+  for (const int row : {3, 4, 0xFFFF}) {
+    WriteScreen(ScreenMemory::kClearRowAddress, {static_cast<uint16_t>(row)});
+  }
+
+  // Nor does it clear the unused words after the cells.
+  EXPECT_THAT(ReadScreen(0, 8), ElementsAre(1, 2, 3, 4, 5, 6, 0, 0));
+}
+
+TEST_F(ScreenTest, LineFeedOnTheBottomRowIsTwoWrites) {
+  ASSERT_TRUE(InitScreen(2, 3));
+  ASSERT_TRUE(Load(R"---(
+    .STACK 16
+        MOV BE, 0F000h      ; The screen's page, in EXTRA
+        MOV R0, E(0FF3h)    ; Scroll the text up a row
+        ADQ R0, 1
+        MOV E(0FF3h), R0
+        MOV R0, E(0FF1h)    ; Clear the bottom row, rows - 1
+        SBQ R0, 1
+        MOV E(0FF8h), R0
+        HALT
+  )---"));
+  WriteScreen(0, {0x10, 0x11, 0x20, 0x21, 0x30, 0x31});
+  WriteScreen(ScreenMemory::kFillAddress, {' '});
+  ASSERT_TRUE(ExecuteUntilHalt());
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0x20, 0x21, 0x30, 0x31, ' ', ' '));
 }
 
 TEST_F(ScreenTest, RefreshWaitsWhileTheBankIsHeld) {
