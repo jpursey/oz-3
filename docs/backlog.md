@@ -26,22 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Ozzy machine
-
-- **Layers:** ozzy (new), apps, wiki
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md)
-
-The first Ozzy anyone can run: the `ozzy` library builds a machine from a
-`gb::Config` text file, writes the machine table and the boot ROM, and starts
-core 0, and the `ozzy` app runs it in the Windows console in real time. The
-boot ROM prints a banner and echoes keys. Creates Ozzy's wiki page, which
-documents the console devices for programmers (see
-[console-devices.md](worklog/console-devices.md)), including the screen's
-built-in character set.
-
 ## Timer device
 
 - **Layers:** devices, ozzy
@@ -77,6 +61,23 @@ packed host bytes.
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
+
+## Graphical frontend
+
+- **Layers:** ozzy, apps
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Ozzy machine*
+- **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (The `ozzy`
+  app); [console-devices.md](worklog/console-devices.md) (Pixels)
+
+An Ozzy in a window of its own, drawing the screen's picture as its pixels
+are, through Game Bits' SDL and renderer: the pixels as an 8-bit texture with
+a three-color palette, each pixel twice as tall as it is wide. So it shows
+what the console frontend can't: the left and right lines, redefined glyphs,
+the alternate character set, compact rows, and the exact blink timing. Keys
+come from the window rather than the console, and the teletype's output needs
+somewhere to go in the window too.
 
 ## Debugger (oz3dbg)
 
