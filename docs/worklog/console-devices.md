@@ -1,6 +1,6 @@
 # Console Devices
 
-The first real devices, in a new `devices` library: the **screen**, the
+The first real devices, in the `devices` library: the **screen**, the
 **keyboard**, and the **teletype** that Ozzy's console is made of (see
 [ozzy_design.md](../ozzy_design.md)). Each is a `Device` and its
 `DeviceFactory`, built on what *Devices in core* added (see
@@ -35,13 +35,14 @@ const ScreenPicture& picture = screen->GetPicture();
 ```
 
 The devices are host-agnostic: each holds its state (the screen's picture, the
-key queue, the text written) and leaves presenting it to the host. Ozzy's
-console frontend, which draws the picture and reads the host's keyboard, is the
+key queue, the text written) and leaves presenting it to the host. The screen
+draws its own pixels, so every host shows exactly the same thing. Ozzy's
+console frontend, which shows the picture and reads the host's keyboard, is the
 *Ozzy machine* item.
 
 A device is configured in real time (a teletype's baud rate, a screen's
 refresh rate), which it turns into cycles with the processor's **clock rate**,
-new in `ProcessorConfig`. So the same device settings work at any clock rate.
+in `ProcessorConfig`. So the same device settings work at any clock rate.
 
 The devices themselves aren't in the specification: they are Ozzy's, and
 Ozzy's wiki page, which documents them for programmers, is written by *Ozzy
@@ -59,8 +60,8 @@ machine*. The clock rate is, in a line of `2-Specifications.md`'s overview.
 - Nothing else changes: everything still runs in cycles, and the clock rate
   only says how many make a second. A host paces the processor to real time
   with it (Ozzy's frontend), or ignores it.
-- `BaseCoreTest::InitConfig` gains a `clock_hz`.
-- Wiki: `2-Specifications.md`'s overview gains a **Clock** bullet.
+- `BaseCoreTest::InitConfig` takes a `clock_hz`.
+- Wiki: `2-Specifications.md`'s overview has a **Clock** bullet.
 
 ### Teletype
 
@@ -76,7 +77,8 @@ A port that writes text to the host, for an Ozzy without a screen.
 - The teletype takes what is written as soon as the port's status is set (by
   `OUTS`, `OUT`, or `OUTR`), and clears the status, so the next `OUTS`
   succeeds. It takes it the cycle after the store, so an `OUTR` of a packed
-  string runs to the end without stopping.
+  string runs to the end without stopping: an `OUTR.IW` of 3 words takes 27
+  cycles, as for a port that is always ready, and an `OUTR.ID` of 3 dwords 33.
 - At a **baud rate** (0, the default, is as fast as cores write), it is busy
   printing what it took for 10 bits a character (a start bit, 8 data bits, and
   a stop bit), and takes nothing more until it is done. The port holds one more
@@ -140,8 +142,7 @@ the status is cleared. That is a quirk to keep.
 ### Screen
 
 A memory mapped page of character cells and control words, which refreshes at
-a configured rate. CL4 is the screen itself, and CL5 to CL8 add to it, as
-marked: until a CL adds its control words, they are reserved.
+a configured rate, and draws a picture of pixels from its own character set.
 
 | Address        | Word                                                          |
 | -------------- | ------------------------------------------------------------- |
@@ -154,18 +155,18 @@ marked: until a CL adds its control words, they are reserved.
 | FF4h           | Cursor column                                                 |
 | FF5h           | Cursor row                                                    |
 | FF6h           | Cursor: its mode and style                                    |
-| FF7h           | Fill: the cell a row is cleared to (CL5)                      |
-| FF8h           | Clear row: clears a row as it is written (CL5)                |
-| FF9h           | Character set window: bit 0 (CL6)                             |
-| FFAh           | First compact row (CL7)                                       |
-| FFBh           | Compact rows: how many (CL7)                                  |
+| FF7h           | Fill: the cell a row is cleared to                            |
+| FF8h           | Clear row: clears a row as it is written                      |
+| FF9h           | Character set window: bit 0                                   |
+| FFAh           | First compact row                                             |
+| FFBh           | Compact rows: how many                                        |
 | FFCh to FFFh   | Reserved: reads 0, and writes are ignored                     |
 
 - Addresses are the screen's own, from the start of its page, wherever it is
   placed.
 - **Cells:** one word per cell. The low byte is the character, and the high
-  byte its attributes. The built-in character set (CL8) draws characters 0 to
-  127 as ASCII, and 128 to 255 as Ozzy's graphics characters.
+  byte its attributes. The built-in character set draws characters 0 to 127 as
+  ASCII, and 128 to 255 as Ozzy's graphics characters.
 
 | Bit   | Attribute                                                       |
 | ----- | --------------------------------------------------------------- |
@@ -188,7 +189,7 @@ marked: until a CL adds its control words, they are reserved.
   to 80 by 51, or 132 by 30).
 - **The size** is at most 132 columns (as wide as a wide terminal) and 64 rows
   (as tall as the cells allow at 63 columns), as well as 4080 cells, so a
-  screen is never a long thin strip (from CL6).
+  screen is never a long thin strip.
 - **The scroll row** is taken modulo the rows, so the row shown at the top is
   the cells' row `scroll`, and the one below it `scroll + 1`, wrapping at the
   last row. Scrolling a whole screen is one write.
@@ -205,33 +206,34 @@ marked: until a CL adds its control words, they are reserved.
 | Fast blink      | 3     | Left edge       | 0Ch   | The leftmost column lit       |
 
 - At power on, the page is all 0 apart from the read-only words: a blank
-  screen, with the cursor off at the top left.
+  screen, with the cursor off at the top left, no compact rows, and the
+  character set window closed.
 
 The screen **refreshes** at `refresh_hz` (30 by default, the full frames a
 second of an interlaced NTSC display): refresh `n` is at cycle
 `n * clock_hz / refresh_hz`, so the schedule doesn't drift where a refresh
 isn't a whole number of cycles (33,333⅓ at 30 Hz and 1 MHz).
 - It takes its bank's lock, adds one to the frame counter, takes the page as
-  the picture (drawing its pixels, from CL6), and releases the lock, all in
-  one cycle, with no cycles of
-  its own. So it never sees half of a core's write, and waits only while a
-  core holds the bank. A refresh that waited is granted the bank as the core
-  releases it, so a core asking for it again in that cycle (as the next
-  instruction's fetch does) waits a cycle for the refresh: the lock handoff's
-  cost, which *Order-independent lock handoff* in the backlog removes.
+  the picture and draws its pixels, and releases the lock, all in one cycle,
+  with no cycles of its own. So it never sees half of a core's write, and waits
+  only while a core holds the bank. A refresh that waited is granted the bank
+  as the core releases it, so a core asking for it again in that cycle (as the
+  next instruction's fetch does) waits a cycle for the refresh: the lock
+  handoff's cost, which *Order-independent lock handoff* in the backlog
+  removes.
 - Then it raises its interrupt (like a vertical blank interrupt).
 - Refreshes are on a fixed schedule: one that waited for the lock doesn't delay
   the next, and refreshes it missed run a cycle apart until it is back on the
   schedule.
 
 The host reads the picture with `Screen::GetPicture()`: the cells as shown
-(with the scroll applied, row by row from the top), and the cursor's position,
-mode, and style. From CL6, it also holds the pixels, which are what the host
-shows (see Pixels). It changes only at a refresh, so the host shows it until
-the next one. A picture compares equal to another with the same contents, so a
-host can skip drawing one that didn't change.
+(with the scroll applied, row by row from the top), the cursor's position,
+mode, and style, and the pixels, which are what the host shows (see Pixels). It
+changes only at a refresh, so the host shows it until the next one. A picture
+compares equal to another with the same contents, so a host can skip drawing
+one that didn't change.
 
-### Clearing rows (CL5)
+### Clearing rows
 
 - **Fill** (FF7h) is the cell a cleared row is filled with, such as a space
   with attributes. It is 0 at power on.
@@ -243,7 +245,7 @@ host can skip drawing one that didn't change.
   scroll row, then clear row `rows - 1`. Clearing the screen is a write for
   each row.
 
-### Character set (CL6)
+### Character set
 
 The screen draws each character from its own **character set**, which a
 program can redefine, as on the Osborne 1. So a program can make its own
@@ -264,10 +266,10 @@ graphics, and animate them.
   are.
 - A changed glyph shows at the next refresh, like everything else, so a program
   can change glyphs between refreshes to animate them.
-- At power on, the character set is the built-in one (CL8): Ozzy's font, which
-  a host can replace with its own in the settings.
+- At power on, the character set is the built-in one (see below), which a host
+  can replace with its own in the settings.
 
-### Pixels (CL6)
+### Pixels
 
 The screen draws the picture's **pixels** itself, so every host shows exactly
 the same thing, and only scales the pixels (each twice as tall as it is wide)
@@ -297,7 +299,7 @@ and chooses their colors.
   faster one would never be seen off. `Create` returns an error otherwise, so
   the refresh rate is in effect at least 2.
 
-### Compact rows (CL7)
+### Compact rows
 
 A band of **compact rows** packs rows 8 pixels apart rather than 10, for games,
 and other drawing tricks. Glyphs don't change: a compact row's bottom two
@@ -316,7 +318,7 @@ pixel rows overlap the next row's top two.
   top and the pixel rows they don't reach off. The picture also holds the
   height drawn: `rows * 10`, less 2 for each compact row but the bottom row.
 
-### The built-in character set (CL8)
+### The built-in character set
 
 The built-in character set is **Ozzy's font**, which every screen starts with
 unless the host sets its own. It is in the style of the Osborne 1's: glyphs
@@ -379,7 +381,9 @@ meant to match it exactly.
 `SetClockHz` names its unit, as the C++ style asks of a plain number, and
 `baud` is a unit itself. "Picture" is the word
 [ozzy_design.md](../ozzy_design.md) uses for what a refresh takes, and
-`ScreenFrame` would read as one count of the frame counter.
+`ScreenFrame` would read as one count of the frame counter. The built-in
+character set is "Ozzy's font" in prose, as it is one typeface, but the API
+calls it a character set, as a program can redefine it.
 
 ### core: the clock rate
 
@@ -410,9 +414,7 @@ int64_t GetClockHz() const;
 - `oz3/devices/`, the `oz3_devices` library, which links `oz3_core` only. Its
   tests, `oz3_devices_test`, also link `oz3_core_testing`, `oz3_tools`, and
   `oz3_instruction_sets`, to run small OZ-3 programs in the default
-  instruction set against the devices, assembled from source with
-  `AssembleProgram` and loaded with `ProgramLoader`. So the tests show what a
-  program sees, with real `INS`, `OUTS`, and `OUTR` cycle counts.
+  instruction set against the devices (see Testing).
 - Each device is a `.h`/`.cc` with its settings, its factory, and the device.
 - **Settings:** a device's name goes on its own, as its identity, which the
   host chooses to find it by. Everything else a host sets about it, its wiring
@@ -439,7 +441,6 @@ int64_t GetClockHz() const;
 - Every device's host API (`PressKey`, `TakeOutput`, `GetPicture`) is called
   between `Processor::Execute` calls, on the processor's thread, and calls
   `Wake()` where it changes what the device would do.
-- CLAUDE.md's library list gains `devices`.
 
 ### devices: Teletype
 
@@ -530,6 +531,7 @@ class Keyboard final : public Device {
 ### devices: Screen
 
 ```
+// screen.h
 // Cell attributes, in the high byte.
 inline constexpr uint16_t kScreenInverse = 0x0100;  ...
 
@@ -540,19 +542,40 @@ enum class ScreenCursorMode : uint16_t { kOff, kOn, kSlowBlink, kFastBlink };
 enum class ScreenCursorStyle : uint16_t {
   kBlock = 0x0000, kInverse = 0x0004, kUnderline = 0x0008, kLeftEdge = 0x000C };
 
+// The character set.
+inline constexpr int kScreenGlyphWidth = 8;     // Pixels, each 1 unit wide
+inline constexpr int kScreenGlyphHeight = 10;   // Pixels, each 2 units tall
+inline constexpr int kScreenGlyphCount = 512;   // 256, and 256 alternates
+inline constexpr int kScreenGlyphSize = 5;      // Words: 2 rows a word
+inline constexpr int kScreenCharacterSetSize =  // 2560 words
+    kScreenGlyphCount * kScreenGlyphSize;
+inline constexpr uint16_t kScreenCharacterWindowOpen = 0x0001;
+
+// A pixel's level in the picture.
+inline constexpr uint8_t kScreenPixelOff = 0;
+inline constexpr uint8_t kScreenPixelDim = 1;
+inline constexpr uint8_t kScreenPixelBright = 2;
+
 struct ScreenSettings {
+  static constexpr int kMaxColumns = 132;
+  static constexpr int kMaxRows = 64;
+  static constexpr int kMaxCells = 0xFF0;
+
   // The page, in its bank, and the interrupt raised at each refresh.
   int bank = 0;
   int page = 0;
   DeviceInterrupt interrupt;
 
-  // The size, whose cells must fit before the control words (4080 at most),
-  // and from CL6, at most kMaxColumns (132) by kMaxRows (64).
-  int columns = 80;
-  int rows = 24;
+  int columns = 80;     // 1 to kMaxColumns
+  int rows = 24;        // 1 to kMaxRows, and at most kMaxCells cells
+  int refresh_hz = 30;  // At least 1, and in effect 2
 
-  // Refreshes a second, at least 1.
-  int refresh_hz = 30;
+  // Blinks a second: each at least 1, and at most refresh_hz / 2.
+  int slow_blink_hz = 1;
+  int fast_blink_hz = 4;
+
+  // kScreenCharacterSetSize words, or unset for the built-in one.
+  std::optional<std::vector<uint16_t>> characters;
 };
 
 struct ScreenPicture {
@@ -564,16 +587,25 @@ struct ScreenPicture {
   int cursor_row = 0;
   ScreenCursorMode cursor_mode = ScreenCursorMode::kOff;  // Off off-screen
   ScreenCursorStyle cursor_style = ScreenCursorStyle::kBlock;
+  int pixel_width = 0;          // columns * kScreenGlyphWidth
+  int pixel_height = 0;         // rows * kScreenGlyphHeight
+  std::vector<uint8_t> pixels;  // Row by row from the top
+  int drawn_height = 0;  // pixel_height, less 2 a compact row but the bottom
 };
 
-// The screen's page, which cores read and write through its bank.
+// The screen's page, which cores read and write through its bank, and its
+// character set.
 class ScreenMemory final : public MemoryMap {
  public:
   // Addresses of the control words, in the screen's own addresses.
   static constexpr int kColumnsAddress = 0xFF0;  ...
+  static constexpr int kReservedAddress = 0xFFC;
 
-  // The page's words, under the bank's lock.
+  ScreenMemory(int columns, int rows, absl::Span<const uint16_t> characters);
+
+  // Under the bank's lock.
   absl::Span<const uint16_t> GetMem(const Lock& lock) const;
+  absl::Span<const uint16_t> GetCharacters(const Lock& lock) const;
   void SetFrameCount(const Lock& lock, uint16_t count);
  protected:
   void Read(int address, uint16_t* data, int size) override;
@@ -600,330 +632,80 @@ class Screen final : public Device {
  protected:
   void Execute() override;
 };
+
+// screen_characters.h
+// The built-in character set, kScreenCharacterSetSize words.
+absl::Span<const uint16_t> GetDefaultScreenCharacters();
 ```
 
 - The cursor's mode and style are enums with their values in the cursor word,
   so the picture names them, and a host or test builds a word by ORing them.
 - The factory's `DeviceConfig` has one page in `bank`, at `page`, readable and
-  writable, one interrupt, and no ports.
-- `ScreenMemory` holds the whole page. `Write` ignores the read-only and
-  reserved words, so only the screen sets them. Its accessors take the bank's
-  lock and `DCHECK` it, so the screen can't use its page without the lock.
+  writable, one interrupt, and no ports. `Create` checks the size, the rates,
+  and a set `characters`, which must be exactly `kScreenCharacterSetSize`
+  words (an empty one is an error). The settings hold the character set by
+  value, as a config file entry would parse into, and the factory keeps one
+  copy for the screens it creates.
+- `ScreenMemory` holds the whole page, and the character set beside it.
+  `Write` ignores the read-only and reserved words, so only the screen sets
+  them. It clears a row as it takes the write to clear row (which it can, as
+  the size and the scroll row are in its page), and stores nothing there, so
+  clear row reads 0; the clear is part of the one word's write, under the lock
+  the core already holds, so a core sees the row cleared from its next access.
+  While the window is open, it sends a write below `kScreenCharacterSetSize`
+  to the character set, and `Read` never reads it. Its accessors take the
+  bank's lock and `DCHECK` it, so the screen can't use its page without the
+  lock.
+- The `Screen` gives its `ScreenMemory` the settings' character set, or
+  `GetDefaultScreenCharacters()` when it is unset.
 - `Execute()`: at a refresh, it requests the lock (one cycle a try, holding
-  the request, until granted), takes the picture, sets the frame counter,
-  releases the lock, raises its interrupt, and advances to the next scheduled
-  refresh, `(frames + 1) * clock_hz / refresh_hz`. It never sleeps: it is busy
-  until the next refresh, which costs the `Processor` one compare a cycle.
-- Performance: a refresh copies the cells into the picture, 30 times a
-  simulated second at the default rate, which is nothing beside the cores.
-
-**Brittleness:** none for a host. The picture is the screen's own copy, so
-the host can read it whenever the processor isn't running.
-
-### devices: clearing rows
-
-```
-class ScreenMemory final : public MemoryMap {
- public:
-  static constexpr int kFillAddress = 0xFF7;
-  static constexpr int kClearRowAddress = 0xFF8;
-  static constexpr int kReservedAddress = 0xFF9;
-};
-```
-
-- `ScreenMemory::Write` clears the row as it takes the write to clear row, so
-  it needs the size and the scroll row (which it has, in its page), and stores
-  nothing there, so clear row reads 0.
-- The clear is part of the one word's write, under the lock the core already
-  holds, so a core sees the row cleared from its next access, and the next
-  refresh shows it.
-
-**Brittleness:** none.
-
-### devices: the character set and the pixels
-
-```
-// screen.h
-inline constexpr int kScreenGlyphWidth = 8;     // Pixels, each 1 unit wide
-inline constexpr int kScreenGlyphHeight = 10;   // Pixels, each 2 units tall
-inline constexpr int kScreenGlyphCount = 512;   // 256, and 256 alternates
-inline constexpr int kScreenGlyphSize = 5;      // Words: 2 rows a word
-inline constexpr int kScreenCharacterSetSize =  // 2560 words
-    kScreenGlyphCount * kScreenGlyphSize;
-
-// The character set window word's bit that opens the window.
-inline constexpr uint16_t kScreenCharacterWindowOpen = 0x0001;
-
-// A pixel's level in the picture.
-inline constexpr uint8_t kScreenPixelOff = 0;
-inline constexpr uint8_t kScreenPixelDim = 1;
-inline constexpr uint8_t kScreenPixelBright = 2;
-
-struct ScreenSettings {
-  ...
-  // Blinks a second: each at least 1, and at most refresh_hz / 2.
-  int slow_blink_hz = 1;
-  int fast_blink_hz = 4;
-
-  // The character set at power on, kScreenCharacterSetSize words, or unset
-  // for the built-in one.
-  std::optional<std::vector<uint16_t>> characters;
-};
-
-struct ScreenPicture {
-  ...
-  // columns * kScreenGlyphWidth by rows * kScreenGlyphHeight, row by row.
-  int pixel_width = 0;
-  int pixel_height = 0;
-  std::vector<uint8_t> pixels;
-};
-
-class ScreenMemory final : public MemoryMap {
- public:
-  static constexpr int kCharacterWindowAddress = 0xFF9;
-  static constexpr int kReservedAddress = 0xFFA;
-
-  ScreenMemory(int columns, int rows, absl::Span<const uint16_t> characters);
-
-  // The character set, under the bank's lock.
-  absl::Span<const uint16_t> GetCharacters(const Lock& lock) const;
-};
-```
-
-- `ScreenMemory` holds the character set beside the page's words. `Write`
-  sends a write below `kScreenCharacterSetSize` to the character set while
-  the window's bit 0 is set, and `Read` never reads it.
-- `Create` returns an error for a `characters` that is set to anything but
-  `kScreenCharacterSetSize` words, an empty one included. An unset one is the
-  built-in character set (CL8).
-- A refresh draws the pixels from the cells, the character set, and the
-  cursor, under the lock, as Behavior's Pixels describes, with the blink
-  phases from the frame count. At 80 by 24, that is 153,600 pixels (150 KB),
-  drawn a glyph row at a time, about 20,000 rows a refresh: still nothing
-  beside the cores, and a host can upload the pixels straight to an 8-bit
-  texture with a three-color palette.
-- The picture keeps the cells and the cursor, for a host (or a test, or a
-  debugger) that wants the text. The pixels are what it shows.
-- The settings hold the character set by value, as a config file entry would
-  parse into, and the factory keeps one copy for the screens it creates.
-
-**Brittleness:** none. The window is the screen's own control word, so nothing
-in core changes.
-
-### devices: compact rows
-
-```
-class ScreenMemory final : public MemoryMap {
- public:
-  static constexpr int kCompactRowAddress = 0xFFA;
-  static constexpr int kCompactRowCountAddress = 0xFFB;
-  static constexpr int kReservedAddress = 0xFFC;
-};
-
-struct ScreenPicture {
-  ...
-  // The pixel rows drawn, from the top: pixel_height, less 2 for each compact
-  // row but the bottom one.
-  int drawn_height = 0;
-};
-```
-
-- Drawing places each screen row at the pixel row below the last, 8 down after
-  a compact row and 10 after a full one, and takes the brighter of each
-  overlapping pair of pixels.
-
-**Brittleness:** none.
-
-### devices: the built-in character set
-
-```
-// screen_characters.h
-absl::Span<const uint16_t> GetDefaultScreenCharacters();
-```
-
-- `GetDefaultScreenCharacters()` returns the 2560 words of the built-in
-  character set, which the `Screen` passes to its `ScreenMemory` when
-  `ScreenSettings::characters` is unset. Its header comment lists what each
-  character is, as Behavior does.
+  the request, until granted), sets the frame counter, takes the cells and the
+  cursor into the picture, draws the pixels, releases the lock, raises its
+  interrupt, and advances to the next scheduled refresh,
+  `(frames + 1) * clock_hz / refresh_hz`. It never sleeps: it is busy until
+  the next refresh, which costs the `Processor` one compare a cycle.
+- Drawing clears the pixels, then draws each cell's glyph rows (inverse, lines,
+  blink, and the cursor applied to its rows, as Behavior's Pixels describes)
+  at its row's top, keeping the brighter of what is there and what it draws.
+  Each row's top is the last one's plus 8 below a compact row, and 10 below
+  any other, and the last row's bottom is `drawn_height`.
 - `screen_characters.cc` keeps the first 256 glyphs readable as pixel art:
   bands of 8 glyphs, each band 10 strings of the 8 glyphs' rows side by side
-  (`#` lit and `.` unlit), under a comment naming the characters. It packs
-  them into words, and copies them to the alternates, at the first call.
+  (`#` lit and `.` unlit), under a comment naming the characters, with a
+  `static_assert` on each string's length. `GetDefaultScreenCharacters()`
+  packs them into words, and copies them to the alternates, at its first call.
+  Its header comment lists what each character is, as Behavior does.
 - The Osborne's shapes were drawn from its character generator (the late
-  stock font, CRC 6c1eab0d), with the user's approval: its pixels, not its ROM
-  image, are in the source, and the font is meant to be thematically the
-  Osborne's rather than an exact copy.
-- `ScreenMemory`'s constructor now always takes a whole character set.
+  stock font, CRC 6c1eab0d), with the user's approval: the source holds its
+  glyphs' pixels as pixel art, not its ROM image, and the font is meant to be
+  thematically the Osborne's rather than an exact copy.
+- The picture keeps the cells and the cursor, for a host (or a test, or a
+  debugger) that wants the text. The pixels are what it shows, and a host can
+  upload them straight to an 8-bit texture with a three-color palette, scaled
+  twice as tall as wide.
+- Performance: at 80 by 24, a refresh copies 1920 cells and draws 153,600
+  pixels (150 KB), a glyph row at a time, 30 times a simulated second at the
+  default rate: still nothing beside the cores.
 
-**Brittleness:** none.
+**Brittleness:** none for a host. The picture is the screen's own copy, so the
+host can read it whenever the processor isn't running. The control words are
+the screen's own, so nothing in core knows about them.
 
-### To confirm
+### Testing
 
-- That an `OUTR` of a packed string to the teletype runs to its end without
-  stopping, as the teletype takes each word the cycle after it is stored, and
-  before the `OUTR`'s next word. **Confirmed in CL2:** an `OUTR.IW` of 3 words
-  takes 27 cycles (9 a word, as for a port that is always ready), with `R7`
-  left at 0, and an `OUTR.ID` of 3 dwords takes 33 (11 a dword).
-- That `AssembleProgram` and `ProgramLoader` make small test programs simpler
-  than encoding them by hand, as the instruction set tests do. **Confirmed in
-  CL2:** `DeviceProgramTest` (`device_program_test.h`, test only) assembles a
-  program, loads it for core 0, and finds a label's IP, so a test can run it
-  with `ExecuteUntilHalt` and time instructions with `CyclesUntilIp`. The
-  other devices' tests use it too. It duplicates the fixture in
-  `default_instruction_set_assemble_test.cc`, which `devices` can't link, and
-  that is fine.
-
-## CLs
-
-Before CL2, an ordinary change to `BaseCoreTest` (not part of this plan) caps
-`ExecuteUntil` at a million cycles, failing the test rather than hanging, and
-makes `ExecuteUntilHalt` return whether the core halted. The devices' tests
-rely on both.
-
-### CL1 [x] core: the processor's clock rate
-
-Depends on: nothing.
-
-- `ProcessorConfig::SetClockHz`, `GetClockHz`, and `kDefaultClockHz`, checked
-  by `Validate()`. `Processor::GetClockHz`, and the protected
-  `Device::GetClockHz` (public in `FakeDevice`).
-- `BaseCoreTest::InitConfig::clock_hz`.
-- Wiki: the **Clock** bullet in `2-Specifications.md`'s overview.
-- Unused by any device yet, so no visible change.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: the default rate, and `Validate` rejecting 0 and negative rates
-  (`processor_config_test.cc`); a device reading its processor's rate
-  (`device_test.cc`).
-
-### CL2 [x] devices: the library, and the teletype
-
-Depends on: CL1.
-
-- `oz3/devices/CMakeLists.txt`, added to `oz3/CMakeLists.txt` after
-  `instruction_sets`.
-- `teletype.h`/`.cc`: `TeletypeSettings`, `TeletypeFactory`, and `Teletype`.
-- `device_program_test.h`: the `DeviceProgramTest` fixture.
-- CLAUDE.md: `devices` in the directory structure's library list, in the
-  dependency order, and the sentence on `devices` and `ozzy` changes to say
-  only `ozzy` doesn't exist yet.
-
-**Verify**
-- Standard checks.
-- Unit tests (`teletype_test.cc`): `OUTS` of single characters and of packed
-  words, with zero bytes skipped; an `OUTR` of a packed string runs to the end
-  with no stop, in its documented cycles, and so does an `OUTR.ID`, with a word
-  written after it not followed by stale characters; control characters pass
-  through, and the eighth bit is dropped; at a baud rate, the exact cycle each
-  write is taken, with the port holding one write meanwhile, zero bytes taking
-  no time, and twice the clock rate taking twice the cycles; an `OUTR` stopping
-  early at a baud rate; a full buffer leaves the status set and `OUTS`
-  failing, until `TakeOutput`; the teletype sleeps while nothing is written;
-  and `Create` failing for invalid settings.
-
-### CL3 [x] devices: the keyboard
-
-Depends on: CL2.
-
-- `keyboard.h`/`.cc`: the key code and modifier constants, `KeyboardSettings`,
-  `KeyboardFactory`, and `Keyboard`.
-
-**Verify**
-- Standard checks.
-- Unit tests (`keyboard_test.cc`): a pressed key is readable with `INS`, with
-  its modifiers, and raises the interrupt once; keys come out in order, each
-  the cycle after the last was read, each raising the interrupt; a full queue
-  drops keys; an interrupt handler reading keys sees each one; and the
-  keyboard sleeps with no keys waiting.
-
-### CL4 [x] devices: the screen
-
-Depends on: CL2.
-
-- `screen.h`/`.cc`: the attribute and cursor constants, `ScreenSettings`,
-  `ScreenPicture`, `ScreenMemory`, `ScreenFactory`, and `Screen`.
-
-**Verify**
-- Standard checks.
-- Unit tests (`screen_test.cc`): cells written by a program appear in the
-  picture only at the next refresh, attributes and all; refreshes on schedule,
-  at the default rates and others, without drift where a refresh isn't a whole
-  number of cycles, counting frames in the control word and `GetFrameCount`,
-  and raising the interrupt; the scroll row, including values past the rows;
-  the cursor word's modes and styles, with its reserved bits ignored, and a
-  cursor outside the screen off; the read-only and reserved words ignore
-  writes; unused words hold what is written; a refresh while a core holds the
-  bank waits for it, costs the core only the lock handoff's cycle, and
-  refreshes it missed catch up; the screen anywhere in a bank; and `Create`
-  failing for invalid settings, and succeeding for the largest size that fits.
-
-### CL5 [x] devices: clearing rows
-
-Depends on: CL4.
-
-- The fill and clear row control words, in `ScreenMemory`.
-- The reserved words start at FF9h.
-
-**Verify**
-- Standard checks.
-- Unit tests (`screen_test.cc`): clear row fills a row with the fill word, in
-  screen positions after the scroll, and reads 0; a row outside the screen
-  clears nothing; a line feed on the bottom row with two writes from a
-  program; and the fill word 0 at power on.
-
-### CL6 [x] devices: the character set and the pixels
-
-Depends on: CL5.
-
-- `screen.h`/`.cc`: the glyph and pixel constants, `ScreenSettings::characters`
-  and the blink rates, the character set window control word, `ScreenMemory`'s
-  character set, and the picture's pixels, drawn at each refresh.
-- The reserved words start at FFAh.
-- `ScreenSettings::kMaxColumns` (132) and `kMaxRows` (64), which `Create`
-  checks along with `kMaxCells`.
-
-**Verify**
-- Standard checks.
-- Unit tests (`screen_test.cc`): with the window set, a program's writes to
-  0 to 9FFh change glyphs (at `n * 5`, two rows a word) and not the cells,
-  while its reads still return the cells; writes from A00h are unchanged by
-  the window; a changed glyph appears in the pixels only at the next refresh;
-  the settings' character set is the one at power on; `Create` failing for a
-  character set of the wrong size, and for a blink rate below 1 or above half
-  the refresh rate; and the exact pixels of a cell plain, dim, inverse, with
-  each line, alternate, blinking in each phase, and under each cursor style
-  and mode, with the blink phases at the frames they change, at the default
-  blink rates and others.
-
-### CL7 [x] devices: compact rows
-
-Depends on: CL6.
-
-- The compact row control words, in `ScreenMemory`, and drawing them, with
-  `ScreenPicture::drawn_height`.
-- The reserved words start at FFCh.
-
-**Verify**
-- Standard checks.
-- Unit tests (`screen_test.cc`): a band's rows packed 8 pixel rows apart, with
-  overlapping pixels the brighter of the two, and the pixel rows below off; a
-  compact bottom row drawn whole; the band staying put as the cells scroll;
-  rows of the band outside the screen ignored; and `drawn_height`.
-
-### CL8 [x] devices: the built-in character set
-
-Depends on: CL6.
-
-- Find the Osborne 1's character generator pixels, and check their terms with
-  the user before using them. Otherwise, a public domain 8 by 10 font.
-- `screen_characters.h`/`.cc`: `GetDefaultScreenCharacters()`, and an unset
-  `ScreenSettings::characters` uses it.
-- Decide the control characters, the graphics characters (128 to 255), and the
-  alternate 256 with the user, and update Behavior to match.
-
-**Verify**
-- Standard checks.
-- Unit tests (`screen_characters_test.cc`): the character set's size, a few
-  glyphs' exact pixels (such as `A`), and a screen with `characters` unset using
-  it.
+- `DeviceProgramTest` (`device_program_test.h`, test only) assembles a small
+  program in the default instruction set with `AssembleProgram`, loads it for
+  core 0 with `ProgramLoader`, and finds a label's IP, so a test runs it with
+  `ExecuteUntilHalt` and times instructions with `CyclesUntilIp`. So the tests
+  show what a program sees, with real `INS`, `OUTS`, and `OUTR` cycle counts.
+  It duplicates the fixture in `default_instruction_set_assemble_test.cc`,
+  which `devices` can't link.
+- `BaseCoreTest::ExecuteUntil` stops at a million cycles, failing the test
+  rather than hanging, and `ExecuteUntilHalt` returns whether the core halted.
+- `teletype_test.cc`, `keyboard_test.cc`, and `screen_test.cc` test each device
+  through programs and its host API, with exact cycles, and `Create` failing
+  for each invalid setting. The screen's tests check pictures pixel by pixel,
+  with `.`, `+`, and `#` for off, dim, and bright, using a test character set
+  of their own, and draw all 512 built-in glyphs to check a screen with
+  `characters` unset. `screen_characters_test.cc` checks the built-in set's
+  size, its alternates, and a few glyphs' exact pixels.

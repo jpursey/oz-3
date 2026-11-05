@@ -31,7 +31,7 @@ Each item carries:
 - **Layers:** ozzy (new), apps, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Console devices*
+- **Depends on:** nothing
 - **Background:** [ozzy_design.md](ozzy_design.md)
 
 The first Ozzy anyone can run: the `ozzy` library builds a machine from a
