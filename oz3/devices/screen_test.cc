@@ -5,8 +5,11 @@
 
 #include "oz3/devices/screen.h"
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -27,7 +30,9 @@ namespace oz3 {
 namespace {
 
 using ::testing::AllOf;
+using ::testing::Each;
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::Field;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
@@ -44,6 +49,106 @@ constexpr int64_t kSlowClockHz = 1000;
 // Returns the cursor word for `mode` and `style`.
 uint16_t CursorWord(ScreenCursorMode mode, ScreenCursorStyle style) {
   return static_cast<uint16_t>(mode) | static_cast<uint16_t>(style);
+}
+
+// A cell's pixels, a string a row: '.' is off, '+' dim, and '#' bright.
+using CellPixels = std::array<std::string_view, kScreenGlyphHeight>;
+
+// The test character set's glyph for 'A', and its alternate glyph for 'A'.
+// Every other glyph is blank.
+constexpr CellPixels kGlyphA = {
+    "........",  //
+    "...##...",  //
+    "..#..#..",  //
+    ".#....#.",  //
+    ".#....#.",  //
+    ".######.",  //
+    ".#....#.",  //
+    ".#....#.",  //
+    "........",  //
+    "........",  //
+};
+constexpr CellPixels kAlternateGlyphA = {
+    "#.#.#.#.",  //
+    ".#.#.#.#",  //
+    "#.#.#.#.",  //
+    ".#.#.#.#",  //
+    "#.#.#.#.",  //
+    ".#.#.#.#",  //
+    "#.#.#.#.",  //
+    ".#.#.#.#",  //
+    "#.#.#.#.",  //
+    ".#.#.#.#",  //
+};
+
+// kGlyphA drawn bright, inverted, underlined, and with its left edge lit, as
+// either a cell's attributes or the cursor draw them, and a cell with every
+// pixel lit bright.
+constexpr CellPixels kInverseGlyphA = {
+    "########",  //
+    "###..###",  //
+    "##.##.##",  //
+    "#.####.#",  //
+    "#.####.#",  //
+    "#......#",  //
+    "#.####.#",  //
+    "#.####.#",  //
+    "########",  //
+    "########",  //
+};
+constexpr CellPixels kUnderlinedGlyphA = {
+    "........",  //
+    "...##...",  //
+    "..#..#..",  //
+    ".#....#.",  //
+    ".#....#.",  //
+    ".######.",  //
+    ".#....#.",  //
+    ".#....#.",  //
+    "........",  //
+    "########",  //
+};
+constexpr CellPixels kLeftEdgeGlyphA = {
+    "#.......",  //
+    "#..##...",  //
+    "#.#..#..",  //
+    "##....#.",  //
+    "##....#.",  //
+    "#######.",  //
+    "##....#.",  //
+    "##....#.",  //
+    "#.......",  //
+    "#.......",  //
+};
+constexpr CellPixels kBlockPixels = {
+    "########", "########", "########", "########", "########",
+    "########", "########", "########", "########", "########",
+};
+
+// Returns `pixels` packed as a glyph, with every pixel not '.' lit.
+std::array<uint16_t, kScreenGlyphSize> PackGlyph(const CellPixels& pixels) {
+  std::array<uint16_t, kScreenGlyphSize> words = {};
+  for (int y = 0; y < kScreenGlyphHeight; ++y) {
+    int row = 0;
+    for (int x = 0; x < kScreenGlyphWidth; ++x) {
+      if (pixels[y][x] != '.') {
+        row |= 0x80 >> x;
+      }
+    }
+    words[y / 2] |= static_cast<uint16_t>(y % 2 == 0 ? row << 8 : row);
+  }
+  return words;
+}
+
+// Returns the test character set: kGlyphA and kAlternateGlyphA, and blank
+// glyphs.
+std::vector<uint16_t> TestCharacters() {
+  std::vector<uint16_t> characters(kScreenCharacterSetSize);
+  std::ranges::copy(PackGlyph(kGlyphA),
+                    characters.begin() + 'A' * kScreenGlyphSize);
+  std::ranges::copy(PackGlyph(kAlternateGlyphA),
+                    characters.begin() + (256 + 'A') * kScreenGlyphSize);
+  return characters;
 }
 
 class ScreenTest : public DeviceProgramTest {
@@ -70,13 +175,14 @@ class ScreenTest : public DeviceProgramTest {
   }
 
   // As above, with a screen of `columns` by `rows` on kPage, raising
-  // kInterrupt, and refreshing at 60 Hz.
+  // kInterrupt, refreshing at 60 Hz, with the test character set.
   bool InitScreen(int columns = 80, int rows = 24) {
     return InitScreen({.page = kPage,
                        .interrupt = {.interrupt = kInterrupt},
                        .columns = columns,
                        .rows = rows,
-                       .refresh_hz = 60});
+                       .refresh_hz = 60,
+                       .characters = TestCharacters()});
   }
 
   // Returns a lock on the screen's bank, which no core may be holding.
@@ -125,6 +231,22 @@ class ScreenTest : public DeviceProgramTest {
     return (GetState().core.GetInterrupts() & (1u << kInterrupt)) != 0;
   }
 
+  // Returns the picture's pixels of the cell at `column` and `row`, as
+  // CellPixels describes.
+  std::vector<std::string> GetCellPixels(int column = 0, int row = 0) {
+    const ScreenPicture& picture = screen_->GetPicture();
+    std::vector<std::string> pixels;
+    for (int y = 0; y < kScreenGlyphHeight; ++y) {
+      std::string& line = pixels.emplace_back();
+      const int start = (row * kScreenGlyphHeight + y) * picture.pixel_width +
+                        column * kScreenGlyphWidth;
+      for (int x = 0; x < kScreenGlyphWidth; ++x) {
+        line += std::string_view(".+#").at(picture.pixels[start + x]);
+      }
+    }
+    return pixels;
+  }
+
   Screen* screen_ = nullptr;
   int bank_ = 0;
   int start_ = 0;  // The screen's first address in its bank.
@@ -140,6 +262,9 @@ TEST_F(ScreenTest, IsBlankAtPowerOn) {
   EXPECT_EQ(picture.cursor_row, 0);
   EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kOff);
   EXPECT_EQ(picture.cursor_style, ScreenCursorStyle::kBlock);
+  EXPECT_EQ(picture.pixel_width, 640);
+  EXPECT_EQ(picture.pixel_height, 240);
+  EXPECT_EQ(picture.pixels, std::vector<uint8_t>(640 * 240));
   EXPECT_EQ(screen_->GetFrameCount(), 0);
 
   EXPECT_EQ(ReadScreen(0, ScreenMemory::kColumnsAddress),
@@ -149,8 +274,8 @@ TEST_F(ScreenTest, IsBlankAtPowerOn) {
 }
 
 TEST_F(ScreenTest, CellsWrittenByAProgramAppearAtTheNextRefresh) {
-  // Refresh 1 is at cycle 1000.
-  ASSERT_TRUE(InitScreen({.page = kPage, .refresh_hz = 1}));
+  // Refresh 1 is at cycle 125.
+  ASSERT_TRUE(InitScreen({.page = kPage, .refresh_hz = 8}));
   ASSERT_TRUE(Load(R"---(
     .STACK 16
         MOV BE, 0F000h      ; The screen's page, in EXTRA
@@ -161,10 +286,10 @@ TEST_F(ScreenTest, CellsWrittenByAProgramAppearAtTheNextRefresh) {
         HALT
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
-  ASSERT_LT(GetCycles(), 1000);
+  ASSERT_LT(GetCycles(), 125);
   EXPECT_THAT(ReadScreen(0), ElementsAre(kScreenInverse | 'H'));
   EXPECT_EQ(screen_->GetPicture().cells, std::vector<uint16_t>(80 * 24));
-  Execute(1000 - GetCycles());
+  Execute(125 - GetCycles());
   EXPECT_EQ(screen_->GetPicture().cells, std::vector<uint16_t>(80 * 24));
   Execute(1);
   std::vector<uint16_t> cells(80 * 24);
@@ -328,7 +453,7 @@ TEST_F(ScreenTest, ReadOnlyAndReservedWordsIgnoreWrites) {
   WriteScreen(ScreenMemory::kColumnsAddress, std::vector<uint16_t>(16, 0xFFFF));
   EXPECT_THAT(ReadScreen(ScreenMemory::kColumnsAddress, 16),
               ElementsAre(80, 24, 1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0,
-                          0, 0, 0, 0, 0, 0, 0));
+                          0xFFFF, 0, 0, 0, 0, 0, 0));
 }
 
 TEST_F(ScreenTest, UnusedWordsHoldWhatIsWritten) {
@@ -430,6 +555,322 @@ TEST_F(ScreenTest, LineFeedOnTheBottomRowIsTwoWrites) {
               ElementsAre(0x20, 0x21, 0x30, 0x31, ' ', ' '));
 }
 
+TEST_F(ScreenTest, CharacterWindowSendsWritesToTheCharacterSet) {
+  ASSERT_TRUE(InitScreen(3, 1));
+  ASSERT_TRUE(Load(R"---(
+    .STACK 16
+        MOV BE, 0F000h      ; The screen's page, in EXTRA
+        MVQ R0, 1           ; Open the character set window
+        MOV E(0FF9h), R0
+        MOV R0, 0FF81h      ; Glyph 0's rows 0 and 1
+        MOV E(0), R0
+        MOV R0, 8142h       ; Glyph 0's rows 8 and 9
+        MOV E(4), R0
+        MOV R0, 1234h       ; Glyph 511's rows 8 and 9
+        MOV E(9FFh), R0
+        MOV R1, E(0)        ; Reads still read the cells
+        MVQ R0, 0           ; Close the window
+        MOV E(0FF9h), R0
+        HALT
+  )---"));
+  WriteScreen(0, {'Z', 0, kScreenAlternate | 0xFF});
+  ASSERT_TRUE(ExecuteUntilHalt());
+  EXPECT_EQ(GetState().r1, 'Z');
+  EXPECT_THAT(ReadScreen(0, 3), ElementsAre('Z', 0, kScreenAlternate | 0xFF));
+  EXPECT_THAT(ReadScreen(ScreenMemory::kCharacterWindowAddress),
+              ElementsAre(0));
+
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(1), ElementsAre("########",  //
+                                            "#......#",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "#......#",  //
+                                            ".#....#."));
+  EXPECT_THAT(GetCellPixels(2), ElementsAre("........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "........",  //
+                                            "...#..#.",  //
+                                            "..##.#.."));
+}
+
+TEST_F(ScreenTest, CharacterWindowLeavesAddressesFromA00hAsTheyAre) {
+  ASSERT_TRUE(InitScreen(80, 51));
+  WriteScreen(ScreenMemory::kCharacterWindowAddress,
+              {kScreenCharacterWindowOpen});
+  WriteScreen(0x9FF, {0x1234, 0x5678});
+  EXPECT_THAT(ReadScreen(0x9FF, 2), ElementsAre(0, 0x5678));
+
+  // Control words are written as ever, too.
+  WriteScreen(ScreenMemory::kFillAddress, {'A', 50});
+  EXPECT_EQ(ReadScreen(80 * 50, 80), std::vector<uint16_t>(80, 'A'));
+}
+
+TEST_F(ScreenTest, ChangedGlyphShowsAtTheNextRefresh) {
+  ASSERT_TRUE(InitScreen(1, 1));
+  WriteScreen(0, {'A'});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(), ElementsAreArray(kGlyphA));
+
+  WriteScreen(ScreenMemory::kCharacterWindowAddress,
+              {kScreenCharacterWindowOpen});
+  WriteScreen('A' * kScreenGlyphSize, std::vector<uint16_t>(5, 0xFF00));
+  WriteScreen(ScreenMemory::kCharacterWindowAddress, {0});
+  EXPECT_THAT(GetCellPixels(), ElementsAreArray(kGlyphA));
+  EXPECT_THAT(ReadScreen(0), ElementsAre('A'));
+
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(), ElementsAre("########",  //
+                                           "........",  //
+                                           "########",  //
+                                           "........",  //
+                                           "########",  //
+                                           "........",  //
+                                           "########",  //
+                                           "........",  //
+                                           "########",  //
+                                           "........"));
+}
+
+TEST_F(ScreenTest, CellIsDrawnFromItsGlyphWithItsAttributes) {
+  // The glyphs are the settings' character set.
+  ASSERT_TRUE(InitScreen(1, 1));
+  const struct {
+    uint16_t cell;
+    CellPixels pixels;
+  } cells[] = {
+      {'A', kGlyphA},
+      {kScreenHalfIntensity | 'A',
+       {
+           "........",  //
+           "...++...",  //
+           "..+..+..",  //
+           ".+....+.",  //
+           ".+....+.",  //
+           ".++++++.",  //
+           ".+....+.",  //
+           ".+....+.",  //
+           "........",  //
+           "........",  //
+       }},
+      {kScreenInverse | 'A', kInverseGlyphA},
+      {kScreenLineTop | 'A',
+       {
+           "########",  //
+           "...##...",  //
+           "..#..#..",  //
+           ".#....#.",  //
+           ".#....#.",  //
+           ".######.",  //
+           ".#....#.",  //
+           ".#....#.",  //
+           "........",  //
+           "........",  //
+       }},
+      {kScreenLineBottom | 'A', kUnderlinedGlyphA},
+      {kScreenLineLeft | 'A', kLeftEdgeGlyphA},
+      {kScreenLineRight | 'A',
+       {
+           ".......#",  //
+           "...##..#",  //
+           "..#..#.#",  //
+           ".#....##",  //
+           ".#....##",  //
+           ".#######",  //
+           ".#....##",  //
+           ".#....##",  //
+           ".......#",  //
+           ".......#",  //
+       }},
+      {kScreenHalfIntensity | kScreenLineTop | kScreenLineBottom |
+           kScreenLineLeft | kScreenLineRight | 'A',
+       {
+           "++++++++",  //
+           "+..++..+",  //
+           "+.+..+.+",  //
+           "++....++",  //
+           "++....++",  //
+           "++++++++",  //
+           "++....++",  //
+           "++....++",  //
+           "+......+",  //
+           "++++++++",  //
+       }},
+      {kScreenAlternate | 'A', kAlternateGlyphA},
+      // Lines are drawn after inverse, so they always show.
+      {kScreenAlternate | kScreenInverse | kScreenLineTop | 'A',
+       {
+           "########",  //
+           "#.#.#.#.",  //
+           ".#.#.#.#",  //
+           "#.#.#.#.",  //
+           ".#.#.#.#",  //
+           "#.#.#.#.",  //
+           ".#.#.#.#",  //
+           "#.#.#.#.",  //
+           ".#.#.#.#",  //
+           "#.#.#.#.",  //
+       }},
+  };
+  for (const auto& [cell, pixels] : cells) {
+    WriteScreen(0, {cell});
+    ExecuteUntilRefresh();
+    EXPECT_THAT(GetCellPixels(), ElementsAreArray(pixels))
+        << "Cell " << std::hex << cell;
+  }
+}
+
+TEST_F(ScreenTest, CursorIsDrawnOnItsCellInItsStyle) {
+  ASSERT_TRUE(InitScreen(2, 1));
+  WriteScreen(0, {'A', 'A'});
+  const struct {
+    uint16_t cursor;
+    CellPixels pixels;
+  } cursors[] = {
+      {CursorWord(ScreenCursorMode::kOff, ScreenCursorStyle::kBlock), kGlyphA},
+      {CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kBlock),
+       kBlockPixels},
+      {CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kInverse),
+       kInverseGlyphA},
+      {CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kUnderline),
+       kUnderlinedGlyphA},
+      {CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kLeftEdge),
+       kLeftEdgeGlyphA},
+  };
+  WriteScreen(ScreenMemory::kCursorColumnAddress, {1, 0});
+  for (const auto& [cursor, pixels] : cursors) {
+    WriteScreen(ScreenMemory::kCursorAddress, {cursor});
+    ExecuteUntilRefresh();
+    EXPECT_THAT(GetCellPixels(0), ElementsAreArray(kGlyphA));
+    EXPECT_THAT(GetCellPixels(1), ElementsAreArray(pixels))
+        << "Cursor " << std::hex << cursor;
+  }
+}
+
+TEST_F(ScreenTest, CursorIsDrawnAtItsCellsLevel) {
+  ASSERT_TRUE(InitScreen(1, 1));
+  WriteScreen(0, {kScreenHalfIntensity | 'A'});
+  WriteScreen(ScreenMemory::kCursorAddress,
+              {CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kBlock)});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(), Each("++++++++"));
+}
+
+TEST_F(ScreenTest, CursorIsDrawnOverABlinkingCellInItsOffPhase) {
+  // At 2 Hz, a slow blink of 1 Hz is off at frame 1.
+  ASSERT_TRUE(InitScreen({.page = kPage,
+                          .columns = 1,
+                          .rows = 1,
+                          .refresh_hz = 2,
+                          .slow_blink_hz = 1,
+                          .fast_blink_hz = 1,
+                          .characters = TestCharacters()}));
+  WriteScreen(0, {kScreenBlink | 'A'});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(), Each("........"));
+
+  WriteScreen(ScreenMemory::kCursorAddress,
+              {CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kBlock)});
+  ExecuteUntilRefresh();  // Frame 2 is on, and frame 3 off.
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(), ElementsAreArray(kBlockPixels));
+}
+
+class ScreenBlinkTest : public ScreenTest {
+ protected:
+  // Whether a blinking cell, and a blinking cursor, were drawn at each refresh,
+  // as a '1' or a '0' for each.
+  struct Phases {
+    std::string cell;
+    std::string cursor;
+  };
+
+  // Initializes a 2 by 1 screen refreshing at `refresh_hz`, with the blink
+  // rates, a blinking 'A' on cell 0, and a block cursor of `cursor_mode` on
+  // cell 1.
+  bool InitBlink(int refresh_hz, int slow_blink_hz, int fast_blink_hz,
+                 ScreenCursorMode cursor_mode) {
+    if (!InitScreen({.page = kPage,
+                     .columns = 2,
+                     .rows = 1,
+                     .refresh_hz = refresh_hz,
+                     .slow_blink_hz = slow_blink_hz,
+                     .fast_blink_hz = fast_blink_hz,
+                     .characters = TestCharacters()})) {
+      return false;
+    }
+    WriteScreen(0, {kScreenBlink | 'A', 'A'});
+    WriteScreen(ScreenMemory::kCursorColumnAddress,
+                {1, 0, CursorWord(cursor_mode, ScreenCursorStyle::kBlock)});
+    return true;
+  }
+
+  // Executes `frames` refreshes, and returns the phases drawn.
+  Phases ExecutePhases(int frames) {
+    Phases phases;
+    for (int frame = 1; frame <= frames; ++frame) {
+      ExecuteUntilRefresh();
+      EXPECT_EQ(screen_->GetFrameCount(), frame);
+      phases.cell += GetCellPixels(0)[1] == kGlyphA[1] ? '1' : '0';
+      phases.cursor += GetCellPixels(1)[0] == "########" ? '1' : '0';
+    }
+    return phases;
+  }
+};
+
+TEST_F(ScreenBlinkTest, BlinksAtTheDefaultRates) {
+  // A blink is on while frames * 2 * blink_hz / 30 is even.
+  ASSERT_TRUE(InitBlink(30, 1, 4, ScreenCursorMode::kFastBlink));
+  const Phases phases = ExecutePhases(31);
+  EXPECT_EQ(phases.cell,
+            "11111111111111"
+            "000000000000000"
+            "11");
+  EXPECT_EQ(phases.cursor,
+            "111"
+            "0000"
+            "1111"
+            "000"
+            "1111"
+            "0000"
+            "1111"
+            "000"
+            "11");
+}
+
+TEST_F(ScreenBlinkTest, BlinksAtOtherRates) {
+  ASSERT_TRUE(InitBlink(10, 2, 5, ScreenCursorMode::kFastBlink));
+  const Phases phases = ExecutePhases(10);
+  EXPECT_EQ(phases.cell,
+            "11"
+            "00"
+            "111"
+            "00"
+            "1");
+  EXPECT_EQ(phases.cursor, "0101010101");
+}
+
+TEST_F(ScreenBlinkTest, SlowBlinkingCursorBlinksWithBlinkingCells) {
+  ASSERT_TRUE(InitBlink(10, 2, 5, ScreenCursorMode::kSlowBlink));
+  const Phases phases = ExecutePhases(10);
+  EXPECT_EQ(phases.cell, "1100111001");
+  EXPECT_EQ(phases.cursor, "1100111001");
+}
+
+TEST_F(ScreenBlinkTest, CursorThatIsOnDoesNotBlink) {
+  ASSERT_TRUE(InitBlink(10, 2, 5, ScreenCursorMode::kOn));
+  EXPECT_EQ(ExecutePhases(10).cursor, "1111111111");
+}
+
 TEST_F(ScreenTest, RefreshWaitsWhileTheBankIsHeld) {
   ASSERT_TRUE(InitScreen(2, 2));
   WriteScreen(0, {1, 2, 3, 4});
@@ -510,9 +951,26 @@ TEST_F(ScreenTest, CreateFailsForInvalidSettings) {
       {{.columns = 0}, "is 0 by 24"},
       {{.rows = 0}, "is 80 by 0"},
       {{.columns = -1}, "is -1 by 24"},
+      {{.columns = 133},
+       "is 133 by 24, but it can have at most 132 columns "
+       "and 64 rows"},
+      {{.columns = 1, .rows = 65}, "is 1 by 65"},
+      {{.columns = 4080, .rows = 1}, "is 4080 by 1"},
+      {{.columns = 1, .rows = 4080}, "is 1 by 4080"},
+      {{.columns = 100'000, .rows = 100'000}, "is 100000 by 100000"},
       {{.columns = 77, .rows = 53}, "at most 4080 cells"},
-      {{.columns = 100'000, .rows = 100'000}, "at most 4080 cells"},
+      {{.columns = 64, .rows = 64}, "at most 4080 cells"},
       {{.refresh_hz = 0}, "refresh rate of 0"},
+      {{.slow_blink_hz = 0}, "slow blink rate of 0"},
+      {{.slow_blink_hz = 16}, "slow blink rate of 16"},
+      {{.fast_blink_hz = 0}, "fast blink rate of 0"},
+      {{.refresh_hz = 60, .fast_blink_hz = 31}, "fast blink rate of 31"},
+      {{.refresh_hz = 1}, "slow blink rate of 1"},
+      {{.characters = std::vector<uint16_t>()}, "character set of 0 words"},
+      {{.characters = std::vector<uint16_t>(kScreenCharacterSetSize - 1)},
+       "character set of 2559 words"},
+      {{.characters = std::vector<uint16_t>(kScreenCharacterSetSize + 1)},
+       "character set of 2561 words"},
   };
   for (const auto& [settings, error] : invalid) {
     absl::StatusOr<std::unique_ptr<ScreenFactory>> factory =
@@ -525,7 +983,8 @@ TEST_F(ScreenTest, CreateFailsForInvalidSettings) {
 
 TEST_F(ScreenTest, CreateSucceedsForTheLargestSizesThatFit) {
   for (const auto& [columns, rows] :
-       {std::pair{80, 51}, std::pair{132, 30}, std::pair{4080, 1}}) {
+       {std::pair{80, 51}, std::pair{132, 30}, std::pair{63, 64},
+        std::pair{132, 1}, std::pair{1, 64}}) {
     EXPECT_TRUE(
         ScreenFactory::Create("Screen", {.columns = columns, .rows = rows})
             .ok())
@@ -535,6 +994,17 @@ TEST_F(ScreenTest, CreateSucceedsForTheLargestSizesThatFit) {
   WriteScreen(80 * 51 - 1, {'Z'});
   ExecuteUntilRefresh();
   EXPECT_EQ(screen_->GetPicture().cells.back(), 'Z');
+}
+
+TEST_F(ScreenTest, CreateSucceedsForBlinkRatesUpToHalfTheRefreshRate) {
+  EXPECT_TRUE(
+      ScreenFactory::Create(
+          "Screen", {.refresh_hz = 8, .slow_blink_hz = 4, .fast_blink_hz = 4})
+          .ok());
+  EXPECT_TRUE(
+      ScreenFactory::Create(
+          "Screen", {.refresh_hz = 9, .slow_blink_hz = 1, .fast_blink_hz = 4})
+          .ok());
 }
 
 TEST_F(ScreenTest, FactoryWiresThePageAndInterrupt) {

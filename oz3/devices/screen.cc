@@ -6,6 +6,7 @@
 #include "oz3/devices/screen.h"
 
 #include <algorithm>
+#include <array>
 #include <string>
 #include <utility>
 
@@ -17,18 +18,96 @@
 
 namespace oz3 {
 
+namespace {
+
+// A cell's rows of pixels, one byte a row, with bit 7 the leftmost pixel.
+using CellRows = std::array<uint8_t, kScreenGlyphHeight>;
+
+constexpr uint8_t kAllPixels = 0xFF;
+constexpr uint8_t kLeftPixel = 0x80;
+constexpr uint8_t kRightPixel = 0x01;
+
+// Swaps the lit and unlit pixels of a cell's `rows`.
+void Invert(CellRows& rows) {
+  for (uint8_t& row : rows) {
+    row = static_cast<uint8_t>(~row);
+  }
+}
+
+// Returns the rows of `cell`, drawn from its glyph in `characters` with its
+// inverse and lines, or all off if it blinks and `blink_on` is false.
+CellRows DrawCell(absl::Span<const uint16_t> characters, uint16_t cell,
+                  bool blink_on) {
+  CellRows rows = {};
+  if ((cell & kScreenBlink) != 0 && !blink_on) {
+    return rows;
+  }
+  const int glyph = (cell & 0xFF) + ((cell & kScreenAlternate) != 0 ? 256 : 0);
+  const uint16_t* words = characters.data() + glyph * kScreenGlyphSize;
+  for (int i = 0; i < kScreenGlyphHeight; ++i) {
+    const uint16_t word = words[i / 2];
+    rows[i] = static_cast<uint8_t>(i % 2 == 0 ? word >> 8 : word);
+  }
+  if ((cell & kScreenInverse) != 0) {
+    Invert(rows);
+  }
+  if ((cell & kScreenLineTop) != 0) {
+    rows.front() = kAllPixels;
+  }
+  if ((cell & kScreenLineBottom) != 0) {
+    rows.back() = kAllPixels;
+  }
+  const uint8_t sides =
+      static_cast<uint8_t>(((cell & kScreenLineLeft) != 0 ? kLeftPixel : 0) |
+                           ((cell & kScreenLineRight) != 0 ? kRightPixel : 0));
+  for (uint8_t& row : rows) {
+    row |= sides;
+  }
+  return rows;
+}
+
+// Draws a cursor of `style` over a cell's `rows`.
+void DrawCursor(ScreenCursorStyle style, CellRows& rows) {
+  switch (style) {
+    case ScreenCursorStyle::kBlock:
+      rows.fill(kAllPixels);
+      break;
+    case ScreenCursorStyle::kInverse:
+      Invert(rows);
+      break;
+    case ScreenCursorStyle::kUnderline:
+      rows.back() = kAllPixels;
+      break;
+    case ScreenCursorStyle::kLeftEdge:
+      for (uint8_t& row : rows) {
+        row |= kLeftPixel;
+      }
+      break;
+  }
+}
+
+}  // namespace
+
 //==============================================================================
 // ScreenMemory
 //==============================================================================
 
-ScreenMemory::ScreenMemory(int columns, int rows) {
+ScreenMemory::ScreenMemory(int columns, int rows,
+                           absl::Span<const uint16_t> characters) {
   mem_[kColumnsAddress] = static_cast<uint16_t>(columns);
   mem_[kRowsAddress] = static_cast<uint16_t>(rows);
+  DCHECK(characters.empty() || characters.size() == characters_.size());
+  std::copy(characters.begin(), characters.end(), characters_.begin());
 }
 
 absl::Span<const uint16_t> ScreenMemory::GetMem(const Lock& lock) const {
   DCHECK(IsLocked(lock));
   return mem_;
+}
+
+absl::Span<const uint16_t> ScreenMemory::GetCharacters(const Lock& lock) const {
+  DCHECK(IsLocked(lock));
+  return characters_;
 }
 
 void ScreenMemory::SetFrameCount(const Lock& lock, uint16_t count) {
@@ -42,9 +121,13 @@ void ScreenMemory::Read(int address, uint16_t* data, int size) {
 
 void ScreenMemory::Write(int address, const uint16_t* data, int size) {
   for (int i = 0; i < size; ++i, ++address) {
-    // Clear row stores nothing, and the read-only and reserved words are only
-    // the screen's to set.
-    if (address == kClearRowAddress) {
+    // The open window sends writes to the character set, clear row stores
+    // nothing, and the read-only and reserved words are only the screen's to
+    // set.
+    if (address < kScreenCharacterSetSize &&
+        (mem_[kCharacterWindowAddress] & kScreenCharacterWindowOpen) != 0) {
+      characters_[address] = data[i];
+    } else if (address == kClearRowAddress) {
       ClearRow(data[i]);
     } else if (address < kColumnsAddress ||
                (address >= kScrollRowAddress && address < kReservedAddress)) {
@@ -74,7 +157,14 @@ absl::StatusOr<std::unique_ptr<ScreenFactory>> ScreenFactory::Create(
         absl::StrCat("Screen ", name, " is ", settings.columns, " by ",
                      settings.rows, ", but each must be at least 1"));
   }
-  if (int64_t{settings.columns} * settings.rows > ScreenSettings::kMaxCells) {
+  if (settings.columns > ScreenSettings::kMaxColumns ||
+      settings.rows > ScreenSettings::kMaxRows) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Screen ", name, " is ", settings.columns, " by ", settings.rows,
+        ", but it can have at most ", ScreenSettings::kMaxColumns,
+        " columns and ", ScreenSettings::kMaxRows, " rows"));
+  }
+  if (settings.columns * settings.rows > ScreenSettings::kMaxCells) {
     return absl::InvalidArgumentError(absl::StrCat(
         "Screen ", name, " is ", settings.columns, " by ", settings.rows,
         ", but it can have at most ", ScreenSettings::kMaxCells, " cells"));
@@ -83,6 +173,23 @@ absl::StatusOr<std::unique_ptr<ScreenFactory>> ScreenFactory::Create(
     return absl::InvalidArgumentError(
         absl::StrCat("Screen ", name, " has a refresh rate of ",
                      settings.refresh_hz, ", but it must be at least 1"));
+  }
+  for (const auto& [blink, blink_hz] :
+       {std::pair{"slow", settings.slow_blink_hz},
+        std::pair{"fast", settings.fast_blink_hz}}) {
+    if (blink_hz < 1 || blink_hz > settings.refresh_hz / 2) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Screen ", name, " has a ", blink, " blink rate of ", blink_hz,
+          ", but it must be at least 1, and at most half the refresh rate of ",
+          settings.refresh_hz));
+    }
+  }
+  if (settings.characters.has_value() &&
+      settings.characters->size() != kScreenCharacterSetSize) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Screen ", name, " has a character set of ",
+        settings.characters->size(), " words, but it must have ",
+        kScreenCharacterSetSize, ", or be unset for the built-in one"));
   }
   return absl::WrapUnique(new ScreenFactory(name, settings));
 }
@@ -108,17 +215,30 @@ std::unique_ptr<Device> ScreenFactory::CreateDevice() const {
 Screen::Screen(DeviceConfig config, const ScreenSettings& settings)
     : Device(std::move(config)),
       refresh_hz_(settings.refresh_hz),
-      memory_(settings.columns, settings.rows),
+      slow_blink_hz_(settings.slow_blink_hz),
+      fast_blink_hz_(settings.fast_blink_hz),
+      memory_(settings.columns, settings.rows,
+              settings.characters.has_value()
+                  ? absl::Span<const uint16_t>(*settings.characters)
+                  : absl::Span<const uint16_t>()),
       picture_(
           {.columns = settings.columns,
            .rows = settings.rows,
-           .cells = std::vector<uint16_t>(settings.columns * settings.rows)}) {}
+           .cells = std::vector<uint16_t>(settings.columns * settings.rows),
+           .pixel_width = settings.columns * kScreenGlyphWidth,
+           .pixel_height = settings.rows * kScreenGlyphHeight,
+           .pixels =
+               std::vector<uint8_t>(settings.columns * kScreenGlyphWidth *
+                                    settings.rows * kScreenGlyphHeight)}) {}
 
 Cycles Screen::GetRefreshCycle() const {
   return (frame_count_ + 1) * GetClockHz() / refresh_hz_;
 }
 
 void Screen::Refresh(const Lock& lock) {
+  ++frame_count_;
+  memory_.SetFrameCount(lock, static_cast<uint16_t>(frame_count_));
+
   const absl::Span<const uint16_t> mem = memory_.GetMem(lock);
   const int columns = picture_.columns;
   const int rows = picture_.rows;
@@ -138,8 +258,55 @@ void Screen::Refresh(const Lock& lock) {
   picture_.cursor_style =
       static_cast<ScreenCursorStyle>(cursor & kScreenCursorStyleMask);
 
-  ++frame_count_;
-  memory_.SetFrameCount(lock, static_cast<uint16_t>(frame_count_));
+  DrawPixels(memory_.GetCharacters(lock));
+}
+
+bool Screen::IsBlinkOn(int blink_hz) const {
+  return frame_count_ * 2 * blink_hz / refresh_hz_ % 2 == 0;
+}
+
+bool Screen::IsCursorOn() const {
+  switch (picture_.cursor_mode) {
+    case ScreenCursorMode::kOff:
+      return false;
+    case ScreenCursorMode::kOn:
+      return true;
+    case ScreenCursorMode::kSlowBlink:
+      return IsBlinkOn(slow_blink_hz_);
+    case ScreenCursorMode::kFastBlink:
+      return IsBlinkOn(fast_blink_hz_);
+  }
+  return false;
+}
+
+void Screen::DrawPixels(absl::Span<const uint16_t> characters) {
+  const bool slow_blink_on = IsBlinkOn(slow_blink_hz_);
+  const bool cursor_on = IsCursorOn();
+  const int columns = picture_.columns;
+  const int width = picture_.pixel_width;
+  for (int row = 0; row < picture_.rows; ++row) {
+    for (int column = 0; column < columns; ++column) {
+      const uint16_t cell = picture_.cells[row * columns + column];
+      CellRows cell_rows = DrawCell(characters, cell, slow_blink_on);
+      if (cursor_on && column == picture_.cursor_column &&
+          row == picture_.cursor_row) {
+        DrawCursor(picture_.cursor_style, cell_rows);
+      }
+
+      // Each pixel row of the cell is a screen's width below the last.
+      const uint8_t level = (cell & kScreenHalfIntensity) != 0
+                                ? kScreenPixelDim
+                                : kScreenPixelBright;
+      int index = row * kScreenGlyphHeight * width + column * kScreenGlyphWidth;
+      for (const uint8_t pixel_row : cell_rows) {
+        for (int x = 0; x < kScreenGlyphWidth; ++x) {
+          picture_.pixels[index + x] =
+              (pixel_row & (kLeftPixel >> x)) != 0 ? level : kScreenPixelOff;
+        }
+        index += width;
+      }
+    }
+  }
 }
 
 void Screen::Execute() {

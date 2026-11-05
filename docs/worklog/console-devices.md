@@ -186,6 +186,9 @@ marked: until a CL adds its control words, they are reserved.
 - **Control words** are at the end of the page, so a program finds them at the
   same address whatever the screen's size. That leaves room for 4080 cells (up
   to 80 by 51, or 132 by 30).
+- **The size** is at most 132 columns (as wide as a wide terminal) and 64 rows
+  (as tall as the cells allow at 63 columns), as well as 4080 cells, so a
+  screen is never a long thin strip (from CL6).
 - **The scroll row** is taken modulo the rows, so the row shown at the top is
   the cells' row `scroll`, and the one below it `scroll + 1`, wrapping at the
   last row. Scrolling a whole screen is one write.
@@ -208,8 +211,9 @@ The screen **refreshes** at `refresh_hz` (30 by default, the full frames a
 second of an interlaced NTSC display): refresh `n` is at cycle
 `n * clock_hz / refresh_hz`, so the schedule doesn't drift where a refresh
 isn't a whole number of cycles (33,333⅓ at 30 Hz and 1 MHz).
-- It takes its bank's lock, takes the page as the picture, adds one to the
-  frame counter, and releases the lock, all in one cycle, with no cycles of
+- It takes its bank's lock, adds one to the frame counter, takes the page as
+  the picture (drawing its pixels, from CL6), and releases the lock, all in
+  one cycle, with no cycles of
   its own. So it never sees half of a core's write, and waits only while a
   core holds the bank. A refresh that waited is granted the bank as the core
   releases it, so a core asking for it again in that cycle (as the next
@@ -285,9 +289,13 @@ and chooses their colors.
   refresh rate: the slow blink (the blink attribute, and the slow blink
   cursor), once a second by default, and the fast blink, four times a second.
   A blink at `blink_hz` is on for the first half of each blink, and off for
-  the second: on while `frames * 2 * blink_hz / refresh_hz` is even.
+  the second: on while `frames * 2 * blink_hz / refresh_hz` is even, where
+  `frames` is the frame counter as the refresh sets it. So the picture a
+  program sees the frame counter for is the one drawn with it, and at 30 Hz
+  the slow blink is off for frames 15 to 29, on to 44, and so on.
 - A blink rate must be at least 1, and at most half the refresh rate, as a
-  faster one would never be seen off. `Create` returns an error otherwise.
+  faster one would never be seen off. `Create` returns an error otherwise, so
+  the refresh rate is in effect at least 2.
 
 ### Compact rows (CL7)
 
@@ -495,7 +503,8 @@ struct ScreenSettings {
   int page = 0;
   DeviceInterrupt interrupt;
 
-  // The size, whose cells must fit before the control words (4080 at most).
+  // The size, whose cells must fit before the control words (4080 at most),
+  // and from CL6, at most kMaxColumns (132) by kMaxRows (64).
   int columns = 80;
   int rows = 24;
 
@@ -599,6 +608,9 @@ inline constexpr int kScreenGlyphSize = 5;      // Words: 2 rows a word
 inline constexpr int kScreenCharacterSetSize =  // 2560 words
     kScreenGlyphCount * kScreenGlyphSize;
 
+// The character set window word's bit that opens the window.
+inline constexpr uint16_t kScreenCharacterWindowOpen = 0x0001;
+
 // A pixel's level in the picture.
 inline constexpr uint8_t kScreenPixelOff = 0;
 inline constexpr uint8_t kScreenPixelDim = 1;
@@ -610,9 +622,9 @@ struct ScreenSettings {
   int slow_blink_hz = 1;
   int fast_blink_hz = 4;
 
-  // The character set at power on, kScreenCharacterSetSize words, or empty
+  // The character set at power on, kScreenCharacterSetSize words, or unset
   // for the built-in one.
-  std::vector<uint16_t> characters;
+  std::optional<std::vector<uint16_t>> characters;
 };
 
 struct ScreenPicture {
@@ -638,9 +650,9 @@ class ScreenMemory final : public MemoryMap {
 - `ScreenMemory` holds the character set beside the page's words. `Write`
   sends a write below `kScreenCharacterSetSize` to the character set while
   the window's bit 0 is set, and `Read` never reads it.
-- `Create` returns an error for a `characters` that is neither empty nor
-  `kScreenCharacterSetSize` words. Until CL8, an empty one is a blank
-  character set.
+- `Create` returns an error for a `characters` that is set to anything but
+  `kScreenCharacterSetSize` words, an empty one included. Until CL8, an unset
+  one is a blank character set.
 - A refresh draws the pixels from the cells, the character set, and the
   cursor, under the lock, as Behavior's Pixels describes, with the blink
   phases from the frame count. At 80 by 24, that is 153,600 pixels (150 KB),
@@ -682,7 +694,7 @@ struct ScreenPicture {
 ### devices: the built-in character set
 
 - `screen_characters.h`/`.cc`, with `GetDefaultScreenCharacters()`: 512 glyphs
-  as a constant array, which an empty `ScreenSettings::characters` uses.
+  as a constant array, which an unset `ScreenSettings::characters` uses.
 - Characters 0 to 127 are ASCII in the Osborne 1's glyph shapes, if a source
   for its character generator's pixels can be found, and its terms allow
   using them. Otherwise, a public domain 8 by 10 font. The control characters,
@@ -806,7 +818,7 @@ Depends on: CL4.
   clears nothing; a line feed on the bottom row with two writes from a
   program; and the fill word 0 at power on.
 
-### CL6 [ ] devices: the character set and the pixels
+### CL6 [x] devices: the character set and the pixels
 
 Depends on: CL5.
 
@@ -814,6 +826,8 @@ Depends on: CL5.
   and the blink rates, the character set window control word, `ScreenMemory`'s
   character set, and the picture's pixels, drawn at each refresh.
 - The reserved words start at FFAh.
+- `ScreenSettings::kMaxColumns` (132) and `kMaxRows` (64), which `Create`
+  checks along with `kMaxCells`.
 
 **Verify**
 - Standard checks.
@@ -849,7 +863,7 @@ Depends on: CL6.
 
 - Find the Osborne 1's character generator pixels, and check their terms with
   the user before using them. Otherwise, a public domain 8 by 10 font.
-- `screen_characters.h`/`.cc`: `GetDefaultScreenCharacters()`, and an empty
+- `screen_characters.h`/`.cc`: `GetDefaultScreenCharacters()`, and an unset
   `ScreenSettings::characters` uses it.
 - Decide the control characters, the graphics characters (128 to 255), and the
   alternate 256 with the user, and update Behavior to match.
@@ -857,5 +871,5 @@ Depends on: CL6.
 **Verify**
 - Standard checks.
 - Unit tests (`screen_characters_test.cc`): the character set's size, a few
-  glyphs' exact pixels (such as `A`), and a screen with empty settings using
+  glyphs' exact pixels (such as `A`), and a screen with `characters` unset using
   it.

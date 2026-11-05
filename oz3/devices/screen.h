@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -29,15 +30,16 @@ namespace oz3 {
 
 // A cell is a word: the low byte is the character, and the high byte its
 // attributes. Characters 0 to 127 are ASCII, and 128 to 255 graphics
-// characters, which the host draws.
+// characters, each drawn from its glyph in the character set.
 
-// Styles, which the host applies to the character's pixels.
+// Styles, which the screen applies to the glyph's pixels. Half intensity draws
+// them dim, rather than bright.
 inline constexpr uint16_t kScreenInverse = 0x0100;
 inline constexpr uint16_t kScreenHalfIntensity = 0x0200;
 inline constexpr uint16_t kScreenBlink = 0x0400;
 
-// Draws the character from the alternate character set: a second 256
-// characters.
+// Draws the character from the alternate glyphs: the second 256 of the
+// character set.
 inline constexpr uint16_t kScreenAlternate = 0x0800;
 
 // Lines, which set every pixel on one edge of the cell. A line on each of two
@@ -74,12 +76,47 @@ enum class ScreenCursorStyle : uint16_t {
 };
 
 //==============================================================================
+// Character set
+//==============================================================================
+
+// A glyph is 8 pixels wide and 10 tall, and its pixels are twice as tall as
+// they are wide. Its rows are a byte each, with bit 7 the leftmost pixel,
+// packed two rows to a word with the high byte first. Glyph n is at n * 5 in
+// the character set: the first 256 are for cells without kScreenAlternate, and
+// the second 256 for cells with it.
+inline constexpr int kScreenGlyphWidth = 8;
+inline constexpr int kScreenGlyphHeight = 10;
+inline constexpr int kScreenGlyphCount = 512;
+inline constexpr int kScreenGlyphSize = 5;  // Words
+inline constexpr int kScreenCharacterSetSize =
+    kScreenGlyphCount * kScreenGlyphSize;  // 2560 words
+
+// While the character set window word has this bit set, writes to the screen's
+// addresses below kScreenCharacterSetSize go to the character set rather than
+// the cells. Its other bits are reserved.
+inline constexpr uint16_t kScreenCharacterWindowOpen = 0x0001;
+
+//==============================================================================
+// Pixels
+//==============================================================================
+
+// A pixel's level in the picture.
+inline constexpr uint8_t kScreenPixelOff = 0;
+inline constexpr uint8_t kScreenPixelDim = 1;
+inline constexpr uint8_t kScreenPixelBright = 2;
+
+//==============================================================================
 // ScreenSettings
 //==============================================================================
 
-// Everything a host sets about a screen but its name: its wiring, its size,
-// and how often it refreshes.
+// Everything a host sets about a screen but its name: its wiring, its size, how
+// often it refreshes and blinks, and its character set at power on.
 struct ScreenSettings {
+  // The most columns and rows: as wide as a wide terminal, and as tall as the
+  // cells allow at 63 columns.
+  static constexpr int kMaxColumns = 132;
+  static constexpr int kMaxRows = 64;
+
   // The most cells, which fit in the page before the control words.
   static constexpr int kMaxCells = 0xFF0;
 
@@ -90,14 +127,25 @@ struct ScreenSettings {
   // The interrupt raised at each refresh.
   DeviceInterrupt interrupt;
 
-  // The size, in cells, which must each be at least 1, with no more than
-  // kMaxCells cells.
+  // The size, in cells: from 1 to kMaxColumns columns, and 1 to kMaxRows rows,
+  // with no more than kMaxCells cells.
   int columns = 80;
   int rows = 24;
 
-  // The refreshes a second, which must be at least 1. The default is the full
+  // The refreshes a second, which must be at least 1, and in effect at least 2,
+  // as the blink rates must be at most half of it. The default is the full
   // frames a second of an interlaced NTSC display.
   int refresh_hz = 30;
+
+  // The blinks a second, which must each be at least 1, and at most half of
+  // refresh_hz. The slow blink is for kScreenBlink and the slow blinking
+  // cursor, and the fast blink for the fast blinking cursor.
+  int slow_blink_hz = 1;
+  int fast_blink_hz = 4;
+
+  // The character set at power on, which must be kScreenCharacterSetSize words,
+  // or unset for the built-in one.
+  std::optional<std::vector<uint16_t>> characters;
 };
 
 //==============================================================================
@@ -121,6 +169,13 @@ struct ScreenPicture {
   int cursor_row = 0;
   ScreenCursorMode cursor_mode = ScreenCursorMode::kOff;
   ScreenCursorStyle cursor_style = ScreenCursorStyle::kBlock;
+
+  // The pixels, which are what the host shows: columns * kScreenGlyphWidth by
+  // rows * kScreenGlyphHeight, row by row from the top, each a kScreenPixel
+  // level. Each pixel is twice as tall as it is wide.
+  int pixel_width = 0;
+  int pixel_height = 0;
+  std::vector<uint8_t> pixels;
 };
 
 //==============================================================================
@@ -130,7 +185,8 @@ struct ScreenPicture {
 // The screen's page, which cores read and write through its bank: the cells,
 // row by row, then unused words a program may use, then the control words at
 // the end of the page, so a program finds them at the same address whatever
-// the screen's size.
+// the screen's size. It also holds the character set, which a program writes
+// through the character set window, and can't read back.
 //
 // Writes to the read-only and reserved words are ignored, so only the screen
 // sets them. Reserved words read 0.
@@ -145,7 +201,8 @@ class ScreenMemory final : public MemoryMap {
   // cells shown at the top of the screen, the cursor's position is in screen
   // positions, and the cursor word is its mode and style. Writing a row in
   // screen positions to clear row fills it with the fill word as it is written,
-  // and clear row reads 0. The rest of the page, from kReservedAddress, is
+  // and clear row reads 0. The character set window word opens the window with
+  // kScreenCharacterWindowOpen. The rest of the page, from kReservedAddress, is
   // reserved.
   static constexpr int kColumnsAddress = ScreenSettings::kMaxCells;
   static constexpr int kRowsAddress = 0xFF1;
@@ -156,14 +213,17 @@ class ScreenMemory final : public MemoryMap {
   static constexpr int kCursorAddress = 0xFF6;
   static constexpr int kFillAddress = 0xFF7;
   static constexpr int kClearRowAddress = 0xFF8;
-  static constexpr int kReservedAddress = 0xFF9;
+  static constexpr int kCharacterWindowAddress = 0xFF9;
+  static constexpr int kReservedAddress = 0xFFA;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Constructs a blank page for a screen of `columns` by `rows` cells.
-  ScreenMemory(int columns, int rows);
+  // Constructs a blank page for a screen of `columns` by `rows` cells, with
+  // `characters` as its character set (kScreenCharacterSetSize words), or a
+  // blank character set if it is empty.
+  ScreenMemory(int columns, int rows, absl::Span<const uint16_t> characters);
   ~ScreenMemory() override = default;
 
   //----------------------------------------------------------------------------
@@ -172,6 +232,9 @@ class ScreenMemory final : public MemoryMap {
 
   // Returns the page's words. `lock` must be a lock on the page's bank.
   absl::Span<const uint16_t> GetMem(const Lock& lock) const;
+
+  // Returns the character set. `lock` must be a lock on the page's bank.
+  absl::Span<const uint16_t> GetCharacters(const Lock& lock) const;
 
   // Sets the frame counter. `lock` must be a lock on the page's bank.
   void SetFrameCount(const Lock& lock, uint16_t count);
@@ -194,6 +257,7 @@ class ScreenMemory final : public MemoryMap {
   void ClearRow(int row);
 
   std::array<uint16_t, kMemoryBankPageSize> mem_ = {};
+  std::array<uint16_t, kScreenCharacterSetSize> characters_ = {};
 };
 
 //==============================================================================
@@ -241,11 +305,19 @@ class ScreenFactory final : public DeviceFactory {
 //
 // The screen refreshes refresh_hz times a second: refresh n is at cycle
 // n * clock_hz / refresh_hz, so the schedule doesn't drift where a refresh
-// isn't a whole number of cycles. At a refresh, it takes its bank's lock,
-// takes the page as the picture, adds one to the frame counter, and releases
-// the lock, all in one cycle, so it never sees half of a core's write. Then it
-// raises its interrupt. A refresh waits while a core holds the bank, and one
-// that waited doesn't delay the next. At most one refresh is in a cycle.
+// isn't a whole number of cycles. At a refresh, it takes its bank's lock, adds
+// one to the frame counter, takes the page as the picture and draws its pixels,
+// and releases the lock, all in one cycle, so it never sees half of a core's
+// write. Then it raises its interrupt. A refresh waits while a core holds the
+// bank, and one that waited doesn't delay the next. At most one refresh is in a
+// cycle.
+//
+// Each cell is drawn from its glyph, lit at the cell's level: the glyph's
+// pixels, swapped by inverse, then the cell's lines, all off in the slow
+// blink's off phase for a blinking cell, and then the cursor, which isn't drawn
+// in its blink's off phase. A blink at blink_hz is on while
+// frames * 2 * blink_hz / refresh_hz is even, where frames is the frame counter
+// the refresh sets.
 //
 // The host reads the picture with GetPicture(), which changes only at a
 // refresh.
@@ -295,10 +367,22 @@ class Screen final : public Device {
   // Returns the cycle of the next refresh.
   Cycles GetRefreshCycle() const;
 
-  // Takes the picture from the page, and adds one to the frame counter.
+  // Adds one to the frame counter, and takes the picture from the page.
   void Refresh(const Lock& lock);
 
+  // Returns whether a blink at `blink_hz` is in its on phase this frame.
+  bool IsBlinkOn(int blink_hz) const;
+
+  // Returns whether the cursor is drawn this frame: it is on, and its blink,
+  // if it has one, is in its on phase.
+  bool IsCursorOn() const;
+
+  // Draws the picture's pixels from its cells and cursor, with `characters`.
+  void DrawPixels(absl::Span<const uint16_t> characters);
+
   const int refresh_hz_;
+  const int slow_blink_hz_;
+  const int fast_blink_hz_;
   ScreenMemory memory_;
   ScreenPicture picture_;
   int64_t frame_count_ = 0;
