@@ -1061,7 +1061,6 @@ TEST_F(CpuCoreTest, RunsAfterReset) {
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kRunInstruction);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_TRUE(memory_bank.IsLocked());
-  state.Update();
   EXPECT_EQ(state.ip, 1);
 
   // The processor has only advanced one cycle
@@ -1085,7 +1084,6 @@ TEST_F(CpuCoreTest, RunsAfterReset) {
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kRunInstruction);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2);
   EXPECT_TRUE(memory_bank.IsLocked());
-  state.Update();
   EXPECT_EQ(state.ip, 2);
 }
 
@@ -1132,7 +1130,6 @@ TEST_F(CpuCoreTest, CoreLockDeferredUntilEndOfInstruction) {
   Execute(kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kStartInstruction);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_TRUE(lock->IsLocked());
 }
@@ -1178,15 +1175,12 @@ TEST_F(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // should be blocked waiting on the first core to release its lock on the CODE
   // memory bank.
   Execute(kCpuCoreFetchAndDecodeCycles);
-  state0.Update();
   EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kRunInstruction);
-  state1.Update();
   EXPECT_EQ(state1.ip, 20);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
-  state2.Update();
   EXPECT_EQ(state2.ip, 30);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
@@ -1195,15 +1189,12 @@ TEST_F(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // finish executing the NOP, and the second core to lock memory and decode the
   // first NOP. This blocks the first core from fetching the next instruction.
   Execute(1);
-  state0.Update();
   EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kFetchInstruction);
-  state1.Update();
   EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kRunInstruction);
-  state2.Update();
   EXPECT_EQ(state2.ip, 30);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
@@ -1213,15 +1204,12 @@ TEST_F(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // decode the first NOP. This blocks the second core from fetching the next
   // instruction.
   Execute(kCpuCoreFetchAndDecodeCycles);
-  state0.Update();
   EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kFetchInstruction);
-  state1.Update();
   EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 1);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
-  state2.Update();
   EXPECT_EQ(state2.ip, 31);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kRunInstruction);
@@ -1229,15 +1217,12 @@ TEST_F(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // One more round will cycle back to the first core. However, as the first
   // core executed first, it needs to wait another cycle to gain the lock.
   Execute(kCpuCoreFetchAndDecodeCycles);
-  state0.Update();
   EXPECT_EQ(state0.ip, 11);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kFetchInstruction);
-  state1.Update();
   EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 1);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
-  state2.Update();
   EXPECT_EQ(state2.ip, 31);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 1);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
@@ -1245,15 +1230,12 @@ TEST_F(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   // One more cycle gives the first core the lock, and it can execute the next
   // instruction.
   Execute(1);
-  state0.Update();
   EXPECT_EQ(state0.ip, 12);
   EXPECT_EQ(state0.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 1);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kRunInstruction);
-  state1.Update();
   EXPECT_EQ(state1.ip, 21);
   EXPECT_EQ(state1.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 2);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
-  state2.Update();
   EXPECT_EQ(state2.ip, 31);
   EXPECT_EQ(state2.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 2);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
@@ -1273,15 +1255,12 @@ TEST_F(CpuCoreTest, MultiCoreRoundRobinsExecution) {
   const int start_cycles = kCpuCoreFetchAndDecodeCycles * 4 + 1;
   const int round_cycles = kCpuCoreFetchAndDecodeCycles * 3 + 1;
   Execute(round_cycles * 5);
-  state0.Update();
   EXPECT_EQ(state0.ip, 17);
   EXPECT_EQ(state0.core.GetCycles(), start_cycles + round_cycles * 5);
   EXPECT_EQ(state0.core.GetState(), CpuCore::State::kRunInstruction);
-  state1.Update();
   EXPECT_EQ(state1.ip, 26);
   EXPECT_EQ(state1.core.GetCycles(), start_cycles + round_cycles * 5);
   EXPECT_EQ(state1.core.GetState(), CpuCore::State::kFetchInstruction);
-  state2.Update();
   EXPECT_EQ(state2.ip, 36);
   EXPECT_EQ(state2.core.GetCycles(), start_cycles + round_cycles * 5);
   EXPECT_EQ(state2.core.GetState(), CpuCore::State::kFetchInstruction);
@@ -1303,7 +1282,6 @@ TEST_F(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
   // an LD microcode before unlocking the CODE memory bank, it will execute as
   // well.
   Execute(1);
-  state.Update();
   EXPECT_EQ(state.ip, 2);  // Advances 2 due to LD
   EXPECT_EQ(state.r0, 42);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
@@ -1313,7 +1291,6 @@ TEST_F(CpuCoreTest, LdOpInFetchExtendsCodeSize) {
   // an LD microcode before unlocking the CODE memory bank, it will execute as
   // well.
   Execute(kCpuCoreFetchAndDecodeCycles + 1);
-  state.Update();
   EXPECT_EQ(state.ip, 5);  // Advances 3 due to two LDs
   EXPECT_EQ(state.d0(), 0x10000);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 3);
@@ -1335,14 +1312,12 @@ TEST_F(CpuCoreTest, HaltOp) {
   Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
 
   // The core should not execute any more instructions.
   Execute(100);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 101);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
 }
 
@@ -1391,7 +1366,6 @@ TEST_F(CpuCoreTest, WaitOp) {
   // into a wait state, as the wait times are too small.
   Execute(kCpuCoreFetchAndDecodeCycles * 4);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kRunInstruction);
-  state.Update();
   EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r0, 3);  // Ran 3 cycles longer than requested
   EXPECT_EQ(state.r1, 2);  // Ran 2 cycles longer than requested
@@ -1402,7 +1376,6 @@ TEST_F(CpuCoreTest, WaitOp) {
   // one cycle, and then return the CPU to the kStartInstruction state.
   Execute(1);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kStartInstruction);
-  state.Update();
   EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 1);
   EXPECT_EQ(state.r3, 0);
@@ -1411,7 +1384,6 @@ TEST_F(CpuCoreTest, WaitOp) {
   // the fetch+decode and the first cycle of waiting.
   Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kWaiting);
-  state.Update();
   EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 2);
 
@@ -1419,7 +1391,6 @@ TEST_F(CpuCoreTest, WaitOp) {
   // state.
   Execute(1);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kStartInstruction);
-  state.Update();
   EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 3);
   EXPECT_EQ(state.r4, 0);
@@ -1427,7 +1398,6 @@ TEST_F(CpuCoreTest, WaitOp) {
   // Execute the HALT instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
-  state.Update();
   EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 4);
 }
@@ -1460,84 +1430,72 @@ TEST_F(CpuCoreTest, AdrLdStOps) {
   // Execute the LCODE instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 2);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x1234);
 
   // Execute the LSTACK instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 2 + 4);
-  state.Update();
   EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r1, 0x5678);
 
   // Execute the LDATA instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 3 + 6);
-  state.Update();
   EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r2, 0x9abc);
 
   // Execute the LEXTRA instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 4 + 8);
-  state.Update();
   EXPECT_EQ(state.ip, 4);
   EXPECT_EQ(state.r3, 0xdef0);
 
   // Execute the SCODE instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 5 + 10);
-  state.Update();
   EXPECT_EQ(state.ip, 5);
   EXPECT_EQ(state.code.SetAddress(20).GetValue(), 0x5678);
 
   // Execute the SSTACK instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 6 + 12);
-  state.Update();
   EXPECT_EQ(state.ip, 6);
   EXPECT_EQ(state.stack.SetAddress(20).GetValue(), 0x9abc);
 
   // Execute the SDATA instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 7 + 14);
-  state.Update();
   EXPECT_EQ(state.ip, 7);
   EXPECT_EQ(state.data.SetAddress(20).GetValue(), 0xdef0);
 
   // Execute the SEXTRA instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 8 + 16);
-  state.Update();
   EXPECT_EQ(state.ip, 8);
   EXPECT_EQ(state.extra.SetAddress(20).GetValue(), 0x1234);
 
   // Execute the PCODE instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 9 + 18);
-  state.Update();
   EXPECT_EQ(state.ip, 9);
   EXPECT_EQ(state.code.SetAddress(24).GetValue(), 0x5678);
 
   // Execute the PSTACK instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 10 + 20);
-  state.Update();
   EXPECT_EQ(state.ip, 10);
   EXPECT_EQ(state.stack.SetAddress(24).GetValue(), 0x9abc);
 
   // Execute the PDATA instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 11 + 22);
-  state.Update();
   EXPECT_EQ(state.ip, 11);
   EXPECT_EQ(state.data.SetAddress(24).GetValue(), 0xdef0);
 
   // Execute the PEXTRA instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 2);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles * 12 + 24);
-  state.Update();
   EXPECT_EQ(state.ip, 12);
   EXPECT_EQ(state.extra.SetAddress(24).GetValue(), 0x1234);
 
@@ -1595,7 +1553,6 @@ TEST_F(CpuCoreTest, LkWhenLocked) {
 
   Execute(kCpuCoreFetchAndDecodeCycles + 10);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kRunInstruction);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0);
 
@@ -1603,7 +1560,6 @@ TEST_F(CpuCoreTest, LkWhenLocked) {
   data_lock.reset();
   Execute(2);  // ADR, LD, UL
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kRunInstruction);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0x1234);
 
@@ -1629,7 +1585,6 @@ TEST_F(CpuCoreTest, MovStOp) {
   Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kRunInstruction);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_FALSE(state.data.GetBank()->IsLocked());
 
@@ -1662,7 +1617,6 @@ TEST_F(CpuCoreTest, MoviOp) {
   // Execute the MOVI instruction.
   Execute(kCpuCoreFetchAndDecodeCycles + 1);
   EXPECT_EQ(state.core.GetCycles(), kCpuCoreFetchAndDecodeCycles + 1);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r3, 42);
 
@@ -3523,21 +3477,18 @@ TEST_F(CpuCoreTest, JdOp) {
   // Execute the JD instruction, loop once
   Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 1);
   EXPECT_EQ(state.core.GetCycles(), GetCycles());
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r7, 1);
 
   // Execute the JD instruction, loop 10 times
   Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 10);
   EXPECT_EQ(state.core.GetCycles(), GetCycles());
-  state.Update();
   EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r7, 10);
 
   // Execute the JD instruction, loop 65536 times
   Execute(kCpuCoreFetchAndDecodeCycles + 1 + 2 * 65536);
   EXPECT_EQ(state.core.GetCycles(), GetCycles());
-  state.Update();
   EXPECT_EQ(state.ip, 3);
   EXPECT_EQ(state.r7, 0);
 
@@ -4790,7 +4741,6 @@ TEST_F(CpuCoreTest, LockPortBlocksCpuCore) {
   for (int i = 0; i < 10; ++i) {
     Execute(1);
   }
-  state.Update();
   EXPECT_EQ(state.ip, blocked_ip);
   EXPECT_EQ(GetPort(1).GetValue(0), 100);
 
@@ -5247,12 +5197,10 @@ TEST_F(CpuCoreTest, CoreLockBlocks) {
 
   // Execute code
   ASSERT_TRUE(ExecuteUntilIp(blocked_ip0));
-  state1.Update();
   EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
   for (int i = 0; i < 10; ++i) {
     Execute(1);
   }
-  state0.Update();
   EXPECT_EQ(state0.ip, blocked_ip0);
   EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
 

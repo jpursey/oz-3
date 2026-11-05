@@ -234,7 +234,6 @@ TEST_F(InstructionTest, IRT_ResumesWait) {
 
   Execute(wait_end - GetCycles() + 1);
   EXPECT_NE(state.core.GetState(), CpuCore::State::kWaiting);
-  state.Update();
   EXPECT_EQ(state.r0, 0);
   EXPECT_EQ(state.st & CpuCore::W, 0);
 }

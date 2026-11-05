@@ -23,7 +23,6 @@ TEST_F(InstructionTest, NOP_Cycles) {
 
   Execute(kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(GetCycles(), kCpuCoreFetchAndDecodeCycles * 10);
-  state.Update();
   EXPECT_EQ(state.ip, 10);
 }
 
@@ -40,7 +39,6 @@ TEST_F(InstructionTest, WAIT_ExactCycles) {
   Execute(5);
   EXPECT_EQ(GetCycles(), 10);
   EXPECT_NE(state.core.GetState(), CpuCore::State::kWaiting);
-  state.Update();
   EXPECT_EQ(state.ip, 1);
   EXPECT_EQ(state.r0, 0);
 }
@@ -56,7 +54,6 @@ TEST_F(InstructionTest, WAIT_OneCycle) {
   Execute(kCpuCoreFetchAndDecodeCycles + 10);
   EXPECT_EQ(GetCycles(), kCpuCoreFetchAndDecodeCycles + 10);
   EXPECT_NE(state.core.GetState(), CpuCore::State::kWaiting);
-  state.Update();
   EXPECT_EQ(state.ip, 2);
   EXPECT_EQ(state.r0, kCpuCoreFetchAndDecodeCycles - 1);
   EXPECT_EQ(state.r1, 0);
@@ -98,7 +95,6 @@ TEST_F(InstructionTest, HALT_EntersIdle) {
   Execute(kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(GetCycles(), kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
-  state.Update();
   EXPECT_EQ(state.ip, 0);  // Stays on the halt instruction.
 }
 
@@ -115,13 +111,11 @@ TEST_F(InstructionTest, HALT_InterruptReturnsToHalt) {
 
   Execute(kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
-  state.Update();
   EXPECT_EQ(state.ip, halt_ip);
 
   state.core.RaiseInterrupt(1);
   Execute(kCpuCoreFetchAndDecodeCycles * 10);
   EXPECT_EQ(state.core.GetState(), CpuCore::State::kIdle);
-  state.Update();
   EXPECT_EQ(state.ip, halt_ip);
   EXPECT_EQ(state.r0, 1);  // Interrupt was triggered.
 }

@@ -185,6 +185,10 @@ class BaseCoreTest : public testing::Test {
     MemAccessor extra;
   };
 
+  // The most cycles ExecuteUntil runs before it gives up, so a test whose
+  // program never reaches its condition fails rather than hangs.
+  static constexpr Cycles kMaxExecuteUntilCycles = 1'000'000;
+
   BaseCoreTest(const InstructionSetDef& def,
                std::shared_ptr<const InstructionSet> instruction_set)
       : def_(def), instruction_set_(std::move(instruction_set)) {}
@@ -241,12 +245,13 @@ class BaseCoreTest : public testing::Test {
   // Returns the number of cycles executed so far by the processor.
   Cycles GetCycles() const { return processor_->GetCycles(); }
 
-  // Executes the specified number of cycles.
-  void Execute(Cycles cycles) { processor_->Execute(cycles); }
-
-  // The most cycles ExecuteUntil runs before it gives up, so a test whose
-  // program never reaches its condition fails rather than hangs.
-  static constexpr Cycles kMaxExecuteUntilCycles = 1'000'000;
+  // Executes the specified number of cycles, then updates every core's state.
+  void Execute(Cycles cycles) {
+    processor_->Execute(cycles);
+    for (CoreState& state : states_) {
+      state.Update();
+    }
+  }
 
   // Executes the processor a cycle at a time until `condition` is met, which is
   // checked after each cycle. Returns false if the core goes idle, its IP
