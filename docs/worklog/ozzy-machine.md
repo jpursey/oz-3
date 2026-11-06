@@ -199,14 +199,17 @@ stack segment can't be (see the backlog's *Labels in address forms*).
   compact rows, and the exact blink timing. A graphical frontend would show
   the pixels as they are (see *Graphical frontend* in the backlog).
 - **Teletype:** for an Ozzy without a screen, it writes the teletype's output
-  to the console as it comes.
+  to the console as it comes, in the console's own buffer with wrapping, so
+  the transcript stays after quitting. Control characters a teletype doesn't
+  act on are dropped. With a screen, the teletype's output is taken and
+  dropped, as the console shows only one of them.
 - **Keyboard:** console key presses become Ozzy key events, with the codes and
   modifiers console-devices.md lists. Ctrl+C is a key like any other (03h).
-- **Quitting:** Ctrl+Break, or closing the console window. It restores the
-  console as it found it.
+- **Quitting:** Ctrl+Alt+Q or Ctrl+Break, or closing the console window. It
+  restores the console as it found it.
 - **Pacing:** each frame (60 a second), it runs the cycles for the real time
   that passed, at most 100 ms of them, so a host that falls behind slows the
-  Ozzy rather than racing to catch up. `--max_speed` instead runs as many
+  Ozzy rather than racing to catch up. `--max-speed` instead runs as many
   cycles as the host can between frames.
 - **Errors:** a config that doesn't read or build prints its error and exits
   with 1.
@@ -252,7 +255,8 @@ host's; the console devices are always named by their own names.
   `oz3_ozzy` (with `oz3_ozzy_test`, and `oz3_ozzy.lib`), and the app is
   `ozzy` (`bin/ozzy.exe`). No two targets or outputs share a name, and the
   source files don't either: the library's are `oz3/ozzy/*`, and the app's
-  is `oz3/apps/ozzy.cc`.
+  is `oz3/apps/ozzy_main.cc` (not `ozzy.cc`, which would read as the source
+  of `ozzy.h`, and which clang-format takes as such).
 - It holds the console frontend's pieces too (`console_text`, and the
   `Console` interface with its `win_` implementation), rather than the app,
   as executables have no tests. A host that embeds Ozzy doesn't call them,
@@ -449,7 +453,7 @@ sets a flag the app's loop checks.
 
 ### apps: ozzy
 
-- `oz3/apps/ozzy.cc`, linking `oz3_ozzy`, `gb_cli` for its flags, and
+- `oz3/apps/ozzy_main.cc`, linking `oz3_ozzy`, `gb_cli` for its flags, and
   `gb_file` to read the config.
 - The loop: take keys and press them, run the cycles for the time since the
   last frame (absl's clock, capped at 100 ms), draw the picture if it changed
@@ -460,10 +464,11 @@ sets a flag the app's loop checks.
 
 ### To confirm
 
-- **Quitting** (CL9): Ctrl+Break is missing on many laptop keyboards (some
-  have it as Ctrl+Fn+B or Ctrl+Fn+Pause). The alternative is a key Ozzy never
-  needs, such as Ctrl+Alt+End. Recommendation: Ctrl+Break and closing the
-  window, adding another key only if Ctrl+Break proves awkward by hand.
+- **Quitting** (CL9, settled in CL10): Ctrl+Break is missing on many
+  keyboards, the user's included, so Ctrl+Alt+Q quits too, and never reaches
+  the Ozzy. Only a Ctrl+Alt+Q that types nothing quits, as AltGr is Ctrl+Alt
+  and types a character with Q on some layouts (@ on a German one).
+  Ctrl+Alt+End was passed over, as Remote Desktop takes it as Ctrl+Alt+Del.
 - **Overline** (CL8): Windows Terminal draws `ESC[53m`, but the old console
   host may not. To check by hand.
 - **Sextants** (CL8): Unicode's sextants (U+1FB00 on) need a font that has
@@ -474,6 +479,16 @@ sets a flag the app's loop checks.
   cells wide, shifting the rest of the row. Windows Terminal draws them one
   cell wide by default. To check by hand; each row starts at its own
   position, so a wide character never spills into the next row.
+- **Frame rate** (CL10): `absl::SleepFor` sleeps in Windows' 15.6 ms timer
+  ticks, so frames land near 32 to 64 a second rather than 60. The Ozzy's
+  speed is right regardless. To check by hand whether drawing or keys feel
+  uneven; if so, a high-resolution waitable timer in the Windows console code.
+- **Console size** (CL10): a console smaller than the screen draws the rows
+  past its bottom over its last row, and cuts off the columns past its edge.
+  To check by hand whether to say so on starting, or resize the console.
+- **Teletype's last line** (CL10): quitting a teletype-only Ozzy mid-line
+  leaves the shell's prompt on that line. To check by hand whether to end the
+  line on quitting.
 
 ## CLs
 
@@ -678,20 +693,41 @@ Depends on: CL2.
   Backspace, Escape, Delete, Ctrl with letters, the arrows, Home to Page Down,
   Insert, F1 to F12, each modifier, and keys that are none (Shift alone).
 
-### CL10 [ ] apps: ozzy
+### CL10 [x] apps: ozzy
 
 Depends on: CL7, CL8, CL9.
 
-- `oz3/apps/ozzy.cc`, and the `ozzy` executable in `oz3/apps/CMakeLists.txt`.
+- `oz3/apps/ozzy_main.cc`, and the `ozzy` executable in `oz3/apps/CMakeLists.txt`.
 - The wiki's Ozzy page gains Running Ozzy, and Home's Ozzy entry is no longer
   planned. README's mention of `ozzy` matches.
+- `console_display.h/.cc`: `ConsoleDisplay`, which shows an Ozzy in a
+  `Console`: the screen's picture at each refresh, or the teletype's output.
+  It is in the library rather than the app so it is tested, with a fake
+  `Console`. It keeps the last picture whole: copying its pixels at each
+  refresh costs little, and a text-only copy would go stale whenever
+  `DrawConsoleText` read another field.
+- `GetTeletypeText` (`console_text`): the teletype's output with the control
+  characters a teletype doesn't act on dropped, as a console takes some as
+  the start of a sequence.
+- `Console::Create` takes a `ConsoleMode` (a CL9 change): `kScreen`, in the
+  alternate buffer without wrapping, or `kLines`, in the console's own buffer
+  with wrapping, for a teletype.
+- `--max-speed` runs 10,000 cycles at a time until the frame's end, so the
+  clock is checked often whatever the clock rate.
+- Ctrl+Alt+Q quits as well as Ctrl+Break (a CL9 change, see *Quitting* in To
+  confirm): `IsQuitKey` in `win_console.h`, tested beside `GetOzzyKey`.
 
 **Verify**
 - Standard checks.
+- Unit tests (`console_display_test.cc`): the mode follows the screen;
+  nothing before the first refresh; the screen drawn whole first, then only
+  where it changed, and nothing without a refresh; the teletype's output
+  written; and an Ozzy with neither saying so. `GetTeletypeText` keeping
+  printable characters and what teletypes act on, and dropping the rest.
 - By hand, in Windows Terminal: the default Ozzy boots to its banner and
   echoes typing, Enter, Backspace, and scrolling; attributes and the cursor
   look right (with a test program written to the screen); a teletype-only
-  config; a config with an error; `--max_speed`; Ctrl+Break and closing the
+  config; a config with an error; `--max-speed`; Ctrl+Break and closing the
   window restore the console.
 - Performance: the frame time of the default Ozzy in Release, and the cycles
-  a second with `--max_speed`.
+  a second with `--max-speed`.

@@ -16,6 +16,7 @@ endif()
 set(oz3_ozzy_SOURCE
   boot_rom.cc boot_rom.h
   console.h
+  console_display.cc console_display.h
   console_text.cc console_text.h
   machine_table.h
   ozzy.cc ozzy.h
@@ -44,6 +45,7 @@ set(oz3_ozzy_LIBS
 )
 set(oz3_ozzy_TEST_SOURCE
   boot_rom_test.cc
+  console_display_test.cc
   console_text_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc

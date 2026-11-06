@@ -237,4 +237,16 @@ std::string DrawConsoleText(const ScreenPicture& picture,
   return text;
 }
 
+std::string GetTeletypeText(std::string_view output) {
+  std::string text;
+  text.reserve(output.size());
+  for (const char character : output) {
+    if ((character >= 0x20 && character < 0x7F) ||
+        (character >= '\a' && character <= '\n') || character == '\r') {
+      text.push_back(character);
+    }
+  }
+  return text;
+}
+
 }  // namespace oz3

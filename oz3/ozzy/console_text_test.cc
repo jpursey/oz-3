@@ -304,5 +304,24 @@ TEST(ConsoleTextTest, CursorShownAfterChangedRows) {
                          Csi("3 q"), Csi("?25h")));
 }
 
+TEST(ConsoleTextTest, TeletypeTextKeepsPrintableCharacters) {
+  EXPECT_EQ(GetTeletypeText(" Hello, world! ~"), " Hello, world! ~");
+  EXPECT_EQ(GetTeletypeText(""), "");
+}
+
+TEST(ConsoleTextTest, TeletypeTextKeepsWhatTeletypesActOn) {
+  EXPECT_EQ(GetTeletypeText("\a\b\t\n\r"), "\a\b\t\n\r");
+  EXPECT_EQ(GetTeletypeText("ab\bc\r\n"), "ab\bc\r\n");
+}
+
+TEST(ConsoleTextTest, TeletypeTextDropsOtherControlCharacters) {
+  EXPECT_EQ(GetTeletypeText("\x1B[2J"), "[2J");
+  EXPECT_EQ(GetTeletypeText(std::string_view("a\x00\x01\x06\x0B\x0C\x0E", 7)),
+            "a");
+  EXPECT_EQ(GetTeletypeText("\x0F\x1A\x1F\x7F"
+                            "b"),
+            "b");
+}
+
 }  // namespace
 }  // namespace oz3

@@ -98,6 +98,24 @@ TEST(WinConsoleTest, EachModifier) {
             'A');
 }
 
+TEST(WinConsoleTest, CtrlAltQQuits) {
+  EXPECT_TRUE(IsQuitKey(GetOzzyKey('Q', 0, kCtrl | kAlt)));
+  EXPECT_TRUE(IsQuitKey(GetOzzyKey(
+      'Q', 0, RIGHT_CTRL_PRESSED | LEFT_ALT_PRESSED | SHIFT_PRESSED)));
+
+  // Q without both Ctrl and Alt, and other keys with them.
+  EXPECT_FALSE(IsQuitKey(GetOzzyKey('Q', 'q', 0)));
+  EXPECT_FALSE(IsQuitKey(GetOzzyKey('Q', 0x11, kCtrl)));
+  EXPECT_FALSE(IsQuitKey(GetOzzyKey('Q', 'q', kAlt)));
+  EXPECT_FALSE(IsQuitKey(GetOzzyKey('W', 0, kCtrl | kAlt)));
+  EXPECT_FALSE(IsQuitKey(GetOzzyKey(VK_END, 0, kCtrl | kAlt)));
+  EXPECT_FALSE(IsQuitKey(0));
+
+  // AltGr with Q types @ on a German layout.
+  EXPECT_FALSE(
+      IsQuitKey(GetOzzyKey('Q', '@', LEFT_CTRL_PRESSED | RIGHT_ALT_PRESSED)));
+}
+
 TEST(WinConsoleTest, KeysThatAreNone) {
   EXPECT_EQ(GetOzzyKey(VK_SHIFT, 0, SHIFT_PRESSED), 0);
   EXPECT_EQ(GetOzzyKey(VK_CONTROL, 0, kCtrl), 0);

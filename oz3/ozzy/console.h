@@ -15,6 +15,19 @@
 
 namespace oz3 {
 
+// How a Console shows what is written to it.
+enum class ConsoleMode {
+  // A screen, drawn in the console's alternate screen buffer, so the
+  // console's own text is back once the Console is destroyed. Rows don't wrap,
+  // so a row wider than the console is cut off at its edge.
+  kScreen,
+
+  // Lines, as a teletype prints them, in the console's own buffer, so they are
+  // still there once the Console is destroyed. Lines wrap at the console's
+  // edge.
+  kLines,
+};
+
 // The host's text console, which the ozzy app runs an Ozzy in: it draws the
 // screen's picture as text, and its key presses are the keyboard's.
 //
@@ -25,12 +38,12 @@ class Console {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Takes over the console: virtual terminal output in UTF-8, the alternate
-  // screen buffer, and raw key input, so that every key (Ctrl+C too) is a key
+  // Takes over the console, to show text in `mode`: virtual terminal output
+  // in UTF-8, and raw key input, so that every key (Ctrl+C too) is a key
   // press. Returns an error if the program has no console, or a Console
   // already exists, as there is only one. The console is given back as it
   // was when the Console is destroyed.
-  static absl::StatusOr<std::unique_ptr<Console>> Create();
+  static absl::StatusOr<std::unique_ptr<Console>> Create(ConsoleMode mode);
 
   Console(const Console&) = delete;
   Console& operator=(const Console&) = delete;
@@ -47,9 +60,9 @@ class Console {
   // Ozzy's key codes (see keyboard.h). It doesn't wait for keys.
   virtual std::vector<uint16_t> TakeKeys() = 0;
 
-  // Returns whether the user asked to quit, with Ctrl+Break or by closing the
-  // console's window. Once the window is closing, the program should finish
-  // and exit promptly.
+  // Returns whether the user asked to quit, with Ctrl+Break, Ctrl+Alt+Q, or by
+  // closing the console's window. The keys that quit aren't key presses. Once
+  // the window is closing, the program should finish and exit promptly.
   virtual bool IsQuitRequested() const = 0;
 
  protected:

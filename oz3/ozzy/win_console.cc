@@ -116,7 +116,7 @@ class WinConsole final : public Console {
   ~WinConsole() override;
 
   // Takes over the console, as Console::Create describes.
-  absl::Status TakeOver();
+  absl::Status TakeOver(ConsoleMode mode);
 
   //----------------------------------------------------------------------------
   // Console implementation
@@ -135,7 +135,7 @@ class WinConsole final : public Console {
   const DWORD input_mode_;
   const HANDLE output_;
   const DWORD output_mode_;
-  bool taken_over_ = false;  // Whether it is in the alternate screen buffer.
+  bool alternate_buffer_ = false;  // Whether it is in the alternate buffer.
 };
 
 WinConsole::WinConsole(HANDLE input, DWORD input_mode, HANDLE output,
@@ -149,7 +149,7 @@ WinConsole::WinConsole(HANDLE input, DWORD input_mode, HANDLE output,
 }
 
 WinConsole::~WinConsole() {
-  if (taken_over_) {
+  if (alternate_buffer_) {
     // The default style, and the cursor's default shape, shown, before going
     // back to the main screen buffer and its cursor.
     Write("\x1B[0m\x1B[0 q\x1B[?25h\x1B[?1049l");
@@ -165,25 +165,32 @@ WinConsole::~WinConsole() {
   g_console_exists = false;
 }
 
-absl::Status WinConsole::TakeOver() {
+absl::Status WinConsole::TakeOver(ConsoleMode mode) {
   // Keys are read as key events rather than lines, without echoing them, and
   // Ctrl+C is a key. Quick edit is off, so a click doesn't pause the program.
   if (!SetConsoleMode(input_, ENABLE_EXTENDED_FLAGS)) {
     return WindowsError("set the console's input mode");
   }
 
-  // Without wrapping, a row wider than the console is cut off at its edge,
-  // rather than continuing on the next.
-  if (!SetConsoleMode(output_, ENABLE_PROCESSED_OUTPUT |
-                                   ENABLE_VIRTUAL_TERMINAL_PROCESSING |
-                                   DISABLE_NEWLINE_AUTO_RETURN)) {
+  // A line feed only moves down, as on a teletype. Without wrapping, a row
+  // wider than the console is cut off at its edge, rather than continuing on
+  // the next.
+  DWORD output_mode = ENABLE_PROCESSED_OUTPUT |
+                      ENABLE_VIRTUAL_TERMINAL_PROCESSING |
+                      DISABLE_NEWLINE_AUTO_RETURN;
+  if (mode == ConsoleMode::kLines) {
+    output_mode |= ENABLE_WRAP_AT_EOL_OUTPUT;
+  }
+  if (!SetConsoleMode(output_, output_mode)) {
     return WindowsError("turn on virtual terminal sequences");
   }
   if (!SetConsoleCtrlHandler(HandleControl, TRUE)) {
     return WindowsError("handle Ctrl+Break");
   }
-  Write("\x1B[?1049h");
-  taken_over_ = true;
+  if (mode == ConsoleMode::kScreen) {
+    Write("\x1B[?1049h");
+    alternate_buffer_ = true;
+  }
   return absl::OkStatus();
 }
 
@@ -218,7 +225,9 @@ std::vector<uint16_t> WinConsole::TakeKeys() {
       const uint16_t key =
           GetOzzyKey(event.wVirtualKeyCode, event.uChar.UnicodeChar,
                      event.dwControlKeyState);
-      if (key != 0) {
+      if (IsQuitKey(key)) {
+        g_quit_requested = true;
+      } else if (key != 0) {
         keys.insert(keys.end(), event.wRepeatCount, key);
       }
     }
@@ -252,11 +261,16 @@ uint16_t GetOzzyKey(uint16_t virtual_key, char32_t character,
   return key;
 }
 
+bool IsQuitKey(uint16_t key) {
+  constexpr uint16_t kCtrlQ = 'Q' - 'A' + 1;
+  return (key & ~kKeyShift) == (kCtrlQ | kKeyCtrl | kKeyAlt);
+}
+
 //==============================================================================
 // Console
 //==============================================================================
 
-absl::StatusOr<std::unique_ptr<Console>> Console::Create() {
+absl::StatusOr<std::unique_ptr<Console>> Console::Create(ConsoleMode mode) {
   if (g_console_exists) {
     return absl::FailedPreconditionError("a console already exists");
   }
@@ -273,7 +287,7 @@ absl::StatusOr<std::unique_ptr<Console>> Console::Create() {
   // The console gives back what it changed, even if taking over fails.
   auto console =
       std::make_unique<WinConsole>(input, input_mode, output, output_mode);
-  if (absl::Status status = console->TakeOver(); !status.ok()) {
+  if (absl::Status status = console->TakeOver(mode); !status.ok()) {
     return status;
   }
   return console;

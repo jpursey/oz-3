@@ -35,6 +35,13 @@ std::string_view GetCharacterText(uint8_t character);
 std::string DrawConsoleText(const ScreenPicture& picture,
                             const ScreenPicture* last);
 
+// Returns the teletype's `output` (see Teletype::TakeOutput) as text for a
+// console: its printable characters, and the control characters a teletype
+// acts on (bell, backspace, tab, line feed, and carriage return). Other
+// control characters are dropped, as a console would take some as the start
+// of a sequence that changes it.
+std::string GetTeletypeText(std::string_view output);
+
 }  // namespace oz3
 
 #endif  // OZ3_OZZY_CONSOLE_TEXT_H_
