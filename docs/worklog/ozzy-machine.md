@@ -15,13 +15,13 @@ ozzy hello.ozzy       // The Ozzy hello.ozzy describes
 A host that embeds Ozzy (a game, or a test) uses the library alone:
 
 ```
-absl::StatusOr<MachineSettings> settings = ReadMachineSettings(text);
+absl::StatusOr<OzzySettings> settings = ReadOzzySettings(text);
 if (!settings.ok()) { ... }
-absl::StatusOr<std::unique_ptr<Machine>> machine = Machine::Create(*settings);
-if (!machine.ok()) { ... }
-(*machine)->GetKeyboard()->PressKey('A');
-(*machine)->Run(absl::Milliseconds(16));
-const ScreenPicture& picture = (*machine)->GetScreen()->GetPicture();
+absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(*settings);
+if (!ozzy.ok()) { ... }
+(*ozzy)->GetKeyboard()->PressKey('A');
+(*ozzy)->Run(absl::Milliseconds(16));
+const ScreenPicture& picture = (*ozzy)->GetScreen()->GetPicture();
 ```
 
 This is item 5 of [ozzy_design.md](../ozzy_design.md)'s *Getting there*, and
@@ -155,9 +155,9 @@ numbers is the boot ROM's own decimal printing of a word, the first real OZ-3
 code Ozzy runs. The clock rate is left out, as it is a dword, and printing one
 needs a dword divide the default instruction set doesn't have.
 
-### `Machine`
+### `Ozzy`
 
-- `Machine::Create(settings)` builds the processor, writes the machine table,
+- `Ozzy::Create(settings)` builds the processor, writes the machine table,
   assembles and loads the boot ROM, and starts core 0. It returns an error for
   settings `ProcessorConfig::Validate` or a device's `Create` rejects, naming
   the device.
@@ -210,14 +210,18 @@ Two new pages, linked from Home in place of the "planned" entries:
 
 | Name                      | Candidates                                     | Avoids                                                      | Choice              |
 | ------------------------- | ---------------------------------------------- | ----------------------------------------------------------- | ------------------- |
-| The library's main class  | `Machine`, `Ozzy`, `Computer`                  | `Processor` (the CPU alone); `Ozzy` is also the OS's name   | `Machine`           |
-| What a config reads into  | `MachineSettings`, `MachineConfig`, `OzzyOptions` | `ProcessorConfig`, `DeviceConfig`, `gb::Config`          | `MachineSettings`   |
-| Reading a config          | `ReadMachineSettings`, `ParseMachineSettings`  | `ReadConfigFromText` (Game Bits' own step)                  | `ReadMachineSettings` |
+| The library's main class  | `Ozzy`, `Machine`, `Computer`                  | `Processor` (the CPU alone); `Machine` (generic, and a host may have its own) | `Ozzy`              |
+| What a config reads into  | `OzzySettings`, `OzzyConfig`, `OzzyOptions`    | `ProcessorConfig`, `DeviceConfig`, `gb::Config`             | `OzzySettings`      |
+| Reading a config          | `ReadOzzySettings`, `ParseOzzySettings`        | `ReadConfigFromText` (Game Bits' own step)                  | `ReadOzzySettings`  |
 | Running for real time     | `Run`, `RunFor`, `Advance`                     | `Processor::Execute` (cycles)                               | `Run`               |
 | Picture to console text   | `DrawConsoleText`, `PictureToText`, `RenderText` | `Screen::GetPicture`, "render" (Game Bits' renderer)      | `DrawConsoleText`   |
 | The host console          | `Console`, `Terminal`, `HostConsole`           | the console devices (Ozzy's own), `Teletype`                | `Console`           |
 
-`MachineSettings` follows the devices' `<Device>Settings`: what a host sets,
+Ozzy is the computer, the hardware product, as the Osborne 1 was; the OS it
+runs will have a name of its own, as the Osborne ran CP/M. So the class is
+`Ozzy` (CL2 named it `Machine`, and CL3 renamed it), while the machine table
+keeps its name, as it describes the machine to the programs on it.
+`OzzySettings` follows the devices' `<Device>Settings`: what a host sets,
 which a config file entry parses into. "Console" is the Windows console, the
 host's; the console devices are always named by their own names.
 
@@ -238,17 +242,17 @@ host's; the console devices are always named by their own names.
   as executables have no tests. A host that embeds Ozzy doesn't call them,
   and as a static library, doesn't link them.
 
-### ozzy: MachineSettings
+### ozzy: OzzySettings
 
 ```
-// machine_settings.h
+// ozzy_settings.h
 // Ozzy's settings for each console device, which a device in a config file
 // starts from. Functions, as ScreenSettings isn't a constant expression.
 ScreenSettings GetOzzyScreenSettings();
 KeyboardSettings GetOzzyKeyboardSettings();
 TeletypeSettings GetOzzyTeletypeSettings();
 
-struct MachineSettings {
+struct OzzySettings {
   static constexpr int64_t kMaxClockHz = 100'000'000;
   static constexpr int kMinPorts = 16;
 
@@ -261,17 +265,25 @@ struct MachineSettings {
   std::optional<TeletypeSettings> teletype;
 };
 
+// Returns an error naming the first setting that breaks a rule of
+// OzzySettings, such as `screen: page 3 of bank 0 is RAM`.
+absl::Status ValidateOzzySettings(const OzzySettings& settings);
+
 // Reads settings from a config file's text, returning an error naming where
 // the first problem is.
-absl::StatusOr<MachineSettings> ReadMachineSettings(std::string text);
+absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text);
 ```
 
-- Reading checks what only the config knows (keys, types, ranges, the cores
-  an interrupt names, one device of each type, device pages not RAM). What the devices
-  and the processor check themselves (a screen's size and rates, ports in
-  range) is left to `Machine::Create`, so no rule is written twice; reading
-  only checks those fit in an `int`. A device's bank and page are checked in
-  reading, as it needs them to tell whether the page is RAM.
+- `ValidateOzzySettings` holds Ozzy's own rules (the ranges, bank 0's
+  boot ROM page, and a device's pages in a bank the Ozzy has and not RAM or
+  the ROM), so `ReadOzzySettings` and `Ozzy::Create` share them, and a
+  host that builds settings in code gets the same checks. Its errors name the
+  setting (`screen.page`), not the text.
+- Reading checks what only the text knows: keys, types, values that fit their
+  setting, one device of each type, and the cores an `interrupt_cores` names
+  (as `"all"` is read there). What the devices and the processor check
+  themselves (a screen's size and rates, ports in range) is left to
+  `Ozzy::Create`, so no rule is written twice.
 - A screen's `characters` is an array of words, whose length the screen
   checks.
 - `kMinPorts` keeps ports 0 to 15 for devices, as ozzy_design.md lays them
@@ -279,7 +291,7 @@ absl::StatusOr<MachineSettings> ReadMachineSettings(std::string text);
 
 **Brittleness:** none.
 
-### ozzy: Machine
+### ozzy: Ozzy
 
 ```
 // machine_table.h
@@ -289,11 +301,13 @@ inline constexpr int kMaxMachineDevices = 16;
 enum class MachineDeviceType : uint16_t { kScreen = 1, kKeyboard, kTeletype };
 // ... the header and entry offsets.
 
-// machine.h
-class Machine final {
+// ozzy.h
+class Ozzy final {
  public:
-  static absl::StatusOr<std::unique_ptr<Machine>> Create(
-      const MachineSettings& settings);
+  static constexpr std::string_view kScreenName = "Screen";  // And the others.
+
+  static absl::StatusOr<std::unique_ptr<Ozzy>> Create(
+      const OzzySettings& settings);
 
   Processor* GetProcessor();
   Screen* GetScreen();      // Null without one.
@@ -317,15 +331,21 @@ class Machine final {
   table, and the source names the table's address as a constant, which a test
   checks against `kMachineTableAddress`.
 - **The source is embedded** in the library at build time, with Game Bits'
-  `gb_embed_file` (Game Bits *Embedded files*): the build generates a source
-  file holding its bytes, rebuilt when the `.oza` changes, and
-  `boot_rom.cc` reads it as text. Nothing assembled is checked in, as
+  `gb_embed_data` (Game Bits *Embedded files*): the build generates the bytes,
+  rebuilt when the `.oza` changes, and a header declaring a
+  `gb::EmbeddedData`, which `Ozzy` reads as text. The `.oza` gets
+  `eol=lf` in `.gitattributes`, so its bytes are the same everywhere. Nothing assembled is checked in, as
   ozzy_design.md asks, and the `.oza` stays a file anyone can assemble with
   `oz3asm` for a listing.
 - An assembly error in the boot ROM is a bug, not a setting: `Create`
   `CHECK`s it, and the tests catch it first.
-- `Run` keeps the nanoseconds-times-clock remainder from the last call, which
-  can't overflow for a call of up to a second at the most clock rate.
+- The table's interrupt cores are only the cores the Ozzy has, so `"all"`
+  (and the screen's default, every core) is written as the Ozzy's own.
+- Devices are in the table in a fixed order: the screen, the keyboard, then
+  the teletype.
+- `Run` splits `time` into whole seconds and the nanoseconds left, and keeps
+  the nanoseconds-times-clock remainder from the last call, so nothing
+  overflows however long a call is.
 
 **Brittleness:** the boot ROM source and `machine_table.h` both know the
 table's layout, which a test that boots machines of several shapes checks from
@@ -443,11 +463,15 @@ Depends on: nothing.
   the Ozzy doesn't have, a second device of a type, a device's page that is
   RAM, and bank 0's page 0 as RAM.
 
-### CL3 [ ] ozzy: Machine, without the boot ROM
+### CL3 [x] ozzy: Ozzy, without the boot ROM
 
 Depends on: CL2.
 
-- `machine_table.h`, and `machine.h/.cc`: `Create` builds the processor and
+- CL2's `MachineSettings` becomes `OzzySettings` (`ozzy_settings.h/.cc`),
+  with `ReadOzzySettings` (see Names).
+- `ValidateOzzySettings`, taking Ozzy's rules out of the reader so
+  `Ozzy::Create` shares them.
+- `machine_table.h`, and `ozzy.h/.cc`: `Create` builds the processor and
   devices and writes the machine table, but starts no core; `Run`.
 
 **Verify**
@@ -472,7 +496,7 @@ Depends on: CL3.
 
 Depends on: CL3, and Game Bits *Embedded files*.
 
-- `boot_rom.oza`, embedded in the library, and `Machine::Create` loads it and
+- `boot_rom.oza`, embedded in the library, and `Ozzy::Create` loads it and
   starts core 0. It reads the table, clears the screen, and prints the banner
   with its numbers, to the screen or the teletype, then halts.
 - The wiki's Ozzy page gains The boot ROM (the banner).

@@ -3,8 +3,9 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/machine_settings.h"
+#include "oz3/ozzy/ozzy_settings.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -94,17 +95,19 @@ absl::StatusOr<int64_t> GetInt(const gb::Config& value, std::string_view path,
   return result;
 }
 
-// Reads the int at `key` in `map` into `value`, if `map` has it. It must be
-// from `min` to `max`.
+// Reads the int at `key` in `map` into `value`, if `map` has it. It need only
+// fit in a T, as ValidateOzzySettings, the processor, and the devices check
+// the rest.
 template <typename T>
 absl::Status ReadInt(const gb::Config& map, std::string_view path,
-                     std::string_view key, int64_t min, int64_t max, T* value) {
+                     std::string_view key, T* value) {
   const gb::Config* config = map.Get(key);
   if (config == nullptr) {
     return absl::OkStatus();
   }
   absl::StatusOr<int64_t> result =
-      GetInt(*config, GetKeyPath(path, key), min, max);
+      GetInt(*config, GetKeyPath(path, key), std::numeric_limits<T>::min(),
+             std::numeric_limits<T>::max());
   if (!result.ok()) {
     return result.status();
   }
@@ -112,24 +115,15 @@ absl::Status ReadInt(const gb::Config& map, std::string_view path,
   return absl::OkStatus();
 }
 
-// Reads the int at `key` in `map` into `value`, if `map` has it. It need only
-// fit in a T, as for a setting the processor or a device checks itself.
-template <typename T>
-absl::Status ReadInt(const gb::Config& map, std::string_view path,
-                     std::string_view key, T* value) {
-  return ReadInt(map, path, key, std::numeric_limits<T>::min(),
-                 std::numeric_limits<T>::max(), value);
-}
-
 //==============================================================================
-// MachineSettingsReader
+// OzzySettingsReader
 //==============================================================================
 
-// Reads MachineSettings from a config, one part at a time, so each part can
-// check itself against what was read before it (the cores, and the banks).
-class MachineSettingsReader final {
+// Reads OzzySettings from a config, one part at a time, so interrupt cores
+// can be checked against the cores read before them.
+class OzzySettingsReader final {
  public:
-  absl::StatusOr<MachineSettings> Read(const gb::Config& config);
+  absl::StatusOr<OzzySettings> Read(const gb::Config& config);
 
  private:
   absl::Status ReadBanks(const gb::Config& config);
@@ -144,24 +138,21 @@ class MachineSettingsReader final {
                                       std::string_view path);
   absl::StatusOr<uint8_t> GetCoreBit(const gb::Config& value,
                                      std::string_view path);
-  absl::Status CheckScreenPage(std::string_view path);
 
-  MachineSettings settings_;
+  OzzySettings settings_;
 };
 
-absl::StatusOr<MachineSettings> MachineSettingsReader::Read(
+absl::StatusOr<OzzySettings> OzzySettingsReader::Read(
     const gb::Config& config) {
   absl::Status status = CheckKeys(config, "", kMachineKeys);
   if (status.ok()) {
-    status = ReadInt(config, "", "clock_hz", 1, MachineSettings::kMaxClockHz,
-                     &settings_.clock_hz);
+    status = ReadInt(config, "", "clock_hz", &settings_.clock_hz);
   }
   if (status.ok()) {
-    status = ReadInt(config, "", "cores", 1, kMaxCores, &settings_.cores);
+    status = ReadInt(config, "", "cores", &settings_.cores);
   }
   if (status.ok()) {
-    status = ReadInt(config, "", "ports", MachineSettings::kMinPorts, kMaxPorts,
-                     &settings_.ports);
+    status = ReadInt(config, "", "ports", &settings_.ports);
   }
   if (status.ok()) {
     status = ReadBanks(config);
@@ -169,13 +160,16 @@ absl::StatusOr<MachineSettings> MachineSettingsReader::Read(
   if (status.ok()) {
     status = ReadDevices(config);
   }
+  if (status.ok()) {
+    status = ValidateOzzySettings(settings_);
+  }
   if (!status.ok()) {
     return status;
   }
   return std::move(settings_);
 }
 
-absl::Status MachineSettingsReader::ReadBanks(const gb::Config& config) {
+absl::Status OzzySettingsReader::ReadBanks(const gb::Config& config) {
   const gb::Config* banks = config.Get("banks");
   if (banks == nullptr) {
     return absl::OkStatus();
@@ -184,10 +178,6 @@ absl::Status MachineSettingsReader::ReadBanks(const gb::Config& config) {
     return PathError("banks", "must be an array");
   }
   const int bank_count = banks->GetArraySize();
-  if (bank_count < 1 || bank_count > kMaxMemoryBanks) {
-    return PathError(
-        "banks", absl::StrCat("must have 1 to ", kMaxMemoryBanks, " banks"));
-  }
   settings_.banks.assign(bank_count, 0);
   for (int i = 0; i < bank_count; ++i) {
     const std::string path = GetIndexPath("banks", i);
@@ -197,22 +187,19 @@ absl::Status MachineSettingsReader::ReadBanks(const gb::Config& config) {
     }
     absl::Status status = CheckKeys(*bank, path, kBankKeys);
     if (status.ok()) {
-      status = ReadInt(*bank, path, "ram", 0, 0xFFFF, &settings_.banks[i]);
+      status = ReadInt(*bank, path, "ram", &settings_.banks[i]);
     }
     if (!status.ok()) {
       return status;
     }
   }
-  if ((settings_.banks[0] & 1) != 0) {
-    return PathError("banks[0].ram", "page 0 of bank 0 is the boot ROM");
-  }
   return absl::OkStatus();
 }
 
-absl::Status MachineSettingsReader::ReadDevices(const gb::Config& config) {
+absl::Status OzzySettingsReader::ReadDevices(const gb::Config& config) {
   const gb::Config* devices = config.Get("devices");
   if (devices == nullptr) {
-    return CheckScreenPage("devices");
+    return absl::OkStatus();
   }
   if (!devices->IsArray()) {
     return PathError("devices", "must be an array");
@@ -231,8 +218,8 @@ absl::Status MachineSettingsReader::ReadDevices(const gb::Config& config) {
   return absl::OkStatus();
 }
 
-absl::Status MachineSettingsReader::ReadDevice(const gb::Config& config,
-                                               std::string_view path) {
+absl::Status OzzySettingsReader::ReadDevice(const gb::Config& config,
+                                            std::string_view path) {
   if (!config.IsMap()) {
     return PathError(path, "must be a map");
   }
@@ -260,8 +247,8 @@ absl::Status MachineSettingsReader::ReadDevice(const gb::Config& config,
                    "\" (must be \"screen\", \"keyboard\", or \"teletype\")"));
 }
 
-absl::Status MachineSettingsReader::ReadScreen(const gb::Config& config,
-                                               std::string_view path) {
+absl::Status OzzySettingsReader::ReadScreen(const gb::Config& config,
+                                            std::string_view path) {
   if (settings_.screen.has_value()) {
     return PathError(path, "an Ozzy has only one screen");
   }
@@ -270,15 +257,8 @@ absl::Status MachineSettingsReader::ReadScreen(const gb::Config& config,
   if (status.ok()) {
     status = ReadInt(config, path, "bank", &screen.bank);
   }
-  if (status.ok() &&
-      (screen.bank < 0 ||
-       screen.bank >= static_cast<int>(settings_.banks.size()))) {
-    status = PathError(GetKeyPath(path, "bank"),
-                       absl::StrCat("the Ozzy has no bank ", screen.bank));
-  }
   if (status.ok()) {
-    status = ReadInt(config, path, "page", 0, kMemoryBankPageCount - 1,
-                     &screen.page);
+    status = ReadInt(config, path, "page", &screen.page);
   }
   if (status.ok()) {
     status = ReadInterrupt(config, path, &screen.interrupt);
@@ -320,11 +300,11 @@ absl::Status MachineSettingsReader::ReadScreen(const gb::Config& config,
       words.push_back(static_cast<uint16_t>(word->GetInt()));
     }
   }
-  return CheckScreenPage(path);
+  return absl::OkStatus();
 }
 
-absl::Status MachineSettingsReader::ReadKeyboard(const gb::Config& config,
-                                                 std::string_view path) {
+absl::Status OzzySettingsReader::ReadKeyboard(const gb::Config& config,
+                                              std::string_view path) {
   if (settings_.keyboard.has_value()) {
     return PathError(path, "an Ozzy has only one keyboard");
   }
@@ -340,8 +320,8 @@ absl::Status MachineSettingsReader::ReadKeyboard(const gb::Config& config,
   return status;
 }
 
-absl::Status MachineSettingsReader::ReadTeletype(const gb::Config& config,
-                                                 std::string_view path) {
+absl::Status OzzySettingsReader::ReadTeletype(const gb::Config& config,
+                                              std::string_view path) {
   if (settings_.teletype.has_value()) {
     return PathError(path, "an Ozzy has only one teletype");
   }
@@ -360,9 +340,9 @@ absl::Status MachineSettingsReader::ReadTeletype(const gb::Config& config,
   return status;
 }
 
-absl::Status MachineSettingsReader::ReadInterrupt(const gb::Config& config,
-                                                  std::string_view path,
-                                                  DeviceInterrupt* interrupt) {
+absl::Status OzzySettingsReader::ReadInterrupt(const gb::Config& config,
+                                               std::string_view path,
+                                               DeviceInterrupt* interrupt) {
   absl::Status status =
       ReadInt(config, path, "interrupt", &interrupt->interrupt);
   if (!status.ok()) {
@@ -381,8 +361,8 @@ absl::Status MachineSettingsReader::ReadInterrupt(const gb::Config& config,
   return absl::OkStatus();
 }
 
-absl::StatusOr<uint8_t> MachineSettingsReader::GetCoreMask(
-    const gb::Config& value, std::string_view path) {
+absl::StatusOr<uint8_t> OzzySettingsReader::GetCoreMask(const gb::Config& value,
+                                                        std::string_view path) {
   if (value.IsString() && value.GetString() == "all") {
     return kAllCores;
   }
@@ -405,32 +385,17 @@ absl::StatusOr<uint8_t> MachineSettingsReader::GetCoreMask(
   return PathError(path, "must be a core, an array of cores, or \"all\"");
 }
 
-absl::StatusOr<uint8_t> MachineSettingsReader::GetCoreBit(
-    const gb::Config& value, std::string_view path) {
+absl::StatusOr<uint8_t> OzzySettingsReader::GetCoreBit(const gb::Config& value,
+                                                       std::string_view path) {
   if (!value.IsInt()) {
     return PathError(path, "must be an int");
   }
+  // The cores aren't validated yet, so this also keeps to the most there are.
   const int64_t core = value.GetInt();
-  if (core < 0 || core >= settings_.cores) {
+  if (core < 0 || core >= std::min(settings_.cores, kMaxCores)) {
     return PathError(path, absl::StrCat("the Ozzy has no core ", core));
   }
   return static_cast<uint8_t>(1 << core);
-}
-
-absl::Status MachineSettingsReader::CheckScreenPage(std::string_view path) {
-  if (!settings_.screen.has_value()) {
-    return absl::OkStatus();
-  }
-  const int bank = settings_.screen->bank;
-  const int page = settings_.screen->page;
-  if (bank == 0 && page == 0) {
-    return PathError(path, "the screen's page 0 of bank 0 is the boot ROM");
-  }
-  if ((settings_.banks[bank] & (1 << page)) != 0) {
-    return PathError(path, absl::StrCat("the screen's page ", page, " of bank ",
-                                        bank, " is RAM"));
-  }
-  return absl::OkStatus();
 }
 
 }  // namespace
@@ -459,16 +424,66 @@ TeletypeSettings GetOzzyTeletypeSettings() {
 }
 
 //==============================================================================
+// Validating settings
+//==============================================================================
+
+absl::Status ValidateOzzySettings(const OzzySettings& settings) {
+  if (settings.clock_hz < 1 || settings.clock_hz > OzzySettings::kMaxClockHz) {
+    return PathError("clock_hz",
+                     absl::StrCat("must be 1 to ", OzzySettings::kMaxClockHz));
+  }
+  if (settings.cores < 1 || settings.cores > kMaxCores) {
+    return PathError("cores", absl::StrCat("must be 1 to ", kMaxCores));
+  }
+  if (settings.ports < OzzySettings::kMinPorts || settings.ports > kMaxPorts) {
+    return PathError("ports", absl::StrCat("must be ", OzzySettings::kMinPorts,
+                                           " to ", kMaxPorts));
+  }
+  const int bank_count = static_cast<int>(settings.banks.size());
+  if (bank_count < 1 || bank_count > kMaxMemoryBanks) {
+    return PathError(
+        "banks", absl::StrCat("must have 1 to ", kMaxMemoryBanks, " banks"));
+  }
+  for (int i = 0; i < bank_count; ++i) {
+    if ((settings.banks[i] & GetBootRomPages(i)) != 0) {
+      return PathError(GetIndexPath("banks", i),
+                       "RAM can't be on the boot ROM's page");
+    }
+  }
+  if (settings.screen.has_value()) {
+    const int bank = settings.screen->bank;
+    const int page = settings.screen->page;
+    if (bank < 0 || bank >= bank_count) {
+      return PathError("screen.bank",
+                       absl::StrCat("the Ozzy has no bank ", bank));
+    }
+    if (page < 0 || page >= kMemoryBankPageCount) {
+      return PathError("screen.page",
+                       absl::StrCat("must be 0 to ", kMemoryBankPageCount - 1));
+    }
+    if ((GetBootRomPages(bank) & (1 << page)) != 0) {
+      return PathError("screen", absl::StrCat("page ", page, " of bank ", bank,
+                                              " is the boot ROM"));
+    }
+    if ((settings.banks[bank] & (1 << page)) != 0) {
+      return PathError(
+          "screen", absl::StrCat("page ", page, " of bank ", bank, " is RAM"));
+    }
+  }
+  return absl::OkStatus();
+}
+
+//==============================================================================
 // Reading settings
 //==============================================================================
 
-absl::StatusOr<MachineSettings> ReadMachineSettings(std::string text) {
+absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text) {
   absl::StatusOr<gb::Config> config =
       gb::ReadConfigFromText(std::move(text), gb::kRootlessTextConfig);
   if (!config.ok()) {
     return config.status();
   }
-  return MachineSettingsReader().Read(*config);
+  return OzzySettingsReader().Read(*config);
 }
 
 }  // namespace oz3

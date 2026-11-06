@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/machine_settings.h"
+#include "oz3/ozzy/ozzy_settings.h"
 
 #include <cstdint>
 #include <optional>
@@ -29,8 +29,7 @@ using ::testing::ElementsAre;
 
 // Returns the error message from reading `text`, or "ok" if it reads.
 std::string ReadError(std::string_view text) {
-  absl::StatusOr<MachineSettings> settings =
-      ReadMachineSettings(std::string(text));
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(std::string(text));
   if (settings.ok()) {
     return "ok";
   }
@@ -42,7 +41,7 @@ std::string ReadError(std::string_view text) {
 // Defaults
 //==============================================================================
 
-TEST(MachineSettingsTest, DeviceDefaults) {
+TEST(OzzySettingsTest, DeviceDefaults) {
   const ScreenSettings screen = GetOzzyScreenSettings();
   const ScreenSettings device_screen;
   EXPECT_EQ(screen.bank, 0);
@@ -68,8 +67,8 @@ TEST(MachineSettingsTest, DeviceDefaults) {
   EXPECT_EQ(teletype.buffer_size, device_teletype.buffer_size);
 }
 
-TEST(MachineSettingsTest, DefaultOzzy) {
-  const MachineSettings settings;
+TEST(OzzySettingsTest, DefaultOzzy) {
+  const OzzySettings settings;
   EXPECT_EQ(settings.clock_hz, ProcessorConfig::kDefaultClockHz);
   EXPECT_EQ(settings.cores, 1);
   EXPECT_EQ(settings.ports, 32);
@@ -79,21 +78,20 @@ TEST(MachineSettingsTest, DefaultOzzy) {
   EXPECT_FALSE(settings.teletype.has_value());
 }
 
-TEST(MachineSettingsTest, EmptyConfigIsDefaultOzzy) {
+TEST(OzzySettingsTest, EmptyConfigIsDefaultOzzy) {
   for (std::string_view text : {"", "  // Nothing but a comment\n"}) {
-    absl::StatusOr<MachineSettings> settings =
-        ReadMachineSettings(std::string(text));
+    absl::StatusOr<OzzySettings> settings = ReadOzzySettings(std::string(text));
     ASSERT_TRUE(settings.ok()) << settings.status();
-    EXPECT_EQ(*settings, MachineSettings());
+    EXPECT_EQ(*settings, OzzySettings());
   }
 }
 
 //==============================================================================
-// The machine
+// The processor and banks
 //==============================================================================
 
-TEST(MachineSettingsTest, ReadsMachine) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(R"(
+TEST(OzzySettingsTest, ReadsMachine) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     clock_hz: 4000000,
     cores: 4,
     ports: 64,
@@ -110,47 +108,24 @@ TEST(MachineSettingsTest, ReadsMachine) {
   EXPECT_THAT(settings->banks, ElementsAre(0x7FFE, 0xFFFF, 0));
 }
 
-TEST(MachineSettingsTest, MachineRanges) {
-  EXPECT_EQ(ReadError("clock_hz: 1"), "ok");
-  EXPECT_EQ(ReadError("clock_hz: 100000000"), "ok");
-  EXPECT_EQ(ReadError("clock_hz: 0"), "clock_hz: must be 1 to 100000000");
-  EXPECT_EQ(ReadError("clock_hz: 100000001"),
-            "clock_hz: must be 1 to 100000000");
-  EXPECT_EQ(ReadError("cores: 1"), "ok");
-  EXPECT_EQ(ReadError("cores: 8"), "ok");
-  EXPECT_EQ(ReadError("cores: 0"), "cores: must be 1 to 8");
+TEST(OzzySettingsTest, ReadSettingsAreValidated) {
+  // ValidateOzzySettings is tested below; this only shows reading uses it.
   EXPECT_EQ(ReadError("cores: 9"), "cores: must be 1 to 8");
-  EXPECT_EQ(ReadError("ports: 16"), "ok");
-  EXPECT_EQ(ReadError("ports: 256"), "ok");
-  EXPECT_EQ(ReadError("ports: 15"), "ports: must be 16 to 256");
-  EXPECT_EQ(ReadError("ports: 257"), "ports: must be 16 to 256");
+  EXPECT_EQ(ReadError("banks: []"), "banks: must have 1 to 16 banks");
+  EXPECT_EQ(ReadError("banks: [{ ram: 0xFFFF }]"),
+            "banks[0]: RAM can't be on the boot ROM's page");
 }
 
-TEST(MachineSettingsTest, BankRanges) {
-  EXPECT_EQ(ReadError("banks: [{ ram: 0 }]"), "ok");
-  EXPECT_EQ(ReadError("banks: [{ ram: 0 }, { ram: 0xFFFF }]"), "ok");
-  EXPECT_EQ(ReadError("banks: []"), "banks: must have 1 to 16 banks");
-  EXPECT_EQ(ReadError("banks: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},"
-                      " {}, {}, {}, {}]"),
-            "ok");
-  EXPECT_EQ(ReadError("banks: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},"
-                      " {}, {}, {}, {}, {}]"),
-            "banks: must have 1 to 16 banks");
+TEST(OzzySettingsTest, ValuesMustFit) {
   EXPECT_EQ(ReadError("banks: [{}, { ram: -1 }]"),
             "banks[1].ram: must be 0 to 65535");
   EXPECT_EQ(ReadError("banks: [{}, { ram: 0x10000 }]"),
             "banks[1].ram: must be 0 to 65535");
+  EXPECT_EQ(ReadError("cores: 0x80000000"),
+            "cores: must be -2147483648 to 2147483647");
 }
 
-TEST(MachineSettingsTest, BootRomPageIsNotRam) {
-  EXPECT_EQ(ReadError("banks: [{ ram: 0xFFFF }]"),
-            "banks[0].ram: page 0 of bank 0 is the boot ROM");
-  EXPECT_EQ(ReadError("banks: [{ ram: 0x0001 }]"),
-            "banks[0].ram: page 0 of bank 0 is the boot ROM");
-  EXPECT_EQ(ReadError("banks: [{}, { ram: 0xFFFF }]"), "ok");
-}
-
-TEST(MachineSettingsTest, MachineErrors) {
+TEST(OzzySettingsTest, MachineErrors) {
   EXPECT_EQ(ReadError("core: 2"), "core: unknown key");
   EXPECT_EQ(ReadError("cores: 2, zebra: 1, apple: 1"), "apple: unknown key");
   EXPECT_EQ(ReadError("cores: 2.0"), "cores: must be an int");
@@ -165,8 +140,8 @@ TEST(MachineSettingsTest, MachineErrors) {
   EXPECT_EQ(ReadError("devices: [\"screen\"]"), "devices[0]: must be a map");
 }
 
-TEST(MachineSettingsTest, SyntaxError) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings("cores: [");
+TEST(OzzySettingsTest, SyntaxError) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings("cores: [");
   EXPECT_FALSE(settings.ok());
 }
 
@@ -174,16 +149,16 @@ TEST(MachineSettingsTest, SyntaxError) {
 // Devices
 //==============================================================================
 
-TEST(MachineSettingsTest, NoDevices) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings("devices: []");
+TEST(OzzySettingsTest, NoDevices) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings("devices: []");
   ASSERT_TRUE(settings.ok()) << settings.status();
   EXPECT_FALSE(settings->screen.has_value());
   EXPECT_FALSE(settings->keyboard.has_value());
   EXPECT_FALSE(settings->teletype.has_value());
 }
 
-TEST(MachineSettingsTest, DevicesTakeDefaults) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(R"(
+TEST(OzzySettingsTest, DevicesTakeDefaults) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     devices: [{ type: "teletype" }, { type: "screen" }, { type: "keyboard" }]
   )");
   ASSERT_TRUE(settings.ok()) << settings.status();
@@ -192,17 +167,17 @@ TEST(MachineSettingsTest, DevicesTakeDefaults) {
   EXPECT_EQ(settings->teletype, GetOzzyTeletypeSettings());
 }
 
-TEST(MachineSettingsTest, OnlyListedDevices) {
-  absl::StatusOr<MachineSettings> settings =
-      ReadMachineSettings("devices: [{ type: 'teletype' }]");
+TEST(OzzySettingsTest, OnlyListedDevices) {
+  absl::StatusOr<OzzySettings> settings =
+      ReadOzzySettings("devices: [{ type: 'teletype' }]");
   ASSERT_TRUE(settings.ok()) << settings.status();
   EXPECT_FALSE(settings->screen.has_value());
   EXPECT_FALSE(settings->keyboard.has_value());
   EXPECT_TRUE(settings->teletype.has_value());
 }
 
-TEST(MachineSettingsTest, ReadsScreen) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(R"(
+TEST(OzzySettingsTest, ReadsScreen) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     cores: 4,
     banks: [{}, { ram: 0x00FF }],
     devices: [{
@@ -227,8 +202,8 @@ TEST(MachineSettingsTest, ReadsScreen) {
   EXPECT_THAT(*screen.characters, ElementsAre(0, 0x1234, 0xFFFF));
 }
 
-TEST(MachineSettingsTest, ReadsKeyboard) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(R"(
+TEST(OzzySettingsTest, ReadsKeyboard) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     cores: 2,
     devices: [{ type: "keyboard", port: 5, interrupt: 3, interrupt_cores: 1 }]
   )");
@@ -239,8 +214,8 @@ TEST(MachineSettingsTest, ReadsKeyboard) {
   EXPECT_EQ(settings->keyboard->interrupt.cores, 0x02);
 }
 
-TEST(MachineSettingsTest, ReadsTeletype) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(R"(
+TEST(OzzySettingsTest, ReadsTeletype) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     devices: [{ type: "teletype", port: 7, baud: 300, buffer_size: 64 }]
   )");
   ASSERT_TRUE(settings.ok()) << settings.status();
@@ -250,10 +225,10 @@ TEST(MachineSettingsTest, ReadsTeletype) {
   EXPECT_EQ(settings->teletype->buffer_size, 64);
 }
 
-TEST(MachineSettingsTest, DeviceSettingsCheckedByDevices) {
+TEST(OzzySettingsTest, DeviceSettingsCheckedByDevices) {
   // The processor and the devices check these themselves, so reading only
   // checks they fit in an int.
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(R"(
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     devices: [
       { type: "screen", interrupt: 99, columns: 1000, rows: -1 },
       { type: "teletype", port: 1000, baud: -5, buffer_size: 0 }
@@ -277,7 +252,7 @@ TEST(MachineSettingsTest, DeviceSettingsCheckedByDevices) {
 // Returns the keyboard's interrupt cores read from `interrupt_cores` in an Ozzy
 // with 4 cores, or none if reading fails.
 std::optional<uint8_t> ReadInterruptCores(std::string_view interrupt_cores) {
-  absl::StatusOr<MachineSettings> settings = ReadMachineSettings(
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(
       absl::StrCat("cores: 4, devices: [{ type: 'keyboard', interrupt_cores: ",
                    interrupt_cores, " }]"));
   if (!settings.ok()) {
@@ -286,7 +261,7 @@ std::optional<uint8_t> ReadInterruptCores(std::string_view interrupt_cores) {
   return settings->keyboard->interrupt.cores;
 }
 
-TEST(MachineSettingsTest, InterruptCores) {
+TEST(OzzySettingsTest, InterruptCores) {
   EXPECT_EQ(ReadInterruptCores("0"), 0x01);
   EXPECT_EQ(ReadInterruptCores("3"), 0x08);
   EXPECT_EQ(ReadInterruptCores("[0, 2]"), 0x05);
@@ -295,7 +270,7 @@ TEST(MachineSettingsTest, InterruptCores) {
   EXPECT_EQ(ReadInterruptCores("'all'"), kAllCores);
 }
 
-TEST(MachineSettingsTest, InterruptCoresErrors) {
+TEST(OzzySettingsTest, InterruptCoresErrors) {
   EXPECT_EQ(ReadError("cores: 2, devices: [{ type: 'keyboard', "
                       "interrupt_cores: 2 }]"),
             "devices[0].interrupt_cores: the Ozzy has no core 2");
@@ -320,7 +295,7 @@ TEST(MachineSettingsTest, InterruptCoresErrors) {
 // Device errors
 //==============================================================================
 
-TEST(MachineSettingsTest, DeviceTypeErrors) {
+TEST(OzzySettingsTest, DeviceTypeErrors) {
   EXPECT_EQ(ReadError("devices: [{ port: 1 }]"), "devices[0]: missing type");
   EXPECT_EQ(ReadError("devices: [{ type: 1 }]"),
             "devices[0].type: must be a string");
@@ -329,7 +304,7 @@ TEST(MachineSettingsTest, DeviceTypeErrors) {
             "\"keyboard\", or \"teletype\")");
 }
 
-TEST(MachineSettingsTest, DeviceUnknownKeys) {
+TEST(OzzySettingsTest, DeviceUnknownKeys) {
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', colums: 40 }]"),
             "devices[0].colums: unknown key");
   EXPECT_EQ(ReadError("devices: [{ type: 'keyboard', page: 3 }]"),
@@ -338,7 +313,7 @@ TEST(MachineSettingsTest, DeviceUnknownKeys) {
             "devices[0].interrupt: unknown key");
 }
 
-TEST(MachineSettingsTest, DeviceWrongTypes) {
+TEST(OzzySettingsTest, DeviceWrongTypes) {
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', rows: '24' }]"),
             "devices[0].rows: must be an int");
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', characters: 0 }]"),
@@ -351,7 +326,7 @@ TEST(MachineSettingsTest, DeviceWrongTypes) {
             "devices[0].baud: must be an int");
 }
 
-TEST(MachineSettingsTest, OneDeviceOfEachType) {
+TEST(OzzySettingsTest, OneDeviceOfEachType) {
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype' }, { type: 'screen' }, "
                       "{ type: 'screen', page: 14 }]"),
             "devices[2]: an Ozzy has only one screen");
@@ -363,32 +338,108 @@ TEST(MachineSettingsTest, OneDeviceOfEachType) {
             "devices[1]: an Ozzy has only one teletype");
 }
 
-TEST(MachineSettingsTest, ScreenPage) {
-  EXPECT_EQ(ReadError("devices: [{ type: 'screen', page: 16 }]"),
-            "devices[0].page: must be 0 to 15");
-  EXPECT_EQ(ReadError("devices: [{ type: 'screen', bank: 1 }]"),
-            "devices[0].bank: the Ozzy has no bank 1");
-  EXPECT_EQ(ReadError("devices: [{ type: 'screen', bank: -1 }]"),
-            "devices[0].bank: the Ozzy has no bank -1");
+TEST(OzzySettingsTest, ScreenPage) {
   EXPECT_EQ(ReadError("banks: [{}, {}], devices: [{ type: 'screen', bank: 1, "
                       "page: 0 }]"),
             "ok");
-  EXPECT_EQ(ReadError("devices: [{ type: 'screen', page: 0 }]"),
-            "devices[0]: the screen's page 0 of bank 0 is the boot ROM");
+  EXPECT_EQ(ReadError("devices: [{ type: 'screen', bank: 1 }]"),
+            "screen.bank: the Ozzy has no bank 1");
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', page: 3 }]"),
-            "devices[0]: the screen's page 3 of bank 0 is RAM");
-  EXPECT_EQ(ReadError("banks: [{}, { ram: 0x8000 }], devices: [{ type: "
-                      "'screen', bank: 1 }]"),
-            "devices[0]: the screen's page 15 of bank 1 is RAM");
+            "screen: page 3 of bank 0 is RAM");
 }
 
-TEST(MachineSettingsTest, DefaultScreenPage) {
+TEST(OzzySettingsTest, DefaultScreenPage) {
   EXPECT_EQ(ReadError("banks: [{ ram: 0xFFFE }]"),
-            "devices: the screen's page 15 of bank 0 is RAM");
+            "screen: page 15 of bank 0 is RAM");
   EXPECT_EQ(ReadError("banks: [{ ram: 0xFFFE }], devices: []"), "ok");
-  EXPECT_EQ(ReadError("banks: [{ ram: 0xFFFE }], devices: [{ type: "
-                      "'screen', page: 0 }]"),
-            "devices[0]: the screen's page 0 of bank 0 is the boot ROM");
+}
+
+//==============================================================================
+// Validating settings built in code
+//==============================================================================
+
+// Returns the error message from validating `settings`, or "ok" if they are
+// valid.
+std::string ValidateError(const OzzySettings& settings) {
+  absl::Status status = ValidateOzzySettings(settings);
+  if (status.ok()) {
+    return "ok";
+  }
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  return std::string(status.message());
+}
+
+TEST(OzzySettingsTest, ValidateDefaultOzzy) {
+  EXPECT_EQ(ValidateError(OzzySettings()), "ok");
+}
+
+TEST(OzzySettingsTest, ValidateClockHz) {
+  OzzySettings settings;
+  settings.clock_hz = 1;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.clock_hz = OzzySettings::kMaxClockHz;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.clock_hz = 0;
+  EXPECT_EQ(ValidateError(settings), "clock_hz: must be 1 to 100000000");
+  settings.clock_hz = OzzySettings::kMaxClockHz + 1;
+  EXPECT_EQ(ValidateError(settings), "clock_hz: must be 1 to 100000000");
+}
+
+TEST(OzzySettingsTest, ValidateCoresAndPorts) {
+  OzzySettings settings;
+  settings.cores = 8;
+  settings.ports = 16;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.ports = 256;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.ports = 15;
+  EXPECT_EQ(ValidateError(settings), "ports: must be 16 to 256");
+  settings.ports = 257;
+  EXPECT_EQ(ValidateError(settings), "ports: must be 16 to 256");
+  settings.ports = 32;
+  settings.cores = 0;
+  EXPECT_EQ(ValidateError(settings), "cores: must be 1 to 8");
+  settings.cores = 9;
+  EXPECT_EQ(ValidateError(settings), "cores: must be 1 to 8");
+}
+
+TEST(OzzySettingsTest, ValidateBanks) {
+  OzzySettings settings;
+  settings.banks.assign(16, 0);
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.banks.assign(17, 0);
+  EXPECT_EQ(ValidateError(settings), "banks: must have 1 to 16 banks");
+  settings.banks.clear();
+  EXPECT_EQ(ValidateError(settings), "banks: must have 1 to 16 banks");
+  settings.banks = {0x0001};
+  EXPECT_EQ(ValidateError(settings),
+            "banks[0]: RAM can't be on the boot ROM's page");
+  settings.banks = {0x7FFE, 0xFFFF};
+  EXPECT_EQ(ValidateError(settings), "ok");
+}
+
+TEST(OzzySettingsTest, ValidateScreenPage) {
+  OzzySettings settings;
+  settings.banks = {0x7FFE, 0x00FF};
+  settings.screen->bank = 1;
+  settings.screen->page = 8;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.screen->page = 7;
+  EXPECT_EQ(ValidateError(settings), "screen: page 7 of bank 1 is RAM");
+  settings.screen->page = 16;
+  EXPECT_EQ(ValidateError(settings), "screen.page: must be 0 to 15");
+  settings.screen->page = -1;
+  EXPECT_EQ(ValidateError(settings), "screen.page: must be 0 to 15");
+  settings.screen->bank = -1;
+  EXPECT_EQ(ValidateError(settings), "screen.bank: the Ozzy has no bank -1");
+  settings.screen->bank = 2;
+  EXPECT_EQ(ValidateError(settings), "screen.bank: the Ozzy has no bank 2");
+  settings.screen->bank = 0;
+  settings.screen->page = 0;
+  EXPECT_EQ(ValidateError(settings),
+            "screen: page 0 of bank 0 is the boot ROM");
+  settings.screen.reset();
+  EXPECT_EQ(ValidateError(settings), "ok");
 }
 
 }  // namespace

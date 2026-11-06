@@ -32,7 +32,7 @@ Libraries depend strictly in the order `core` → `tools` → `instruction_sets`
 - `tools` (`oz3_tools`): Libraries and tools for working with the OZ-3 that a host application can use on its own: `InstructionAssembler` (instruction set source files to an `InstructionSetDef`), `InstructionDefExporter` (an `InstructionSetDef` to C++), and `ProgramLoader` (loading a `Program` into a `Processor`'s memory). The program assembler (`AssembleProgramFile`) turns program source into a `Program` and its `ProgramMap`, which program files, map files, and listings are written from.
 - `instruction_sets` (`oz3_instruction_sets`): Ready-made instruction sets, currently the default one (see Default instruction set). It links only `core`.
 - `devices` (`oz3_devices`): Ready-made devices for a `ProcessorConfig`, currently the teletype, the keyboard, and the screen (the console devices Ozzy is built from; see `docs/worklog/console-devices.md`). Each is a `Device` and its `DeviceFactory`, configured by a name and one `<Device>Settings` struct holding its wiring and behavior, with rates in real time that it turns into cycles with the processor's clock rate (a factory whose settings can be invalid is made by a static `Create`). A host finds a device with `Processor::GetDevice` and casts it to the type it named. It links only `core`; its tests also link `tools` and `instruction_sets`, to run programs against the devices with `DeviceProgramTest`.
-- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `MachineSettings` describes one, read from a `.ozzy` config file (Game Bits' text config) by `ReadMachineSettings`.
+- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs.
 - `apps`: Every executable, and no libraries. `oz3ism` is the command line instruction set assembler, and `oz3asm` the command line program assembler. Each links only what it needs: `oz3asm` links `instruction_sets` for its default instruction set, and `oz3ism` doesn't (see Default instruction set).
 
 ### Default instruction set
@@ -89,7 +89,7 @@ OZ-3 code (everything under `oz3/`) compiles with warnings as errors (`/WX` on M
 
 ### Test
 
-Tests are GoogleTest binaries registered with ctest, one per library (`oz3_core_test`, `oz3_tools_test`, `oz3_instruction_sets_test`, `oz3_devices_test`).
+Tests are GoogleTest binaries registered with ctest, one per library (`oz3_core_test`, `oz3_tools_test`, `oz3_instruction_sets_test`, `oz3_devices_test`, `oz3_ozzy_test`).
 
 ```
 ctest --test-dir out/build/x64-Debug --output-on-failure
