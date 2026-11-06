@@ -200,16 +200,6 @@ TEST(BootRomTest, MostRam) {
   ExpectScreen(*ozzy, GetBannerRows("OZZY 0.1  1 MHz  1 core  1016K RAM"));
 }
 
-TEST(BootRomTest, ScreenInAnotherBank) {
-  OzzySettings settings;
-  settings.banks = {0xFFFE, 0x0000, 0x00FF};
-  settings.screen->bank = 2;
-  settings.screen->page = 12;
-  std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
-  ASSERT_NE(ozzy, nullptr);
-  ExpectScreen(*ozzy, GetBannerRows("OZZY 0.1  1 MHz  1 core  92K RAM"));
-}
-
 TEST(BootRomTest, ClockRate) {
   // The clock rate is in the largest unit it is a whole number of.
   OzzySettings settings;
@@ -228,7 +218,7 @@ TEST(BootRomTest, FastestClockRates) {
   // The most digits are a dword.
   OzzySettings settings;
   settings.screen.reset();
-  settings.teletype = GetOzzyTeletypeSettings();
+  settings.teletype = OzzyTeletypeSettings();
   settings.clock_hz = OzzySettings::kMaxClockHz;
   std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
@@ -297,7 +287,7 @@ TEST(BootRomTest, Teletype) {
     SCOPED_TRACE(baud);
     OzzySettings settings;
     settings.screen.reset();
-    settings.teletype = GetOzzyTeletypeSettings();
+    settings.teletype = OzzyTeletypeSettings();
     settings.teletype->baud = baud;
     std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
     ASSERT_NE(ozzy, nullptr);
@@ -309,7 +299,7 @@ TEST(BootRomTest, Teletype) {
 
 TEST(BootRomTest, ScreenRatherThanTeletype) {
   OzzySettings settings;
-  settings.teletype = GetOzzyTeletypeSettings();
+  settings.teletype = OzzyTeletypeSettings();
   std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   ExpectScreen(*ozzy, GetBannerRows("OZZY 0.1  1 MHz  1 core  56K RAM"));

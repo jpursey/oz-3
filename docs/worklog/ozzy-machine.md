@@ -48,8 +48,8 @@ banks: [
   { ram: 0xFFFF }   // Bank 1: every page
 ],
 devices: [
-  { type: "screen", bank: 0, page: 15, interrupt: 6, columns: 80, rows: 24 },
-  { type: "keyboard", port: 1, interrupt: 1, interrupt_cores: 0 }
+  { type: "screen", columns: 80, rows: 24 },
+  { type: "keyboard" }
 ]
 ```
 
@@ -61,33 +61,30 @@ there is no comma after the last one.
   `.BANK` masks all state pages. Game Bits' text config reads `0x` hex, so
   a mask reads as its pages. Page 0 of bank 0 is always the boot ROM, so bank
   0's mask can't have bit 0. The default is one bank, `0x7FFE`.
-- **Devices** are a list, each with a `type`, and the settings of its
-  `<Device>Settings` (see console-devices.md), in snake case as there. Any
-  setting left out takes Ozzy's default for that type (the table below), so
-  `{ type: "keyboard" }` is a keyboard on port 1. Without `devices`, the Ozzy
-  has a screen and a keyboard. `devices: []` is an Ozzy with none.
-- **`interrupt_cores`** is the cores a device's interrupt line is connected
-  to: one core (`0`), a list of them (`[0, 2]`), or `"all"`. Unlike pages,
-  it names cores rather than giving a mask, as a single integer reads as a
-  core, and a list is as short as a mask for the few cores a line goes to. A
-  core the Ozzy doesn't have is an error, though `"all"` is whatever cores it
-  has.
+- **Devices** are a list, each with a `type`, and the settings of its own
+  `<Device>Settings` (see console-devices.md), in snake case as there, apart
+  from its wiring. Any setting left out takes the device's default, so
+  `{ type: "keyboard" }` is the keyboard. Without `devices`, the Ozzy has a
+  screen and a keyboard. `devices: []` is an Ozzy with none.
+- **The wiring is fixed:** each device's port, interrupt, interrupt cores, and
+  pages are the Ozzy's, as on real hardware, so programs (the boot ROM, the
+  OS) know them as constants. Which devices an Ozzy has is what varies. The
+  devices library still takes any wiring, for other hosts.
 - An Ozzy has at most one of each console device, as the console frontend
   shows one screen and one teletype, and types on one keyboard. Their names in
   the `Processor` are `Screen`, `Keyboard`, and `Teletype`.
-- A device's pages must be in a bank the Ozzy has, and not be RAM or the boot
-  ROM, so the machine table says plainly what each page is.
+- With a screen, bank 0's page 15 must not be RAM, so the machine table says
+  plainly what each page is.
 
-| Type       | Defaults                                                                       |
-| ---------- | ------------------------------------------------------------------------------ |
-| `screen`   | bank 0, page 15, interrupt 6 on every core, 80 by 24, and the device's own rates |
-| `keyboard` | port 1, interrupt 1 on core 0                                                  |
-| `teletype` | port 2, baud 0 (as fast as cores write)                                        |
+| Type       | Wiring                                    | Settings, with their defaults                          |
+| ---------- | ----------------------------------------- | ------------------------------------------------------ |
+| `screen`   | page 15 of bank 0, interrupt 6 on every core | columns 80, rows 24, and the screen's own rates and characters |
+| `keyboard` | port 1, interrupt 1 on core 0             | none                                                   |
+| `teletype` | port 2                                    | baud 0 (as fast as cores write), buffer_size 4096      |
 
 - Errors name where they are, as gb::Config keeps no line numbers:
-  `devices[1].interrupt_cores: the Ozzy has no core 2`. An unknown key, a
-  value of the wrong type, and a value out of range are all errors, so a typo
-  never goes unnoticed.
+  `devices[0].port: unknown key`. An unknown key, a value of the wrong type,
+  and a value out of range are all errors, so a typo never goes unnoticed.
 
 ### Memory
 
@@ -95,7 +92,7 @@ there is no comma after the last one.
 | ------------ | ------------------------------------------------------------ |
 | 0            | The boot ROM, with the machine table at 0F00h                |
 | 1-14         | RAM (by default). The boot ROM's stack is in the first page. |
-| 15           | The screen (by default)                                      |
+| 15           | The screen, if the Ozzy has one                              |
 
 ### The machine table
 
@@ -133,7 +130,9 @@ devices, the Ozzy's devices first:
 | 6-7  | The type's own: a screen's columns and rows, otherwise 0      |
 
 Device types are numbers this item assigns; the timer and the drive take the
-next ones when they land.
+next ones when they land. A device's wiring is fixed, so its entry always
+holds the same port, interrupt, and pages, but the table still gives them, so
+it describes the hardware whole.
 
 ### The boot ROM
 
@@ -260,11 +259,35 @@ host's; the console devices are always named by their own names.
 
 ```
 // ozzy_settings.h
-// Ozzy's settings for each console device, which a device in a config file
-// starts from. Functions, as ScreenSettings isn't a constant expression.
-ScreenSettings GetOzzyScreenSettings();
+// The Ozzy's wiring, the same in every Ozzy.
+inline constexpr int kOzzyScreenBank = 0;
+inline constexpr int kOzzyScreenPage = 15;
+inline constexpr int kOzzyScreenInterrupt = 6;
+inline constexpr uint8_t kOzzyScreenInterruptCores = kAllCores;
+inline constexpr int kOzzyKeyboardPort = 1;
+inline constexpr int kOzzyKeyboardInterrupt = 1;
+inline constexpr uint8_t kOzzyKeyboardInterruptCores = 0x01;  // Core 0.
+inline constexpr int kOzzyTeletypePort = 2;
+
+// The settings of each console device that an Ozzy leaves to the host: all
+// but its wiring.
+struct OzzyScreenSettings {
+  int columns = ScreenSettings().columns;  // And so on, for each setting.
+  int rows;
+  int refresh_hz;
+  int slow_blink_hz;
+  int fast_blink_hz;
+  std::optional<std::vector<uint16_t>> characters;
+};
+struct OzzyTeletypeSettings {
+  int baud;
+  int buffer_size;
+};
+
+// Returns the device's settings for an Ozzy's device: its own, and the wiring.
+ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen);
 KeyboardSettings GetOzzyKeyboardSettings();
-TeletypeSettings GetOzzyTeletypeSettings();
+TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype);
 
 struct OzzySettings {
   static constexpr int64_t kMaxClockHz = 100'000'000;
@@ -274,9 +297,9 @@ struct OzzySettings {
   int cores = 1;
   int ports = 32;
   std::vector<uint16_t> banks = {0x7FFE};  // The RAM pages of each bank.
-  std::optional<ScreenSettings> screen = GetOzzyScreenSettings();
-  std::optional<KeyboardSettings> keyboard = GetOzzyKeyboardSettings();
-  std::optional<TeletypeSettings> teletype;
+  std::optional<OzzyScreenSettings> screen = OzzyScreenSettings();
+  bool keyboard = true;
+  std::optional<OzzyTeletypeSettings> teletype;
 };
 
 // Returns an error naming the first setting that breaks a rule of
@@ -289,15 +312,22 @@ absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text);
 ```
 
 - `ValidateOzzySettings` holds Ozzy's own rules (the ranges, bank 0's
-  boot ROM page, and a device's pages in a bank the Ozzy has and not RAM or
-  the ROM), so `ReadOzzySettings` and `Ozzy::Create` share them, and a
-  host that builds settings in code gets the same checks. Its errors name the
-  setting (`screen.page`), not the text.
+  boot ROM page, some RAM, and the screen's page not RAM), so
+  `ReadOzzySettings` and `Ozzy::Create` share them, and a host that builds
+  settings in code gets the same checks. Its errors name the setting
+  (`banks[0]`), not the text.
 - Reading checks what only the text knows: keys, types, values that fit their
-  setting, one device of each type, and the cores an `interrupt_cores` names
-  (as `"all"` is read there). What the devices and the processor check
-  themselves (a screen's size and rates, ports in range) is left to
-  `Ozzy::Create`, so no rule is written twice.
+  setting, and one device of each type. What the devices and the processor
+  check themselves (a screen's size and rates) is left to `Ozzy::Create`, so
+  no rule is written twice.
+- `OzzySettings` holds the Ozzy's own device settings, rather than the
+  devices', so a host can't set the wiring either, and the wiring is written
+  in one place. A keyboard has nothing to set, so it is only there or not.
+  `OzzyScreenSettings` and `OzzyTeletypeSettings` take their defaults from
+  `ScreenSettings` and `TeletypeSettings`.
+- The wiring fits every Ozzy (the screen's page isn't the boot ROM's, the
+  ports are below `kMinPorts`, and the interrupts are ones every core has),
+  which `static_assert`s check, so no settings can make it invalid.
 - A screen's `characters` is an array of words, whose length the screen
   checks.
 - `kMinPorts` keeps ports 0 to 15 for devices, as ozzy_design.md lays them
@@ -353,8 +383,8 @@ class Ozzy final {
   `oz3asm` for a listing.
 - An assembly error in the boot ROM is a bug, not a setting: `Create`
   `CHECK`s it, and the tests catch it first.
-- The table's interrupt cores are only the cores the Ozzy has, so `"all"`
-  (and the screen's default, every core) is written as the Ozzy's own.
+- The table's interrupt cores are only the cores the Ozzy has, so the
+  screen's, every core, is written as the Ozzy's own.
 - Devices are in the table in a fixed order: the screen, the keyboard, then
   the teletype.
 - `Run` splits `time` into whole seconds and the nanoseconds left, and keeps
@@ -423,17 +453,17 @@ sets a flag the app's loop checks.
   (or write the teletype's output), and sleep until the next frame.
 - Performance: the default Ozzy at 1 MHz is 16,667 cycles a frame, which the
   emulator runs in well under a millisecond in Release. Drawing an 80 by 24
-  picture's text is a few kilobytes. To be measured in CL9.
+  picture's text is a few kilobytes. To be measured in CL10.
 
 ### To confirm
 
-- **Quitting** (CL8): Ctrl+Break is missing on many laptop keyboards (some
+- **Quitting** (CL9): Ctrl+Break is missing on many laptop keyboards (some
   have it as Ctrl+Fn+B or Ctrl+Fn+Pause). The alternative is a key Ozzy never
   needs, such as Ctrl+Alt+End. Recommendation: Ctrl+Break and closing the
   window, adding another key only if Ctrl+Break proves awkward by hand.
-- **Overline** (CL7): Windows Terminal draws `ESC[53m`, but the old console
+- **Overline** (CL8): Windows Terminal draws `ESC[53m`, but the old console
   host may not. To check by hand.
-- **Sextants** (CL7): Unicode's sextants (U+1FB00 on) need a font that has
+- **Sextants** (CL8): Unicode's sextants (U+1FB00 on) need a font that has
   them, as Cascadia Mono does. To check by hand, falling back to the nearest
   block character otherwise.
 
@@ -523,7 +553,7 @@ Depends on: CL3, and Game Bits *Embedded files*.
 - Printing a character past the right edge wraps it (as a terminal does, when
   the next character comes, so a full line has no blank row after it), and a
   new line below the bottom row scrolls, as the banner needs them on a small
-  screen, so CL6 only adds the keys.
+  screen, so CL7 only adds the keys.
 - `ValidateOzzySettings` requires some RAM, for the boot ROM's stack.
 - `oz3_ozzy` links `oz3_tools`, to assemble and load the boot ROM.
 - The wiki's Ozzy page gains The boot ROM (the banner).
@@ -541,9 +571,32 @@ Depends on: CL3, and Game Bits *Embedded files*.
   the source's machine table constants against `machine_table.h`.
 - `oz3asm` assembles `boot_rom.oza` on its own.
 
-### CL6 [ ] ozzy: the boot ROM echoes keys
+### CL6 [x] ozzy: the Ozzy's fixed wiring
 
 Depends on: CL5.
+
+- Each device's port, interrupt, interrupt cores, and pages are fixed (see The
+  config file), as constants in `ozzy_settings.h`. `OzzySettings` holds
+  `OzzyScreenSettings` and `OzzyTeletypeSettings`, without the wiring, and
+  `keyboard` is a bool. `GetOzzy<Device>Settings` add the wiring.
+- The config file loses `bank`, `page`, `interrupt`, `interrupt_cores`, and
+  `port`, so they are unknown keys, and `ValidateOzzySettings` checks only
+  that page 15 of bank 0 isn't RAM when there is a screen.
+- The machine table is unchanged.
+- The wiki's Ozzy Computer page: the config file's device keys, the errors,
+  and memory. The Ozzy Devices page gives each device's fixed wiring, which
+  it now leaves to the machine.
+
+**Verify**
+- Standard checks.
+- Unit tests: each device's settings with the wiring; the Ozzy's device
+  settings' defaults match the devices'; the removed keys are unknown; the
+  screen's page as RAM; the machine table for every device; the boot ROM's
+  banner unchanged.
+
+### CL7 [ ] ozzy: the boot ROM echoes keys
+
+Depends on: CL6.
 
 - The keyboard handler in `boot_rom.oza`: echo, Enter, and Backspace, on the
   screen and the teletype.
@@ -556,7 +609,7 @@ Depends on: CL5.
   scrolling past the bottom row (the scroll row moves and the new bottom row is
   clear), ignored keys, and 16 keys at once; the same on the teletype.
 
-### CL7 [ ] ozzy: console text
+### CL8 [ ] ozzy: console text
 
 Depends on: CL2.
 
@@ -569,7 +622,7 @@ Depends on: CL2.
   rows redrawn; a different size redrawing all; the cursor's position, shape,
   blinking, and hiding when off.
 
-### CL8 [ ] ozzy: the Windows console
+### CL9 [ ] ozzy: the Windows console
 
 Depends on: CL2.
 
@@ -581,9 +634,9 @@ Depends on: CL2.
   Backspace, Escape, Delete, Ctrl with letters, the arrows, Home to Page Down,
   Insert, F1 to F12, each modifier, and keys that are none (Shift alone).
 
-### CL9 [ ] apps: ozzy
+### CL10 [ ] apps: ozzy
 
-Depends on: CL6, CL7, CL8.
+Depends on: CL7, CL8, CL9.
 
 - `oz3/apps/ozzy.cc`, and the `ozzy` executable in `oz3/apps/CMakeLists.txt`.
 - The wiki's Ozzy page gains Running Ozzy, and Home's Ozzy entry is no longer

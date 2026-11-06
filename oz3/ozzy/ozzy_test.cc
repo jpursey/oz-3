@@ -25,7 +25,6 @@
 namespace oz3 {
 namespace {
 
-using ::testing::AllOf;
 using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
@@ -72,8 +71,8 @@ TEST(OzzyTest, Processor) {
   settings.cores = 4;
   settings.ports = 64;
   settings.screen.reset();
-  settings.keyboard.reset();
-  settings.teletype = GetOzzyTeletypeSettings();
+  settings.keyboard = false;
+  settings.teletype = OzzyTeletypeSettings();
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
@@ -89,8 +88,6 @@ TEST(OzzyTest, Processor) {
 TEST(OzzyTest, BankPages) {
   OzzySettings settings;
   settings.banks = {0x00FE, 0xFFFF, 0x0000};
-  settings.screen->bank = 2;
-  settings.screen->page = 3;
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
@@ -100,25 +97,25 @@ TEST(OzzyTest, BankPages) {
   EXPECT_EQ(processor->GetMemory(1)->GetMemorySize(), 16 * kMemoryBankPageSize);
   EXPECT_EQ(processor->GetMemory(2)->GetMemorySize(), 0);
 
-  // Bank 0: the boot ROM's page is read only, and the RAM pages read and
-  // write.
+  // Bank 0: the boot ROM's page is read only, the RAM pages read and write,
+  // and page 15 is the screen's.
   MemoryPageMasks masks = processor->GetMemory(0)->GetMemPageMasks();
   EXPECT_EQ(masks.read_mask, 0x00FF);
   EXPECT_EQ(masks.write_mask, 0x00FE);
-  EXPECT_EQ(processor->GetMemory(0)->GetMapPageMasks().read_mask, 0);
+  masks = processor->GetMemory(0)->GetMapPageMasks();
+  EXPECT_EQ(masks.read_mask, 0x8000);
+  EXPECT_EQ(masks.write_mask, 0x8000);
 
   // Bank 1: all RAM.
   masks = processor->GetMemory(1)->GetMemPageMasks();
   EXPECT_EQ(masks.read_mask, 0xFFFF);
   EXPECT_EQ(masks.write_mask, 0xFFFF);
 
-  // Bank 2: only the screen's page.
+  // Bank 2: nothing.
   masks = processor->GetMemory(2)->GetMemPageMasks();
   EXPECT_EQ(masks.read_mask, 0);
   EXPECT_EQ(masks.write_mask, 0);
-  masks = processor->GetMemory(2)->GetMapPageMasks();
-  EXPECT_EQ(masks.read_mask, 0x0008);
-  EXPECT_EQ(masks.write_mask, 0x0008);
+  EXPECT_EQ(processor->GetMemory(2)->GetMapPageMasks().read_mask, 0);
 
   // Banks the Ozzy doesn't have have no memory.
   EXPECT_EQ(processor->GetMemory(3)->GetMemorySize(), 0);
@@ -164,13 +161,9 @@ TEST(OzzyTest, FullMachineTable) {
   settings.cores = 3;
   settings.ports = 256;
   settings.banks = {0x0002, 0xFFFF, 0x7FFF};
-  settings.screen->bank = 2;
   settings.screen->columns = 40;
   settings.screen->rows = 12;
-  settings.screen->interrupt = {.interrupt = 9, .cores = 0x06};
-  settings.keyboard->port = 5;
-  settings.keyboard->interrupt = {.interrupt = 3, .cores = kAllCores};
-  settings.teletype = GetOzzyTeletypeSettings();
+  settings.teletype = OzzyTeletypeSettings();
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
@@ -182,13 +175,14 @@ TEST(OzzyTest, FullMachineTable) {
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableDevices - offset),
               Each(0));
   offset = kMachineTableDevices;
-  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
-              ElementsAre(1, 0xFFFF, 9, 0x06, 2, 15, 40, 12));
-  offset += kMachineDeviceSize;
 
-  // All cores is only the cores the Ozzy has.
+  // The screen's interrupt is on every core, which is only the cores the Ozzy
+  // has.
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
-              ElementsAre(2, 5, 3, 0x07, 0xFFFF, 0xFFFF, 0, 0));
+              ElementsAre(1, 0xFFFF, 6, 0x07, 0, 15, 40, 12));
+  offset += kMachineDeviceSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
+              ElementsAre(2, 1, 1, 0x01, 0xFFFF, 0xFFFF, 0, 0));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(3, 2, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));
@@ -218,7 +212,7 @@ TEST(OzzyTest, AllBanksMachineTable) {
 TEST(OzzyTest, NoDevicesMachineTable) {
   OzzySettings settings;
   settings.screen.reset();
-  settings.keyboard.reset();
+  settings.keyboard = false;
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 0);
@@ -248,27 +242,10 @@ TEST(OzzyTest, DeviceErrors) {
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Screen Screen"));
 
   settings = OzzySettings();
-  settings.teletype = GetOzzyTeletypeSettings();
-  settings.teletype->baud = -1;
+  settings.teletype = OzzyTeletypeSettings{.baud = -1};
   ozzy = Ozzy::Create(settings);
   EXPECT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Teletype"));
-}
-
-TEST(OzzyTest, ProcessorErrors) {
-  OzzySettings settings;
-  settings.keyboard->port = 32;
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
-  EXPECT_FALSE(ozzy.ok());
-  EXPECT_THAT(ozzy.status().message(),
-              AllOf(HasSubstr("Keyboard"), HasSubstr("port")));
-
-  settings = OzzySettings();
-  settings.screen->interrupt.interrupt = 32;
-  ozzy = Ozzy::Create(settings);
-  EXPECT_FALSE(ozzy.ok());
-  EXPECT_THAT(ozzy.status().message(),
-              AllOf(HasSubstr("Screen"), HasSubstr("interrupt")));
 }
 
 //==============================================================================

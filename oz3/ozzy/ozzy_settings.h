@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "absl/status/statusor.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/processor_config.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
@@ -30,26 +31,59 @@ constexpr uint16_t GetBootRomPages(int bank) {
 }
 
 //==============================================================================
-// Device defaults
+// Device wiring
 //==============================================================================
 
-// Returns Ozzy's settings for each console device, which a device in a config
-// file starts from:
-// - The screen: page 15 of bank 0, interrupt 6 on every core, 80 by 24, and
-//   the screen's own rates.
-// - The keyboard: port 1, interrupt 1 on core 0.
-// - The teletype: port 2, at baud 0 (as fast as cores write).
-ScreenSettings GetOzzyScreenSettings();
+// The wiring of each console device, which is the same in every Ozzy, so
+// programs know it: the screen's page and interrupt, the keyboard's port and
+// interrupt, and the teletype's port. Interrupt cores have bit n for core n.
+inline constexpr int kOzzyScreenBank = 0;
+inline constexpr int kOzzyScreenPage = 15;
+inline constexpr int kOzzyScreenInterrupt = 6;
+inline constexpr uint8_t kOzzyScreenInterruptCores = kAllCores;
+inline constexpr int kOzzyKeyboardPort = 1;
+inline constexpr int kOzzyKeyboardInterrupt = 1;
+inline constexpr uint8_t kOzzyKeyboardInterruptCores = 0x01;
+inline constexpr int kOzzyTeletypePort = 2;
+
+//==============================================================================
+// Device settings
+//==============================================================================
+
+// The settings of an Ozzy's screen that a host sets: all of ScreenSettings
+// but its wiring, with the same defaults.
+struct OzzyScreenSettings {
+  bool operator==(const OzzyScreenSettings&) const = default;
+
+  int columns = ScreenSettings().columns;
+  int rows = ScreenSettings().rows;
+  int refresh_hz = ScreenSettings().refresh_hz;
+  int slow_blink_hz = ScreenSettings().slow_blink_hz;
+  int fast_blink_hz = ScreenSettings().fast_blink_hz;
+  std::optional<std::vector<uint16_t>> characters;
+};
+
+// The settings of an Ozzy's teletype that a host sets: all of
+// TeletypeSettings but its wiring, with the same defaults.
+struct OzzyTeletypeSettings {
+  bool operator==(const OzzyTeletypeSettings&) const = default;
+
+  int baud = TeletypeSettings().baud;
+  int buffer_size = TeletypeSettings().buffer_size;
+};
+
+// Returns the settings of an Ozzy's device: the host's, and the wiring.
+ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen);
 KeyboardSettings GetOzzyKeyboardSettings();
-TeletypeSettings GetOzzyTeletypeSettings();
+TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype);
 
 //==============================================================================
 // OzzySettings
 //==============================================================================
 
-// Everything a host sets about an Ozzy: the processor, its memory, and its
-// console devices. The defaults are the default Ozzy: one core at 1 MHz, one
-// bank, a screen, and a keyboard.
+// Everything a host sets about an Ozzy: the processor, its memory, and which
+// console devices it has, with their own settings. The defaults are the
+// default Ozzy: one core at 1 MHz, one bank, a screen, and a keyboard.
 struct OzzySettings {
   // The fastest clock rate.
   static constexpr int64_t kMaxClockHz = 100'000'000;
@@ -73,11 +107,11 @@ struct OzzySettings {
   // never has bit 0 set. At least one bank has RAM, for the boot ROM's stack.
   std::vector<uint16_t> banks = {0x7FFE};
 
-  // The console devices, which an Ozzy has at most one of each of. A device's
-  // pages are in a bank the Ozzy has, and are neither RAM nor the boot ROM.
-  std::optional<ScreenSettings> screen = GetOzzyScreenSettings();
-  std::optional<KeyboardSettings> keyboard = GetOzzyKeyboardSettings();
-  std::optional<TeletypeSettings> teletype;
+  // The console devices, which an Ozzy has at most one of each of. With a
+  // screen, its page isn't RAM.
+  std::optional<OzzyScreenSettings> screen = OzzyScreenSettings();
+  bool keyboard = true;
+  std::optional<OzzyTeletypeSettings> teletype;
 };
 
 //==============================================================================
@@ -85,22 +119,21 @@ struct OzzySettings {
 //==============================================================================
 
 // Returns an error naming the first setting that breaks a rule of
-// OzzySettings, such as `screen: page 3 of bank 0 is RAM`. What the
-// processor and devices check themselves (such as a screen's size, or a
-// device's port) is left to them.
+// OzzySettings, such as `screen: page 15 of bank 0 is RAM`. What the
+// processor and devices check themselves (such as a screen's size) is left to
+// them.
 absl::Status ValidateOzzySettings(const OzzySettings& settings);
 
 // Reads settings from the text of a config file (a `.ozzy` file): Game Bits'
 // text config format, rootless and with comments. Anything the text leaves
-// out keeps its default, as does any setting a device leaves out (see
-// GetOzzyScreenSettings). Without `devices`, the Ozzy has the default screen
-// and keyboard.
+// out keeps its default, as does any setting a device leaves out. Without
+// `devices`, the Ozzy has the default screen and keyboard.
 //
 // Returns an error naming where the first problem in the text is, such as
-// `devices[1].interrupt_cores: the Ozzy has no core 2`: an unknown key, a value
-// of the wrong type, a value that doesn't fit its setting, a second device of a
-// type, or a core the Ozzy doesn't have. Then the settings must be valid (see
-// ValidateOzzySettings), which names the setting rather than the text.
+// `devices[1].port: unknown key`: an unknown key, a value of the wrong type, a
+// value that doesn't fit its setting, or a second device of a type. Then the
+// settings must be valid (see ValidateOzzySettings), which names the setting
+// rather than the text.
 absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text);
 
 }  // namespace oz3

@@ -142,19 +142,21 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
   }
   if (settings.screen.has_value()) {
     absl::StatusOr<std::unique_ptr<ScreenFactory>> screen =
-        ScreenFactory::Create(Ozzy::kScreenName, *settings.screen);
+        ScreenFactory::Create(Ozzy::kScreenName,
+                              GetOzzyScreenSettings(*settings.screen));
     if (!screen.ok()) {
       return screen.status();
     }
     config.AddDevice(std::move(*screen));
   }
-  if (settings.keyboard.has_value()) {
-    config.AddDevice(std::make_shared<KeyboardFactory>(Ozzy::kKeyboardName,
-                                                       *settings.keyboard));
+  if (settings.keyboard) {
+    config.AddDevice(std::make_shared<KeyboardFactory>(
+        Ozzy::kKeyboardName, GetOzzyKeyboardSettings()));
   }
   if (settings.teletype.has_value()) {
     absl::StatusOr<std::unique_ptr<TeletypeFactory>> teletype =
-        TeletypeFactory::Create(Ozzy::kTeletypeName, *settings.teletype);
+        TeletypeFactory::Create(Ozzy::kTeletypeName,
+                                GetOzzyTeletypeSettings(*settings.teletype));
     if (!teletype.ok()) {
       return teletype.status();
     }

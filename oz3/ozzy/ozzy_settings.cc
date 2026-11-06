@@ -5,7 +5,6 @@
 
 #include "oz3/ozzy/ozzy_settings.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -22,11 +21,27 @@
 #include "gb/config/config.h"
 #include "gb/config/text_config.h"
 #include "oz3/core/core_types.h"
-#include "oz3/core/device_config.h"
+#include "oz3/core/cpu_core.h"
 
 namespace oz3 {
 
 namespace {
+
+//==============================================================================
+// Device wiring
+//==============================================================================
+
+// The wiring fits every Ozzy, so no settings can make it invalid.
+static_assert((GetBootRomPages(kOzzyScreenBank) & (1 << kOzzyScreenPage)) == 0,
+              "The screen's page must not be the boot ROM's");
+static_assert(kOzzyScreenPage < kMemoryBankPageCount,
+              "The screen's page must be in its bank");
+static_assert(kOzzyKeyboardPort < OzzySettings::kMinPorts &&
+                  kOzzyTeletypePort < OzzySettings::kMinPorts,
+              "Device ports must be ports every Ozzy has");
+static_assert(kOzzyScreenInterrupt < CpuCore::kInterruptCount &&
+                  kOzzyKeyboardInterrupt < CpuCore::kInterruptCount,
+              "Device interrupts must be interrupts every core has");
 
 //==============================================================================
 // Keys
@@ -36,13 +51,10 @@ constexpr std::string_view kMachineKeys[] = {"clock_hz", "cores", "ports",
                                              "banks", "devices"};
 constexpr std::string_view kBankKeys[] = {"ram"};
 constexpr std::string_view kScreenKeys[] = {
-    "type",      "bank", "page",       "interrupt",     "interrupt_cores",
-    "columns",   "rows", "refresh_hz", "slow_blink_hz", "fast_blink_hz",
-    "characters"};
-constexpr std::string_view kKeyboardKeys[] = {"type", "port", "interrupt",
-                                              "interrupt_cores"};
-constexpr std::string_view kTeletypeKeys[] = {"type", "port", "baud",
-                                              "buffer_size"};
+    "type",          "columns",       "rows",      "refresh_hz",
+    "slow_blink_hz", "fast_blink_hz", "characters"};
+constexpr std::string_view kKeyboardKeys[] = {"type"};
+constexpr std::string_view kTeletypeKeys[] = {"type", "baud", "buffer_size"};
 
 //==============================================================================
 // Paths and values
@@ -119,8 +131,7 @@ absl::Status ReadInt(const gb::Config& map, std::string_view path,
 // OzzySettingsReader
 //==============================================================================
 
-// Reads OzzySettings from a config, one part at a time, so interrupt cores
-// can be checked against the cores read before them.
+// Reads OzzySettings from a config.
 class OzzySettingsReader final {
  public:
   absl::StatusOr<OzzySettings> Read(const gb::Config& config);
@@ -132,12 +143,6 @@ class OzzySettingsReader final {
   absl::Status ReadScreen(const gb::Config& config, std::string_view path);
   absl::Status ReadKeyboard(const gb::Config& config, std::string_view path);
   absl::Status ReadTeletype(const gb::Config& config, std::string_view path);
-  absl::Status ReadInterrupt(const gb::Config& config, std::string_view path,
-                             DeviceInterrupt* interrupt);
-  absl::StatusOr<uint8_t> GetCoreMask(const gb::Config& value,
-                                      std::string_view path);
-  absl::StatusOr<uint8_t> GetCoreBit(const gb::Config& value,
-                                     std::string_view path);
 
   OzzySettings settings_;
 };
@@ -205,7 +210,7 @@ absl::Status OzzySettingsReader::ReadDevices(const gb::Config& config) {
     return PathError("devices", "must be an array");
   }
   settings_.screen.reset();
-  settings_.keyboard.reset();
+  settings_.keyboard = false;
   settings_.teletype.reset();
   const int device_count = devices->GetArraySize();
   for (int i = 0; i < device_count; ++i) {
@@ -252,17 +257,8 @@ absl::Status OzzySettingsReader::ReadScreen(const gb::Config& config,
   if (settings_.screen.has_value()) {
     return PathError(path, "an Ozzy has only one screen");
   }
-  ScreenSettings& screen = settings_.screen.emplace(GetOzzyScreenSettings());
+  OzzyScreenSettings& screen = settings_.screen.emplace();
   absl::Status status = CheckKeys(config, path, kScreenKeys);
-  if (status.ok()) {
-    status = ReadInt(config, path, "bank", &screen.bank);
-  }
-  if (status.ok()) {
-    status = ReadInt(config, path, "page", &screen.page);
-  }
-  if (status.ok()) {
-    status = ReadInterrupt(config, path, &screen.interrupt);
-  }
   if (status.ok()) {
     status = ReadInt(config, path, "columns", &screen.columns);
   }
@@ -305,19 +301,11 @@ absl::Status OzzySettingsReader::ReadScreen(const gb::Config& config,
 
 absl::Status OzzySettingsReader::ReadKeyboard(const gb::Config& config,
                                               std::string_view path) {
-  if (settings_.keyboard.has_value()) {
+  if (settings_.keyboard) {
     return PathError(path, "an Ozzy has only one keyboard");
   }
-  KeyboardSettings& keyboard =
-      settings_.keyboard.emplace(GetOzzyKeyboardSettings());
-  absl::Status status = CheckKeys(config, path, kKeyboardKeys);
-  if (status.ok()) {
-    status = ReadInt(config, path, "port", &keyboard.port);
-  }
-  if (status.ok()) {
-    status = ReadInterrupt(config, path, &keyboard.interrupt);
-  }
-  return status;
+  settings_.keyboard = true;
+  return CheckKeys(config, path, kKeyboardKeys);
 }
 
 absl::Status OzzySettingsReader::ReadTeletype(const gb::Config& config,
@@ -325,12 +313,8 @@ absl::Status OzzySettingsReader::ReadTeletype(const gb::Config& config,
   if (settings_.teletype.has_value()) {
     return PathError(path, "an Ozzy has only one teletype");
   }
-  TeletypeSettings& teletype =
-      settings_.teletype.emplace(GetOzzyTeletypeSettings());
+  OzzyTeletypeSettings& teletype = settings_.teletype.emplace();
   absl::Status status = CheckKeys(config, path, kTeletypeKeys);
-  if (status.ok()) {
-    status = ReadInt(config, path, "port", &teletype.port);
-  }
   if (status.ok()) {
     status = ReadInt(config, path, "baud", &teletype.baud);
   }
@@ -340,87 +324,35 @@ absl::Status OzzySettingsReader::ReadTeletype(const gb::Config& config,
   return status;
 }
 
-absl::Status OzzySettingsReader::ReadInterrupt(const gb::Config& config,
-                                               std::string_view path,
-                                               DeviceInterrupt* interrupt) {
-  absl::Status status =
-      ReadInt(config, path, "interrupt", &interrupt->interrupt);
-  if (!status.ok()) {
-    return status;
-  }
-  const gb::Config* cores = config.Get("interrupt_cores");
-  if (cores == nullptr) {
-    return absl::OkStatus();
-  }
-  absl::StatusOr<uint8_t> mask =
-      GetCoreMask(*cores, GetKeyPath(path, "interrupt_cores"));
-  if (!mask.ok()) {
-    return mask.status();
-  }
-  interrupt->cores = *mask;
-  return absl::OkStatus();
-}
-
-absl::StatusOr<uint8_t> OzzySettingsReader::GetCoreMask(const gb::Config& value,
-                                                        std::string_view path) {
-  if (value.IsString() && value.GetString() == "all") {
-    return kAllCores;
-  }
-  if (value.IsInt()) {
-    return GetCoreBit(value, path);
-  }
-  if (value.IsArray()) {
-    uint8_t mask = 0;
-    const int count = value.GetArraySize();
-    for (int i = 0; i < count; ++i) {
-      absl::StatusOr<uint8_t> bit =
-          GetCoreBit(*value.Get(i), GetIndexPath(path, i));
-      if (!bit.ok()) {
-        return bit.status();
-      }
-      mask |= *bit;
-    }
-    return mask;
-  }
-  return PathError(path, "must be a core, an array of cores, or \"all\"");
-}
-
-absl::StatusOr<uint8_t> OzzySettingsReader::GetCoreBit(const gb::Config& value,
-                                                       std::string_view path) {
-  if (!value.IsInt()) {
-    return PathError(path, "must be an int");
-  }
-  // The cores aren't validated yet, so this also keeps to the most there are.
-  const int64_t core = value.GetInt();
-  if (core < 0 || core >= std::min(settings_.cores, kMaxCores)) {
-    return PathError(path, absl::StrCat("the Ozzy has no core ", core));
-  }
-  return static_cast<uint8_t>(1 << core);
-}
-
 }  // namespace
 
 //==============================================================================
-// Device defaults
+// Device settings
 //==============================================================================
 
-ScreenSettings GetOzzyScreenSettings() {
-  ScreenSettings settings;
-  settings.bank = 0;
-  settings.page = 15;
-  settings.interrupt = {.interrupt = 6, .cores = kAllCores};
-  return settings;
+ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen) {
+  return {.bank = kOzzyScreenBank,
+          .page = kOzzyScreenPage,
+          .interrupt = {.interrupt = kOzzyScreenInterrupt,
+                        .cores = kOzzyScreenInterruptCores},
+          .columns = screen.columns,
+          .rows = screen.rows,
+          .refresh_hz = screen.refresh_hz,
+          .slow_blink_hz = screen.slow_blink_hz,
+          .fast_blink_hz = screen.fast_blink_hz,
+          .characters = screen.characters};
 }
 
 KeyboardSettings GetOzzyKeyboardSettings() {
-  return {.port = 1, .interrupt = {.interrupt = 1, .cores = 1}};
+  return {.port = kOzzyKeyboardPort,
+          .interrupt = {.interrupt = kOzzyKeyboardInterrupt,
+                        .cores = kOzzyKeyboardInterruptCores}};
 }
 
-TeletypeSettings GetOzzyTeletypeSettings() {
-  TeletypeSettings settings;
-  settings.port = 2;
-  settings.baud = 0;
-  return settings;
+TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype) {
+  return {.port = kOzzyTeletypePort,
+          .baud = teletype.baud,
+          .buffer_size = teletype.buffer_size};
 }
 
 //==============================================================================
@@ -454,25 +386,11 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
     return PathError(
         "banks", "the Ozzy has no RAM, which the boot ROM needs for its stack");
   }
-  if (settings.screen.has_value()) {
-    const int bank = settings.screen->bank;
-    const int page = settings.screen->page;
-    if (bank < 0 || bank >= bank_count) {
-      return PathError("screen.bank",
-                       absl::StrCat("the Ozzy has no bank ", bank));
-    }
-    if (page < 0 || page >= kMemoryBankPageCount) {
-      return PathError("screen.page",
-                       absl::StrCat("must be 0 to ", kMemoryBankPageCount - 1));
-    }
-    if ((GetBootRomPages(bank) & (1 << page)) != 0) {
-      return PathError("screen", absl::StrCat("page ", page, " of bank ", bank,
-                                              " is the boot ROM"));
-    }
-    if ((settings.banks[bank] & (1 << page)) != 0) {
-      return PathError(
-          "screen", absl::StrCat("page ", page, " of bank ", bank, " is RAM"));
-    }
+  if (settings.screen.has_value() &&
+      (settings.banks[kOzzyScreenBank] & (1 << kOzzyScreenPage)) != 0) {
+    return PathError("screen",
+                     absl::StrCat("page ", kOzzyScreenPage, " of bank ",
+                                  kOzzyScreenBank, " is RAM"));
   }
   return absl::OkStatus();
 }
