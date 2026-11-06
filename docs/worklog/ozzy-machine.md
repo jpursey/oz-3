@@ -144,16 +144,19 @@ table, and:
   and new lines below the bottom row scroll, so a small screen shows what fits.
 - **Without one, with a teletype**, it prints the banner to the teletype, then
   CR LF twice.
-- **With a keyboard**, it sets a handler for the keyboard's interrupt and
-  halts, so it runs only when a key arrives (a halted core still handles
-  interrupts). Each key echoes: characters 20h to 7Eh print at the cursor,
-  Enter starts a new line, and Backspace erases the character before the
-  cursor. Other keys are ignored. On the screen, a new line past the bottom
-  scrolls with the scroll row and clear row, and the cursor wraps to the next
-  line at the right edge. On the teletype, Enter is CR LF, and Backspace is
-  BS, space, BS.
-- With neither a screen nor a teletype, or without a keyboard once the banner
-  is printed, it halts for good.
+- Then it enables interrupts and halts, so it runs only when an interrupt
+  comes (a halted core still handles interrupts).
+- **With a keyboard**, it sets a handler for the keyboard's interrupt, which
+  is always interrupt 1 on core 0, and reads port 1. Each key echoes, by its
+  low byte (modifiers make no difference): characters 20h to 7Eh print at the
+  cursor, Enter starts a new line, and Backspace erases the character before
+  the cursor, doing nothing at the start of a row. Other keys are ignored. On
+  the screen, a new line past the bottom scrolls with the scroll row and clear
+  row, and after a full row the cursor stays on its last column until the
+  next character wraps. On the teletype, Enter is CR LF, and Backspace is BS,
+  space, BS.
+- Without a keyboard, or with neither a screen nor a teletype, nothing
+  echoes, and other devices' interrupts have no handler, so they are dropped.
 
 The banner is `OZZY` and the boot ROM's version, then the clock rate, cores,
 and RAM from the machine table, such as `OZZY 0.1  1 MHz  4 cores  120K RAM`
@@ -594,20 +597,28 @@ Depends on: CL5.
   screen's page as RAM; the machine table for every device; the boot ROM's
   banner unchanged.
 
-### CL7 [ ] ozzy: the boot ROM echoes keys
+### CL7 [x] ozzy: the boot ROM echoes keys
 
 Depends on: CL6.
 
 - The keyboard handler in `boot_rom.oza`: echo, Enter, and Backspace, on the
-  screen and the teletype.
+  screen and the teletype. The boot ROM finds whether there is a keyboard in
+  the machine table, and sets the handler with `SETI` on the keyboard's fixed
+  interrupt, reading its fixed port, as constants in its source. It halts with
+  interrupts enabled.
+- After a full row, the cursor shows on the row's last column, rather than
+  past the screen's edge.
 - The wiki's Ozzy page describes the echo.
 
 **Verify**
 - Standard checks.
-- Unit tests: keys pressed between runs appear on the next picture; Enter,
-  Backspace (including at the start of a line), wrapping at the right edge,
-  scrolling past the bottom row (the scroll row moves and the new bottom row is
-  clear), ignored keys, and 16 keys at once; the same on the teletype.
+- Unit tests: keys pressed between runs appear on the next picture, and keys
+  pressed before the banner after it; every character 20h to 7Eh, 16 (as
+  many as the keyboard holds) at once; Enter;
+  Backspace (including at the start of a row, and in a full row); wrapping
+  at the right edge and scrolling past the bottom row (the new bottom row is
+  clear); ignored keys and modifiers; the same on the teletype, as fast as it prints and at 9600 baud; the source's keyboard
+  wiring and key constants against `ozzy_settings.h` and `keyboard.h`.
 
 ### CL8 [ ] ozzy: console text
 

@@ -14,11 +14,14 @@
 #include <vector>
 
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
+#include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy.h"
@@ -40,10 +43,30 @@ struct StackPlace {
   uint16_t base = 0;
 };
 
+// The default Ozzy's banner.
+constexpr std::string_view kDefaultBanner = "OZZY 0.1  1 MHz  1 core  56K RAM";
+
+// Expects the boot ROM's source to have each of `expected`'s constants, with
+// its value.
+void ExpectSourceConstants(std::map<std::string_view, uint32_t> expected) {
+  for (const ProgramMap::Constant& constant :
+       GetBootRom().GetMap().GetConstants()) {
+    if (auto it = expected.find(constant.name); it != expected.end()) {
+      EXPECT_EQ(constant.dword_value, it->second) << it->first;
+      expected.erase(it);
+    }
+  }
+  EXPECT_THAT(expected, IsEmpty());
+}
+
 // Returns whether core 0 has halted.
 bool IsHalted(Ozzy& ozzy) {
   return ozzy.GetProcessor()->GetCore(0)->GetState() == CpuCore::State::kIdle;
 }
+
+// Runs `ozzy` long enough for the screen to refresh, 30 times a second, and
+// the teletype to print the character its port holds.
+void RunToShow(Ozzy& ozzy) { ozzy.Run(absl::Milliseconds(34)); }
 
 // Returns an Ozzy for `settings` that has run until the boot ROM halts, and for
 // its screen to refresh since, or null if it can't be created.
@@ -61,10 +84,7 @@ std::unique_ptr<Ozzy> BootOzzy(const OzzySettings& settings) {
     booted.Run(absl::Milliseconds(1));
   }
   EXPECT_TRUE(IsHalted(booted)) << "The boot ROM didn't halt";
-
-  // Long enough for the screen to refresh, 30 times a second, and the teletype
-  // to print the character its port holds.
-  booted.Run(absl::Milliseconds(34));
+  RunToShow(booted);
   return std::move(*ozzy);
 }
 
@@ -94,21 +114,45 @@ std::string PadRow(std::string_view text, int columns) {
   return row;
 }
 
-// Expects the screen to show `rows` of text, and the cursor at the start of
-// the third row, below the banner and a blank line, as it always is once the
-// boot ROM is done.
-void ExpectScreen(Ozzy& ozzy, const std::vector<std::string_view>& rows) {
+// Expects the screen to show `rows` of text, and the cursor at `column` and
+// `row`.
+void ExpectScreenAndCursor(Ozzy& ozzy,
+                           const std::vector<std::string_view>& rows,
+                           int column, int row) {
   ASSERT_NE(ozzy.GetScreen(), nullptr);
   const ScreenPicture& picture = ozzy.GetScreen()->GetPicture();
   ASSERT_EQ(static_cast<int>(rows.size()), picture.rows);
-  for (int row = 0; row < picture.rows; ++row) {
-    EXPECT_EQ(GetRowText(picture, row), PadRow(rows[row], picture.columns))
-        << "Row " << row;
+  for (int i = 0; i < picture.rows; ++i) {
+    EXPECT_EQ(GetRowText(picture, i), PadRow(rows[i], picture.columns))
+        << "Row " << i;
   }
-  EXPECT_EQ(picture.cursor_column, 0);
-  EXPECT_EQ(picture.cursor_row, 2);
+  EXPECT_EQ(picture.cursor_column, column);
+  EXPECT_EQ(picture.cursor_row, row);
   EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kSlowBlink);
   EXPECT_EQ(picture.cursor_style, ScreenCursorStyle::kUnderline);
+}
+
+// Expects the screen to show `rows` of text, and the cursor at the start of
+// the third row, below the banner and a blank line, as it always is once the
+// boot ROM has printed it.
+void ExpectScreen(Ozzy& ozzy, const std::vector<std::string_view>& rows) {
+  ExpectScreenAndCursor(ozzy, rows, 0, 2);
+}
+
+// Presses each of `keys`, and runs `ozzy` long enough to echo them, and show
+// them.
+void TypeKeys(Ozzy& ozzy, absl::Span<const uint16_t> keys) {
+  for (uint16_t key : keys) {
+    EXPECT_TRUE(ozzy.GetKeyboard()->PressKey(key));
+  }
+  RunToShow(ozzy);
+}
+
+// Types the keys of each character of `text`, which are their key events (such
+// as '\b' for Backspace).
+void TypeText(Ozzy& ozzy, std::string_view text) {
+  const std::vector<uint16_t> keys(text.begin(), text.end());
+  TypeKeys(ozzy, keys);
 }
 
 // Returns the rows of the default 80 by 24 screen, with `banner` on the first.
@@ -124,7 +168,7 @@ std::vector<std::string_view> GetBannerRows(std::string_view banner) {
 
 TEST(BootRomTest, SourceKnowsTheMachineTable) {
   // The source's own copy of the table's layout matches machine_table.h.
-  std::map<std::string_view, uint32_t> expected = {
+  ExpectSourceConstants({
       {"TABLE", kMachineTableAddress},
       {"TABLE_CLOCK_HZ", kMachineTableAddress + kMachineHeaderClockHzLow},
       {"TABLE_CORES", kMachineTableAddress + kMachineHeaderCores},
@@ -142,16 +186,22 @@ TEST(BootRomTest, SourceKnowsTheMachineTable) {
       {"DEVICE_ROWS", kMachineDeviceData + 1},
       {"DEVICE_SIZE", kMachineDeviceSize},
       {"SCREEN", static_cast<uint32_t>(MachineDeviceType::kScreen)},
+      {"KEYBOARD", static_cast<uint32_t>(MachineDeviceType::kKeyboard)},
       {"TELETYPE", static_cast<uint32_t>(MachineDeviceType::kTeletype)},
-  };
-  for (const ProgramMap::Constant& constant :
-       GetBootRom().GetMap().GetConstants()) {
-    if (auto it = expected.find(constant.name); it != expected.end()) {
-      EXPECT_EQ(constant.dword_value, it->second) << it->first;
-      expected.erase(it);
-    }
-  }
-  EXPECT_THAT(expected, IsEmpty());
+  });
+}
+
+TEST(BootRomTest, SourceKnowsTheKeyboard) {
+  // The source's own copy of the keyboard's wiring and keys matches the
+  // Ozzy's. Only core 0 runs the boot ROM, so the keyboard's interrupt must
+  // reach it.
+  ExpectSourceConstants({
+      {"KEYBOARD_PORT", kOzzyKeyboardPort},
+      {"KEYBOARD_INTERRUPT", kOzzyKeyboardInterrupt},
+      {"KEY_BACKSPACE", kKeyBackspace},
+      {"KEY_ENTER", kKeyEnter},
+  });
+  EXPECT_NE(kOzzyKeyboardInterruptCores & 1, 0);
 }
 
 //==============================================================================
@@ -161,7 +211,7 @@ TEST(BootRomTest, SourceKnowsTheMachineTable) {
 TEST(BootRomTest, DefaultOzzy) {
   std::unique_ptr<Ozzy> ozzy = BootOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
-  ExpectScreen(*ozzy, GetBannerRows("OZZY 0.1  1 MHz  1 core  56K RAM"));
+  ExpectScreen(*ozzy, GetBannerRows(kDefaultBanner));
   EXPECT_TRUE(IsHalted(*ozzy));
 }
 
@@ -251,7 +301,7 @@ TEST(BootRomTest, BannerFillsTheRow) {
   settings.screen->rows = 4;
   std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  ExpectScreen(*ozzy, {"OZZY 0.1  1 MHz  1 core  56K RAM", "", "", ""});
+  ExpectScreen(*ozzy, {kDefaultBanner, "", "", ""});
 }
 
 //==============================================================================
@@ -292,7 +342,7 @@ TEST(BootRomTest, Teletype) {
     std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
     ASSERT_NE(ozzy, nullptr);
     EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(),
-              "OZZY 0.1  1 MHz  1 core  56K RAM\r\n\r\n");
+              absl::StrCat(kDefaultBanner, "\r\n\r\n"));
     EXPECT_TRUE(IsHalted(*ozzy));
   }
 }
@@ -302,7 +352,7 @@ TEST(BootRomTest, ScreenRatherThanTeletype) {
   settings.teletype = OzzyTeletypeSettings();
   std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  ExpectScreen(*ozzy, GetBannerRows("OZZY 0.1  1 MHz  1 core  56K RAM"));
+  ExpectScreen(*ozzy, GetBannerRows(kDefaultBanner));
   EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(), "");
 }
 
@@ -316,6 +366,162 @@ TEST(BootRomTest, NoScreenOrTeletype) {
   std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_TRUE(IsHalted(*ozzy));
+
+  // Keys echo nowhere.
+  TypeText(*ozzy, "a\r\b");
+  EXPECT_TRUE(IsHalted(*ozzy));
+}
+
+//==============================================================================
+// Echoing keys on the screen
+//==============================================================================
+
+TEST(BootRomTest, KeysEchoBetweenRuns) {
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+  std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
+
+  TypeText(*ozzy, "Hi");
+  rows[2] = "Hi";
+  ExpectScreenAndCursor(*ozzy, rows, 2, 2);
+  EXPECT_TRUE(IsHalted(*ozzy));
+
+  TypeText(*ozzy, " there!");
+  rows[2] = "Hi there!";
+  ExpectScreenAndCursor(*ozzy, rows, 9, 2);
+  EXPECT_TRUE(IsHalted(*ozzy));
+}
+
+TEST(BootRomTest, KeysBeforeTheBannerEchoAfterIt) {
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(OzzySettings());
+  ASSERT_TRUE(ozzy.ok()) << ozzy.status();
+  EXPECT_TRUE((*ozzy)->GetKeyboard()->PressKey('a'));
+  EXPECT_TRUE((*ozzy)->GetKeyboard()->PressKey('b'));
+  (*ozzy)->Run(absl::Milliseconds(100));
+  std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
+  rows[2] = "ab";
+  ExpectScreenAndCursor(**ozzy, rows, 2, 2);
+}
+
+TEST(BootRomTest, EveryCharacterEchoes) {
+  std::string characters;
+  for (int c = 0x20; c <= 0x7E; ++c) {
+    characters.push_back(static_cast<char>(c));
+  }
+  OzzySettings settings;
+  settings.screen->columns = 95;
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  // As many keys at a time as the keyboard holds.
+  for (int i = 0; i < static_cast<int>(characters.size());
+       i += Keyboard::kQueueSize) {
+    TypeText(*ozzy,
+             std::string_view(characters).substr(i, Keyboard::kQueueSize));
+  }
+  std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
+  rows[2] = characters;
+
+  // The line is full, so the cursor stays on its last column.
+  ExpectScreenAndCursor(*ozzy, rows, 94, 2);
+}
+
+TEST(BootRomTest, OtherKeysAreIgnored) {
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+  TypeKeys(*ozzy, {kKeyTab, kKeyEscape, kKeyDelete, kKeyUp, kKeyInsert, kKeyF1,
+                   kKeyF12, 0x01, 0x1A, 0xFF});
+  ExpectScreen(*ozzy, GetBannerRows(kDefaultBanner));
+}
+
+TEST(BootRomTest, ModifiersMakeNoDifference) {
+  // The key is what echoes, whatever modifier keys are held with it.
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+  TypeKeys(*ozzy,
+           {kKeyShift | 'A', kKeyCtrl | 'b', kKeyAlt | 'c',
+            kKeyCtrl | kKeyBackspace, kKeyShift | kKeyEnter, kKeyCtrl | 0x01});
+  std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
+  rows[2] = "Ab";
+  ExpectScreenAndCursor(*ozzy, rows, 0, 3);
+}
+
+TEST(BootRomTest, Enter) {
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+  TypeText(*ozzy, "ab\rcd\r\r");
+  std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
+  rows[2] = "ab";
+  rows[3] = "cd";
+  ExpectScreenAndCursor(*ozzy, rows, 0, 5);
+}
+
+TEST(BootRomTest, Backspace) {
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+  std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
+
+  TypeText(*ozzy, "abc\b\bx");
+  rows[2] = "ax";
+  ExpectScreenAndCursor(*ozzy, rows, 2, 2);
+
+  // At the start of a row, Backspace does nothing, so it never goes back to
+  // the row above.
+  TypeText(*ozzy, "\b\b\b\b");
+  rows[2] = "";
+  ExpectScreenAndCursor(*ozzy, rows, 0, 2);
+  TypeText(*ozzy, "\ry\b\b");
+  ExpectScreenAndCursor(*ozzy, rows, 0, 3);
+}
+
+TEST(BootRomTest, KeysWrapAndScroll) {
+  // The banner leaves "AM" on a 10 by 3 screen, and the cursor on the bottom
+  // row.
+  OzzySettings settings;
+  settings.screen->columns = 10;
+  settings.screen->rows = 3;
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+
+  // A full row keeps the cursor on its last column, until the next key.
+  TypeText(*ozzy, "0123456789");
+  ExpectScreenAndCursor(*ozzy, {"AM", "", "0123456789"}, 9, 2);
+
+  // Backspace in a full row erases its last column.
+  TypeText(*ozzy, "\bX");
+  ExpectScreenAndCursor(*ozzy, {"AM", "", "012345678X"}, 9, 2);
+
+  // The next key wraps, and scrolls the screen up a row, clearing the new
+  // bottom row.
+  TypeText(*ozzy, "a");
+  ExpectScreenAndCursor(*ozzy, {"", "012345678X", "a"}, 1, 2);
+
+  // Enter on the bottom row scrolls too.
+  TypeText(*ozzy, "\r");
+  ExpectScreenAndCursor(*ozzy, {"012345678X", "a", ""}, 0, 2);
+}
+
+//==============================================================================
+// Echoing keys on the teletype
+//==============================================================================
+
+TEST(BootRomTest, KeysOnTheTeletype) {
+  for (int baud : {0, 9600}) {
+    SCOPED_TRACE(baud);
+    OzzySettings settings;
+    settings.screen.reset();
+    settings.teletype = OzzyTeletypeSettings();
+    settings.teletype->baud = baud;
+    std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
+    ASSERT_NE(ozzy, nullptr);
+    EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(),
+              absl::StrCat(kDefaultBanner, "\r\n\r\n"));
+
+    // Backspace even at the start of a line, as the teletype doesn't know
+    // where it is. At 9600 baud, 10 characters take 10 milliseconds.
+    TypeText(*ozzy, "\bab\b\tc\r");
+    EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(), "\b \bab\b \bc\r\n");
+    EXPECT_TRUE(IsHalted(*ozzy));
+  }
 }
 
 }  // namespace

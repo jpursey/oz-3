@@ -8,7 +8,8 @@
 ;
 ; Core 0 runs this at power on, from page 0 of bank 0. It reads the machine
 ; table, clears the screen, prints the banner to the screen (or, without one, to
-; the teletype), and halts.
+; the teletype), and halts with interrupts enabled. With a keyboard, its
+; interrupt handler echoes each key.
 ;
 ; The code and its strings are one ROM segment, which is also the DATA segment,
 ; so the machine table is read with D(n). The screen's page is the EXTRA bank.
@@ -43,7 +44,25 @@
 
 ; Device types.
 .CONST SCREEN = 1
+.CONST KEYBOARD = 2
 .CONST TELETYPE = 3
+
+;-------------------------------------------------------------------------------
+; The keyboard's wiring, which is the same in every Ozzy (see the wiki's Ozzy
+; Computer page)
+;-------------------------------------------------------------------------------
+
+.CONST KEYBOARD_PORT = 1
+.CONST KEYBOARD_INTERRUPT = 1
+
+;-------------------------------------------------------------------------------
+; Keys (see the wiki's Ozzy Devices page)
+;-------------------------------------------------------------------------------
+
+.CONST KEY_BACKSPACE = 08h
+.CONST KEY_ENTER = 0Dh
+.CONST KEY_FIRST_CHAR = 20h  ; The characters that echo, 20h to 7Eh
+.CONST KEY_LAST_CHAR = 7Eh
 
 ;-------------------------------------------------------------------------------
 ; The screen's control words (see the wiki's Ozzy Devices page)
@@ -117,6 +136,10 @@ start:
     CALL new_line
     CALL new_line
     CALL show_cursor
+
+    ; A halted core still handles interrupts, so from here on the boot ROM
+    ; runs only when a key comes. Keys pressed since power on come at once.
+    EI
     HALT
 
 banner_text:
@@ -135,9 +158,10 @@ unit_text:
     .DW SIZE(UNIT_SIZE) ' MHz'
 
 ;-------------------------------------------------------------------------------
-; find_devices: Finds the screen and the teletype in the machine table. With a
-; screen, sets the EXTRA bank to its page, and V_COLUMNS and V_ROWS to its size.
-; With a teletype, sets V_TELETYPE to its port.
+; find_devices: Finds the screen, the keyboard, and the teletype in the machine
+; table. With a screen, sets the EXTRA bank to its page, and V_COLUMNS and
+; V_ROWS to its size. With a keyboard, sets key_handler as its interrupt's
+; handler. With a teletype, sets V_TELETYPE to its port.
 ;-------------------------------------------------------------------------------
 
 find_devices:
@@ -160,6 +184,11 @@ find_devices:
     MOV S(V_ROWS), R0
     JP @step
 @not_screen:
+    CMP R0, KEYBOARD
+    JC NZ, @not_keyboard
+    SETI KEYBOARD_INTERRUPT, key_handler
+    JP @step
+@not_keyboard:
     CMP R0, TELETYPE
     JC NZ, @step
     MOV R0, (R1 + DEVICE_PORT)
@@ -185,7 +214,43 @@ clear_screen:
     RET
 
 ;-------------------------------------------------------------------------------
-; show_cursor: Shows the cursor where the next character goes on the screen.
+; key_handler: The keyboard's interrupt handler. Reads a key, and echoes it:
+; a character from KEY_FIRST_CHAR to KEY_LAST_CHAR prints, Enter starts a new
+; line, and Backspace erases the character before. Other keys are ignored, and
+; the modifier keys held with a key make no difference.
+;-------------------------------------------------------------------------------
+
+key_handler:
+    PUSH R0
+    INS KEYBOARD_PORT, R0
+    JC NS, @done
+    AND R0, 0FFh
+
+    CMP R0, KEY_ENTER
+    JC NZ, @not_enter
+    CALL new_line
+    JP @shown
+@not_enter:
+    CMP R0, KEY_BACKSPACE
+    JC NZ, @not_backspace
+    CALL back_space
+    JP @shown
+@not_backspace:
+    CMP R0, KEY_FIRST_CHAR
+    JC C, @done
+    CMP R0, KEY_LAST_CHAR + 1
+    JC NC, @done
+    CALL put_char
+@shown:
+    CALL show_cursor
+
+@done:
+    POP R0
+    IRT
+
+;-------------------------------------------------------------------------------
+; show_cursor: Shows the cursor where the next character goes on the screen,
+; or on the last column after a full line, until the next character wraps.
 ;-------------------------------------------------------------------------------
 
 show_cursor:
@@ -193,6 +258,10 @@ show_cursor:
     RETC Z
     PUSH R0
     MOV R0, S(V_COLUMN)
+    CMP R0, S(V_COLUMNS)
+    JC C, @column
+    SBQ R0, 1
+@column:
     MOV E(SCREEN_CURSOR_COLUMN), R0
     MOV R0, S(V_ROW)
     MOV E(SCREEN_CURSOR_ROW), R0
@@ -218,14 +287,8 @@ put_char:
     CMP R1, S(V_COLUMNS)
     JC C, @write_cell
     CALL new_line
-
-    ; The cell is the row as shown, after the scroll row, at the column.
 @write_cell:
-    MOV R4, S(V_ROW)
-    ADD R4, S(V_SCROLL)
-    MOD R4, S(V_ROWS)
-    MUL R4, S(V_COLUMNS)
-    ADD R4, S(V_COLUMN)
+    CALL get_cell
     MOV (R4), R0
     MOV R1, S(V_COLUMN)
     ADQ R1, 1
@@ -243,6 +306,51 @@ put_char:
 @done:
     POP R4
     POP R1
+    RET
+
+;-------------------------------------------------------------------------------
+; back_space: Erases the character before the one where the next character
+; goes, which then goes there instead. On the screen, it does nothing at the
+; start of a row. On the teletype, it is a backspace, a space, and a backspace.
+;-------------------------------------------------------------------------------
+
+back_space:
+    PUSH R1
+    PUSH R4
+    TST S(V_COLUMNS)
+    JC Z, @teletype
+    MOV R1, S(V_COLUMN)
+    TST R1
+    JC Z, @done
+    SBQ R1, 1
+    MOV S(V_COLUMN), R1
+    CALL get_cell
+    MOV (R4), ' '
+    JP @done
+
+@teletype:
+    MOV R1, erase_text
+    CALL print_string
+
+@done:
+    POP R4
+    POP R1
+    RET
+
+erase_text:
+    .DW 08h, ' ', 08h, 0
+
+;-------------------------------------------------------------------------------
+; get_cell: Sets R4 to the screen's cell where the next character goes: the row
+; as shown, after the scroll row, at the column.
+;-------------------------------------------------------------------------------
+
+get_cell:
+    MOV R4, S(V_ROW)
+    ADD R4, S(V_SCROLL)
+    MOD R4, S(V_ROWS)
+    MUL R4, S(V_COLUMNS)
+    ADD R4, S(V_COLUMN)
     RET
 
 ;-------------------------------------------------------------------------------
