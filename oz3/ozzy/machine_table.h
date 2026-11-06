@@ -17,10 +17,11 @@ namespace oz3 {
 //
 // The machine table describes an Ozzy's hardware to the programs it runs. The
 // host writes it into the boot ROM's page at power on, at kMachineTableAddress
-// in bank 0. It is words: a header, then an entry for each bank, then an entry
-// for each device, with the rest of its kMachineTableSize words 0. Each entry
-// is a fixed number of words, and the offsets below are word offsets into the
-// header or an entry.
+// in bank 0. It is words: a header, then an entry for every bank there can be,
+// then an entry for every device there can be, each in a fixed place, with the
+// rest of its kMachineTableSize words 0. A bank or device the Ozzy doesn't
+// have is an entry of 0. The offsets below are word offsets into the table, or
+// into the header or an entry.
 //==============================================================================
 
 // Where the table is in bank 0, and its size in words.
@@ -53,6 +54,9 @@ inline constexpr int kMachineHeaderSize = 8;  // The last word is reserved.
 // A bank entry
 //------------------------------------------------------------------------------
 
+// Bank n's entry is at kMachineTableBanks + n * kMachineBankSize.
+inline constexpr int kMachineTableBanks = kMachineHeaderSize;
+
 // The bank's ROM and RAM pages, with bit n for page n.
 inline constexpr int kMachineBankRom = 0;
 inline constexpr int kMachineBankRam = 1;
@@ -62,7 +66,12 @@ inline constexpr int kMachineBankSize = 2;
 // A device entry
 //------------------------------------------------------------------------------
 
-// The type of a device in its entry.
+// Device n's entry is at kMachineTableDevices + n * kMachineDeviceSize, with
+// the devices first, and then entries of 0.
+inline constexpr int kMachineTableDevices =
+    kMachineTableBanks + kMaxMemoryBanks * kMachineBankSize;
+
+// The type of a device in its entry, which is 0 in an entry for no device.
 enum class MachineDeviceType : uint16_t {
   kScreen = 1,
   kKeyboard = 2,
@@ -87,8 +96,7 @@ inline constexpr int kMachineDeviceSize = 8;
 
 static_assert(kMachineTableAddress + kMachineTableSize <= kMemoryBankPageSize,
               "The machine table must be in the boot ROM's page");
-static_assert(kMachineHeaderSize + kMaxMemoryBanks * kMachineBankSize +
-                      kMaxMachineDevices * kMachineDeviceSize <=
+static_assert(kMachineTableDevices + kMaxMachineDevices * kMachineDeviceSize <=
                   kMachineTableSize,
               "The machine table must hold every bank and device");
 

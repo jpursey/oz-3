@@ -101,9 +101,11 @@ there is no comma after the last one.
 
 The host writes the machine table into the boot ROM's page at power on, at
 0F00h in bank 0 (`kMachineTableAddress`), so the boot ROM, and later the OS,
-learn the hardware from it. It is words, laid out like a program file: a
-header of counts, then fixed-size entries. It has room for 256 words, which
-holds 16 banks and 16 devices (`kMaxMachineDevices`).
+learn the hardware from it. It is 256 words: a header of counts, then an
+entry for every bank there can be (16), then an entry for every device there
+can be (16, `kMaxMachineDevices`), each in a fixed place, so a program finds
+bank `n`'s or device `n`'s entry at a constant address. A bank or device the
+Ozzy doesn't have is an entry of 0, and the rest of the table is 0.
 
 | Word | Header                                    |
 | ---- | ----------------------------------------- |
@@ -115,12 +117,14 @@ holds 16 banks and 16 devices (`kMaxMachineDevices`).
 | 6    | Devices                                   |
 | 7    | Reserved: 0                               |
 
-Then one entry per bank, of 2 words: the ROM page mask and the RAM page mask
-(bit `n` is page `n`). Then one entry per device, of 8 words:
+Then, from word 8 (`kMachineTableBanks`), an entry of 2 words for each of the
+16 banks: the ROM page mask and the RAM page mask (bit `n` is page `n`). Then,
+from word 28h (`kMachineTableDevices`), an entry of 8 words for each of the 16
+devices, the Ozzy's devices first:
 
 | Word | Device entry                                                  |
 | ---- | ------------------------------------------------------------- |
-| 0    | Type: 1 screen, 2 keyboard, 3 teletype                        |
+| 0    | Type: 1 screen, 2 keyboard, 3 teletype, or 0 for no device    |
 | 1    | Port, or FFFFh for none                                       |
 | 2    | Interrupt, or FFFFh for none                                  |
 | 3    | Interrupt cores: one bit per core                             |
@@ -482,15 +486,21 @@ Depends on: CL2.
   banks; errors from a device's `Create` and from `Validate` naming the
   device; `Run`'s cycles for many short calls adding up to the clock rate.
 
-### CL4 [ ] wiki: Ozzy's machine page
+### CL4 [x] wiki: Ozzy's machine page
 
 Depends on: CL3.
 
 - `3-Ozzy-Computer.md`: what Ozzy is, the config file, memory, and the
   machine table. Home links it.
+- The machine table gives every bank and device entry a fixed place
+  (`kMachineTableBanks` and `kMachineTableDevices`), rather than packing the
+  devices after the Ozzy's banks, so programs find them at constant
+  addresses.
 
 **Verify**
 - The user reviews the page with CL2 and CL3's behavior.
+- Standard checks, and unit tests: the entries' offsets pinned, the unused
+  bank entries 0, and the devices in place for an Ozzy with all 16 banks.
 
 ### CL5 [ ] ozzy: the boot ROM's banner
 

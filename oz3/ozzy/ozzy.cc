@@ -80,12 +80,13 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
   table[kMachineHeaderDevices] = static_cast<uint16_t>(devices.size());
 
   absl::Span<uint16_t> entries =
-      absl::MakeSpan(table).subspan(kMachineHeaderSize);
+      absl::MakeSpan(table).subspan(kMachineTableBanks);
   for (int i = 0; i < bank_count; ++i) {
     entries[kMachineBankRom] = GetBootRomPages(i);
     entries[kMachineBankRam] = settings.banks[i];
     entries.remove_prefix(kMachineBankSize);
   }
+  entries = absl::MakeSpan(table).subspan(kMachineTableDevices);
   for (const std::shared_ptr<const DeviceFactory>& device : devices) {
     const DeviceConfig& device_config = device->GetConfig();
     if (device_config.name == Ozzy::kScreenName) {

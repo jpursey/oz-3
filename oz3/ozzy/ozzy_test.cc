@@ -128,17 +128,26 @@ TEST(OzzyTest, BankPages) {
 // The machine table
 //==============================================================================
 
+TEST(OzzyTest, MachineTableLayout) {
+  // Programs find entries at these offsets, so they never move.
+  EXPECT_EQ(kMachineTableBanks, 0x08);
+  EXPECT_EQ(kMachineTableDevices, 0x28);
+}
+
 TEST(OzzyTest, DefaultMachineTable) {
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
-  int offset = 0;
   EXPECT_THAT(
-      GetTableWords(*ozzy, offset, kMachineHeaderSize),
+      GetTableWords(*ozzy, 0, kMachineHeaderSize),
       ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 32, 1, 2, 0));
-  offset += kMachineHeaderSize;
-  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineBankSize),
+  EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, kMachineBankSize),
               ElementsAre(0x0001, 0x7FFE));
-  offset += kMachineBankSize;
+
+  // The banks the Ozzy doesn't have are 0.
+  int offset = kMachineTableBanks + kMachineBankSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableDevices - offset),
+              Each(0));
+  offset = kMachineTableDevices;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(1, 0xFFFF, 6, 0x01, 0, 15, 80, 24));
   offset += kMachineDeviceSize;
@@ -164,14 +173,15 @@ TEST(OzzyTest, FullMachineTable) {
   settings.teletype = GetOzzyTeletypeSettings();
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  int offset = 0;
   EXPECT_THAT(
-      GetTableWords(*ozzy, offset, kMachineHeaderSize),
+      GetTableWords(*ozzy, 0, kMachineHeaderSize),
       ElementsAre(kMachineTableVersion, 0xE100, 0x05F5, 3, 256, 3, 3, 0));
-  offset += kMachineHeaderSize;
-  EXPECT_THAT(GetTableWords(*ozzy, offset, 3 * kMachineBankSize),
+  EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, 3 * kMachineBankSize),
               ElementsAre(0x0001, 0x0002, 0, 0xFFFF, 0, 0x7FFF));
-  offset += 3 * kMachineBankSize;
+  int offset = kMachineTableBanks + 3 * kMachineBankSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableDevices - offset),
+              Each(0));
+  offset = kMachineTableDevices;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(1, 0xFFFF, 9, 0x06, 2, 15, 40, 12));
   offset += kMachineDeviceSize;
@@ -187,6 +197,24 @@ TEST(OzzyTest, FullMachineTable) {
               Each(0));
 }
 
+TEST(OzzyTest, AllBanksMachineTable) {
+  OzzySettings settings;
+  settings.banks.assign(kMaxMemoryBanks, 0xFFFF);
+  settings.banks[0] = 0x7FFE;
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderBanks, 1)[0], kMaxMemoryBanks);
+  const int last_bank =
+      kMachineTableBanks + (kMaxMemoryBanks - 1) * kMachineBankSize;
+  EXPECT_THAT(GetTableWords(*ozzy, last_bank, kMachineBankSize),
+              ElementsAre(0, 0xFFFF));
+
+  // The devices are where they always are, right after the last bank.
+  EXPECT_EQ(last_bank + kMachineBankSize, kMachineTableDevices);
+  EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices, kMachineDeviceSize),
+              ElementsAre(1, 0xFFFF, 6, 0x01, 0, 15, 80, 24));
+}
+
 TEST(OzzyTest, NoDevicesMachineTable) {
   OzzySettings settings;
   settings.screen.reset();
@@ -194,10 +222,9 @@ TEST(OzzyTest, NoDevicesMachineTable) {
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 0);
-  EXPECT_THAT(
-      GetTableWords(*ozzy, kMachineHeaderSize + kMachineBankSize,
-                    kMachineTableSize - kMachineHeaderSize - kMachineBankSize),
-      Each(0));
+  EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices,
+                            kMachineTableSize - kMachineTableDevices),
+              Each(0));
 }
 
 //==============================================================================
