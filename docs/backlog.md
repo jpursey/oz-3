@@ -26,12 +26,79 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Ozzy settings through ConfigReader
+
+- **Layers:** ozzy, apps, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** Game Bits *Config reader with error locations*
+- **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (The config
+  file); Game Bits' `docs/worklog/config_reader.md`
+
+`ReadOzzySettings` checks keys, types, and ranges with helpers of its own, and
+its errors name only the setting's path (`devices[1].port: unknown key`), as
+Game Bits' config kept no locations. Game Bits' `ConfigReader` now does those
+checks and names the line too: `hello.ozzy(12:5): devices[1].columns: must be
+1 to 132`. Reading the settings with it removes the helpers, and `ozzy` passes
+the config file's name so its errors carry it. The wiki's Ozzy Computer page
+(Errors) shows the new form.
+
+## Ozzy console polish
+
+- **Layers:** ozzy, apps
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (ozzy: the
+  console frontend, apps: ozzy)
+
+What trying `ozzy` by hand left open:
+- **Frame rate:** `absl::SleepFor` sleeps in Windows' 15.6 ms timer ticks, so
+  frames land near 32 to 64 a second rather than 60 (the Ozzy's speed is right
+  regardless). A high-resolution waitable timer in the Windows console code
+  would make them even.
+- **Console size:** a console smaller than the screen draws the rows past its
+  bottom over its last row, and cuts off the columns past its edge. `ozzy`
+  could say so on starting, or resize the console.
+- **The teletype's last line:** quitting a teletype-only Ozzy mid-line leaves
+  the shell's prompt on that line.
+- **Unchecked by hand:** the overline (`ESC[53m`), the sextants' font, and the
+  width of East Asian "ambiguous" characters (such as the shades and card
+  suits), in the old console host as well as Windows Terminal; and the frame
+  time of the default Ozzy in Release, and the cycles a second with
+  `--max-speed`.
+
+## Screens without pixels
+
+- **Layers:** devices, ozzy
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [console-devices.md](worklog/console-devices.md) (Pixels)
+
+Every refresh draws the screen's picture into pixels (about 150 KB for 80 by
+24), which the console frontend never shows, as it draws the cells as text. At
+30 refreshes a second that is little, but with `--max-speed` it grows with the
+speed. A screen setting, or a host call, that leaves the pixels undrawn would
+save it for hosts that show text.
+
+## Program lexer's code points through Game Bits
+
+- **Layers:** tools
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `oz3/tools/program_lexer.cc`
+
+The program lexer decodes surrogate pairs by hand, where Game Bits'
+`gb::ConsumeCodePoint` (`gb/base/unicode.h`) now does it.
+
 ## Timer device
 
 - **Layers:** devices, ozzy
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Ozzy machine*
+- **Depends on:** nothing
 - **Background:** [ozzy_design.md](ozzy_design.md) (Timer)
 
 A periodic interrupt at a configured rate, and a port to read the cycle count
@@ -42,7 +109,7 @@ and the host's date and time.
 - **Layers:** devices, ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Ozzy machine*
+- **Depends on:** nothing
 - **Background:** [ozzy_design.md](ozzy_design.md) (Disk drive, File names)
 
 The smart drive, which owns its file system: a flat directory of 12.3 named
@@ -67,7 +134,7 @@ the shell.
 - **Layers:** ozzy, apps
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Ozzy machine*
+- **Depends on:** nothing
 - **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (The `ozzy`
   app); [console-devices.md](worklog/console-devices.md) (Pixels)
 

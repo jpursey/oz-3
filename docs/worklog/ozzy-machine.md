@@ -1,15 +1,16 @@
 # Ozzy Machine
 
-The first Ozzy anyone can run. The new `ozzy` library builds a machine from a
+The first Ozzy anyone can run. The `ozzy` library builds a machine from a
 config file: the processor, its banks and cores, and the console devices (see
 [console-devices.md](console-devices.md)). It writes the **machine table** and
 the **boot ROM** into page 0 of bank 0, and starts core 0, which clears the
-screen, prints a banner, and echoes keys. The new `ozzy` app runs it in the
+screen, prints a banner, and echoes keys. The `ozzy` app runs it in the
 Windows console in real time:
 
 ```
 ozzy                  // The default Ozzy: one core, a screen, and a keyboard
 ozzy hello.ozzy       // The Ozzy hello.ozzy describes
+ozzy --max-speed      // As fast as the host can
 ```
 
 A host that embeds Ozzy (a game, or a test) uses the library alone:
@@ -186,7 +187,7 @@ stack segment can't be (see the backlog's *Labels in address forms*).
 
 ### The `ozzy` app
 
-`ozzy [config]` runs an Ozzy in the Windows console.
+`ozzy [--max-speed] [config]` runs an Ozzy in the Windows console.
 - **Screen:** it draws the screen's picture as text, in the console's
   alternate screen buffer, with virtual terminal sequences: each cell's
   character as its nearest Unicode character, inverse, half intensity
@@ -216,7 +217,7 @@ stack segment can't be (see the backlog's *Labels in address forms*).
 
 ### Wiki
 
-Two new pages, linked from Home in place of the "planned" entries:
+Two pages, linked from Home, which also lists `ozzy` among the tools:
 - **3-Ozzy-Computer:** what Ozzy is, the config file, memory, the machine
   table, the boot ROM, and running `ozzy`.
 - **3.1-Ozzy-Devices:** the screen, keyboard, and teletype for programmers,
@@ -238,7 +239,7 @@ Two new pages, linked from Home in place of the "planned" entries:
 
 Ozzy is the computer, the hardware product, as the Osborne 1 was; the OS it
 runs will have a name of its own, as the Osborne ran CP/M. So the class is
-`Ozzy` (CL2 named it `Machine`, and CL3 renamed it), while the machine table
+`Ozzy` (it was first named `Machine`), while the machine table
 keeps its name, as it describes the machine to the programs on it.
 `OzzySettings` follows the devices' `<Device>Settings`: what a host sets,
 which a config file entry parses into. "Console" is the Windows console, the
@@ -406,328 +407,144 @@ both sides.
 
 ```
 // console_text.h
+// Returns the UTF-8 text closest to the built-in character set's character.
+std::string_view GetCharacterText(uint8_t character);
+
 // Returns the text that draws `picture` from the console's top left, with
 // virtual terminal sequences, redrawing only the rows that differ from `last`
 // (all of them if it is null or a different size).
 std::string DrawConsoleText(const ScreenPicture& picture,
                             const ScreenPicture* last);
 
-// Returns the UTF-8 text closest to the built-in character set's character.
-std::string_view GetCharacterText(uint8_t character);
+// Returns the teletype's output with the control characters a teletype
+// doesn't act on dropped.
+std::string GetTeletypeText(std::string_view output);
 
 // console.h
+enum class ConsoleMode { kScreen, kLines };
+
 class Console {
  public:
-  // Takes over the console (virtual terminal output, UTF-8, the alternate
-  // screen buffer, and raw key input), or returns an error. It is given back
-  // as it was when the Console is destroyed.
-  static absl::StatusOr<std::unique_ptr<Console>> Create();
-  virtual ~Console() = default;
+  // Takes over the console (virtual terminal output, raw key input, and for a
+  // screen, the alternate buffer), or returns an error. It is given back as
+  // it was when the Console is destroyed.
+  static absl::StatusOr<std::unique_ptr<Console>> Create(ConsoleMode mode);
 
-  // Writes text, which may hold virtual terminal sequences.
   virtual void Write(std::string_view text) = 0;
-
-  // Returns the key events pressed since the last call, in Ozzy's codes.
-  virtual std::vector<uint16_t> TakeKeys() = 0;
-
-  // Returns whether the user asked to quit (Ctrl+Break, or closing the window).
+  virtual std::vector<uint16_t> TakeKeys() = 0;  // In Ozzy's key codes.
   virtual bool IsQuitRequested() const = 0;
 };
 
+// console_display.h
+ConsoleMode GetOzzyConsoleMode(Ozzy& ozzy);  // kScreen with a screen.
+
+class ConsoleDisplay final {
+ public:
+  ConsoleDisplay(Ozzy& ozzy, Console& console);
+
+  // Shows the screen's picture, if it was refreshed, or the teletype's output.
+  void Update();
+};
+
 // win_console.h: no Windows headers, so it can be tested.
-// Returns the Ozzy key event for a Windows key press, or 0 for none.
 uint16_t GetOzzyKey(uint16_t virtual_key, char32_t character,
                     uint32_t control_keys);
+bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
 ```
 
-- `win_console.cc` is the only Windows implementation, picked by the build as
-  the C++ style asks, and includes `<windows.h>` last. Only Windows builds, so
-  there is no `gen_` one until another platform does.
-- `GetOzzyKey` is all of the key translation, so `win_console_test.cc` tests it
-  with the Windows virtual key constants. Reading and writing the console
-  itself is tested by hand.
+- **Characters:** each of the 256 is a code point in a table (the graphics,
+  the hatch, and the symbols), or ASCII as itself, or a computed sextant
+  (Unicode's leave out the blank, the two halves, and full, which are a space,
+  U+258C, U+2590, and U+2588). The source holds code points rather than the
+  characters, as OZ-3 compiles without `/utf-8`, and Game Bits'
+  `gb::AppendUtf8` encodes them.
+- **Drawing:** drawing every row clears the console first. Each changed row
+  starts with a move to its own position, so nothing spills from one row into
+  the next, and its style changes only between runs of cells that share
+  attributes. The cursor is hidden while rows are drawn, and the style is the
+  default between rows, so each call's text stands on its own. The inverse
+  cursor is a block, and both blink rates are the console's own blink.
+- **`ConsoleDisplay`** keeps the last picture it drew whole, and draws only at
+  a refresh (the screen's frame count changing), so the first picture is drawn
+  whole and later ones only where they changed. Copying the pixels with the
+  cells costs little, and a text-only copy would go stale whenever
+  `DrawConsoleText` read another field. The teletype's output is taken every
+  update, even when it is dropped, so it never fills and stalls the program
+  writing it.
+- **`win_console.cc`** is the only implementation, compiled only on Windows,
+  as Game Bits' `gb/thread` does, and includes `<windows.h>` last. Only
+  Windows builds, so there is no `gen_` one.
+  - Text is converted to UTF-16 and written with `WriteConsoleW`, so the
+    console's code page is left alone.
+  - Output has virtual terminal processing, and a line feed only moves down,
+    as on a teletype. `kScreen` is the alternate buffer without wrapping, so a
+    row wider than the console is cut off; `kLines` is the console's own
+    buffer with wrapping, so a teletype's transcript stays after quitting.
+  - Input is raw key events (`ENABLE_EXTENDED_FLAGS` alone), so Ctrl+C is a
+    key, and quick edit doesn't pause the program on a click. Restoring the
+    input mode adds `ENABLE_EXTENDED_FLAGS`, which quick edit needs to come
+    back on.
+  - Ctrl+Break is a signal, which the control handler takes as quitting. On
+    closing the window, the handler sets the quit flag and never returns, so
+    the program finishes and exits on its own (the system ends it after a few
+    seconds if it doesn't).
+  - Only one `Console` exists at a time, as the console and its control
+    handler are the process's.
+- **`GetOzzyKey`** is all of the key translation: the named keys and F1 to F12
+  come from the virtual key, whatever character they type; then printable
+  ASCII characters; then Ctrl with a letter from the virtual key, as Windows
+  types nothing for Ctrl+Alt with one. Every key event holds the modifiers
+  held with it, so AltGr's characters keep Ctrl and Alt.
+- **Quitting:** many keyboards have no Break key, so Ctrl+Alt+Q quits too,
+  and never reaches the Ozzy. Only a Ctrl+Alt+Q that types nothing quits, as
+  AltGr is Ctrl+Alt and types a character with Q on some layouts (@ on a
+  German one). Ctrl+Alt+End was passed over, as Remote Desktop takes it as
+  Ctrl+Alt+Del.
+- The frontend's pieces are in the library rather than the app, as
+  executables have no tests. A host that embeds Ozzy doesn't call them, and as
+  a static library, doesn't link them.
 
 **Brittleness:** the console must be given back however the app exits, which
-`Console`'s destructor does, and its handler for Ctrl+Break and closing only
-sets a flag the app's loop checks.
+`Console`'s destructor does, and its control handler only sets a flag the
+app's loop checks.
 
 ### apps: ozzy
 
-- `oz3/apps/ozzy_main.cc`, linking `oz3_ozzy`, `gb_cli` for its flags, and
-  `gb_file` to read the config.
-- The loop: take keys and press them, run the cycles for the time since the
-  last frame (absl's clock, capped at 100 ms), draw the picture if it changed
-  (or write the teletype's output), and sleep until the next frame.
-- Performance: the default Ozzy at 1 MHz is 16,667 cycles a frame, which the
-  emulator runs in well under a millisecond in Release. Drawing an 80 by 24
-  picture's text is a few kilobytes. To be measured in CL10.
+- `oz3/apps/ozzy_main.cc`, the `ozzy` executable, linking `oz3_ozzy`,
+  `gb_cli` for its flags, and `gb_file` to read the config.
+- It reads the settings, creates the Ozzy, then the `Console` in
+  `GetOzzyConsoleMode`'s mode, so an error before then prints as any command
+  line error.
+- **The loop**, 60 frames a second: take keys and press them, run the cycles
+  for the real time since the last frame (absl's clock, capped at 100 ms),
+  update the `ConsoleDisplay`, and sleep until the next frame. A frame that
+  ends late starts the next at once, rather than catching up.
+- **`--max-speed`** runs 10,000 cycles at a time until the frame's end, so
+  the clock is checked often whatever the clock rate.
 
-### To confirm
+### Testing
 
-- **Quitting** (CL9, settled in CL10): Ctrl+Break is missing on many
-  keyboards, the user's included, so Ctrl+Alt+Q quits too, and never reaches
-  the Ozzy. Only a Ctrl+Alt+Q that types nothing quits, as AltGr is Ctrl+Alt
-  and types a character with Q on some layouts (@ on a German one).
-  Ctrl+Alt+End was passed over, as Remote Desktop takes it as Ctrl+Alt+Del.
-- **Overline** (CL8): Windows Terminal draws `ESC[53m`, but the old console
-  host may not. To check by hand.
-- **Sextants** (CL8): Unicode's sextants (U+1FB00 on) need a font that has
-  them, as Cascadia Mono does. To check by hand, falling back to the nearest
-  block character otherwise.
-- **Character widths** (CL8): several characters (such as ○, ■, ♠, ½, and
-  the shades) are East Asian "ambiguous" width, which a console may draw two
-  cells wide, shifting the rest of the row. Windows Terminal draws them one
-  cell wide by default. To check by hand; each row starts at its own
-  position, so a wide character never spills into the next row.
-- **Frame rate** (CL10): `absl::SleepFor` sleeps in Windows' 15.6 ms timer
-  ticks, so frames land near 32 to 64 a second rather than 60. The Ozzy's
-  speed is right regardless. To check by hand whether drawing or keys feel
-  uneven; if so, a high-resolution waitable timer in the Windows console code.
-- **Console size** (CL10): a console smaller than the screen draws the rows
-  past its bottom over its last row, and cuts off the columns past its edge.
-  To check by hand whether to say so on starting, or resize the console.
-- **Teletype's last line** (CL10): quitting a teletype-only Ozzy mid-line
-  leaves the shell's prompt on that line. To check by hand whether to end the
-  line on quitting.
-
-## CLs
-
-### CL1 [x] wiki: Ozzy's devices page
-
-Depends on: nothing.
-
-- `3.1-Ozzy-Devices.md`: the screen, keyboard, and teletype, as a programmer
-  sees them, from console-devices.md's Behavior: ports, interrupts, the
-  screen's addresses and control words, cells and attributes, the cursor,
-  clearing rows, the character set and its window, compact rows, the built-in
-  character set, refreshes and blinking, key codes, and teletype timing. Not
-  the host APIs.
-- Home: the Devices entry links the page.
-- Here: the backlog item comes out, this plan goes in, and a new backlog item,
-  *Graphical frontend*, takes what the console can't show (an Ozzy window
-  drawing the picture's pixels, through Game Bits' SDL and renderer).
-
-**Verify**
-- The user reviews the page against console-devices.md and the code.
-- Links resolve on GitHub's naming (lower case, no extension).
-
-### CL2 [x] ozzy: the library, and MachineSettings
-
-Depends on: nothing.
-
-- `oz3/ozzy/CMakeLists.txt`, and `oz3/CMakeLists.txt` adds it after
-  `devices`. CLAUDE.md's directory structure gains the library.
-- `machine_settings.h/.cc`: `MachineSettings`, the Ozzy defaults for each
-  device, and `ReadMachineSettings`.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: an empty config is the default Ozzy; each key and each device
-  type read; a device's defaults fill what it leaves out; RAM masks in hex;
-  `interrupt_cores` as one core, a list, and `"all"`; `devices: []`; and an
-  error naming the place for an unknown key, a wrong type, each range, a core
-  the Ozzy doesn't have, a second device of a type, a device's page that is
-  RAM, and bank 0's page 0 as RAM.
-
-### CL3 [x] ozzy: Ozzy, without the boot ROM
-
-Depends on: CL2.
-
-- CL2's `MachineSettings` becomes `OzzySettings` (`ozzy_settings.h/.cc`),
-  with `ReadOzzySettings` (see Names).
-- `ValidateOzzySettings`, taking Ozzy's rules out of the reader so
-  `Ozzy::Create` shares them.
-- `machine_table.h`, and `ozzy.h/.cc`: `Create` builds the processor and
-  devices and writes the machine table, but starts no core; `Run`.
-
-**Verify**
-- Standard checks.
-- Unit tests: the processor's banks (reads and writes on RAM, ROM, and empty
-  pages), cores, ports, and clock; each device found, or null; the machine
-  table's words for the default Ozzy and one with every device and several
-  banks; errors from a device's `Create` and from `Validate` naming the
-  device; `Run`'s cycles for many short calls adding up to the clock rate.
-
-### CL4 [x] wiki: Ozzy's machine page
-
-Depends on: CL3.
-
-- `3-Ozzy-Computer.md`: what Ozzy is, the config file, memory, and the
-  machine table. Home links it.
-- The machine table gives every bank and device entry a fixed place
-  (`kMachineTableBanks` and `kMachineTableDevices`), rather than packing the
-  devices after the Ozzy's banks, so programs find them at constant
-  addresses.
-
-**Verify**
-- The user reviews the page with CL2 and CL3's behavior.
-- Standard checks, and unit tests: the entries' offsets pinned, the unused
-  bank entries 0, and the devices in place for an Ozzy with all 16 banks.
-
-### CL5 [x] ozzy: the boot ROM's banner
-
-Depends on: CL3, and Game Bits *Embedded files*.
-
-- `boot_rom.oza`, embedded in the library (as `boot_rom_source.h`), which
-  `GetBootRom` (`boot_rom.h/.cc`) assembles once, and `Ozzy::Create` loads
-  and starts core 0 on. It reads the table, clears the screen, and prints the
-  banner with its numbers, to the screen or the teletype, then halts.
-- Printing a character past the right edge wraps it (as a terminal does, when
-  the next character comes, so a full line has no blank row after it), and a
-  new line below the bottom row scrolls, as the banner needs them on a small
-  screen, so CL7 only adds the keys.
-- `ValidateOzzySettings` requires some RAM, for the boot ROM's stack.
-- `oz3_ozzy` links `oz3_tools`, to assemble and load the boot ROM.
-- The wiki's Ozzy page gains The boot ROM (the banner).
-- The backlog gains *Labels in address forms*.
-
-**Verify**
-- Standard checks.
-- Unit tests: the banner's cells (and cursor) for a few machine shapes,
-  including the decimal numbers at their edges (1 core, 2 and 8 cores, a
-  single page of RAM, and the most RAM with a screen, 1016K); clock rates
-  in kHz and Hz, 100 MHz, and 99999999 Hz; the screen in another bank; a 10 by
-  3 screen that wraps and scrolls, and one as wide as the banner; the stack's
-  page; the banner on the teletype for an Ozzy without a screen, as fast as it
-  prints and at 9600 baud; core 0 halted afterward for an Ozzy with neither;
-  the source's machine table constants against `machine_table.h`.
-- `oz3asm` assembles `boot_rom.oza` on its own.
-
-### CL6 [x] ozzy: the Ozzy's fixed wiring
-
-Depends on: CL5.
-
-- Each device's port, interrupt, interrupt cores, and pages are fixed (see The
-  config file), as constants in `ozzy_settings.h`. `OzzySettings` holds
-  `OzzyScreenSettings` and `OzzyTeletypeSettings`, without the wiring, and
-  `keyboard` is a bool. `GetOzzy<Device>Settings` add the wiring.
-- The config file loses `bank`, `page`, `interrupt`, `interrupt_cores`, and
-  `port`, so they are unknown keys, and `ValidateOzzySettings` checks only
-  that page 15 of bank 0 isn't RAM when there is a screen.
-- The machine table is unchanged.
-- The wiki's Ozzy Computer page: the config file's device keys, the errors,
-  and memory. The Ozzy Devices page gives each device's fixed wiring, which
-  it now leaves to the machine.
-
-**Verify**
-- Standard checks.
-- Unit tests: each device's settings with the wiring; the Ozzy's device
-  settings' defaults match the devices'; the removed keys are unknown; the
-  screen's page as RAM; the machine table for every device; the boot ROM's
-  banner unchanged.
-
-### CL7 [x] ozzy: the boot ROM echoes keys
-
-Depends on: CL6.
-
-- The keyboard handler in `boot_rom.oza`: echo, Enter, and Backspace, on the
-  screen and the teletype. The boot ROM finds whether there is a keyboard in
-  the machine table, and sets the handler with `SETI` on the keyboard's fixed
-  interrupt, reading its fixed port, as constants in its source. It halts with
-  interrupts enabled.
-- After a full row, the cursor shows on the row's last column, rather than
-  past the screen's edge.
-- The wiki's Ozzy page describes the echo.
-
-**Verify**
-- Standard checks.
-- Unit tests: keys pressed between runs appear on the next picture, and keys
-  pressed before the banner after it; every character 20h to 7Eh, 16 (as
-  many as the keyboard holds) at once; Enter;
-  Backspace (including at the start of a row, and in a full row); wrapping
-  at the right edge and scrolling past the bottom row (the new bottom row is
-  clear); ignored keys and modifiers; the same on the teletype, as fast as it prints and at 9600 baud; the source's keyboard
-  wiring and key constants against `ozzy_settings.h` and `keyboard.h`.
-
-### CL8 [x] ozzy: console text
-
-Depends on: CL2, and Game Bits *Code point conversions in gb_base*.
-
-- `console_text.h/.cc`: `DrawConsoleText` and `GetCharacterText`.
-- Each character's nearest Unicode character is a code point in a table, and
-  the sextants are computed (Unicode's leave out the blank, the two halves,
-  and full, which are a space, ▌, ▐, and █). Of 00h to 1Fh, 13h and 1Dh are
-  ¼ and ½, and the rest are blocks, quadrants, triangles, heavy lines, and a
-  dot. The source holds code points rather than the characters, as OZ-3
-  compiles without `/utf-8`, and Game Bits' `gb::AppendUtf8` (Game Bits *Code
-  point conversions in gb_base*) encodes them.
-- Drawing every row clears the console first. The cursor is hidden while
-  rows are drawn, and the style is the default between rows, so each call's
-  text stands on its own. The inverse cursor is a block, and both blink rates
-  are the console's own blink.
-
-**Verify**
-- Standard checks.
-- Unit tests: every one of the 256 characters is one printable character;
-  ASCII as itself, and the graphics, sextants, and symbols at their edges;
-  each attribute's sequence, those text can't show left out, and runs of
-  cells sharing attributes written once; only changed rows redrawn, and
-  nothing for the same picture; a different size redrawing all; the cursor's
-  position, every shape and blinking, hiding when off, changing alone, and put back after drawing rows.
-
-### CL9 [x] ozzy: the Windows console
-
-Depends on: CL2.
-
-- `console.h`, `win_console.h/.cc`: `Console` and `GetOzzyKey`. The build
-  compiles the `win_` files only on Windows, as Game Bits' `gb/thread` does.
-- Text is converted to UTF-16 and written with `WriteConsoleW`, so the
-  console's code page is left alone. Wrapping is off, so a row wider than the
-  console is cut off rather than continuing on the next.
-- Input is raw key events (`ENABLE_EXTENDED_FLAGS` alone), so Ctrl+C is a key
-  and quick edit doesn't pause the program on a click. Ctrl+Break is still a
-  signal. On closing the window, the control handler sets the quit flag and
-  never returns, so the program finishes and exits on its own (the system
-  ends it after a few seconds if it doesn't).
-- `GetOzzyKey`: the named keys and F1 to F12 come from the virtual key,
-  whatever character they type; then printable ASCII characters; then Ctrl
-  with a letter from the virtual key, as Windows types nothing for Ctrl+Alt
-  with one. AltGr's characters keep Ctrl and Alt, as every key event holds the
-  modifiers held. Only one `Console` exists at a time, as the console and its
-  control handler are the process's.
-
-**Verify**
-- Standard checks.
-- Unit tests (`win_console_test.cc`): `GetOzzyKey` for characters, Enter, Tab,
-  Backspace, Escape, Delete, Ctrl with letters, the arrows, Home to Page Down,
-  Insert, F1 to F12, each modifier, and keys that are none (Shift alone).
-
-### CL10 [x] apps: ozzy
-
-Depends on: CL7, CL8, CL9.
-
-- `oz3/apps/ozzy_main.cc`, and the `ozzy` executable in `oz3/apps/CMakeLists.txt`.
-- The wiki's Ozzy page gains Running Ozzy, and Home's Ozzy entry is no longer
-  planned. README's mention of `ozzy` matches.
-- `console_display.h/.cc`: `ConsoleDisplay`, which shows an Ozzy in a
-  `Console`: the screen's picture at each refresh, or the teletype's output.
-  It is in the library rather than the app so it is tested, with a fake
-  `Console`. It keeps the last picture whole: copying its pixels at each
-  refresh costs little, and a text-only copy would go stale whenever
-  `DrawConsoleText` read another field.
-- `GetTeletypeText` (`console_text`): the teletype's output with the control
-  characters a teletype doesn't act on dropped, as a console takes some as
-  the start of a sequence.
-- `Console::Create` takes a `ConsoleMode` (a CL9 change): `kScreen`, in the
-  alternate buffer without wrapping, or `kLines`, in the console's own buffer
-  with wrapping, for a teletype.
-- `--max-speed` runs 10,000 cycles at a time until the frame's end, so the
-  clock is checked often whatever the clock rate.
-- Ctrl+Alt+Q quits as well as Ctrl+Break (a CL9 change, see *Quitting* in To
-  confirm): `IsQuitKey` in `win_console.h`, tested beside `GetOzzyKey`.
-
-**Verify**
-- Standard checks.
-- Unit tests (`console_display_test.cc`): the mode follows the screen;
-  nothing before the first refresh; the screen drawn whole first, then only
-  where it changed, and nothing without a refresh; the teletype's output
-  written; and an Ozzy with neither saying so. `GetTeletypeText` keeping
-  printable characters and what teletypes act on, and dropping the rest.
+- `ozzy_settings_test.cc`: reading every key and device type, the devices'
+  defaults filling what a config leaves out, the wiring added to each
+  device's settings, and an error naming the place for each kind of mistake.
+- `ozzy_test.cc`: the processor's banks (reads and writes on RAM, ROM, and
+  empty pages), cores, ports, and clock; each device found, or null; the
+  machine table's words for Ozzys of several shapes, with its offsets pinned;
+  errors from a device and from validation naming the device; and `Run`'s
+  cycles adding up to the clock rate over many short calls.
+- `boot_rom_test.cc`: the banner's cells and cursor for many machine shapes
+  (cores, RAM, and clock rates at their edges, a small screen that wraps and
+  scrolls, the screen in another bank), and on the teletype; the echo of every
+  character, Enter, Backspace, wrapping, scrolling, and ignored keys, on the
+  screen and the teletype; and the source's constants against
+  `machine_table.h`, `ozzy_settings.h`, and `keyboard.h`.
+- `console_text_test.cc`: every character one printable character, each
+  attribute's sequence, runs, only changed rows redrawn, every cursor shape,
+  and the teletype filter. `console_display_test.cc` runs real Ozzys against
+  a fake `Console`. `win_console_test.cc` tests `GetOzzyKey` and `IsQuitKey`
+  with the Windows constants.
 - By hand, in Windows Terminal: the default Ozzy boots to its banner and
-  echoes typing, Enter, Backspace, and scrolling; attributes and the cursor
-  look right (with a test program written to the screen); a teletype-only
-  config; a config with an error; `--max-speed`; Ctrl+Break and closing the
-  window restore the console.
-- Performance: the frame time of the default Ozzy in Release, and the cycles
-  a second with `--max-speed`.
+  echoes typing, and Ctrl+Alt+Q quits, giving the console back. A config with
+  an error prints it and exits with 1, and without a console `ozzy` says so.
+  Reading and writing the console itself has no unit tests.
+
