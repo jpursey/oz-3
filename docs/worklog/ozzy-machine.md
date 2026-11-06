@@ -651,11 +651,26 @@ Depends on: CL2, and Game Bits *Code point conversions in gb_base*.
   nothing for the same picture; a different size redrawing all; the cursor's
   position, every shape and blinking, hiding when off, changing alone, and put back after drawing rows.
 
-### CL9 [ ] ozzy: the Windows console
+### CL9 [x] ozzy: the Windows console
 
 Depends on: CL2.
 
-- `console.h`, `win_console.h/.cc`: `Console` and `GetOzzyKey`.
+- `console.h`, `win_console.h/.cc`: `Console` and `GetOzzyKey`. The build
+  compiles the `win_` files only on Windows, as Game Bits' `gb/thread` does.
+- Text is converted to UTF-16 and written with `WriteConsoleW`, so the
+  console's code page is left alone. Wrapping is off, so a row wider than the
+  console is cut off rather than continuing on the next.
+- Input is raw key events (`ENABLE_EXTENDED_FLAGS` alone), so Ctrl+C is a key
+  and quick edit doesn't pause the program on a click. Ctrl+Break is still a
+  signal. On closing the window, the control handler sets the quit flag and
+  never returns, so the program finishes and exits on its own (the system
+  ends it after a few seconds if it doesn't).
+- `GetOzzyKey`: the named keys and F1 to F12 come from the virtual key,
+  whatever character they type; then printable ASCII characters; then Ctrl
+  with a letter from the virtual key, as Windows types nothing for Ctrl+Alt
+  with one. AltGr's characters keep Ctrl and Alt, as every key event holds the
+  modifiers held. Only one `Console` exists at a time, as the console and its
+  control handler are the process's.
 
 **Verify**
 - Standard checks.

@@ -3,12 +3,24 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+# The console's implementation for the platform. Only Windows has one.
+if (WIN32)
+  set(oz3_ozzy_internal_SOURCE
+    win_console.cc win_console.h
+  )
+  set(oz3_ozzy_internal_TEST_SOURCE
+    win_console_test.cc
+  )
+endif()
+
 set(oz3_ozzy_SOURCE
   boot_rom.cc boot_rom.h
+  console.h
   console_text.cc console_text.h
   machine_table.h
   ozzy.cc ozzy.h
   ozzy_settings.cc ozzy_settings.h
+  ${oz3_ozzy_internal_SOURCE}
 )
 set(oz3_ozzy_DEPS
   absl::algorithm_container
@@ -35,6 +47,7 @@ set(oz3_ozzy_TEST_SOURCE
   console_text_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc
+  ${oz3_ozzy_internal_TEST_SOURCE}
 )
 
 gb_add_library(oz3_ozzy)
