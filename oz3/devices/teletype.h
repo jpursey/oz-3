@@ -32,6 +32,8 @@ struct TeletypeSettings {
   // bits, and a stop bit.
   static constexpr int kBitsPerChar = 10;
 
+  bool operator==(const TeletypeSettings&) const = default;
+
   // The processor port the teletype is on.
   int port = 0;
 

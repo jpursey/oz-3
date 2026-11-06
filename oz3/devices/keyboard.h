@@ -68,6 +68,8 @@ inline constexpr uint16_t kKeyAlt = 0x0400;
 
 // Everything a host sets about a keyboard but its name: its wiring.
 struct KeyboardSettings {
+  bool operator==(const KeyboardSettings&) const = default;
+
   // The processor port the keyboard is on.
   int port = 0;
 

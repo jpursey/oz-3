@@ -40,18 +40,21 @@ the default Ozzy:
 
 ```
 // hello.ozzy
-clock_hz: 1000000   // 1 Hz to 100 MHz
-cores: 4            // 1 to 8
-ports: 32           // 16 to 256
+clock_hz: 1000000,  // 1 Hz to 100 MHz
+cores: 4,           // 1 to 8
+ports: 32,          // 16 to 256
 banks: [
   { ram: 0x7FFE },  // Bank 0: pages 1 to 14 (page 0 is always the boot ROM)
-  { ram: 0xFFFF },  // Bank 1: every page
-]
+  { ram: 0xFFFF }   // Bank 1: every page
+],
 devices: [
   { type: "screen", bank: 0, page: 15, interrupt: 6, columns: 80, rows: 24 },
-  { type: "keyboard", port: 1, interrupt: 1, interrupt_cores: 0 },
+  { type: "keyboard", port: 1, interrupt: 1, interrupt_cores: 0 }
 ]
 ```
+
+As in JSON, entries are separated by commas, including the file's own, and
+there is no comma after the last one.
 
 - **Banks** are 1 to 16, and each gives its RAM pages as a mask, bit `n` for
   page `n`, as `MemoryPageMasks`, the machine table, and the assembler's
@@ -82,9 +85,9 @@ devices: [
 | `teletype` | port 2, baud 0 (as fast as cores write)                                        |
 
 - Errors name where they are, as gb::Config keeps no line numbers:
-  `devices[1].columns: must be 1 to 132`. An unknown key, a value of the wrong
-  type, and a value out of range are all errors, so a typo never goes
-  unnoticed.
+  `devices[1].interrupt_cores: the Ozzy has no core 2`. An unknown key, a
+  value of the wrong type, and a value out of range are all errors, so a typo
+  never goes unnoticed.
 
 ### Memory
 
@@ -239,6 +242,12 @@ host's; the console devices are always named by their own names.
 
 ```
 // machine_settings.h
+// Ozzy's settings for each console device, which a device in a config file
+// starts from. Functions, as ScreenSettings isn't a constant expression.
+ScreenSettings GetOzzyScreenSettings();
+KeyboardSettings GetOzzyKeyboardSettings();
+TeletypeSettings GetOzzyTeletypeSettings();
+
 struct MachineSettings {
   static constexpr int64_t kMaxClockHz = 100'000'000;
   static constexpr int kMinPorts = 16;
@@ -247,8 +256,8 @@ struct MachineSettings {
   int cores = 1;
   int ports = 32;
   std::vector<uint16_t> banks = {0x7FFE};  // The RAM pages of each bank.
-  std::optional<ScreenSettings> screen = kDefaultScreenSettings;
-  std::optional<KeyboardSettings> keyboard = kDefaultKeyboardSettings;
+  std::optional<ScreenSettings> screen = GetOzzyScreenSettings();
+  std::optional<KeyboardSettings> keyboard = GetOzzyKeyboardSettings();
   std::optional<TeletypeSettings> teletype;
 };
 
@@ -260,7 +269,11 @@ absl::StatusOr<MachineSettings> ReadMachineSettings(std::string text);
 - Reading checks what only the config knows (keys, types, ranges, the cores
   an interrupt names, one device of each type, device pages not RAM). What the devices
   and the processor check themselves (a screen's size and rates, ports in
-  range) is left to `Machine::Create`, so no rule is written twice.
+  range) is left to `Machine::Create`, so no rule is written twice; reading
+  only checks those fit in an `int`. A device's bank and page are checked in
+  reading, as it needs them to tell whether the page is RAM.
+- A screen's `characters` is an array of words, whose length the screen
+  checks.
 - `kMinPorts` keeps ports 0 to 15 for devices, as ozzy_design.md lays them
   out; 32 leaves room for the OS's call ports (16 to 23).
 
@@ -411,7 +424,7 @@ Depends on: nothing.
 - The user reviews the page against console-devices.md and the code.
 - Links resolve on GitHub's naming (lower case, no extension).
 
-### CL2 [ ] ozzy: the library, and MachineSettings
+### CL2 [x] ozzy: the library, and MachineSettings
 
 Depends on: nothing.
 

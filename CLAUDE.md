@@ -27,14 +27,13 @@ This is a CMake project, starting at the root. The directory structure is as fol
                    and can get deleted at any time.
 ```
 
-Libraries depend strictly in the order `core` → `tools` → `instruction_sets` → `devices`, and `apps` comes last (each may use the ones before it, and `core` uses nothing in OZ-3):
+Libraries depend strictly in the order `core` → `tools` → `instruction_sets` → `devices` → `ozzy`, and `apps` comes last (each may use the ones before it, and `core` uses nothing in OZ-3):
 - `core` (`oz3_core`): The runtime. `Processor` simulates a whole OZ-3 machine: its `CpuCore`s, `MemoryBank`s, and `Port`s, configured by `ProcessorConfig`. Shared resources are `Lockable`, and every access to one goes through a simulated lock. An `InstructionSet` is compiled from an `InstructionSetDef` (instructions and macros written in microcode) by the instruction compiler. Core has no instruction set of its own: every `CpuCoreConfig` is given one. `oz3_core_testing` holds `BaseCoreTest`, the test fixture for running cores, which other libraries' tests share.
 - `tools` (`oz3_tools`): Libraries and tools for working with the OZ-3 that a host application can use on its own: `InstructionAssembler` (instruction set source files to an `InstructionSetDef`), `InstructionDefExporter` (an `InstructionSetDef` to C++), and `ProgramLoader` (loading a `Program` into a `Processor`'s memory). The program assembler (`AssembleProgramFile`) turns program source into a `Program` and its `ProgramMap`, which program files, map files, and listings are written from.
 - `instruction_sets` (`oz3_instruction_sets`): Ready-made instruction sets, currently the default one (see Default instruction set). It links only `core`.
 - `devices` (`oz3_devices`): Ready-made devices for a `ProcessorConfig`, currently the teletype, the keyboard, and the screen (the console devices Ozzy is built from; see `docs/worklog/console-devices.md`). Each is a `Device` and its `DeviceFactory`, configured by a name and one `<Device>Settings` struct holding its wiring and behavior, with rates in real time that it turns into cycles with the processor's clock rate (a factory whose settings can be invalid is made by a static `Create`). A host finds a device with `Processor::GetDevice` and casts it to the type it named. It links only `core`; its tests also link `tools` and `instruction_sets`, to run programs against the devices with `DeviceProgramTest`.
+- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `MachineSettings` describes one, read from a `.ozzy` config file (Game Bits' text config) by `ReadMachineSettings`.
 - `apps`: Every executable, and no libraries. `oz3ism` is the command line instruction set assembler, and `oz3asm` the command line program assembler. Each links only what it needs: `oz3asm` links `instruction_sets` for its default instruction set, and `oz3ism` doesn't (see Default instruction set).
-
-The README also describes `ozzy` (a virtual computer and "OS" built from the other libraries, with the debugger), which doesn't exist yet (see the backlog). When it is added, it comes after `devices` in the dependency order, and before `apps`.
 
 ### Default instruction set
 

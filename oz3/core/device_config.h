@@ -21,6 +21,8 @@ namespace oz3 {
 
 // The wiring of one of a device's interrupts.
 struct DeviceInterrupt {
+  bool operator==(const DeviceInterrupt&) const = default;
+
   // The interrupt line, in the range [0, CpuCore::kInterruptCount).
   int interrupt = 0;
 

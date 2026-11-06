@@ -121,6 +121,8 @@ struct ScreenSettings {
   // The most cells, which fit in the page before the control words.
   static constexpr int kMaxCells = 0xFF0;
 
+  bool operator==(const ScreenSettings&) const = default;
+
   // The bank the screen's page is in, and the page in it.
   int bank = 0;
   int page = 0;
