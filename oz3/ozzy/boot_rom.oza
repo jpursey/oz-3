@@ -1,0 +1,410 @@
+; Copyright (c) 2026 John Pursey
+;
+; Use of this source code is governed by an MIT-style License that can be found
+; in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+;===============================================================================
+; The Ozzy's boot ROM
+;
+; Core 0 runs this at power on, from page 0 of bank 0. It reads the machine
+; table, clears the screen, prints the banner to the screen (or, without one, to
+; the teletype), and halts.
+;
+; The code and its strings are one ROM segment, which is also the DATA segment,
+; so the machine table is read with D(n). The screen's page is the EXTRA bank.
+; The stack is in a page of RAM the host places, and the variables are the
+; first words pushed onto it, from S(-1) down.
+;===============================================================================
+
+;-------------------------------------------------------------------------------
+; The machine table (see oz3/ozzy/machine_table.h)
+;-------------------------------------------------------------------------------
+
+.CONST TABLE = 0F00h
+.CONST TABLE_CLOCK_HZ = TABLE + 1
+.CONST TABLE_CORES = TABLE + 3
+.CONST TABLE_BANKS = TABLE + 5
+.CONST TABLE_DEVICES = TABLE + 6
+.CONST TABLE_BANK_ENTRIES = TABLE + 08h
+.CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
+
+; A bank entry: its RAM pages are its second word.
+.CONST BANK_RAM = 1
+.CONST BANK_SIZE = 2
+
+; A device entry.
+.CONST DEVICE_TYPE = 0
+.CONST DEVICE_PORT = 1
+.CONST DEVICE_BANK = 4
+.CONST DEVICE_PAGE = 5
+.CONST DEVICE_COLUMNS = 6
+.CONST DEVICE_ROWS = 7
+.CONST DEVICE_SIZE = 8
+
+; Device types.
+.CONST SCREEN = 1
+.CONST TELETYPE = 3
+
+;-------------------------------------------------------------------------------
+; The screen's control words (see the wiki's Ozzy Devices page)
+;-------------------------------------------------------------------------------
+
+.CONST SCREEN_SCROLL = 0FF3h
+.CONST SCREEN_CURSOR_COLUMN = 0FF4h
+.CONST SCREEN_CURSOR_ROW = 0FF5h
+.CONST SCREEN_CURSOR = 0FF6h
+.CONST SCREEN_FILL = 0FF7h
+.CONST SCREEN_CLEAR_ROW = 0FF8h
+
+; A slow blinking underline.
+.CONST CURSOR_STYLE = 2 | 8
+
+;-------------------------------------------------------------------------------
+; Variables, at S(n), in the order start pushes them
+;-------------------------------------------------------------------------------
+
+.CONST V_COLUMNS = -1   ; The screen's columns, or 0 without a screen
+.CONST V_ROWS = -2      ; The screen's rows
+.CONST V_COLUMN = -3    ; Where the next character goes on the screen
+.CONST V_ROW = -4
+.CONST V_SCROLL = -5    ; The screen's scroll row
+.CONST V_TELETYPE = -6  ; The teletype's port, or 0FFFFh without one
+
+; The words of each unit's text, for the clock rate.
+.CONST UNIT_SIZE = 5
+
+;-------------------------------------------------------------------------------
+; Segments
+;-------------------------------------------------------------------------------
+
+.BANK rom, 1
+.BANK ram
+.STACK 64
+
+.SEGMENT rom CODE DATA ROM PAGE(0) BANK(rom)
+
+start:
+    PUSH.W 0        ; V_COLUMNS
+    PUSH.W 0        ; V_ROWS
+    PUSH.W 0        ; V_COLUMN
+    PUSH.W 0        ; V_ROW
+    PUSH.W 0        ; V_SCROLL
+    PUSH.W 0FFFFh   ; V_TELETYPE
+    CALL find_devices
+    CALL clear_screen
+
+    MOV R1, banner_text
+    CALL print_string
+    CALL print_clock
+    MOV R1, gap_text
+    CALL print_string
+    MOV R2, D(TABLE_CORES)
+    MVQ R3, 0
+    CALL print_number
+    MOV R1, core_text
+    CALL print_string
+    CMP R2, 1
+    JC Z, @one_core
+    MOV R0, 's'
+    CALL put_char
+@one_core:
+    MOV R1, gap_text
+    CALL print_string
+    CALL count_ram
+    CALL print_number
+    MOV R1, ram_text
+    CALL print_string
+    CALL new_line
+    CALL new_line
+    CALL show_cursor
+    HALT
+
+banner_text:
+    .DW 'OZZY 0.1  ', 0
+core_text:
+    .DW ' core', 0
+gap_text:
+    .DW '  ', 0
+ram_text:
+    .DW 'K RAM', 0
+
+; The clock rate's units, each UNIT_SIZE words, from the smallest.
+unit_text:
+    .DW SIZE(UNIT_SIZE) ' Hz'
+    .DW SIZE(UNIT_SIZE) ' kHz'
+    .DW SIZE(UNIT_SIZE) ' MHz'
+
+;-------------------------------------------------------------------------------
+; find_devices: Finds the screen and the teletype in the machine table. With a
+; screen, sets the EXTRA bank to its page, and V_COLUMNS and V_ROWS to its size.
+; With a teletype, sets V_TELETYPE to its port.
+;-------------------------------------------------------------------------------
+
+find_devices:
+    MOV R2, D(TABLE_DEVICES)
+    TST R2
+    RETC Z
+    MOV R1, TABLE_DEVICE_ENTRIES
+@next:
+    MOV R0, (R1 + DEVICE_TYPE)
+    CMP R0, SCREEN
+    JC NZ, @not_screen
+    MOV R3, (R1 + DEVICE_BANK)
+    SHL R3, 12
+    MOV R7, (R1 + DEVICE_PAGE)
+    SHL R7, 12
+    RST SELF, EXTRA
+    MOV R0, (R1 + DEVICE_COLUMNS)
+    MOV S(V_COLUMNS), R0
+    MOV R0, (R1 + DEVICE_ROWS)
+    MOV S(V_ROWS), R0
+    JP @step
+@not_screen:
+    CMP R0, TELETYPE
+    JC NZ, @step
+    MOV R0, (R1 + DEVICE_PORT)
+    MOV S(V_TELETYPE), R0
+@step:
+    ADQ R1, DEVICE_SIZE
+    JD R2, @next
+    RET
+
+;-------------------------------------------------------------------------------
+; clear_screen: Fills every row of the screen with spaces.
+;-------------------------------------------------------------------------------
+
+clear_screen:
+    TST S(V_COLUMNS)
+    RETC Z
+    MOV E(SCREEN_FILL), ' '
+    MOV R2, S(V_ROWS)
+@row:
+    SBQ R2, 1
+    MOV E(SCREEN_CLEAR_ROW), R2
+    JC NZ, @row
+    RET
+
+;-------------------------------------------------------------------------------
+; show_cursor: Shows the cursor where the next character goes on the screen.
+;-------------------------------------------------------------------------------
+
+show_cursor:
+    TST S(V_COLUMNS)
+    RETC Z
+    PUSH R0
+    MOV R0, S(V_COLUMN)
+    MOV E(SCREEN_CURSOR_COLUMN), R0
+    MOV R0, S(V_ROW)
+    MOV E(SCREEN_CURSOR_ROW), R0
+    MOV E(SCREEN_CURSOR), CURSOR_STYLE
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; put_char: Prints the character in R0. On the screen, it goes where the next
+; character goes, which then moves right. Past the right edge, the character
+; goes at the start of the next line.
+;-------------------------------------------------------------------------------
+
+put_char:
+    PUSH R1
+    PUSH R4
+    TST S(V_COLUMNS)
+    JC Z, @teletype
+
+    ; A full line wraps when the next character comes, so a line that fills
+    ; the row is followed by no blank row.
+    MOV R1, S(V_COLUMN)
+    CMP R1, S(V_COLUMNS)
+    JC C, @write_cell
+    CALL new_line
+
+    ; The cell is the row as shown, after the scroll row, at the column.
+@write_cell:
+    MOV R4, S(V_ROW)
+    ADD R4, S(V_SCROLL)
+    MOD R4, S(V_ROWS)
+    MUL R4, S(V_COLUMNS)
+    ADD R4, S(V_COLUMN)
+    MOV (R4), R0
+    MOV R1, S(V_COLUMN)
+    ADQ R1, 1
+    MOV S(V_COLUMN), R1
+    JP @done
+
+@teletype:
+    MOV R1, S(V_TELETYPE)
+    CMP R1, 0FFFFh
+    JC Z, @done
+@write:
+    OUTS R1, R0
+    JC NS, @write
+
+@done:
+    POP R4
+    POP R1
+    RET
+
+;-------------------------------------------------------------------------------
+; new_line: Starts a new line. On the screen, below the bottom row, it scrolls
+; the screen up a row, and clears the new bottom row. On the teletype, it is a
+; carriage return and a line feed.
+;-------------------------------------------------------------------------------
+
+new_line:
+    PUSH R0
+    PUSH R1
+    TST S(V_COLUMNS)
+    JC Z, @teletype
+    MOV S(V_COLUMN), 0
+    MOV R1, S(V_ROW)
+    ADQ R1, 1
+    CMP R1, S(V_ROWS)
+    JC NC, @scroll
+    MOV S(V_ROW), R1
+    JP @done
+
+@scroll:
+    MOV R1, S(V_SCROLL)
+    ADQ R1, 1
+    MOD R1, S(V_ROWS)
+    MOV S(V_SCROLL), R1
+    MOV E(SCREEN_SCROLL), R1
+    MOV R1, S(V_ROWS)
+    SBQ R1, 1
+    MOV E(SCREEN_CLEAR_ROW), R1
+    JP @done
+
+@teletype:
+    MVQ R0, 0Dh
+    CALL put_char
+    MVQ R0, 0Ah
+    CALL put_char
+
+@done:
+    POP R1
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; print_string: Prints the string at R1 in DATA, one character a word, ending
+; with a 0.
+;-------------------------------------------------------------------------------
+
+print_string:
+    PUSH R0
+    PUSH R1
+@next:
+    MOV R0, (R1)
+    TST R0
+    JC Z, @done
+    CALL put_char
+    ADQ R1, 1
+    JP @next
+@done:
+    POP R1
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; print_clock: Prints the clock rate in the largest of Hz, kHz, and MHz that
+; it is a whole number of.
+;-------------------------------------------------------------------------------
+
+print_clock:
+    PUSH R1
+    PUSH.D D1
+    PUSH.D D2
+    PUSH R6
+    MOV D1, D[TABLE_CLOCK_HZ]
+    MOV R1, unit_text
+    MVQ R6, 2
+@unit:
+    MOV D2, D1
+    MOD D2, 1000
+    TST R4
+    JC NZ, @print
+    DIV D1, 1000
+    ADQ R1, UNIT_SIZE
+    JD R6, @unit
+@print:
+    CALL print_number
+    CALL print_string
+
+    POP R6
+    POP.D D2
+    POP.D D1
+    POP R1
+    RET
+
+;-------------------------------------------------------------------------------
+; print_number: Prints the dword in D1 in decimal.
+;-------------------------------------------------------------------------------
+
+print_number:
+    PUSH R0
+    PUSH.D D1
+    PUSH.D D2
+    PUSH R7
+    MVQ R7, 0
+
+    ; The digits are pushed from the last, and popped from the first.
+@divide:
+    MOV D2, D1
+    MOD D2, 10
+    DIV D1, 10
+    ADD R4, '0'
+    PUSH R4
+    ADQ R7, 1
+    TST D1
+    JC NZ, @divide
+@print:
+    POP R0
+    CALL put_char
+    JD R7, @print
+
+    POP R7
+    POP.D D2
+    POP.D D1
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; count_ram: Sets D1 to the K (1024 words) of RAM in every bank, 4 a page.
+;-------------------------------------------------------------------------------
+
+count_ram:
+    PUSH R0
+    PUSH R1
+    PUSH R6
+    PUSH R7
+    MVQ D1, 0
+    MOV R6, D(TABLE_BANKS)
+    MOV R1, TABLE_BANK_ENTRIES + BANK_RAM
+@bank:
+    MOV R0, (R1)
+
+    ; Each pass clears the lowest set bit, until none are left.
+@page:
+    TST R0
+    JC Z, @next_bank
+    MOV R7, R0
+    SBQ R7, 1
+    AND R0, R7
+    ADQ R2, 4
+    JP @page
+@next_bank:
+    ADQ R1, BANK_SIZE
+    JD R6, @bank
+
+    POP R7
+    POP R6
+    POP R1
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; The stack, with the variables at its top
+;-------------------------------------------------------------------------------
+
+.SEGMENT stack STACK BANK(ram)

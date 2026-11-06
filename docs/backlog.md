@@ -79,6 +79,32 @@ the alternate character set, compact rows, and the exact blink timing. Keys
 come from the window rather than the console, and the teletype's output needs
 somewhere to go in the window too.
 
+## Labels in address forms
+
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** the wiki's `2.5-Program-Source.md` (Symbols, Segments) and
+  `2.2-Default-Instruction-Set.md` (Address forms); `oz3/ozzy/boot_rom.oza`
+  (its variables)
+
+A label is its offset in its own segment, but `S(n)`, `D(n)`, and `E(n)`
+address from a bank's base register, and the assembler checks neither, so a
+label in one silently addresses the wrong words:
+- `S(label)` is wrong even for a label in the stack segment, as `BS` is at the
+  segment's end (`SP` starts at 0, and the first push wraps to its last word),
+  so the label is off by the segment's size.
+- `D(label)` and `E(label)` are right for a label in the `DATA` or `EXTRA`
+  segment, whose base registers are at their starts, but a label in any other
+  segment is an offset into the wrong segment, and maybe the wrong bank.
+
+These are most likely errors: a label in `S()`, `D()`, or `E()` must be in the
+segment with that role (with `S()` an error, or its label's offset from the
+end, so it works). A register form (`MOV R1, label`, then `(R1)`) can't be
+checked, which the Program Source page should say. The boot ROM works around
+it by pushing its variables first, and addressing them as `S(-1)` down.
+
 ## Debugger (oz3dbg)
 
 - **Layers:** core, tools

@@ -450,6 +450,10 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
                        "RAM can't be on the boot ROM's page");
     }
   }
+  if (absl::c_count(settings.banks, 0) == bank_count) {
+    return PathError(
+        "banks", "the Ozzy has no RAM, which the boot ROM needs for its stack");
+  }
   if (settings.screen.has_value()) {
     const int bank = settings.screen->bank;
     const int page = settings.screen->page;

@@ -70,7 +70,7 @@ struct OzzySettings {
 
   // The banks, from 1 to kMaxMemoryBanks of them, each given as its RAM pages,
   // with bit n for page n. Page 0 of bank 0 is always the boot ROM, so bank 0
-  // never has bit 0 set.
+  // never has bit 0 set. At least one bank has RAM, for the boot ROM's stack.
   std::vector<uint16_t> banks = {0x7FFE};
 
   // The console devices, which an Ozzy has at most one of each of. A device's

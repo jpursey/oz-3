@@ -25,10 +25,10 @@ namespace oz3 {
 //==============================================================================
 
 // An Ozzy: a Processor with the banks, cores, and console devices its
-// OzzySettings describe, and the machine table in the boot ROM's page (see
-// machine_table.h). Each bank is readable on its RAM pages and its ROM page
-// (page 0 of bank 0), and writable on its RAM pages. Its other pages read 0
-// and ignore writes, but for a device's.
+// OzzySettings describe, the boot ROM (boot_rom.oza) in page 0 of bank 0, and
+// the machine table in the boot ROM's page (see machine_table.h). Each bank is
+// readable on its RAM pages and its ROM page, and writable on its RAM pages.
+// Its other pages read 0 and ignore writes, but for a device's.
 class Ozzy final {
  public:
   //----------------------------------------------------------------------------
@@ -44,7 +44,8 @@ class Ozzy final {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Creates an Ozzy from `settings`, with every core idle. Returns an error if
+  // Creates an Ozzy from `settings`, powered on: core 0 is about to run the
+  // boot ROM, and the other cores are idle. Returns an error if
   // the settings are invalid (see ValidateOzzySettings), or if a device or
   // the processor rejects them, naming the device.
   static absl::StatusOr<std::unique_ptr<Ozzy>> Create(

@@ -140,8 +140,11 @@ next ones when they land.
 At power on, core 0 starts at IP 0 of the boot ROM. It reads the machine
 table, and:
 - **With a screen**, it clears the screen (filled with spaces), prints the
-  banner at the top, and shows an underline cursor below it.
-- **Without one, with a teletype**, it prints the banner to the teletype.
+  banner at the top, then a blank line, and shows a slow blinking underline
+  cursor at the start of the line after. The banner wraps at the right edge,
+  and new lines below the bottom row scroll, so a small screen shows what fits.
+- **Without one, with a teletype**, it prints the banner to the teletype, then
+  CR LF twice.
 - **With a keyboard**, it sets a handler for the keyboard's interrupt and
   halts, so it runs only when a key arrives (a halted core still handles
   interrupts). Each key echoes: characters 20h to 7Eh print at the cursor,
@@ -153,11 +156,18 @@ table, and:
 - With neither a screen nor a teletype, or without a keyboard once the banner
   is printed, it halts for good.
 
-The banner is `OZZY` and the boot ROM's version, then the cores and RAM from
-the machine table, such as `OZZY 0.1  4 cores  120 Kiw RAM`. Printing the
-numbers is the boot ROM's own decimal printing of a word, the first real OZ-3
-code Ozzy runs. The clock rate is left out, as it is a dword, and printing one
-needs a dword divide the default instruction set doesn't have.
+The banner is `OZZY` and the boot ROM's version, then the clock rate, cores,
+and RAM from the machine table, such as `OZZY 0.1  1 MHz  4 cores  120K RAM`
+(`1 core` for one). RAM is in K, as old machines wrote it, which on an Ozzy is
+1024 words (4K a page). The clock rate is in the largest of Hz, kHz, and MHz
+it is a whole number of (`4770 kHz`, `32768 Hz`). Printing the numbers is the
+boot ROM's own decimal printing of a dword (with `DIV.DW` and `MOD.DW`), the
+first real OZ-3 code Ozzy runs.
+
+The boot ROM's stack is in the first page of RAM of the lowest bank that has
+any, which `ProgramLoader` picks, so an Ozzy must have some RAM. Its variables
+are the first words it pushes, addressed as `S(-1)` down, as a label in the
+stack segment can't be (see the backlog's *Labels in address forms*).
 
 ### `Ozzy`
 
@@ -502,30 +512,41 @@ Depends on: CL3.
 - Standard checks, and unit tests: the entries' offsets pinned, the unused
   bank entries 0, and the devices in place for an Ozzy with all 16 banks.
 
-### CL5 [ ] ozzy: the boot ROM's banner
+### CL5 [x] ozzy: the boot ROM's banner
 
 Depends on: CL3, and Game Bits *Embedded files*.
 
-- `boot_rom.oza`, embedded in the library, and `Ozzy::Create` loads it and
-  starts core 0. It reads the table, clears the screen, and prints the banner
-  with its numbers, to the screen or the teletype, then halts.
+- `boot_rom.oza`, embedded in the library (as `boot_rom_source.h`), which
+  `GetBootRom` (`boot_rom.h/.cc`) assembles once, and `Ozzy::Create` loads
+  and starts core 0 on. It reads the table, clears the screen, and prints the
+  banner with its numbers, to the screen or the teletype, then halts.
+- Printing a character past the right edge wraps it (as a terminal does, when
+  the next character comes, so a full line has no blank row after it), and a
+  new line below the bottom row scrolls, as the banner needs them on a small
+  screen, so CL6 only adds the keys.
+- `ValidateOzzySettings` requires some RAM, for the boot ROM's stack.
+- `oz3_ozzy` links `oz3_tools`, to assemble and load the boot ROM.
 - The wiki's Ozzy page gains The boot ROM (the banner).
+- The backlog gains *Labels in address forms*.
 
 **Verify**
 - Standard checks.
 - Unit tests: the banner's cells (and cursor) for a few machine shapes,
-  including the decimal numbers at their edges (1 core, 8 cores, a single page
-  of RAM, and all 16 banks of it, 1024 Kiw); the banner on the teletype for an Ozzy without a
-  screen; core 0 halted afterward, with nothing printed, for an Ozzy with
-  neither; the source's table address against `kMachineTableAddress`.
+  including the decimal numbers at their edges (1 core, 2 and 8 cores, a
+  single page of RAM, and the most RAM with a screen, 1016K); clock rates
+  in kHz and Hz, 100 MHz, and 99999999 Hz; the screen in another bank; a 10 by
+  3 screen that wraps and scrolls, and one as wide as the banner; the stack's
+  page; the banner on the teletype for an Ozzy without a screen, as fast as it
+  prints and at 9600 baud; core 0 halted afterward for an Ozzy with neither;
+  the source's machine table constants against `machine_table.h`.
 - `oz3asm` assembles `boot_rom.oza` on its own.
 
 ### CL6 [ ] ozzy: the boot ROM echoes keys
 
 Depends on: CL5.
 
-- The keyboard handler in `boot_rom.oza`: echo, Enter, Backspace, wrapping,
-  and scrolling, on the screen and the teletype.
+- The keyboard handler in `boot_rom.oza`: echo, Enter, and Backspace, on the
+  screen and the teletype.
 - The wiki's Ozzy page describes the echo.
 
 **Verify**

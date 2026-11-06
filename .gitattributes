@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Program source that is embedded in a build has the same bytes everywhere.
+oz3/ozzy/boot_rom.oza eol=lf

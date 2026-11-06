@@ -339,8 +339,8 @@ TEST(OzzySettingsTest, OneDeviceOfEachType) {
 }
 
 TEST(OzzySettingsTest, ScreenPage) {
-  EXPECT_EQ(ReadError("banks: [{}, {}], devices: [{ type: 'screen', bank: 1, "
-                      "page: 0 }]"),
+  EXPECT_EQ(ReadError("banks: [{ ram: 0x7FFE }, {}], devices: [{ type: "
+                      "'screen', bank: 1, page: 0 }]"),
             "ok");
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', bank: 1 }]"),
             "screen.bank: the Ozzy has no bank 1");
@@ -406,6 +406,10 @@ TEST(OzzySettingsTest, ValidateCoresAndPorts) {
 TEST(OzzySettingsTest, ValidateBanks) {
   OzzySettings settings;
   settings.banks.assign(16, 0);
+  EXPECT_EQ(ValidateError(settings),
+            "banks: the Ozzy has no RAM, which the boot ROM needs for its "
+            "stack");
+  settings.banks[15] = 0x8000;
   EXPECT_EQ(ValidateError(settings), "ok");
   settings.banks.assign(17, 0);
   EXPECT_EQ(ValidateError(settings), "banks: must have 1 to 16 banks");

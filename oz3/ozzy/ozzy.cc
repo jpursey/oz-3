@@ -18,14 +18,18 @@
 #include "absl/status/statusor.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/device_config.h"
 #include "oz3/core/device_factory.h"
+#include "oz3/core/lockable.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/processor_config.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/ozzy/boot_rom.h"
 #include "oz3/ozzy/machine_table.h"
+#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 
@@ -181,13 +185,26 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
   }
   auto processor = std::make_unique<Processor>(*config);
 
-  // The table is in the boot ROM's page, which bank 0 always has.
+  // The loader writes the boot ROM into its page, as a ROM programmer would,
+  // and places its stack in RAM, which the settings always have.
+  ProgramLoader loader(processor.get());
+  const ProgramLoader::Handle boot_rom = loader.Load(GetBootRom().GetProgram());
+  CHECK_NE(boot_rom, ProgramLoader::kInvalidHandle);
+
+  // The table is in the boot ROM's page, after its code.
   const std::array<uint16_t, kMachineTableSize> table =
       GetMachineTable(settings, *config);
   absl::Span<uint16_t> memory =
       processor->GetMemory(0)->GetMem(kMachineTableAddress, kMachineTableSize);
   DCHECK_EQ(memory.size(), table.size());
   absl::c_copy(table, memory.begin());
+
+  // Power on: core 0 starts the boot ROM.
+  CpuCore* core = processor->GetCore(0);
+  std::unique_ptr<Lock> lock = core->RequestLock();
+  DCHECK(lock->IsLocked());
+  core->Reset(*lock, loader.GetResetParams(boot_rom));
+  lock.reset();
 
   return absl::WrapUnique(new Ozzy(std::move(processor)));
 }
