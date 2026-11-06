@@ -469,6 +469,11 @@ sets a flag the app's loop checks.
 - **Sextants** (CL8): Unicode's sextants (U+1FB00 on) need a font that has
   them, as Cascadia Mono does. To check by hand, falling back to the nearest
   block character otherwise.
+- **Character widths** (CL8): several characters (such as ○, ■, ♠, ½, and
+  the shades) are East Asian "ambiguous" width, which a console may draw two
+  cells wide, shifting the rest of the row. Windows Terminal draws them one
+  cell wide by default. To check by hand; each row starts at its own
+  position, so a wide character never spills into the next row.
 
 ## CLs
 
@@ -620,18 +625,31 @@ Depends on: CL6.
   clear); ignored keys and modifiers; the same on the teletype, as fast as it prints and at 9600 baud; the source's keyboard
   wiring and key constants against `ozzy_settings.h` and `keyboard.h`.
 
-### CL8 [ ] ozzy: console text
+### CL8 [x] ozzy: console text
 
-Depends on: CL2.
+Depends on: CL2, and Game Bits *Code point conversions in gb_base*.
 
 - `console_text.h/.cc`: `DrawConsoleText` and `GetCharacterText`.
+- Each character's nearest Unicode character is a code point in a table, and
+  the sextants are computed (Unicode's leave out the blank, the two halves,
+  and full, which are a space, ▌, ▐, and █). Of 00h to 1Fh, 13h and 1Dh are
+  ¼ and ½, and the rest are blocks, quadrants, triangles, heavy lines, and a
+  dot. The source holds code points rather than the characters, as OZ-3
+  compiles without `/utf-8`, and Game Bits' `gb::AppendUtf8` (Game Bits *Code
+  point conversions in gb_base*) encodes them.
+- Drawing every row clears the console first. The cursor is hidden while
+  rows are drawn, and the style is the default between rows, so each call's
+  text stands on its own. The inverse cursor is a block, and both blink rates
+  are the console's own blink.
 
 **Verify**
 - Standard checks.
-- Unit tests: every one of the 256 characters has text; each attribute's
-  sequence, and runs of cells sharing attributes written once; only changed
-  rows redrawn; a different size redrawing all; the cursor's position, shape,
-  blinking, and hiding when off.
+- Unit tests: every one of the 256 characters is one printable character;
+  ASCII as itself, and the graphics, sextants, and symbols at their edges;
+  each attribute's sequence, those text can't show left out, and runs of
+  cells sharing attributes written once; only changed rows redrawn, and
+  nothing for the same picture; a different size redrawing all; the cursor's
+  position, every shape and blinking, hiding when off, changing alone, and put back after drawing rows.
 
 ### CL9 [ ] ozzy: the Windows console
 

@@ -5,6 +5,7 @@
 
 set(oz3_ozzy_SOURCE
   boot_rom.cc boot_rom.h
+  console_text.cc console_text.h
   machine_table.h
   ozzy.cc ozzy.h
   ozzy_settings.cc ozzy_settings.h
@@ -12,11 +13,13 @@ set(oz3_ozzy_SOURCE
 set(oz3_ozzy_DEPS
   absl::algorithm_container
   absl::memory
+  absl::no_destructor
   absl::span
   absl::status
   absl::statusor
   absl::strings
   absl::time
+  gb_base
   gb_config
   gb_parse
   oz3_core
@@ -29,6 +32,7 @@ set(oz3_ozzy_LIBS
 )
 set(oz3_ozzy_TEST_SOURCE
   boot_rom_test.cc
+  console_text_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc
 )
