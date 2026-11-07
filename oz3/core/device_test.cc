@@ -252,6 +252,24 @@ TEST(DeviceTest, RaisesInterruptsOnCoresWiredTo) {
   EXPECT_EQ(device->RaiseInterrupt(1), 0b110);
 }
 
+TEST(DeviceTest, RaisesSharedInterruptsWhenWiredShared) {
+  auto factory = std::make_shared<FakeDeviceFactory>(DeviceConfig{
+      .name = "Fake",
+      .interrupts = {{.interrupt = 5, .cores = 0b110, .shared = true}}});
+  Processor processor(ProcessorConfig::MultiCore(3, GetTestInstructionSet())
+                          .AddDevice(factory));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+
+  EXPECT_EQ(device->RaiseInterrupt(0), 0b110);
+  EXPECT_EQ(processor.GetCore(0)->GetSharedInterrupts(), 0);
+  EXPECT_EQ(processor.GetCore(1)->GetSharedInterrupts(), 1u << 5);
+  EXPECT_EQ(processor.GetCore(2)->GetSharedInterrupts(), 1u << 5);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(processor.GetCore(i)->GetInterrupts(), 0) << "core " << i;
+  }
+  EXPECT_EQ(device->RaiseInterrupt(0), 0);
+}
+
 TEST(DeviceTest, DevicesSharingALineMergeRaises) {
   auto factory_a = std::make_shared<FakeDeviceFactory>(
       DeviceConfig{.name = "A", .interrupts = {{.interrupt = 3}}});

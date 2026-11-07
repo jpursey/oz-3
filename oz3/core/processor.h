@@ -104,10 +104,22 @@ class Processor final {
   // all of them (already pending on each, or `cores` names none of its cores).
   uint8_t RaiseInterrupt(int interrupt, uint8_t cores = kAllCores);
 
+  // Raises the interrupt as a shared interrupt on the cores in `cores`, as
+  // RaiseInterrupt does, so that only one of them handles it.
+  //
+  // It is pending on each of the cores until that core takes it. A core without
+  // a handler for it drops it, on itself alone. The first core to take it with
+  // a handler takes it from every core it is pending on, so the others never
+  // see it. Returns the mask of cores it was newly raised on, so 0 means it was
+  // already pending as a shared interrupt on each of them.
+  uint8_t RaiseSharedInterrupt(int interrupt, uint8_t cores = kAllCores);
+
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
+
+  uint8_t DoRaiseInterrupt(int interrupt, uint8_t cores, bool shared);
 
   // The devices are declared first, so they are destroyed after everything
   // they use.

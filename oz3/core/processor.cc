@@ -93,11 +93,23 @@ void Processor::Execute(Cycles cycles) {
 }
 
 uint8_t Processor::RaiseInterrupt(int interrupt, uint8_t cores) {
+  return DoRaiseInterrupt(interrupt, cores, /*shared=*/false);
+}
+
+uint8_t Processor::RaiseSharedInterrupt(int interrupt, uint8_t cores) {
+  return DoRaiseInterrupt(interrupt, cores, /*shared=*/true);
+}
+
+uint8_t Processor::DoRaiseInterrupt(int interrupt, uint8_t cores, bool shared) {
   DCHECK(interrupt >= 0 && interrupt < CpuCore::kInterruptCount);
   uint8_t raised = 0;
   for (int i = 0; i < num_cores_; ++i) {
     const uint8_t core_bit = static_cast<uint8_t>(1 << i);
-    if ((cores & core_bit) != 0 && cores_[i]->RaiseInterrupt(interrupt)) {
+    if ((cores & core_bit) == 0) {
+      continue;
+    }
+    if (shared ? cores_[i]->RaiseSharedInterrupt({}, interrupt)
+               : cores_[i]->RaiseInterrupt(interrupt)) {
       raised |= core_bit;
     }
   }

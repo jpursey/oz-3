@@ -4086,6 +4086,271 @@ TEST_F(CpuCoreTest, CrunWhileDroppingUnmappedInterrupt) {
   EXPECT_EQ(state1.core.GetInterrupts(), 0);
 }
 
+// Every core has a handler and interrupts enabled, so the first to check takes
+// the shared interrupt: core 0, as cores run in index order. It takes it from
+// the others, which never see it.
+TEST_F(CpuCoreTest, SharedInterruptIsTakenByOneCore) {
+  ASSERT_TRUE(Init({.num_cores = 3, .num_memory_banks = 3}));
+  MemAccessor code = GetMemory(0);
+  code.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  code.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  code.AddValue(Encode(kTestOp_EI));
+  code.AddValue(Encode(kTestOp_HALT));
+  code.AddValue(Encode(kTestOp_HALT));
+
+  // Interrupt 1, counting in R3
+  code.SetAddress(100);
+  code.AddValue(Encode(kTestOp_ADDI, CpuCore::R3));
+  code.AddValue(Encode(kTestOp_IRET));
+
+  // Each core runs the same code, with a stack of its own.
+  for (int i = 0; i < 3; ++i) {
+    GetState(i).ResetCore({.mb = CpuCore::Banks().SetStack(i).ToWord()});
+    ExecuteUntilHalt(i);
+  }
+
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b111);
+  Execute(1);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(GetState(i).core.GetSharedInterrupts(), 0) << "core " << i;
+  }
+  ExecuteUntilHalt(0);
+  EXPECT_EQ(GetState(0).r3, 1);
+  EXPECT_EQ(GetState(1).r3, 0);
+  EXPECT_EQ(GetState(2).r3, 0);
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b111);
+}
+
+// A core without a handler drops a shared interrupt on itself alone. So it is
+// still pending on a core with a handler and interrupts disabled, which takes
+// it once it enables them.
+TEST_F(CpuCoreTest, SharedInterruptIsDroppedByCoreWithoutHandler) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+
+  // Core 0 runs from bank 1, and has no handler.
+  MemAccessor code0 = GetMemory(1);
+  code0.AddValue(Encode(kTestOp_EI));
+  code0.AddValue(Encode(kTestOp_HALT));
+
+  // Core 1 runs from bank 0, and has a handler.
+  MemAccessor code1 = GetMemory(0);
+  code1.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  code1.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  code1.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  const uint16_t ip1 = code1.AddNopGetAddress();
+  code1.AddValue(Encode(kTestOp_EI));
+  code1.AddValue(Encode(kTestOp_HALT));
+  code1.AddValue(Encode(kTestOp_HALT));
+
+  // Interrupt 1, counting in R3
+  code1.SetAddress(100);
+  code1.AddValue(Encode(kTestOp_ADDI, CpuCore::R3));
+  code1.AddValue(Encode(kTestOp_IRET));
+
+  GetState(0).ResetCore(
+      {.mb = CpuCore::Banks().SetCode(1).SetStack(1).ToWord()});
+  ExecuteUntilHalt(0);
+  GetState(1).ResetCore();
+  ASSERT_TRUE(ExecuteUntilIp(1, ip1));
+
+  // Core 0 drops it at once, while core 1 has interrupts disabled.
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b11);
+  Execute(1);
+  EXPECT_EQ(GetState(0).core.GetSharedInterrupts(), 0);
+  EXPECT_EQ(GetState(1).core.GetSharedInterrupts(), 1u << 1);
+
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(GetState(1).r3, 1);
+  EXPECT_EQ(GetState(1).core.GetSharedInterrupts(), 0);
+}
+
+// A core only checks for interrupts between instructions while it runs, but
+// every cycle while it is idle. So an idle core takes a shared interrupt raised
+// while a core with a lower index runs a long instruction.
+TEST_F(CpuCoreTest, IdleCoreTakesSharedInterruptFromBusyCore) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  MemAccessor code = GetMemory(0);
+  code.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  code.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  code.AddValue(Encode(kTestOp_EI));
+  code.AddValue(Encode(kTestOp_JD, 100));
+  const uint16_t ip1 = code.GetAddress();
+  code.AddValue(Encode(kTestOp_HALT));
+  code.AddValue(Encode(kTestOp_HALT));
+
+  // Interrupt 1, counting in R3
+  code.SetAddress(100);
+  code.AddValue(Encode(kTestOp_ADDI, CpuCore::R3));
+  code.AddValue(Encode(kTestOp_IRET));
+
+  GetState(1).ResetCore({.mb = CpuCore::Banks().SetStack(1).ToWord()});
+  ExecuteUntilHalt(1);
+
+  // Core 0 has started the JD, which loops for 200 cycles.
+  GetState(0).ResetCore();
+  ASSERT_TRUE(ExecuteUntilIp(0, ip1));
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b11);
+  Execute(1);
+  EXPECT_EQ(GetState(0).core.GetSharedInterrupts(), 0);
+  EXPECT_EQ(GetState(1).core.GetSharedInterrupts(), 0);
+
+  ExecuteUntilHalt(0);
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(GetState(0).r3, 0);
+  EXPECT_EQ(GetState(1).r3, 1);
+}
+
+// A line pending on a core both as a shared interrupt and as one that isn't is
+// one interrupt there. Taking it clears both, and the shared one on every
+// other core, including one with interrupts disabled.
+TEST_F(CpuCoreTest, SharedAndUnsharedRaisesOfALineMerge) {
+  ASSERT_TRUE(Init({.num_cores = 2}));
+  MemAccessor code = GetMemory(0);
+  code.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  code.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  code.AddValue(Encode(kTestOp_EI));
+  code.AddValue(Encode(kTestOp_HALT));
+  code.AddValue(Encode(kTestOp_HALT));
+
+  // Interrupt 1, counting in R3
+  code.SetAddress(100);
+  code.AddValue(Encode(kTestOp_ADDI, CpuCore::R3));
+  code.AddValue(Encode(kTestOp_IRET));
+
+  // Core 1 never starts, so it keeps interrupts disabled.
+  GetState(0).ResetCore();
+  ExecuteUntilHalt(0);
+  EXPECT_TRUE(GetState(0).core.RaiseInterrupt(1));
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b11);
+  Execute(1);
+  EXPECT_EQ(GetState(0).core.GetInterrupts(), 0);
+  EXPECT_EQ(GetState(0).core.GetSharedInterrupts(), 0);
+  EXPECT_EQ(GetState(1).core.GetSharedInterrupts(), 0);
+
+  ExecuteUntilHalt(0);
+  EXPECT_EQ(GetState(0).r3, 1);
+}
+
+// A waiting core without a handler drops both copies of a line pending both
+// ways, and keeps waiting.
+TEST_F(CpuCoreTest, WaitingCoreDropsSharedInterruptWithoutHandler) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  state.code.AddValue(Encode(kTestOp_EI));
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R3)).AddValue(1000);
+  state.code.AddValue(Encode(kTestOp_WAIT, CpuCore::R3));
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  ASSERT_TRUE(ExecuteUntil(
+      [&] { return state.core.GetState() == CpuCore::State::kWaiting; }));
+  EXPECT_TRUE(state.core.RaiseInterrupt(1));
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b1);
+  Execute(1);
+  EXPECT_EQ(state.core.GetState(), CpuCore::State::kWaiting);
+  EXPECT_EQ(state.core.GetInterrupts(), 0);
+  EXPECT_EQ(state.core.GetSharedInterrupts(), 0);
+}
+
+// Taking a shared interrupt costs the same cycles as one that isn't shared.
+TEST_F(CpuCoreTest, SharedInterruptTakesSameCycles) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  state.code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  state.code.AddValue(Encode(kTestOp_EI));
+  state.code.AddValue(Encode(kTestOp_HALT));
+  state.code.AddValue(Encode(kTestOp_HALT));
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  // Interrupt 1
+  state.code.SetAddress(100);
+  state.code.AddValue(Encode(kTestOp_IRET));
+
+  ExecuteUntilHalt();
+  state.core.RaiseInterrupt(1);
+  const Cycles unshared_cycles = CyclesUntilIp(100);
+  ExecuteUntilHalt();
+  GetProcessor().RaiseSharedInterrupt(1);
+  const Cycles shared_cycles = CyclesUntilIp(100);
+  ASSERT_GE(unshared_cycles, 0);
+  EXPECT_EQ(shared_cycles, unshared_cycles);
+}
+
+// A core that can't begin to take a shared interrupt, as another holds its
+// lock, hasn't claimed it. Another core takes it, and the first goes back to
+// being idle once its lock is released.
+TEST_F(CpuCoreTest, BlockedCoreLosesSharedInterrupt) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+
+  // Core 0 runs from bank 0, and enables interrupts once at ip0.
+  MemAccessor code0 = GetMemory(0);
+  code0.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  code0.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  code0.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  const uint16_t ip0 = code0.AddNopGetAddress();
+  code0.AddValue(Encode(kTestOp_EI));
+  code0.AddValue(Encode(kTestOp_HALT));
+  code0.AddValue(Encode(kTestOp_HALT));
+  // Interrupt 1, counting in R3
+  code0.SetAddress(100);
+  code0.AddValue(Encode(kTestOp_ADDI, CpuCore::R3));
+  code0.AddValue(Encode(kTestOp_IRET));
+
+  // Core 1 runs the same from bank 1, but enables interrupts at once.
+  MemAccessor code1 = GetMemory(1);
+  code1.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(1);
+  code1.AddValue(Encode(kTestOp_LV, CpuCore::R1)).AddValue(100);
+  // Interrupt 1 to 100
+  code1.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  code1.AddValue(Encode(kTestOp_EI));
+  code1.AddValue(Encode(kTestOp_HALT));
+  code1.AddValue(Encode(kTestOp_HALT));
+  // Interrupt 1, counting in R3
+  code1.SetAddress(100);
+  code1.AddValue(Encode(kTestOp_ADDI, CpuCore::R3));
+  code1.AddValue(Encode(kTestOp_IRET));
+
+  GetState(1).ResetCore(
+      {.mb = CpuCore::Banks().SetCode(1).SetStack(1).ToWord()});
+  ExecuteUntilHalt(1);
+  GetState(0).ResetCore();
+  ASSERT_TRUE(ExecuteUntilIp(0, ip0));
+
+  // Core 1 is stuck in kHandleInterrupt while the test holds its lock, and
+  // core 0 has interrupts disabled, so the interrupt stays pending on both.
+  auto lock = GetState(1).core.RequestLock();
+  ASSERT_TRUE(lock->IsLocked());
+  EXPECT_EQ(GetProcessor().RaiseSharedInterrupt(1), 0b11);
+  Execute(1);
+  EXPECT_EQ(GetState(1).core.GetState(), CpuCore::State::kHandleInterrupt);
+  EXPECT_EQ(GetState(0).core.GetSharedInterrupts(), 1u << 1);
+  EXPECT_EQ(GetState(1).core.GetSharedInterrupts(), 1u << 1);
+
+  // Core 0 enables interrupts and takes it from core 1.
+  ExecuteUntilHalt(0);
+  EXPECT_EQ(GetState(0).r3, 1);
+  EXPECT_EQ(GetState(1).core.GetSharedInterrupts(), 0);
+
+  lock = nullptr;
+  Execute(10);
+  EXPECT_EQ(GetState(1).core.GetState(), CpuCore::State::kIdle);
+  EXPECT_EQ(GetState(1).r3, 0);
+}
+
 TEST_F(CpuCoreTest, InterruptAddressUsesLowBitsOfIndex) {
   ASSERT_TRUE(Init());
   CoreState& state = GetState();

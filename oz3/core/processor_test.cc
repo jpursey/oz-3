@@ -148,5 +148,42 @@ TEST(ProcessorTest, RaiseInterruptIgnoresMissingCores) {
   EXPECT_EQ(processor.GetCore(1)->GetInterrupts(), 1u << 3);
 }
 
+TEST(ProcessorTest, RaiseSharedInterruptOnSomeCores) {
+  Processor processor(ProcessorConfig::MultiCore(3, GetNopInstructionSet()));
+
+  EXPECT_EQ(processor.RaiseSharedInterrupt(1, 0b101), 0b101);
+  EXPECT_EQ(processor.GetCore(0)->GetSharedInterrupts(), 1u << 1);
+  EXPECT_EQ(processor.GetCore(1)->GetSharedInterrupts(), 0);
+  EXPECT_EQ(processor.GetCore(2)->GetSharedInterrupts(), 1u << 1);
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_EQ(processor.GetCore(i)->GetInterrupts(), 0) << "core " << i;
+  }
+}
+
+TEST(ProcessorTest, RaiseSharedInterruptReturnsCoresNewlyRaisedOn) {
+  Processor processor(ProcessorConfig::MultiCore(3, GetNopInstructionSet()));
+
+  EXPECT_EQ(processor.RaiseSharedInterrupt(1, 0b001), 0b001);
+  EXPECT_EQ(processor.RaiseSharedInterrupt(1), 0b110);
+  EXPECT_EQ(processor.RaiseSharedInterrupt(1), 0);
+  EXPECT_EQ(processor.RaiseSharedInterrupt(2, 0b010), 0b010);
+
+  // A shared raise and one that isn't are pending apart, so neither is a
+  // duplicate of the other.
+  EXPECT_EQ(processor.RaiseInterrupt(1), 0b111);
+  EXPECT_EQ(processor.RaiseSharedInterrupt(3), 0b111);
+  EXPECT_EQ(processor.RaiseInterrupt(3), 0b111);
+}
+
+TEST(ProcessorTest, RaiseSharedInterruptIgnoresMissingCores) {
+  Processor processor(ProcessorConfig::MultiCore(2, GetNopInstructionSet()));
+
+  EXPECT_EQ(processor.RaiseSharedInterrupt(3, 0b1110), 0b0010);
+  EXPECT_EQ(processor.GetCore(0)->GetSharedInterrupts(), 0);
+  EXPECT_EQ(processor.GetCore(1)->GetSharedInterrupts(), 1u << 3);
+  EXPECT_EQ(processor.RaiseSharedInterrupt(4, 0b1100), 0);
+  EXPECT_EQ(processor.RaiseSharedInterrupt(4, 0), 0);
+}
+
 }  // namespace
 }  // namespace oz3

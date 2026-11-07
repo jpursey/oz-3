@@ -26,47 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Shared interrupt lines
-
-- **Layers:** core, devices, ozzy, wiki
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** the Interrupts section of `2-Specifications.md`;
-  `Processor::RaiseInterrupt` and `CpuCore::HandleInterrupt` in `oz3/core`
-
-An interrupt goes to every core its line is connected to, and each core with a
-handler runs it. A shared interrupt goes to one of them: the first core to take
-it clears it on every core it was raised on, so a keyboard shared by several
-cores interrupts only one. Sharing is a mode of the raise, set in a device's
-wiring (`DeviceInterrupt`) beside its cores, not a kind of line, so any line
-can be raised either way:
-- A core takes a shared interrupt only with `I` set and a handler for its
-  line. Otherwise it stays pending for the others, where an unshared interrupt
-  with no handler is dropped. One that no core can take stays pending.
-- Lines keep their priority, lowest first, however they were raised. A line
-  pending both ways on a core is one interrupt there, and taking it clears
-  both.
-- The first core that can take it wins, with ties going to the lower core
-  index, as cores run in index order. An idle or waiting core checks every
-  cycle, and a running one only between instructions, so an idle core usually
-  wins.
-- A shared raise is new if the line wasn't already pending as shared, so a
-  device learns it was newly raised on all of its cores, or on none.
-
-Devices don't retract interrupts: a shared line covers what that would, and a
-stale interrupt only runs a handler that finds nothing to do.
-
-The check after each instruction stays a few bit operations: each core keeps a
-word of the shared lines pending on it, updated as they are raised and taken,
-and a mask of the lines it has handlers for, updated by `IST`. Ozzy's config
-gains the mode, and the machine table carries it in the unused high byte of a
-device's interrupt cores word, so no entry moves.
-
-A shared form of `INTC`, taking a mask of cores, would give programs the same:
-a job queue that wakes one idle worker. It adds to the default instruction set,
-so it is the last CL, or an item of its own.
-
 ## RST clears a core's interrupt state
 
 - **Layers:** core, instruction_sets, wiki
@@ -95,11 +54,10 @@ starts with no handlers, its status flags clear, and interrupts disabled:
   (`RST SELF`) it writes the instruction's staged status flags, which are
   copied back when it ends. No microcode uses `CST(ST,...)` today, so no
   instruction changes but `RST`.
-- **Pending interrupts:** kept. On a line not shared (see *Shared interrupt
-  lines*), a core with no handlers drops them if `I` is set, or takes them as
-  spurious interrupts once the new program enables interrupts, which handlers
-  tolerate anyway. A shared one stays pending for the other cores, as a core
-  with no handler can't take it.
+- **Pending interrupts:** kept. A core with no handlers drops them if `I` is
+  set, or takes them as spurious interrupts once the new program enables
+  interrupts, which handlers tolerate anyway. Dropping a shared one only drops
+  it on this core, so it stays pending on the others it was raised on.
 
 `RST`'s code words don't change, but its cycles do, so the `.inc` is
 regenerated and its tests' cycle counts updated. The host's `CpuCore::Reset`
@@ -504,5 +462,23 @@ they exist. Beyond what devices do:
   it through its lock, and a core that needs a result (the math processor's)
   waits on the lock until it is done, as an x87's `FWAIT` does. Interrupts are
   for work that finishes on its own time (a DMA transfer), and perhaps errors.
-- **Any free core:** work any one core may take raises on a shared line (see
-  *Shared interrupt lines*).
+- **Any free core:** work any one core may take raises a shared interrupt
+  (see `Processor::RaiseSharedInterrupt`), as a device wired shared does.
+
+## Shared interrupts from programs
+
+- **Layers:** core, instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** the `INT` and `CLK` microcode in `2.1-Microcode.md`; `INTC`
+  in `2.2-Default-Instruction-Set.md`; `Processor::RaiseSharedInterrupt`
+
+Devices and the host can raise a shared interrupt, which only one of the cores
+it is raised on handles, but a program can't. `INT` raises on one core, the
+running one or the one locked with `CLK`, and `CLK` locks only one, so a raise
+on a mask of cores can't be built from existing microcode. It needs a new op,
+raising a shared interrupt on the cores in a register's mask, and a new
+instruction at the end of the `.izm` that uses it. It would let a program hand
+work to whichever core of a pool is free, such as a job queue waking one idle
+worker. It adds microcode, so it waits until a program needs it.

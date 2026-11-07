@@ -29,6 +29,10 @@ struct DeviceInterrupt {
   // The cores the line is connected to, with one bit for each core index. Bits
   // for cores the processor doesn't have are ignored.
   uint8_t cores = kAllCores;
+
+  // Whether the interrupt is shared, so only one of the cores handles it (see
+  // Processor::RaiseSharedInterrupt), rather than each core with a handler.
+  bool shared = false;
 };
 
 //==============================================================================

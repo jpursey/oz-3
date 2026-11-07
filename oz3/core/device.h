@@ -92,9 +92,10 @@ class Device : public ExecutionComponent {
   // and must be in the range [0, GetInterruptCount()).
   uint8_t GetInterruptCores(int interrupt) const;
 
-  // Raises one of the device's interrupts on the cores it is connected to, and
-  // returns the cores it was newly raised on (see Processor::RaiseInterrupt).
-  // The interrupt must be in the range [0, GetInterruptCount()).
+  // Raises one of the device's interrupts on the cores it is connected to, as a
+  // shared interrupt if its wiring says so, and returns the cores it was newly
+  // raised on (see Processor::RaiseInterrupt and RaiseSharedInterrupt). The
+  // interrupt must be in the range [0, GetInterruptCount()).
   uint8_t RaiseInterrupt(int interrupt);
 
  private:
@@ -156,6 +157,9 @@ inline uint8_t Device::RaiseInterrupt(int interrupt) {
   DCHECK(processor_ != nullptr);
   DCHECK(interrupt >= 0 && interrupt < GetInterruptCount());
   const DeviceInterrupt& wiring = config_.interrupts[interrupt];
+  if (wiring.shared) {
+    return processor_->RaiseSharedInterrupt(wiring.interrupt, wiring.cores);
+  }
   return processor_->RaiseInterrupt(wiring.interrupt, wiring.cores);
 }
 

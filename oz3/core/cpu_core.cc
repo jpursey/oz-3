@@ -90,6 +90,18 @@ constexpr std::string_view kDwordRegNamesCompressed[] = {
     "D0", "D1", "D2", "D3", "CD",
 };
 
+// Sets the interrupt's bit in `pending`, returning false if it was already set
+// (a duplicate).
+bool RaisePending(uint32_t& pending, int interrupt) {
+  DCHECK(interrupt >= 0 && interrupt < CpuCore::kInterruptCount);
+  const uint32_t bit = uint32_t{1} << interrupt;
+  if ((pending & bit) != 0) {
+    return false;
+  }
+  pending |= bit;
+  return true;
+}
+
 }  // namespace
 
 absl::Span<const std::string_view> CpuCore::GetWordRegisterNames() {
@@ -254,13 +266,11 @@ void CpuCore::SetDwordRegister(const Lock& lock, int reg, uint32_t value) {
 }
 
 bool CpuCore::RaiseInterrupt(int interrupt) {
-  DCHECK(interrupt >= 0 && interrupt < kInterruptCount);
-  const uint32_t bit = uint32_t{1} << interrupt;
-  if ((it_ & bit) != 0) {
-    return false;
-  }
-  it_ |= bit;
-  return true;
+  return RaisePending(it_, interrupt);
+}
+
+bool CpuCore::RaiseSharedInterrupt(CoreInternal, int interrupt) {
+  return RaisePending(shared_it_, interrupt);
 }
 
 void CpuCore::InitBanks() {
@@ -348,11 +358,23 @@ void CpuCore::HandleInterrupt() {
   }
   uint32_t mask = 1;
   for (interrupt_ = 0; interrupt_ < kInterruptCount; ++interrupt_, mask <<= 1) {
-    if (it_ & mask) {
-      it_ -= mask;
-      if (ivec_[interrupt_] != 0) {
-        break;
+    if (((it_ | shared_it_) & mask) == 0) {
+      continue;
+    }
+
+    // The interrupt is cleared on this core, whether it has a handler or not.
+    // With one, a shared interrupt is also taken from every other core.
+    const bool handled = ivec_[interrupt_] != 0;
+    const bool shared = (shared_it_ & mask) != 0;
+    it_ &= ~mask;
+    shared_it_ &= ~mask;
+    if (handled && shared) {
+      for (int i = 0; i < processor_->GetNumCores(); ++i) {
+        processor_->GetCore(i)->shared_it_ &= ~mask;
       }
+    }
+    if (handled) {
+      break;
     }
   }
   if (interrupt_ == kInterruptCount) {

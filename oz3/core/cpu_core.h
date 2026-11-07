@@ -456,8 +456,13 @@ class CpuCore final : public ExecutionComponent {
     return banks_[bank_index];
   }
 
-  // Returns the current interrupt state.
+  // Returns the interrupts pending on this core that were raised on it alone,
+  // with one bit for each interrupt.
   uint32_t GetInterrupts() const { return it_; }
+
+  // Returns the shared interrupts pending on this core (see
+  // Processor::RaiseSharedInterrupt), with one bit for each interrupt.
+  uint32_t GetSharedInterrupts() const { return shared_it_; }
 
   // Returns the current interrupt vector address for the specified interrupt.
   uint16_t GetInterruptAddress(int interrupt) const {
@@ -491,6 +496,14 @@ class CpuCore final : public ExecutionComponent {
   // the interrupt was already pending (a duplicate), whether or not interrupts
   // are enabled.
   bool RaiseInterrupt(int interrupt);
+
+  // Raises the specified interrupt as a shared interrupt on this core. Only the
+  // Processor raises one, on several cores at once (see
+  // Processor::RaiseSharedInterrupt).
+  //
+  // It must be a valid interrupt index: [0, kInterruptCount). Returns false if
+  // it was already pending on this core as a shared interrupt.
+  bool RaiseSharedInterrupt(CoreInternal, int interrupt);
 
   // Returns true if an interrupt is pending (will be handled next).
   bool IsInterruptPending() const;
@@ -555,6 +568,7 @@ class CpuCore final : public ExecutionComponent {
   // Interrupt state.
   int interrupt_ = -1;                   // Current interrupt being started.
   uint32_t it_ = 0;                      // IT register
+  uint32_t shared_it_ = 0;               // Shared interrupts pending.
   uint16_t ivec_[kInterruptCount] = {};  // Interrupt vector table.
   static_assert(sizeof(it_) >= kInterruptCount / 8);
 
@@ -575,7 +589,7 @@ class CpuCore final : public ExecutionComponent {
 static_assert(sizeof(CpuCore) < 512, "CpuCore too big");
 
 inline bool CpuCore::IsInterruptPending() const {
-  return it_ != 0 && (r_[ST] & I) != 0;
+  return (it_ | shared_it_) != 0 && (r_[ST] & I) != 0;
 }
 
 }  // namespace oz3
