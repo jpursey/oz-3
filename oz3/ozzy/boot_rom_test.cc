@@ -143,7 +143,7 @@ void ExpectScreen(Ozzy& ozzy, const std::vector<std::string_view>& rows) {
 // them.
 void TypeKeys(Ozzy& ozzy, absl::Span<const uint16_t> keys) {
   for (uint16_t key : keys) {
-    EXPECT_TRUE(ozzy.GetKeyboard()->PressKey(key));
+    EXPECT_TRUE(ozzy.GetKeyboard()->TypeKey(key));
   }
   RunToShow(ozzy);
 }
@@ -411,8 +411,8 @@ TEST(BootRomTest, KeysEchoWithEveryCore) {
 TEST(BootRomTest, KeysBeforeTheBannerEchoAfterIt) {
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(OzzySettings());
   ASSERT_TRUE(ozzy.ok()) << ozzy.status();
-  EXPECT_TRUE((*ozzy)->GetKeyboard()->PressKey('a'));
-  EXPECT_TRUE((*ozzy)->GetKeyboard()->PressKey('b'));
+  EXPECT_TRUE((*ozzy)->GetKeyboard()->TypeKey('a'));
+  EXPECT_TRUE((*ozzy)->GetKeyboard()->TypeKey('b'));
   (*ozzy)->Run(absl::Milliseconds(100));
   std::vector<std::string_view> rows = GetBannerRows(kDefaultBanner);
   rows[2] = "ab";

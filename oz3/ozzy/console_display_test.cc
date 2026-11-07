@@ -111,7 +111,7 @@ TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
   EXPECT_EQ(console.TakeText(), "");
 
   const ScreenPicture before = ozzy->GetScreen()->GetPicture();
-  ozzy->GetKeyboard()->PressKey('x');
+  ozzy->GetKeyboard()->TypeKey('x');
   ozzy->Run(kKeyTime);
   display.Update();
   const std::string text = console.TakeText();
@@ -129,7 +129,7 @@ TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
   display.Update();
   EXPECT_THAT(console.TakeText(), HasSubstr("OZZY 0.1"));
 
-  ozzy->GetKeyboard()->PressKey('x');
+  ozzy->GetKeyboard()->TypeKey('x');
   ozzy->Run(kKeyTime);
   display.Update();
   EXPECT_EQ(console.TakeText(), "x");

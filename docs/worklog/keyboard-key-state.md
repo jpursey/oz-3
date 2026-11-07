@@ -90,16 +90,16 @@ code (if it has one).
 inline constexpr uint8_t kKeyLeftShift = 0x89;  ...  kKeyRightAlt = 0x8E;
 
 struct KeyboardSettings {
+  // The first of Keyboard::kKeyStatePorts ports of key state, or none for a
+  // keyboard without key state.
+  std::optional<int> state_port;
+
   // The typed keys' port, or none for a keyboard without typed keys.
-  std::optional<int> port = 0;
+  std::optional<int> typed_port = 0;
 
   // The interrupt raised when a typed key is put in the port, which a keyboard
   // without typed keys doesn't have.
-  DeviceInterrupt interrupt;
-
-  // The first of Keyboard::kKeyStatePorts ports of key state, or none for a
-  // keyboard without key state.
-  std::optional<int> key_state_port;
+  DeviceInterrupt typed_interrupt;
 };
 
 class Keyboard {
@@ -118,7 +118,9 @@ class Keyboard {
 };
 ```
 
-`port` stays 0 by default, so existing settings keep their meaning.
+`port` and `interrupt` become `typed_port` and `typed_interrupt`, so each
+field says which keys it is for, and `typed_port` stays 0 by default, so a
+default keyboard is as it was.
 `PressKey` becomes `TypeKey`, now that key state has presses of its own, which
 renames its calls in `ozzy_main.cc` and the ozzy tests.
 
@@ -158,7 +160,9 @@ codes, with the existing reading and key events under typed keys, and
   The names are close, so the comments say which is which. Renaming the bits
   (such as `kKeyShiftBit`) would be clearer, but changes every use of them;
   recommended to leave them.
-- **`key_state_port`**, `kKeyStatePorts`, `kKeyStateKeys`.
+- **`state_port`**, **`typed_port`**, and **`typed_interrupt`** in
+  `KeyboardSettings`, with the two ports together, and `kKeyStatePorts` and
+  `kKeyStateKeys` in `Keyboard`.
 - **`KeyChange`** (`{key, held}`) and **`ConsoleKeys`** (`typed` and
   `changes`) in the console frontend.
 - **`GetKeyEvent`**, renamed from `GetOzzyKey`, and **`GetKeyCode`**: they give
@@ -168,9 +172,14 @@ codes, with the existing reading and key events under typed keys, and
 ### devices: Keyboard
 
 - `KeyboardFactory` wires the typed port (if any) and then the key state ports
-  (if any), in that order, and the interrupt only with the typed port. Port
-  ranges are checked by `ProcessorConfig::Validate`, as now, so the factory
-  keeps its constructor.
+  (if any), in that order, and the interrupt only with the typed port. Its
+  settings can now be invalid, so it is made by a static `Create`, as the
+  teletype's and screen's are, which fails for a keyboard with neither typed
+  keys nor key state, or with the typed keys' port among the key state's
+  (devices may share ports, so `ProcessorConfig::Validate` wouldn't catch it).
+  Port ranges are checked by `ProcessorConfig::Validate`, as now. The Ozzy
+  creates its keyboard with `Create`. Like the teletype, the factory keeps its
+  settings, and the keyboard is constructed from them.
 - The keyboard keeps, for each key state port: the keys held, the keys pressed
   and not yet taken, the pressed keys it last put in word 1, and whether the
   port needs writing.
@@ -246,12 +255,13 @@ virtual ConsoleKeys TakeKeys() = 0;  // Replaces std::vector<uint16_t>.
 
 ## CLs
 
-### CL1 [ ] devices: key state
+### CL1 [x] devices: key state
 
 Depends on: nothing.
 
 - `keyboard.h` and `keyboard.cc`: the key codes, `KeyboardSettings`'s optional
-  `port` and `key_state_port`, `kKeyStatePorts`, `kKeyStateKeys`, and
+  `state_port` and `typed_port`, and `typed_interrupt`, `KeyboardFactory::Create`,
+  `kKeyStatePorts`, `kKeyStateKeys`, and
   `SetKeyState`, and the key state in `Execute`. `PressKey` becomes `TypeKey`,
   with its calls in `ozzy_main.cc`, `boot_rom_test.cc`, and
   `console_display_test.cc`.

@@ -121,7 +121,7 @@ void RunOzzy(Ozzy& ozzy, Console& console,
   while (!console.IsQuitRequested()) {
     for (const uint16_t key : console.TakeKeys()) {
       if (keyboard != nullptr) {
-        keyboard->PressKey(key);
+        keyboard->TypeKey(key);
       }
     }
 

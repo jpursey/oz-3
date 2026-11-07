@@ -153,8 +153,12 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
     config.AddDevice(std::move(*screen));
   }
   if (settings.keyboard) {
-    config.AddDevice(std::make_shared<KeyboardFactory>(
-        Ozzy::kKeyboardName, GetOzzyKeyboardSettings()));
+    absl::StatusOr<std::unique_ptr<KeyboardFactory>> keyboard =
+        KeyboardFactory::Create(Ozzy::kKeyboardName, GetOzzyKeyboardSettings());
+    if (!keyboard.ok()) {
+      return keyboard.status();
+    }
+    config.AddDevice(std::move(*keyboard));
   }
   if (settings.teletype.has_value()) {
     absl::StatusOr<std::unique_ptr<TeletypeFactory>> teletype =

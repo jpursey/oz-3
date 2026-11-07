@@ -344,10 +344,10 @@ ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen) {
 }
 
 KeyboardSettings GetOzzyKeyboardSettings() {
-  return {.port = kOzzyKeyboardPort,
-          .interrupt = {.interrupt = kOzzyKeyboardInterrupt,
-                        .cores = kOzzyKeyboardInterruptCores,
-                        .shared = true}};
+  return {.typed_port = kOzzyKeyboardPort,
+          .typed_interrupt = {.interrupt = kOzzyKeyboardInterrupt,
+                              .cores = kOzzyKeyboardInterruptCores,
+                              .shared = true}};
 }
 
 TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype) {
