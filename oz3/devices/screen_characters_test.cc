@@ -48,7 +48,7 @@ TEST(ScreenCharactersTest, AlternateGlyphsAreTheFirst256) {
               ElementsAreArray(characters.first(half)));
 }
 
-TEST(ScreenCharactersTest, AsciiIsInTheOsborneStyle) {
+TEST(ScreenCharactersTest, AsciiIsFromRow1WithDescendersBelow) {
   EXPECT_THAT(GetGlyphPixels(' '), Each("........"));
   EXPECT_THAT(GetGlyphPixels('A'), ElementsAre("........",  //
                                                ".####...",  //

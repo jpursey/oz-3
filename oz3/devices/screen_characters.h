@@ -13,10 +13,9 @@
 namespace oz3 {
 
 // Returns the built-in character set, kScreenCharacterSetSize words, which a
-// screen starts with when ScreenSettings::characters is unset. Its glyphs are
-// Ozzy's font:
-// - 00h to 1Fh: block and line graphics, in the style of the Osborne 1's.
-// - 20h to 7Eh: ASCII, in the style of the Osborne 1's, and 7Fh a hatch.
+// screen starts with when ScreenSettings::characters is unset. Its glyphs are:
+// - 00h to 1Fh: block and line graphics.
+// - 20h to 7Eh: ASCII, and 7Fh a hatch.
 // - 80h to BFh: sextants: 80h plus the sixths of the cell lit, where bit 0 is
 //   the top left sixth, bit 1 the top right, and so on to bit 5, the bottom
 //   right. The sixths are rows of 3, 4, and 3 pixels.

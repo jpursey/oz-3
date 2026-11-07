@@ -1,9 +1,8 @@
 # Ozzy Computer
 
 Ozzy is a virtual computer built around the OZ-3, in the spirit of the CP/M
-machines of the early 1980s (the Osborne Executive and the Kaypro): a
-character screen, a keyboard, disk drives, and a small operating system that
-loads programs from disk and runs them. It is what makes the OZ-3 a machine
+machines of the early 1980s: a character screen, a keyboard, disk drives, and
+a small operating system that loads programs from disk and runs them. It is what makes the OZ-3 a machine
 to write fun programs for, rather than a processor in a test.
 
 This doc defines Ozzy as a whole: its hardware, its devices, the instructions
@@ -193,8 +192,8 @@ A memory mapped page. An 80 by 24 screen is 1920 cells, which fits in one
 - **Cells:** one word per cell, row by row. The low byte is the character, and
   the high byte its attribute, so writing a plain character (`'A'`, 41h) shows
   it with no attributes.
-- **Attributes:** inverse, underline, half intensity, and blink, as the Osborne
-  Executive had. The rest of the byte is reserved.
+- **Attributes:** inverse, underline, half intensity, and blink. The rest of
+  the byte is reserved.
 - **Characters:** 0 to 127 are ASCII, and 128 to 255 are Ozzy's own graphics
   characters (box drawing, blocks, and the like), drawn by the console
   frontend with their nearest Unicode characters.
