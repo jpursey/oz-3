@@ -7,18 +7,19 @@ pressed, by their place on the keyboard. A queue of press and release events
 can't give that reliably: a release the program never reads leaves its key
 held, and a queue nobody reads fills.
 
-So the keyboard gains **key state**: ports holding a bit for each key held, and
+So the keyboard has **key state**: ports holding a bit for each key held, and
 for each key pressed since the port was last read. It is state rather than
 events, so nothing is lost when a program doesn't read it, and nothing waits to
 be read. A keyboard's wiring chooses typed keys, key state, or both, and the
-Ozzy's keyboard has both. Memory mapping would take a whole page (4 Kiw) for 10
-words, so key state is in ports (see the backlog's *Shared I/O page*).
+Ozzy's keyboard has both, with the console frontend reporting every key to
+each. Memory mapping would take a whole page (4 Kiw) for 10 words, so key state
+is in ports (see the backlog's *Shared I/O page*).
 
 ## Behavior
 
 ### Devices: the keyboard
 
-**Wiring:** typed keys are a port and an interrupt, as now. Key state is
+**Wiring:** typed keys are a port and an interrupt. Key state is
 `Keyboard::kKeyStatePorts` (10) consecutive ports from a first port, with no
 interrupt. A keyboard has either or both.
 
@@ -60,46 +61,45 @@ never set, and 9Ch to 9Fh are free for keys added later.
 
 - The status is set while word 1 isn't 0.
 - Reading the port clears its status (`IN` does, as well as `INS`), which takes
-  its pressed keys: the keyboard clears them from word 1 and the status, keeping
-  any pressed since. So a program reads the dword, `IN.RD` (or `INS.RD`, which
-  reads only when a key on the port was pressed), and gets both at once.
-  Reading word 0 alone (`IN.RW`) takes the pressed keys without seeing them.
+  its pressed keys: the keyboard clears them from word 1, keeping any pressed
+  since. So a program reads the dword, `IN.RD` (or `INS.RD`, which reads only
+  when a key on the port was pressed), and gets both at once. Reading word 0
+  alone takes the pressed keys without seeing them.
 - A key pressed and released between two reads is pressed but not held, so a
   tap is never missed. A key held down presses once: the host's auto-repeat
   doesn't press it again.
 - Each port has its own lock, so a program reading the ports while the keyboard
   updates them may see some ports from before a change and some from after.
-  Every key the host reports in one frame changes at once on its own port.
-- The keyboard writes a port only when one of its keys changes, or it is read
-  with keys pressed, with no cycles of its own, so it waits only while a core
-  holds the port. A core that writes to a key state port changes it until the
-  keyboard next writes it, and a write that sets the status makes `INS` read
-  it.
+  Keys on one port change together.
+- The keyboard writes a port only when one of its keys changes, or its pressed
+  keys are taken, with no cycles of its own, so it waits only while a core
+  holds the port. A core's write to a key state port stays until the keyboard
+  next writes it, and a write that sets the status makes `INS` read it.
 
-The typed keys don't change for programs. The host still translates every
-typed key itself, by its own layout, and types it: the keyboard never makes
-typed keys from key state. A host reporting a key to a keyboard with both calls
-both, `TypeKey` for the character it types (if any) and `SetKeyState` for its
-code (if it has one).
+The typed keys don't change for programs. The host translates every typed key
+itself, by its own layout, and types it: the keyboard never makes typed keys
+from key state (see the backlog's *Typed keys from key state*). A host
+reporting a key to a keyboard with both calls both, `TypeKey` for the
+character it types (if any) and `SetKeyState` for its code (if it has one).
 
 **Host interface:**
 
 ```
 // Key codes for the modifier keys, only in key state (typed keys hold the
 // modifiers as bits, kKeyShift, kKeyCtrl, and kKeyAlt).
-inline constexpr uint8_t kKeyLeftShift = 0x89;  ...  kKeyRightAlt = 0x8E;
+inline constexpr uint16_t kKeyLeftShift = 0x89;  ...  kKeyRightAlt = 0x8E;
 
 struct KeyboardSettings {
-  // The first of Keyboard::kKeyStatePorts ports of key state, or none for a
-  // keyboard without key state.
-  std::optional<int> state_port;
+  std::optional<int> state_port;      // First key state port, or none.
+  std::optional<int> typed_port = 0;  // The typed keys' port, or none.
+  DeviceInterrupt typed_interrupt;    // Raised as each typed key arrives.
+};
 
-  // The typed keys' port, or none for a keyboard without typed keys.
-  std::optional<int> typed_port = 0;
-
-  // The interrupt raised when a typed key is put in the port, which a keyboard
-  // without typed keys doesn't have.
-  DeviceInterrupt typed_interrupt;
+class KeyboardFactory {
+  // Fails for neither typed keys nor key state, or for the typed keys' port
+  // among the key state's.
+  static absl::StatusOr<std::unique_ptr<KeyboardFactory>> Create(
+      std::string_view name, const KeyboardSettings& settings);
 };
 
 class Keyboard {
@@ -107,26 +107,24 @@ class Keyboard {
   static constexpr int kKeyStatePorts = 10;
   static constexpr int kKeyStateKeys = kKeyStatePorts * 16;
 
-  // Queues the typed key event `key` (was PressKey). Does nothing, returning
-  // false, for a keyboard without typed keys.
+  // Queues a typed key event (was PressKey). Returns false if the queue is
+  // full, or the keyboard has no typed keys.
   bool TypeKey(uint16_t key);
 
-  // Sets whether the key with code `key` is held, which must be less than
-  // kKeyStateKeys. A key that wasn't held is pressed too. Does nothing for a
-  // keyboard without key state. Called between Processor::Execute calls.
+  // Sets whether the key with code `key` is held. A key that wasn't held is
+  // pressed too. Does nothing without key state, or for a code out of range.
   void SetKeyState(int key, bool held);
 };
 ```
 
-`port` and `interrupt` become `typed_port` and `typed_interrupt`, so each
-field says which keys it is for, and `typed_port` stays 0 by default, so a
-default keyboard is as it was.
-`PressKey` becomes `TypeKey`, now that key state has presses of its own, which
-renames its calls in `ozzy_main.cc` and the ozzy tests.
+The settings' `port` and `interrupt` became `typed_port` and `typed_interrupt`,
+so each field says which keys it is for, and `typed_port` stays 0 by default,
+so a default keyboard is as it was. `PressKey` became `TypeKey`, as "press" now
+means a key going down in key state.
 
-**Wiki:** `3.2-Keyboard.md` gains the key state's wiring, reading, and key
-codes, with the existing reading and key events under typed keys, and
-`3-Devices.md`'s table gives the keyboard's ports as 1 and 10.
+**Wiki:** `3.2-Keyboard.md` has the key state's wiring, reading, and key codes,
+with the reading and key events under typed keys, and `3-Devices.md`'s table
+gives the keyboard's ports as 1, 10, or 11.
 
 ### Ozzy
 
@@ -135,10 +133,11 @@ codes, with the existing reading and key events under typed keys, and
   `{ type: "keyboard" }` is unchanged, and has both.
 - The machine table's keyboard entry gives the first key state port in its
   first data word (FFFFh for none), and its second stays 0. Version 1 is
-  unchanged: the word was 0, and no program reads it yet.
+  unchanged: the word was 0, and no program read it.
 - The console frontend reports every key's presses and releases to the key
   state, by where the key is (its scan code), and releases them all when the
   console loses focus, which sends no releases for keys held then.
+- Nothing in the Ozzy reads key state yet: the boot ROM reads only typed keys.
 - **Wiki:** `4-Ozzy-Computer.md`'s device table, machine table, its example,
   and the console frontend's keyboard.
 
@@ -146,57 +145,48 @@ codes, with the existing reading and key events under typed keys, and
 
 ### Names
 
-- **Typed keys** is the existing port and its key events, and **key state** the
-  new ports. Alternatives: "key matrix" (suggests the scanning hardware of old
-  keyboards, which this isn't), "held keys" (only word 0). Recommended: key
-  state. "Key event" stays the typed key's word.
-- **`SetKeyState(key, held)`**, as the feature is key state. Set aside:
-  `SetKeyHeld` (reads as always holding it), `HoldKey` and `ReleaseKey`, and
-  `KeyDown` and `KeyUp` (not verbs).
-- **`TypeKey`**, renamed from `PressKey`, as "press" now means a key going
-  down in key state, and the typed keys are typed.
+- **Typed keys** is the port of key events, and **key state** the ports of
+  bits. "Key matrix" (the scanning hardware of old keyboards) and "held keys"
+  (only word 0) were set aside. "Key event" stays the typed key's word.
+- **`SetKeyState(key, held)`**, as the feature is key state, rather than
+  `SetKeyHeld` (reads as always holding it), or `HoldKey` and `ReleaseKey`.
+- **`TypeKey`**, renamed from `PressKey`, as the typed keys are typed.
 - **`kKeyLeftShift` to `kKeyRightAlt`**: key codes, beside `kKeyShift`,
   `kKeyCtrl`, and `kKeyAlt`, which are the typed key event's modifier bits.
-  The names are close, so the comments say which is which. Renaming the bits
-  (such as `kKeyShiftBit`) would be clearer, but changes every use of them;
-  recommended to leave them.
+  The names are close, so the comments say which is which.
 - **`state_port`**, **`typed_port`**, and **`typed_interrupt`** in
-  `KeyboardSettings`, with the two ports together, and `kKeyStatePorts` and
-  `kKeyStateKeys` in `Keyboard`.
+  `KeyboardSettings`, with the two ports together.
 - **`KeyChange`** (`{key, held}`) and **`ConsoleKeys`** (`typed` and
-  `changes`) in the console frontend.
+  `changes`) in the console frontend, and **`ConsoleKeyState`**, the keys a
+  Windows console reported held.
 - **`GetKeyEvent`**, renamed from `GetOzzyKey`, and **`GetKeyCode`**: they give
   the keyboard device's typed key events and key codes, which aren't the
-  Ozzy's own. They stay in `win_console`, the only Windows host.
+  Ozzy's own. They are in `win_console`, the only Windows host.
 
 ### devices: Keyboard
 
 - `KeyboardFactory` wires the typed port (if any) and then the key state ports
   (if any), in that order, and the interrupt only with the typed port. Its
-  settings can now be invalid, so it is made by a static `Create`, as the
-  teletype's and screen's are, which fails for a keyboard with neither typed
-  keys nor key state, or with the typed keys' port among the key state's
-  (devices may share ports, so `ProcessorConfig::Validate` wouldn't catch it).
-  Port ranges are checked by `ProcessorConfig::Validate`, as now. The Ozzy
-  creates its keyboard with `Create`. Like the teletype, the factory keeps its
+  settings can be invalid, so it is made by `Create`, as the teletype's and
+  screen's are, which catches a typed port among the key state's (devices may
+  share ports, so `ProcessorConfig::Validate` wouldn't). Port ranges are checked
+  by `ProcessorConfig::Validate`. Like the teletype's, the factory keeps its
   settings, and the keyboard is constructed from them.
 - The keyboard keeps, for each key state port: the keys held, the keys pressed
-  and not yet taken, the pressed keys it last put in word 1, and whether the
-  port needs writing.
+  and not yet taken, the pressed keys it last put in word 1, whether a key
+  changed since, and its lock while requested.
   - `SetKeyState` sets or clears the held bit, and on a press of a key not held,
-    its pressed bit, marking the port to write, and wakes the keyboard.
-  - `Execute` requests the lock of every port to write, and of every port it
-    put pressed keys in whose status reads clear (a core read it). As each is
-    granted, it checks the status under the lock: if clear, the pressed keys it
-    put there were taken, so it removes only those, keeping any the host
-    pressed since. Then it writes word 0 and word 1 with no status mode, sets
-    the status if word 1 isn't 0 (`StoreWord` with `S`, at word 1), and
-    releases the lock. With nothing left to write, it sleeps.
+    its pressed bit, marks the port changed, and wakes the keyboard.
+  - `Execute` runs the typed keys and the key state each time, so it waits for
+    every lock it needs at once. It requests the lock of every changed port,
+    and of every port it put pressed keys in whose status reads clear (a core
+    read it). Under the lock, if the status is clear, the pressed keys it put
+    there were taken, so it removes only those, keeping any the host pressed
+    since. Then it writes word 0, and word 1 with the status if it isn't 0, and
+    releases the lock. A requested lock is always used and released, so a port
+    is never left locked. With nothing to write, it sleeps.
   - Reads and writes of its ports wake it (`Port` wakes the components wired
-    to a port), which is how it learns of a read. A woken keyboard with nothing
-    to write sleeps again at once.
-- Typed keys are unchanged but for `TypeKey`'s name, and use the typed port's
-  index in the config, which is 0 whenever there is one.
+    to a port), which is how it learns of a read.
 - Performance: a game polling 10 ports each frame wakes the keyboard 10 times a
   frame, each a check of 10 ports.
 
@@ -207,54 +197,61 @@ a read and the keyboard taking it.
 
 ### ozzy: wiring and the machine table
 
-- `kOzzyKeyboardKeyStatePort = 6` beside `kOzzyKeyboardPort`, and
-  `GetOzzyKeyboardSettings` sets it.
-- `kMachineDeviceData` is the keyboard's first key state port.
-- The boot ROM doesn't change, as it reads only typed keys.
+- `kOzzyKeyboardKeyStatePort` (6) is beside `kOzzyKeyboardPort`, and
+  `GetOzzyKeyboardSettings` sets it. Static asserts check that the key state's
+  ports are in every Ozzy, and clear of the other devices' ports.
+- The machine table's keyboard entry takes its first data word from the
+  keyboard's settings.
 
 ### ozzy and apps: the console frontend
 
 ```
-// A key pressed or released, by its key code (see keyboard.h).
+// console.h
 struct KeyChange {
-  int key = 0;
+  int key = 0;        // Its key code.
   bool held = false;
 };
-
-// The keys a console took since the last call, oldest first.
 struct ConsoleKeys {
-  std::vector<uint16_t> typed;     // Typed key events
-  std::vector<KeyChange> changes;  // Key state changes
+  std::vector<uint16_t> typed;     // Typed key events.
+  std::vector<KeyChange> changes;  // Keys pressed and released.
 };
+virtual ConsoleKeys TakeKeys() = 0;  // Was std::vector<uint16_t>.
 
-virtual ConsoleKeys TakeKeys() = 0;  // Replaces std::vector<uint16_t>.
+// win_console.h: no Windows headers, so it can be tested.
+int GetKeyCode(uint16_t scan_code, bool extended);
+class ConsoleKeyState {
+ public:
+  void AddKeyEvent(uint16_t scan_code, bool key_down, uint32_t control_keys,
+                   std::vector<KeyChange>& changes);
+  void ReleaseKeys(std::vector<KeyChange>& changes);
+};
 ```
 
-- `GetKeyCode(scan_code, extended)` in `win_console.h` gives a key's code
-  from the key event record's scan code, and whether it is an extended key (`E0`
-  prefixed: the arrows and the six keys above them, Right Ctrl, Right Alt, and
-  the keypad's Enter and `/`, which share scan codes with the keypad and the
-  main keys), or 0 for a key
-  without one. It is a fixed table of scan codes, which are by place, so it
-  needs no Windows calls and is tested as `GetKeyEvent` is.
-- `GetOzzyKey` becomes `GetKeyEvent`, unchanged otherwise.
-- `TakeKeys` gives a change for each key down and key up record with a code,
-  which `GetKeyEvent` and the quit keys don't affect, and on losing focus,
-  releases every key held. `ConsoleKeyState` in `win_console.h` keeps which
-  keys it reported held, so it is tested without a console.
-- Ctrl and Alt are held as each key event record's control key state says,
-  rather than by their scan codes, as Windows Terminal gives Right Alt's key up
-  without `ENHANCED_KEY` (Left Alt's, by its scan code), which would leave it
-  held. The control key state is right in both consoles, and is in every
-  record, so a Ctrl or Alt released without focus is caught up on the next
-  key. It has one Shift for both, so Shift is by its scan code, which both
-  consoles give right.
-- `ozzy_main` types each typed key and sets each change.
+- `GetKeyCode` is a fixed table of scan codes, which are by place: the main
+  rows as strings of their characters from each row's first scan code, F1 to
+  F10's range, and the other keys, with and without `ENHANCED_KEY`. The
+  extended keys are the arrows and the six keys above them, Right Ctrl, Right
+  Alt, and the keypad's Enter and `/`, which share scan codes with the keypad
+  and the main keys. The keypad's keys have no code.
+- `ConsoleKeyState` keeps the keys reported held. A key down of a key held is
+  a repeat, and a key up of a key not held was released before (such as the
+  Enter that started `ozzy`), so neither is a change.
+- Ctrl and Alt are held as each record's control key state says, rather than
+  by their scan codes, as Windows Terminal gives Right Alt's key up without
+  `ENHANCED_KEY` (Left Alt's, by its scan code), which would leave it held. The
+  control key state is right in both consoles, and is in every record, so a
+  Ctrl or Alt pressed or released without focus is caught up on the next key,
+  ahead of that key. It has one Shift for both, so Shift is by its scan code.
+- `TakeKeys` gives every key event record to `ConsoleKeyState`, the keys that
+  quit too, and releases every key held on a `FOCUS_EVENT` losing focus. The
+  typed keys are as before.
+- `ozzy_main` takes the keys every frame, with or without a keyboard, and
+  types each typed key and sets each change.
 
-### Confirmed
+### Confirmed by hand
 
-By hand in CL3, with a throwaway viewer that printed each input record, in
-Windows Terminal and the old console host:
+With a throwaway viewer that printed each input record, in Windows Terminal and
+the old console host:
 - Both deliver `FOCUS_EVENT` records, and a key held while the console loses
   focus has no key up. In Windows Terminal, a key released after focus is back
   may still have its key up, which is ignored, as it is already released.
@@ -264,76 +261,30 @@ Windows Terminal and the old console host:
 - Windows Terminal gives Right Alt's key up without `ENHANCED_KEY`, and the old
   console with it (see the control key state above).
 - The On-Screen Keyboard's keys have their real scan codes in both, so injected
-  keys are in key state. Its Ctrl and Alt latch, held until the next click.
+  keys are in key state. Its Ctrl and Alt latch, held until clicked again.
 - The Claude Code terminal panel gives each held key as a key down and key up
   pair at every repeat, so a held key is a stream of taps in key state there,
   and Ctrl+Alt+Q doesn't reach the program. `ozzy` is for a Windows console.
 
 Not confirmed: AltGr (no layout with it was at hand), the keypad's Enter (no
-keypad), and remapped keys. AltGr is held as whatever the control key state
-says, which on Windows is expected to be Left Ctrl and Right Alt.
+keypad), and remapped keys (see the backlog's *Ozzy console polish*).
 
-## CLs
+### Testing
 
-### CL1 [x] devices: key state
-
-Depends on: nothing.
-
-- `keyboard.h` and `keyboard.cc`: the key codes, `KeyboardSettings`'s optional
-  `state_port` and `typed_port`, and `typed_interrupt`, `KeyboardFactory::Create`,
-  `kKeyStatePorts`, `kKeyStateKeys`, and
-  `SetKeyState`, and the key state in `Execute`. `PressKey` becomes `TypeKey`,
-  with its calls in `ozzy_main.cc`, `boot_rom_test.cc`, and
-  `console_display_test.cc`.
-- `keyboard_test.cc`: key state tests, beside the typed key tests.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests:
-  - the factory's wiring: typed keys only, key state only, and both;
-  - holding and releasing keys sets and clears word 0, in the port and bit of
-    its code, the cycle after;
-  - a press sets word 1 and the status, a held key's repeats don't press
-    again, and a press and release before a read is pressed but not held;
-  - a program reading with `IN.RD` gets both words and takes the pressed keys,
-    keeping the held, and `INS.RD` reads only with keys pressed;
-  - a press between a core's read and the keyboard taking it isn't lost;
-  - typed keys and key state work together, and each alone;
-  - the keyboard sleeps with nothing to write, and its updates take no cycles.
-- Wiki: `3.2-Keyboard.md` and `3-Devices.md`.
-
-### CL2 [x] ozzy: key state on ports 6 to 15
-
-Depends on: CL1.
-
-- `ozzy_settings.h` and `.cc`: `kOzzyKeyboardKeyStatePort`, in the keyboard's
-  settings.
-- `ozzy.cc`: the keyboard entry's first data word.
-- Tests in `ozzy_settings_test.cc` and `ozzy_test.cc`.
-
-**Verify**
-- Standard checks.
-- Unit tests: the settings' wiring, and the machine table's keyboard entry with
-  and without a keyboard.
-- Wiki: `4-Ozzy-Computer.md`'s devices table, machine table, and example.
-
-### CL3 [x] ozzy, apps: key state from the console
-
-Depends on: CL2.
-
-- `console.h`: `KeyChange`, `ConsoleKeys`, and `TakeKeys`.
-- `win_console.h` and `.cc`: `GetKeyCode`, `GetOzzyKey` renamed to
-  `GetKeyEvent`, `ConsoleKeyState`, and `TakeKeys`'s changes and focus.
-- `ozzy_main.cc`: sets the changes.
-- Tests in `win_console_test.cc`.
-
-**Verify**
-- Standard checks.
-- Unit tests: `GetKeyCode` for each row of the table, the extended keys
-  against their keypad and left twins, and keys without a code;
-  `ConsoleKeyState`'s repeats, key ups of keys not held, Shift by scan code,
-  Ctrl and Alt by the control key state (Windows Terminal's Right Alt too), and
-  releasing every key.
-- By hand: the input records of both consoles, with a throwaway viewer (see
-  Confirmed). Nothing in the Ozzy reads key state yet.
-- Wiki: `4-Ozzy-Computer.md`'s console frontend.
+- `keyboard_test.cc`: the factory's wiring for typed keys only, key state only,
+  and both, and `Create`'s errors; holding and releasing keys in the port and
+  bit of their codes, with repeats not pressing again and taps pressed but not
+  held; programs reading with `IN.RD` and `INS.RD`; a core's write staying
+  until the next change; a press between a read and the keyboard taking it;
+  out-of-range codes; the keyboard sleeping with nothing to write, its updates
+  taking no cycles, and a port released when a core sets its status while the
+  keyboard waits for it.
+- `ozzy_settings_test.cc` and `ozzy_test.cc`: the keyboard's wiring, key state
+  reaching ports 6 and 15 of a running Ozzy, and the machine table's keyboard
+  entry.
+- `win_console_test.cc`: `GetKeyCode` for each row of the table, the extended
+  keys against their keypad and left twins, and keys without a code; and
+  `ConsoleKeyState` with records copied from both consoles: repeats, key ups
+  of keys not held, Shift by its scan code, Ctrl and Alt by the control key
+  state (Windows Terminal's Right Alt too), catching up, and releasing every
+  key on losing focus.

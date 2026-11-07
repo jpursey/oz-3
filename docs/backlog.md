@@ -50,7 +50,8 @@ the config file's name so its errors carry it. The wiki's Ozzy Computer page
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (ozzy: the
-  console frontend, apps: ozzy)
+  console frontend, apps: ozzy);
+  [keyboard-key-state.md](worklog/keyboard-key-state.md) (Confirmed by hand)
 
 What trying `ozzy` by hand left open:
 - **Frame rate:** `absl::SleepFor` sleeps in Windows' 15.6 ms timer ticks, so
@@ -67,6 +68,13 @@ What trying `ozzy` by hand left open:
   suits), in the old console host as well as Windows Terminal; and the frame
   time of the default Ozzy in Release, and the cycles a second with
   `--max-speed`.
+- **Key state unchecked by hand:** AltGr (held as the control key state says,
+  expected to be Left Ctrl and Right Alt), the keypad's Enter (which has no
+  code), and remapped keys (which may have no scan code, and so no key state).
+- **Terminals that aren't consoles:** the Claude Code terminal panel keeps
+  Ctrl+Alt+Q, so `ozzy` can't be quit there but from outside, and gives a held
+  key as a stream of taps. `ozzy` could say it needs a Windows console, or have
+  a quit key such terminals pass through.
 
 ## Screens without pixels
 
@@ -109,7 +117,7 @@ and the host's date and time.
 - **Layers:** devices, wiki
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Keyboard key state*
+- **Depends on:** nothing
 - **Background:** [keyboard-key-state.md](worklog/keyboard-key-state.md)
 
 A keyboard with typed keys needs its host to translate each key by its own
