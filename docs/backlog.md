@@ -51,13 +51,6 @@ What trying `ozzy` by hand left open:
   suits), in the old console host as well as Windows Terminal; and the frame
   time of the default Ozzy in Release, and the cycles a second with
   `--max-speed`.
-- **Key state unchecked by hand:** AltGr (held as the control key state says,
-  expected to be Left Ctrl and Right Alt), the keypad's Enter (which has no
-  code), and remapped keys (which may have no scan code, and so no key state).
-- **Terminals that aren't consoles:** the Claude Code terminal panel keeps
-  Ctrl+Alt+Q, so `ozzy` can't be quit there but from outside, and gives a held
-  key as a stream of taps. `ozzy` could say it needs a Windows console, or have
-  a quit key such terminals pass through.
 
 ## Screens without pixels
 
@@ -94,25 +87,6 @@ The program lexer decodes surrogate pairs by hand, where Game Bits'
 
 A periodic interrupt at a configured rate, and a port to read the cycle count
 and the host's date and time.
-
-## Typed keys from key state
-
-- **Layers:** devices, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [keyboard-key-state.md](worklog/keyboard-key-state.md)
-
-A keyboard with typed keys needs its host to translate each key by its own
-layout, and type it with `Keyboard::TypeKey`. A keyboard setting could have
-the keyboard make its typed keys from its key state instead, as old keyboards
-did from their own fixed layout, so a host (such as a game reporting only
-where keys are) only sets key state. The keyboard would turn key codes into
-characters by the US layout the codes are named for, with Shift and Ctrl
-applied, and Caps Lock (which needs a key code and a lock state). It would
-repeat a held key itself, after a delay and at a rate in real time turned into
-cycles, so it repeats the same on every run. The cost is the layout: on any
-other, keys type the US characters, so AZERTY's `A` types `q`.
 
 ## Disk drive device
 
@@ -423,3 +397,22 @@ spec's "a mapped page belongs wholly to its device" becomes a range, and only a
 shared page needs the range checked to find its device. Smaller pages aren't
 an option, as a bank's 16-bit read and write masks fix it at 16 pages. It
 waits until a device needs it.
+
+## Typed keys from key state
+
+- **Layers:** devices, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [keyboard-key-state.md](worklog/keyboard-key-state.md)
+
+A keyboard with typed keys needs its host to translate each key by its own
+layout, and type it with `Keyboard::TypeKey`. A keyboard setting could have
+the keyboard make its typed keys from its key state instead, as old keyboards
+did from their own fixed layout, so a host (such as a game reporting only
+where keys are) only sets key state. The keyboard would turn key codes into
+characters by the US layout the codes are named for, with Shift and Ctrl
+applied, and Caps Lock (which needs a key code and a lock state). It would
+repeat a held key itself, after a delay and at a rate in real time turned into
+cycles, so it repeats the same on every run. The cost is the layout: on any
+other, keys type the US characters, so AZERTY's `A` types `q`.
