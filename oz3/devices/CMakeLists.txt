@@ -8,8 +8,11 @@ set(oz3_devices_SOURCE
   screen.cc screen.h
   screen_characters.cc screen_characters.h
   teletype.cc teletype.h
+  timer.cc timer.h
 )
 set(oz3_devices_DEPS
+  absl::any_invocable
+  absl::civil_time
   absl::memory
   absl::span
   absl::status
@@ -27,6 +30,7 @@ set(oz3_devices_TEST_SOURCE
   screen_characters_test.cc
   screen_test.cc
   teletype_test.cc
+  timer_test.cc
 )
 set(oz3_devices_TEST_DEPS
   gb_parse
