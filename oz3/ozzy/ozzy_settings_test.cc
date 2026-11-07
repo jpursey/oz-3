@@ -15,6 +15,8 @@
 #include "absl/strings/str_cat.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/configs/console_config.h"
+#include "oz3/configs/teletype_config.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor_config.h"
 #include "oz3/devices/keyboard.h"
@@ -448,6 +450,28 @@ TEST(OzzySettingsTest, ValidateScreenPage) {
   EXPECT_EQ(ValidateError(settings), "screen: page 15 of bank 0 is RAM");
   settings.screen.reset();
   EXPECT_EQ(ValidateError(settings), "ok");
+}
+
+//==============================================================================
+// The configs in configs/
+//==============================================================================
+
+TEST(OzzySettingsTest, ConsoleConfigIsTheDefaultOzzy) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(
+      std::string(kConsoleConfig.GetText()), "configs/console.ozzy");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  EXPECT_EQ(*settings, OzzySettings());
+}
+
+TEST(OzzySettingsTest, TeletypeConfig) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(
+      std::string(kTeletypeConfig.GetText()), "configs/teletype.ozzy");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  OzzySettings expected;
+  expected.banks = {0xFFFE};
+  expected.screen.reset();
+  expected.teletype = OzzyTeletypeSettings();
+  EXPECT_EQ(*settings, expected);
 }
 
 }  // namespace

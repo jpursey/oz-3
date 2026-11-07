@@ -19,6 +19,9 @@ This is a CMake project, starting at the root. The directory structure is as fol
   oz3/          -- All source code in this project, separated into libraries
                    (see below)
   docs/         -- Feature plans (worklog/) and the backlog
+  configs/      -- Ozzy configs (.ozzy) for common machines, to run with ozzy.
+                   oz3_ozzy_test embeds and reads each one, so a new config
+                   gets a test there too.
   wiki/         -- A clone of the GitHub wiki, which holds the specification
                    (see Wiki). It is its own git repository, and is ignored by
                    this one.

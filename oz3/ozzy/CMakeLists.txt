@@ -57,3 +57,10 @@ gb_add_library(oz3_ozzy)
 # The boot ROM's source, which GetBootRom assembles.
 gb_embed_data(oz3_ozzy boot_rom.oza oz3/ozzy/boot_rom_source.h
               oz3::kBootRomSource)
+
+# The configs checked in at the top level, which the tests read, so they stay
+# valid as the settings change.
+gb_embed_data(oz3_ozzy_test ${PROJECT_SOURCE_DIR}/configs/console.ozzy
+              oz3/configs/console_config.h oz3::kConsoleConfig)
+gb_embed_data(oz3_ozzy_test ${PROJECT_SOURCE_DIR}/configs/teletype.ozzy
+              oz3/configs/teletype_config.h oz3::kTeletypeConfig)

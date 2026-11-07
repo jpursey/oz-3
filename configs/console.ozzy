@@ -1,0 +1,14 @@
+// An Ozzy for a text console, as the ozzy app runs it: a screen of 80 by 24
+// characters, which fits a standard console window, and a keyboard. This is the
+// default Ozzy, written out to start from.
+
+clock_hz: 1000000  // 1 Hz to 100 MHz
+cores: 1           // 1 to 8
+ports: 32          // 16 to 256
+banks: [
+  { ram: 0x7FFE }  // Pages 1 to 14: page 0 is the boot ROM, and 15 the screen
+]
+devices: [
+  { type: "screen", columns: 80, rows: 24 }
+  { type: "keyboard" }
+]

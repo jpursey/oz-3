@@ -1,0 +1,13 @@
+// An Ozzy with a teletype rather than a screen: what it prints scrolls by in
+// the console, and stays there once it quits. The keyboard types to it.
+
+clock_hz: 1000000  // 1 Hz to 100 MHz
+cores: 1           // 1 to 8
+ports: 32          // 16 to 256
+banks: [
+  { ram: 0xFFFE }  // Pages 1 to 15: page 0 is the boot ROM
+]
+devices: [
+  { type: "teletype", baud: 0 }  // As fast as programs write
+  { type: "keyboard" }
+]
