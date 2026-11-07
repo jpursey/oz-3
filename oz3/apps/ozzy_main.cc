@@ -13,9 +13,11 @@
 
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "gb/base/context.h"
+#include "gb/base/sleep.h"
 #include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
 #include "gb/cli/cli_command_line.h"
@@ -24,6 +26,8 @@
 #include "gb/cli/run_command_line.h"
 #include "gb/file/file_system.h"
 #include "gb/file/path.h"
+#include "oz3/core/core_types.h"
+#include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/ozzy/console.h"
 #include "oz3/ozzy/console_display.h"
@@ -43,6 +47,13 @@ const gb::CliFlag<bool> kMaxSpeed = {
         "Runs the Ozzy as fast as the host can, rather than at its clock "
         "rate.",
 };
+const gb::CliFlag<bool> kStats = {
+    .name = "stats",
+    .help =
+        "Writes how the Ozzy ran once it quits: the frames a second, the time "
+        "each took on average to run the Ozzy and draw the console (which "
+        "with --max-speed is the whole frame), and the cycles a second.",
+};
 const gb::CliArg<std::string_view> kConfigFile = {
     .name = "config file",
     .help =
@@ -61,7 +72,7 @@ const gb::CliCommand kProgram = {
         "Ctrl+Break, or the console's window is closed. Paths are written the "
         "operating "
         "system's way, absolute or relative to the current directory.",
-    .flags = {&kMaxSpeed},
+    .flags = {&kMaxSpeed, &kStats},
     .args = {&kConfigFile},
     .constraints = {&gb::kConstraintCliFileSystem},
     .run = Run,
@@ -109,16 +120,29 @@ std::optional<OzzySettings> ReadSettings(
   return *std::move(settings);
 }
 
+// How a run of an Ozzy went.
+struct RunStats {
+  int64_t frames = 0;
+  absl::Duration time;        // From the first frame's start to the last's end.
+  absl::Duration frame_time;  // The time frames took, without waiting.
+  Cycles cycles = 0;
+};
+
 // Runs `ozzy` in `console` until the user quits, each frame for the time since
 // the last, or with `max_speed_run_time`, in runs of that time until the next
 // frame.
-void RunOzzy(Ozzy& ozzy, Console& console,
-             std::optional<absl::Duration> max_speed_run_time) {
+RunStats RunOzzy(Ozzy& ozzy, Console& console,
+                 std::optional<absl::Duration> max_speed_run_time) {
   Keyboard* const keyboard = ozzy.GetKeyboard();
   ConsoleDisplay display(ozzy, console);
-  absl::Time last_time = absl::Now();
+  RunStats stats;
+  const Cycles start_cycles = ozzy.GetProcessor()->GetCycles();
+  const absl::Time start_time = absl::Now();
+  absl::Time last_time = start_time;
   absl::Time next_frame = last_time;
   while (!console.IsQuitRequested()) {
+    const absl::Time frame_start = absl::Now();
+
     // Keys are taken without a keyboard too, so they don't pile up.
     const ConsoleKeys keys = console.TakeKeys();
     if (keyboard != nullptr) {
@@ -146,12 +170,32 @@ void RunOzzy(Ozzy& ozzy, Console& console,
     // A frame that ends late starts the next at once, rather than catching
     // up with frames run back to back.
     now = absl::Now();
+    ++stats.frames;
+    stats.frame_time += now - frame_start;
     if (next_frame > now) {
-      absl::SleepFor(next_frame - now);
+      gb::PreciseSleepFor(next_frame - now);
     } else {
       next_frame = now;
     }
   }
+  stats.time = absl::Now() - start_time;
+  stats.cycles = ozzy.GetProcessor()->GetCycles() - start_cycles;
+  return stats;
+}
+
+// Writes `stats` to the standard output.
+void WriteStats(const RunStats& stats) {
+  if (stats.frames == 0) {
+    absl::PrintF("The Ozzy quit before its first frame.\n");
+    return;
+  }
+  const double secs = absl::ToDoubleSeconds(stats.time);
+  absl::PrintF("%d frames in %.2f s: %.2f frames a second\n", stats.frames,
+               secs, stats.frames / secs);
+  absl::PrintF("Each frame took %.3f ms on average to run and draw\n",
+               absl::ToDoubleMilliseconds(stats.frame_time / stats.frames));
+  absl::PrintF("%d cycles: %.0f cycles a second\n", stats.cycles,
+               stats.cycles / secs);
 }
 
 bool Run(gb::ValidatedContext& context,
@@ -186,7 +230,13 @@ bool Run(gb::ValidatedContext& context,
   if (command_line.Get(kMaxSpeed)) {
     max_speed_run_time = absl::Seconds(kMaxSpeedRunCycles) / settings->clock_hz;
   }
-  RunOzzy(**ozzy, **console, max_speed_run_time);
+  const RunStats stats = RunOzzy(**ozzy, **console, max_speed_run_time);
+
+  // The console is given back first, so the stats are in its own buffer.
+  console->reset();
+  if (command_line.Get(kStats)) {
+    WriteStats(stats);
+  }
   return true;
 }
 

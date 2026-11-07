@@ -11,6 +11,7 @@ Windows console in real time:
 ozzy                  // The default Ozzy: one core, a screen, and a keyboard
 ozzy hello.ozzy       // The Ozzy hello.ozzy describes
 ozzy --max-speed      // As fast as the host can
+ozzy --stats          // Says how fast it ran, once it quits
 ```
 
 A host that embeds Ozzy (a game, or a test) uses the library alone:
@@ -188,7 +189,7 @@ stack segment can't be (see the backlog's *Labels in address forms*).
 
 ### The `ozzy` app
 
-`ozzy [--max-speed] [config]` runs an Ozzy in the Windows console.
+`ozzy [--max-speed] [--stats] [config]` runs an Ozzy in the Windows console.
 - **Screen:** it draws the screen's picture as text, in the console's
   alternate screen buffer, with virtual terminal sequences: each cell's
   character as its nearest Unicode character, inverse, half intensity
@@ -196,14 +197,19 @@ stack segment can't be (see the backlog's *Labels in address forms*).
   The cursor is the console's own, in its position, shape (block, underline,
   or bar for the left edge), and blinking. It draws only the rows that changed
   since the last picture.
+- **A small console:** while the console is smaller than the screen, it shows
+  a message saying how big it needs to be in place of the picture, and draws
+  the picture whole once the console is big enough. A resize draws whatever
+  is shown whole again.
 - **What text can't show:** the left and right lines, redefined glyphs, the
   alternate character set (which is a copy of the first, until redefined),
   compact rows, and the exact blink timing. A graphical frontend would show
   the pixels as they are (see *Graphical frontend* in the backlog).
 - **Teletype:** for an Ozzy without a screen, it writes the teletype's output
   to the console as it comes, in the console's own buffer with wrapping, so
-  the transcript stays after quitting. Control characters a teletype doesn't
-  act on are dropped. With a screen, the teletype's output is taken and
+  the transcript stays after quitting, and a last line left unended is ended
+  on quitting. Control characters a teletype doesn't act on are dropped. With
+  a screen, the teletype's output is taken and
   dropped, as the console shows only one of them.
 - **Keyboard:** console key presses become Ozzy key events, with the codes and
   modifiers console-devices.md lists. Ctrl+C is a key like any other (03h).
@@ -213,6 +219,9 @@ stack segment can't be (see the backlog's *Labels in address forms*).
   that passed, at most 100 ms of them, so a host that falls behind slows the
   Ozzy rather than racing to catch up. `--max-speed` instead runs as many
   cycles as the host can between frames.
+- **Stats:** with `--stats`, once it quits, it writes the frames a second, the
+  time each took on average to run the Ozzy and draw the console, and the
+  cycles a second.
 - **Errors:** a config that doesn't read or build prints its error and exits
   with 1.
 
@@ -426,6 +435,10 @@ std::string DrawConsoleText(const ScreenPicture& picture,
 // doesn't act on dropped.
 std::string GetTeletypeText(std::string_view output);
 
+// Returns the text that clears the console and draws `lines` from its top
+// left, with the cursor hidden.
+std::string DrawConsoleLines(absl::Span<const std::string> lines);
+
 // console.h
 enum class ConsoleMode { kScreen, kLines };
 
@@ -437,6 +450,7 @@ class Console {
   static absl::StatusOr<std::unique_ptr<Console>> Create(ConsoleMode mode);
 
   virtual void Write(std::string_view text) = 0;
+  virtual ConsoleSize GetSize() = 0;  // The window's, in characters.
   virtual std::vector<uint16_t> TakeKeys() = 0;  // In Ozzy's key codes.
   virtual bool IsQuitRequested() const = 0;
 };
@@ -472,7 +486,11 @@ bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
   cursor is a block, and both blink rates are the console's own blink.
 - **`ConsoleDisplay`** keeps the last picture it drew whole, and draws only at
   a refresh (the screen's frame count changing), so the first picture is drawn
-  whole and later ones only where they changed. Copying the pixels with the
+  whole and later ones only where they changed. While the console is too
+  small, it writes its message (with `DrawConsoleLines`) in place of the
+  picture. Whatever is shown is drawn whole again when the console's size
+  changes, as a console may lose or move what was drawn when it resizes, and
+  the picture is drawn whole over the message. Copying the pixels with the
   cells costs little, and a text-only copy would go stale whenever
   `DrawConsoleText` read another field. The teletype's output is taken every
   update, even when it is dropped, so it never fills and stalls the program
@@ -486,6 +504,12 @@ bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
     as on a teletype. `kScreen` is the alternate buffer without wrapping, so a
     row wider than the console is cut off; `kLines` is the console's own
     buffer with wrapping, so a teletype's transcript stays after quitting.
+    Giving back `kLines` writes a line break if the cursor's line is unended
+    (the cursor isn't at its start, or a carriage return alone left text on
+    it), so the shell's prompt starts on a line of its own.
+  - The size is the window's, from `GetConsoleScreenBufferInfo`. Taking over
+    reads it first and fails if it can't, so a later failure to read it is
+    taken as no change.
   - Input is raw key events (`ENABLE_EXTENDED_FLAGS` alone), so Ctrl+C is a
     key, and quick edit doesn't pause the program on a click. Restoring the
     input mode adds `ENABLE_EXTENDED_FLAGS`, which quick edit needs to come
@@ -524,10 +548,16 @@ app's loop checks.
   line error.
 - **The loop**, 60 frames a second: take keys and press them, run the cycles
   for the real time since the last frame (absl's clock, capped at 100 ms),
-  update the `ConsoleDisplay`, and sleep until the next frame. A frame that
-  ends late starts the next at once, rather than catching up.
+  update the `ConsoleDisplay`, and sleep until the next frame, with Game Bits'
+  `gb::PreciseSleepFor`, as `absl::SleepFor` wakes only at Windows' 15.6 ms
+  timer tick, which would make the frames uneven. A frame that ends late
+  starts the next at once, rather than catching up.
 - **`--max-speed`** runs 10,000 cycles at a time until the frame's end, so
   the clock is checked often whatever the clock rate.
+- **`--stats`** totals the frames, the time from each frame's start to the
+  end of its drawing, and the processor's cycles while it ran. They are
+  written to the standard output once the `Console` is destroyed, so they are
+  in the console's own buffer.
 
 ### Testing
 
@@ -548,7 +578,7 @@ app's loop checks.
 - `console_text_test.cc`: every character one printable character, each
   attribute's sequence, runs, only changed rows redrawn, every cursor shape,
   and the teletype filter. `console_display_test.cc` runs real Ozzys against
-  a fake `Console`. `win_console_test.cc` tests `GetOzzyKey` and `IsQuitKey`
+  a fake `Console`, of the screen's size and too small for it. `win_console_test.cc` tests `GetOzzyKey` and `IsQuitKey`
   with the Windows constants.
 - By hand, in Windows Terminal: the default Ozzy boots to its banner and
   echoes typing, and Ctrl+Alt+Q quits, giving the console back. A config with

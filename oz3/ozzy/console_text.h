@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 
+#include "absl/types/span.h"
 #include "oz3/devices/screen.h"
 
 namespace oz3 {
@@ -34,6 +35,12 @@ std::string_view GetCharacterText(uint8_t character);
 // attributes) to be the default, and leaves it so.
 std::string DrawConsoleText(const ScreenPicture& picture,
                             const ScreenPicture* last);
+
+// Returns the text that clears the console and draws `lines` from its top left,
+// each as it is, with the cursor hidden. A console showing a screen doesn't
+// wrap them, so each needs to fit. As with DrawConsoleText, the text expects
+// the console's style to be the default, and leaves it so.
+std::string DrawConsoleLines(absl::Span<const std::string> lines);
 
 // Returns the teletype's `output` (see Teletype::TakeOutput) as text for a
 // console: its printable characters, and the control characters a teletype

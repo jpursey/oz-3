@@ -24,8 +24,17 @@ enum class ConsoleMode {
 
   // Lines, as a teletype prints them, in the console's own buffer, so they are
   // still there once the Console is destroyed. Lines wrap at the console's
-  // edge.
+  // edge. A last line left unended is ended when the Console is destroyed, so
+  // what writes to the console next starts on a line of its own.
   kLines,
+};
+
+// The size of a console's window, in characters.
+struct ConsoleSize {
+  bool operator==(const ConsoleSize&) const = default;
+
+  int columns = 0;
+  int rows = 0;
 };
 
 // A key pressed or released, by its key code (see keyboard.h).
@@ -69,6 +78,10 @@ class Console {
 
   // Writes `text`, which is UTF-8 and may hold virtual terminal sequences.
   virtual void Write(std::string_view text) = 0;
+
+  // Returns the size of the console's window, which the user may change at any
+  // time.
+  virtual ConsoleSize GetSize() = 0;
 
   // Returns the keys since the last call: the typed key events, and each key
   // pressed and released, by where it is. A key held when the console loses

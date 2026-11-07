@@ -52,11 +52,13 @@ set(ozzy_SOURCE
 set(ozzy_DEPS
   absl::status
   absl::statusor
+  absl::str_format
   absl::strings
   absl::time
   gb_base
   gb_cli
   gb_file
+  oz3_core
   oz3_devices
   oz3_ozzy
 )

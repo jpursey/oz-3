@@ -267,7 +267,7 @@ the old console host:
   and Ctrl+Alt+Q doesn't reach the program. `ozzy` is for a Windows console.
 
 Not confirmed: AltGr (no layout with it was at hand), the keypad's Enter (no
-keypad), and remapped keys (see the backlog's *Ozzy console polish*).
+keypad), and remapped keys.
 
 ### Testing
 

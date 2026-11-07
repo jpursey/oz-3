@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -174,6 +175,30 @@ absl::Status WindowsError(std::string_view action) {
       absl::StrCat("failed to ", action, ": ", gb::GetWindowsError()));
 }
 
+// Returns the size of the window of a console with `info`.
+ConsoleSize GetWindowSize(const CONSOLE_SCREEN_BUFFER_INFO& info) {
+  return {.columns = info.srWindow.Right - info.srWindow.Left + 1,
+          .rows = info.srWindow.Bottom - info.srWindow.Top + 1};
+}
+
+// Returns whether the line the cursor is on in the console `output`, with
+// `info`, is unended: the cursor isn't at its start, or there is text on it, as
+// a carriage return alone leaves.
+bool IsLineUnended(HANDLE output, const CONSOLE_SCREEN_BUFFER_INFO& info) {
+  if (info.dwCursorPosition.X != 0) {
+    return true;
+  }
+  std::wstring line(info.dwSize.X, L' ');
+  DWORD read = 0;
+  if (!ReadConsoleOutputCharacterW(
+          output, line.data(), static_cast<DWORD>(line.size()),
+          {.X = 0, .Y = info.dwCursorPosition.Y}, &read)) {
+    return false;
+  }
+  line.resize(read);
+  return line.find_first_not_of(L' ') != std::wstring::npos;
+}
+
 class WinConsole final : public Console {
  public:
   //----------------------------------------------------------------------------
@@ -193,6 +218,7 @@ class WinConsole final : public Console {
   //----------------------------------------------------------------------------
 
   void Write(std::string_view text) override;
+  ConsoleSize GetSize() override;
   ConsoleKeys TakeKeys() override;
   bool IsQuitRequested() const override { return g_quit_requested; }
 
@@ -205,8 +231,9 @@ class WinConsole final : public Console {
   const DWORD input_mode_;
   const HANDLE output_;
   const DWORD output_mode_;
-  bool alternate_buffer_ = false;  // Whether it is in the alternate buffer.
-  ConsoleKeyState key_state_;      // The keys reported held.
+  std::optional<ConsoleMode> mode_;  // Once it has taken over.
+  ConsoleSize size_;                 // The size last read.
+  ConsoleKeyState key_state_;        // The keys reported held.
 };
 
 WinConsole::WinConsole(HANDLE input, DWORD input_mode, HANDLE output,
@@ -220,10 +247,15 @@ WinConsole::WinConsole(HANDLE input, DWORD input_mode, HANDLE output,
 }
 
 WinConsole::~WinConsole() {
-  if (alternate_buffer_) {
+  if (mode_ == ConsoleMode::kScreen) {
     // The default style, and the cursor's default shape, shown, before going
     // back to the main screen buffer and its cursor.
     Write("\x1B[0m\x1B[0 q\x1B[?25h\x1B[?1049l");
+  } else if (CONSOLE_SCREEN_BUFFER_INFO info;
+             mode_ == ConsoleMode::kLines &&
+             GetConsoleScreenBufferInfo(output_, &info) &&
+             IsLineUnended(output_, info)) {
+    Write("\r\n");
   }
 
   // Keys not taken are dropped, rather than left for whatever runs next.
@@ -258,10 +290,18 @@ absl::Status WinConsole::TakeOver(ConsoleMode mode) {
   if (!SetConsoleCtrlHandler(HandleControl, TRUE)) {
     return WindowsError("handle Ctrl+Break");
   }
+
+  // The size is read here first, so GetSize can take a later failure to read
+  // it as no change.
+  CONSOLE_SCREEN_BUFFER_INFO info;
+  if (!GetConsoleScreenBufferInfo(output_, &info)) {
+    return WindowsError("read the console's size");
+  }
+  size_ = GetWindowSize(info);
   if (mode == ConsoleMode::kScreen) {
     Write("\x1B[?1049h");
-    alternate_buffer_ = true;
   }
+  mode_ = mode;
   return absl::OkStatus();
 }
 
@@ -279,6 +319,14 @@ void WinConsole::Write(std::string_view text) {
     data += written;
     size -= written;
   }
+}
+
+ConsoleSize WinConsole::GetSize() {
+  if (CONSOLE_SCREEN_BUFFER_INFO info;
+      GetConsoleScreenBufferInfo(output_, &info)) {
+    size_ = GetWindowSize(info);
+  }
+  return size_;
 }
 
 ConsoleKeys WinConsole::TakeKeys() {

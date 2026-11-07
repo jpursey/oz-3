@@ -304,6 +304,13 @@ TEST(ConsoleTextTest, CursorShownAfterChangedRows) {
                          Csi("3 q"), Csi("?25h")));
 }
 
+TEST(ConsoleTextTest, LinesDrawnFromTheTopLeft) {
+  EXPECT_EQ(DrawConsoleLines({"one", "two"}),
+            absl::StrCat(Csi("?25l"), Csi("2J"), Csi("H"), "one\r\ntwo"));
+  EXPECT_EQ(DrawConsoleLines({}),
+            absl::StrCat(Csi("?25l"), Csi("2J"), Csi("H")));
+}
+
 TEST(ConsoleTextTest, TeletypeTextKeepsPrintableCharacters) {
   EXPECT_EQ(GetTeletypeText(" Hello, world! ~"), " Hello, world! ~");
   EXPECT_EQ(GetTeletypeText(""), "");

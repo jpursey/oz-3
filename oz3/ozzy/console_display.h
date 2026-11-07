@@ -43,12 +43,19 @@ class ConsoleDisplay final {
 
   // Shows what changed since the last call: the screen's picture, if it was
   // refreshed, or the teletype's output. Called between Ozzy::Run calls.
+  //
+  // While the console is smaller than the screen, it shows a message in place
+  // of the picture, saying how big the console needs to be. Once the console
+  // is big enough, or whenever it resizes, the picture is drawn whole.
   void Update();
 
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
+
+  // Shows the message for a console of `size` too small for `picture`.
+  void ShowTooSmall(ConsoleSize size, const ScreenPicture& picture);
 
   Console& console_;
   Screen* const screen_;
@@ -61,6 +68,13 @@ class ConsoleDisplay final {
   // The last picture drawn, which is 0 by 0 before the first, so the first is
   // drawn whole.
   ScreenPicture last_;
+
+  // The console's size when the picture or the message was last drawn, which
+  // is 0 by 0 before either is.
+  ConsoleSize size_;
+
+  // Whether the message is shown in place of the picture.
+  bool message_shown_ = false;
 };
 
 }  // namespace oz3

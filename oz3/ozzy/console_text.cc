@@ -14,6 +14,8 @@
 #include "absl/base/no_destructor.h"
 #include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
+#include "absl/types/span.h"
 #include "gb/base/unicode.h"
 #include "oz3/devices/screen.h"
 
@@ -235,6 +237,11 @@ std::string DrawConsoleText(const ScreenPicture& picture,
   }
   AppendCursor(picture, text);
   return text;
+}
+
+std::string DrawConsoleLines(absl::Span<const std::string> lines) {
+  return absl::StrCat(kCsi, "?25l", kCsi, "2J", kCsi, "H",
+                      absl::StrJoin(lines, "\r\n"));
 }
 
 std::string GetTeletypeText(std::string_view output) {
