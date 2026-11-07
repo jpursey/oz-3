@@ -25,6 +25,8 @@ namespace oz3 {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::EndsWith;
+using ::testing::StartsWith;
 
 // Returns the error message from reading `text`, or "ok" if it reads.
 std::string ReadError(std::string_view text) {
@@ -140,31 +142,60 @@ TEST(OzzySettingsTest, ReadSettingsAreValidated) {
 
 TEST(OzzySettingsTest, ValuesMustFit) {
   EXPECT_EQ(ReadError("banks: [{}, { ram: -1 }]"),
-            "banks[1].ram: must be 0 to 65535");
+            "(1:20): banks[1].ram: must be 0 to 65535");
   EXPECT_EQ(ReadError("banks: [{}, { ram: 0x10000 }]"),
-            "banks[1].ram: must be 0 to 65535");
+            "(1:20): banks[1].ram: must be 0 to 65535");
   EXPECT_EQ(ReadError("cores: 0x80000000"),
-            "cores: must be -2147483648 to 2147483647");
+            "(1:8): cores: must be -2147483648 to 2147483647");
 }
 
 TEST(OzzySettingsTest, MachineErrors) {
-  EXPECT_EQ(ReadError("core: 2"), "core: unknown key");
-  EXPECT_EQ(ReadError("cores: 2, zebra: 1, apple: 1"), "apple: unknown key");
-  EXPECT_EQ(ReadError("cores: 2.0"), "cores: must be an int");
-  EXPECT_EQ(ReadError("clock_hz: \"fast\""), "clock_hz: must be an int");
-  EXPECT_EQ(ReadError("ports: true"), "ports: must be an int");
-  EXPECT_EQ(ReadError("banks: { ram: 0x7FFE }"), "banks: must be an array");
-  EXPECT_EQ(ReadError("banks: [0x7FFE]"), "banks[0]: must be a map");
-  EXPECT_EQ(ReadError("banks: [{ rom: 1 }]"), "banks[0].rom: unknown key");
+  EXPECT_EQ(ReadError("core: 2"), "(1:7): core: unknown key");
+  EXPECT_EQ(ReadError("cores: 2, zebra: 1, apple: 1"),
+            "(1:28): apple: unknown key");
+  EXPECT_EQ(ReadError("cores: 2.0"), "(1:8): cores: must be an int");
+  EXPECT_EQ(ReadError("clock_hz: \"fast\""),
+            "(1:11): clock_hz: must be an int");
+  EXPECT_EQ(ReadError("ports: true"), "(1:8): ports: must be an int");
+  EXPECT_EQ(ReadError("banks: { ram: 0x7FFE }"),
+            "(1:8): banks: must be an array");
+  EXPECT_EQ(ReadError("banks: [0x7FFE]"), "(1:9): banks[0]: must be a map");
+  EXPECT_EQ(ReadError("banks: [{ rom: 1 }]"),
+            "(1:16): banks[0].rom: unknown key");
   EXPECT_EQ(ReadError("banks: [{ ram: [1, 2] }]"),
-            "banks[0].ram: must be an int");
-  EXPECT_EQ(ReadError("devices: {}"), "devices: must be an array");
-  EXPECT_EQ(ReadError("devices: [\"screen\"]"), "devices[0]: must be a map");
+            "(1:16): banks[0].ram: must be an int");
+  EXPECT_EQ(ReadError("devices: {}"), "(1:10): devices: must be an array");
+  EXPECT_EQ(ReadError("devices: [\"screen\"]"),
+            "(1:11): devices[0]: must be a map");
 }
 
 TEST(OzzySettingsTest, SyntaxError) {
-  absl::StatusOr<OzzySettings> settings = ReadOzzySettings("cores: [");
-  EXPECT_FALSE(settings.ok());
+  EXPECT_THAT(ReadError("cores: ["), StartsWith("(1:9): "));
+}
+
+//==============================================================================
+// Error locations
+//==============================================================================
+
+TEST(OzzySettingsTest, ErrorsNameTheFile) {
+  // Each kind of error: in the text, in its syntax, and in the settings.
+  constexpr std::string_view kText = R"(
+    cores: 2,
+    devices: [
+      { type: "screen", colums: 40 }
+    ]
+  )";
+  absl::StatusOr<OzzySettings> settings =
+      ReadOzzySettings(std::string(kText), "hello.ozzy");
+  EXPECT_EQ(settings.status(),
+            absl::InvalidArgumentError(
+                "hello.ozzy(4:33): devices[0].colums: unknown key"));
+  settings = ReadOzzySettings("cores: [", "hello.ozzy");
+  EXPECT_EQ(settings.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(settings.status().message(), StartsWith("hello.ozzy(1:9): "));
+  settings = ReadOzzySettings("cores: 9", "hello.ozzy");
+  EXPECT_EQ(settings.status(),
+            absl::InvalidArgumentError("hello.ozzy: cores: must be 1 to 8"));
 }
 
 //==============================================================================
@@ -242,7 +273,7 @@ TEST(OzzySettingsTest, DeviceSettingsCheckedByDevices) {
   EXPECT_EQ(settings->teletype->baud, -5);
   EXPECT_EQ(settings->teletype->buffer_size, 0);
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', columns: 0x80000000 }]"),
-            "devices[0].columns: must be -2147483648 to 2147483647");
+            "(1:38): devices[0].columns: must be -2147483648 to 2147483647");
 }
 
 TEST(OzzySettingsTest, WiringIsFixed) {
@@ -250,9 +281,10 @@ TEST(OzzySettingsTest, WiringIsFixed) {
   for (std::string_view key :
        {"bank", "page", "interrupt", "interrupt_cores", "port"}) {
     for (std::string_view type : {"screen", "keyboard", "teletype"}) {
-      EXPECT_EQ(ReadError(absl::StrCat("devices: [{ type: '", type, "', ", key,
-                                       ": 1 }]")),
-                absl::StrCat("devices[0].", key, ": unknown key"))
+      EXPECT_THAT(
+          ReadError(
+              absl::StrCat("devices: [{ type: '", type, "', ", key, ": 1 }]")),
+          EndsWith(absl::StrCat("): devices[0].", key, ": unknown key")))
           << type;
     }
   }
@@ -263,43 +295,45 @@ TEST(OzzySettingsTest, WiringIsFixed) {
 //==============================================================================
 
 TEST(OzzySettingsTest, DeviceTypeErrors) {
-  EXPECT_EQ(ReadError("devices: [{ port: 1 }]"), "devices[0]: missing type");
+  EXPECT_EQ(ReadError("devices: [{ port: 1 }]"),
+            "(1:11): devices[0]: missing type");
   EXPECT_EQ(ReadError("devices: [{ type: 1 }]"),
-            "devices[0].type: must be a string");
+            "(1:19): devices[0].type: must be \"screen\", \"keyboard\", or "
+            "\"teletype\"");
   EXPECT_EQ(ReadError("devices: [{ type: 'disk' }]"),
-            "devices[0].type: unknown type \"disk\" (must be \"screen\", "
-            "\"keyboard\", or \"teletype\")");
+            "(1:19): devices[0].type: must be \"screen\", \"keyboard\", or "
+            "\"teletype\"");
 }
 
 TEST(OzzySettingsTest, DeviceUnknownKeys) {
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', colums: 40 }]"),
-            "devices[0].colums: unknown key");
+            "(1:37): devices[0].colums: unknown key");
   EXPECT_EQ(ReadError("devices: [{ type: 'keyboard', page: 3 }]"),
-            "devices[0].page: unknown key");
+            "(1:37): devices[0].page: unknown key");
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype', interrupt: 3 }]"),
-            "devices[0].interrupt: unknown key");
+            "(1:42): devices[0].interrupt: unknown key");
 }
 
 TEST(OzzySettingsTest, DeviceWrongTypes) {
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', rows: '24' }]"),
-            "devices[0].rows: must be an int");
+            "(1:35): devices[0].rows: must be an int");
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', characters: 0 }]"),
-            "devices[0].characters: must be an array");
+            "(1:41): devices[0].characters: must be an array");
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', characters: [0, -1] }]"),
-            "devices[0].characters[1]: must be 0 to 65535");
+            "(1:45): devices[0].characters[1]: must be 0 to 65535");
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype', baud: 'fast' }]"),
-            "devices[0].baud: must be an int");
+            "(1:37): devices[0].baud: must be an int");
 }
 
 TEST(OzzySettingsTest, OneDeviceOfEachType) {
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype' }, { type: 'screen' }, "
                       "{ type: 'screen', columns: 40 }]"),
-            "devices[2]: an Ozzy has only one screen");
+            "(1:53): devices[2]: an Ozzy has only one screen");
   EXPECT_EQ(ReadError("devices: [{ type: 'keyboard' }, { type: 'keyboard' }]"),
-            "devices[1]: an Ozzy has only one keyboard");
+            "(1:33): devices[1]: an Ozzy has only one keyboard");
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype' }, "
                       "{ type: 'teletype', baud: 300 }]"),
-            "devices[1]: an Ozzy has only one teletype");
+            "(1:33): devices[1]: an Ozzy has only one teletype");
 }
 
 TEST(OzzySettingsTest, ScreenPage) {

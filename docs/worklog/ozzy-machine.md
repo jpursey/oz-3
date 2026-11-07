@@ -83,9 +83,10 @@ there is no comma after the last one.
 | `keyboard` | port 1, interrupt 1 on core 0             | none                                                   |
 | `teletype` | port 2                                    | baud 0 (as fast as cores write), buffer_size 4096      |
 
-- Errors name where they are, as gb::Config keeps no line numbers:
-  `devices[0].port: unknown key`. An unknown key, a value of the wrong type,
-  and a value out of range are all errors, so a typo never goes unnoticed.
+- Errors name where they are, by line and column and by setting:
+  `hello.ozzy(12:5): devices[0].port: unknown key`. An unknown key, a value of
+  the wrong type, and a value out of range are all errors, so a typo never
+  goes unnoticed.
 
 ### Memory
 
@@ -315,8 +316,9 @@ struct OzzySettings {
 absl::Status ValidateOzzySettings(const OzzySettings& settings);
 
 // Reads settings from a config file's text, returning an error naming where
-// the first problem is.
-absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text);
+// the first problem is, beginning with `filename` if it isn't empty.
+absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
+                                              std::string_view filename = {});
 ```
 
 - `ValidateOzzySettings` holds Ozzy's own rules (the ranges, bank 0's
@@ -324,7 +326,8 @@ absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text);
   `ReadOzzySettings` and `Ozzy::Create` share them, and a host that builds
   settings in code gets the same checks. Its errors name the setting
   (`banks[0]`), not the text.
-- Reading checks what only the text knows: keys, types, values that fit their
+- Reading checks what only the text knows, with Game Bits' `ConfigReader`,
+  whose errors give the line and column: keys, types, values that fit their
   setting, and one device of each type. What the devices and the processor
   check themselves (a screen's size and rates) is left to `Ozzy::Create`, so
   no rule is written twice.

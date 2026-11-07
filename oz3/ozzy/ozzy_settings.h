@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/status/statusor.h"
@@ -133,12 +134,15 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings);
 // out keeps its default, as does any setting a device leaves out. Without
 // `devices`, the Ozzy has the default screen and keyboard.
 //
-// Returns an error naming where the first problem in the text is, such as
-// `devices[1].port: unknown key`: an unknown key, a value of the wrong type, a
-// value that doesn't fit its setting, or a second device of a type. Then the
-// settings must be valid (see ValidateOzzySettings), which names the setting
-// rather than the text.
-absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text);
+// Returns an error naming where the first problem in the text is, by its line
+// and column and its setting, such as `hello.ozzy(12:5): devices[1].port:
+// unknown key`: a syntax error, an unknown key, a value of the wrong type, a
+// value that doesn't fit its setting, or a second device of a type. Errors
+// begin with `filename`, if it isn't empty. Then the settings must be valid
+// (see ValidateOzzySettings), which names the setting but not its place in the
+// text: `hello.ozzy: screen: page 15 of bank 0 is RAM`.
+absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
+                                              std::string_view filename = {});
 
 }  // namespace oz3
 

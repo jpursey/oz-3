@@ -26,23 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Ozzy settings through ConfigReader
-
-- **Layers:** ozzy, apps, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Game Bits *Config reader with error locations*
-- **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (The config
-  file); Game Bits' `docs/worklog/config_reader.md`
-
-`ReadOzzySettings` checks keys, types, and ranges with helpers of its own, and
-its errors name only the setting's path (`devices[1].port: unknown key`), as
-Game Bits' config kept no locations. Game Bits' `ConfigReader` now does those
-checks and names the line too: `hello.ozzy(12:5): devices[1].columns: must be
-1 to 132`. Reading the settings with it removes the helpers, and `ozzy` passes
-the config file's name so its errors carry it. The wiki's Ozzy Computer page
-(Errors) shows the new form.
-
 ## Ozzy console polish
 
 - **Layers:** ozzy, apps

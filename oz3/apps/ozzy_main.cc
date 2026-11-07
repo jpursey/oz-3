@@ -100,10 +100,10 @@ std::optional<OzzySettings> ReadSettings(
     writer(gb::CliText::kError, absl::StrCat("Failed to read ", path));
     return std::nullopt;
   }
-  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(std::move(text));
+  absl::StatusOr<OzzySettings> settings =
+      ReadOzzySettings(std::move(text), path);
   if (!settings.ok()) {
-    writer(gb::CliText::kError,
-           absl::StrCat(path, ": ", settings.status().message()));
+    writer(gb::CliText::kError, settings.status().message());
     return std::nullopt;
   }
   return *std::move(settings);

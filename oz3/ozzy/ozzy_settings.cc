@@ -6,8 +6,6 @@
 #include "oz3/ozzy/ozzy_settings.h"
 
 #include <cstdint>
-#include <limits>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -17,8 +15,8 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-#include "absl/types/span.h"
 #include "gb/config/config.h"
+#include "gb/config/config_reader.h"
 #include "gb/config/text_config.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
@@ -62,271 +60,164 @@ constexpr std::string_view kKeyboardKeys[] = {"type"};
 constexpr std::string_view kTeletypeKeys[] = {"type", "baud", "buffer_size"};
 
 //==============================================================================
-// Paths and values
+// Device types
 //==============================================================================
 
-std::string GetKeyPath(std::string_view path, std::string_view key) {
-  if (path.empty()) {
-    return std::string(key);
-  }
-  return absl::StrCat(path, ".", key);
+enum class DeviceType {
+  kNone,
+  kScreen,
+  kKeyboard,
+  kTeletype,
+};
+
+constexpr gb::ConfigEnumName<DeviceType> kDeviceTypes[] = {
+    {"screen", DeviceType::kScreen},
+    {"keyboard", DeviceType::kKeyboard},
+    {"teletype", DeviceType::kTeletype},
+};
+
+//==============================================================================
+// Validation errors
+//==============================================================================
+
+absl::Status PathError(std::string_view path, std::string_view message) {
+  return absl::InvalidArgumentError(absl::StrCat(path, ": ", message));
 }
 
 std::string GetIndexPath(std::string_view path, int index) {
   return absl::StrCat(path, "[", index, "]");
 }
 
-absl::Status PathError(std::string_view path, std::string_view message) {
-  return absl::InvalidArgumentError(absl::StrCat(path, ": ", message));
-}
-
-// Returns an error for the first key in `map`, in sorted order, that isn't one
-// of `keys`. `map` must be a map.
-absl::Status CheckKeys(const gb::Config& map, std::string_view path,
-                       absl::Span<const std::string_view> keys) {
-  // The map is unordered, so the smallest unknown key is the one named, to
-  // name the same one every time.
-  std::optional<std::string_view> unknown_key;
-  for (const auto& [key, value] : *map.GetMap()) {
-    if (!absl::c_linear_search(keys, key) &&
-        (!unknown_key.has_value() || key < *unknown_key)) {
-      unknown_key = key;
-    }
-  }
-  if (unknown_key.has_value()) {
-    return PathError(GetKeyPath(path, *unknown_key), "unknown key");
-  }
-  return absl::OkStatus();
-}
-
-// Returns the int `value` holds, which must be from `min` to `max`.
-absl::StatusOr<int64_t> GetInt(const gb::Config& value, std::string_view path,
-                               int64_t min, int64_t max) {
-  if (!value.IsInt()) {
-    return PathError(path, "must be an int");
-  }
-  const int64_t result = value.GetInt();
-  if (result < min || result > max) {
-    return PathError(path, absl::StrCat("must be ", min, " to ", max));
-  }
-  return result;
-}
-
-// Reads the int at `key` in `map` into `value`, if `map` has it. It need only
-// fit in a T, as ValidateOzzySettings, the processor, and the devices check
-// the rest.
-template <typename T>
-absl::Status ReadInt(const gb::Config& map, std::string_view path,
-                     std::string_view key, T* value) {
-  const gb::Config* config = map.Get(key);
-  if (config == nullptr) {
-    return absl::OkStatus();
-  }
-  absl::StatusOr<int64_t> result =
-      GetInt(*config, GetKeyPath(path, key), std::numeric_limits<T>::min(),
-             std::numeric_limits<T>::max());
-  if (!result.ok()) {
-    return result.status();
-  }
-  *value = static_cast<T>(*result);
-  return absl::OkStatus();
-}
-
 //==============================================================================
 // OzzySettingsReader
 //==============================================================================
 
-// Reads OzzySettings from a config.
+// Reads OzzySettings from a config. Each value need only fit in its setting's
+// type, as ValidateOzzySettings, the processor, and the devices check the rest.
+// Errors are left in the reader's status.
 class OzzySettingsReader final {
  public:
-  absl::StatusOr<OzzySettings> Read(const gb::Config& config);
+  OzzySettings Read(const gb::ConfigReader& reader);
 
  private:
-  absl::Status ReadBanks(const gb::Config& config);
-  absl::Status ReadDevices(const gb::Config& config);
-  absl::Status ReadDevice(const gb::Config& config, std::string_view path);
-  absl::Status ReadScreen(const gb::Config& config, std::string_view path);
-  absl::Status ReadKeyboard(const gb::Config& config, std::string_view path);
-  absl::Status ReadTeletype(const gb::Config& config, std::string_view path);
+  void ReadBanks(const gb::ConfigReader& banks);
+  void ReadDevices(const gb::ConfigReader& devices);
+  void ReadDevice(const gb::ConfigReader& device);
+  void ReadScreen(const gb::ConfigReader& device);
+  void ReadKeyboard(const gb::ConfigReader& device);
+  void ReadTeletype(const gb::ConfigReader& device);
 
   OzzySettings settings_;
 };
 
-absl::StatusOr<OzzySettings> OzzySettingsReader::Read(
-    const gb::Config& config) {
-  absl::Status status = CheckKeys(config, "", kMachineKeys);
-  if (status.ok()) {
-    status = ReadInt(config, "", "clock_hz", &settings_.clock_hz);
-  }
-  if (status.ok()) {
-    status = ReadInt(config, "", "cores", &settings_.cores);
-  }
-  if (status.ok()) {
-    status = ReadInt(config, "", "ports", &settings_.ports);
-  }
-  if (status.ok()) {
-    status = ReadBanks(config);
-  }
-  if (status.ok()) {
-    status = ReadDevices(config);
-  }
-  if (status.ok()) {
-    status = ValidateOzzySettings(settings_);
-  }
-  if (!status.ok()) {
-    return status;
+OzzySettings OzzySettingsReader::Read(const gb::ConfigReader& reader) {
+  if (reader.ValidateMap(kMachineKeys)) {
+    reader.Get("clock_hz").ReadInt(&settings_.clock_hz);
+    reader.Get("cores").ReadInt(&settings_.cores);
+    reader.Get("ports").ReadInt(&settings_.ports);
+    ReadBanks(reader.Get("banks"));
+    ReadDevices(reader.Get("devices"));
   }
   return std::move(settings_);
 }
 
-absl::Status OzzySettingsReader::ReadBanks(const gb::Config& config) {
-  const gb::Config* banks = config.Get("banks");
-  if (banks == nullptr) {
-    return absl::OkStatus();
+void OzzySettingsReader::ReadBanks(const gb::ConfigReader& banks) {
+  if (!banks.ValidateArray()) {
+    return;
   }
-  if (!banks->IsArray()) {
-    return PathError("banks", "must be an array");
-  }
-  const int bank_count = banks->GetArraySize();
+  const int bank_count = banks.GetArraySize();
   settings_.banks.assign(bank_count, 0);
   for (int i = 0; i < bank_count; ++i) {
-    const std::string path = GetIndexPath("banks", i);
-    const gb::Config* bank = banks->Get(i);
-    if (!bank->IsMap()) {
-      return PathError(path, "must be a map");
-    }
-    absl::Status status = CheckKeys(*bank, path, kBankKeys);
-    if (status.ok()) {
-      status = ReadInt(*bank, path, "ram", &settings_.banks[i]);
-    }
-    if (!status.ok()) {
-      return status;
+    const gb::ConfigReader bank = banks.Get(i);
+    if (bank.ValidateMap(kBankKeys)) {
+      bank.Get("ram").ReadInt(&settings_.banks[i]);
     }
   }
-  return absl::OkStatus();
 }
 
-absl::Status OzzySettingsReader::ReadDevices(const gb::Config& config) {
-  const gb::Config* devices = config.Get("devices");
-  if (devices == nullptr) {
-    return absl::OkStatus();
-  }
-  if (!devices->IsArray()) {
-    return PathError("devices", "must be an array");
+void OzzySettingsReader::ReadDevices(const gb::ConfigReader& devices) {
+  if (!devices.ValidateArray()) {
+    return;
   }
   settings_.screen.reset();
   settings_.keyboard = false;
   settings_.teletype.reset();
-  const int device_count = devices->GetArraySize();
+  const int device_count = devices.GetArraySize();
   for (int i = 0; i < device_count; ++i) {
-    absl::Status status =
-        ReadDevice(*devices->Get(i), GetIndexPath("devices", i));
-    if (!status.ok()) {
-      return status;
-    }
+    ReadDevice(devices.Get(i));
   }
-  return absl::OkStatus();
 }
 
-absl::Status OzzySettingsReader::ReadDevice(const gb::Config& config,
-                                            std::string_view path) {
-  if (!config.IsMap()) {
-    return PathError(path, "must be a map");
+void OzzySettingsReader::ReadDevice(const gb::ConfigReader& device) {
+  // A device that isn't a map is rejected by Get(), which makes the type
+  // missing too, but only the first error is kept.
+  const gb::ConfigReader type = device.Get("type");
+  if (type.IsMissing()) {
+    device.Reject("missing type");
+    return;
   }
-  const gb::Config* type = config.Get("type");
-  if (type == nullptr) {
-    return PathError(path, "missing type");
+  DeviceType device_type = DeviceType::kNone;
+  type.ReadEnum<DeviceType>(kDeviceTypes, &device_type);
+  switch (device_type) {
+    case DeviceType::kNone:
+      // The type was rejected.
+      break;
+    case DeviceType::kScreen:
+      ReadScreen(device);
+      break;
+    case DeviceType::kKeyboard:
+      ReadKeyboard(device);
+      break;
+    case DeviceType::kTeletype:
+      ReadTeletype(device);
+      break;
   }
-  const std::string type_path = GetKeyPath(path, "type");
-  if (!type->IsString()) {
-    return PathError(type_path, "must be a string");
-  }
-  const std::string_view type_name = type->GetString();
-  if (type_name == "screen") {
-    return ReadScreen(config, path);
-  }
-  if (type_name == "keyboard") {
-    return ReadKeyboard(config, path);
-  }
-  if (type_name == "teletype") {
-    return ReadTeletype(config, path);
-  }
-  return PathError(
-      type_path,
-      absl::StrCat("unknown type \"", type_name,
-                   "\" (must be \"screen\", \"keyboard\", or \"teletype\")"));
 }
 
-absl::Status OzzySettingsReader::ReadScreen(const gb::Config& config,
-                                            std::string_view path) {
+void OzzySettingsReader::ReadScreen(const gb::ConfigReader& device) {
   if (settings_.screen.has_value()) {
-    return PathError(path, "an Ozzy has only one screen");
+    device.Reject("an Ozzy has only one screen");
+    return;
   }
   OzzyScreenSettings& screen = settings_.screen.emplace();
-  absl::Status status = CheckKeys(config, path, kScreenKeys);
-  if (status.ok()) {
-    status = ReadInt(config, path, "columns", &screen.columns);
+  if (!device.ValidateMap(kScreenKeys)) {
+    return;
   }
-  if (status.ok()) {
-    status = ReadInt(config, path, "rows", &screen.rows);
-  }
-  if (status.ok()) {
-    status = ReadInt(config, path, "refresh_hz", &screen.refresh_hz);
-  }
-  if (status.ok()) {
-    status = ReadInt(config, path, "slow_blink_hz", &screen.slow_blink_hz);
-  }
-  if (status.ok()) {
-    status = ReadInt(config, path, "fast_blink_hz", &screen.fast_blink_hz);
-  }
-  if (!status.ok()) {
-    return status;
-  }
-  if (const gb::Config* characters = config.Get("characters");
-      characters != nullptr) {
-    const std::string characters_path = GetKeyPath(path, "characters");
-    if (!characters->IsArray()) {
-      return PathError(characters_path, "must be an array");
-    }
-    std::vector<uint16_t>& words = screen.characters.emplace();
-    const int count = characters->GetArraySize();
-    words.reserve(count);
+  device.Get("columns").ReadInt(&screen.columns);
+  device.Get("rows").ReadInt(&screen.rows);
+  device.Get("refresh_hz").ReadInt(&screen.refresh_hz);
+  device.Get("slow_blink_hz").ReadInt(&screen.slow_blink_hz);
+  device.Get("fast_blink_hz").ReadInt(&screen.fast_blink_hz);
+  const gb::ConfigReader characters = device.Get("characters");
+  if (characters.ValidateArray()) {
+    const int count = characters.GetArraySize();
+    std::vector<uint16_t>& words = screen.characters.emplace(count, 0);
     for (int i = 0; i < count; ++i) {
-      const gb::Config* word = characters->Get(i);
-      if (!word->IsInt() || word->GetInt() < 0 || word->GetInt() > 0xFFFF) {
-        // Only now build the path, as a character set is thousands of words.
-        return GetInt(*word, GetIndexPath(characters_path, i), 0, 0xFFFF)
-            .status();
-      }
-      words.push_back(static_cast<uint16_t>(word->GetInt()));
+      characters.Get(i).ReadInt(&words[i]);
     }
   }
-  return absl::OkStatus();
 }
 
-absl::Status OzzySettingsReader::ReadKeyboard(const gb::Config& config,
-                                              std::string_view path) {
+void OzzySettingsReader::ReadKeyboard(const gb::ConfigReader& device) {
   if (settings_.keyboard) {
-    return PathError(path, "an Ozzy has only one keyboard");
+    device.Reject("an Ozzy has only one keyboard");
+    return;
   }
   settings_.keyboard = true;
-  return CheckKeys(config, path, kKeyboardKeys);
+  device.ValidateMap(kKeyboardKeys);
 }
 
-absl::Status OzzySettingsReader::ReadTeletype(const gb::Config& config,
-                                              std::string_view path) {
+void OzzySettingsReader::ReadTeletype(const gb::ConfigReader& device) {
   if (settings_.teletype.has_value()) {
-    return PathError(path, "an Ozzy has only one teletype");
+    device.Reject("an Ozzy has only one teletype");
+    return;
   }
   OzzyTeletypeSettings& teletype = settings_.teletype.emplace();
-  absl::Status status = CheckKeys(config, path, kTeletypeKeys);
-  if (status.ok()) {
-    status = ReadInt(config, path, "baud", &teletype.baud);
+  if (!device.ValidateMap(kTeletypeKeys)) {
+    return;
   }
-  if (status.ok()) {
-    status = ReadInt(config, path, "buffer_size", &teletype.buffer_size);
-  }
-  return status;
+  device.Get("baud").ReadInt(&teletype.baud);
+  device.Get("buffer_size").ReadInt(&teletype.buffer_size);
 }
 
 }  // namespace
@@ -406,13 +297,28 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
 // Reading settings
 //==============================================================================
 
-absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text) {
-  absl::StatusOr<gb::Config> config =
-      gb::ReadConfigFromText(std::move(text), gb::kRootlessTextConfig);
+absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
+                                              std::string_view filename) {
+  absl::StatusOr<gb::Config> config = gb::ReadConfigFromText(
+      std::move(text), gb::kRootlessTextConfig, filename);
   if (!config.ok()) {
     return config.status();
   }
-  return OzzySettingsReader().Read(*config);
+  const gb::ConfigReader reader(&*config, filename);
+  OzzySettings settings = OzzySettingsReader().Read(reader);
+  if (absl::Status status = reader.GetStatus(); !status.ok()) {
+    return status;
+  }
+
+  // The settings are no longer the text, so these errors have no location.
+  if (absl::Status status = ValidateOzzySettings(settings); !status.ok()) {
+    if (filename.empty()) {
+      return status;
+    }
+    return absl::InvalidArgumentError(
+        absl::StrCat(filename, ": ", status.message()));
+  }
+  return settings;
 }
 
 }  // namespace oz3
