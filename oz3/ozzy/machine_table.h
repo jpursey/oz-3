@@ -82,8 +82,10 @@ inline constexpr int kMachineDeviceType = 0;
 inline constexpr int kMachineDevicePort = 1;
 inline constexpr int kMachineDeviceInterrupt = 2;
 
-// The cores the interrupt is raised on, with bit n for core n.
+// The cores the interrupt is raised on, with bit n for core n, and
+// kMachineInterruptShared set if it is a shared interrupt.
 inline constexpr int kMachineDeviceInterruptCores = 3;
+inline constexpr uint16_t kMachineInterruptShared = 0x8000;
 
 // The bank the device's pages are in, and the first of them.
 inline constexpr int kMachineDeviceBank = 4;

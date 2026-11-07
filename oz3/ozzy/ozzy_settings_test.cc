@@ -67,7 +67,8 @@ TEST(OzzySettingsTest, KeyboardSettings) {
   const KeyboardSettings keyboard = GetOzzyKeyboardSettings();
   EXPECT_EQ(keyboard.port, 1);
   EXPECT_EQ(keyboard.interrupt.interrupt, 1);
-  EXPECT_EQ(keyboard.interrupt.cores, 0x01);
+  EXPECT_EQ(keyboard.interrupt.cores, kAllCores);
+  EXPECT_TRUE(keyboard.interrupt.shared);
 }
 
 TEST(OzzySettingsTest, TeletypeSettings) {

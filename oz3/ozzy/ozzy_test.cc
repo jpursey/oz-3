@@ -129,6 +129,7 @@ TEST(OzzyTest, MachineTableLayout) {
   // Programs find entries at these offsets, so they never move.
   EXPECT_EQ(kMachineTableBanks, 0x08);
   EXPECT_EQ(kMachineTableDevices, 0x28);
+  EXPECT_EQ(kMachineInterruptShared, 0x8000);
 }
 
 TEST(OzzyTest, DefaultMachineTable) {
@@ -149,7 +150,7 @@ TEST(OzzyTest, DefaultMachineTable) {
               ElementsAre(1, 0xFFFF, 6, 0x01, 0, 15, 80, 24));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
-              ElementsAre(2, 1, 1, 0x01, 0xFFFF, 0xFFFF, 0, 0));
+              ElementsAre(2, 1, 1, 0x8001, 0xFFFF, 0xFFFF, 0, 0));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
@@ -176,13 +177,13 @@ TEST(OzzyTest, FullMachineTable) {
               Each(0));
   offset = kMachineTableDevices;
 
-  // The screen's interrupt is on every core, which is only the cores the Ozzy
-  // has.
+  // The screen's and keyboard's interrupts are on every core, which is only the
+  // cores the Ozzy has. The keyboard's is shared.
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(1, 0xFFFF, 6, 0x07, 0, 15, 40, 12));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
-              ElementsAre(2, 1, 1, 0x01, 0xFFFF, 0xFFFF, 0, 0));
+              ElementsAre(2, 1, 1, 0x8007, 0xFFFF, 0xFFFF, 0, 0));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(3, 2, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));

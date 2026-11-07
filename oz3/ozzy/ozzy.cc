@@ -57,6 +57,9 @@ void WriteDeviceEntry(MachineDeviceType type, const DeviceConfig& config,
     entry[kMachineDeviceInterrupt] = static_cast<uint16_t>(interrupt.interrupt);
     entry[kMachineDeviceInterruptCores] =
         static_cast<uint16_t>(interrupt.cores & ((1 << cores) - 1));
+    if (interrupt.shared) {
+      entry[kMachineDeviceInterruptCores] |= kMachineInterruptShared;
+    }
   }
   if (config.memory.pages.page_count > 0) {
     entry[kMachineDeviceBank] = static_cast<uint16_t>(config.memory.bank);

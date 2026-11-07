@@ -346,7 +346,8 @@ ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen) {
 KeyboardSettings GetOzzyKeyboardSettings() {
   return {.port = kOzzyKeyboardPort,
           .interrupt = {.interrupt = kOzzyKeyboardInterrupt,
-                        .cores = kOzzyKeyboardInterruptCores}};
+                        .cores = kOzzyKeyboardInterruptCores,
+                        .shared = true}};
 }
 
 TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype) {

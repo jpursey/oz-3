@@ -392,6 +392,22 @@ TEST(BootRomTest, KeysEchoBetweenRuns) {
   EXPECT_TRUE(IsHalted(*ozzy));
 }
 
+TEST(BootRomTest, KeysEchoWithEveryCore) {
+  // The keyboard's interrupt is shared by every core, but only core 0 has a
+  // handler, so the others drop it and core 0 still echoes every key.
+  OzzySettings settings;
+  settings.cores = kMaxCores;
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  std::vector<std::string_view> rows =
+      GetBannerRows("OZZY 0.1  1 MHz  8 cores  56K RAM");
+
+  TypeText(*ozzy, "Hi there!");
+  rows[2] = "Hi there!";
+  ExpectScreenAndCursor(*ozzy, rows, 9, 2);
+  EXPECT_TRUE(IsHalted(*ozzy));
+}
+
 TEST(BootRomTest, KeysBeforeTheBannerEchoAfterIt) {
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(OzzySettings());
   ASSERT_TRUE(ozzy.ok()) << ozzy.status();
