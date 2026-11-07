@@ -66,17 +66,6 @@ Every refresh draws the screen's picture into pixels (about 150 KB for 80 by
 speed. A screen setting, or a host call, that leaves the pixels undrawn would
 save it for hosts that show text.
 
-## Program lexer's code points through Game Bits
-
-- **Layers:** tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `oz3/tools/program_lexer.cc`
-
-The program lexer decodes surrogate pairs by hand, where Game Bits'
-`gb::ConsumeCodePoint` (`gb/base/unicode.h`) now does it.
-
 ## Timer device
 
 - **Layers:** devices, ozzy

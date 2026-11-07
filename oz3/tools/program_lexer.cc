@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -98,18 +99,6 @@ struct ProgramLexerConfig {
   gb::LexerConfig config;
 };
 
-// Returns the code point for a UTF-16 string at `index`, and advances `index`
-// past it.
-uint32_t NextCodePoint(std::u16string_view text, int& index) {
-  const uint32_t unit = text[index++];
-  if (unit < 0xD800 || unit > 0xDBFF ||
-      index == static_cast<int>(text.size())) {
-    return unit;
-  }
-  const uint32_t low = text[index++];
-  return 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
-}
-
 }  // namespace
 
 const gb::LexerConfig& GetProgramLexerConfig() {
@@ -121,41 +110,30 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
                                                      const gb::Token& token) {
   const std::string_view token_text = lexer.GetTokenText(token);
   DCHECK(token.IsString() && !token_text.empty());
-  const std::string_view text = token.GetString();
-
-  // ToUtf16 drops a leading byte order mark, which in a string is a character
-  // (U+FEFF), so it is converted separately.
-  constexpr std::string_view kByteOrderMark = "\xEF\xBB\xBF";
-  const bool has_byte_order_mark = text.starts_with(kByteOrderMark);
-  const std::string_view rest =
-      (has_byte_order_mark ? text.substr(kByteOrderMark.size()) : text);
-  std::u16string utf16_text = gb::ToUtf16(rest);
-  if (utf16_text.empty() && !rest.empty()) {
-    return absl::InvalidArgumentError("String is not valid UTF-8");
-  }
-  if (has_byte_order_mark) {
-    utf16_text.insert(utf16_text.begin(), u'\xFEFF');
-  }
+  std::string_view text = token.GetString();
 
   // The lexer has already decoded the string, so only its text says which
   // quotes it was in.
   const bool packed = (token_text.front() == '"');
-  const uint32_t max_code_point = (packed ? 0xFF : 0xFFFF);
+  const char32_t max_code_point = (packed ? 0xFF : 0xFFFF);
   std::vector<uint16_t> words;
   bool high = true;
-  for (int i = 0; i < static_cast<int>(utf16_text.size());) {
-    const uint32_t code_point = NextCodePoint(utf16_text, i);
-    if (code_point > max_code_point) {
-      return absl::InvalidArgumentError(
-          absl::StrFormat("Character U+%04X does not fit in a %s", code_point,
-                          packed ? "byte" : "word"));
+  while (!text.empty()) {
+    const std::optional<char32_t> code_point = gb::ConsumeCodePoint(&text);
+    if (!code_point.has_value()) {
+      return absl::InvalidArgumentError("String is not valid UTF-8");
+    }
+    if (*code_point > max_code_point) {
+      return absl::InvalidArgumentError(absl::StrFormat(
+          "Character U+%04X does not fit in a %s",
+          static_cast<uint32_t>(*code_point), packed ? "byte" : "word"));
     }
     if (!packed) {
-      words.push_back(static_cast<uint16_t>(code_point));
+      words.push_back(static_cast<uint16_t>(*code_point));
     } else if (high) {
-      words.push_back(static_cast<uint16_t>(code_point << 8));
+      words.push_back(static_cast<uint16_t>(*code_point << 8));
     } else {
-      words.back() |= static_cast<uint16_t>(code_point);
+      words.back() |= static_cast<uint16_t>(*code_point);
     }
     high = !high;
   }
