@@ -104,6 +104,46 @@ The program lexer decodes surrogate pairs by hand, where Game Bits'
 A periodic interrupt at a configured rate, and a port to read the cycle count
 and the host's date and time.
 
+## Keyboard key state
+
+- **Layers:** devices, ozzy, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** the wiki's `3.2-Keyboard.md` (Key events); `GetOzzyKey` and
+  `WinConsole::TakeKeys` in `oz3/ozzy/win_console.cc`
+
+The keyboard gives typed keys: key presses only, as characters, with the
+modifier keys held as a mask, and never a modifier key alone. Games want the
+keys held instead, and the keys pressed, which a queue of press and release
+events can't give reliably: a release the program never reads leaves its key
+held, and a queue nobody reads fills. So the keyboard gains key state, which
+it holds as state rather than events, in ports of its own. A keyboard's wiring
+chooses typed keys, key state, or both, so a game can leave out the typed keys'
+port rather than have a queue it never reads.
+- **Keys:** a bit per physical key, numbered by the typed key's code for the
+  key without Shift: `A` to `Z`, `0` to `9`, and punctuation by their unshifted
+  characters, and the named keys at 80h to 9Bh. The left and right modifier
+  keys take codes typed keys don't use, such as 89h to 8Eh. So one table of
+  codes serves both, for 160 keys.
+- **Ports, not memory:** a mapped page for 10 words would take 4 Kiw of address
+  space (see *Shared I/O page*). Port k holds keys 16k to 16k + 15: word 0 the
+  keys held, and word 1 the keys pressed since it was last read, with the
+  status set while word 1 isn't 0. A game reads the keys held with `IN`, which
+  leaves the status alone. `INS` takes the keys pressed and clears the status
+  in one locked access, so the keyboard starts over with the presses since, and
+  none is lost between a read and a clear, as one would be between reading and
+  clearing memory. That is 10 ports.
+- **Each port has its own lock,** so a program reading across the ports while
+  the keyboard updates them sees some from before and some from after: a quirk
+  to keep.
+- **The host** presses and releases keys between `Processor::Execute` calls,
+  as with `Keyboard::PressKey`. The Windows console gives the key releases and
+  the modifier keys alone that `TakeKeys` skips now, and tells left from
+  right. It sends no releases for keys held when the console loses focus, so
+  the host releases every key on a `FOCUS_EVENT`. The graphical frontend takes
+  them from its window.
+
 ## Disk drive device
 
 - **Layers:** devices, ozzy, wiki
@@ -391,3 +431,25 @@ raising a shared interrupt on the cores in a register's mask, and a new
 instruction at the end of the `.izm` that uses it. It would let a program hand
 work to whichever core of a pool is free, such as a job queue waking one idle
 worker. It adds microcode, so it waits until a program needs it.
+
+## Shared I/O page
+
+- **Layers:** core, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** Main memory in the wiki's `2-Specifications.md`; the wiki's
+  `3-Devices.md` (Wiring and settings)
+
+A mapped page belongs wholly to its device, so a device with only a few words
+to map takes a whole page, 4 Kiw of a bank's 64, and each such device takes
+another. Ports suit small state a program reads and writes as registers (the
+keyboard, *Timer device*), and memory mapping suits bulk
+data (the screen's cells), so no device needs this yet. One with more than
+ports comfortably hold, such as sound or sprite registers, could share a page
+instead: several devices mapped into one page, each at a range of words of its
+own that it addresses from 0, as the C64's I/O area holds several chips. The
+spec's "a mapped page belongs wholly to its device" becomes a range, and only a
+shared page needs the range checked to find its device. Smaller pages aren't
+an option, as a bank's 16-bit read and write masks fix it at 16 pages. It
+waits until a device needs it.
