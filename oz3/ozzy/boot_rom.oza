@@ -68,12 +68,12 @@
 ; The screen's control words (see the wiki's Ozzy Devices page)
 ;-------------------------------------------------------------------------------
 
-.CONST SCREEN_SCROLL = 0FF3h
-.CONST SCREEN_CURSOR_COLUMN = 0FF4h
-.CONST SCREEN_CURSOR_ROW = 0FF5h
-.CONST SCREEN_CURSOR = 0FF6h
-.CONST SCREEN_FILL = 0FF7h
-.CONST SCREEN_CLEAR_ROW = 0FF8h
+.CONST SCREEN_SCROLL_ROW = 0FF4h
+.CONST SCREEN_CURSOR_COLUMN = 0FF5h
+.CONST SCREEN_CURSOR_ROW = 0FF6h
+.CONST SCREEN_CURSOR = 0FF7h
+.CONST SCREEN_FILL = 0FF8h
+.CONST SCREEN_FILL_ROW = 0FFAh
 
 ; A slow blinking underline.
 .CONST CURSOR_STYLE = 2 | 8
@@ -209,7 +209,7 @@ clear_screen:
     MOV R2, S(V_ROWS)
 @row:
     SBQ R2, 1
-    MOV E(SCREEN_CLEAR_ROW), R2
+    MOV E(SCREEN_FILL_ROW), R2
     JC NZ, @row
     RET
 
@@ -377,10 +377,10 @@ new_line:
     ADQ R1, 1
     MOD R1, S(V_ROWS)
     MOV S(V_SCROLL), R1
-    MOV E(SCREEN_SCROLL), R1
+    MOV E(SCREEN_SCROLL_ROW), R1
     MOV R1, S(V_ROWS)
     SBQ R1, 1
-    MOV E(SCREEN_CLEAR_ROW), R1
+    MOV E(SCREEN_FILL_ROW), R1
     JP @done
 
 @teletype:

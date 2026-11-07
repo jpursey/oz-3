@@ -124,23 +124,42 @@ void ScreenMemory::Read(int address, uint16_t* data, int size) {
 }
 
 void ScreenMemory::Write(int address, const uint16_t* data, int size) {
+  const int cell_count = mem_[kColumnsAddress] * mem_[kRowsAddress];
   for (int i = 0; i < size; ++i, ++address) {
-    // The open window sends writes to the character set, clear row stores
-    // nothing, and the read-only and reserved words are only the screen's to
-    // set.
-    if (address < kScreenCharacterSetSize &&
-        (mem_[kCharacterWindowAddress] & kScreenCharacterWindowOpen) != 0) {
-      characters_[address] = data[i];
-    } else if (address == kClearRowAddress) {
-      ClearRow(data[i]);
-    } else if (address < kColumnsAddress ||
-               (address >= kScrollRowAddress && address < kReservedAddress)) {
+    // The open window puts the character set in place of the cells, fill
+    // column and fill row store nothing, and the read-only and reserved words
+    // are only the screen's to set.
+    if (address < kColumnsAddress) {
+      if ((mem_[kCharacterWindowAddress] & kScreenCharacterWindowOpen) != 0) {
+        if (address < kScreenCharacterSetSize) {
+          characters_[address] = data[i];
+        }
+      } else if (address < cell_count) {
+        mem_[address] = data[i];
+      }
+    } else if (address == kFillColumnAddress) {
+      FillColumn(data[i]);
+    } else if (address == kFillRowAddress) {
+      FillRow(data[i]);
+    } else if (address >= kScrollColumnAddress && address < kReservedAddress) {
       mem_[address] = data[i];
     }
   }
 }
 
-void ScreenMemory::ClearRow(int row) {
+void ScreenMemory::FillColumn(int column) {
+  const int columns = mem_[kColumnsAddress];
+  const int rows = mem_[kRowsAddress];
+  if (column >= columns) {
+    return;
+  }
+  const int cells_column = (mem_[kScrollColumnAddress] + column) % columns;
+  for (int row = 0; row < rows; ++row) {
+    mem_[row * columns + cells_column] = mem_[kFillAddress];
+  }
+}
+
+void ScreenMemory::FillRow(int row) {
   const int columns = mem_[kColumnsAddress];
   const int rows = mem_[kRowsAddress];
   if (row >= rows) {
@@ -247,10 +266,15 @@ void Screen::Refresh(const Lock& lock) {
   const int columns = picture_.columns;
   const int rows = picture_.rows;
 
-  // The scroll row is the cells' row shown at the top, wrapping at the last.
+  // The scroll column and row are the cells' column shown at the left and row
+  // shown at the top, each wrapping at the last.
+  const int scroll_column = mem[ScreenMemory::kScrollColumnAddress] % columns;
   const int scroll_row = mem[ScreenMemory::kScrollRowAddress] % rows;
-  std::rotate_copy(mem.begin(), mem.begin() + scroll_row * columns,
-                   mem.begin() + rows * columns, picture_.cells.begin());
+  for (int row = 0; row < rows; ++row) {
+    const auto cells_row = mem.begin() + (scroll_row + row) % rows * columns;
+    std::rotate_copy(cells_row, cells_row + scroll_column, cells_row + columns,
+                     picture_.cells.begin() + row * columns);
+  }
 
   const uint16_t cursor = mem[ScreenMemory::kCursorAddress];
   picture_.cursor_column = mem[ScreenMemory::kCursorColumnAddress];

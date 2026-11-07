@@ -94,7 +94,8 @@ inline constexpr int kScreenCharacterSetSize =
 
 // While the character set window word has this bit set, writes to the screen's
 // addresses below kScreenCharacterSetSize go to the character set rather than
-// the cells. Its other bits are reserved.
+// the cells, and writes to any cells from kScreenCharacterSetSize are ignored.
+// Its other bits are reserved.
 inline constexpr uint16_t kScreenCharacterWindowOpen = 0x0001;
 
 //==============================================================================
@@ -163,7 +164,8 @@ struct ScreenPicture {
   int columns = 0;
   int rows = 0;
 
-  // The cells as shown, with the scroll row applied, row by row from the top.
+  // The cells as shown, with the scroll column and row applied, row by row from
+  // the top.
   std::vector<uint16_t> cells;
 
   // The cursor, in screen positions, with its mode and style. A cursor outside
@@ -190,10 +192,10 @@ struct ScreenPicture {
 //==============================================================================
 
 // The screen's page, which cores read and write through its bank: the cells,
-// row by row, then unused words a program may use, then the control words at
-// the end of the page, so a program finds them at the same address whatever
-// the screen's size. It also holds the character set, which a program writes
-// through the character set window, and can't read back.
+// row by row, then reserved words up to the control words at the end of the
+// page, so a program finds them at the same address whatever the screen's
+// size. It also holds the character set, which a program writes through the
+// character set window, and can't read back.
 //
 // Writes to the read-only and reserved words are ignored, so only the screen
 // sets them. Reserved words read 0.
@@ -204,11 +206,12 @@ class ScreenMemory final : public MemoryMap {
   //----------------------------------------------------------------------------
 
   // Addresses of the control words, in the screen's own addresses. Columns,
-  // rows, and the frame counter are read only. The scroll row is the row of
-  // cells shown at the top of the screen, the cursor's position is in screen
-  // positions, and the cursor word is its mode and style. Writing a row in
-  // screen positions to clear row fills it with the fill word as it is written,
-  // and clear row reads 0. The character set window word opens the window with
+  // rows, and the frame counter are read only. The scroll column and row are
+  // the column and row of cells shown at the left and top of the screen, the
+  // cursor's position is in screen positions, and the cursor word is its mode
+  // and style. Writing a column or row in screen positions to fill column or
+  // fill row fills it with the fill word as it is written, and both read 0.
+  // The character set window word opens the window with
   // kScreenCharacterWindowOpen. The first compact row and the compact row count
   // are a band of rows, in screen positions, drawn 8 pixel rows apart rather
   // than 10 (see Screen). The rest of the page, from kReservedAddress, is
@@ -216,16 +219,18 @@ class ScreenMemory final : public MemoryMap {
   static constexpr int kColumnsAddress = ScreenSettings::kMaxCells;
   static constexpr int kRowsAddress = 0xFF1;
   static constexpr int kFrameCountAddress = 0xFF2;
-  static constexpr int kScrollRowAddress = 0xFF3;
-  static constexpr int kCursorColumnAddress = 0xFF4;
-  static constexpr int kCursorRowAddress = 0xFF5;
-  static constexpr int kCursorAddress = 0xFF6;
-  static constexpr int kFillAddress = 0xFF7;
-  static constexpr int kClearRowAddress = 0xFF8;
-  static constexpr int kCharacterWindowAddress = 0xFF9;
-  static constexpr int kCompactRowAddress = 0xFFA;
-  static constexpr int kCompactRowCountAddress = 0xFFB;
-  static constexpr int kReservedAddress = 0xFFC;
+  static constexpr int kScrollColumnAddress = 0xFF3;
+  static constexpr int kScrollRowAddress = 0xFF4;
+  static constexpr int kCursorColumnAddress = 0xFF5;
+  static constexpr int kCursorRowAddress = 0xFF6;
+  static constexpr int kCursorAddress = 0xFF7;
+  static constexpr int kFillAddress = 0xFF8;
+  static constexpr int kFillColumnAddress = 0xFF9;
+  static constexpr int kFillRowAddress = 0xFFA;
+  static constexpr int kCharacterWindowAddress = 0xFFB;
+  static constexpr int kCompactRowAddress = 0xFFC;
+  static constexpr int kCompactRowCountAddress = 0xFFD;
+  static constexpr int kReservedAddress = 0xFFE;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -262,9 +267,10 @@ class ScreenMemory final : public MemoryMap {
   // Implementation
   //----------------------------------------------------------------------------
 
-  // Fills `row`, in screen positions, with the fill word. A row outside the
-  // screen clears nothing.
-  void ClearRow(int row);
+  // Fills `column` or `row`, in screen positions, with the fill word. A column
+  // or row outside the screen fills nothing.
+  void FillColumn(int column);
+  void FillRow(int row);
 
   std::array<uint16_t, kMemoryBankPageSize> mem_ = {};
   std::array<uint16_t, kScreenCharacterSetSize> characters_ = {};

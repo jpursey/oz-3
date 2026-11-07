@@ -412,6 +412,47 @@ TEST_F(ScreenTest, ScrollRowIsShownAtTheTop) {
               ElementsAre(0x10, 0x11, 0x20, 0x21, 0x30, 0x31));
 }
 
+TEST_F(ScreenTest, ScrollColumnIsShownAtTheLeft) {
+  ASSERT_TRUE(InitScreen(3, 2));
+  WriteScreen(0, {0x10, 0x11, 0x12, 0x20, 0x21, 0x22});
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {1});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0x11, 0x12, 0x10, 0x21, 0x22, 0x20));
+
+  // The scroll column is taken modulo the columns.
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {5});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0x12, 0x10, 0x11, 0x22, 0x20, 0x21));
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {0xFFFF});  // 65535 % 3 is 0
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0x10, 0x11, 0x12, 0x20, 0x21, 0x22));
+}
+
+TEST_F(ScreenTest, ScrollColumnAndRowApplyTogether) {
+  ASSERT_TRUE(InitScreen(3, 2));
+  WriteScreen(0, {0x10, 0x11, 0x12, 0x20, 0x21, 0x22});
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {1, 1});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0x21, 0x22, 0x20, 0x11, 0x12, 0x10));
+}
+
+TEST_F(ScreenTest, CursorStaysPutAsTheCellsScroll) {
+  // The cursor is in screen positions, so it is drawn on the cell shown there.
+  ASSERT_TRUE(InitScreen(2, 1));
+  WriteScreen(0, {0, 'A'});
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {1});
+  WriteScreen(
+      ScreenMemory::kCursorColumnAddress,
+      {0, 0, CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kInverse)});
+  ExecuteUntilRefresh();
+  EXPECT_THAT(GetCellPixels(0), ElementsAreArray(kInverseGlyphA));
+  EXPECT_THAT(GetCellPixels(1), Each(std::string(8, '.')));
+}
+
 TEST_F(ScreenTest, CursorWordSetsTheModeAndStyle) {
   ASSERT_TRUE(InitScreen(80, 24));
   WriteScreen(ScreenMemory::kCursorColumnAddress,
@@ -465,21 +506,20 @@ TEST_F(ScreenTest, ReadOnlyAndReservedWordsIgnoreWrites) {
   ExecuteUntilRefresh();
   WriteScreen(ScreenMemory::kColumnsAddress, std::vector<uint16_t>(16, 0xFFFF));
   EXPECT_THAT(ReadScreen(ScreenMemory::kColumnsAddress, 16),
-              ElementsAre(80, 24, 1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0,
-                          0xFFFF, 0xFFFF, 0xFFFF, 0, 0, 0, 0));
+              ElementsAre(80, 24, 1, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF,
+                          0xFFFF, 0, 0, 0xFFFF, 0xFFFF, 0xFFFF, 0, 0));
 }
 
-TEST_F(ScreenTest, UnusedWordsHoldWhatIsWritten) {
+TEST_F(ScreenTest, WordsAfterTheCellsAreReserved) {
+  // They read 0 and ignore writes.
   ASSERT_TRUE(InitScreen(80, 24));
-  const int unused = ScreenMemory::kColumnsAddress - 80 * 24;
-  std::vector<uint16_t> words(unused);
-  for (int i = 0; i < unused; ++i) {
-    words[i] = static_cast<uint16_t>(i + 1);
-  }
-  WriteScreen(80 * 24, words);
+  const int cells = 80 * 24;
+  const int reserved = ScreenMemory::kColumnsAddress - cells;
+  WriteScreen(0, std::vector<uint16_t>(ScreenMemory::kColumnsAddress, 'A'));
   ExecuteUntilRefresh();
-  EXPECT_EQ(ReadScreen(80 * 24, unused), words);
-  EXPECT_EQ(screen_->GetPicture().cells, std::vector<uint16_t>(80 * 24));
+  EXPECT_EQ(ReadScreen(0, cells), std::vector<uint16_t>(cells, 'A'));
+  EXPECT_EQ(ReadScreen(cells, reserved), std::vector<uint16_t>(reserved));
+  EXPECT_EQ(screen_->GetPicture().cells, std::vector<uint16_t>(cells, 'A'));
 }
 
 TEST_F(ScreenTest, PictureIsUnchangedWithoutWrites) {
@@ -498,53 +538,117 @@ TEST_F(ScreenTest, PictureIsUnchangedWithoutWrites) {
   EXPECT_NE(screen_->GetPicture(), picture);
 }
 
-TEST_F(ScreenTest, ClearRowFillsARowWithTheFillWord) {
+TEST_F(ScreenTest, FillRowSetsARowToTheFillWord) {
   ASSERT_TRUE(InitScreen(2, 3));
   WriteScreen(0, {0x10, 0x11, 0x20, 0x21, 0x30, 0x31});
 
   // The fill word is 0 at power on.
-  WriteScreen(ScreenMemory::kClearRowAddress, {0});
+  WriteScreen(ScreenMemory::kFillRowAddress, {0});
   EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0, 0, 0x20, 0x21, 0x30, 0x31));
 
-  // The row is cleared as clear row is written, after the fill word before it
-  // in the same write. Clear row reads 0, and the next refresh shows the row.
+  // Fill row reads 0, and the next refresh shows the row.
   const uint16_t fill = kScreenInverse | ' ';
-  WriteScreen(ScreenMemory::kFillAddress, {fill, 2});
+  WriteScreen(ScreenMemory::kFillAddress, {fill});
+  WriteScreen(ScreenMemory::kFillRowAddress, {2});
   EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0, 0, 0x20, 0x21, fill, fill));
-  EXPECT_THAT(ReadScreen(ScreenMemory::kFillAddress, 2), ElementsAre(fill, 0));
+  EXPECT_THAT(ReadScreen(ScreenMemory::kFillRowAddress), ElementsAre(0));
   ExecuteUntilRefresh();
   EXPECT_THAT(screen_->GetPicture().cells,
               ElementsAre(0, 0, 0x20, 0x21, fill, fill));
 }
 
-TEST_F(ScreenTest, ClearRowIsInScreenPositions) {
+TEST_F(ScreenTest, FillRowIsInScreenPositions) {
   ASSERT_TRUE(InitScreen(2, 3));
 
   // With the cells' row 1 at the top, screen row 0 is the cells' row 1, and
   // screen row 2 wraps to the cells' row 0.
   WriteScreen(ScreenMemory::kScrollRowAddress, {1});
-  WriteScreen(ScreenMemory::kFillAddress, {1, 0});
-  WriteScreen(ScreenMemory::kFillAddress, {2, 2});
+  WriteScreen(ScreenMemory::kFillAddress, {1});
+  WriteScreen(ScreenMemory::kFillRowAddress, {0});
+  WriteScreen(ScreenMemory::kFillAddress, {2});
+  WriteScreen(ScreenMemory::kFillRowAddress, {2});
   EXPECT_THAT(ReadScreen(0, 6), ElementsAre(2, 2, 1, 1, 0, 0));
 
   // The scroll row is taken modulo the rows: 0FFFEh % 3 is 2.
   WriteScreen(ScreenMemory::kScrollRowAddress, {0xFFFE});
-  WriteScreen(ScreenMemory::kFillAddress, {3, 0});
+  WriteScreen(ScreenMemory::kFillAddress, {3});
+  WriteScreen(ScreenMemory::kFillRowAddress, {0});
   EXPECT_THAT(ReadScreen(0, 6), ElementsAre(2, 2, 1, 1, 3, 3));
   ExecuteUntilRefresh();
   EXPECT_THAT(screen_->GetPicture().cells, ElementsAre(3, 3, 2, 2, 1, 1));
 }
 
-TEST_F(ScreenTest, ClearRowOutsideTheScreenClearsNothing) {
+TEST_F(ScreenTest, FillRowOutsideTheScreenFillsNothing) {
   ASSERT_TRUE(InitScreen(2, 3));
   WriteScreen(0, {1, 2, 3, 4, 5, 6});
   WriteScreen(ScreenMemory::kFillAddress, {0xFF});
   for (const int row : {3, 4, 0xFFFF}) {
-    WriteScreen(ScreenMemory::kClearRowAddress, {static_cast<uint16_t>(row)});
+    WriteScreen(ScreenMemory::kFillRowAddress, {static_cast<uint16_t>(row)});
   }
 
-  // Nor does it clear the unused words after the cells.
+  // Nor does it fill the reserved words after the cells.
   EXPECT_THAT(ReadScreen(0, 8), ElementsAre(1, 2, 3, 4, 5, 6, 0, 0));
+}
+
+TEST_F(ScreenTest, FillColumnSetsAColumnToTheFillWord) {
+  ASSERT_TRUE(InitScreen(3, 2));
+  WriteScreen(0, {0x10, 0x11, 0x12, 0x20, 0x21, 0x22});
+
+  // The fill word is 0 at power on.
+  WriteScreen(ScreenMemory::kFillColumnAddress, {0});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0, 0x11, 0x12, 0, 0x21, 0x22));
+
+  // Fill column reads 0, and the next refresh shows the column.
+  const uint16_t fill = kScreenInverse | ' ';
+  WriteScreen(ScreenMemory::kFillAddress, {fill});
+  WriteScreen(ScreenMemory::kFillColumnAddress, {2});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0, 0x11, fill, 0, 0x21, fill));
+  EXPECT_THAT(ReadScreen(ScreenMemory::kFillColumnAddress), ElementsAre(0));
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells,
+              ElementsAre(0, 0x11, fill, 0, 0x21, fill));
+}
+
+TEST_F(ScreenTest, FillColumnIsInScreenPositions) {
+  ASSERT_TRUE(InitScreen(3, 2));
+
+  // With the cells' column 1 at the left, screen column 0 is the cells' column
+  // 1, and screen column 2 wraps to the cells' column 0.
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {1});
+  WriteScreen(ScreenMemory::kFillAddress, {1});
+  WriteScreen(ScreenMemory::kFillColumnAddress, {0});
+  WriteScreen(ScreenMemory::kFillAddress, {2});
+  WriteScreen(ScreenMemory::kFillColumnAddress, {2});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(2, 1, 0, 2, 1, 0));
+
+  // The scroll column is taken modulo the columns: 0FFFEh % 3 is 2.
+  WriteScreen(ScreenMemory::kScrollColumnAddress, {0xFFFE});
+  WriteScreen(ScreenMemory::kFillAddress, {3});
+  WriteScreen(ScreenMemory::kFillColumnAddress, {0});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(2, 1, 3, 2, 1, 3));
+  ExecuteUntilRefresh();
+  EXPECT_THAT(screen_->GetPicture().cells, ElementsAre(3, 2, 1, 3, 2, 1));
+}
+
+TEST_F(ScreenTest, FillColumnOutsideTheScreenFillsNothing) {
+  ASSERT_TRUE(InitScreen(3, 2));
+  WriteScreen(0, {1, 2, 3, 4, 5, 6});
+  WriteScreen(ScreenMemory::kFillAddress, {0xFF});
+  for (const int column : {3, 4, 0xFFFF}) {
+    WriteScreen(ScreenMemory::kFillColumnAddress,
+                {static_cast<uint16_t>(column)});
+  }
+  EXPECT_THAT(ReadScreen(0, 8), ElementsAre(1, 2, 3, 4, 5, 6, 0, 0));
+}
+
+TEST_F(ScreenTest, FillsAreInOrderInOneWrite) {
+  // Each fill is made as its word is written, after the fill word before it.
+  ASSERT_TRUE(InitScreen(3, 2));
+  WriteScreen(0, {1, 2, 3, 4, 5, 6});
+  WriteScreen(ScreenMemory::kFillAddress, {0x10, 1, 0});
+  EXPECT_THAT(ReadScreen(0, 6), ElementsAre(0x10, 0x10, 0x10, 4, 0x10, 6));
+  EXPECT_THAT(ReadScreen(ScreenMemory::kFillAddress, 3),
+              ElementsAre(0x10, 0, 0));
 }
 
 TEST_F(ScreenTest, LineFeedOnTheBottomRowIsTwoWrites) {
@@ -552,12 +656,12 @@ TEST_F(ScreenTest, LineFeedOnTheBottomRowIsTwoWrites) {
   ASSERT_TRUE(Load(R"---(
     .STACK 16
         MOV BE, 0F000h      ; The screen's page, in EXTRA
-        MOV R0, E(0FF3h)    ; Scroll the text up a row
+        MOV R0, E(0FF4h)    ; Scroll the text up a row
         ADQ R0, 1
-        MOV E(0FF3h), R0
+        MOV E(0FF4h), R0
         MOV R0, E(0FF1h)    ; Clear the bottom row, rows - 1
         SBQ R0, 1
-        MOV E(0FF8h), R0
+        MOV E(0FFAh), R0
         HALT
   )---"));
   WriteScreen(0, {0x10, 0x11, 0x20, 0x21, 0x30, 0x31});
@@ -574,7 +678,7 @@ TEST_F(ScreenTest, CharacterWindowSendsWritesToTheCharacterSet) {
     .STACK 16
         MOV BE, 0F000h      ; The screen's page, in EXTRA
         MVQ R0, 1           ; Open the character set window
-        MOV E(0FF9h), R0
+        MOV E(0FFBh), R0
         MOV R0, 0FF81h      ; Glyph 0's rows 0 and 1
         MOV E(0), R0
         MOV R0, 8142h       ; Glyph 0's rows 8 and 9
@@ -583,7 +687,7 @@ TEST_F(ScreenTest, CharacterWindowSendsWritesToTheCharacterSet) {
         MOV E(9FFh), R0
         MOV R1, E(0)        ; Reads still read the cells
         MVQ R0, 0           ; Close the window
-        MOV E(0FF9h), R0
+        MOV E(0FFBh), R0
         HALT
   )---"));
   WriteScreen(0, {'Z', 0, kScreenAlternate | 0xFF});
@@ -616,16 +720,24 @@ TEST_F(ScreenTest, CharacterWindowSendsWritesToTheCharacterSet) {
                                             "..##.#.."));
 }
 
-TEST_F(ScreenTest, CharacterWindowLeavesAddressesFromA00hAsTheyAre) {
+TEST_F(ScreenTest, CharacterWindowIgnoresWritesToTheCellsFromA00h) {
   ASSERT_TRUE(InitScreen(80, 51));
   WriteScreen(ScreenMemory::kCharacterWindowAddress,
               {kScreenCharacterWindowOpen});
   WriteScreen(0x9FF, {0x1234, 0x5678});
-  EXPECT_THAT(ReadScreen(0x9FF, 2), ElementsAre(0, 0x5678));
+  WriteScreen(80 * 51 - 1, {0x5678});
+  EXPECT_THAT(ReadScreen(0x9FF, 2), ElementsAre(0, 0));
+  EXPECT_THAT(ReadScreen(80 * 51 - 1), ElementsAre(0));
 
-  // Control words are written as ever, too.
-  WriteScreen(ScreenMemory::kFillAddress, {'A', 50});
+  // Control words are written as ever, and filling still fills the cells.
+  WriteScreen(ScreenMemory::kFillAddress, {'A'});
+  WriteScreen(ScreenMemory::kFillRowAddress, {50});
   EXPECT_EQ(ReadScreen(80 * 50, 80), std::vector<uint16_t>(80, 'A'));
+
+  // Once the window closes, the cells take writes again.
+  WriteScreen(ScreenMemory::kCharacterWindowAddress, {0});
+  WriteScreen(0xA00, {0x5678});
+  EXPECT_THAT(ReadScreen(0xA00), ElementsAre(0x5678));
 }
 
 TEST_F(ScreenTest, ChangedGlyphShowsAtTheNextRefresh) {
