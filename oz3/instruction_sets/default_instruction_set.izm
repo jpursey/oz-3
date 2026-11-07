@@ -5314,16 +5314,16 @@ instruction(exclude_a:R7) OUTR.ID "$v, [$r]" {
 ################################################################################
 ## RST <core-index> <bank-mask>
 ##
-## Cycles: 11-28
+## Cycles: 11-94
 ## ZSCO: ----
 ##
 ## Variants:
-##    RST <0..7>, <bank-mask>    (11-27 cycles)
-##    RST R2, <bank-mask>        (11-27 cycles)
-##    RST SELF, <bank-mask>      (12-28 cycles)
+##    RST <0..7>, <bank-mask>    (11-93 cycles)
+##    RST R2, <bank-mask>        (11-93 cycles)
+##    RST SELF, <bank-mask>      (12-94 cycles)
 ##
-## The cost depends on the banks: 11 cycles with none (12 for SELF), and 7 more
-## for CODE, 5 for STACK, and 2 each for DATA and EXTRA.
+## The cost depends on the banks: 11 cycles with none (12 for SELF), and 73
+## more for CODE, 5 for STACK, and 2 each for DATA and EXTRA.
 ##
 ## The core to reset may be specified as an immediate value 0-7 or the special
 ## keyword SELF (to reset the running core), or specified by register R2 (0..7,
@@ -5335,6 +5335,10 @@ instruction(exclude_a:R7) OUTR.ID "$v, [$r]" {
 ##     The core's BC register is set to this core's R4 register.
 ##     The core's IP register is set to zero.
 ##     The core's R0 and R1 registers are copied from this core.
+##     The core's interrupt handlers are all cleared (set to 0).
+##     The core's status flags (ZSCOI) are cleared, so interrupts are disabled.
+##     For SELF, these are the flags the instruction ends with.
+##     The core's trap flag (T) and pending interrupts are kept.
 ##     The core starts running from its new IP, if it was halted or waiting.
 ##   Bit 1: STACK
 ##     The core's BS register is set to this core's R5 register.
@@ -5368,6 +5372,14 @@ instruction RST "$m, $Banks" {
   CST(IP,C0);
   CST(R0,R0);
   CST(R1,R1);
+
+  # Clear the interrupt handlers, from 32 (handler 0) down to 1, and the status
+  # flags. C0 is still zero.
+  MOVI(C2,32);
+@clear_handlers:
+  IST(C2,C0);
+  JD(C2,@clear_handlers);
+  CST(ST,C0);
   CRUN;
 
 @stack:

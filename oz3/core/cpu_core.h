@@ -333,11 +333,18 @@ class CpuCore final : public ExecutionComponent {
 
   // Reset() parameters for the CPU core.
   //
-  // Resets the CPU memory bank assignments and associated address registers.
-  // Only the specified memory bank assignmends at registers are reset, and the
-  // rest are left unchanged. In addition, the IP register is set to zero if the
-  // BC register is reset, and the SP and FP registers are set to zero if the BS
-  // register is reset.
+  // A reset always clears the general purpose registers (R0 to R7) and the
+  // wait flag (W), and starts the core running. Beyond that, only what `mask`
+  // selects is reset, and the rest is left unchanged:
+  // - MC, MS, MD, ME: The CODE, STACK, DATA, and EXTRA bank assignments in MB
+  //   are set from `mb`.
+  // - RBC: BC is set to `bc`, and IP to zero. This starts a new program, as the
+  //   RST instruction does when it resets CODE, so the interrupt handlers and
+  //   the status flags (ZSCOI) are also cleared. The trap flag (T) and pending
+  //   interrupts are kept.
+  // - RBS: BS is set to `bs`, and SP and FP to zero.
+  // - RBD: BD is set to `bd`.
+  // - RBE: BE is set to `be`.
   struct ResetParams {
     // Bit flags for `reset_mask`.
     static constexpr uint16_t MC = 1 << 0;   // Set code bank.

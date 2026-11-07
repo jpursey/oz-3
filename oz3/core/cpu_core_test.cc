@@ -100,6 +100,7 @@ enum MicroTestOp : uint8_t {
   kTestOp_CBKS,
   kTestOp_CLD,
   kTestOp_CST,
+  kTestOp_CSTST,
   kTestOp_CRUN,
   kTestOp_CRUNS,
   kTestOp_CINT,
@@ -766,6 +767,13 @@ const InstructionDef kMicroTestInstructions[] = {
              "CLK(R6);"
              "CST(a,b);"
              "CUL;"},
+    {.op = kTestOp_CSTST,
+     .op_name = "CSTST",
+     .arg1 = ArgType::kWordReg,
+     .code = "UL;"
+             "CLK(R6);"
+             "CST(ST,a);"
+             "CUL;"},
     {.op = kTestOp_CRUN,
      .op_name = "CRUN",
      .code = "UL;"
@@ -1047,6 +1055,45 @@ TEST_F(CpuCoreTest, ResetWithSetRegisters) {
   EXPECT_EQ(state.stack.GetBank(), GetMemory(14).GetBank());
   EXPECT_EQ(state.data.GetBank(), GetMemory(13).GetBank());
   EXPECT_EQ(state.extra.GetBank(), GetMemory(12).GetBank());
+}
+
+TEST_F(CpuCoreTest, ResetOfCodeClearsInterruptState) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+  state.SetRegisters({{CpuCore::R0, 0},
+                      {CpuCore::R1, 100},
+                      {CpuCore::R2, CpuCore::kInterruptCount - 1},
+                      {CpuCore::R3, 200}});
+  state.code.AddValue(Encode(kTestOp_IST, CpuCore::R0, CpuCore::R1));
+  state.code.AddValue(Encode(kTestOp_IST, CpuCore::R2, CpuCore::R3));
+  state.code.AddValue(Encode(kTestOp_HALT));
+  ExecuteUntilHalt();
+  ASSERT_EQ(state.core.GetInterruptAddress(0), 100);
+  ASSERT_EQ(state.core.GetInterruptAddress(CpuCore::kInterruptCount - 1), 200);
+
+  // The core doesn't run again, so its interrupt stays pending.
+  const uint16_t st = CpuCore::T | CpuCore::Z | CpuCore::C | CpuCore::I;
+  state.SetRegisters({{CpuCore::ST, st}});
+  state.core.RaiseInterrupt(3);
+
+  // Resetting other registers keeps the interrupt state.
+  state.ResetCore(
+      {.mask = CpuCore::ResetParams::MS | CpuCore::ResetParams::RBS});
+  state.Update();
+  EXPECT_EQ(state.st, st);
+  EXPECT_EQ(state.core.GetInterruptAddress(0), 100);
+  EXPECT_EQ(state.core.GetInterruptAddress(CpuCore::kInterruptCount - 1), 200);
+
+  // Resetting BC clears the handlers and status flags, but keeps the trap flag
+  // and the pending interrupt.
+  state.ResetCore({.mask = CpuCore::ResetParams::RBC});
+  state.Update();
+  EXPECT_EQ(state.st, CpuCore::T);
+  for (int i = 0; i < CpuCore::kInterruptCount; ++i) {
+    EXPECT_EQ(state.core.GetInterruptAddress(i), 0) << "Interrupt " << i;
+  }
+  EXPECT_EQ(state.core.GetInterrupts(), 1 << 3);
 }
 
 TEST_F(CpuCoreTest, RunsAfterReset) {
@@ -5136,6 +5183,47 @@ TEST_F(CpuCoreTest, ModifySelfWithCbk) {
   EXPECT_EQ(state.r1, 1003);
   EXPECT_EQ(state.r2, 1000);
   EXPECT_EQ(state.r3, 1003);
+}
+
+TEST_F(CpuCoreTest, CstWritesStatusFlagsOfOtherCore) {
+  // Core 1 is left idle.
+  ASSERT_TRUE(Init({.num_cores = 2}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  state0.ResetCore();
+  state0.SetRegisters({{CpuCore::R1, 0xFF00 | CpuCore::C | CpuCore::O},
+                       {CpuCore::R2, 0},
+                       {CpuCore::R6, 1}});
+  state1.SetRegisters({{CpuCore::ST, CpuCore::T | CpuCore::Z | CpuCore::S}});
+
+  // Only the low byte is written, so the trap flag is kept.
+  state0.code.AddValue(Encode(kTestOp_CSTST, CpuCore::R1));
+  const uint16_t ip1 = state0.code.AddNopGetAddress();
+  state0.code.AddValue(Encode(kTestOp_CSTST, CpuCore::R2));
+  const uint16_t ip2 = state0.code.AddNopGetAddress();
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state1.st, CpuCore::T | CpuCore::C | CpuCore::O);
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(state1.st, CpuCore::T);
+  EXPECT_EQ(state0.st, 0);
+}
+
+TEST_F(CpuCoreTest, CstWritesStatusFlagsOfSelf) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+  state.SetRegisters({{CpuCore::ST, CpuCore::T | CpuCore::Z | CpuCore::S},
+                      {CpuCore::R1, 0xFF00 | CpuCore::C | CpuCore::O},
+                      {CpuCore::R6, 0xFFFF}});
+
+  // The flags are the ones the instruction ends with, and the trap flag is
+  // kept.
+  state.code.AddValue(Encode(kTestOp_CSTST, CpuCore::R1));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(state.st, CpuCore::T | CpuCore::C | CpuCore::O);
 }
 
 TEST_F(CpuCoreTest, SelfCoreInterrupt) {

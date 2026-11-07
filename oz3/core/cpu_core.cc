@@ -236,6 +236,8 @@ void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
   if (params.mask & ResetParams::RBC) {
     r_[BC] = params.bc;
     r_[IP] = 0;
+    std::memset(ivec_, 0, sizeof(ivec_));
+    r_[ST] &= 0xFF00;
   }
   if (params.mask & ResetParams::RBS) {
     r_[BS] = params.bs;
@@ -1061,7 +1063,12 @@ void CpuCore::RunInstructionLoop() {
         DCHECK(lock_ != nullptr || locked_core_ == this);
         OZ3_INIT_REG1;
         OZ3_INIT_REG2;
-        if (reg1 != MB && reg1 != ST) {
+        if (reg1 == ST) {
+          // Only the status flags are written, never the control flags. On
+          // this core, they are the flags the instruction ends with.
+          uint16_t& st = (locked_core_ == this ? msr_ : locked_core_->r_[ST]);
+          st = (st & 0xFF00) | (r_[reg2] & 0x00FF);
+        } else if (reg1 != MB) {
           locked_core_->r_[reg1] = r_[reg2];
         }
       } break;

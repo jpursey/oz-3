@@ -26,46 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## RST clears a core's interrupt state
-
-- **Layers:** core, instruction_sets, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `RST` in `oz3/instruction_sets/default_instruction_set.izm`;
-  `CST` and `CpuCore::Reset` in `oz3/core/cpu_core.cc`
-
-An `RST` that resets a core's `CODE` bank starts a new program there, but the
-core keeps the old program's interrupt handlers and status flags. Handlers are
-addresses relative to `BC`, which `RST` sets anew, so an interrupt before the
-new program sets its own jumps into its code at a stale address, and the core
-keeps whatever `I` was. An OS reusing cores for programs (see *Ozzy OS*) has
-to undo this itself, with `CLK` and 32 `IST`s.
-
-With `CODE` in its mask, `RST` clears them in microcode, so a new program
-starts with no handlers, its status flags clear, and interrupts disabled:
-- **Handlers:** a loop of `IST` with the zero register `C2`, from 32 down to 1
-  (`IST` uses the low 5 bits, so 32 is handler 0). That is about 65 cycles,
-  which clearing a table of handlers should take.
-- **Status flags:** `CST(ST,C2)`. `CST` ignores `ST` today. It writes `ST`'s
-  status flags instead (the low byte), and never the control flags: `W` is
-  `WAIT`'s and `CRUN`'s (and `RST` already runs `CRUN`), and `T` is left for a
-  debugger, so stepping a core survives a reset. On the running core
-  (`RST SELF`) it writes the instruction's staged status flags, which are
-  copied back when it ends. No microcode uses `CST(ST,...)` today, so no
-  instruction changes but `RST`.
-- **Pending interrupts:** kept. A core with no handlers drops them if `I` is
-  set, or takes them as spurious interrupts once the new program enables
-  interrupts, which handlers tolerate anyway. Dropping a shared one only drops
-  it on this core, so it stays pending on the others it was raised on.
-
-`RST`'s code words don't change, but its cycles do, so the `.inc` is
-regenerated and its tests' cycle counts updated. The host's `CpuCore::Reset`
-does the same when it resets `CODE`, at no cost, so a boot and an `RST` start a
-program alike. The wiki's microcode reference (`CST`) and default instruction
-set page (`RST`: what a `CODE` reset clears and keeps, and its cycles) change
-with it.
-
 ## Notify flag
 
 - **Layers:** core, instruction_sets, wiki
@@ -212,8 +172,7 @@ packed host bytes.
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Timer device*, *Disk drive device*, *RST clears a core's
-  interrupt state*, *Notify flag*
+- **Depends on:** *Timer device*, *Disk drive device*, *Notify flag*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program

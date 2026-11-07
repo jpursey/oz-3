@@ -88,7 +88,7 @@ TEST_F(CoreTest, RST_AllBanks) {
   const uint16_t ip1 = state0.code.AddNopGetAddress();
 
   ASSERT_EQ(state1.core.GetState(), CpuCore::State::kIdle);
-  EXPECT_EQ(CyclesUntilIp(ip1), 27);  // RST 1, CODE|STACK|DATA|EXTRA
+  EXPECT_EQ(CyclesUntilIp(ip1), 93);  // RST 1, CODE|STACK|DATA|EXTRA
   EXPECT_EQ(state0.st, ZC);
   EXPECT_EQ(state1.mb, mb);
   EXPECT_EQ(state1.bc, 100);
@@ -120,7 +120,11 @@ TEST_F(CoreTest, RST_Code) {
                        {CpuCore::R5, 200},
                        {CpuCore::R6, 300},
                        {CpuCore::R7, 400}});
-  state1.SetRegisters({{CpuCore::SP, 50}, {CpuCore::FP, 60}});
+  state1.SetRegisters(
+      {{CpuCore::ST, CpuCore::T | ZC}, {CpuCore::SP, 50}, {CpuCore::FP, 60}});
+
+  // Interrupts are disabled on core 1, so its interrupt stays pending.
+  state1.core.RaiseInterrupt(3);
 
   // Core 1 runs from 100 in bank 1 once reset.
   GetMemory(1)
@@ -131,9 +135,12 @@ TEST_F(CoreTest, RST_Code) {
   state0.code.AddValue(Encode("RST", {"$#3", 1}, 0x1));
   const uint16_t ip1 = state0.code.AddNopGetAddress();
 
-  // Only the code bank and registers change.
-  EXPECT_EQ(CyclesUntilIp(ip1), 18);  // RST 1, CODE
+  // Only the code bank and registers, and the status flags, change. The trap
+  // flag and the pending interrupt are kept.
+  EXPECT_EQ(CyclesUntilIp(ip1), 84);  // RST 1, CODE
   EXPECT_EQ(state0.st, ZC);
+  EXPECT_EQ(state1.st, CpuCore::T);
+  EXPECT_EQ(state1.core.GetInterrupts(), 1 << 3);
   EXPECT_EQ(state1.mb, CpuCore::Banks().SetCode(1).ToWord());
   EXPECT_EQ(state1.bc, 100);
   EXPECT_EQ(state1.r0, 11);
@@ -202,14 +209,41 @@ TEST_F(CoreTest, RST_CodeWaiting) {
   state0.code.AddValue(Encode("RST", {"$#3", 1}, 0x1));
   const uint16_t ip1 = state0.code.AddNopGetAddress();
 
-  // The WAIT ends, and core 1 runs from its new code location.
-  EXPECT_EQ(CyclesUntilIp(ip1), 18);  // RST 1, CODE
+  // The WAIT ends, and core 1 runs from its new code location, with its
+  // interrupt handler cleared and interrupts disabled.
+  EXPECT_EQ(CyclesUntilIp(ip1), 84);  // RST 1, CODE
   EXPECT_NE(state1.core.GetState(), CpuCore::State::kWaiting);
-  EXPECT_EQ(state1.st & CpuCore::W, 0);
+  EXPECT_EQ(state1.st, 0);
+  EXPECT_EQ(state1.core.GetInterruptAddress(5), 0);
   ExecuteUntilHalt(1);
   EXPECT_EQ(state1.r5, 7);
   EXPECT_EQ(state1.ip, 1);
   EXPECT_LT(state1.core.GetCycles(), 1000);
+}
+
+TEST_F(CoreTest, RST_SELF_CodeClearsEveryHandler) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+
+  // The core sets a handler for every interrupt, and then resets its code to
+  // 500, where it halts.
+  for (int i = 0; i < CpuCore::kInterruptCount; ++i) {
+    state.code.AddValue(Encode("SETI", "$v")).AddValue(i).AddValue(100 + i);
+  }
+  const uint16_t rst_ip = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("RST", "SELF", 0x1));
+  state.code.SetAddress(500).AddValue(Encode("HALT"));
+  state.SetRegisters({{CpuCore::R3, 0}, {CpuCore::R4, 500}});
+
+  ASSERT_TRUE(ExecuteUntilIp(rst_ip));
+  for (int i = 0; i < CpuCore::kInterruptCount; ++i) {
+    ASSERT_EQ(state.core.GetInterruptAddress(i), 100 + i) << "Interrupt " << i;
+  }
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.bc, 500);
+  for (int i = 0; i < CpuCore::kInterruptCount; ++i) {
+    EXPECT_EQ(state.core.GetInterruptAddress(i), 0) << "Interrupt " << i;
+  }
 }
 
 TEST_F(CoreTest, RST_NoBanks) {
@@ -278,7 +312,7 @@ TEST_F(CoreTest, RST_R2) {
 
   // There is no core 5, so nothing changes.
   ASSERT_TRUE(ExecuteUntilIp(setup3));  // MOV.LW R2, 5
-  EXPECT_EQ(CyclesUntilIp(ip3), 27);    // RST R2 (5), CODE|STACK|DATA|EXTRA
+  EXPECT_EQ(CyclesUntilIp(ip3), 93);    // RST R2 (5), CODE|STACK|DATA|EXTRA
   EXPECT_EQ(state0.mb, CpuCore::Banks().SetData(1).SetExtra(1).ToWord());
   EXPECT_EQ(state0.bc, 0);
   EXPECT_EQ(state1.bc, 0);
@@ -303,12 +337,14 @@ TEST_F(CoreTest, RST_SELF) {
   state.code.SetAddress(200);
   const uint16_t ip1 = state.code.AddNopGetAddress() - 200;
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 21);  // RST SELF, CODE|DATA
+  EXPECT_EQ(CyclesUntilIp(ip1), 87);  // RST SELF, CODE|DATA
   EXPECT_EQ(state.bc, 200);
   EXPECT_EQ(state.bd, 300);
   EXPECT_EQ(state.r0, 11);
   EXPECT_EQ(state.r1, 12);
-  EXPECT_EQ(state.st, ZC);
+
+  // Resetting CODE clears the status flags the instruction ends with.
+  EXPECT_EQ(state.st, 0);
 }
 
 // SELF takes a cycle more than a core index, to load -1, so resetting every
@@ -329,7 +365,7 @@ TEST_F(CoreTest, RST_SELF_AllBanks) {
   state.code.SetAddress(200);
   const uint16_t ip1 = state.code.AddNopGetAddress() - 200;
 
-  EXPECT_EQ(CyclesUntilIp(ip1), 28);  // RST SELF, CODE|STACK|DATA|EXTRA
+  EXPECT_EQ(CyclesUntilIp(ip1), 94);  // RST SELF, CODE|STACK|DATA|EXTRA
   EXPECT_EQ(state.bc, 200);
   EXPECT_EQ(state.bs, 300);
   EXPECT_EQ(state.bd, 400);
