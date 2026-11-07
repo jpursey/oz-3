@@ -9,6 +9,7 @@
 #include <bit>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "absl/algorithm/container.h"
@@ -106,6 +107,11 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
     } else if (device_config.name == Ozzy::kKeyboardName) {
       WriteDeviceEntry(MachineDeviceType::kKeyboard, device_config,
                        settings.cores, entries);
+      const std::optional<int> state_port =
+          GetOzzyKeyboardSettings().state_port;
+      entries[kMachineDeviceData] = state_port.has_value()
+                                        ? static_cast<uint16_t>(*state_port)
+                                        : kMachineTableNone;
     } else {
       DCHECK(device_config.name == Ozzy::kTeletypeName);
       WriteDeviceEntry(MachineDeviceType::kTeletype, device_config,

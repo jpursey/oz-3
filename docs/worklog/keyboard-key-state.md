@@ -282,7 +282,7 @@ Depends on: nothing.
   - the keyboard sleeps with nothing to write, and its updates take no cycles.
 - Wiki: `3.2-Keyboard.md` and `3-Devices.md`.
 
-### CL2 [ ] ozzy: key state on ports 6 to 15
+### CL2 [x] ozzy: key state on ports 6 to 15
 
 Depends on: CL1.
 

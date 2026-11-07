@@ -18,7 +18,9 @@
 #include "oz3/core/core_types.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
+#include "oz3/core/port.h"
 #include "oz3/core/processor.h"
+#include "oz3/devices/keyboard.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy_settings.h"
 
@@ -63,6 +65,20 @@ TEST(OzzyTest, DefaultOzzy) {
   ASSERT_NE(ozzy->GetKeyboard(), nullptr);
   EXPECT_EQ(ozzy->GetKeyboard(), processor->GetDevice(Ozzy::kKeyboardName));
   EXPECT_EQ(ozzy->GetTeletype(), nullptr);
+}
+
+TEST(OzzyTest, KeyboardKeyState) {
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+
+  // Key state is on ports 6 to 15: key code 08h (Backspace) is bit 8 of port
+  // 6, and 9Bh (F12) bit 11 of port 15.
+  ozzy->GetKeyboard()->SetKeyState(kKeyBackspace, true);
+  ozzy->GetKeyboard()->SetKeyState(kKeyF12, true);
+  ozzy->Run(absl::Milliseconds(1));
+  Processor* processor = ozzy->GetProcessor();
+  EXPECT_EQ(processor->GetPort(6).GetValue(0), 0x0100);
+  EXPECT_EQ(processor->GetPort(15).GetValue(0), 0x0800);
 }
 
 TEST(OzzyTest, Processor) {
@@ -150,7 +166,7 @@ TEST(OzzyTest, DefaultMachineTable) {
               ElementsAre(1, 0xFFFF, 6, 0x01, 0, 15, 80, 24));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
-              ElementsAre(2, 1, 1, 0x8001, 0xFFFF, 0xFFFF, 0, 0));
+              ElementsAre(2, 1, 1, 0x8001, 0xFFFF, 0xFFFF, 6, 0));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
@@ -183,7 +199,7 @@ TEST(OzzyTest, FullMachineTable) {
               ElementsAre(1, 0xFFFF, 6, 0x07, 0, 15, 40, 12));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
-              ElementsAre(2, 1, 1, 0x8007, 0xFFFF, 0xFFFF, 0, 0));
+              ElementsAre(2, 1, 1, 0x8007, 0xFFFF, 0xFFFF, 6, 0));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(3, 2, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));

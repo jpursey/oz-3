@@ -37,8 +37,13 @@ static_assert((GetBootRomPages(kOzzyScreenBank) & (1 << kOzzyScreenPage)) == 0,
 static_assert(kOzzyScreenPage < kMemoryBankPageCount,
               "The screen's page must be in its bank");
 static_assert(kOzzyKeyboardPort < OzzySettings::kMinPorts &&
+                  kOzzyKeyboardKeyStatePort + Keyboard::kKeyStatePorts <=
+                      OzzySettings::kMinPorts &&
                   kOzzyTeletypePort < OzzySettings::kMinPorts,
               "Device ports must be ports every Ozzy has");
+static_assert(kOzzyKeyboardPort < kOzzyKeyboardKeyStatePort &&
+                  kOzzyTeletypePort < kOzzyKeyboardKeyStatePort,
+              "The key state ports must not be other devices' ports");
 static_assert(kOzzyScreenInterrupt < CpuCore::kInterruptCount &&
                   kOzzyKeyboardInterrupt < CpuCore::kInterruptCount,
               "Device interrupts must be interrupts every core has");
@@ -344,7 +349,8 @@ ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen) {
 }
 
 KeyboardSettings GetOzzyKeyboardSettings() {
-  return {.typed_port = kOzzyKeyboardPort,
+  return {.state_port = kOzzyKeyboardKeyStatePort,
+          .typed_port = kOzzyKeyboardPort,
           .typed_interrupt = {.interrupt = kOzzyKeyboardInterrupt,
                               .cores = kOzzyKeyboardInterruptCores,
                               .shared = true}};

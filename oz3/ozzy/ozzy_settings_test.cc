@@ -64,7 +64,9 @@ TEST(OzzySettingsTest, ScreenSettings) {
 }
 
 TEST(OzzySettingsTest, KeyboardSettings) {
+  // Key state is on ports 6 to 15, the last of the ports kept for devices.
   const KeyboardSettings keyboard = GetOzzyKeyboardSettings();
+  EXPECT_EQ(keyboard.state_port, 6);
   EXPECT_EQ(keyboard.typed_port, 1);
   EXPECT_EQ(keyboard.typed_interrupt.interrupt, 1);
   EXPECT_EQ(keyboard.typed_interrupt.cores, kAllCores);

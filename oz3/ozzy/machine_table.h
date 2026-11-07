@@ -91,8 +91,8 @@ inline constexpr uint16_t kMachineInterruptShared = 0x8000;
 inline constexpr int kMachineDeviceBank = 4;
 inline constexpr int kMachineDevicePage = 5;
 
-// Two words that are the type's own: a screen's columns and rows, and
-// otherwise 0.
+// Two words that are the type's own: a screen's columns and rows, a keyboard's
+// first key state port (kMachineTableNone for none) and 0, and otherwise 0.
 inline constexpr int kMachineDeviceData = 6;
 inline constexpr int kMachineDeviceSize = 8;
 

@@ -35,10 +35,11 @@ constexpr uint16_t GetBootRomPages(int bank) {
 //==============================================================================
 
 // The wiring of each console device, which is the same in every Ozzy, so
-// programs know it: the screen's page and interrupt, the keyboard's port and
-// interrupt, and the teletype's port. Interrupt cores have bit n for core n.
-// The keyboard's interrupt is shared, so each key is handled by one core, while
-// the screen's refresh is news for every core with a handler.
+// programs know it: the screen's page and interrupt, the keyboard's typed keys'
+// port and interrupt and its first key state port, and the teletype's port.
+// Interrupt cores have bit n for core n. The keyboard's interrupt is shared, so
+// each key is handled by one core, while the screen's refresh is news for every
+// core with a handler.
 inline constexpr int kOzzyScreenBank = 0;
 inline constexpr int kOzzyScreenPage = 15;
 inline constexpr int kOzzyScreenInterrupt = 6;
@@ -46,6 +47,7 @@ inline constexpr uint8_t kOzzyScreenInterruptCores = kAllCores;
 inline constexpr int kOzzyKeyboardPort = 1;
 inline constexpr int kOzzyKeyboardInterrupt = 1;
 inline constexpr uint8_t kOzzyKeyboardInterruptCores = kAllCores;
+inline constexpr int kOzzyKeyboardKeyStatePort = 6;
 inline constexpr int kOzzyTeletypePort = 2;
 
 //==============================================================================
