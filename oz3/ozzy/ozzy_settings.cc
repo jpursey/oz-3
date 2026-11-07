@@ -236,7 +236,8 @@ ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen) {
           .refresh_hz = screen.refresh_hz,
           .slow_blink_hz = screen.slow_blink_hz,
           .fast_blink_hz = screen.fast_blink_hz,
-          .characters = screen.characters};
+          .characters = screen.characters,
+          .draw_pixels = screen.draw_pixels};
 }
 
 KeyboardSettings GetOzzyKeyboardSettings() {

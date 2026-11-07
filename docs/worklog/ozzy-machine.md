@@ -287,6 +287,7 @@ struct OzzyScreenSettings {
   int slow_blink_hz;
   int fast_blink_hz;
   std::optional<std::vector<uint16_t>> characters;
+  bool draw_pixels;  // Not in a config file
 };
 struct OzzyTeletypeSettings {
   int baud;
@@ -335,7 +336,9 @@ absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
   devices', so a host can't set the wiring either, and the wiring is written
   in one place. A keyboard has nothing to set, so it is only there or not.
   `OzzyScreenSettings` and `OzzyTeletypeSettings` take their defaults from
-  `ScreenSettings` and `TeletypeSettings`.
+  `ScreenSettings` and `TeletypeSettings`. A config file sets all of them but
+  the screen's `draw_pixels`, which depends on how the host shows the screen,
+  not on the machine, so the host sets it after reading the file.
 - The wiring fits every Ozzy (the screen's page isn't the boot ROM's, the
   ports are below `kMinPorts`, and the interrupts are ones every core has),
   which `static_assert`s check, so no settings can make it invalid.
@@ -515,7 +518,8 @@ app's loop checks.
 
 - `oz3/apps/ozzy_main.cc`, the `ozzy` executable, linking `oz3_ozzy`,
   `gb_cli` for its flags, and `gb_file` to read the config.
-- It reads the settings, creates the Ozzy, then the `Console` in
+- It reads the settings, turns off the screen's `draw_pixels`, as the console
+  shows the cells as text, creates the Ozzy, then the `Console` in
   `GetOzzyConsoleMode`'s mode, so an error before then prints as any command
   line error.
 - **The loop**, 60 frames a second: take keys and press them, run the cycles

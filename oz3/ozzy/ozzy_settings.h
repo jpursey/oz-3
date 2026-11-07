@@ -56,7 +56,9 @@ inline constexpr int kOzzyTeletypePort = 2;
 //==============================================================================
 
 // The settings of an Ozzy's screen that a host sets: all of ScreenSettings
-// but its wiring, with the same defaults.
+// but its wiring, with the same defaults. A config file sets all but
+// draw_pixels, which depends on how the host shows the screen rather than on
+// the machine.
 struct OzzyScreenSettings {
   bool operator==(const OzzyScreenSettings&) const = default;
 
@@ -66,6 +68,7 @@ struct OzzyScreenSettings {
   int slow_blink_hz = ScreenSettings().slow_blink_hz;
   int fast_blink_hz = ScreenSettings().fast_blink_hz;
   std::optional<std::vector<uint16_t>> characters;
+  bool draw_pixels = ScreenSettings().draw_pixels;
 };
 
 // The settings of an Ozzy's teletype that a host sets: all of

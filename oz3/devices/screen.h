@@ -150,6 +150,10 @@ struct ScreenSettings {
   // The character set at power on, which must be kScreenCharacterSetSize words,
   // or unset for the built-in one (GetDefaultScreenCharacters).
   std::optional<std::vector<uint16_t>> characters;
+
+  // Whether each refresh draws the picture's pixels. A host that shows only the
+  // cells turns it off, so refreshes don't spend the time.
+  bool draw_pixels = true;
 };
 
 //==============================================================================
@@ -177,13 +181,15 @@ struct ScreenPicture {
 
   // The pixels, which are what the host shows: columns * kScreenGlyphWidth by
   // rows * kScreenGlyphHeight, row by row from the top, each a kScreenPixel
-  // level. Each pixel is twice as tall as it is wide.
+  // level. Each pixel is twice as tall as it is wide. Without
+  // ScreenSettings::draw_pixels, there are none, and they are 0 by 0.
   int pixel_width = 0;
   int pixel_height = 0;
   std::vector<uint8_t> pixels;
 
   // The pixel rows drawn, from the top: pixel_height, less 2 for each compact
-  // row but the bottom one. The pixel rows below it are off.
+  // row but the bottom one. The pixel rows below it are off. Without
+  // ScreenSettings::draw_pixels, it is 0.
   int drawn_height = 0;
 };
 
@@ -407,6 +413,7 @@ class Screen final : public Device {
   const int refresh_hz_;
   const int slow_blink_hz_;
   const int fast_blink_hz_;
+  const bool draw_pixels_;
   ScreenMemory memory_;
   ScreenPicture picture_;
   int64_t frame_count_ = 0;

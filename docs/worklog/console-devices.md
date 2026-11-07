@@ -576,6 +576,10 @@ struct ScreenSettings {
 
   // kScreenCharacterSetSize words, or unset for the built-in one.
   std::optional<std::vector<uint16_t>> characters;
+
+  // Whether refreshes draw the pixels, which a host that shows only the cells
+  // turns off. Without them, the picture's pixel fields are all 0 and empty.
+  bool draw_pixels = true;
 };
 
 struct ScreenPicture {
@@ -660,7 +664,8 @@ absl::Span<const uint16_t> GetDefaultScreenCharacters();
   `GetDefaultScreenCharacters()` when it is unset.
 - `Execute()`: at a refresh, it requests the lock (one cycle a try, holding
   the request, until granted), sets the frame counter, takes the cells and the
-  cursor into the picture, draws the pixels, releases the lock, raises its
+  cursor into the picture, draws the pixels (with `draw_pixels`), releases the
+  lock, raises its
   interrupt, and advances to the next scheduled refresh,
   `(frames + 1) * clock_hz / refresh_hz`. It never sleeps: it is busy until
   the next refresh, which costs the `Processor` one compare a cycle.
@@ -685,7 +690,9 @@ absl::Span<const uint16_t> GetDefaultScreenCharacters();
   twice as tall as wide.
 - Performance: at 80 by 24, a refresh copies 1920 cells and draws 153,600
   pixels (150 KB), a glyph row at a time, 30 times a simulated second at the
-  default rate: still nothing beside the cores.
+  default rate: still nothing beside the cores. A run faster than real time
+  draws more of them each real second, so a host that doesn't show them turns
+  off `draw_pixels`.
 
 **Brittleness:** none for a host. The picture is the screen's own copy, so the
 host can read it whenever the processor isn't running. The control words are

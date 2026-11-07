@@ -158,10 +158,15 @@ bool Run(gb::ValidatedContext& context,
          const gb::CliCommandLine& command_line) {
   gb::FileSystem* file_system = context.GetPtr<gb::FileSystem>();
   const gb::CliWriter writer = *context.GetPtr<gb::CliWriter>();
-  const std::optional<OzzySettings> settings =
+  std::optional<OzzySettings> settings =
       ReadSettings(writer, *file_system, command_line);
   if (!settings.has_value()) {
     return false;
+  }
+
+  // The console shows the screen's cells as text, so it never needs pixels.
+  if (settings->screen.has_value()) {
+    settings->screen->draw_pixels = false;
   }
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(*settings);
   if (!ozzy.ok()) {

@@ -55,13 +55,15 @@ TEST(OzzySettingsTest, ScreenSettings) {
                                .refresh_hz = 60,
                                .slow_blink_hz = 2,
                                .fast_blink_hz = 8,
-                               .characters = std::vector<uint16_t>{1, 2}};
+                               .characters = std::vector<uint16_t>{1, 2},
+                               .draw_pixels = false};
   expected.columns = 40;
   expected.rows = 12;
   expected.refresh_hz = 60;
   expected.slow_blink_hz = 2;
   expected.fast_blink_hz = 8;
   expected.characters = std::vector<uint16_t>{1, 2};
+  expected.draw_pixels = false;
   EXPECT_EQ(GetOzzyScreenSettings(screen), expected);
 }
 

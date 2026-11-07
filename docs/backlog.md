@@ -52,20 +52,6 @@ What trying `ozzy` by hand left open:
   time of the default Ozzy in Release, and the cycles a second with
   `--max-speed`.
 
-## Screens without pixels
-
-- **Layers:** devices, ozzy
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [console-devices.md](worklog/console-devices.md) (Pixels)
-
-Every refresh draws the screen's picture into pixels (about 150 KB for 80 by
-24), which the console frontend never shows, as it draws the cells as text. At
-30 refreshes a second that is little, but with `--max-speed` it grows with the
-speed. A screen setting, or a host call, that leaves the pixels undrawn would
-save it for hosts that show text.
-
 ## Timer device
 
 - **Layers:** devices, ozzy

@@ -240,6 +240,7 @@ Screen::Screen(DeviceConfig config, const ScreenSettings& settings)
       refresh_hz_(settings.refresh_hz),
       slow_blink_hz_(settings.slow_blink_hz),
       fast_blink_hz_(settings.fast_blink_hz),
+      draw_pixels_(settings.draw_pixels),
       memory_(settings.columns, settings.rows,
               settings.characters.has_value()
                   ? absl::Span<const uint16_t>(*settings.characters)
@@ -247,12 +248,14 @@ Screen::Screen(DeviceConfig config, const ScreenSettings& settings)
       picture_(
           {.columns = settings.columns,
            .rows = settings.rows,
-           .cells = std::vector<uint16_t>(settings.columns * settings.rows),
-           .pixel_width = settings.columns * kScreenGlyphWidth,
-           .pixel_height = settings.rows * kScreenGlyphHeight,
-           .pixels = std::vector<uint8_t>(settings.columns * kScreenGlyphWidth *
-                                          settings.rows * kScreenGlyphHeight),
-           .drawn_height = settings.rows * kScreenGlyphHeight}) {}
+           .cells = std::vector<uint16_t>(settings.columns * settings.rows)}) {
+  if (draw_pixels_) {
+    picture_.pixel_width = settings.columns * kScreenGlyphWidth;
+    picture_.pixel_height = settings.rows * kScreenGlyphHeight;
+    picture_.pixels.resize(picture_.pixel_width * picture_.pixel_height);
+    picture_.drawn_height = picture_.pixel_height;
+  }
+}
 
 Cycles Screen::GetRefreshCycle() const {
   return (frame_count_ + 1) * GetClockHz() / refresh_hz_;
@@ -286,8 +289,11 @@ void Screen::Refresh(const Lock& lock) {
   picture_.cursor_style =
       static_cast<ScreenCursorStyle>(cursor & kScreenCursorStyleMask);
 
-  DrawPixels(memory_.GetCharacters(lock), mem[ScreenMemory::kCompactRowAddress],
-             mem[ScreenMemory::kCompactRowCountAddress]);
+  if (draw_pixels_) {
+    DrawPixels(memory_.GetCharacters(lock),
+               mem[ScreenMemory::kCompactRowAddress],
+               mem[ScreenMemory::kCompactRowCountAddress]);
+  }
 }
 
 bool Screen::IsBlinkOn(int blink_hz) const {

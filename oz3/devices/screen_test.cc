@@ -1077,6 +1077,36 @@ TEST_F(ScreenTest, DrawnHeightCountsTheCompactRowsAboveTheBottom) {
   }
 }
 
+TEST_F(ScreenTest, PixelsAreNotDrawnWithoutDrawPixels) {
+  ASSERT_TRUE(InitScreen({.page = kPage,
+                          .interrupt = {.interrupt = kInterrupt},
+                          .columns = 1,
+                          .rows = 3,
+                          .refresh_hz = 60,
+                          .characters = TestCharacters(),
+                          .draw_pixels = false}));
+  EXPECT_EQ(screen_->GetPicture().pixel_width, 0);
+  EXPECT_EQ(screen_->GetPicture().pixel_height, 0);
+  EXPECT_THAT(screen_->GetPicture().pixels, IsEmpty());
+  EXPECT_EQ(screen_->GetPicture().drawn_height, 0);
+
+  // The rest of the picture is taken as usual.
+  WriteScreen(0, {kScreenBlink | 'A', 'A'});
+  WriteScreen(
+      ScreenMemory::kCursorColumnAddress,
+      {0, 1, CursorWord(ScreenCursorMode::kOn, ScreenCursorStyle::kBlock)});
+  WriteScreen(ScreenMemory::kCompactRowAddress, {0, 1});
+  ExecuteUntilRefresh();
+  const ScreenPicture& picture = screen_->GetPicture();
+  EXPECT_THAT(picture.cells, ElementsAre(kScreenBlink | 'A', 'A', 0));
+  EXPECT_EQ(picture.cursor_row, 1);
+  EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kOn);
+  EXPECT_EQ(picture.pixel_width, 0);
+  EXPECT_EQ(picture.pixel_height, 0);
+  EXPECT_THAT(picture.pixels, IsEmpty());
+  EXPECT_EQ(picture.drawn_height, 0);
+}
+
 class ScreenBlinkTest : public ScreenTest {
  protected:
   // Whether a blinking cell, and a blinking cursor, were drawn at each refresh,
