@@ -119,9 +119,14 @@ void RunOzzy(Ozzy& ozzy, Console& console,
   absl::Time last_time = absl::Now();
   absl::Time next_frame = last_time;
   while (!console.IsQuitRequested()) {
-    for (const uint16_t key : console.TakeKeys()) {
-      if (keyboard != nullptr) {
+    // Keys are taken without a keyboard too, so they don't pile up.
+    const ConsoleKeys keys = console.TakeKeys();
+    if (keyboard != nullptr) {
+      for (const uint16_t key : keys.typed) {
         keyboard->TypeKey(key);
+      }
+      for (const KeyChange& change : keys.changes) {
+        keyboard->SetKeyState(change.key, change.held);
       }
     }
 

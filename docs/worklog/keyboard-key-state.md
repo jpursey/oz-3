@@ -239,19 +239,39 @@ virtual ConsoleKeys TakeKeys() = 0;  // Replaces std::vector<uint16_t>.
   needs no Windows calls and is tested as `GetKeyEvent` is.
 - `GetOzzyKey` becomes `GetKeyEvent`, unchanged otherwise.
 - `TakeKeys` gives a change for each key down and key up record with a code,
-  which `GetKeyEvent` and the quit keys don't affect. It keeps which keys it
-  reported held, and on losing focus, releases them.
+  which `GetKeyEvent` and the quit keys don't affect, and on losing focus,
+  releases every key held. `ConsoleKeyState` in `win_console.h` keeps which
+  keys it reported held, so it is tested without a console.
+- Ctrl and Alt are held as each key event record's control key state says,
+  rather than by their scan codes, as Windows Terminal gives Right Alt's key up
+  without `ENHANCED_KEY` (Left Alt's, by its scan code), which would leave it
+  held. The control key state is right in both consoles, and is in every
+  record, so a Ctrl or Alt released without focus is caught up on the next
+  key. It has one Shift for both, so Shift is by its scan code, which both
+  consoles give right.
 - `ozzy_main` types each typed key and sets each change.
 
-### To confirm
+### Confirmed
 
-- That the console delivers `FOCUS_EVENT` records when it loses focus, and that
-  keys held then have no key up, in Windows Terminal and the old console host
-  (CL3, by hand).
-- That AltGr arrives as Left Ctrl and Right Alt, so it holds both in key state,
-  as it does in Windows itself (CL3, by hand). That would be left as it is.
-- Which `wVirtualScanCode` the console gives an injected or remapped key, which
-  may be 0, and so no key state (CL3, by hand).
+By hand in CL3, with a throwaway viewer that printed each input record, in
+Windows Terminal and the old console host:
+- Both deliver `FOCUS_EVENT` records, and a key held while the console loses
+  focus has no key up. In Windows Terminal, a key released after focus is back
+  may still have its key up, which is ignored, as it is already released.
+- Scan codes match the table for the letters, Space, Enter, the arrows, Insert,
+  both Shifts, both Ctrls, and both Alts. The Windows key is extended 5Bh, so
+  it has no code. Auto-repeat is more key downs, and no key ups.
+- Windows Terminal gives Right Alt's key up without `ENHANCED_KEY`, and the old
+  console with it (see the control key state above).
+- The On-Screen Keyboard's keys have their real scan codes in both, so injected
+  keys are in key state. Its Ctrl and Alt latch, held until the next click.
+- The Claude Code terminal panel gives each held key as a key down and key up
+  pair at every repeat, so a held key is a stream of taps in key state there,
+  and Ctrl+Alt+Q doesn't reach the program. `ozzy` is for a Windows console.
+
+Not confirmed: AltGr (no layout with it was at hand), the keypad's Enter (no
+keypad), and remapped keys. AltGr is held as whatever the control key state
+says, which on Windows is expected to be Left Ctrl and Right Alt.
 
 ## CLs
 
@@ -297,21 +317,23 @@ Depends on: CL1.
   and without a keyboard.
 - Wiki: `4-Ozzy-Computer.md`'s devices table, machine table, and example.
 
-### CL3 [ ] ozzy, apps: key state from the console
+### CL3 [x] ozzy, apps: key state from the console
 
 Depends on: CL2.
 
 - `console.h`: `KeyChange`, `ConsoleKeys`, and `TakeKeys`.
 - `win_console.h` and `.cc`: `GetKeyCode`, `GetOzzyKey` renamed to
-  `GetKeyEvent`, and `TakeKeys`'s changes and focus.
+  `GetKeyEvent`, `ConsoleKeyState`, and `TakeKeys`'s changes and focus.
 - `ozzy_main.cc`: sets the changes.
 - Tests in `win_console_test.cc`.
 
 **Verify**
 - Standard checks.
 - Unit tests: `GetKeyCode` for each row of the table, the extended keys
-  against their keypad and left twins, and keys without a code.
-- By hand: run `ozzy`, and confirm the To confirm items. Nothing in the Ozzy
-  reads key state yet, so a small test program, or the debugger later, is
-  needed to see it.
+  against their keypad and left twins, and keys without a code;
+  `ConsoleKeyState`'s repeats, key ups of keys not held, Shift by scan code,
+  Ctrl and Alt by the control key state (Windows Terminal's Right Alt too), and
+  releasing every key.
+- By hand: the input records of both consoles, with a throwaway viewer (see
+  Confirmed). Nothing in the Ozzy reads key state yet.
 - Wiki: `4-Ozzy-Computer.md`'s console frontend.

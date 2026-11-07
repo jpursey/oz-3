@@ -16,6 +16,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 #include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
 #include "oz3/devices/keyboard.h"
@@ -64,6 +65,75 @@ uint16_t GetKey(uint16_t virtual_key, char32_t character, bool ctrl) {
   // character, but not with Alt held too, so it comes from the virtual key.
   if (ctrl && virtual_key >= 'A' && virtual_key <= 'Z') {
     return static_cast<uint16_t>(virtual_key - 'A' + 1);
+  }
+  return 0;
+}
+
+// The main keys' rows, by scan code: the keys from the first scan code on, as
+// the characters a US keyboard types without Shift, which are their key codes.
+struct ScanCodeRow {
+  uint16_t first_scan_code;
+  std::string_view keys;
+};
+constexpr ScanCodeRow kScanCodeRows[] = {
+    {0x02, "1234567890-="},
+    {0x10, "qwertyuiop[]"},
+    {0x1E, "asdfghjkl;'`"},
+    {0x2B, "\\zxcvbnm,./"},
+};
+
+// F1 to F10's scan codes, which are consecutive.
+constexpr uint16_t kScanCodeF1 = 0x3B;
+constexpr uint16_t kScanCodeF10 = 0x44;
+
+// The other keys with key codes, by scan code, without ENHANCED_KEY and with
+// it.
+struct ScanCode {
+  uint16_t scan_code;
+  uint16_t key;
+};
+constexpr ScanCode kScanCodes[] = {
+    {0x01, kKeyEscape},     {0x0E, kKeyBackspace}, {0x0F, kKeyTab},
+    {0x1C, kKeyEnter},      {0x1D, kKeyLeftCtrl},  {0x2A, kKeyLeftShift},
+    {0x36, kKeyRightShift}, {0x38, kKeyLeftAlt},   {0x39, ' '},
+    {0x57, kKeyF11},        {0x58, kKeyF12},
+};
+constexpr ScanCode kExtendedScanCodes[] = {
+    {0x1D, kKeyRightCtrl}, {0x38, kKeyRightAlt}, {0x47, kKeyHome},
+    {0x48, kKeyUp},        {0x49, kKeyPageUp},   {0x4B, kKeyLeft},
+    {0x4D, kKeyRight},     {0x4F, kKeyEnd},      {0x50, kKeyDown},
+    {0x51, kKeyPageDown},  {0x52, kKeyInsert},   {0x53, kKeyDelete},
+};
+
+// The keys held as the control key state says, rather than by their scan codes.
+struct ControlKey {
+  DWORD flag;
+  int key;
+};
+constexpr ControlKey kControlKeys[] = {
+    {LEFT_CTRL_PRESSED, kKeyLeftCtrl},
+    {RIGHT_CTRL_PRESSED, kKeyRightCtrl},
+    {LEFT_ALT_PRESSED, kKeyLeftAlt},
+    {RIGHT_ALT_PRESSED, kKeyRightAlt},
+};
+
+// Returns whether the key with code `key` is held as the control key state
+// says.
+bool IsControlKey(int key) {
+  for (const ControlKey& control_key : kControlKeys) {
+    if (control_key.key == key) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Returns the key in `scan_codes` with `scan_code`, or 0 if there is none.
+int FindScanCode(absl::Span<const ScanCode> scan_codes, uint16_t scan_code) {
+  for (const ScanCode& entry : scan_codes) {
+    if (entry.scan_code == scan_code) {
+      return entry.key;
+    }
   }
   return 0;
 }
@@ -123,7 +193,7 @@ class WinConsole final : public Console {
   //----------------------------------------------------------------------------
 
   void Write(std::string_view text) override;
-  std::vector<uint16_t> TakeKeys() override;
+  ConsoleKeys TakeKeys() override;
   bool IsQuitRequested() const override { return g_quit_requested; }
 
  private:
@@ -136,6 +206,7 @@ class WinConsole final : public Console {
   const HANDLE output_;
   const DWORD output_mode_;
   bool alternate_buffer_ = false;  // Whether it is in the alternate buffer.
+  ConsoleKeyState key_state_;      // The keys reported held.
 };
 
 WinConsole::WinConsole(HANDLE input, DWORD input_mode, HANDLE output,
@@ -210,25 +281,39 @@ void WinConsole::Write(std::string_view text) {
   }
 }
 
-std::vector<uint16_t> WinConsole::TakeKeys() {
-  std::vector<uint16_t> keys;
+ConsoleKeys WinConsole::TakeKeys() {
+  ConsoleKeys keys;
   constexpr DWORD kMaxRecords = 64;
   INPUT_RECORD records[kMaxRecords];
   DWORD count = 0;
   while (GetNumberOfConsoleInputEvents(input_, &count) && count > 0 &&
          ReadConsoleInputW(input_, records, kMaxRecords, &count)) {
     for (const INPUT_RECORD& record : std::span(records, count)) {
+      if (record.EventType == FOCUS_EVENT) {
+        if (!record.Event.FocusEvent.bSetFocus) {
+          key_state_.ReleaseKeys(keys.changes);
+        }
+        continue;
+      }
+      if (record.EventType != KEY_EVENT) {
+        continue;
+      }
+
+      // Every key with a code is a change, the keys that quit too.
       const KEY_EVENT_RECORD& event = record.Event.KeyEvent;
-      if (record.EventType != KEY_EVENT || !event.bKeyDown) {
+      const bool key_down = event.bKeyDown != FALSE;
+      key_state_.AddKeyEvent(event.wVirtualScanCode, key_down,
+                             event.dwControlKeyState, keys.changes);
+      if (!key_down) {
         continue;
       }
       const uint16_t key =
-          GetOzzyKey(event.wVirtualKeyCode, event.uChar.UnicodeChar,
-                     event.dwControlKeyState);
+          GetKeyEvent(event.wVirtualKeyCode, event.uChar.UnicodeChar,
+                      event.dwControlKeyState);
       if (IsQuitKey(key)) {
         g_quit_requested = true;
       } else if (key != 0) {
-        keys.insert(keys.end(), event.wRepeatCount, key);
+        keys.typed.insert(keys.typed.end(), event.wRepeatCount, key);
       }
     }
   }
@@ -241,8 +326,8 @@ std::vector<uint16_t> WinConsole::TakeKeys() {
 // Keys
 //==============================================================================
 
-uint16_t GetOzzyKey(uint16_t virtual_key, char32_t character,
-                    uint32_t control_keys) {
+uint16_t GetKeyEvent(uint16_t virtual_key, char32_t character,
+                     uint32_t control_keys) {
   const bool ctrl =
       (control_keys & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
   uint16_t key = GetKey(virtual_key, character, ctrl);
@@ -264,6 +349,54 @@ uint16_t GetOzzyKey(uint16_t virtual_key, char32_t character,
 bool IsQuitKey(uint16_t key) {
   constexpr uint16_t kCtrlQ = 'Q' - 'A' + 1;
   return (key & ~kKeyShift) == (kCtrlQ | kKeyCtrl | kKeyAlt);
+}
+
+int GetKeyCode(uint16_t scan_code, bool extended) {
+  if (extended) {
+    return FindScanCode(kExtendedScanCodes, scan_code);
+  }
+  for (const ScanCodeRow& row : kScanCodeRows) {
+    const int index = scan_code - row.first_scan_code;
+    if (index >= 0 && index < static_cast<int>(row.keys.size())) {
+      return row.keys[index];
+    }
+  }
+  if (scan_code >= kScanCodeF1 && scan_code <= kScanCodeF10) {
+    return kKeyF1 + (scan_code - kScanCodeF1);
+  }
+  return FindScanCode(kScanCodes, scan_code);
+}
+
+//==============================================================================
+// ConsoleKeyState
+//==============================================================================
+
+void ConsoleKeyState::AddKeyEvent(uint16_t scan_code, bool key_down,
+                                  uint32_t control_keys,
+                                  std::vector<KeyChange>& changes) {
+  // Ctrl and Alt first, as they are held with the key.
+  for (const ControlKey& control_key : kControlKeys) {
+    ChangeKey(control_key.key, (control_keys & control_key.flag) != 0, changes);
+  }
+  const int key = GetKeyCode(scan_code, (control_keys & ENHANCED_KEY) != 0);
+  if (!IsControlKey(key)) {
+    ChangeKey(key, key_down, changes);
+  }
+}
+
+void ConsoleKeyState::ReleaseKeys(std::vector<KeyChange>& changes) {
+  for (int key = 0; key < Keyboard::kKeyStateKeys; ++key) {
+    ChangeKey(key, false, changes);
+  }
+}
+
+void ConsoleKeyState::ChangeKey(int key, bool held,
+                                std::vector<KeyChange>& changes) {
+  if (key == 0 || held_[key] == held) {
+    return;
+  }
+  held_[key] = held;
+  changes.push_back({.key = key, .held = held});
 }
 
 //==============================================================================

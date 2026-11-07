@@ -37,7 +37,7 @@ class FakeConsole final : public Console {
   std::string TakeText() { return std::exchange(text_, {}); }
 
   void Write(std::string_view text) override { absl::StrAppend(&text_, text); }
-  std::vector<uint16_t> TakeKeys() override { return {}; }
+  ConsoleKeys TakeKeys() override { return {}; }
   bool IsQuitRequested() const override { return false; }
 
  private:

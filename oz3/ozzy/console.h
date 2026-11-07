@@ -28,6 +28,20 @@ enum class ConsoleMode {
   kLines,
 };
 
+// A key pressed or released, by its key code (see keyboard.h).
+struct KeyChange {
+  bool operator==(const KeyChange&) const = default;
+
+  int key = 0;
+  bool held = false;
+};
+
+// The keys a Console took since they were last taken, each oldest first.
+struct ConsoleKeys {
+  std::vector<uint16_t> typed;     // Typed key events (see keyboard.h).
+  std::vector<KeyChange> changes;  // Keys pressed and released.
+};
+
 // The host's text console, which the ozzy app runs an Ozzy in: it draws the
 // screen's picture as text, and its key presses are the keyboard's.
 //
@@ -56,13 +70,16 @@ class Console {
   // Writes `text`, which is UTF-8 and may hold virtual terminal sequences.
   virtual void Write(std::string_view text) = 0;
 
-  // Returns the key events pressed since the last call, oldest first, in
-  // Ozzy's key codes (see keyboard.h). It doesn't wait for keys.
-  virtual std::vector<uint16_t> TakeKeys() = 0;
+  // Returns the keys since the last call: the typed key events, and each key
+  // pressed and released, by where it is. A key held when the console loses
+  // focus is released then, as its release goes elsewhere. It doesn't wait for
+  // keys.
+  virtual ConsoleKeys TakeKeys() = 0;
 
   // Returns whether the user asked to quit, with Ctrl+Break, Ctrl+Alt+Q, or by
-  // closing the console's window. The keys that quit aren't key presses. Once
-  // the window is closing, the program should finish and exit promptly.
+  // closing the console's window. The keys that quit aren't typed key events,
+  // but are pressed and released as other keys are. Once the window is
+  // closing, the program should finish and exit promptly.
   virtual bool IsQuitRequested() const = 0;
 
  protected:
