@@ -343,8 +343,9 @@ TEST_F(CoreTest, RST_SELF) {
   EXPECT_EQ(state.r0, 11);
   EXPECT_EQ(state.r1, 12);
 
-  // Resetting CODE clears the status flags the instruction ends with.
-  EXPECT_EQ(state.st, 0);
+  // Resetting CODE clears the status flags the instruction ends with. The core
+  // is running, so it is notified, as WAKE does.
+  EXPECT_EQ(state.st, CpuCore::N);
 }
 
 // SELF takes a cycle more than a core index, to load -1, so resetting every
@@ -493,7 +494,8 @@ TEST_F(CoreTest, INTC_NoCore) {
   EXPECT_EQ(GetState().core.GetInterrupts(), 0);
 }
 
-// The WAIT ends without completing, so its register isn't updated.
+// The WAIT ends without completing, so its register isn't updated, and O is
+// set.
 TEST_F(CoreTest, WAKE_Waiting) {
   ASSERT_TRUE(InitWaitingCore1());
   auto& state0 = GetState(0);
@@ -509,11 +511,12 @@ TEST_F(CoreTest, WAKE_Waiting) {
   ExecuteUntilHalt(1);
   EXPECT_EQ(state1.r6, 1);
   EXPECT_EQ(state1.r0, 1000);
+  EXPECT_NE(state1.st & CpuCore::O, 0);
   EXPECT_LT(state1.core.GetCycles(), 1000);
 }
 
 // A WAKE SELF in an interrupt handler ends the WAIT it interrupted, so the
-// handler returns to the instruction after the WAIT.
+// handler returns to the instruction after the WAIT, with O set.
 TEST_F(CoreTest, WAKE_SELF_InInterrupt) {
   ASSERT_TRUE(InitWaitingCore1());
   auto& state0 = GetState(0);
@@ -531,11 +534,12 @@ TEST_F(CoreTest, WAKE_SELF_InInterrupt) {
   EXPECT_EQ(state1.r6, 1);
   EXPECT_EQ(state1.r0, 1000);
   EXPECT_EQ(state1.sp, 500);
+  EXPECT_NE(state1.st & CpuCore::O, 0);
   EXPECT_LT(state1.core.GetCycles(), 1000);
 }
 
 // WAKE starts an idle core from its IP. A second WAKE, while the core is
-// running, changes nothing.
+// running, only sets its N.
 TEST_F(CoreTest, WAKE_Idle) {
   ASSERT_TRUE(InitTwoCores());
   auto& state0 = GetState(0);
@@ -569,6 +573,7 @@ TEST_F(CoreTest, WAKE_Idle) {
   EXPECT_EQ(state1.r6, 8);
   EXPECT_EQ(state1.r7, 9);
   EXPECT_EQ(state1.ip, 203);
+  EXPECT_EQ(state1.st, CpuCore::N);
 }
 
 // A core idle from HALT runs the HALT again, as HALT moves IP back to itself,
@@ -602,10 +607,13 @@ TEST_F(CoreTest, WAKE_Halted) {
   ExecuteUntilHalt(1);
   EXPECT_EQ(state1.r5, 0);
   EXPECT_EQ(state1.ip, 200);
+
+  // Starting an idle core doesn't set its N.
+  EXPECT_EQ(state1.st, 0);
 }
 
-// On a running core that isn't in an interrupt, WAKE SELF changes nothing, so
-// it falls through. There is no core 1.
+// On a running core that isn't in an interrupt, WAKE SELF only sets N, so it
+// falls through. There is no core 1.
 TEST_F(CoreTest, WAKE_Cycles) {
   ASSERT_TRUE(InitAndReset());
   GetState().SetRegisters({{CpuCore::R2, 1}});
@@ -614,6 +622,92 @@ TEST_F(CoreTest, WAKE_Cycles) {
       {"WAKE R2 (1)", 4, {Encode("WAKE", "R2")}},
       {"WAKE SELF", 5, {Encode("WAKE", "SELF")}},
   });
+  EXPECT_EQ(GetState().st, CpuCore::N | CpuCore::I);
+}
+
+// On a running core, WAKE SELF has no WAIT to end, so it sets N, and the next
+// WAIT clears it and ends at once, setting O, as it doesn't update its
+// register.
+TEST_F(CoreTest, WAKE_SELF_BeforeWait) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, ZC}, {CpuCore::R0, 1000}});
+
+  state.code.AddValue(Encode("WAKE", "SELF"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("WAIT", CpuCore::R0));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // WAKE SELF
+  EXPECT_EQ(state.st, CpuCore::N | ZC);
+  EXPECT_EQ(CyclesUntilIp(ip2), 3);  // WAIT R0 (1000), notified
+  EXPECT_EQ(state.st, ZC | CpuCore::O);
+  EXPECT_EQ(state.r0, 1000);
+}
+
+// A WAKE of another core that is running sets its N, so the core's next WAIT
+// ends at once.
+TEST_F(CoreTest, WAKE_RunningBeforeWait) {
+  ASSERT_TRUE(InitTwoCores());
+  auto& state0 = GetState(0);
+  auto& state1 = GetState(1);
+  state0.SetRegisters({{CpuCore::R2, 1}});
+
+  // Core 1 runs from 0 in bank 1, and is still running NOPs when core 0 wakes
+  // it.
+  auto mem1 = GetMemory(1);
+  for (int i = 0; i < 20; ++i) {
+    mem1.AddValue(Encode("NOP"));
+  }
+  const uint16_t wait_ip1 = mem1.GetAddress();
+  mem1.AddValue(Encode("WAIT", CpuCore::R0)).AddValue(Encode("HALT"));
+  state1.ResetCore({.mask = CpuCore::ResetParams::ALL,
+                    .mb = CpuCore::Banks().SetCode(1).ToWord()});
+  state1.SetRegisters({{CpuCore::R0, 1000}});
+
+  state0.code.AddValue(Encode("WAKE", "R2"));
+  const uint16_t ip1 = state0.code.AddNopGetAddress();
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // WAKE R2 (1)
+  EXPECT_EQ(state1.st, CpuCore::N);
+  EXPECT_LT(state1.ip, wait_ip1);
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(state1.st, CpuCore::O);
+  EXPECT_EQ(state1.r0, 1000);
+  EXPECT_LT(state1.core.GetCycles(), 1000);
+}
+
+// CLRN clears N, setting O to show a WAKE came, so the WAKE no longer ends the
+// next WAIT.
+TEST_F(CoreTest, CLRN_ClearsNotify) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, ZC}, {CpuCore::R0, 100}});
+
+  state.code.AddValue(Encode("WAKE", "SELF"));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CLRN"));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("WAIT", CpuCore::R0));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // WAKE SELF
+  EXPECT_EQ(state.st, CpuCore::N | ZC);
+  EXPECT_EQ(CyclesUntilIp(ip2), 3);  // CLRN
+  EXPECT_EQ(state.st, ZC | CpuCore::O);
+  EXPECT_EQ(CyclesUntilIp(ip3), 100);  // WAIT R0 (100)
+  EXPECT_EQ(state.st, ZC);
+  EXPECT_EQ(state.r0, 0);
+}
+
+// Without N set, CLRN only clears O.
+TEST_F(CoreTest, CLRN_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  GetState().SetRegisters({{CpuCore::ST, ZC | CpuCore::O}});
+  RunCycleCases({
+      {"CLRN", 3, {Encode("CLRN")}},
+  });
+  EXPECT_EQ(GetState().st, ZC);
 }
 
 }  // namespace

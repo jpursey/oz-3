@@ -26,56 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Notify flag
-
-- **Layers:** core, instruction_sets, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** the `WAIT` and `CRUN` microcode in `2.1-Microcode.md`; `WAIT`
-  and `WAKE` in `2.2-Default-Instruction-Set.md`; the call protocol in
-  [ozzy_design.md](ozzy_design.md) (OS calls)
-
-A core that asks for something and then `WAIT`s for the answer, such as a
-program calling the OS (`INTC`, then `WAIT`, answered with `WAKE`), or waiting
-for a device whose interrupt handler does `WAKE SELF`, misses an answer that
-comes before its `WAIT` starts: a `WAKE` on a running core does nothing, so
-the core waits out its whole timeout. The window is a few cycles, but fetching
-the `WAIT` waits for the `CODE` bank, so anything holding it (another core, the
-screen's refresh, a DMA page copy) stretches the window to as long as it holds
-it.
-
-A new control flag, `N` (notify), at bit 10 beside `W`, latches the wake, so a
-`WAKE` ends the core's current `WAIT`, or its next one. Only the behavior of
-the existing `CRUN` and `WAIT` microcode changes, not their syntax:
-- **`CRUN`:** on an idle core, it starts it, and with `W` set (a waiting core,
-  or a `WAIT` an interrupt will return to), it ends the `WAIT`, as now.
-  Otherwise, where it does nothing today, it sets `N`. On the running core it
-  sets it in the instruction's staged flags, which are copied back when it
-  ends.
-- **`WAIT`:** with `N` set, it clears it and ends at once, as a `WAIT` ended
-  by `WAKE` does: its register is unchanged and `O` is cleared. A `WAIT` in a
-  handler that interrupted a `WAIT` fails as now, leaving `N` set.
-
-A delay is no worse off: a `WAKE` during one already ends it early, and a
-program that never receives a `WAKE` never has `N` set. A program that sleeps
-until something happens checks that it did, and `WAIT`s again if not, so an
-early end costs a loop. `RST` runs `CRUN`, so resetting a running core sets
-`N`, and the new program's first `WAIT` ends at once. The host's
-`CpuCore::Reset` clears it.
-
-A program can't count on `N` being clear when it starts, nor on any register,
-so clearing it with `WAIT` takes 6 cycles (a register cleared, then the
-`WAIT`). A new instruction at the end of the `.izm`, such as `CLRN` (`UL;
-WAIT(C2);`, as `C2` is always zero), does it in 3, using only existing
-microcode, and is pinned by raising `kPinnedInstructionCount`. Its flags are
-`WAIT`'s.
-
-The flags table in `2-Specifications.md`, and `WAIT` and `CRUN` in the
-microcode reference, change with it, as do `WAIT`, `WAKE`, `RST`, and the new
-instruction on the default instruction set page. Core and instruction tests
-that expect a `WAKE` on a running core to do nothing change too.
-
 ## Ozzy settings through ConfigReader
 
 - **Layers:** ozzy, apps, wiki
@@ -172,7 +122,7 @@ packed host bytes.
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Timer device*, *Disk drive device*, *Notify flag*
+- **Depends on:** *Timer device*, *Disk drive device*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program

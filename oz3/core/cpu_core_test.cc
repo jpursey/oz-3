@@ -5379,7 +5379,7 @@ TEST_F(CpuCoreTest, CrunEndsWaitOnOtherCore) {
 
   ASSERT_TRUE(ExecuteUntilIp(nop_ip0));
   EXPECT_NE(state1.core.GetState(), CpuCore::State::kWaiting);
-  EXPECT_EQ(state1.st, CpuCore::Z | CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state1.st, CpuCore::ZSCO);  // The WAIT was ended, so O is set.
 
   ExecuteUntilHalt();
   EXPECT_EQ(state0.ip, end_ip0);
@@ -5457,11 +5457,14 @@ TEST_F(CpuCoreTest, CrunEndsWaitOnSelf) {
   state.core.RaiseInterrupt(0);
   ASSERT_TRUE(ExecuteUntilIp(ip1));
   EXPECT_EQ(state.st, 0);
+
+  // The WAIT's flags are on the stack, so O is set when the interrupt returns
+  // to it.
   ASSERT_TRUE(ExecuteUntilIp(ip0));
-  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S | CpuCore::O);
   ExecuteUntilHalt();
   EXPECT_EQ(state.ip, end_ip);
-  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S);
+  EXPECT_EQ(state.st, CpuCore::I | CpuCore::S | CpuCore::O);
   EXPECT_LT(state.core.GetCycles(), 1000);
 }
 
@@ -5490,6 +5493,43 @@ TEST_F(CpuCoreTest, CrunStartsIdleCore) {
   ExecuteUntilHalt(1);
   EXPECT_EQ(state1.ip, end_ip1);
   EXPECT_EQ(state1.r0, 42);
+  EXPECT_EQ(state1.st, 0);  // Starting an idle core doesn't set N.
+}
+
+TEST_F(CpuCoreTest, CrunNotifiesRunningCore) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  // Initialize processor
+  state.SetRegisters({{CpuCore::R0, 1000}, {CpuCore::ST, CpuCore::S}});
+
+  // Main program
+  state.code.AddValue(Encode(kTestOp_CRUNS));
+  const uint16_t ip0 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode(kTestOp_WAIT, CpuCore::R0));
+  state.code.AddValue(Encode(kTestOp_HALT));
+  const uint16_t end_ip = state.code.GetAddress();
+
+  // Execute code
+  ASSERT_TRUE(ExecuteUntilIp(ip0));
+  EXPECT_EQ(state.st, CpuCore::N | CpuCore::S);
+
+  // The WAIT clears N, sets O, and ends at once, without updating R0.
+  ExecuteUntilHalt();
+  EXPECT_EQ(state.ip, end_ip);
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::O);
+  EXPECT_EQ(state.r0, 1000);
+  EXPECT_LT(state.core.GetCycles(), 1000);
+}
+
+TEST_F(CpuCoreTest, ResetClearsNotify) {
+  ASSERT_TRUE(Init());
+  CoreState& state = GetState();
+  state.ResetCore();
+  state.SetRegisters({{CpuCore::ST, CpuCore::N | CpuCore::S}});
+  state.ResetCore({.mask = CpuCore::ResetParams::MS});
+  EXPECT_EQ(state.st, CpuCore::S);
 }
 
 TEST_F(CpuCoreTest, ResetDuringWait) {

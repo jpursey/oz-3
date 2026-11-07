@@ -177,8 +177,10 @@ class CpuCore final : public ExecutionComponent {
   // Control flags
   static constexpr uint16_t TShift = 8;       // Trap flag shift
   static constexpr uint16_t WShift = 9;       // Wait flag shift
+  static constexpr uint16_t NShift = 10;      // Notify flag shift
   static constexpr uint16_t T = 1 << TShift;  // Trap flag
   static constexpr uint16_t W = 1 << WShift;  // Wait flag
+  static constexpr uint16_t N = 1 << NShift;  // Notify flag
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   // Status flag conditions for microcode condition arguments. This is used with
@@ -333,9 +335,9 @@ class CpuCore final : public ExecutionComponent {
 
   // Reset() parameters for the CPU core.
   //
-  // A reset always clears the general purpose registers (R0 to R7) and the
-  // wait flag (W), and starts the core running. Beyond that, only what `mask`
-  // selects is reset, and the rest is left unchanged:
+  // A reset always clears the general purpose registers (R0 to R7), the wait
+  // flag (W), and the notify flag (N), and starts the core running. Beyond
+  // that, only what `mask` selects is reset, and the rest is left unchanged:
   // - MC, MS, MD, ME: The CODE, STACK, DATA, and EXTRA bank assignments in MB
   //   are set from `mb`.
   // - RBC: BC is set to `bc`, and IP to zero. This starts a new program, as the

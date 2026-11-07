@@ -504,6 +504,7 @@ TEST_F(AssembleFormTest, EveryForm) {
   AddForms("INTC.I", cores, {Word(24)});
   AddForms("INTC.R", cores, {Reg(CpuCore::R1)});
   AddForms("WAKE", cores);
+  AddForm("CLRN", {});
 
   ExpectStatementsAssemble();
 }

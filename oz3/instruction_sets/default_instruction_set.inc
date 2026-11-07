@@ -3430,8 +3430,8 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg_macro_name = "LockCore",
      .code = "UL;$LockCore;@code:MSKI(C1,1);JC(Z,@stack);MVN(C0:0,R3:0);"
              "CBK(CODE,C0);CST(BC,R4);MOVI(C0,0);CST(IP,C0);CST(R0,R0);"
-             "CST(R1,R1);MOVI(C2,32);@clear_handlers:IST(C2,C0);"
-             "JD(C2,@clear_handlers);CST(ST,C0);CRUN;@stack:MSKI(C1,2);"
+             "CST(R1,R1);CRUN;MOVI(C2,32);@clear_handlers:IST(C2,C0);"
+             "JD(C2,@clear_handlers);CST(ST,C0);@stack:MSKI(C1,2);"
              "JC(Z,@data);MVN(C0:0,R3:1);CBK(STACK,C0);CST(BS,R5);"
              "MOVI(C0,0);CST(SP,C0);CST(FP,C0);@data:MSKI(C1,4);"
              "JC(Z,@extra);MVN(C0:0,R3:2);CBK(DATA,C0);CST(BD,R6);"
@@ -3461,6 +3461,9 @@ constexpr oz3::InstructionDef kInstructions[] = {
      .arg1 = {oz3::ArgType::kMacro, 4},
      .arg_macro_name = "LockCore",
      .code = "UL;$LockCore;CRUN;CUL;"},
+    {.op = 142,
+     .op_name = "CLRN",
+     .code = "UL;WAIT(C2);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

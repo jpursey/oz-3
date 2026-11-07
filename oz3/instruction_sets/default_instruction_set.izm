@@ -249,7 +249,14 @@ instruction HALT {
 ## additional cycles taken. This may be longer than the requested time due to
 ## an interrupt occurring or the core getting locked.
 ##
-## On failure, the O flag is set. Otherwise it is cleared.
+## If the notify flag (N) is set, from a WAKE that came while the core was
+## running, the WAIT clears it and ends at once, as a WAIT ended by WAKE does.
+## CLRN clears N without waiting.
+##
+## The O flag is set if the WAIT doesn't complete, so the register is not
+## updated: it failed (leaving N as it was), it ended at once from N, or it was
+## ended early by WAKE (when the WAIT ends, or when the interrupt it was in
+## returns to it). Otherwise O is cleared.
 ################################################################################
 
 instruction WAIT "$r" {
@@ -4261,7 +4268,8 @@ instruction RETC.A "$Condition, $#5" {
 ##    IRT.A <0..31>    (7 cycles)
 ##
 ## Pops 0-31 words from the stack, then pops ST and IP from the stack. If the
-## interrupt occurred during a WAIT, the WAIT resumes.
+## interrupt occurred during a WAIT, the WAIT resumes, unless WAKE ended it, in
+## which case the O flag is set.
 ################################################################################
 
 instruction IRT {
@@ -4288,7 +4296,8 @@ instruction IRT.A "$#5" {
 ##
 ## If the specified condition is true, optionally pops 0-31 words from the
 ## stack, then pops ST and IP from the stack. If the interrupt occurred during
-## a WAIT, the WAIT resumes. Each variant takes 3 cycles when it doesn't return.
+## a WAIT, the WAIT resumes, unless WAKE ended it, in which case the O flag is
+## set. Each variant takes 3 cycles when it doesn't return.
 ################################################################################
 
 instruction IRTC "$Condition" {
@@ -5340,6 +5349,11 @@ instruction(exclude_a:R7) OUTR.ID "$v, [$r]" {
 ##     For SELF, these are the flags the instruction ends with.
 ##     The core's trap flag (T) and pending interrupts are kept.
 ##     The core starts running from its new IP, if it was halted or waiting.
+##     Otherwise, as for WAKE, its notify flag (N) is set, so the new program's
+##     first WAIT ends at once.
+##     A WAIT the core was in is ended without completing. The status flags are
+##     cleared, so nothing shows that it didn't complete, even if the new
+##     program starts right after it. To continue from a WAIT, use WAKE.
 ##   Bit 1: STACK
 ##     The core's BS register is set to this core's R5 register.
 ##     The core's FP and SP registers are set to zero.
@@ -5372,15 +5386,15 @@ instruction RST "$m, $Banks" {
   CST(IP,C0);
   CST(R0,R0);
   CST(R1,R1);
+  CRUN;
 
   # Clear the interrupt handlers, from 32 (handler 0) down to 1, and the status
-  # flags. C0 is still zero.
+  # flags, after CRUN, as it sets O on a waiting core. C0 is still zero.
   MOVI(C2,32);
 @clear_handlers:
   IST(C2,C0);
   JD(C2,@clear_handlers);
   CST(ST,C0);
-  CRUN;
 
 @stack:
   # Test if stack is set
@@ -5486,7 +5500,8 @@ instruction INTC.R "$m, $r" {
 ## Ends a core's WAIT, or starts it running from its current IP if it is idle.
 ## If the core is handling an interrupt that interrupted a WAIT, that WAIT is
 ## ended, so the interrupt returns to the instruction after it. A WAIT ended
-## this way does not complete, so its register is not updated.
+## this way does not complete, so its register is not updated, and the core's O
+## flag is set (once the interrupt returns, for a WAIT it interrupted).
 ##
 ## The core is specified as for RST: an immediate value 0-7, the special keyword
 ## SELF (the running core), or register R2 (0..7, or -1 to indicate self). If
@@ -5495,6 +5510,10 @@ instruction INTC.R "$m, $r" {
 ## A core idle from HALT runs the HALT again, and stays idle, as HALT moves IP
 ## back to itself. On the running core, WAKE only ends the WAIT an interrupt
 ## handler interrupted.
+##
+## A running core that has no WAIT to end has its notify flag (N) set instead,
+## so its next WAIT ends at once. A core that asks for something and then WAITs
+## for the answer gets it even if the WAKE comes before the WAIT starts.
 ################################################################################
 
 instruction WAKE "$m" {
@@ -5502,4 +5521,25 @@ instruction WAKE "$m" {
   $LockCore;
   CRUN;
   CUL;
+}
+
+################################################################################
+## CLRN
+##
+## Cycles: 3
+## ZSCO: ---X
+##
+## Clears the notify flag (N), which a WAKE sets on a running core, so the next
+## WAIT waits even if a WAKE came before. A program can't count on N being
+## clear when it starts, as RST sets it on a running core.
+##
+## This is a WAIT of 0 cycles, so its flags are WAIT's: the O flag is set if N
+## was set, so a program can tell that a WAKE came. Within an interrupt that
+## interrupted a WAIT, it fails as WAIT does, setting O and leaving N as it was.
+## Otherwise O is cleared.
+################################################################################
+
+instruction CLRN {
+  UL;
+  WAIT(C2);  # C2 is always zero at the start of an instruction.
 }

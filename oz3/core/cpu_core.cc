@@ -250,7 +250,7 @@ void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
   if (params.mask & ResetParams::RBE) {
     r_[BE] = params.be;
   }
-  r_[ST] &= ~W;
+  r_[ST] &= ~(W | N);
   state_ = State::kStartInstruction;
 }
 
@@ -434,9 +434,14 @@ void CpuCore::ReturnFromInterrupt() {
   r_[SP] += 2;
   AllowLock();
   exec_cycles_ += kCpuCoreReturnFromInterruptCycles;
-  if ((r_[ST] & W) != 0 && r_[IP] == wait_pc_) {
+  if (r_[IP] != wait_pc_ || (msr_ & W) == 0) {
+    state_ = State::kStartInstruction;
+  } else if ((r_[ST] & W) != 0) {
     state_ = State::kWaiting;
   } else {
+    // The interrupt came during a WAIT, which CRUN ended while the interrupt
+    // was handled, so the WAIT didn't complete.
+    r_[ST] |= O;
     state_ = State::kStartInstruction;
   }
 }
@@ -572,9 +577,18 @@ void CpuCore::RunInstructionLoop() {
         exec_cycles_ += kCpuCoreCycles_MSR;
       } break;
       case kMicro_WAIT: {
-        // There can only be one WAIT instruction in progress at a time.
+        // O is set whenever the WAIT doesn't complete, so its register isn't
+        // updated. There can only be one WAIT instruction in progress at a
+        // time, so one within it fails.
         if (mst_ & W) {
           msr_ |= O;
+          state_ = State::kStartInstruction;
+          return;
+        }
+        if ((msr_ & N) != 0) {
+          // A CRUN came first, so this WAIT ends at once, as one ended by CRUN
+          // does.
+          msr_ = (msr_ & ~N) | O;
           state_ = State::kStartInstruction;
           return;
         }
@@ -1079,18 +1093,32 @@ void CpuCore::RunInstructionLoop() {
         }
         DCHECK(lock_ != nullptr || locked_core_ == this);
 
+        // On this core, the flags are the ones the instruction ends with. A
+        // core handling an interrupt is idle, waiting, or running according to
+        // what it goes back to if none of its interrupts has a handler.
+        CpuCore* const core = locked_core_;
+        uint16_t& st = (core == this ? msr_ : core->r_[ST]);
+        const State state =
+            (core->state_ == State::kHandleInterrupt ? core->resume_state_
+                                                     : core->state_);
+        if (state != State::kIdle && (st & W) == 0) {
+          // A running core has no WAIT to end, so its next one ends at once.
+          st |= N;
+          break;
+        }
+
         // Clearing W ends a WAIT, including one an interrupt would otherwise
-        // return to.
-        locked_core_->r_[ST] &= ~W;
-        if (locked_core_ == this) {
-          msr_ &= ~W;
-        } else if (locked_core_->state_ == State::kIdle ||
-                   locked_core_->state_ == State::kWaiting) {
-          locked_core_->state_ = State::kStartInstruction;
-        } else if (locked_core_->state_ == State::kHandleInterrupt) {
-          // The core starts running if it goes back to what it was doing,
-          // because none of its interrupts has a handler.
-          locked_core_->resume_state_ = State::kStartInstruction;
+        // return to. The WAIT doesn't complete, so it sets O: here on a waiting
+        // core, and otherwise when the interrupt returns to it.
+        core->r_[ST] &= ~W;
+        st &= ~W;
+        if (state == State::kWaiting) {
+          core->r_[ST] |= O;
+        }
+        if (core->state_ == State::kIdle || core->state_ == State::kWaiting) {
+          core->state_ = State::kStartInstruction;
+        } else if (core->state_ == State::kHandleInterrupt) {
+          core->resume_state_ = State::kStartInstruction;
         }
       } break;
       case kMicro_END:

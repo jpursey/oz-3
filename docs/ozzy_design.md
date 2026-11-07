@@ -341,7 +341,8 @@ resetting `CODE` sets `IP` to 0, and `HALT` can't be resumed, as the default
 
 `INTC` and `WAKE` are signals: they change nothing a core is working with, and
 a core that isn't waiting for them is barely affected (an interrupt it has no
-handler for is dropped, and a running core has no `WAIT` to end). Data between
+handler for is dropped, and on a running core, `WAKE` only ends its next
+`WAIT` early). Data between
 cores goes through shared memory and ports. There are deliberately no
 instructions to read or write another core's registers, which could catch it
 anywhere in its work. `RST` stays the one hammer, for starting and stopping a
@@ -372,11 +373,12 @@ running.
 A call block also suits calls a register couldn't carry, such as a packed
 file name or a line of text.
 
-Between a program's `INTC` and its `WAIT` the OS could, in theory, answer
-first, and the `WAKE` would find nothing to end. The call sequence has to make
-that safe, such as by waiting in a loop until a result register changes
-(`WAIT` times out, so this always ends), or by an `INTC` form that waits in the
-same instruction. Which one is settled in the OS item.
+Between a program's `INTC` and its `WAIT` the OS could answer first. The
+`WAKE` then finds no `WAIT` to end, so it sets the program's core's notify flag
+(`N`), and the `WAIT` ends at once. A program clears `N` with `CLRN` before it
+starts calling, as it can't count on `N` being clear when it starts. A `WAIT`
+also ends early from a stray `WAKE`, so the program checks the result in the
+call block, and `WAIT`s again if the call hasn't finished.
 
 The calls, as a sketch:
 - **Console:** write a character, write a packed string, read a key, read a
@@ -459,8 +461,6 @@ assembled system code is checked in.
 
 ## To confirm
 
-- The call sequence's race between `INTC` and `WAIT` (see [Calls](#calls)),
-  settled in the *Ozzy OS* item.
 - Which interrupts OS calls raise, settled in the *Ozzy OS* item. Either each
   core has its own call interrupt (24 to 31), which a program computes from
   its core number in `R0` at start and raises with `INTC.R`, or every core
