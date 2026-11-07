@@ -104,45 +104,24 @@ The program lexer decodes surrogate pairs by hand, where Game Bits'
 A periodic interrupt at a configured rate, and a port to read the cycle count
 and the host's date and time.
 
-## Keyboard key state
+## Typed keys from key state
 
-- **Layers:** devices, ozzy, wiki
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** the wiki's `3.2-Keyboard.md` (Key events); `GetOzzyKey` and
-  `WinConsole::TakeKeys` in `oz3/ozzy/win_console.cc`
+- **Layers:** devices, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Keyboard key state*
+- **Background:** [keyboard-key-state.md](worklog/keyboard-key-state.md)
 
-The keyboard gives typed keys: key presses only, as characters, with the
-modifier keys held as a mask, and never a modifier key alone. Games want the
-keys held instead, and the keys pressed, which a queue of press and release
-events can't give reliably: a release the program never reads leaves its key
-held, and a queue nobody reads fills. So the keyboard gains key state, which
-it holds as state rather than events, in ports of its own. A keyboard's wiring
-chooses typed keys, key state, or both, so a game can leave out the typed keys'
-port rather than have a queue it never reads.
-- **Keys:** a bit per physical key, numbered by the typed key's code for the
-  key without Shift: `A` to `Z`, `0` to `9`, and punctuation by their unshifted
-  characters, and the named keys at 80h to 9Bh. The left and right modifier
-  keys take codes typed keys don't use, such as 89h to 8Eh. So one table of
-  codes serves both, for 160 keys.
-- **Ports, not memory:** a mapped page for 10 words would take 4 Kiw of address
-  space (see *Shared I/O page*). Port k holds keys 16k to 16k + 15: word 0 the
-  keys held, and word 1 the keys pressed since it was last read, with the
-  status set while word 1 isn't 0. A game reads the keys held with `IN`, which
-  leaves the status alone. `INS` takes the keys pressed and clears the status
-  in one locked access, so the keyboard starts over with the presses since, and
-  none is lost between a read and a clear, as one would be between reading and
-  clearing memory. That is 10 ports.
-- **Each port has its own lock,** so a program reading across the ports while
-  the keyboard updates them sees some from before and some from after: a quirk
-  to keep.
-- **The host** presses and releases keys between `Processor::Execute` calls,
-  as with `Keyboard::PressKey`. The Windows console gives the key releases and
-  the modifier keys alone that `TakeKeys` skips now, and tells left from
-  right. It sends no releases for keys held when the console loses focus, so
-  the host releases every key on a `FOCUS_EVENT`. The graphical frontend takes
-  them from its window.
+A keyboard with typed keys needs its host to translate each key by its own
+layout, and type it with `Keyboard::TypeKey`. A keyboard setting could have
+the keyboard make its typed keys from its key state instead, as old keyboards
+did from their own fixed layout, so a host (such as a game reporting only
+where keys are) only sets key state. The keyboard would turn key codes into
+characters by the US layout the codes are named for, with Shift and Ctrl
+applied, and Caps Lock (which needs a key code and a lock state). It would
+repeat a held key itself, after a delay and at a rate in real time turned into
+cycles, so it repeats the same on every run. The cost is the layout: on any
+other, keys type the US characters, so AZERTY's `A` types `q`.
 
 ## Disk drive device
 
