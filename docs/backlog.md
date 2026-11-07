@@ -26,6 +26,138 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Shared interrupt lines
+
+- **Layers:** core, devices, ozzy, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** the Interrupts section of `2-Specifications.md`;
+  `Processor::RaiseInterrupt` and `CpuCore::HandleInterrupt` in `oz3/core`
+
+An interrupt goes to every core its line is connected to, and each core with a
+handler runs it. A shared interrupt goes to one of them: the first core to take
+it clears it on every core it was raised on, so a keyboard shared by several
+cores interrupts only one. Sharing is a mode of the raise, set in a device's
+wiring (`DeviceInterrupt`) beside its cores, not a kind of line, so any line
+can be raised either way:
+- A core takes a shared interrupt only with `I` set and a handler for its
+  line. Otherwise it stays pending for the others, where an unshared interrupt
+  with no handler is dropped. One that no core can take stays pending.
+- Lines keep their priority, lowest first, however they were raised. A line
+  pending both ways on a core is one interrupt there, and taking it clears
+  both.
+- The first core that can take it wins, with ties going to the lower core
+  index, as cores run in index order. An idle or waiting core checks every
+  cycle, and a running one only between instructions, so an idle core usually
+  wins.
+- A shared raise is new if the line wasn't already pending as shared, so a
+  device learns it was newly raised on all of its cores, or on none.
+
+Devices don't retract interrupts: a shared line covers what that would, and a
+stale interrupt only runs a handler that finds nothing to do.
+
+The check after each instruction stays a few bit operations: each core keeps a
+word of the shared lines pending on it, updated as they are raised and taken,
+and a mask of the lines it has handlers for, updated by `IST`. Ozzy's config
+gains the mode, and the machine table carries it in the unused high byte of a
+device's interrupt cores word, so no entry moves.
+
+A shared form of `INTC`, taking a mask of cores, would give programs the same:
+a job queue that wakes one idle worker. It adds to the default instruction set,
+so it is the last CL, or an item of its own.
+
+## RST clears a core's interrupt state
+
+- **Layers:** core, instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `RST` in `oz3/instruction_sets/default_instruction_set.izm`;
+  `CST` and `CpuCore::Reset` in `oz3/core/cpu_core.cc`
+
+An `RST` that resets a core's `CODE` bank starts a new program there, but the
+core keeps the old program's interrupt handlers and status flags. Handlers are
+addresses relative to `BC`, which `RST` sets anew, so an interrupt before the
+new program sets its own jumps into its code at a stale address, and the core
+keeps whatever `I` was. An OS reusing cores for programs (see *Ozzy OS*) has
+to undo this itself, with `CLK` and 32 `IST`s.
+
+With `CODE` in its mask, `RST` clears them in microcode, so a new program
+starts with no handlers, its status flags clear, and interrupts disabled:
+- **Handlers:** a loop of `IST` with the zero register `C2`, from 32 down to 1
+  (`IST` uses the low 5 bits, so 32 is handler 0). That is about 65 cycles,
+  which clearing a table of handlers should take.
+- **Status flags:** `CST(ST,C2)`. `CST` ignores `ST` today. It writes `ST`'s
+  status flags instead (the low byte), and never the control flags: `W` is
+  `WAIT`'s and `CRUN`'s (and `RST` already runs `CRUN`), and `T` is left for a
+  debugger, so stepping a core survives a reset. On the running core
+  (`RST SELF`) it writes the instruction's staged status flags, which are
+  copied back when it ends. No microcode uses `CST(ST,...)` today, so no
+  instruction changes but `RST`.
+- **Pending interrupts:** kept. On a line not shared (see *Shared interrupt
+  lines*), a core with no handlers drops them if `I` is set, or takes them as
+  spurious interrupts once the new program enables interrupts, which handlers
+  tolerate anyway. A shared one stays pending for the other cores, as a core
+  with no handler can't take it.
+
+`RST`'s code words don't change, but its cycles do, so the `.inc` is
+regenerated and its tests' cycle counts updated. The host's `CpuCore::Reset`
+does the same when it resets `CODE`, at no cost, so a boot and an `RST` start a
+program alike. The wiki's microcode reference (`CST`) and default instruction
+set page (`RST`: what a `CODE` reset clears and keeps, and its cycles) change
+with it.
+
+## Notify flag
+
+- **Layers:** core, instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** the `WAIT` and `CRUN` microcode in `2.1-Microcode.md`; `WAIT`
+  and `WAKE` in `2.2-Default-Instruction-Set.md`; the call protocol in
+  [ozzy_design.md](ozzy_design.md) (OS calls)
+
+A core that asks for something and then `WAIT`s for the answer, such as a
+program calling the OS (`INTC`, then `WAIT`, answered with `WAKE`), or waiting
+for a device whose interrupt handler does `WAKE SELF`, misses an answer that
+comes before its `WAIT` starts: a `WAKE` on a running core does nothing, so
+the core waits out its whole timeout. The window is a few cycles, but fetching
+the `WAIT` waits for the `CODE` bank, so anything holding it (another core, the
+screen's refresh, a DMA page copy) stretches the window to as long as it holds
+it.
+
+A new control flag, `N` (notify), at bit 10 beside `W`, latches the wake, so a
+`WAKE` ends the core's current `WAIT`, or its next one. Only the behavior of
+the existing `CRUN` and `WAIT` microcode changes, not their syntax:
+- **`CRUN`:** on an idle core, it starts it, and with `W` set (a waiting core,
+  or a `WAIT` an interrupt will return to), it ends the `WAIT`, as now.
+  Otherwise, where it does nothing today, it sets `N`. On the running core it
+  sets it in the instruction's staged flags, which are copied back when it
+  ends.
+- **`WAIT`:** with `N` set, it clears it and ends at once, as a `WAIT` ended
+  by `WAKE` does: its register is unchanged and `O` is cleared. A `WAIT` in a
+  handler that interrupted a `WAIT` fails as now, leaving `N` set.
+
+A delay is no worse off: a `WAKE` during one already ends it early, and a
+program that never receives a `WAKE` never has `N` set. A program that sleeps
+until something happens checks that it did, and `WAIT`s again if not, so an
+early end costs a loop. `RST` runs `CRUN`, so resetting a running core sets
+`N`, and the new program's first `WAIT` ends at once. The host's
+`CpuCore::Reset` clears it.
+
+A program can't count on `N` being clear when it starts, nor on any register,
+so clearing it with `WAIT` takes 6 cycles (a register cleared, then the
+`WAIT`). A new instruction at the end of the `.izm`, such as `CLRN` (`UL;
+WAIT(C2);`, as `C2` is always zero), does it in 3, using only existing
+microcode, and is pinned by raising `kPinnedInstructionCount`. Its flags are
+`WAIT`'s.
+
+The flags table in `2-Specifications.md`, and `WAIT` and `CRUN` in the
+microcode reference, change with it, as do `WAIT`, `WAKE`, `RST`, and the new
+instruction on the default instruction set page. Core and instruction tests
+that expect a `WAKE` on a running core to do nothing change too.
+
 ## Ozzy settings through ConfigReader
 
 - **Layers:** ozzy, apps, wiki
@@ -122,7 +254,8 @@ packed host bytes.
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Timer device*, *Disk drive device*
+- **Depends on:** *Timer device*, *Disk drive device*, *RST clears a core's
+  interrupt state*, *Notify flag*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
@@ -360,4 +493,16 @@ the default one, below `0xF0`.
 Coprocessors raise interrupts as devices do, learning which cores they were
 newly raised on (see `Processor::RaiseInterrupt`), can sleep while they have
 nothing to do (see `ExecutionComponent::Sleep`), and join Ozzy's config once
-they exist.
+they exist. Beyond what devices do:
+- **Raising on chosen cores:** a coprocessor serves every core, so it raises
+  an interrupt on the cores it picks, such as the one whose request it
+  finished (the DMA processor's request registers are per core), from among
+  those its line is wired to. So each opcode a core hands it says which core
+  it came from, and its raise takes a mask of cores, limited to its wiring. A
+  device could raise the same way, but none needs to yet.
+- **Results through locks:** a coprocessor is shared, so cores take turns at
+  it through its lock, and a core that needs a result (the math processor's)
+  waits on the lock until it is done, as an x87's `FWAIT` does. Interrupts are
+  for work that finishes on its own time (a DMA transfer), and perhaps errors.
+- **Any free core:** work any one core may take raises on a shared line (see
+  *Shared interrupt lines*).
