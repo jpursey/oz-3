@@ -134,6 +134,32 @@ TEST(OzzySettingsTest, ReadsMachine) {
   EXPECT_THAT(settings->banks, ElementsAre(0x7FFE, 0xFFFF, 0));
 }
 
+TEST(OzzySettingsTest, CommasAreOptional) {
+  // One entry a line, without commas.
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
+    cores: 4
+    banks: [
+      { ram: 0x7FFE }
+      { ram: 0xFFFF }
+    ]
+  )");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  EXPECT_EQ(settings->cores, 4);
+  EXPECT_THAT(settings->banks, ElementsAre(0x7FFE, 0xFFFF));
+
+  // A comma after the last entry.
+  settings = ReadOzzySettings(R"(
+    cores: 4,
+    banks: [
+      { ram: 0x7FFE },
+      { ram: 0xFFFF },
+    ],
+  )");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  EXPECT_EQ(settings->cores, 4);
+  EXPECT_THAT(settings->banks, ElementsAre(0x7FFE, 0xFFFF));
+}
+
 TEST(OzzySettingsTest, ReadSettingsAreValidated) {
   // ValidateOzzySettings is tested below; this only shows reading uses it.
   EXPECT_EQ(ReadError("cores: 9"), "cores: must be 1 to 8");

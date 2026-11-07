@@ -55,8 +55,8 @@ devices: [
 ]
 ```
 
-As in JSON, entries are separated by commas, including the file's own, and
-there is no comma after the last one.
+Commas between entries are optional, so a file can have one entry a line
+without them, and a comma after the last entry is allowed.
 
 - **Banks** are 1 to 16, and each gives its RAM pages as a mask, bit `n` for
   page `n`, as `MemoryPageMasks`, the machine table, and the assembler's
