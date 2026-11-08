@@ -325,10 +325,16 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
                      absl::StrCat("page ", kOzzyScreenPage, " of bank ",
                                   kOzzyScreenBank, " is RAM"));
   }
-  if (settings.timer.has_value() &&
-      settings.timer->tick_hz > OzzySettings::kMaxTimerTickHz) {
-    return PathError("timer", absl::StrCat("tick_hz must be at most ",
-                                           OzzySettings::kMaxTimerTickHz));
+  if (settings.timer.has_value()) {
+    if (settings.timer->tick_hz > OzzySettings::kMaxTimerTickHz) {
+      return PathError("timer", absl::StrCat("tick_hz must be at most ",
+                                             OzzySettings::kMaxTimerTickHz));
+    }
+    if (settings.timer->tick_hz > settings.clock_hz) {
+      return PathError("timer",
+                       absl::StrCat("tick_hz must be at most clock_hz (",
+                                    settings.clock_hz, ")"));
+    }
   }
   return absl::OkStatus();
 }

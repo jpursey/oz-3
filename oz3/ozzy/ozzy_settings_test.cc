@@ -430,7 +430,9 @@ TEST(OzzySettingsTest, ValidateDefaultOzzy) {
 }
 
 TEST(OzzySettingsTest, ValidateClockHz) {
+  // Without the timer, whose default rate is faster than the slowest clock.
   OzzySettings settings;
+  settings.timer.reset();
   settings.clock_hz = 1;
   EXPECT_EQ(ValidateError(settings), "ok");
   settings.clock_hz = OzzySettings::kMaxClockHz;
@@ -487,7 +489,8 @@ TEST(OzzySettingsTest, ValidateScreenPage) {
 }
 
 TEST(OzzySettingsTest, ValidateTimerTickHz) {
-  // The machine table holds the rate in a word. The timer checks the rest.
+  // The machine table holds the rate in a word, and the timer ticks at most
+  // once a cycle. The timer checks the rest.
   OzzySettings settings;
   settings.timer->tick_hz = 65535;
   EXPECT_EQ(ValidateError(settings), "ok");
@@ -497,6 +500,25 @@ TEST(OzzySettingsTest, ValidateTimerTickHz) {
   EXPECT_EQ(ValidateError(settings), "ok");
   EXPECT_EQ(ReadError("devices: [{ type: 'timer', tick_hz: 100000 }]"),
             "timer: tick_hz must be at most 65535");
+}
+
+TEST(OzzySettingsTest, ValidateTimerTickHzAgainstClockHz) {
+  OzzySettings settings;
+  settings.clock_hz = 60;
+  settings.timer->tick_hz = 60;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.timer->tick_hz = 61;
+  EXPECT_EQ(ValidateError(settings),
+            "timer: tick_hz must be at most clock_hz (60)");
+  settings.timer.reset();
+  EXPECT_EQ(ValidateError(settings), "ok");
+
+  // The default timer's 60 ticks a second is too fast for a 10 Hz Ozzy.
+  EXPECT_EQ(ReadError("clock_hz: 10"),
+            "timer: tick_hz must be at most clock_hz (10)");
+  EXPECT_EQ(
+      ReadError("clock_hz: 10, devices: [{ type: 'timer', tick_hz: 10 }]"),
+      "ok");
 }
 
 //==============================================================================

@@ -318,7 +318,9 @@ TEST(OzzyTest, RunAtClockRate) {
 }
 
 TEST(OzzyTest, ShortRunsAddUp) {
+  // Without the timer, whose default rate is faster than these clocks.
   OzzySettings settings;
+  settings.timer.reset();
   settings.clock_hz = 3;
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
