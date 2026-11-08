@@ -22,6 +22,7 @@
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
+#include "oz3/devices/timer.h"
 
 namespace oz3 {
 namespace {
@@ -91,6 +92,18 @@ TEST(OzzySettingsTest, TeletypeSettings) {
             expected);
 }
 
+TEST(OzzySettingsTest, TimerSettings) {
+  // The defaults are the timer's own, with the Ozzy's wiring: its interrupt is
+  // on every core, and not shared.
+  TimerSettings expected;
+  expected.port = 3;
+  expected.interrupt = {.interrupt = 0, .cores = kAllCores};
+  EXPECT_EQ(GetOzzyTimerSettings(OzzyTimerSettings()), expected);
+
+  expected.tick_hz = 100;
+  EXPECT_EQ(GetOzzyTimerSettings({.tick_hz = 100}), expected);
+}
+
 //==============================================================================
 // Defaults
 //==============================================================================
@@ -104,6 +117,7 @@ TEST(OzzySettingsTest, DefaultOzzy) {
   EXPECT_EQ(settings.screen, OzzyScreenSettings());
   EXPECT_TRUE(settings.keyboard);
   EXPECT_FALSE(settings.teletype.has_value());
+  EXPECT_EQ(settings.timer, OzzyTimerSettings());
 }
 
 TEST(OzzySettingsTest, EmptyConfigIsDefaultOzzy) {
@@ -238,16 +252,21 @@ TEST(OzzySettingsTest, NoDevices) {
   EXPECT_FALSE(settings->screen.has_value());
   EXPECT_FALSE(settings->keyboard);
   EXPECT_FALSE(settings->teletype.has_value());
+  EXPECT_FALSE(settings->timer.has_value());
 }
 
 TEST(OzzySettingsTest, DevicesTakeDefaults) {
   absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
-    devices: [{ type: "teletype" }, { type: "screen" }, { type: "keyboard" }]
+    devices: [
+      { type: "teletype" }, { type: "screen" }, { type: "keyboard" },
+      { type: "timer" }
+    ]
   )");
   ASSERT_TRUE(settings.ok()) << settings.status();
   EXPECT_EQ(settings->screen, OzzyScreenSettings());
   EXPECT_TRUE(settings->keyboard);
   EXPECT_EQ(settings->teletype, OzzyTeletypeSettings());
+  EXPECT_EQ(settings->timer, OzzyTimerSettings());
 }
 
 TEST(OzzySettingsTest, OnlyListedDevices) {
@@ -257,6 +276,7 @@ TEST(OzzySettingsTest, OnlyListedDevices) {
   EXPECT_FALSE(settings->screen.has_value());
   EXPECT_FALSE(settings->keyboard);
   EXPECT_TRUE(settings->teletype.has_value());
+  EXPECT_FALSE(settings->timer.has_value());
 }
 
 TEST(OzzySettingsTest, ReadsScreen) {
@@ -288,13 +308,22 @@ TEST(OzzySettingsTest, ReadsTeletype) {
   EXPECT_EQ(settings->teletype->buffer_size, 64);
 }
 
+TEST(OzzySettingsTest, ReadsTimer) {
+  absl::StatusOr<OzzySettings> settings =
+      ReadOzzySettings("devices: [{ type: 'timer', tick_hz: 100 }]");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  ASSERT_TRUE(settings->timer.has_value());
+  EXPECT_EQ(settings->timer->tick_hz, 100);
+}
+
 TEST(OzzySettingsTest, DeviceSettingsCheckedByDevices) {
   // The devices check these themselves, so reading only checks they fit in an
   // int.
   absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
     devices: [
       { type: "screen", columns: 1000, rows: -1 },
-      { type: "teletype", baud: -5, buffer_size: 0 }
+      { type: "teletype", baud: -5, buffer_size: 0 },
+      { type: "timer", tick_hz: 0 }
     ]
   )");
   ASSERT_TRUE(settings.ok()) << settings.status();
@@ -302,6 +331,7 @@ TEST(OzzySettingsTest, DeviceSettingsCheckedByDevices) {
   EXPECT_EQ(settings->screen->rows, -1);
   EXPECT_EQ(settings->teletype->baud, -5);
   EXPECT_EQ(settings->teletype->buffer_size, 0);
+  EXPECT_EQ(settings->timer->tick_hz, 0);
   EXPECT_EQ(ReadError("devices: [{ type: 'screen', columns: 0x80000000 }]"),
             "(1:38): devices[0].columns: must be -2147483648 to 2147483647");
 }
@@ -310,7 +340,7 @@ TEST(OzzySettingsTest, WiringIsFixed) {
   // A device's wiring is the Ozzy's, so none of it is a key.
   for (std::string_view key :
        {"bank", "page", "interrupt", "interrupt_cores", "port"}) {
-    for (std::string_view type : {"screen", "keyboard", "teletype"}) {
+    for (std::string_view type : {"screen", "keyboard", "teletype", "timer"}) {
       EXPECT_THAT(
           ReadError(
               absl::StrCat("devices: [{ type: '", type, "', ", key, ": 1 }]")),
@@ -328,11 +358,11 @@ TEST(OzzySettingsTest, DeviceTypeErrors) {
   EXPECT_EQ(ReadError("devices: [{ port: 1 }]"),
             "(1:11): devices[0]: missing type");
   EXPECT_EQ(ReadError("devices: [{ type: 1 }]"),
-            "(1:19): devices[0].type: must be \"screen\", \"keyboard\", or "
-            "\"teletype\"");
+            "(1:19): devices[0].type: must be \"screen\", \"keyboard\", "
+            "\"teletype\", or \"timer\"");
   EXPECT_EQ(ReadError("devices: [{ type: 'disk' }]"),
-            "(1:19): devices[0].type: must be \"screen\", \"keyboard\", or "
-            "\"teletype\"");
+            "(1:19): devices[0].type: must be \"screen\", \"keyboard\", "
+            "\"teletype\", or \"timer\"");
 }
 
 TEST(OzzySettingsTest, DeviceUnknownKeys) {
@@ -353,6 +383,8 @@ TEST(OzzySettingsTest, DeviceWrongTypes) {
             "(1:45): devices[0].characters[1]: must be 0 to 65535");
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype', baud: 'fast' }]"),
             "(1:37): devices[0].baud: must be an int");
+  EXPECT_EQ(ReadError("devices: [{ type: 'timer', tick_hz: 60.5 }]"),
+            "(1:37): devices[0].tick_hz: must be an int");
 }
 
 TEST(OzzySettingsTest, OneDeviceOfEachType) {
@@ -364,6 +396,8 @@ TEST(OzzySettingsTest, OneDeviceOfEachType) {
   EXPECT_EQ(ReadError("devices: [{ type: 'teletype' }, "
                       "{ type: 'teletype', baud: 300 }]"),
             "(1:33): devices[1]: an Ozzy has only one teletype");
+  EXPECT_EQ(ReadError("devices: [{ type: 'timer' }, { type: 'timer' }]"),
+            "(1:30): devices[1]: an Ozzy has only one timer");
 }
 
 TEST(OzzySettingsTest, ScreenPage) {
@@ -452,6 +486,19 @@ TEST(OzzySettingsTest, ValidateScreenPage) {
   EXPECT_EQ(ValidateError(settings), "ok");
 }
 
+TEST(OzzySettingsTest, ValidateTimerTickHz) {
+  // The machine table holds the rate in a word. The timer checks the rest.
+  OzzySettings settings;
+  settings.timer->tick_hz = 65535;
+  EXPECT_EQ(ValidateError(settings), "ok");
+  settings.timer->tick_hz = 65536;
+  EXPECT_EQ(ValidateError(settings), "timer: tick_hz must be at most 65535");
+  settings.timer.reset();
+  EXPECT_EQ(ValidateError(settings), "ok");
+  EXPECT_EQ(ReadError("devices: [{ type: 'timer', tick_hz: 100000 }]"),
+            "timer: tick_hz must be at most 65535");
+}
+
 //==============================================================================
 // The configs in configs/
 //==============================================================================
@@ -471,6 +518,7 @@ TEST(OzzySettingsTest, TeletypeConfig) {
   expected.banks = {0xFFFE};
   expected.screen.reset();
   expected.teletype = OzzyTeletypeSettings();
+  expected.timer = OzzyTimerSettings();
   EXPECT_EQ(*settings, expected);
 }
 

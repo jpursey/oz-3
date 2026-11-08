@@ -50,6 +50,7 @@ set(ozzy_SOURCE
 )
 
 set(ozzy_DEPS
+  absl::civil_time
   absl::status
   absl::statusor
   absl::str_format

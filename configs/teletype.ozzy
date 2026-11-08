@@ -10,4 +10,5 @@ banks: [
 devices: [
   { type: "teletype", baud: 0 }  // As fast as programs write
   { type: "keyboard" }
+  { type: "timer" }
 ]

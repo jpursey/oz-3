@@ -18,6 +18,7 @@
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
+#include "oz3/devices/timer.h"
 
 namespace oz3 {
 
@@ -35,12 +36,12 @@ constexpr uint16_t GetBootRomPages(int bank) {
 // Device wiring
 //==============================================================================
 
-// The wiring of each console device, which is the same in every Ozzy, so
-// programs know it: the screen's page and interrupt, the keyboard's typed keys'
-// port and interrupt and its first key state port, and the teletype's port.
-// Interrupt cores have bit n for core n. The keyboard's interrupt is shared, so
-// each key is handled by one core, while the screen's refresh is news for every
-// core with a handler.
+// The wiring of each device, which is the same in every Ozzy, so programs know
+// it: the screen's page and interrupt, the keyboard's typed keys' port and
+// interrupt and its first key state port, the teletype's port, and the timer's
+// first port and interrupt. Interrupt cores have bit n for core n. The
+// keyboard's interrupt is shared, so each key is handled by one core, while the
+// screen's refresh and the timer's tick are news for every core with a handler.
 inline constexpr int kOzzyScreenBank = 0;
 inline constexpr int kOzzyScreenPage = 15;
 inline constexpr int kOzzyScreenInterrupt = 6;
@@ -50,6 +51,9 @@ inline constexpr int kOzzyKeyboardInterrupt = 1;
 inline constexpr uint8_t kOzzyKeyboardInterruptCores = kAllCores;
 inline constexpr int kOzzyKeyboardKeyStatePort = 6;
 inline constexpr int kOzzyTeletypePort = 2;
+inline constexpr int kOzzyTimerPort = 3;
+inline constexpr int kOzzyTimerInterrupt = 0;
+inline constexpr uint8_t kOzzyTimerInterruptCores = kAllCores;
 
 //==============================================================================
 // Device settings
@@ -80,24 +84,36 @@ struct OzzyTeletypeSettings {
   int buffer_size = TeletypeSettings().buffer_size;
 };
 
+// The settings of an Ozzy's timer that a host sets: all of TimerSettings but
+// its wiring, with the same defaults.
+struct OzzyTimerSettings {
+  bool operator==(const OzzyTimerSettings&) const = default;
+
+  int tick_hz = TimerSettings().tick_hz;
+};
+
 // Returns the settings of an Ozzy's device: the host's, and the wiring.
 ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen);
 KeyboardSettings GetOzzyKeyboardSettings();
 TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype);
+TimerSettings GetOzzyTimerSettings(const OzzyTimerSettings& timer);
 
 //==============================================================================
 // OzzySettings
 //==============================================================================
 
 // Everything a host sets about an Ozzy: the processor, its memory, and which
-// console devices it has, with their own settings. The defaults are the
-// default Ozzy: one core at 1 MHz, one bank, a screen, and a keyboard.
+// devices it has, with their own settings. The defaults are the default Ozzy:
+// one core at 1 MHz, one bank, a screen, a keyboard, and a timer.
 struct OzzySettings {
   // The fastest clock rate.
   static constexpr int64_t kMaxClockHz = 100'000'000;
 
   // The fewest ports, which keeps ports 0 to 15 for devices.
   static constexpr int kMinPorts = 16;
+
+  // The fastest a timer ticks, as the machine table holds its rate in a word.
+  static constexpr int kMaxTimerTickHz = 0xFFFF;
 
   bool operator==(const OzzySettings&) const = default;
 
@@ -115,11 +131,12 @@ struct OzzySettings {
   // never has bit 0 set. At least one bank has RAM, for the boot ROM's stack.
   std::vector<uint16_t> banks = {0x7FFE};
 
-  // The console devices, which an Ozzy has at most one of each of. With a
-  // screen, its page isn't RAM.
+  // The devices, which an Ozzy has at most one of each of. With a screen, its
+  // page isn't RAM.
   std::optional<OzzyScreenSettings> screen = OzzyScreenSettings();
   bool keyboard = true;
   std::optional<OzzyTeletypeSettings> teletype;
+  std::optional<OzzyTimerSettings> timer = OzzyTimerSettings();
 };
 
 //==============================================================================
@@ -135,7 +152,7 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings);
 // Reads settings from the text of a config file (a `.ozzy` file): Game Bits'
 // text config format, rootless and with comments. Anything the text leaves
 // out keeps its default, as does any setting a device leaves out. Without
-// `devices`, the Ozzy has the default screen and keyboard.
+// `devices`, the Ozzy has the default screen, keyboard, and timer.
 //
 // Returns an error naming where the first problem in the text is, by its line
 // and column and its setting, such as `hello.ozzy(12:5): devices[1].port:

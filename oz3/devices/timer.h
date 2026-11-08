@@ -131,7 +131,10 @@ class TimerFactory final : public DeviceFactory {
 //
 // The date and time are the host's, from the clock it sets with SetClock(),
 // which the timer calls only when a program asks for the time. Without a
-// clock, they are 1970-01-01 00:00:00.
+// clock, they are 1970-01-01 00:00:00. They are the host's time, not the
+// machine's: they have nothing to do with the cycle count, ticks, or
+// milliseconds, so when a host runs the machine slower or faster than its
+// clock rate, the date and time drift from them.
 //
 // The timer sleeps until its next tick, or a write to the clock port.
 class Timer final : public Device {

@@ -37,14 +37,21 @@ static_assert(kOzzyScreenPage < kMemoryBankPageCount,
 static_assert(kOzzyKeyboardPort < OzzySettings::kMinPorts &&
                   kOzzyKeyboardKeyStatePort + Keyboard::kKeyStatePorts <=
                       OzzySettings::kMinPorts &&
-                  kOzzyTeletypePort < OzzySettings::kMinPorts,
+                  kOzzyTeletypePort < OzzySettings::kMinPorts &&
+                  kOzzyTimerPort + Timer::kPorts <= OzzySettings::kMinPorts,
               "Device ports must be ports every Ozzy has");
-static_assert(kOzzyKeyboardPort < kOzzyKeyboardKeyStatePort &&
-                  kOzzyTeletypePort < kOzzyKeyboardKeyStatePort,
-              "The key state ports must not be other devices' ports");
+static_assert(kOzzyKeyboardPort < kOzzyTimerPort &&
+                  kOzzyTeletypePort < kOzzyTimerPort &&
+                  kOzzyTimerPort + Timer::kPorts <= kOzzyKeyboardKeyStatePort,
+              "The timer's ports must be between the other devices' ports");
 static_assert(kOzzyScreenInterrupt < CpuCore::kInterruptCount &&
-                  kOzzyKeyboardInterrupt < CpuCore::kInterruptCount,
+                  kOzzyKeyboardInterrupt < CpuCore::kInterruptCount &&
+                  kOzzyTimerInterrupt < CpuCore::kInterruptCount,
               "Device interrupts must be interrupts every core has");
+static_assert(kOzzyTimerInterrupt != kOzzyScreenInterrupt &&
+                  kOzzyTimerInterrupt != kOzzyKeyboardInterrupt &&
+                  kOzzyScreenInterrupt != kOzzyKeyboardInterrupt,
+              "Device interrupts must be different");
 
 //==============================================================================
 // Keys
@@ -58,6 +65,7 @@ constexpr std::string_view kScreenKeys[] = {
     "slow_blink_hz", "fast_blink_hz", "characters"};
 constexpr std::string_view kKeyboardKeys[] = {"type"};
 constexpr std::string_view kTeletypeKeys[] = {"type", "baud", "buffer_size"};
+constexpr std::string_view kTimerKeys[] = {"type", "tick_hz"};
 
 //==============================================================================
 // Device types
@@ -68,12 +76,14 @@ enum class DeviceType {
   kScreen,
   kKeyboard,
   kTeletype,
+  kTimer,
 };
 
 constexpr gb::ConfigEnumName<DeviceType> kDeviceTypes[] = {
     {"screen", DeviceType::kScreen},
     {"keyboard", DeviceType::kKeyboard},
     {"teletype", DeviceType::kTeletype},
+    {"timer", DeviceType::kTimer},
 };
 
 //==============================================================================
@@ -106,6 +116,7 @@ class OzzySettingsReader final {
   void ReadScreen(const gb::ConfigReader& device);
   void ReadKeyboard(const gb::ConfigReader& device);
   void ReadTeletype(const gb::ConfigReader& device);
+  void ReadTimer(const gb::ConfigReader& device);
 
   OzzySettings settings_;
 };
@@ -142,6 +153,7 @@ void OzzySettingsReader::ReadDevices(const gb::ConfigReader& devices) {
   settings_.screen.reset();
   settings_.keyboard = false;
   settings_.teletype.reset();
+  settings_.timer.reset();
   const int device_count = devices.GetArraySize();
   for (int i = 0; i < device_count; ++i) {
     ReadDevice(devices.Get(i));
@@ -170,6 +182,9 @@ void OzzySettingsReader::ReadDevice(const gb::ConfigReader& device) {
       break;
     case DeviceType::kTeletype:
       ReadTeletype(device);
+      break;
+    case DeviceType::kTimer:
+      ReadTimer(device);
       break;
   }
 }
@@ -220,6 +235,18 @@ void OzzySettingsReader::ReadTeletype(const gb::ConfigReader& device) {
   device.Get("buffer_size").ReadInt(&teletype.buffer_size);
 }
 
+void OzzySettingsReader::ReadTimer(const gb::ConfigReader& device) {
+  if (settings_.timer.has_value()) {
+    device.Reject("an Ozzy has only one timer");
+    return;
+  }
+  OzzyTimerSettings& timer = settings_.timer.emplace();
+  if (!device.ValidateMap(kTimerKeys)) {
+    return;
+  }
+  device.Get("tick_hz").ReadInt(&timer.tick_hz);
+}
+
 }  // namespace
 
 //==============================================================================
@@ -252,6 +279,13 @@ TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype) {
   return {.port = kOzzyTeletypePort,
           .baud = teletype.baud,
           .buffer_size = teletype.buffer_size};
+}
+
+TimerSettings GetOzzyTimerSettings(const OzzyTimerSettings& timer) {
+  return {.port = kOzzyTimerPort,
+          .interrupt = {.interrupt = kOzzyTimerInterrupt,
+                        .cores = kOzzyTimerInterruptCores},
+          .tick_hz = timer.tick_hz};
 }
 
 //==============================================================================
@@ -290,6 +324,11 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
     return PathError("screen",
                      absl::StrCat("page ", kOzzyScreenPage, " of bank ",
                                   kOzzyScreenBank, " is RAM"));
+  }
+  if (settings.timer.has_value() &&
+      settings.timer->tick_hz > OzzySettings::kMaxTimerTickHz) {
+    return PathError("timer", absl::StrCat("tick_hz must be at most ",
+                                           OzzySettings::kMaxTimerTickHz));
   }
   return absl::OkStatus();
 }

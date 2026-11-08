@@ -112,10 +112,15 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
       entries[kMachineDeviceData] = state_port.has_value()
                                         ? static_cast<uint16_t>(*state_port)
                                         : kMachineTableNone;
-    } else {
-      DCHECK(device_config.name == Ozzy::kTeletypeName);
+    } else if (device_config.name == Ozzy::kTeletypeName) {
       WriteDeviceEntry(MachineDeviceType::kTeletype, device_config,
                        settings.cores, entries);
+    } else {
+      DCHECK(device_config.name == Ozzy::kTimerName);
+      WriteDeviceEntry(MachineDeviceType::kTimer, device_config, settings.cores,
+                       entries);
+      entries[kMachineDeviceData] =
+          static_cast<uint16_t>(settings.timer->tick_hz);
     }
     entries.remove_prefix(kMachineDeviceSize);
   }
@@ -175,6 +180,14 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
     }
     config.AddDevice(std::move(*teletype));
   }
+  if (settings.timer.has_value()) {
+    absl::StatusOr<std::unique_ptr<TimerFactory>> timer = TimerFactory::Create(
+        Ozzy::kTimerName, GetOzzyTimerSettings(*settings.timer));
+    if (!timer.ok()) {
+      return timer.status();
+    }
+    config.AddDevice(std::move(*timer));
+  }
   return config;
 }
 
@@ -228,7 +241,8 @@ Ozzy::Ozzy(std::unique_ptr<Processor> processor)
     : processor_(std::move(processor)),
       screen_(static_cast<Screen*>(processor_->GetDevice(kScreenName))),
       keyboard_(static_cast<Keyboard*>(processor_->GetDevice(kKeyboardName))),
-      teletype_(static_cast<Teletype*>(processor_->GetDevice(kTeletypeName))) {}
+      teletype_(static_cast<Teletype*>(processor_->GetDevice(kTeletypeName))),
+      timer_(static_cast<Timer*>(processor_->GetDevice(kTimerName))) {}
 
 Ozzy::~Ozzy() = default;
 

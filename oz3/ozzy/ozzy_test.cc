@@ -21,6 +21,7 @@
 #include "oz3/core/port.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/devices/timer.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy_settings.h"
 
@@ -65,6 +66,20 @@ TEST(OzzyTest, DefaultOzzy) {
   ASSERT_NE(ozzy->GetKeyboard(), nullptr);
   EXPECT_EQ(ozzy->GetKeyboard(), processor->GetDevice(Ozzy::kKeyboardName));
   EXPECT_EQ(ozzy->GetTeletype(), nullptr);
+  ASSERT_NE(ozzy->GetTimer(), nullptr);
+  EXPECT_EQ(ozzy->GetTimer(), processor->GetDevice(Ozzy::kTimerName));
+}
+
+TEST(OzzyTest, TimerTicks) {
+  OzzySettings settings;
+  settings.timer->tick_hz = 100;
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+
+  // The tick count is on port 3, at the timer's rate.
+  ozzy->Run(absl::Milliseconds(25));
+  EXPECT_EQ(ozzy->GetTimer()->GetTickCount(), 2);
+  EXPECT_EQ(ozzy->GetProcessor()->GetPort(3).GetValue(0), 2);
 }
 
 TEST(OzzyTest, KeyboardKeyState) {
@@ -99,6 +114,15 @@ TEST(OzzyTest, Processor) {
   EXPECT_EQ(ozzy->GetKeyboard(), nullptr);
   ASSERT_NE(ozzy->GetTeletype(), nullptr);
   EXPECT_EQ(ozzy->GetTeletype(), processor->GetDevice(Ozzy::kTeletypeName));
+}
+
+TEST(OzzyTest, NoTimer) {
+  OzzySettings settings;
+  settings.timer.reset();
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  EXPECT_EQ(ozzy->GetTimer(), nullptr);
+  EXPECT_EQ(ozzy->GetProcessor()->GetDevice(Ozzy::kTimerName), nullptr);
 }
 
 TEST(OzzyTest, BankPages) {
@@ -153,7 +177,7 @@ TEST(OzzyTest, DefaultMachineTable) {
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
-      ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 32, 1, 2, 0));
+      ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 32, 1, 3, 0));
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, kMachineBankSize),
               ElementsAre(0x0001, 0x7FFE));
 
@@ -168,6 +192,9 @@ TEST(OzzyTest, DefaultMachineTable) {
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(2, 1, 1, 0x8001, 0xFFFF, 0xFFFF, 6, 0));
   offset += kMachineDeviceSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
+              ElementsAre(4, 3, 0, 0x01, 0xFFFF, 0xFFFF, 60, 0));
+  offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
 }
@@ -181,11 +208,12 @@ TEST(OzzyTest, FullMachineTable) {
   settings.screen->columns = 40;
   settings.screen->rows = 12;
   settings.teletype = OzzyTeletypeSettings();
+  settings.timer->tick_hz = 1000;
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
-      ElementsAre(kMachineTableVersion, 0xE100, 0x05F5, 3, 256, 3, 3, 0));
+      ElementsAre(kMachineTableVersion, 0xE100, 0x05F5, 3, 256, 3, 4, 0));
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, 3 * kMachineBankSize),
               ElementsAre(0x0001, 0x0002, 0, 0xFFFF, 0, 0x7FFF));
   int offset = kMachineTableBanks + 3 * kMachineBankSize;
@@ -193,8 +221,8 @@ TEST(OzzyTest, FullMachineTable) {
               Each(0));
   offset = kMachineTableDevices;
 
-  // The screen's and keyboard's interrupts are on every core, which is only the
-  // cores the Ozzy has. The keyboard's is shared.
+  // The screen's, keyboard's, and timer's interrupts are on every core, which
+  // is only the cores the Ozzy has. The keyboard's is shared.
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(1, 0xFFFF, 6, 0x07, 0, 15, 40, 12));
   offset += kMachineDeviceSize;
@@ -203,6 +231,9 @@ TEST(OzzyTest, FullMachineTable) {
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(3, 2, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));
+  offset += kMachineDeviceSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
+              ElementsAre(4, 3, 0, 0x07, 0xFFFF, 0xFFFF, 1000, 0));
   offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
@@ -230,6 +261,7 @@ TEST(OzzyTest, NoDevicesMachineTable) {
   OzzySettings settings;
   settings.screen.reset();
   settings.keyboard = false;
+  settings.timer.reset();
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 0);
@@ -263,6 +295,12 @@ TEST(OzzyTest, DeviceErrors) {
   ozzy = Ozzy::Create(settings);
   EXPECT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Teletype"));
+
+  settings = OzzySettings();
+  settings.timer->tick_hz = 0;
+  ozzy = Ozzy::Create(settings);
+  EXPECT_FALSE(ozzy.ok());
+  EXPECT_THAT(ozzy.status().message(), HasSubstr("Timer Timer"));
 }
 
 //==============================================================================

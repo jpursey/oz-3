@@ -14,6 +14,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/time/civil_time.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "gb/base/context.h"
@@ -29,6 +30,7 @@
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/devices/timer.h"
 #include "oz3/ozzy/console.h"
 #include "oz3/ozzy/console_display.h"
 #include "oz3/ozzy/ozzy.h"
@@ -217,6 +219,14 @@ bool Run(gb::ValidatedContext& context,
     writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
                                              ozzy.status().message()));
     return false;
+  }
+
+  // Programs see the date and time where the user is. It is the host's time,
+  // so when the Ozzy can't keep up with its clock rate (or runs at max speed),
+  // it drifts from the timer's ticks and milliseconds.
+  if (Timer* timer = (*ozzy)->GetTimer(); timer != nullptr) {
+    timer->SetClock(
+        [] { return absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone()); });
   }
   absl::StatusOr<std::unique_ptr<Console>> console =
       Console::Create(GetOzzyConsoleMode(**ozzy));

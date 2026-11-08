@@ -26,17 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Timer device
-
-- **Layers:** devices, ozzy
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (Timer)
-
-A periodic interrupt at a configured rate, and a port to read the cycle count
-and the host's date and time.
-
 ## Disk drive device
 
 - **Layers:** devices, ozzy, wiki
@@ -55,7 +44,7 @@ packed host bytes.
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Timer device*, *Disk drive device*
+- **Depends on:** *Disk drive device*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
@@ -337,7 +326,7 @@ worker. It adds microcode, so it waits until a program needs it.
 A mapped page belongs wholly to its device, so a device with only a few words
 to map takes a whole page, 4 Kiw of a bank's 64, and each such device takes
 another. Ports suit small state a program reads and writes as registers (the
-keyboard, *Timer device*), and memory mapping suits bulk
+keyboard, the timer), and memory mapping suits bulk
 data (the screen's cells), so no device needs this yet. One with more than
 ports comfortably hold, such as sound or sprite registers, could share a page
 instead: several devices mapped into one page, each at a range of words of its

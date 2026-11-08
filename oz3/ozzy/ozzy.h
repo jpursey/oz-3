@@ -16,6 +16,7 @@
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
+#include "oz3/devices/timer.h"
 #include "oz3/ozzy/ozzy_settings.h"
 
 namespace oz3 {
@@ -24,7 +25,7 @@ namespace oz3 {
 // Ozzy
 //==============================================================================
 
-// An Ozzy: a Processor with the banks, cores, and console devices its
+// An Ozzy: a Processor with the banks, cores, and devices its
 // OzzySettings describe, the boot ROM (boot_rom.oza) in page 0 of bank 0, and
 // the machine table in the boot ROM's page (see machine_table.h). Each bank is
 // readable on its RAM pages and its ROM page, and writable on its RAM pages.
@@ -35,10 +36,11 @@ class Ozzy final {
   // Constants
   //----------------------------------------------------------------------------
 
-  // The names of the console devices in the Processor.
+  // The names of the devices in the Processor.
   static constexpr std::string_view kScreenName = "Screen";
   static constexpr std::string_view kKeyboardName = "Keyboard";
   static constexpr std::string_view kTeletypeName = "Teletype";
+  static constexpr std::string_view kTimerName = "Timer";
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -61,10 +63,15 @@ class Ozzy final {
 
   Processor* GetProcessor() { return processor_.get(); }
 
-  // Return the console devices, each null if the Ozzy doesn't have one.
+  // Return the devices, each null if the Ozzy doesn't have one. A host gives
+  // the timer its clock (see Timer::SetClock), as it has none of its own. The
+  // clock's date and time move with the host's time, while ticks and
+  // milliseconds move with the time given to Run, so the two only keep pace
+  // while the host runs the Ozzy in real time.
   Screen* GetScreen() { return screen_; }
   Keyboard* GetKeyboard() { return keyboard_; }
   Teletype* GetTeletype() { return teletype_; }
+  Timer* GetTimer() { return timer_; }
 
   //----------------------------------------------------------------------------
   // Operations
@@ -88,6 +95,7 @@ class Ozzy final {
   Screen* const screen_;
   Keyboard* const keyboard_;
   Teletype* const teletype_;
+  Timer* const timer_;
 
   // The time times the clock rate left over from the last Run, which is less
   // than a cycle.
