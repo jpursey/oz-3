@@ -26,19 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Disk drive device
-
-- **Layers:** devices, ozzy, wiki
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (Disk drive, File names)
-
-The smart drive, which owns its file system: a flat directory of 12.3 named
-files on a host folder, requests as blocks in memory with the port as a
-doorbell, transfers straight to memory in simulated time, and text files as
-packed host bytes.
-
 ## Ozzy OS
 
 - **Layers:** ozzy, wiki
