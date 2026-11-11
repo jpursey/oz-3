@@ -178,8 +178,7 @@ class DiskImage {
       gb::FileSystem* file_system, std::string_view path,
       int64_t sector_count);
 
-  // Opens an existing image. If the host file can't be opened for writing,
-  // it is opened for reading, and reads as write-protected.
+  // Opens an existing image, for reading and writing.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Open(
       gb::FileSystem* file_system, std::string_view path);
 
@@ -187,16 +186,13 @@ class DiskImage {
   uint16_t GetFlags() const;  // The header's flags word, as MEDIA reports it.
   bool IsWriteProtected() const;
 
-  // Sets the header's write-protect bit. Fails if the host file is read-only.
+  // Sets the header's write-protect bit.
   DiskStatus SetWriteProtected(bool write_protected);
 
   // Reads or writes one whole sector. Fail with kIoError, and writes with
   // kWriteProtected on a protected image.
   DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
   DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words);
-
-  // Flushes the host file.
-  DiskStatus Flush();
 };
 ```
 
@@ -205,11 +201,30 @@ class DiskImage {
   so a sector is read or written as one 512-byte block, with no conversion.
   Only a big-endian host swaps each word's bytes, after reading and before
   writing.
-- `Open` fails with an `absl::Status` naming the problem: the file isn't an
-  image (the wrong ID), its version or sector size isn't supported, its
-  sector count is 0, or the file is too short to hold the sectors its header
-  counts.
+- `Open` fails with an `absl::Status` naming the problem: the file is missing
+  or can't be opened for reading and writing, it isn't an image (the wrong
+  ID), its version or sector size isn't supported, its sector count is 0, or
+  the file is too short to hold the sectors its header counts.
+- There is no read-only host file: `gb::FileSystem` has no file attributes,
+  and the header's write-protect bit is how an image is read-only, as a
+  floppy's notch is. If Game Bits gains file attributes, opening a read-only
+  host file as write-protected could follow.
 - `Create` writes the header and zero sectors, a few sectors at a time.
+- It is write-through to the host: `WriteSector` and `SetWriteProtected`
+  flush the host file before returning, so a host failure is the result of
+  the write it failed, and there is no `Flush` to pair with writes. A flush is
+  an OS write (the local protocol's `fflush`), not a sync to the device, so a
+  flush per sector costs nothing at the drive's rates.
+- Once a host read, write, or flush fails, `gb::File` is invalid, so every
+  later operation on the image is `kIoError` too.
+- Tests reach the `kIoError` paths through `FaultyFileProtocol`, a test-only
+  `gb::MemoryFileProtocol` in `oz3_disk_test` whose files' reads, writes, and
+  flushes fail once its `Limits` (how many more of each succeed) run out. So
+  nothing for tests is in `DiskImage`. CL7's crash test uses it to stop the
+  image's writes after a given number of sectors. Names:
+  `FaultyFileProtocol`. Alternatives: `FailingFileProtocol` (reads as always
+  failing), `FaultInjectionFileProtocol` (long). Recommended:
+  `FaultyFileProtocol`.
 
 ### disk: DiskHardware
 
@@ -383,7 +398,7 @@ class DiskFileSystem {
   DiskStatus Create(const DiskFilename& name, DiskFile* file);
   DiskStatus Close(DiskFile file, DateTime now);
   DiskStatus Flush(DiskFile file, DateTime now);
-  DiskStatus Flush(DateTime now);  // Every open file, then the image.
+  DiskStatus Flush(DateTime now);  // Every open file and buffer.
 
   // Data. Read and Write move at most up to the next sector boundary.
   DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int* count);
@@ -454,13 +469,10 @@ file system, for `oz3dsk` and any frontend.
 
 ### To confirm
 
-- That `gb::File::Write` past the end of a `MemoryFileProtocol` file extends
-  it, and that `Read` at the end returns short rather than failing (CL2).
-- That a host file opened read-only through `gb::FileSystem` refuses writes
-  without failing the open, for read-only images (CL2).
-- That `TestProtocol`'s `fail_write_after` stops a write at an exact byte, so
-  a crash can be simulated at every sector write (CL7). If not, a test-only
-  `DiskImage` limit on writes does it.
+Confirmed in CL2: `gb::File::Write` past the end of a `MemoryFileProtocol`
+file extends it, and `Read` at the end returns short rather than failing.
+Game Bits' `TestProtocol` is for testing Game Bits' file system, so host
+failures come from OZ-3's own `FaultyFileProtocol` instead.
 
 ## CLs
 
@@ -487,15 +499,16 @@ Depends on: nothing.
   as no date, ordering across each word, and a year past 65,535 keeping its
   low 16 bits as the timer did. The timer's existing tests pass unchanged.
 
-### CL2 [ ] disk: the library and disk images
+### CL2 [x] disk: the library and disk images
 
 Depends on: nothing.
 
-- `oz3/disk/`: `CMakeLists.txt` (`oz3_disk`, on `oz3_core`, `gb_file`, and
-  Abseil),
-  `disk_status.h` (`DiskStatus`, with every status code), and `disk_image.h`
-  and `.cc`.
-- disk_design.md: `DiskError` becomes `DiskStatus`.
+- `oz3/disk/`: `CMakeLists.txt` (`oz3_disk`, on `gb_file` and Abseil; CL4
+  adds `oz3_core` when it first uses `DateTime`), `disk_status.h`
+  (`DiskStatus`, with every status code), `disk_image.h` and `.cc`, and the
+  test-only `faulty_file_protocol.h` and `.cc`.
+- disk_design.md: `DiskError` becomes `DiskStatus`, and the library uses
+  `core` for `DateTime`.
 - `oz3/CMakeLists.txt` adds `disk` after `core`.
 - CLAUDE.md: the library order becomes `core` → `disk` → `tools` → ..., with a
   description of `disk` (it uses only `core`, for `DateTime`).
@@ -506,8 +519,10 @@ Depends on: nothing.
 - Unit tests: creating and reopening images, the header's exact bytes, sector
   bytes low first, every header error, a file too short for its sectors,
   reads and writes at the first and last sectors and past the end, write
-  protection set, cleared, and refusing writes, a read-only host file, and
-  host I/O failures as `kIoError` (through `TestProtocol`).
+  protection set, cleared, and refusing writes, a missing or locked host file,
+  and host read, write, and flush failures (through `FaultyFileProtocol`):
+  `kIoError` from each operation and every one after, and a failed `Create`
+  or `Open`.
 
 ### CL3 [ ] disk: the hardware's cache and timing
 
@@ -530,6 +545,7 @@ Depends on: CL1, CL2.
 
 - `disk_filename.h` and `.cc` (`DiskFilename` and `DiskLabel`), and
   `disk_dir_entry.h` and `.cc`.
+- `oz3_disk` depends on `oz3_core`, for `DateTime`.
 - Unused, so no visible change.
 
 **Verify**
@@ -615,11 +631,11 @@ Depends on: CL6.
   a cluster boundary, the free count after each, stamps at `Close` and
   `Flush` only after writes, and the exact order of sector writes for each
   commit.
-- A crash test: for each operation sequence, stop the image's writes after
-  every possible number of sector writes, detach and reattach the image, and
-  check that no cluster is cross-linked or on both the free list and a chain
-  (with CL9's `Check` once it exists; here by walking the chains in the
-  test).
+- A crash test: for each operation sequence, stop the image's writes with
+  `FaultyFileProtocol` after every possible number of sector writes, detach and
+  reattach the image, and check that no cluster is cross-linked or on both
+  the free list and a chain (with CL9's `Check` once it exists; here by
+  walking the chains in the test).
 
 ### CL8 [ ] disk: deleting, renaming, and attributes
 

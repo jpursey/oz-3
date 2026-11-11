@@ -1,0 +1,118 @@
+// Copyright (c) 2026 John Pursey
+//
+// Use of this source code is governed by an MIT-style License that can be found
+// in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+#ifndef OZ3_DISK_DISK_IMAGE_H_
+#define OZ3_DISK_DISK_IMAGE_H_
+
+#include <cstdint>
+#include <memory>
+#include <string_view>
+
+#include "absl/status/statusor.h"
+#include "absl/types/span.h"
+#include "gb/file/file.h"
+#include "gb/file/file_system.h"
+#include "oz3/disk/disk_status.h"
+
+namespace oz3 {
+
+// The words in a sector.
+inline constexpr int kDiskSectorWords = 256;
+
+// A disk image: a host file holding an 8-word header, and then a flat array of
+// sectors. Words are stored two bytes each, low byte first, so sector n starts
+// at byte 16 + 512 * n. The header is the medium's: its sector count and its
+// flags, such as write protection. It is never visible to the OZ-3 as data.
+//
+// The image owns its host file, open for reading and writing until the image
+// is destroyed. It is write-through: each write is flushed to the host before
+// it returns, so a host failure is the result of the write it failed. Once a
+// host read, write, or flush fails, the host file is unusable, and every later
+// operation fails with kIoError too.
+class DiskImage final {
+ public:
+  //----------------------------------------------------------------------------
+  // Constants
+  //----------------------------------------------------------------------------
+
+  // The header's flags: bit 0 is write protection. The others are reserved.
+  static constexpr uint16_t kWriteProtectedFlag = 0x0001;
+
+  // The most sectors an image can have, as its header counts them in a dword.
+  static constexpr int64_t kMaxSectorCount = 0xFFFF'FFFF;
+
+  //----------------------------------------------------------------------------
+  // Construction / Destruction
+  //----------------------------------------------------------------------------
+
+  // Creates a blank image of `sector_count` sectors at `path`, replacing any
+  // file there: every sector is zeros, an unformatted disk. `file_system` must
+  // outlive the image. Fails if `sector_count` is not 1 to kMaxSectorCount, or
+  // the host file can't be written.
+  static absl::StatusOr<std::unique_ptr<DiskImage>> Create(
+      gb::FileSystem* file_system, std::string_view path, int64_t sector_count);
+
+  // Opens the existing image at `path` for reading and writing. `file_system`
+  // must outlive the image. Fails with a message saying what is wrong if the
+  // file is missing, can't be opened for reading and writing, isn't an image,
+  // has a version or sector size this doesn't support, has no sectors, or is
+  // too short for the sectors its header counts.
+  static absl::StatusOr<std::unique_ptr<DiskImage>> Open(
+      gb::FileSystem* file_system, std::string_view path);
+
+  DiskImage(const DiskImage&) = delete;
+  DiskImage& operator=(const DiskImage&) = delete;
+  ~DiskImage() = default;
+
+  //----------------------------------------------------------------------------
+  // Medium
+  //----------------------------------------------------------------------------
+
+  // Returns the number of sectors, from 1 to kMaxSectorCount.
+  int64_t GetSectorCount() const { return sector_count_; }
+
+  // Returns the header's flags word, as the drive's MEDIA command reports it.
+  uint16_t GetFlags() const { return flags_; }
+
+  // Returns whether the image is write-protected, refusing sector writes.
+  bool IsWriteProtected() const { return (flags_ & kWriteProtectedFlag) != 0; }
+
+  // Sets or clears the header's write-protect bit, which a protected image
+  // still allows. Returns kOk, or kIoError if the host write or flush fails.
+  DiskStatus SetWriteProtected(bool write_protected);
+
+  //----------------------------------------------------------------------------
+  // Sectors
+  //----------------------------------------------------------------------------
+
+  // Reads sector `sector` into `words`. Returns kOk, kBadArgument if the
+  // sector is out of range or `words` isn't kDiskSectorWords long, or kIoError
+  // if the host read fails.
+  DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
+
+  // Writes `words` to sector `sector`. Returns kOk, kBadArgument as for
+  // ReadSector, kWriteProtected if the image is write-protected, or kIoError
+  // if the host write or flush fails.
+  DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words);
+
+ private:
+  //----------------------------------------------------------------------------
+  // Implementation
+  //----------------------------------------------------------------------------
+
+  DiskImage(std::unique_ptr<gb::File> file, int64_t sector_count,
+            uint16_t flags);
+
+  // Returns whether `sector` and `size` are a sector and a sector's words.
+  bool IsValidSector(int64_t sector, int64_t size) const;
+
+  std::unique_ptr<gb::File> file_;
+  const int64_t sector_count_;
+  uint16_t flags_;
+};
+
+}  // namespace oz3
+
+#endif  // OZ3_DISK_DISK_IMAGE_H_

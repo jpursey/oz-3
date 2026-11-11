@@ -180,7 +180,7 @@ Every name and pattern character is below 80h, and the matching is a fixed loop 
 
 One library, `oz3/disk` (`oz3_disk`), is the only implementation of the format. The drive device, `DiskFileProtocol`, and `oz3dsk` all use it, so they can never disagree about what's on a disk. Its names carry a `Disk` prefix, so they aren't confused with general file concepts.
 
-It uses nothing in OZ-3, only Game Bits (`gb_file`), and is its own library rather than part of `devices` only so that `tools` can use it. So it comes right after `core` in the libraries' order: `core` → `disk` → `tools` → `instruction_sets` → `devices` → `ozzy`, then `apps`.
+It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is its own library rather than part of `devices` only so that `tools` can use it. So it comes right after `core` in the libraries' order: `core` → `disk` → `tools` → `instruction_sets` → `devices` → `ozzy`, then `apps`.
 
 | Class | What |
 | --- | --- |
@@ -191,7 +191,7 @@ It uses nothing in OZ-3, only Game Bits (`gb_file`), and is its own library rath
 | `DateTime` | In core: the 4-word date and time, as the timer answers it and timestamps store it |
 | `DiskDirEntry` | A value: a 16-word directory entry, with getters and setters, returning its name as a `DiskFilename` |
 | `DiskFile` | A value: a handle to an open file, an index and a generation |
-| `DiskError` | An enum matching the drive's status codes |
+| `DiskStatus` | An enum of the drive's status codes, `kOk` included |
 
 The public surface is `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the value types. The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
 
