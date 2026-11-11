@@ -26,24 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Port status and byte-swapped compare instructions
-
-- **Layers:** instruction_sets, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [disk_design.md](disk_design.md) (Prerequisites, Control
-  port: requests, Names and patterns)
-
-Two new instructions at the end of the default instruction set, pinned as new
-instructions are:
-- `TSTP`: sets **S** to a port's status without loading or clearing anything,
-  which the disk drive's reset handshake needs, as `IN` would clear a pending
-  request.
-- A compare that swaps both words' bytes first, so packed text (low byte
-  first) compares in reading order with one instruction a word, for sorting
-  file names and other text.
-
 ## No date without a clock
 
 - **Layers:** devices, wiki
@@ -77,8 +59,7 @@ consistency checks. No device and no tools, so it is tested on its own over
 - **Layers:** devices, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Disk library*, *Port status and byte-swapped compare
-  instructions*
+- **Depends on:** *Disk library*
 - **Background:** [disk_design.md](disk_design.md) (Drive device)
 
 The smart drive on the disk library: its settings and timing presets, the

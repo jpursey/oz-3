@@ -3464,6 +3464,34 @@ constexpr oz3::InstructionDef kInstructions[] = {
     {.op = 142,
      .op_name = "CLRN",
      .code = "UL;WAIT(C2);"},
+    {.op = 143,
+     .op_name = "TSTP.R",
+     .source = "$r",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .code = "UL;PLK(a);PLD(_,C0);MSR(S,S);PUL;"},
+    {.op = 144,
+     .op_name = "TSTP.I",
+     .source = "$#8",
+     .arg1 = {oz3::ArgType::kImmediate, 8},
+     .code = "UL;PLK(C0);PLD(_,C1);MSR(S,S);PUL;"},
+    {.op = 145,
+     .op_name = "CMPT.W",
+     .source = "$r, $m",
+     .arg1 = {oz3::ArgType::kWordReg, 3},
+     .arg2 = {oz3::ArgType::kMacro, 5},
+     .arg_macro_name = "GetWord",
+     .code = "$GetWord;MVB(C0:L,a:H);MVB(C0:H,a:L);MVB(C1:L,r:H);"
+             "MVB(C1:H,r:L);CMP(C0,C1);MSR(ZSCO,ZSCO);"},
+    {.op = 146,
+     .op_name = "CMPT.D",
+     .source = "$R, $m",
+     .arg1 = {oz3::ArgType::kDwordReg, 2},
+     .arg2 = {oz3::ArgType::kMacro, 5},
+     .arg_macro_name = "GetDword",
+     .code = "$GetDword;MVB(C2:L,r1:H);MVB(C2:H,r1:L);MVB(C1:L,r0:H);"
+             "MVB(C1:H,r0:L);MVB(C0:L,a0:H);MVB(C0:H,a0:L);CMP(C0,C1);"
+             "MSR(Z,Z);MVB(C0:L,a1:H);MVB(C0:H,a1:L);SBC(C0,C2);"
+             "MSR(ZSCO,_SCO);"},
 };
 
 constexpr oz3::InstructionSetDef kInstructionSet = {

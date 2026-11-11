@@ -36,9 +36,9 @@ namespace {
 //==============================================================================
 
 // Instructions with opcodes below this have pinned code words.
-constexpr int kPinnedInstructionCount = 0x8F;
+constexpr int kPinnedInstructionCount = 0x93;
 
-constexpr uint64_t kPinnedFingerprint = 0xEA673C04BF7643C5;
+constexpr uint64_t kPinnedFingerprint = 0xD813E5BDE83CAB53;
 
 std::string ArgumentLayout(const Argument& arg) {
   return absl::StrCat(ArgTypeToString(arg.type), ":",

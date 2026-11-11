@@ -1084,5 +1084,143 @@ TEST_F(InstructionTest, CMP_Cycles) {
   });
 }
 
+// Packed text holds two characters a word, the first in the low byte.
+constexpr uint16_t Packed(char first, char second) {
+  return static_cast<uint16_t>(static_cast<uint8_t>(first) |
+                               (static_cast<uint8_t>(second) << 8));
+}
+
+TEST_F(InstructionTest, CMPT_W) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.extra.SetAddress(state.be + 100).AddValue(Packed('B', 'A'));
+  state.SetRegisters({{CpuCore::ST, 0},
+                      {CpuCore::R0, Packed('A', 'Z')},
+                      {CpuCore::R1, Packed('B', 'A')},
+                      {CpuCore::R2, Packed('B', '\0')},
+                      {CpuCore::R3, 0x0080},
+                      {CpuCore::R4, 100}});
+
+  state.code.AddValue(Encode("CMPT.W", CpuCore::R0, {"$r", CpuCore::R1}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.W", CpuCore::R2, {"$r", CpuCore::R0}));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.W", CpuCore::R1, {"($r)", CpuCore::R4}));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.W", CpuCore::R0, {"$r", CpuCore::R0}));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.W", CpuCore::R3, "$v")).AddValue(0x0100);
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  // "AZ" is less than "BA" in reading order, though not as plain words.
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // CMPT.W R0, R1
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.r0, Packed('A', 'Z'));
+  EXPECT_EQ(state.r1, Packed('B', 'A'));
+
+  // "B" (ended by a zero) is greater than "AZ".
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // CMPT.W R2, R0
+  EXPECT_EQ(state.st, 0);
+
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // CMPT.W R1, (R4)
+  EXPECT_EQ(state.st, CpuCore::Z);
+
+  // The same register on both sides is swapped twice, and still equal.
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // CMPT.W R0, R0
+  EXPECT_EQ(state.st, CpuCore::Z);
+  EXPECT_EQ(state.r0, Packed('A', 'Z'));
+
+  // Swapped, this is 0x8000 - 0x0001, which overflows.
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // CMPT.W R3, 0x0100
+  EXPECT_EQ(state.st, CpuCore::O);
+}
+
+// A dword of packed text, the high word's characters and then the low word's.
+constexpr uint32_t PackedDword(char high_first, char high_second,
+                               char low_first, char low_second) {
+  return (uint32_t{Packed(high_first, high_second)} << 16) |
+         Packed(low_first, low_second);
+}
+
+TEST_F(InstructionTest, CMPT_D) {
+  ASSERT_TRUE(InitAndReset());
+  auto& state = GetState();
+  state.extra.SetAddress(state.be + 100)
+      .AddValue32(PackedDword('C', 'D', 'A', 'Z'));
+  state.SetRegisters({{CpuCore::ST, 0}, {CpuCore::R4, 100}});
+  state.SetRegisters({{CpuCore::R0, Packed('A', 'Z')},
+                      {CpuCore::R1, Packed('C', 'D')},
+                      {CpuCore::R2, Packed('B', 'A')},
+                      {CpuCore::R3, Packed('C', 'D')},
+                      {CpuCore::R6, Packed('Z', 'Z')},
+                      {CpuCore::R7, Packed('B', '\0')}});
+
+  state.code.AddValue(Encode("CMPT.D", 0, {"$R", 1}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.D", 3, {"$R", 0}));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.D", 0, "$V"))
+      .AddValue32(PackedDword('C', 'E', 'A', 'Z'));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.D", 0, {"[$r]", CpuCore::R4}));
+  const uint16_t ip4 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("CMPT.D", 1, {"$R", 1}));
+  const uint16_t ip5 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("MOV.LD", 3, "$V")).AddValue32(0x00800000);
+  state.code.AddValue(Encode("CMPT.D", 3, "$V")).AddValue32(0x01000000);
+  const uint16_t ip6 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  // The high words are equal, and the low word "AZ" is less than "BA" in
+  // reading order, though not as plain words.
+  ASSERT_TRUE(ExecuteUntilIp(ip1));  // CMPT.D D0, D1
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+  EXPECT_EQ(state.d0(), PackedDword('C', 'D', 'A', 'Z'));
+  EXPECT_EQ(state.d1(), PackedDword('C', 'D', 'B', 'A'));
+
+  // The high word decides: "B" (ended by a zero) is less than "CD", though the
+  // low word "ZZ" is greater than "AZ".
+  ASSERT_TRUE(ExecuteUntilIp(ip2));  // CMPT.D D3, D0
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+
+  // Equal low words don't make the dwords equal.
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // CMPT.D D0, "CEAZ"
+  EXPECT_EQ(state.st, CpuCore::S | CpuCore::C);
+
+  ASSERT_TRUE(ExecuteUntilIp(ip4));  // CMPT.D D0, [R4]
+  EXPECT_EQ(state.st, CpuCore::Z);
+
+  ASSERT_TRUE(ExecuteUntilIp(ip5));  // CMPT.D D1, D1
+  EXPECT_EQ(state.st, CpuCore::Z);
+  EXPECT_EQ(state.d1(), PackedDword('C', 'D', 'B', 'A'));
+
+  // Swapped, this is 0x80000000 - 0x00010000, which overflows.
+  ASSERT_TRUE(ExecuteUntilIp(ip6));  // CMPT.D D3, 0x01000000
+  EXPECT_EQ(state.st, CpuCore::O);
+}
+
+TEST_F(InstructionTest, CMPT_Cycles) {
+  ASSERT_TRUE(InitAndReset());
+  RunCycleCases({
+      {"CMPT.W R0, R1",
+       8,
+       {Encode("CMPT.W", CpuCore::R0, {"$r", CpuCore::R1})}},
+      {"CMPT.W R0, 5", 9, {Encode("CMPT.W", CpuCore::R0, "$v"), 5}},
+      {"CMPT.W R0, (R1)",
+       10,
+       {Encode("CMPT.W", CpuCore::R0, {"($r)", CpuCore::R1})}},
+      {"CMPT.W R0, (R1 + 1)",
+       12,
+       {Encode("CMPT.W", CpuCore::R0, {"($r + $v)", CpuCore::R1}), 1}},
+      {"CMPT.D D0, D1", 13, {Encode("CMPT.D", 0, {"$R", 1})}},
+      {"CMPT.D D0, 5", 15, {Encode("CMPT.D", 0, "$V"), 5, 0}},
+      {"CMPT.D D0, [R4]", 16, {Encode("CMPT.D", 0, {"[$r]", CpuCore::R4})}},
+      {"CMPT.D D0, [R4 + 1]",
+       18,
+       {Encode("CMPT.D", 0, {"[$r + $v]", CpuCore::R4}), 1}},
+  });
+}
+
 }  // namespace
 }  // namespace oz3

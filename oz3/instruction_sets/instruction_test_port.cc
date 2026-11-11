@@ -2020,6 +2020,65 @@ TEST_F(InstructionTest, OUTR_MissingPort) {
   EXPECT_EQ(state.st, ZC);
 }
 
+TEST_F(InstructionTest, TSTP_R) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, ZC},
+                      {CpuCore::R0, 1},    // Port
+                      {CpuCore::R1, 2}});  // Missing port
+
+  state.code.AddValue(Encode("TSTP.R", CpuCore::R0));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TSTP.R", CpuCore::R0));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SETF", CpuCore::S));
+  state.code.AddValue(Encode("TSTP.R", CpuCore::R1));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+
+  // A set status sets S, and the port is left as it was.
+  WritePort(1, 42);
+  EXPECT_EQ(CyclesUntilIp(ip1), 4);  // TSTP.R R0
+  EXPECT_EQ(state.st, ZSC);
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(GetPort(1).GetStatus(), 1);
+  EXPECT_EQ(GetPort(1).GetValue(0), 42);
+
+  // A clear status clears S.
+  ReadPort(1);
+  EXPECT_EQ(CyclesUntilIp(ip2), 4);  // TSTP.R R0
+  EXPECT_EQ(state.st, ZC);
+
+  // A missing port has no status, whatever S held before.
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SETF S; TSTP.R R1
+  EXPECT_EQ(state.st, ZC);
+}
+
+TEST_F(InstructionTest, TSTP_I) {
+  ASSERT_TRUE(InitAndReset({.num_ports = 2}));
+  auto& state = GetState();
+  state.SetRegisters({{CpuCore::ST, ZC}});
+
+  state.code.AddValue(Encode("TSTP.I", 1));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("TSTP.I", 1));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("SETF", CpuCore::S));
+  state.code.AddValue(Encode("TSTP.I", 2));
+  const uint16_t ip3 = state.code.AddNopGetAddress();
+
+  WritePort(1, 42);
+  EXPECT_EQ(CyclesUntilIp(ip1), 4);  // TSTP.I 1
+  EXPECT_EQ(state.st, ZSC);
+  EXPECT_EQ(GetPort(1).GetStatus(), 1);
+
+  ReadPort(1);
+  EXPECT_EQ(CyclesUntilIp(ip2), 4);  // TSTP.I 1
+  EXPECT_EQ(state.st, ZC);
+
+  ASSERT_TRUE(ExecuteUntilIp(ip3));  // SETF S; TSTP.I 2
+  EXPECT_EQ(state.st, ZC);
+}
+
 // The tests above time the ends of every variant but these, which take a port
 // as a value: their cheapest address forms, and OUT and OUTS from a register.
 // Nothing has written to port 1 before the INS cases, so they find it not

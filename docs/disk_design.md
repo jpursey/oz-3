@@ -165,7 +165,7 @@ A name is two separate packed fields, a 1–12 character name and a 0–4 charac
 - **Characters:** letters, digits, and the DOS punctuation ``! # $ % & ' ( ) - @ ^ _ ` { } ~``. Letters are stored in upper case, and names are matched without regard to case.
 - **Excluded:** `.`, `/`, `\`, spaces, and everything else. The dot exists only in display and in text a program parses.
 - **Padding** is zero bytes, and no zero byte may come before a character within a field.
-- **Order:** names sort by comparing their 16 bytes in order, which sorts by name and then extension. Since the first character of each pair is in the low byte, comparing the words themselves doesn't sort; code compares byte by byte, or swaps each word's bytes before comparing. A compare instruction that swaps both words' bytes first makes this one instruction a word (see Prerequisites).
+- **Order:** names sort by comparing their 16 bytes in order, which sorts by name and then extension. Since the first character of each pair is in the low byte, comparing the words themselves doesn't sort; code compares each word with `CMPT`, which swaps both words' bytes before comparing, so it is one instruction a word.
 - In assembly, a name field is two directives, `.DW SIZE(6) "HELLO"` then `.DW SIZE(2) "TXT"`, displayed as `HELLO.TXT`.
 
 A **pattern** is a name field that may also hold `?` and `*`, matched against each field separately, byte by byte:
@@ -340,7 +340,7 @@ The OS writes a request word with `OUTS`, setting the port's flag. Each bit is a
 
 **Reset** aborts whatever is in progress, silently and with the same outcomes as an abort by a command word (see Aborts), withdraws any words waiting on the command and data ports, clears both ports' flags, and returns the drive to idle. It works in every phase, so it is the one sure way back to a known state.
 
-To know a request is done, the OS tests the port's flag with `TSTP`, a new instruction in the default instruction set that sets **S** to a port's flag without loading or clearing anything. The drive never sets the control port's flag itself, so a set flag can only mean the OS's request is still waiting. When the drive finishes a request, it restores the state word and clears the flag in the same step. So a reset is:
+To know a request is done, the OS tests the port's flag with `TSTP`, which sets **S** to a port's flag without loading or clearing anything. The drive never sets the control port's flag itself, so a set flag can only mean the OS's request is still waiting. When the drive finishes a request, it restores the state word and clears the flag in the same step. So a reset is:
 
 1. The OS writes 1 to the control port with `OUTS`.
 2. `TSTP` on the control port until **S** is clear. The reset is complete, the drive is idle, and the state word is current.
@@ -636,7 +636,7 @@ This design depends on changes made ahead of it, each a backlog item of its own:
 - **Packed strings low byte first.** The assembler packs strings with the first character of each pair in the low byte, and the teletype and any other code handling packed text follow suit, as does the boot ROM's text and every test that packs text. Host files then hold packed text in reading order, so text and mixed binary-and-text files copy to and from images as plain binary, on any host. Single characters still write as themselves (0041h is "A"). It breaks every program with packed text, which is why it comes before there are many.
 - **Port status and byte-swapped compare instructions** in the default instruction set, at its end as new instructions are:
   - `TSTP`: sets **S** to a port's flag without loading or clearing anything, for the control port's request handshake.
-  - A compare that swaps both words' bytes first, so packed text compares in reading order with one instruction a word, for sorting names and other packed text.
+  - `CMPT`: a compare that swaps both words' bytes first, so packed text compares in reading order with one instruction a word, for sorting names and other packed text.
 - **No date without a clock.** A timer with no host clock reads zeros for the date and time, rather than 1970-01-01 00:00:00, so timers and drives agree that zeros mean no date.
 - **Game Bits changes:** required positional arguments with subcommands and required flags in `gb_cli`, and `MoveFile` and `MoveFolder` in `gb::FileSystem` (see Game Bits dependencies).
 

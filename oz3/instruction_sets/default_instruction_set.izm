@@ -5543,3 +5543,73 @@ instruction CLRN {
   UL;
   WAIT(C2);  # C2 is always zero at the start of an instruction.
 }
+
+################################################################################
+## TSTP <port>
+##
+## Cycles: 4
+## ZSCO: -X--
+##
+## Variants:
+##    TSTP.R <reg>        (4 cycles)
+##    TSTP.I <0..255>     (4 cycles)
+##
+## Tests the specified port's status, without reading or changing the port. "S"
+## flag is set if the port's status is set, otherwise it is cleared (always
+## cleared if the port does not exist). TSTP.I holds the port in the code word.
+################################################################################
+
+instruction TSTP.R "$r" {
+  UL;
+  PLK(a); PLD(_,C0); MSR(S,S); PUL;  # The word loaded into C0 is discarded
+}
+
+instruction TSTP.I "$#8" {
+  UL;
+  PLK(C0); PLD(_,C1); MSR(S,S); PUL;  # As TSTP.R, with the port in C0
+}
+
+################################################################################
+## CMPT <register> <value>
+##
+## Cycles: 8-18
+## ZSCO: XXXX
+##
+## Variants:
+##    CMPT.W <reg>, <reg>              (8 cycles)
+##    CMPT.W <reg>, <integer>          (9 cycles)
+##    CMPT.W <reg>, <word-address>     (10-12 cycles)
+##    CMPT.D <dreg>, <dreg>            (13 cycles)
+##    CMPT.D <dreg>, <integer>         (15 cycles)
+##    CMPT.D <dreg>, <dword-address>   (16-18 cycles)
+##
+## Compares as CMP does, but with the bytes of each word of both <register> and
+## <value> swapped first, neither of which is changed. Packed text holds its
+## first character in the low byte, so CMPT.W compares two words of packed text
+## in reading order. CMPT.D swaps each word's bytes on its own, and keeps the
+## words where they are, so the high word is compared first, as for CMP.D.
+################################################################################
+
+instruction CMPT.W "$r, $m" {
+  $GetWord;
+  MVB(C0:L,a:H); MVB(C0:H,a:L); MVB(C1:L,r:H); MVB(C1:H,r:L);
+  CMP(C0,C1);
+  MSR(ZSCO,ZSCO);
+}
+
+instruction CMPT.D "$R, $m" {
+  $GetDword;
+
+  # The value may be in C0 and C1, so each is swapped into a register whose
+  # word has already been read.
+  MVB(C2:L,r1:H); MVB(C2:H,r1:L);
+  MVB(C1:L,r0:H); MVB(C1:H,r0:L);
+  MVB(C0:L,a0:H); MVB(C0:H,a0:L);
+  CMP(C0,C1);
+  MSR(Z,Z);
+
+  # MVB leaves the flags, so SBC borrows from the CMP.
+  MVB(C0:L,a1:H); MVB(C0:H,a1:L);
+  SBC(C0,C2);
+  MSR(ZSCO,_SCO);
+}

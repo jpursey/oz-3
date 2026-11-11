@@ -433,6 +433,8 @@ TEST_F(AssembleFormTest, EveryForm) {
   AddForm("CPD", {Reg(CpuCore::R3), RegAt(CpuCore::R4)});
   AddForm("CPIR", {Reg(CpuCore::R5), RegAt(CpuCore::R6)});
   AddForm("CPDR", {Reg(CpuCore::R7), RegAt(CpuCore::R0)});
+  AddForms("CMPT.W", {Reg(CpuCore::R2)}, WordValues());
+  AddForms("CMPT.D", {DReg(1)}, DwordValues());
 
   //----------------------------------------------------------------------------
   // Branches
@@ -492,6 +494,8 @@ TEST_F(AssembleFormTest, EveryForm) {
             {Reg(CpuCore::R0), DwordRegAt(CpuCore::R1)});
     AddForm(absl::StrCat(op, ".ID"), {Word(34), DwordRegAt(CpuCore::R2)});
   }
+  AddForm("TSTP.R", {Reg(CpuCore::R3)});
+  AddForm("TSTP.I", {Number(200)});
 
   //----------------------------------------------------------------------------
   // Cores
