@@ -108,7 +108,7 @@ first):
 | 0         | 0     | Timer                              |
 | 1         | 1     | Keyboard                           |
 | -         | 2     | Teletype (when there is no screen) |
-| 2-5       | 8-11  | Disk drives `A:` to `D:`           |
+| 2-5       | 16-27 | Disk drives `A:` to `D:`, 3 each   |
 | 6         | -     | Screen refresh                     |
 | 24-31     | 16-23 | OS calls from cores 0 to 7         |
 
@@ -148,8 +148,8 @@ devices: [
   { type: "screen", bank: 0, page: 15, columns: 80, rows: 24, interrupt: 6 },
   { type: "keyboard", port: 1, interrupt: 1 },
   { type: "timer", port: 0, interrupt: 0, hz: 60 },
-  { type: "drive", letter: "A", port: 8, interrupt: 2, folder: "disks/system" },
-  { type: "drive", letter: "B", port: 9, interrupt: 3, folder: "disks/work" },
+  { type: "drive", letter: "A", image: "disks/system.ozd" },
+  { type: "drive", letter: "B", image: "disks/work.ozd" },
 ]
 ```
 
@@ -251,38 +251,10 @@ pace themselves with.
 
 A **smart drive**: it owns its file system, so the OS asks for files by name,
 and the drive keeps the directory and allocates space. This keeps the OS small,
-where a CP/M BDOS spent most of its size on the file system.
-- **Disks** are folders on the host in the first version. Each file in the
-  folder whose name is a valid Ozzy name (see
-  [File names](#file-names)) is a file on the disk, and the rest don't show.
-  So a program is put on a disk by copying its `.oz3` file into the folder. A
-  single file disk image format can come later.
-- **A flat directory**, one per drive, with drive letters. No subdirectories.
-- **Requests** are blocks in memory. The OS fills one in, and writes its
-  address and bank to the drive's port (one dword: word 0 the address, word 1
-  the bank). The port acts as a doorbell: its status stays set while the drive
-  is busy, so `OUTS` fails until it is done. The drive reads the block, does
-  the work, writes the results and a status back into the block, and raises
-  its interrupt.
-- **Commands:** find (first and next, with `*` and `?` patterns), open (read,
-  write, create, or append), close, read, write, seek, delete, rename, and the
-  disk's free space. Files have handles, a few per drive.
-- **Transfers** go straight between the file and memory, at the address the
-  request gives. The program file format is designed for this: a loader can
-  read each data block straight to where it goes.
-- **Time:** each request takes simulated time, a configured seek time and a
-  time per word, and the drive locks the bank a few words at a time, so it
-  contends with the cores. This is what lets the OS core sleep while a drive
-  works, and other programs keep running.
-- **Words on the host:** a file is words, stored on the host low byte first,
-  as program files are. A file opened as **text** is instead the host's bytes,
-  packed two to a word with the first in the high byte (and a zero byte to pad
-  an odd length). So a text file written in Notepad reads as packed text on
-  the Ozzy, and back.
-
-A request block sketch: command, status, handle, mode, position (a dword),
-buffer bank and address, length in words, and a name or pattern (8 words), for
-about 18 words.
+where a CP/M BDOS spent most of its size on the file system. Its design, from
+the disk image format to the drives in the Ozzy, is
+[disk_design.md](disk_design.md), which replaces the sketch of a drive on host
+folders that was here.
 
 ## Packed strings
 
@@ -305,16 +277,9 @@ directory listing, or a drive searching its directory, is cheap.
 
 ### File names
 
-A file name is 12.3: up to 12 characters, then optionally a `.` and up to 3,
-packed into a fixed field of 8 words with the dot included, padded with zero
-bytes. A full 16 character name fills the field with no zero byte, so it is a
-fixed field, not a zero terminated string.
-- Names aren't case-sensitive. The drive stores and returns them in upper case.
-- The drive rejects a name with a space, `*`, `?`, `:`, or a second `.`.
-- `.OZ3` is a program.
-
-In source, a name field is `.DW SIZE(8) "A.TXT"`, which pads the name's 3
-words with zeros to fill the field's 8.
+A file name is 12.4, a name of up to 12 characters and an extension of up to
+4, in a fixed field of 8 words with no dot stored. See
+[disk_design.md](disk_design.md) (Names and patterns). `.OZ3` is a program.
 
 ## New instructions
 
@@ -483,10 +448,11 @@ The backlog items build this in order, each updating the wiki as it goes:
    console frontend and pacing, and a boot ROM that prints a banner and echoes
    keys. This is the first Ozzy anyone can run, and creates Ozzy's wiki page.
 6. *Timer device* (devices, ozzy).
-7. *Disk drive device* (devices, ozzy): the smart drive, on host folders.
+7. The disk drive, in the items [disk_design.md](disk_design.md) lists: disk
+   images, the drive, its tools, and drives in the Ozzy.
 8. *Ozzy OS* (ozzy, wiki): booting from disk, the calls, the loader, running
    programs in the foreground and in parallel, and the shell.
 
 Then *Debugger (oz3dbg)*, which Ozzy integrates once there is a machine worth
-debugging. Later, and waiting in the backlog: disk image files, and the DMA
-coprocessor for fast screen and disk transfers.
+debugging. Later, and waiting in the backlog: the DMA coprocessor for fast
+screen and disk transfers.

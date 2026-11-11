@@ -26,12 +26,117 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Packed strings low byte first
+
+- **Layers:** tools, devices, ozzy, wiki
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [disk_design.md](disk_design.md) (Prerequisites)
+
+Pack strings with the first character of each pair in the low byte, so packed
+text on the host (two bytes a word, low byte first, as in program files) reads
+in order, and text files copy to and from disk images as plain binary. The
+assembler's lexer packs this way, the teletype prints the low byte first, and
+the boot ROM's text and every test that packs text follow. Single characters
+still write as themselves (0041h is "A"). The wiki's packing (2.5's `SIZE`
+example, the teletype page) and ozzy_design.md's Packed strings change to
+match. It breaks every program with packed text, which is why it comes before
+there are many.
+
+## Port status and byte-swapped compare instructions
+
+- **Layers:** instruction_sets, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [disk_design.md](disk_design.md) (Prerequisites, Control
+  port: requests, Names and patterns)
+
+Two new instructions at the end of the default instruction set, pinned as new
+instructions are:
+- `TSTP`: sets **S** to a port's status without loading or clearing anything,
+  which the disk drive's reset handshake needs, as `IN` would clear a pending
+  request.
+- A compare that swaps both words' bytes first, so packed text (low byte
+  first) compares in reading order with one instruction a word, for sorting
+  file names and other text.
+
+## No date without a clock
+
+- **Layers:** devices, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [disk_design.md](disk_design.md) (Timestamps)
+
+A timer with no host clock reads zeros for the date and time, rather than
+1970-01-01 00:00:00, so the timer and the disk drive agree that zeros mean no
+date (month 0 is invalid). `3.4-Timer.md` changes to match.
+
+## Disk library
+
+- **Layers:** disk
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Packed strings low byte first*
+- **Background:** [disk_design.md](disk_design.md) (Disk image, File system,
+  Disk library)
+
+The new `oz3/disk` library (`oz3_disk`), between `core` and `tools`: disk
+images, `DiskHardware`'s cache and timing, the file system (mounting,
+formatting, the FAT and free list, directories, open files, and every file
+operation in its crash-safe order), names and patterns, timestamps, and
+consistency checks. No device and no tools, so it is tested on its own over
+`MemoryFileProtocol`. CLAUDE.md's library order gains it.
+
+## Disk drive device
+
+- **Layers:** devices, wiki
+- **Size:** large
+- **Feature workflow:** yes
+- **Depends on:** *Disk library*, *Port status and byte-swapped compare
+  instructions*
+- **Background:** [disk_design.md](disk_design.md) (Drive device)
+
+The smart drive on the disk library: its settings and timing presets, the
+command, data, and control ports, the command protocol with aborts and reset,
+every command, packed transfers, early completion, and disk changes. A new
+`3.5-Disk-Drive.md` wiki page, and rows in `3-Devices.md` and `Home.md`.
+
+## Disk tools
+
+- **Layers:** tools, apps, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Disk library*, Game Bits *Command line arguments before
+  subcommands*, Game Bits *Moving files*
+- **Background:** [disk_design.md](disk_design.md) (Tools)
+
+`DiskFileProtocol`, a `gb::FileProtocol` over a mounted image, in `tools`, and
+the `oz3dsk` command line tool for making, formatting, and filling images.
+
+## Ozzy drives
+
+- **Layers:** ozzy, apps, wiki
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Disk drive device*, *No date without a clock*, and *Disk
+  tools* to make disks to try by hand
+- **Background:** [disk_design.md](disk_design.md) (Ozzy)
+
+Drives `A:` to `D:` in the Ozzy: the wiring (ports 16 to 27, with the ports
+kept for devices growing to 0 to 31), `{ type: "drive" }` in configs with an
+image attached at power on, the machine table's type 5, `Ozzy::GetDrive`, the
+host clock, flushing at shutdown, and how the `ozzy` app changes disks while
+it runs.
+
 ## Ozzy OS
 
 - **Layers:** ozzy, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Disk drive device*
+- **Depends on:** *Ozzy drives*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
 
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
