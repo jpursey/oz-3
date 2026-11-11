@@ -26,22 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Disk library
-
-- **Layers:** disk
-- **Size:** large
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [disk_design.md](disk_design.md) (Disk image, File system,
-  Disk library)
-
-The new `oz3/disk` library (`oz3_disk`), between `core` and `tools`: disk
-images, `DiskHardware`'s cache and timing, the file system (mounting,
-formatting, the FAT and free list, directories, open files, and every file
-operation in its crash-safe order), names and patterns, timestamps, and
-consistency checks. No device and no tools, so it is tested on its own over
-`MemoryFileProtocol`. CLAUDE.md's library order gains it.
-
 ## Disk drive device
 
 - **Layers:** devices, wiki

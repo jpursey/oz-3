@@ -249,7 +249,7 @@ A drive's configuration can name a preset for its read rate, write rate, and lat
 The drive is no more powerful than the machine it serves. Its memory is a small fixed budget in two layers, matching the library's: the file system's own buffers, and the hardware's cache. That's about 2.75 Kiw with the defaults.
 
 - **The file system's buffers:** one sector per slot, one directory sector, and two FAT sectors, one of which always holds sector 1, where the free list's head lives. That's slots + 3 sectors, 7 with the defaults. These are the only places the file system holds sectors, and nothing writes them but the file system itself.
-- **The hardware's read cache:** a write-through cache of recently read sectors, 4 by default and possibly 0. Every write goes straight to the disk, so the cache only saves repeated reads, and the disk is always exactly what has been written to it.
+- **The hardware's read cache:** a write-through cache of recently read and written sectors, 4 by default and possibly 0. Every write goes straight to the disk, so the cache only saves repeated reads, and the disk is always exactly what has been written to it.
 - **A few words of state per slot:** the file's position, size, current cluster, and where its directory entry lives.
 
 A slot's buffer holds the sector at its position: file data, or for a directory handle, directory entries. The directory buffer serves directory changes and the entries of files being opened and closed. The FAT's working buffer serves every chain walk and allocation, for all files. Before a buffer takes another sector, the file system writes it if it's dirty. A big directory is slow to search, since its sectors pass through one buffer, though the read cache softens repeated passes.
@@ -688,7 +688,7 @@ The loader opens the `.oz3` file, reads its header with `READ`, then reads each 
 ## Open questions
 
 - [ ] Whether a data-ready interrupt is worth adding later, so the OS can `WAIT` through sector loads instead of polling. It would need its own enable bit in the control port, to keep the interrupt's single meaning by default.
-- [ ] Subdirectory commands, such as opening a directory entry as a directory handle, when the directory bit becomes real.
+- [ ] Subdirectory commands, such as opening a directory entry as a directory handle, when the directory bit becomes real. Commands that take a name (`OPEN`, `CREATE`, `DELETE`, `RENAME`, and `ATTRIB`) could resolve it against a current directory, with a directory handle or a path as an option, so version 1 commands keep working unchanged.
 - [ ] What the boot area holds, with the Ozzy OS and booting from a drive.
 - [ ] How the `ozzy` app changes disks while it runs: the console frontend has only its quit keys today, so it needs a way to pick a drive and an image (or none), such as a key chord and a prompt line. Settled in *Ozzy drives*, or a later item of its own.
 - [ ] Assembler addition: allow `SIZE(n)` anywhere in a `.DW` list, applying until the next `SIZE`, so a name field fits in one directive.
