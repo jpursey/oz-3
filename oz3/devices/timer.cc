@@ -22,15 +22,10 @@ namespace {
 constexpr int kTickPort = 0;
 constexpr int kClockPort = 1;
 
-// Returns `low` and `high` as the low and high words of a dword, each truncated
-// to 16 bits.
-uint32_t GetDword(int64_t low, int64_t high) {
-  return static_cast<uint16_t>(low) |
-         static_cast<uint32_t>(static_cast<uint16_t>(high)) << 16;
+// Returns `low` and `high` as the low and high words of a dword.
+uint32_t GetDword(uint16_t low, uint16_t high) {
+  return low | static_cast<uint32_t>(high) << 16;
 }
-
-// Returns `high` and `low` as the high and low bytes of a word.
-int GetBytes(int high, int low) { return (high << 8) | low; }
 
 // Stores `value` to `port` with `lock`, which holds it: the low word first,
 // and then the high word with `mode`.
@@ -143,13 +138,15 @@ void Timer::AnswerClock(const Lock& lock, uint16_t index) {
       answer = static_cast<uint32_t>(GetCycles() / clock_hz * 1000 +
                                      GetCycles() % clock_hz * 1000 / clock_hz);
     } break;
-    case kTimerDate:
-      answer = latched_date_;
-      break;
-    case kTimerTime:
+    case kTimerDate: {
+      const DateTime::Words& words = latched_.GetWords();
+      answer = GetDword(words[0], words[1]);
+    } break;
+    case kTimerTime: {
       LatchDateTime();
-      answer = latched_time_;
-      break;
+      const DateTime::Words& words = latched_.GetWords();
+      answer = GetDword(words[2], words[3]);
+    } break;
   }
 
   // The status stays clear, as the timer took the index.
@@ -157,14 +154,7 @@ void Timer::AnswerClock(const Lock& lock, uint16_t index) {
 }
 
 void Timer::LatchDateTime() {
-  if (clock_ == nullptr) {
-    latched_date_ = 0;
-    latched_time_ = 0;
-    return;
-  }
-  const absl::CivilSecond now = clock_();
-  latched_date_ = GetDword(now.year(), GetBytes(now.month(), now.day()));
-  latched_time_ = GetDword(now.hour(), GetBytes(now.minute(), now.second()));
+  latched_ = clock_ != nullptr ? DateTime::FromCivil(clock_()) : DateTime();
 }
 
 }  // namespace oz3

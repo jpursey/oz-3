@@ -188,7 +188,7 @@ It uses nothing in OZ-3, only Game Bits (`gb_file`), and is its own library rath
 | `DiskHardware` | Owns a `DiskImage`, and behaves as a dumb drive: sector reads and writes through an optional write-through read cache, and the time of each, from the read rate, write rate, and latency. A future raw drive device would be this behind ports |
 | `DiskFileSystem` | Owns a `DiskHardware`, and takes the open-file limit. Holds its own buffers, and does mounting, formatting, the FAT and free list, directories, the open-file table, and every file operation |
 | `DiskFilename` | A value: the 8-word 12.4 field. Parses and formats dotted text, validates, and matches |
-| `DiskTime` | A value: the 4-word timestamp, in the timer's layout |
+| `DateTime` | In core: the 4-word date and time, as the timer answers it and timestamps store it |
 | `DiskDirEntry` | A value: a 16-word directory entry, with getters and setters, returning its name as a `DiskFilename` |
 | `DiskFile` | A value: a handle to an open file, an index and a generation |
 | `DiskError` | An enum matching the drive's status codes |
@@ -202,7 +202,7 @@ The public surface is `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the val
 - **Commits are explicit.** `DiskFileSystem` writes its buffers at the points the drive needs: at the end of every directory-changing operation, in `Close`, `Flush(DiskFile)`, and `Truncate(DiskFile)`, and when a dirty buffer is reused, always in the crash-safe order. `Flush()` with no file writes everything, for a clean shutdown.
 - **Per-sector work.** A read or write moves at most up to the next sector boundary per call, so the drive can stream a sector at a time, and a failure lands at the right point.
 - **Time belongs to the hardware.** `DiskHardware` adds up the time of the operations it performs, without waiting. The drive reads and resets that total after each file system call, and waits that long before going on. Tools ignore it.
-- **No clock.** Timestamps come in as `DiskTime` values, from the host clock in the drive and from host file times in tools.
+- **No clock.** Timestamps come in as core's `DateTime` values, from the host clock in the drive and from host file times in tools.
 - **Consistency checks** are `DiskFileSystem::Check`, reporting orphaned and cross-linked clusters and chains that don't match sizes, and optionally repairing them.
 - **Host transfer helpers** convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend.
 

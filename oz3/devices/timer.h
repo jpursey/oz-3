@@ -15,6 +15,7 @@
 #include "absl/status/statusor.h"
 #include "absl/time/civil_time.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_config.h"
 #include "oz3/core/device_factory.h"
@@ -207,15 +208,13 @@ class Timer final : public Device {
   // Answers `index` on the clock port, with `lock` holding it.
   void AnswerClock(const Lock& lock, uint16_t index);
 
-  // Latches the clock's date and time as kTimerDate and kTimerTime answer
-  // them, or zeros without a clock.
+  // Latches the clock's date and time, or no date without a clock.
   void LatchDateTime();
 
   const int tick_hz_;
   int64_t tick_count_ = 0;
   Clock clock_;
-  uint32_t latched_date_ = 0;         // At the last kTimerTime.
-  uint32_t latched_time_ = 0;         // At the last kTimerTime.
+  DateTime latched_;                  // At the last kTimerTime.
   std::unique_ptr<Lock> tick_lock_;   // While it is requested.
   std::unique_ptr<Lock> clock_lock_;  // While it is requested.
 };

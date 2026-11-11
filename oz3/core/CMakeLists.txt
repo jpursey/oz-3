@@ -8,6 +8,7 @@ set(oz3_core_SOURCE
   core_types.h
   cpu_core.cc cpu_core.h
   cpu_core_config.cc cpu_core_config.h
+  date_time.cc date_time.h
   device.cc device.h
   device_config.h
   device_factory.h
@@ -25,6 +26,7 @@ set(oz3_core_SOURCE
   processor_config.cc processor_config.h
 )
 set(oz3_core_DEPS
+  absl::civil_time
   absl::memory
   absl::span
   absl::status
@@ -38,6 +40,7 @@ set(oz3_core_LIBS
 
 set(oz3_core_TEST_SOURCE
   cpu_core_test.cc
+  date_time_test.cc
   device_test.cc
   execution_component_test.cc
   instruction_compiler_test.cc

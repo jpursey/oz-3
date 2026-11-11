@@ -146,12 +146,12 @@ class DateTime {
 
   // The year keeps its low 16 bits, as the timer always has.
   static DateTime FromCivil(absl::CivilSecond time);
-  static DateTime FromWords(absl::Span<const uint16_t, 4> words);
+  static DateTime FromWords(const std::array<uint16_t, 4>& words);
 
   // nullopt with no date (month 0).
   std::optional<absl::CivilSecond> ToCivil() const;
   bool IsSet() const;
-  std::array<uint16_t, 4> GetWords() const;
+  const std::array<uint16_t, 4>& GetWords() const;
 
   auto operator<=>(const DateTime&) const = default;
 };
@@ -467,7 +467,7 @@ file system, for `oz3dsk` and any frontend.
 The status is `[ ]` not started, `[~]` in progress (set by the CL's first
 edit), or `[x]` submitted (set in the CL's own commit).
 
-### CL1 [ ] core: dates and times
+### CL1 [x] core: dates and times
 
 Depends on: nothing.
 
