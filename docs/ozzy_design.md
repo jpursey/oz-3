@@ -236,7 +236,7 @@ reads it with `INS`.
 ### Teletype
 
 For an Ozzy without a screen, a port that writes text to the host. Each word
-written is two packed characters, the high byte first, and a zero byte is
+written is two packed characters, the low byte first, and a zero byte is
 skipped. So a single character is written as itself (`'A'` is 0041h), and a
 packed string can be sent straight from memory with `OUTR`. It handles carriage
 return, line feed, backspace, and bell. Input still comes from the keyboard.
@@ -258,7 +258,7 @@ folders that was here.
 
 ## Packed strings
 
-Text is packed two characters to a word, the first in the high byte, with the
+Text is packed two characters to a word, the first in the low byte, with the
 last word padded with a zero byte, exactly as the assembler writes `"..."`
 strings. A packed string in memory ends with a zero byte (`.DW "Hello", 0`),
 and calls that move text take a length as well. Packed text is used for:
@@ -271,9 +271,13 @@ and calls that move text take a length as well. Packed text is used for:
 Two things are not packed: screen cells (a character and an attribute), and key
 events (one key at a time, with its modifiers).
 
-Putting the first character in the high byte means comparing packed strings
-word by word, as unsigned values, sorts them alphabetically, so a sorted
-directory listing, or a drive searching its directory, is cheap.
+Putting the first character in the low byte means packed text on the host (two
+bytes a word, low byte first, as in program files) reads in order, so text
+files copy to and from disk images as plain binary. Comparing packed strings
+word by word sorts them alphabetically once each word's bytes are swapped,
+which the byte-swapped compare instruction does in one instruction a word (see
+[disk_design.md](disk_design.md), Prerequisites), so a sorted directory
+listing, or a drive searching its directory, stays cheap.
 
 ### File names
 

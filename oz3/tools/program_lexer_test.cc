@@ -222,16 +222,16 @@ TEST_F(ProgramLexerTest, StringWordsOneCharacterPerWord) {
 }
 
 TEST_F(ProgramLexerTest, StringWordsTwoCharactersPerWord) {
-  EXPECT_THAT(*StringWords("\"Hello\""), ElementsAre(0x4865, 0x6C6C, 0x6F00));
-  EXPECT_THAT(*StringWords("\"AB\""), ElementsAre(0x4142));
-  EXPECT_THAT(*StringWords("\"A\""), ElementsAre(0x4100));
+  EXPECT_THAT(*StringWords("\"Hello\""), ElementsAre(0x6548, 0x6C6C, 0x006F));
+  EXPECT_THAT(*StringWords("\"AB\""), ElementsAre(0x4241));
+  EXPECT_THAT(*StringWords("\"A\""), ElementsAre(0x0041));
   EXPECT_THAT(*StringWords("\"\""), IsEmpty());
 }
 
 TEST_F(ProgramLexerTest, StringWordsDoubledQuotes) {
   EXPECT_THAT(*StringWords("'It''s'"), ElementsAre('I', 't', '\'', 's'));
   EXPECT_THAT(*StringWords("'\"'"), ElementsAre('"'));
-  EXPECT_THAT(*StringWords("\"\"\"\""), ElementsAre(0x2200));
+  EXPECT_THAT(*StringWords("\"\"\"\""), ElementsAre(0x0022));
   EXPECT_THAT(*StringWords("\"''\""), ElementsAre(0x2727));
 }
 
@@ -239,7 +239,7 @@ TEST_F(ProgramLexerTest, StringWordsUtf8) {
   // U+00E9 (two bytes in UTF-8), and U+20AC (three bytes).
   EXPECT_THAT(*StringWords("'\xC3\xA9\xE2\x82\xAC'"),
               ElementsAre(0x00E9, 0x20AC));
-  EXPECT_THAT(*StringWords("\"\xC3\xA9!\""), ElementsAre(0xE921));
+  EXPECT_THAT(*StringWords("\"\xC3\xA9!\""), ElementsAre(0x21E9));
 }
 
 TEST_F(ProgramLexerTest, StringWordsByteOrderMark) {

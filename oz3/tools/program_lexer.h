@@ -43,7 +43,7 @@ const gb::LexerConfig& GetProgramLexerConfig();
 
 // Returns the words of a string token that `lexer` read:
 // - 'Hello' is one character per word.
-// - "Hello" is two characters per word, the first in the high byte, and the
+// - "Hello" is two characters per word, the first in the low byte, and the
 //   last word padded with a zero byte.
 // A character is its Unicode code point, which must fit in a word, or in a
 // byte for two per word. Returns an error if one doesn't, or the string isn't

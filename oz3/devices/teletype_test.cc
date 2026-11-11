@@ -86,7 +86,7 @@ TEST_F(TeletypeTest, WritesCharactersAndPackedWords) {
         OUTS.IW 2, 'H'         ; One character, with a zero high byte
         OUTS.IW 2, "i!"        ; Two packed characters
         OUTS.IW 2, 0           ; Nothing
-        OUTS.IW 2, 0D0Ah       ; Control characters pass through
+        OUTS.IW 2, 0A0Dh       ; Control characters pass through
         OUTS.IW 2, 0700h       ; A zero low byte is skipped
         OUTS.IW 2, 8
         OUTS.IW 2, 0C180h      ; 7 bits: C1h is 'A', and 80h is skipped
@@ -176,7 +176,7 @@ TEST_F(TeletypeTest, BaudRateKeepsItBusyForEachCharacter) {
 
   // Then it is busy printing what it took, while the port holds the next
   // write.
-  WritePort(0x4243);  // "BC"
+  WritePort(0x4342);  // "BC"
   EXPECT_EQ(CyclesUntilTaken(), 100);
   WritePort(0x4400);  // "D", as a zero byte takes no time
   EXPECT_EQ(CyclesUntilTaken(), 200);
@@ -244,7 +244,7 @@ TEST_F(TeletypeTest, FullBufferHoldsThePortUntilOutputIsTaken) {
   ASSERT_TRUE(ExecuteUntilHalt());
   EXPECT_EQ(GetState().st & CpuCore::S, 0);
   EXPECT_EQ(GetPort(kPort).GetStatus(), 1);
-  EXPECT_EQ(GetPort(kPort).GetValue(0), 0x6566);
+  EXPECT_EQ(GetPort(kPort).GetValue(0), 0x6665);
 
   // Waits for the host as long as it takes.
   Execute(1000);

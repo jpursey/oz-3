@@ -290,8 +290,8 @@ TEST_F(ExpressionTest, DivisionByZero) {
 
 TEST_F(ExpressionTest, Strings) {
   EXPECT_EQ(Value("'A'"), 65);
-  EXPECT_EQ(Value("\"AB\""), 0x4142);
-  EXPECT_EQ(Value("\"A\""), 0x4100);
+  EXPECT_EQ(Value("\"AB\""), 0x4241);
+  EXPECT_EQ(Value("\"A\""), 0x0041);
   EXPECT_EQ(Value("'A' + 1"), 66);
   EXPECT_EQ(Error("1 + 'AB'"), "4: A string in an expression must be one word");
   EXPECT_EQ(Error("''"), "0: A string in an expression must be one word");

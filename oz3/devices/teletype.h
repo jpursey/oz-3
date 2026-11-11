@@ -89,7 +89,7 @@ class TeletypeFactory final : public DeviceFactory {
 
 // A teletype writes text to the host, for a machine without a screen.
 //
-// Each word a core writes to its port is two packed characters, the high byte
+// Each word a core writes to its port is two packed characters, the low byte
 // first, and a zero byte is skipped, so a single character is written as
 // itself ('A' is 0041h), and a packed string can be written straight from
 // memory with OUTR. A dword write is two words, word 0 first, so OUTR.ID

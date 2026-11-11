@@ -26,24 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Packed strings low byte first
-
-- **Layers:** tools, devices, ozzy, wiki
-- **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [disk_design.md](disk_design.md) (Prerequisites)
-
-Pack strings with the first character of each pair in the low byte, so packed
-text on the host (two bytes a word, low byte first, as in program files) reads
-in order, and text files copy to and from disk images as plain binary. The
-assembler's lexer packs this way, the teletype prints the low byte first, and
-the boot ROM's text and every test that packs text follow. Single characters
-still write as themselves (0041h is "A"). The wiki's packing (2.5's `SIZE`
-example, the teletype page) and ozzy_design.md's Packed strings change to
-match. It breaks every program with packed text, which is why it comes before
-there are many.
-
 ## Port status and byte-swapped compare instructions
 
 - **Layers:** instruction_sets, wiki
@@ -79,7 +61,7 @@ date (month 0 is invalid). `3.4-Timer.md` changes to match.
 - **Layers:** disk
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Packed strings low byte first*
+- **Depends on:** nothing
 - **Background:** [disk_design.md](disk_design.md) (Disk image, File system,
   Disk library)
 

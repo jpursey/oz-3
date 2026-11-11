@@ -482,7 +482,7 @@ TEST_F(ProgramAssemblerTest, Data) {
       AssembleWords(".STACK 1\n"
                     ".DW 1, -1, 'A' + 1, \"AB\"\n"
                     ".DD 12345678h, -1\n"),
-      ElementsAre(1, 0xFFFF, 0x42, 0x4142, 0x5678, 0x1234, 0xFFFF, 0xFFFF));
+      ElementsAre(1, 0xFFFF, 0x42, 0x4241, 0x5678, 0x1234, 0xFFFF, 0xFFFF));
   EXPECT_THAT(
       AssembleErrors(".STACK 1\n.DW 10000h, 20000h\n.DD 100000000h\n"),
       ElementsAre(IsErrorAt(1, 4, "Value 65536 does not fit in a word"),
@@ -495,7 +495,7 @@ TEST_F(ProgramAssemblerTest, Strings) {
   EXPECT_THAT(
       AssembleWords(".STACK 1\n"
                     ".DW 'Hi', \"Hi!\", '', 0, ('A'), 'It''s'\n"),
-      ElementsAre('H', 'i', 0x4869, 0x2100, 0, 'A', 'I', 't', '\'', 's'));
+      ElementsAre('H', 'i', 0x6948, 0x0021, 0, 'A', 'I', 't', '\'', 's'));
   EXPECT_THAT(AssembleErrors(".STACK 1\n.DW \"\xE2\x82\xAC\"\n"),
               ElementsAre(IsErrorAt(1, 4, "")));
   EXPECT_THAT(
@@ -515,8 +515,8 @@ TEST_F(ProgramAssemblerTest, FixedSizeData) {
                             ".DW SIZE(2) \"ABCD\"\n"
                             "end: .DW SIZE(0) ''\n"
                             ".DW SIZE(2) end\n"),
-              ElementsAre(0x412E, 0x5458, 0x5400, 0, 1, 'A', 'B', 0, 0x4142,
-                          0x4344, 10, 0));
+              ElementsAre(0x2E41, 0x5854, 0x0054, 0, 1, 'A', 'B', 0, 0x4241,
+                          0x4443, 10, 0));
 
   // SIZE can still be a symbol.
   EXPECT_THAT(AssembleWords(".STACK 1\n.CONST SIZE = 7\n.DW SIZE, SIZE + 1\n"),

@@ -66,7 +66,7 @@ machine*. The clock rate is, in a line of `2-Specifications.md`'s overview.
 ### Teletype
 
 A port that writes text to the host, for an Ozzy without a screen.
-- Each word a core writes to the port is two packed characters, the high byte
+- Each word a core writes to the port is two packed characters, the low byte
   first, and a zero byte is skipped. So a single character is written as itself
   (`'A'` is 0041h), and a packed string goes straight from memory with `OUTR`.
 - A dword write is two words, word 0 first, so `OUTR.ID` writes a packed
@@ -256,8 +256,7 @@ graphics, and animate them.
   they are wide, so a cell is 8 by 20 square units, and an 80 by 24 screen is
   640 by 480.
 - A glyph is 10 rows of one byte each, with bit 7 the leftmost pixel, packed
-  two rows to a word, the high byte first (as the teletype packs characters):
-  5 words a glyph. Glyph `n` (0 to 511) is at `n * 5`, so the whole character
+  two rows to a word, the high byte first: 5 words a glyph. Glyph `n` (0 to 511) is at `n * 5`, so the whole character
   set is 2560 words, from 0 to 9FFh.
 - **The character set window** (FF9h): while its bit 0 is set, writes to the
   screen's addresses 0 to 9FFh go to the character set rather than the cells.

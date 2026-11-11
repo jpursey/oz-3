@@ -180,8 +180,8 @@ anything else the program wants shared.
   word, or two packed into each word, and the quotes say which, one mark or
   two:
   - `'Hello'` is one character per word: five words.
-  - `"Hello"` is two characters per word, the first in the high byte, and the
-    last word padded with a zero byte: `4865h 6C6Ch 6F00h`. Each character must
+  - `"Hello"` is two characters per word, the first in the low byte, and the
+    last word padded with a zero byte: `6548h 6C6Ch 006Fh`. Each character must
     fit in a byte. Displays, ports, and code can unpack them as they like.
 
   A quote inside a string is doubled (`'It''s'`). Source files are UTF-8, and a

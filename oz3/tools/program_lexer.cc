@@ -117,7 +117,7 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
   const bool packed = (token_text.front() == '"');
   const char32_t max_code_point = (packed ? 0xFF : 0xFFFF);
   std::vector<uint16_t> words;
-  bool high = true;
+  bool low = true;
   while (!text.empty()) {
     const std::optional<char32_t> code_point = gb::ConsumeCodePoint(&text);
     if (!code_point.has_value()) {
@@ -130,12 +130,12 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
     }
     if (!packed) {
       words.push_back(static_cast<uint16_t>(*code_point));
-    } else if (high) {
-      words.push_back(static_cast<uint16_t>(*code_point << 8));
+    } else if (low) {
+      words.push_back(static_cast<uint16_t>(*code_point));
     } else {
-      words.back() |= static_cast<uint16_t>(*code_point);
+      words.back() |= static_cast<uint16_t>(*code_point << 8);
     }
-    high = !high;
+    low = !low;
   }
   return words;
 }

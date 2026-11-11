@@ -89,7 +89,7 @@ void Teletype::Execute() {
     port.StoreWord(*lock_, 0, 0);
     for (const uint16_t word : words) {
       // Characters are 7 bits, as the eighth was a teletype's parity bit.
-      for (const int c : {(word >> 8) & 0x7F, word & 0x7F}) {
+      for (const int c : {word & 0x7F, (word >> 8) & 0x7F}) {
         if (c != 0) {
           output_ += static_cast<char>(c);
         }
