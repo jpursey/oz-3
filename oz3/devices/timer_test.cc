@@ -367,18 +367,26 @@ TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
             (PortWords{.word0 = kTimerCycles, .word1 = 0, .status = 0}));
 }
 
-TEST_F(TimerTest, DateAndTimeAreTheEpochWithoutAClock) {
+TEST_F(TimerTest, DateAndTimeAreZerosWithoutAClock) {
   ASSERT_TRUE(InitTimer());
   Execute(1);
   EXPECT_EQ(AskClock(kTimerTime), 0);
-  EXPECT_EQ(AskClock(kTimerDate), 0x0101'07B2);
+  EXPECT_EQ(AskClock(kTimerDate), 0);
 
-  // Taking the clock away goes back to the epoch.
+  // Taking the clock away goes back to zeros.
   SetNow(absl::CivilSecond(2026, 11, 7, 13, 45, 30));
   EXPECT_EQ(AskClock(kTimerTime), 0x2D1E'000D);
+  EXPECT_EQ(AskClock(kTimerDate), 0x0B07'07EA);
   timer_->SetClock(nullptr);
   EXPECT_EQ(AskClock(kTimerTime), 0);
-  EXPECT_EQ(AskClock(kTimerDate), 0x0101'07B2);
+  EXPECT_EQ(AskClock(kTimerDate), 0);
+}
+
+TEST_F(TimerTest, DateIsZerosBeforeTheFirstTime) {
+  ASSERT_TRUE(InitTimer());
+  SetNow(absl::CivilSecond(2026, 11, 7, 13, 45, 30));
+  Execute(1);
+  EXPECT_EQ(AskClock(kTimerDate), 0);
 }
 
 TEST_F(TimerTest, ClockIsCalledOnlyForTheTime) {

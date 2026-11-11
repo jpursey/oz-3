@@ -144,20 +144,27 @@ void Timer::AnswerClock(const Lock& lock, uint16_t index) {
                                      GetCycles() % clock_hz * 1000 / clock_hz);
     } break;
     case kTimerDate:
-      answer = GetDword(
-          latched_date_time_.year(),
-          GetBytes(latched_date_time_.month(), latched_date_time_.day()));
+      answer = latched_date_;
       break;
     case kTimerTime:
-      latched_date_time_ = clock_ != nullptr ? clock_() : absl::CivilSecond();
-      answer = GetDword(
-          latched_date_time_.hour(),
-          GetBytes(latched_date_time_.minute(), latched_date_time_.second()));
+      LatchDateTime();
+      answer = latched_time_;
       break;
   }
 
   // The status stays clear, as the timer took the index.
   StoreDword(GetPort(kClockPort), lock, 0, answer);
+}
+
+void Timer::LatchDateTime() {
+  if (clock_ == nullptr) {
+    latched_date_ = 0;
+    latched_time_ = 0;
+    return;
+  }
+  const absl::CivilSecond now = clock_();
+  latched_date_ = GetDword(now.year(), GetBytes(now.month(), now.day()));
+  latched_time_ = GetDword(now.hour(), GetBytes(now.minute(), now.second()));
 }
 
 }  // namespace oz3

@@ -38,6 +38,7 @@ inline constexpr uint16_t kTimerMilliseconds = 1;
 
 // The host's date, as latched by the last kTimerTime: word 0 the year, and word
 // 1 the month (1 to 12) in the high byte and the day (1 to 31) in the low byte.
+// It is 0 before the first kTimerTime, or without a clock.
 inline constexpr uint16_t kTimerDate = 2;
 
 // The host's time: word 0 the hour (0 to 23), and word 1 the minute in the high
@@ -131,10 +132,10 @@ class TimerFactory final : public DeviceFactory {
 //
 // The date and time are the host's, from the clock it sets with SetClock(),
 // which the timer calls only when a program asks for the time. Without a
-// clock, they are 1970-01-01 00:00:00. They are the host's time, not the
-// machine's: they have nothing to do with the cycle count, ticks, or
-// milliseconds, so when a host runs the machine slower or faster than its
-// clock rate, the date and time drift from them.
+// clock, both are zeros, which means no date, since month 0 is invalid. They
+// are the host's time, not the machine's: they have nothing to do with the
+// cycle count, ticks, or milliseconds, so when a host runs the machine slower
+// or faster than its clock rate, the date and time drift from them.
 //
 // The timer sleeps until its next tick, or a write to the clock port.
 class Timer final : public Device {
@@ -167,7 +168,7 @@ class Timer final : public Device {
   //----------------------------------------------------------------------------
 
   // Sets the clock the timer gets the date and time from, replacing any it had,
-  // or none for the timer to answer with 1970-01-01 00:00:00. The timer calls
+  // or none for the timer to answer with zeros for both. The timer calls
   // it from inside Processor::Execute, each time a program asks for the time.
   void SetClock(Clock clock) { clock_ = std::move(clock); }
 
@@ -206,12 +207,17 @@ class Timer final : public Device {
   // Answers `index` on the clock port, with `lock` holding it.
   void AnswerClock(const Lock& lock, uint16_t index);
 
+  // Latches the clock's date and time as kTimerDate and kTimerTime answer
+  // them, or zeros without a clock.
+  void LatchDateTime();
+
   const int tick_hz_;
   int64_t tick_count_ = 0;
   Clock clock_;
-  absl::CivilSecond latched_date_time_;  // At the last kTimerTime.
-  std::unique_ptr<Lock> tick_lock_;      // While it is requested.
-  std::unique_ptr<Lock> clock_lock_;     // While it is requested.
+  uint32_t latched_date_ = 0;         // At the last kTimerTime.
+  uint32_t latched_time_ = 0;         // At the last kTimerTime.
+  std::unique_ptr<Lock> tick_lock_;   // While it is requested.
+  std::unique_ptr<Lock> clock_lock_;  // While it is requested.
 };
 
 }  // namespace oz3

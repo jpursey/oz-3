@@ -26,18 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## No date without a clock
-
-- **Layers:** devices, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [disk_design.md](disk_design.md) (Timestamps)
-
-A timer with no host clock reads zeros for the date and time, rather than
-1970-01-01 00:00:00, so the timer and the disk drive agree that zeros mean no
-date (month 0 is invalid). `3.4-Timer.md` changes to match.
-
 ## Disk library
 
 - **Layers:** disk
@@ -84,8 +72,8 @@ the `oz3dsk` command line tool for making, formatting, and filling images.
 - **Layers:** ozzy, apps, wiki
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Disk drive device*, *No date without a clock*, and *Disk
-  tools* to make disks to try by hand
+- **Depends on:** *Disk drive device*, and *Disk tools* to make disks to try
+  by hand
 - **Background:** [disk_design.md](disk_design.md) (Ozzy)
 
 Drives `A:` to `D:` in the Ozzy: the wiring (ports 16 to 27, with the ports
