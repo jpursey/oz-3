@@ -119,12 +119,12 @@ TEST_F(DiskHardwareTest, ReadsAndWritesTheImage) {
   EXPECT_EQ(Read(3), MakeSector(0x300));
   Write(3, MakeSector(0x1234), WriteCaching::kCache);
   Write(4, MakeSector(0x5678), WriteCaching::kSkip);
+  std::unique_ptr<DiskImage> image = hardware_->DetachImage();
+  ASSERT_NE(image, nullptr);
   Sector words(kDiskSectorWords);
-  ASSERT_EQ(hardware_->GetImage()->ReadSector(3, absl::MakeSpan(words)),
-            DiskStatus::kOk);
+  ASSERT_EQ(image->ReadSector(3, absl::MakeSpan(words)), DiskStatus::kOk);
   EXPECT_EQ(words, MakeSector(0x1234));
-  ASSERT_EQ(hardware_->GetImage()->ReadSector(4, absl::MakeSpan(words)),
-            DiskStatus::kOk);
+  ASSERT_EQ(image->ReadSector(4, absl::MakeSpan(words)), DiskStatus::kOk);
   EXPECT_EQ(words, MakeSector(0x5678));
 }
 
@@ -136,7 +136,7 @@ TEST_F(DiskHardwareTest, KeepsItsSettings) {
 TEST_F(DiskHardwareTest, StartsEmpty) {
   DiskHardware hardware(GetTimedSettings(2));
   EXPECT_FALSE(hardware.HasImage());
-  EXPECT_EQ(hardware.GetImage(), nullptr);
+  EXPECT_EQ(hardware.GetMedia(), nullptr);
   EXPECT_EQ(hardware.DetachImage(), nullptr);
 }
 
@@ -154,11 +154,13 @@ TEST_F(DiskHardwareTest, EmptyDriveHasNoDisk) {
 
 TEST_F(DiskHardwareTest, DetachImageReturnsTheImage) {
   MakeHardware(GetTimedSettings(2));
-  DiskImage* image = hardware_->GetImage();
+  const DiskMedia* media = hardware_->GetMedia();
+  ASSERT_NE(media, nullptr);
+  EXPECT_EQ(media->GetSectorCount(), kSectorCount);
   EXPECT_TRUE(hardware_->HasImage());
-  EXPECT_EQ(hardware_->DetachImage().get(), image);
+  EXPECT_EQ(hardware_->DetachImage().get(), media);
   EXPECT_FALSE(hardware_->HasImage());
-  EXPECT_EQ(hardware_->GetImage(), nullptr);
+  EXPECT_EQ(hardware_->GetMedia(), nullptr);
   Sector words(kDiskSectorWords);
   EXPECT_EQ(hardware_->ReadSector(0, absl::MakeSpan(words)),
             DiskStatus::kNoDisk);
@@ -426,7 +428,7 @@ TEST_F(DiskHardwareTest, WrongSizedBuffersAreBadArguments) {
 TEST_F(DiskHardwareTest, WriteProtectedWritesLeaveTheCache) {
   MakeHardware(GetTimedSettings(2));
   Read(0);
-  ASSERT_EQ(hardware_->GetImage()->SetWriteProtected(true), DiskStatus::kOk);
+  ASSERT_EQ(hardware_->GetMedia()->SetWriteProtected(true), DiskStatus::kOk);
   hardware_->CollectBusyTime();
   EXPECT_EQ(hardware_->WriteSector(0, MakeSector(0x1234), WriteCaching::kCache),
             DiskStatus::kWriteProtected);

@@ -52,9 +52,10 @@ is how code calls it:
   its clock rate, as devices turn their other real-time rates.
 - **The hardware is private.** Nothing outside needs `DiskHardware` but its
   settings and time, so the file system doesn't expose it. What callers need
-  of the image goes through the file system: `GetMediaInfo` (the sector
-  count and header flags, as `MEDIA` reports them, without a file system on
-  the disk) and `SetWriteProtected`, for `oz3dsk protect`.
+  of the image is its medium, which the file system's `GetMedia` returns
+  (null with no image): the sector count and header flags, as `MEDIA`
+  reports them, without a file system on the disk, and `SetWriteProtected`,
+  for `oz3dsk protect`.
 - **Writes allocate as they go.** `Write` allocates each cluster when its
   first word is written, after following any chain already past the file's
   size, rather than allocating a whole request's clusters up front.
@@ -86,10 +87,12 @@ confused with Game Bits' `gb::File`, `gb::FileSystem`, `gb::RawFile`, or
   disk changes says attaching and detaching. Alternatives: `Mount` and
   `Unmount` (but an unformatted image is attached with nothing to mount),
   `Insert` and `Eject` (the drive's words, not a file system's).
-- **`DiskMediaInfo`:** the image's sector count and flags, from
-  `GetMediaInfo`. With `DiskVolumeInfo` and `DiskFileInfo`, each `...Info` is
-  a snapshot of what one layer reports: the medium, the file system, and an
-  open file.
+- **`DiskMedia`:** the medium, from the image's header: its sector count,
+  flags, and write protection. It is `DiskImage`'s base, so the hardware and
+  file system hand it out without exposing the image's sectors, and a new
+  header field reaches every caller without changing them.
+- **`DiskVolumeInfo`** and **`DiskFileInfo`:** each `...Info` is a snapshot
+  of what one layer reports: the file system, and an open file.
 - **`DiskLabel`:** the volume label, a value like `DiskFilename` but one
   16-character field with no extension. Alternatives: a `DiskFilename` mode
   (but a label isn't a name and can't be matched), or validating functions on
@@ -101,7 +104,7 @@ confused with Game Bits' `gb::File`, `gb::FileSystem`, `gb::RawFile`, or
   latency, as a device's `<Device>Settings` holds its behavior.
 - **`DiskVolumeInfo`**, from `GetVolumeInfo`: the file system the superblock
   describes (the label, sectors per cluster, cluster count, and free
-  clusters), as against the medium `DiskMediaInfo` describes. "Disk" is the
+  clusters), as against the medium `DiskMedia` describes. "Disk" is the
   whole thing, image and all, so "volume" names the file system on it, as the
   superblock's volume label already does. The drive's `DISK` command becomes
   `VOLUME` to match (same opcode, 41h), in disk_design.md, in CL5.
@@ -172,8 +175,27 @@ class DateTime {
 ### disk: DiskImage
 
 ```
+// The medium, as an image's header describes it. Only DiskImage derives from
+// it, setting the header's flags through WriteFlags.
+class DiskMedia {
+ public:
+  int64_t GetSectorCount() const;
+  uint16_t GetFlags() const;  // The header's flags word, as MEDIA reports it.
+  bool IsWriteProtected() const;
+
+  // Sets the header's write-protect bit.
+  DiskStatus SetWriteProtected(bool write_protected);
+
+ protected:
+  DiskMedia(int64_t sector_count, uint16_t flags);
+  ~DiskMedia();
+
+ private:
+  virtual DiskStatus WriteFlags(uint16_t flags) = 0;
+};
+
 // A disk image: a host file holding a flat array of sectors behind its header.
-class DiskImage {
+class DiskImage final : public DiskMedia {
  public:
   // Creates a blank image of `sector_count` sectors at `path`, replacing any
   // file there. `file_system` must outlive the image.
@@ -184,13 +206,6 @@ class DiskImage {
   // Opens an existing image, for reading and writing.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Open(
       gb::FileSystem* file_system, std::string_view path);
-
-  int64_t GetSectorCount() const;
-  uint16_t GetFlags() const;  // The header's flags word, as MEDIA reports it.
-  bool IsWriteProtected() const;
-
-  // Sets the header's write-protect bit.
-  DiskStatus SetWriteProtected(bool write_protected);
 
   // Reads or writes one whole sector. Fail with kIoError, and writes with
   // kWriteProtected on a protected image.
@@ -258,7 +273,8 @@ class DiskHardware {
   void AttachImage(std::unique_ptr<DiskImage> image);
   std::unique_ptr<DiskImage> DetachImage();  // Null if empty.
   bool HasImage() const;
-  DiskImage* GetImage() const;  // Null if empty.
+  const DiskMedia* GetMedia() const;  // Null if empty.
+  DiskMedia* GetMedia();
 
   // kNoDisk with no image.
   DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
@@ -353,11 +369,19 @@ with no file system, so disk_design.md's layout rules live in one place:
 // Where a formatted disk's parts are: the FAT after the superblock, then the
 // clusters, as the superblock records them.
 struct DiskLayout {
+  static constexpr int kMaxSectorsPerCluster = 64;
+  static constexpr int kMaxClusterCount = 0xFFFE;
+  static constexpr int kMaxFatSectors = 0xFFFF;  // As a word holds.
+
   auto operator<=>(const DiskLayout&) const = default;
 
   // Returns whether every field is in range, and the disk fits in an image of
-  // `sector_count` sectors.
+  // `sector_count` sectors. The FAT needs ⌈(cluster_count + 1) ÷ 256⌉ sectors,
+  // a word per cluster and the free list's head, but may have more.
   bool IsValid(int64_t sector_count) const;
+
+  // Returns the sectors the disk uses: 1 + FAT + clusters.
+  int64_t GetSectorCount() const;
 
   // Returns the first sector of `cluster` (1 to cluster_count).
   int64_t GetClusterSector(int cluster) const;
@@ -402,13 +426,16 @@ class DiskFileSystem {
   // with a buffer of its own.
   DiskFileSystem(const DiskHardwareSettings& settings, int max_open_files);
 
+  const DiskHardwareSettings& GetSettings() const;
+  int GetMaxOpenFiles() const;
+
   // Image. AttachImage returns kOk, kUnformatted, or kIoError, and the image
   // stays attached for all three. DetachImage returns null with no image.
   DiskStatus AttachImage(std::unique_ptr<DiskImage> image);
   std::unique_ptr<DiskImage> DetachImage();
   bool HasImage() const;
-  DiskStatus GetMediaInfo(DiskMediaInfo* info);
-  DiskStatus SetWriteProtected(bool write_protected);
+  const DiskMedia* GetMedia() const;  // Null if empty.
+  DiskMedia* GetMedia();
 
   // Returns the simulated time the disk spent since the last call, and
   // resets it.
@@ -596,13 +623,15 @@ Depends on: CL1, CL2.
   sorts), labels at 0 and 16 characters, and entries' fields round trip,
   the modified time included.
 
-### CL5 [ ] disk: attaching, formatting, and the free list
+### CL5 [x] disk: attaching, formatting, and the free list
 
 Depends on: CL3, CL4.
 
 - `disk_layout.h` and `.cc`: `DiskLayout` and `ChooseDiskLayout`.
+- `disk_media.h` and `.cc`: `DiskMedia`, the medium, split out of
+  `DiskImage` as its base. `DiskHardware::GetImage` becomes `GetMedia`.
 - `disk_file_system.h` and `.cc`: construction, `AttachImage`, `DetachImage`,
-  `GetMediaInfo`, `SetWriteProtected`, `CollectBusyTime`, `Format`,
+  `GetMedia`, `CollectBusyTime`, `Format`,
   `SetLabel`, and `GetVolumeInfo`, with the FAT buffers and walking the free
   list for the free count. Open files come in later CLs.
 - disk_design.md: the `DISK` command becomes `VOLUME` (still 41h), in the

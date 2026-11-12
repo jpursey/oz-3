@@ -39,6 +39,28 @@ command, data, and control ports, the command protocol with aborts and reset,
 every command, packed transfers, early completion, and disk changes. A new
 `3.5-Disk-Drive.md` wiki page, and rows in `3-Devices.md` and `Home.md`.
 
+How a latent command is expected to run on the library, to settle in the
+design:
+
+- **Accept** is the device's own checks, with queries that don't touch the
+  disk: `GetMedia` (no disk, write protected), parsing the argument words
+  (bad name, bad label), `ChooseDiskLayout` (a `FORMAT` sectors per cluster
+  with no layout), and the open-file table and `GetWritableWords`. Synchronous
+  commands answer here.
+- **Work:** once accept is OK, the device calls the file system operation,
+  which does all its disk work at once, and `CollectBusyTime` gives how long
+  that took the drive. Busy time doesn't tell accept errors from completions:
+  a failed transfer takes no time, and tools take no time at all.
+- **Completion** carries the operation's status and results, scheduled that
+  many cycles later.
+- The operations keep their own early checks for tools, which the device's
+  accept has already ruled out. If the duplicated rules matter, the file
+  system could gain shared `Check...` functions, such as `CheckFormat`.
+- An aborted latent command finishing its disk work matches this. "No disk if
+  the image disappears mid-command" doesn't, since the work is already on the
+  old image: the device could report it at completion if the image changed in
+  between.
+
 ## Disk tools
 
 - **Layers:** tools, apps, wiki

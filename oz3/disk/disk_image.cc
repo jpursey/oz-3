@@ -151,23 +151,19 @@ absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Open(
 
 DiskImage::DiskImage(std::unique_ptr<gb::File> file, int64_t sector_count,
                      uint16_t flags)
-    : file_(std::move(file)), sector_count_(sector_count), flags_(flags) {}
+    : DiskMedia(sector_count, flags), file_(std::move(file)) {}
 
 bool DiskImage::IsValidSector(int64_t sector, int64_t size) const {
-  return sector >= 0 && sector < sector_count_ && size == kDiskSectorWords;
+  return sector >= 0 && sector < GetSectorCount() && size == kDiskSectorWords;
 }
 
-DiskStatus DiskImage::SetWriteProtected(bool write_protected) {
-  const uint16_t flags =
-      write_protected ? (flags_ | kWriteProtectedFlag)
-                      : static_cast<uint16_t>(flags_ & ~kWriteProtectedFlag);
+DiskStatus DiskImage::WriteFlags(uint16_t flags) {
   uint16_t stored = flags;
   SwapToHostOrder({&stored, 1});
   if (file_->SeekTo(kFlagsOffset) != kFlagsOffset ||
       file_->Write(&stored, 1) != 1 || !file_->Flush()) {
     return DiskStatus::kIoError;
   }
-  flags_ = flags;
   return DiskStatus::kOk;
 }
 

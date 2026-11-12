@@ -184,7 +184,8 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is it
 
 | Class | What |
 | --- | --- |
-| `DiskImage` | An image: created or opened with a `gb::FileSystem` and a path, owning its `gb::File`. Sector reads and writes, the sector count, and write protection |
+| `DiskMedia` | The medium, from the image's header: the sector count and flags, and setting write protection. The base of `DiskImage`, and what the hardware and file system hand out, so nothing else reads or writes the image's sectors |
+| `DiskImage` | An image: created or opened with a `gb::FileSystem` and a path, owning its `gb::File`. Sector reads and writes, and its header as a `DiskMedia` |
 | `DiskHardware` | Owns the attached `DiskImage`, if any, and behaves as a dumb drive: sector reads and writes through an optional write-through read cache, and the time of each, from the read rate, write rate, cache rate, and latency. A future raw drive device would be this behind ports |
 | `DiskFileSystem` | Owns a `DiskHardware`, and takes the open-file limit. Holds its own buffers, and does mounting, formatting, the FAT and free list, directories, the open-file table, and every file operation |
 | `DiskFilename` | A value: the 8-word 12.4 field. Parses and formats dotted text, validates, and matches |
@@ -194,7 +195,7 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is it
 | `DiskFile` | A value: a handle to an open file, an index and a generation |
 | `DiskStatus` | An enum of the drive's status codes, `kOk` included |
 
-The public surface is `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the value types. The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
+The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the value types. The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
 
 - **One owner per image.** `DiskFileSystem` owns the `DiskHardware`, which owns the `DiskImage`, so nothing else can write the image behind the file system's back.
 - **Patterns are filenames.** `DiskFilename::ParsePattern("*.TXT")` expands each `*` into `?` bytes at construction, and `Matches(const DiskFilename& name)` is a byte compare where `?` matches anything. A plain parse rejects `?` and `*`, so a pattern can't be mistaken for a name.
@@ -446,18 +447,18 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 | Code | Command | Arguments (OS writes) | Accept (OS reads) | Completion (OS reads) |
 | --- | --- | --- | --- | --- |
 | 40h | MEDIA | — | status, sector count (dword), flags | — |
-| 41h | DISK | — | status | status, label (8), sectors per cluster, cluster count, free clusters |
+| 41h | VOLUME | — | status | status, label (8), sectors per cluster, cluster count, free clusters |
 | 42h | FORMAT | label (8), sectors per cluster | status | status |
 | 43h | LABEL | label (8) | status | status |
 
 - `MEDIA` is synchronous and describes the medium from the image's header: its sector count and the header's flags word, with bit 0 meaning write-protected. It works on unformatted disks.
-- `DISK` describes the file system, and fails with **unformatted** if there isn't one. Its free clusters come from the free count (see Free count below), so it is quick unless it is the first command to need the count.
-- `FORMAT` uses the image's full sector count, writing the superblock (with the formatted date), the zeroed FAT, and the root cluster, each sector charged. Sectors per cluster must be a power of two from 1 to 64, large enough that at most 65,534 clusters cover the image; 0 lets the drive pick the smallest that does. It fails with **in use** if any slot is open.
+- `VOLUME` describes the file system, and fails with **unformatted** if there isn't one. Its free clusters come from the free count (see Free count below), so it is quick unless it is the first command to need the count.
+- `FORMAT` uses the image's full sector count, blanking the superblock, then writing the zeroed FAT, the root cluster, and last the superblock (with the formatted date), each sector charged. A format that fails partway leaves the disk unformatted. Sectors per cluster must be a power of two from 1 to 64, large enough that at most 65,534 clusters cover the image; 0 lets the drive pick the smallest that does. It fails with **in use** if any slot is open.
 - `LABEL` rewrites the superblock's label.
 
 #### Free count
 
-The drive keeps a count of free clusters in memory, never on the disk. The first command after an image is attached that needs it counts them by walking the whole free list, which is slow on a big, fragmented disk, as DOS's was, and from then on the drive keeps it current as it allocates and frees. The commands that need it are `OPEN`, `CREATE`, and `DISK` (and `FORMAT`, which sets it), so every file handle is opened with the count known, and a `WRITE` can work out at accept how much fits without touching the disk. An `OPEN` on a write-protected disk doesn't need it, since nothing can be written.
+The drive keeps a count of free clusters in memory, never on the disk. The first command after an image is attached that needs it counts them by walking the whole free list, which is slow on a big, fragmented disk, as DOS's was, and from then on the drive keeps it current as it allocates and frees. The commands that need it are `OPEN`, `CREATE`, and `VOLUME` (and `FORMAT`, which sets it), so every file handle is opened with the count known, and a `WRITE` can work out at accept how much fits without touching the disk. An `OPEN` on a write-protected disk doesn't need it, since nothing can be written.
 
 #### Where errors land
 
@@ -627,7 +628,7 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
   - `image`: an image attached at power on, or none for an empty drive. The disk's size is the image's, so a preset's image size only matters to `oz3dsk new`.
 
   A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't exist is a config error, as a typo would be, and so are two drives of one letter or one image. An Ozzy has at most one of each other device, but one drive per letter. There is no drive by default.
-- **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores, no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `DISK`), since it changes while the Ozzy runs.
+- **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores, no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
 - **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. The Ozzy gives each drive the host's clock, as it gives the timer, and flushes every drive when it shuts down cleanly.
 - **The `ozzy` app** attaches the config's images at power on. Changing disks while it runs needs the console frontend's help (see Open questions).
 - **Wiki:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors.

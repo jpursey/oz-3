@@ -14,6 +14,7 @@
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "oz3/disk/disk_image.h"
+#include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 
 namespace oz3 {
@@ -98,10 +99,11 @@ class DiskHardware final {
   // Returns whether an image is attached.
   bool HasImage() const { return image_ != nullptr; }
 
-  // Returns the attached image, for its medium (its sector count and flags),
-  // or null if the drive is empty. Its sectors are only read and written
-  // through the hardware, so the cache is never stale.
-  DiskImage* GetImage() const { return image_.get(); }
+  // Returns the attached image's medium, or null if the drive is empty. Its
+  // sectors are only read and written through the hardware, so the cache is
+  // never stale.
+  const DiskMedia* GetMedia() const { return image_.get(); }
+  DiskMedia* GetMedia() { return image_.get(); }
 
   //----------------------------------------------------------------------------
   // Sectors

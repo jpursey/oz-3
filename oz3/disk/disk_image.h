@@ -14,6 +14,7 @@
 #include "absl/types/span.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
+#include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 
 namespace oz3 {
@@ -23,26 +24,15 @@ inline constexpr int kDiskSectorWords = 256;
 
 // A disk image: a host file holding an 8-word header, and then a flat array of
 // sectors. Words are stored two bytes each, low byte first, so sector n starts
-// at byte 16 + 512 * n. The header is the medium's: its sector count and its
-// flags, such as write protection. It is never visible to the OZ-3 as data.
+// at byte 16 + 512 * n. The header is the medium's (see DiskMedia).
 //
 // The image owns its host file, open for reading and writing until the image
 // is destroyed. It is write-through: each write is flushed to the host before
 // it returns, so a host failure is the result of the write it failed. Once a
 // host read, write, or flush fails, the host file is unusable, and every later
 // operation fails with kIoError too.
-class DiskImage final {
+class DiskImage final : public DiskMedia {
  public:
-  //----------------------------------------------------------------------------
-  // Constants
-  //----------------------------------------------------------------------------
-
-  // The header's flags: bit 0 is write protection. The others are reserved.
-  static constexpr uint16_t kWriteProtectedFlag = 0x0001;
-
-  // The most sectors an image can have, as its header counts them in a dword.
-  static constexpr int64_t kMaxSectorCount = 0xFFFF'FFFF;
-
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -65,23 +55,6 @@ class DiskImage final {
   DiskImage(const DiskImage&) = delete;
   DiskImage& operator=(const DiskImage&) = delete;
   ~DiskImage() = default;
-
-  //----------------------------------------------------------------------------
-  // Medium
-  //----------------------------------------------------------------------------
-
-  // Returns the number of sectors, from 1 to kMaxSectorCount.
-  int64_t GetSectorCount() const { return sector_count_; }
-
-  // Returns the header's flags word, as the drive's MEDIA command reports it.
-  uint16_t GetFlags() const { return flags_; }
-
-  // Returns whether the image is write-protected, refusing sector writes.
-  bool IsWriteProtected() const { return (flags_ & kWriteProtectedFlag) != 0; }
-
-  // Sets or clears the header's write-protect bit, which a protected image
-  // still allows. Returns kOk, or kIoError if the host write or flush fails.
-  DiskStatus SetWriteProtected(bool write_protected);
 
   //----------------------------------------------------------------------------
   // Sectors
@@ -108,9 +81,10 @@ class DiskImage final {
   // Returns whether `sector` and `size` are a sector and a sector's words.
   bool IsValidSector(int64_t sector, int64_t size) const;
 
+  // Writes `flags` to the header, flushing it.
+  DiskStatus WriteFlags(uint16_t flags) override;
+
   std::unique_ptr<gb::File> file_;
-  const int64_t sector_count_;
-  uint16_t flags_;
 };
 
 }  // namespace oz3

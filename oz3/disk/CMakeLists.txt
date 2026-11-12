@@ -5,10 +5,13 @@
 
 set(oz3_disk_SOURCE
   disk_dir_entry.cc disk_dir_entry.h
+  disk_file_system.cc disk_file_system.h
   disk_filename.cc disk_filename.h
   disk_hardware.cc disk_hardware.h
   disk_image.cc disk_image.h
   disk_label.cc disk_label.h
+  disk_layout.cc disk_layout.h
+  disk_media.cc disk_media.h
   disk_packed_text.cc disk_packed_text.h
   disk_status.h
 )
@@ -28,10 +31,12 @@ set(oz3_disk_LIBS
 
 set(oz3_disk_TEST_SOURCE
   disk_dir_entry_test.cc
+  disk_file_system_test.cc
   disk_filename_test.cc
   disk_hardware_test.cc
   disk_image_test.cc
   disk_label_test.cc
+  disk_layout_test.cc
   faulty_file_protocol.cc faulty_file_protocol.h
 )
 
