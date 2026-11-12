@@ -185,7 +185,7 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is it
 | Class | What |
 | --- | --- |
 | `DiskImage` | An image: created or opened with a `gb::FileSystem` and a path, owning its `gb::File`. Sector reads and writes, the sector count, and write protection |
-| `DiskHardware` | Owns a `DiskImage`, and behaves as a dumb drive: sector reads and writes through an optional write-through read cache, and the time of each, from the read rate, write rate, and latency. A future raw drive device would be this behind ports |
+| `DiskHardware` | Owns the attached `DiskImage`, if any, and behaves as a dumb drive: sector reads and writes through an optional write-through read cache, and the time of each, from the read rate, write rate, cache rate, and latency. A future raw drive device would be this behind ports |
 | `DiskFileSystem` | Owns a `DiskHardware`, and takes the open-file limit. Holds its own buffers, and does mounting, formatting, the FAT and free list, directories, the open-file table, and every file operation |
 | `DiskFilename` | A value: the 8-word 12.4 field. Parses and formats dotted text, validates, and matches |
 | `DateTime` | In core: the 4-word date and time, as the timer answers it and timestamps store it |
@@ -222,13 +222,14 @@ The drive maps its slots one to one onto `DiskFile` handles. Stale slots after a
 | Read cache | Sectors in the hardware's write-through read cache; may be 0 | 4 |
 | Read rate | Words per second read from the disk | Preset |
 | Write rate | Words per second written to the disk | Preset |
+| Cache rate | Words per second copied out of the read cache | Preset |
 | Latency | Fixed time for a transfer that isn't continuous with the previous one | Preset |
 
 The drive has no drive letter, which is the Ozzy's concept, and no image path. The host attaches and detaches images at runtime. The drive also takes a clock from the host, the same as the timer's, for timestamps. A drive with no clock stamps zeros, as a timer with no clock reads zeros (see Prerequisites).
 
 #### Timing presets
 
-A drive's configuration can name a preset for its read rate, write rate, and latency, and override any of the three individually. Real drives varied a lot with controller, interleave, and model, so these are rough approximations of typical effective speeds, not any specific drive. A drive with no timing settings uses `floppy-1440k`.
+A drive's configuration can name a preset for its read rate, write rate, cache rate, and latency, and override any of the four individually. Real drives varied a lot with controller, interleave, and model, so these are rough approximations of typical effective speeds, not any specific drive. A drive with no timing settings uses `floppy-1440k`.
 
 | Preset | Approximates | Image size | Read rate | Write rate | Latency |
 | --- | --- | --- | --- | --- | --- |
@@ -241,6 +242,7 @@ A drive's configuration can name a preset for its read rate, write rate, and lat
 
 - **Rates** are sustained transfer rates, after interleave and rotation, not the raw bit rate of the medium.
 - **Latency** is a typical average access: a seek plus half a rotation.
+- **Cache rate** is 1,000,000 words per second (976 Kiw/s) for every preset, a 1 MHz OZ-3 class controller copying a word a cycle: about 256 µs a sector. It is small next to any disk, but not free.
 - **Image size** is the matching size for `oz3dsk new`. The drive itself takes its size from the image, so a preset doesn't limit which images it accepts.
 - At the Ozzy's default 1 MHz, the OS's streaming loop moves roughly 100 Kiw/s a word at a time, or about twice that with packed transfers. The floppies are far slower than the processor, while the fastest hard disk presets approach its limits, much as on real machines of the time.
 
@@ -281,9 +283,9 @@ An open file's size lives in its slot, and its directory entry is written at `CL
 
 #### Timing
 
-Time is charged by the hardware layer, for sector transfers only. Moving words between buffers and ports, searching memory, and editing buffers are free.
+Time is charged by the hardware layer, for sector transfers and reads from its cache only. Moving words between buffers and ports, searching memory, and editing buffers are free.
 
-- Reading a sector costs 256 ÷ read rate, unless it's in the read cache, which is free. Writing a sector always costs 256 ÷ write rate.
+- Reading a sector costs 256 ÷ read rate, or 256 ÷ cache rate if it's in the read cache, with no latency. Writing a sector always costs 256 ÷ write rate.
 - A transfer that isn't continuous with the previous one, meaning a different sector than the next in order or a switch between reading and writing, first costs the fixed latency. This is a simplified seek, with no tracks. Reads from the cache don't move anything, so they don't affect continuity.
 - While a sector is in a slot's buffer, the drive puts each next word in the data port, or takes each word from it, before the processor can ask. A streaming loop only waits at sector loads and writes.
 
@@ -619,7 +621,7 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 - **Interrupts:** a completion is news for whichever core issued the command, normally the OS's, so the interrupt is on every core and not shared, and every core with a handler is told, as with the timer.
 - **Config:** each drive is `{ type: "drive", letter: "A", ... }`, and only `type` and `letter` are required. The rest are the drive's settings, each optional:
   - `preset`: one of the timing presets (see Timing presets), `floppy-1440k` if left out. It gives the read rate, write rate, and latency.
-  - `read_rate`, `write_rate`, and `latency_ms`: each overrides what the preset gives, so `{ type: "drive", letter: "B", preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
+  - `read_rate`, `write_rate`, `cache_rate`, and `latency_ms`: each overrides what the preset gives, so `{ type: "drive", letter: "B", preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
   - `slots` and `read_cache`, with the drive's defaults.
   - `image`: an image attached at power on, or none for an empty drive. The disk's size is the image's, so a preset's image size only matters to `oz3dsk new`.
 

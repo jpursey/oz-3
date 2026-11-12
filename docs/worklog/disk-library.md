@@ -27,11 +27,12 @@ is how code calls it:
   returns an `absl::StatusOr` whose message says what was wrong with the file.
 - **Images come and go.** A `DiskFileSystem` is made with its hardware
   settings and open-file limit, and no image: an empty drive, where every
-  operation on the disk is `kNoDisk`. `AttachImage` gives it an image, making
-  its `DiskHardware` from the settings, and reads the superblock, returning
-  `kOk`, `kUnformatted` (which can still be formatted), or `kIoError`.
-  `DetachImage` returns the image, discarding the hardware and every buffer
-  unwritten, as pulling a floppy would; a host wanting it consistent calls
+  operation on the disk is `kNoDisk`. It makes its `DiskHardware` from the
+  settings once, empty too. `AttachImage` attaches an image to the hardware,
+  and reads the superblock, returning `kOk`, `kUnformatted` (which can still
+  be formatted), or `kIoError`. `DetachImage` detaches and returns the image,
+  emptying the hardware's cache and discarding every buffer unwritten, as
+  pulling a floppy would; a host wanting it consistent calls
   `Flush` first. Attaching while an image is attached detaches it first.
 - **Stale handles are the library's.** A file open when its image is
   detached stays open but stale: every operation on it is `kDiskChanged`,
@@ -233,23 +234,31 @@ struct DiskHardwareSettings {
   int read_cache_sectors = 0;          // 0 for no cache.
   int64_t read_words_per_sec = 0;      // 0 takes no time.
   int64_t write_words_per_sec = 0;     // 0 takes no time.
+  int64_t cache_words_per_sec = 0;     // 0 takes no time.
   absl::Duration latency = absl::ZeroDuration();
 };
 
-// A dumb drive: sector reads and writes on an image, through a write-through
-// read cache, adding up the time each takes.
+// A dumb drive: sector reads and writes on whatever image is attached, through
+// a write-through read cache, adding up the time each takes.
 class DiskHardware {
  public:
-  DiskHardware(std::unique_ptr<DiskImage> image,
-               const DiskHardwareSettings& settings);
-
   // Whether a written sector is kept in the read cache.
   enum class WriteCaching {
     kCache,  // It may be read again.
     kSkip,   // The caller keeps it, and won't read it from the disk.
   };
 
-  DiskImage* GetImage();
+  explicit DiskHardware(const DiskHardwareSettings& settings);  // Empty.
+
+  const DiskHardwareSettings& GetSettings() const;
+
+  // Changing the image (null for none) empties the cache and forgets the head.
+  void AttachImage(std::unique_ptr<DiskImage> image);
+  std::unique_ptr<DiskImage> DetachImage();  // Null if empty.
+  bool HasImage() const;
+  DiskImage* GetImage() const;  // Null if empty.
+
+  // kNoDisk with no image.
   DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
   DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words,
                         WriteCaching caching);
@@ -264,7 +273,7 @@ class DiskHardware {
   first. A write goes straight to the image, and with `kCache` caches the
   sector as a read does, so a sector written and later read again (a file
   read and written at random, or a FAT or directory sector the file system's
-  one buffer let go) is free to read.
+  one buffer let go) is cheap to read.
 - A write with `kSkip` updates the sector's cached copy if there is one, so
   the cache never holds stale words, but doesn't add one. The file system
   passes it for the two sectors it always holds: the superblock (sector 0),
@@ -272,11 +281,23 @@ class DiskHardware {
   1), written at nearly every commit that allocates or frees, which would
   otherwise keep a cache slot for nothing. Every other write is `kCache`.
   The choice is the caller's, as the hardware knows nothing of file systems.
-- A cached read is free, and doesn't move the head. Any other transfer that
-  isn't the sector after the last transfer, in the same direction, first
-  costs the latency. The first transfer always does.
+- A cached read costs a sector at the cache rate (`cache_words_per_sec`), the
+  drive copying it out of its memory, with no latency, and doesn't move the
+  head. Any other transfer that isn't the sector after the last transfer, in
+  the same direction, first costs the latency. The first transfer always
+  does, as does the first after the image changes. A transfer that fails
+  takes no time and doesn't move the head.
+- The hardware is the drive, so it lives as long as the drive, with images
+  attached and detached as disks are inserted and ejected. It owns the
+  attached image. With none, every transfer is `kNoDisk`. Attaching over an
+  attached image destroys the old one. The busy time is the drive's, so
+  changing the image keeps it.
+- Settings must not be negative, which the constructor checks. The drive
+  validates its config before making hardware.
 - The default settings take no time and cache nothing, which is what tools
-  want. The drive's timing presets belong to *Disk drive device*.
+  want. The drive's timing presets belong to *Disk drive device*; each gives a
+  cache rate of 1,000,000 words per second (a 1 MHz OZ-3 class controller,
+  about 256 µs a sector), as disk_design.md's Timing presets now say.
 
 ### disk: values
 
@@ -440,7 +461,8 @@ class DiskFileSystem {
   handle's; it isn't free until it is closed, so the drive's slot and the
   file system's free together. A directory handle reads its chain's full
   length as its size, and refuses writes with `kWrongHandleType`.
-- **Attaching** makes new hardware, with an empty cache, and charges the
+- **Attaching** attaches the image to the hardware, which empties its cache
+  and forgets its head, and charges the
   superblock's read to the busy time, as the drive charges attaching. Buffers
   and the free count belong to the attached image, so detaching discards
   them, with no write-back.
@@ -524,17 +546,22 @@ Depends on: nothing.
   `kIoError` from each operation and every one after, and a failed `Create`
   or `Open`.
 
-### CL3 [ ] disk: the hardware's cache and timing
+### CL3 [x] disk: the hardware's cache and timing
 
 Depends on: CL2.
 
 - `disk_hardware.h` and `.cc`: `DiskHardwareSettings` and `DiskHardware`.
+- disk_design.md: a cache rate, 1,000,000 words per second in every preset,
+  so cached reads aren't free.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
 - Unit tests: exact times for continuous and non-continuous reads and writes,
-  a switch of direction, the first transfer, cached reads costing nothing and
+  a switch of direction, the first transfer, cached reads costing the cache
+  rate with no latency (nothing at a rate of 0), an empty drive as `kNoDisk`,
+  attaching, detaching, and replacing images (emptying the cache and
+  forgetting the head, but keeping the busy time), and
   not moving the head, least recently used eviction, `kCache` writes adding
   and updating cached sectors, `kSkip` writes updating but not adding them,
   a cache of 0, and zero rates taking no time.
