@@ -4,8 +4,12 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_disk_SOURCE
+  disk_dir_entry.cc disk_dir_entry.h
+  disk_filename.cc disk_filename.h
   disk_hardware.cc disk_hardware.h
   disk_image.cc disk_image.h
+  disk_label.cc disk_label.h
+  disk_packed_text.cc disk_packed_text.h
   disk_status.h
 )
 set(oz3_disk_DEPS
@@ -16,14 +20,18 @@ set(oz3_disk_DEPS
   absl::strings
   absl::time
   gb_file
+  oz3_core
 )
 set(oz3_disk_LIBS
   absl::check
 )
 
 set(oz3_disk_TEST_SOURCE
+  disk_dir_entry_test.cc
+  disk_filename_test.cc
   disk_hardware_test.cc
   disk_image_test.cc
+  disk_label_test.cc
   faulty_file_protocol.cc faulty_file_protocol.h
 )
 

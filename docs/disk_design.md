@@ -188,6 +188,7 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is it
 | `DiskHardware` | Owns the attached `DiskImage`, if any, and behaves as a dumb drive: sector reads and writes through an optional write-through read cache, and the time of each, from the read rate, write rate, cache rate, and latency. A future raw drive device would be this behind ports |
 | `DiskFileSystem` | Owns a `DiskHardware`, and takes the open-file limit. Holds its own buffers, and does mounting, formatting, the FAT and free list, directories, the open-file table, and every file operation |
 | `DiskFilename` | A value: the 8-word 12.4 field. Parses and formats dotted text, validates, and matches |
+| `DiskLabel` | A value: the 8-word volume label. Parses, formats, and validates |
 | `DateTime` | In core: the 4-word date and time, as the timer answers it and timestamps store it |
 | `DiskDirEntry` | A value: a 16-word directory entry, with getters and setters, returning its name as a `DiskFilename` |
 | `DiskFile` | A value: a handle to an open file, an index and a generation |
@@ -196,7 +197,7 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is it
 The public surface is `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the value types. The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
 
 - **One owner per image.** `DiskFileSystem` owns the `DiskHardware`, which owns the `DiskImage`, so nothing else can write the image behind the file system's back.
-- **Patterns are filenames.** `DiskFilename::FromPattern("*.TXT")` expands each `*` into `?` bytes at construction, and `Matches(const DiskFilename& name)` is a byte compare where `?` matches anything. A plain parse rejects `?` and `*`, so a pattern can't be mistaken for a name.
+- **Patterns are filenames.** `DiskFilename::ParsePattern("*.TXT")` expands each `*` into `?` bytes at construction, and `Matches(const DiskFilename& name)` is a byte compare where `?` matches anything. A plain parse rejects `?` and `*`, so a pattern can't be mistaken for a name.
 - **Files are handles, like `FILE*`.** `DiskFileSystem` keeps the open-file table and does every operation, as in `Read(DiskFile, span)`, so it can refuse to delete an open file, give open files' sizes in listings, and write back at close. The caller sets the table's size: the drive passes its slot count, and tools a large one. A handle's generation catches use of a closed handle whose index has been reused.
 - **Buffers are explicit.** `DiskFileSystem` holds one sector per open file, one directory sector, and two FAT sectors, one fixed on sector 1. There's no generic cache between it and the hardware, so it always knows exactly what it holds and when it's written, and its memory is fixed by its open-file limit.
 - **Commits are explicit.** `DiskFileSystem` writes its buffers at the points the drive needs: at the end of every directory-changing operation, in `Close`, `Flush(DiskFile)`, and `Truncate(DiskFile)`, and when a dirty buffer is reused, always in the crash-safe order. `Flush()` with no file writes everything, for a clean shutdown.

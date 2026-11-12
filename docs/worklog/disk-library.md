@@ -125,8 +125,10 @@ confused with Game Bits' `gb::File`, `gb::FileSystem`, `gb::RawFile`, or
   call, which the file system's adds to its own.
 - **Host transfer:** `WordsFromBytes`, `BytesFromWords`, `WordsFromText`, and
   `TextFromWords`, in `disk_transfer.h`.
-- Constants: `kDiskSectorWords` (256), `kDiskNameWords` (8), and
-  `kDiskDirEntryWords` (16).
+- Constants: `kDiskSectorWords` (256), and each value's own size,
+  `DiskFilename::kWordCount` (8), `DiskLabel::kWordCount` (8), and
+  `DiskDirEntry::kWordCount` (16). Names and labels being the same size is
+  happenstance, so each has its own.
 
 Words are `uint16_t`. Sector numbers, positions, and sizes are `int64_t`, as
 they need 32 bits unsigned. Cluster numbers are `int`.
@@ -318,7 +320,7 @@ class DiskFilename {
       absl::Span<const uint16_t> words);
 
   std::string ToString() const;  // "HELLO.TXT", or "HELLO" with no extension.
-  std::array<uint16_t, kDiskNameWords> GetWords() const;
+  Words GetWords() const;
   bool IsPattern() const;
 
   // Byte compare where this pattern's ? matches any byte.
@@ -335,7 +337,12 @@ class DiskFilename {
   type of their own.
 - `DiskDirEntry` is the 16 words with getters and setters: the name (nullopt
   for a free entry or one that breaks the rules), attributes, first cluster,
-  size, and modified time.
+  size, and modified time. It holds its words exactly as read, and `IsFree`
+  is its first word being 0. The attribute bits are `kDiskAttribReadOnly`,
+  `kDiskAttribHidden`, and `kDiskAttribDirectory`, and `kDiskAttribSettable`
+  is the two `ATTRIB` sets.
+- Dotted text with a trailing dot and no extension (`HELLO.`) is the name
+  with no extension, as DOS reads it. A second dot is refused.
 
 ### disk: DiskLayout
 
@@ -566,13 +573,17 @@ Depends on: CL2.
   and updating cached sectors, `kSkip` writes updating but not adding them,
   a cache of 0, and zero rates taking no time.
 
-### CL4 [ ] disk: names, labels, and directory entries
+### CL4 [x] disk: names, labels, and directory entries
 
 Depends on: CL1, CL2.
 
-- `disk_filename.h` and `.cc` (`DiskFilename` and `DiskLabel`), and
-  `disk_dir_entry.h` and `.cc`.
+- `disk_filename.h` and `.cc`, `disk_label.h` and `.cc`, and
+  `disk_dir_entry.h` and `.cc`, with the internal `disk_packed_text.h` and
+  `.cc` holding the packed text rules names and labels share (the
+  characters, upper-casing, padding, and packing).
 - `oz3_disk` depends on `oz3_core`, for `DateTime`.
+- disk_design.md: `FromPattern` becomes `ParsePattern`, and the Disk library
+  table gains `DiskLabel`.
 - Unused, so no visible change.
 
 **Verify**
