@@ -42,6 +42,7 @@ An image file is an 8-word container header followed by the sectors in order. Th
 - Sector size is fixed at 256 words (512 bytes). It is recorded so another size remains possible in a later version.
 - The sector count is the disk's physical size. A file system may use fewer sectors; any beyond it are unused.
 - Write protection belongs to the medium, like a floppy's notch, so it lives here rather than in the drive's configuration. The drive reports it through `MEDIA` and refuses changes to a protected disk.
+- A read-only host file is a write-protected image too, whatever its header says: it is opened for reading only, and its flags have bit 0 set. The header's bit is the notch, which travels with the image, and the host's read-only attribute is the host's own protection, which the image never changes. Protection can't be cleared on a read-only host file.
 - A blank image is all zero sectors: an unformatted disk.
 
 ## File system
@@ -551,6 +552,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 - **Paths** are dotted names in the root, matched without regard to case. There are no folders until subdirectories exist.
 - **Flags:** info, list, file create, file read, and file write.
 - **The byte view is the binary convention:** each word is two bytes, low byte first, and a file's size is its words × 2. Reading at an odd byte offset reads the containing word, and writing an odd number of bytes pads the last word with a zero high byte. A `.oz3` stored on a disk is the same words as on the host, so the program loader, the assembler, and anything else on `gb::FileSystem` can read from and write into images unchanged.
+- **Attributes:** it supports `gb::FileAttribute::kReadOnly` and `kHidden`, the disk's read-only and hidden bits. `PathInfo` reports them from the file's entry, and `gb::FileSystem::SetAttributes` sets them as `ATTRIB` does, failing with the file open. A read-only file can't be opened for writing or deleted, as on the drive, and a hidden one is still listed. Copies and moves keep them, as for any protocol, so a read-only host file copied in stays read-only, and back out again.
 - **Moves** within the protocol are renames, through `gb::FileSystem::MoveFile`.
 - **Timestamps:** the protocol stamps written files using a clock given when it's created, or zeros without one.
 - **Text conversion** stays outside, in the library's host transfer helpers, since a `RawFile` has no notion of text.
@@ -559,7 +561,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 
 The protocol owns its `DiskFileSystem`. It mounts one, unmounts it, and can swap one image for another. With nothing mounted, every path is invalid.
 
-Everything beyond the protocol (attributes, the label, write protection, and checks) goes through `GetFileSystem()`, which returns the mounted `DiskFileSystem`, or null. No separate interface is needed, and since the protocol and direct calls share one file system, they share one open-file table and one set of buffers: deleting a file the protocol has open still fails with **in use**, and every view stays consistent.
+Everything beyond the protocol (the label, write protection, and checks) goes through `GetFileSystem()`, which returns the mounted `DiskFileSystem`, or null. No separate interface is needed, and since the protocol and direct calls share one file system, they share one open-file table and one set of buffers: deleting a file the protocol has open still fails with **in use**, and every view stays consistent.
 
 The host keeps a pointer to the protocol before passing it to `gb::FileSystem::Register`, which owns it from then on. Protocols live as long as their file system, so the pointer stays valid. Direct calls bypass the protocol's `Lock` and `Unlock`, so a multithreaded host needs its own locking around them; the OZ-3 tools are single-threaded.
 
@@ -597,16 +599,19 @@ oz3dsk work.ozd dir *.OZ3
 - **Binary (the default):** two host bytes per word, low byte first, as in `.oz3` files. An odd last byte is padded with a zero, and `get` writes two bytes per word.
 - **Text (`--text`):** the same byte order as binary, since strings are packed low byte first, so text never needs reordering. Going in, host line endings become LF (0Ah). Coming out, `get --text` drops zero bytes, such as the padding in an odd-length file's last word. Files mixing binary fields and text copy correctly as plain binary.
 - **Timestamps:** `put` stamps the file with the host file's modified time, and `get` sets the host file's time from the entry.
+- **Attributes:** `put` and `get` keep read-only and hidden, as any copy does, with or without `--text`, so neither replaces a read-only file. They keep only the attributes both protocols support, as `gb::FileSystem::GetAttributeFlags` reports them, so a host without a hidden attribute keeps only read-only.
+- **`protect off`** fails on a read-only image file, which is always protected (see Image file).
 
-`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile` through the protocol. The rest use the library directly through the protocol's `GetFileSystem()`.
+`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile` and `attrib` uses `gb::FileSystem::SetAttributes` through the protocol, and `dir` reads attributes from its `PathInfo`. The rest use the library directly through the protocol's `GetFileSystem()`.
 
 ### Game Bits dependencies
 
-This work depends on three Game Bits changes, made ahead of it:
+This work depends on four Game Bits changes, made ahead of it:
 
 - **`gb_cli`: required positional arguments with subcommands.** A command may have required positional arguments and subcommands together, with the arguments always before the subcommand's name. Only required arguments are allowed there, so the parser always takes exactly that many words before looking for a subcommand, and an argument can never be mistaken for one.
 - **`gb_cli`: required flags.** A flag can be marked required; the default stays optional.
 - **`gb::FileSystem`: `MoveFile` and `MoveFolder`.** They take the same parameters as `CopyFile` and `CopyFolder`, except that moving between different protocols isn't allowed.
+- **`gb::FileSystem`: file attributes.** Read-only and hidden, reported in `PathInfo` and changed with `SetAttributes`, which copies and moves keep. The disk library uses them for read-only image files, and `DiskFileProtocol` for the disk's own attributes.
 
 ## Ozzy
 
@@ -642,7 +647,7 @@ This design depends on changes made ahead of it, each a backlog item of its own:
   - `TSTP`: sets **S** to a port's flag without loading or clearing anything, for the control port's request handshake.
   - `CMPT`: a compare that swaps both words' bytes first, so packed text compares in reading order with one instruction a word, for sorting names and other packed text.
 - **No date without a clock.** A timer with no host clock reads zeros for the date and time, rather than 1970-01-01 00:00:00, so timers and drives agree that zeros mean no date.
-- **Game Bits changes:** required positional arguments with subcommands and required flags in `gb_cli`, and `MoveFile` and `MoveFolder` in `gb::FileSystem` (see Game Bits dependencies).
+- **Game Bits changes:** required positional arguments with subcommands and required flags in `gb_cli`, and `MoveFile`, `MoveFolder`, and file attributes in `gb::FileSystem` (see Game Bits dependencies).
 
 ## Getting there
 
@@ -653,7 +658,7 @@ The backlog items that build this, in order, each updating the wiki as it goes. 
 3. *No date without a clock* (devices, wiki).
 4. *Disk library* (disk): the image, the hardware's timing, the file system, names, and checks, with no device. Depends on 1, so names pack as the assembler does.
 5. *Disk drive device* (devices, wiki): the ports, the command protocol, and every command, on the disk library. Depends on 2 and 4.
-6. *Disk tools* (tools, apps, wiki): `DiskFileProtocol` and `oz3dsk`. Depends on 4, and on Game Bits *Command line arguments before subcommands* and *Moving files*.
+6. *Disk tools* (tools, apps, wiki): `DiskFileProtocol` and `oz3dsk`. Depends on 4.
 7. *Ozzy drives* (ozzy, apps, wiki): the wiring, config, and machine table above. Depends on 3 and 5, and on 6 to make disks to try by hand.
 
 Then the *Ozzy OS*, which boots from `A:`.

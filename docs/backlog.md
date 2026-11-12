@@ -66,8 +66,7 @@ design:
 - **Layers:** tools, apps, wiki
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Disk library*, Game Bits *Command line arguments before
-  subcommands*, Game Bits *Moving files*
+- **Depends on:** *Disk library*
 - **Background:** [disk_design.md](disk_design.md) (Tools)
 
 `DiskFileProtocol`, a `gb::FileProtocol` over a mounted image, in `tools`, and

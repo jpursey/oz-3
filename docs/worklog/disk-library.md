@@ -183,7 +183,8 @@ class DiskMedia {
   uint16_t GetFlags() const;  // The header's flags word, as MEDIA reports it.
   bool IsWriteProtected() const;
 
-  // Sets the header's write-protect bit.
+  // Sets the header's write-protect bit, writing nothing if it is unchanged.
+  // Fails with kWriteProtected to clear it on a read-only host file.
   DiskStatus SetWriteProtected(bool write_protected);
 
  protected:
@@ -203,7 +204,8 @@ class DiskImage final : public DiskMedia {
       gb::FileSystem* file_system, std::string_view path,
       int64_t sector_count);
 
-  // Opens an existing image, for reading and writing.
+  // Opens an existing image, for reading and writing, or only reading, as a
+  // write-protected image, if the host file is read-only.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Open(
       gb::FileSystem* file_system, std::string_view path);
 
@@ -223,10 +225,16 @@ class DiskImage final : public DiskMedia {
   or can't be opened for reading and writing, it isn't an image (the wrong
   ID), its version or sector size isn't supported, its sector count is 0, or
   the file is too short to hold the sectors its header counts.
-- There is no read-only host file: `gb::FileSystem` has no file attributes,
-  and the header's write-protect bit is how an image is read-only, as a
-  floppy's notch is. If Game Bits gains file attributes, opening a read-only
-  host file as write-protected could follow.
+- A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
+  a write-protected image, whatever its header says, from CL11. `Open` opens
+  it for reading only, and its flags have the write-protect bit set, so
+  `MEDIA` reports it. The header's bit is the floppy's notch, which travels
+  with the image; the host's attribute is the host's own protection, and the
+  image never changes it. Clearing protection on a read-only host file fails
+  with kWriteProtected: the host file's protection is one the image can't
+  change. It is checked before trying, as a failed host write would leave the
+  image unusable (see below), and setting protection when already set writes
+  nothing.
 - `Create` writes the header and zero sectors, a few sectors at a time.
 - It is write-through to the host: `WriteSector` and `SetWriteProtected`
   flush the host file before returning, so a host failure is the result of
@@ -747,3 +755,24 @@ Depends on: CL2.
 - Standard checks.
 - Unit tests: odd and even byte counts each way, CRLF, CR, and LF going in,
   and zero bytes dropped coming out.
+
+### CL11 [ ] disk: read-only image files
+
+Depends on: CL2.
+
+- `DiskImage::Open` reads the host file's attributes, and opens a read-only
+  one for reading only, as a write-protected image (see DiskImage above).
+  `WriteFlags` refuses on it with kWriteProtected.
+- `DiskMedia::SetWriteProtected` writes nothing when the bit is unchanged.
+- A read-only image file attaches as a protected disk.
+
+**Verify**
+- Standard checks.
+- Unit tests, with the attribute set through `gb::FileSystem::SetAttributes`
+  on `FaultyFileProtocol` (a `gb::MemoryFileProtocol`, which supports it): a
+  read-only image opens, reads, and reports itself protected with a header
+  that isn't; its writes fail with kWriteProtected; clearing protection fails
+  with kWriteProtected, leaving the image usable, and setting it succeeds, writing
+  nothing (a write limit of 0 shows it);
+  `Create` over a read-only file fails; and an unchanged `SetWriteProtected`
+  writes nothing on a writable image too.
