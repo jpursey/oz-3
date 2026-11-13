@@ -728,7 +728,7 @@ Depends on: CL6.
   entry on the disk one word past the biggest size as invalid, and `Open` of
   it as `kCorrupt`.
 
-### CL8 [ ] disk: creating files
+### CL8 [x] disk: creating files
 
 Depends on: CL7.
 
@@ -739,25 +739,33 @@ Depends on: CL7.
   has no free entry and no cluster to grow by. Writes the new entry (the name,
   `now` as its modified time, and zeros for everything else) into the first
   free entry, and opens the empty file in the lowest free slot. Like `Open`,
-  it counts the free clusters if nothing has yet.
-- Growing the root: with no free entry, it allocates a cluster, zeroes and
-  writes its sectors, then links it onto the root's chain, then writes the
-  entry into its first sector. The root slot `Open` keeps and any open root
-  handle take the new size, so an open listing reaches the new entries.
+  it counts the free clusters if nothing has yet, once the name is known to
+  be free.
+- Growing the root: with no free entry, it writes the free list's head
+  cluster's sectors in order while the cluster is still free, zeroed but for
+  the new entry in its first, then allocates it and links it onto the root's
+  chain. Writing them in order keeps them continuous, so only the first pays
+  the latency. The root slot `Open` keeps and any open root handle take the
+  new size, so an open listing reaches the new entries.
 - The write path: `SectorBuffer` gains a dirty flag, and every write goes
   through one private function that knows which buffer it is. It writes
   sector 1 with `kSkip` and every other with `kCache`; it writes sector 1
   first if it is dirty before the working FAT sector, so the free list's head
-  reaches the disk before any link to a cluster taken from it; and a
+  reaches the disk before any link to a cluster taken from it (only
+  allocating leaves FAT buffers dirty past its operation, so this is
+  allocating's order); and a
   directory sector written through one buffer is copied into any other buffer
   holding it, so an open root handle sees each entry as it is written.
   Loading another sector into a dirty buffer writes it first.
 - Allocating: takes the free list's head, sets the head to its next, writes
   the cluster's own word as FFFFh, and links the chain's old last cluster to
   it, as disk_design.md's FAT and free list says, keeping the free count.
+  When the link is in another FAT sector than the cluster's own word, the
+  FAT is written before the link is made, so the link can't reach the disk
+  before the end, leaving the chain running on into the free list.
 - `Create` commits before returning, in disk_design.md's order: the new root
-  cluster's zeroed sectors, sector 1, the working FAT sector, then the entry's
-  sector.
+  cluster's sectors, sector 1, then the working FAT sector; or without
+  growing, just the entry's sector.
 - disk_design.md: the drive stamps a file when it creates it, as well as when
   it closes it after a write, so no reachable entry is left with a zero time
   by the drive (Timestamps, and `CREATE`'s notes).
@@ -767,8 +775,7 @@ Depends on: CL7.
 - Standard checks.
 - Unit tests: creating into a free entry between used ones and at the end of
   a sector, with the entry's exact words (its modified time `now`), then
-  opening it (`kInUse`) and reading it empty after closing;
-  each refusal; `kExists` for an open and a closed file; growing a full root,
+  opening it (`kInUse`) and reading it empty after closing; each refusal; `kExists` for an open and a closed file; growing a full root,
   with the exact order of sector writes, a 1-sector and a 4-sector cluster,
   and the FAT's head and the new link in different FAT sectors; an open root
   handle seeing the new entry and the grown size; the free count after each;
@@ -791,8 +798,7 @@ Depends on: CL8.
 - `GetWritableWords`: the room left in the file's last cluster past its
   size, plus the free clusters', without the disk.
 - A slot remembers it was written since its last stamp. `Close` and `Flush`
-  commit the file: its
-  dirty data sector, then the FAT (sector 1 first), then its entry, with the
+  commit the file: its dirty data sector, then the FAT (sector 1 first), then its entry, with the
   size, first cluster, and, if written, `now` as the modified time. A
   directory handle's `Close` and `Flush` write nothing. `Flush(now)` commits
   every open file, then any dirty FAT buffer.
@@ -807,8 +813,8 @@ Depends on: CL8.
   inside a file, growing over slack past the size, filling the disk to `disk
   full` with `GetWritableWords` exact at each step, each refusal, the free
   count, stamps at `Close` and `Flush` only after writes (a created file
-  closed unwritten keeps its creation stamp), two files written at once sharing the working FAT sector,
-  `Find` showing an open file's size, and the exact order of sector writes for
+  closed unwritten keeps its creation stamp), two files written at once
+  sharing the working FAT sector, `Find` showing an open file's size, and the exact order of sector writes for
   each commit and for a buffer taking another sector.
 
 ### CL10 [ ] disk: truncating files
@@ -820,8 +826,10 @@ Depends on: CL9.
   `Flush` does, without stamping), then writes the entry with the new size
   (and first cluster 0 at size 0), then the FAT marking the chain's new end
   and the freed chain's last link to the old head, then sector 1 with the
-  freed chain as the head, as disk_design.md's `TRUNCATE` orders them. It
-  counts as a write, so `Close` stamps it. Returns `kWrongHandleType` for a
+  freed chain as the head, as disk_design.md's `TRUNCATE` orders them.
+  Freeing is the reverse of allocating's order, which the write path keeps
+  for dirty FAT buffers (see CL8), so it starts with every FAT buffer clean
+  and writes each in its turn. It counts as a write, so `Close` stamps it. Returns `kWrongHandleType` for a
   directory handle, `kReadOnly`, and `kWriteProtected`.
 - Unused, so no visible change.
 

@@ -161,6 +161,15 @@ class DiskFileSystem final {
   // already open. Its size is its chain's full length.
   DiskStatus OpenRoot(DiskFile* file);
 
+  // Creates the empty file `name` in the root directory, modified `now`, and
+  // opens it as Open does. With no free entry, the root grows by a cluster.
+  // Commits before returning, so the file is on the disk. Returns
+  // kWriteProtected on a protected disk, kUnformatted with no file system,
+  // kBadName for a pattern, kTooManyOpen with every slot taken, kExists if the
+  // name is taken, kDiskFull if the root is full with no cluster free, and
+  // kCorrupt for a broken root chain or free list.
+  DiskStatus Create(const DiskFilename& name, DateTime now, DiskFile* file);
+
   // Closes `file`, freeing its slot. A stale slot is freed too.
   DiskStatus Close(DiskFile file);
 
@@ -203,7 +212,15 @@ class DiskFileSystem final {
 
   // A buffer holding one sector.
   struct SectorBuffer {
-    int sector = -1;  // -1 for none.
+    // Makes the buffer hold no sector, discarding any change, without
+    // clearing its words.
+    void Reset() {
+      sector = -1;
+      dirty = false;
+    }
+
+    int sector = -1;     // -1 for none.
+    bool dirty = false;  // Changed since it was read or written.
     Sector words = {};
   };
 
@@ -263,6 +280,11 @@ class DiskFileSystem final {
   // Forgets the attached disk's superblock, free count, and buffers.
   void ResetVolume();
 
+  // Forgets the free count and the directory and FAT buffers, unwritten, so
+  // they are read again when next needed, as after a change that failed
+  // partway.
+  void DiscardBuffers();
+
   // Returns kNoDisk with no image, kUnformatted with no file system, or else
   // kOk.
   DiskStatus GetVolumeStatus() const;
@@ -305,25 +327,61 @@ class DiskFileSystem final {
   // Returns kCorrupt for a broken root chain.
   DiskStatus OpenRootSlot(Slot* slot);
 
+  // Moves `slot`'s last cluster reached to the one `cluster_index` clusters
+  // into its chain, following the chain from the cluster last reached, or from
+  // the start to go back. Returns kCorrupt if the chain is shorter.
+  DiskStatus ReachCluster(Slot* slot, int cluster_index);
+
   //----------------------------------------------------------------------------
   // Sectors
   //----------------------------------------------------------------------------
 
-  // Reads `sector` into `buffer`, unless it already holds it.
+  // Reads `sector` into `buffer`, unless it already holds it, first writing
+  // the sector it held if it is dirty.
   DiskStatus LoadSector(int sector, SectorBuffer* buffer);
 
+  // Loads `sector` into `buffer` as all zeros, without reading it, and marks
+  // it dirty, first writing the sector it held if it is dirty.
+  DiskStatus BlankSector(int sector, SectorBuffer* buffer);
+
   // Loads the sector at `slot`'s position, which must be before its end, into
-  // its buffer, following its chain from the cluster last reached, or from the
-  // start to go back.
+  // its buffer.
   DiskStatus LoadSlotSector(Slot* slot);
+
+  // Writes `buffer`'s sector if it is dirty. Every write of a buffer comes
+  // here, to keep the order disk_design.md's Committing gives.
+  //
+  // Only allocating leaves the FAT buffers dirty past the operation that
+  // changed them, so the order kept here is allocating's: the working FAT
+  // sector's write first writes sector 1 if it is dirty, so the free list's
+  // head reaches the disk before a cluster taken from it is linked to.
+  // Freeing writes its own order, starting with every FAT buffer clean.
+  //
+  // Sector 1 isn't cached, as its buffer always holds it. A sector written is
+  // copied into every other buffer holding it, so an open root handle sees
+  // each entry as it is written. That relies on no sector being dirty in two
+  // buffers: only a file's own slot holds its data, and dir_ is clean between
+  // operations.
+  DiskStatus WriteBuffer(SectorBuffer* buffer);
 
   //----------------------------------------------------------------------------
   // FAT
   //----------------------------------------------------------------------------
 
+  // Writes the dirty FAT buffers, sector 1 first.
+  DiskStatus WriteFat();
+
+  // Sets `buffer` to the FAT buffer for the FAT's word `index`, reading its
+  // sector into it if needed.
+  DiskStatus LoadFatSector(int index, SectorBuffer** buffer);
+
   // Sets `value` to the FAT's word `index`, from its buffer, reading the
   // sector into it if needed.
   DiskStatus ReadFatWord(int index, uint16_t* value);
+
+  // Sets the FAT's word `index` to `value`, in its buffer, reading the sector
+  // into it if needed.
+  DiskStatus SetFatWord(int index, uint16_t value);
 
   // Sets `next` to the cluster after `cluster` in its chain, or 0 at the
   // chain's end. A `cluster` of 0 gives the free list's head. Returns kCorrupt
@@ -334,9 +392,35 @@ class DiskFileSystem final {
   // kCorrupt for a broken chain, or one longer than the disk (a loop).
   DiskStatus CountChain(int first_cluster, int* count);
 
+  // Sets `head` to the free list's head, which free_count_ must be set for.
+  // Returns kDiskFull with no cluster free, and kCorrupt for a broken link or
+  // an empty list the count says isn't.
+  DiskStatus GetFreeHead(int* head);
+
+  // Takes the free list's head, ends a chain with it, and links it after
+  // `last_cluster`, unless that is 0 for a new chain, setting `cluster` to it.
+  // The cluster's end reaches the disk before the link to it, so a crash can't
+  // leave the chain running on into the free list. Returns kDiskFull, changing
+  // nothing, with no cluster free, and kCorrupt for a broken free list.
+  DiskStatus AllocateCluster(int last_cluster, int* cluster);
+
   //----------------------------------------------------------------------------
   // Directory
   //----------------------------------------------------------------------------
+
+  // Opens dir_ on the root if it isn't open, or else moves its position back
+  // to the start. It stays open, keeping its sector, until the volume is
+  // reset.
+  DiskStatus RewindDirectory();
+
+  // Calls `visit` with each entry of the directory open in `slot`, free ones
+  // included, and where it is, from the first entry starting at or after its
+  // position, moving the position past each before the call. Returns kOk once
+  // `visit` returns true, and kNotFound at the end, leaving the position
+  // there.
+  DiskStatus VisitEntries(
+      Slot* slot,
+      absl::FunctionRef<bool(const DiskDirEntry&, const EntryLocation&)> visit);
 
   // Finds the next entry of the directory open in `slot` whose name `matches`
   // accepts, from the first entry starting at or after its position, setting
@@ -347,6 +431,22 @@ class DiskFileSystem final {
   DiskStatus FindNextEntry(Slot* slot,
                            absl::FunctionRef<bool(const DiskFilename&)> matches,
                            DiskDirEntry* entry, EntryLocation* location);
+
+  // Writes the dirty FAT buffers, then the directory buffer, as every change
+  // to the directory does before returning.
+  DiskStatus CommitDirectory();
+
+  // Puts `entry` at `location` in dir_'s buffer, loading its sector if
+  // needed, for CommitDirectory to write.
+  DiskStatus PutEntry(const EntryLocation& location, const DiskDirEntry& entry);
+
+  // Grows the root, open in dir_, by a cluster holding `entry` as its first
+  // entry, setting `location` to it. The cluster's sectors, zeroed but for the
+  // entry, are written before the link that adds it, as a directory has no
+  // size to stop reads, and dir_ and any open root handle take the new size.
+  // The link is left for CommitDirectory to write. Returns kDiskFull, changing
+  // nothing, with no cluster free.
+  DiskStatus GrowRoot(const DiskDirEntry& entry, EntryLocation* location);
 
   //----------------------------------------------------------------------------
   // State

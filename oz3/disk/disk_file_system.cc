@@ -43,6 +43,11 @@ constexpr int kFatHeadSector = 1;
 // A FAT link ending a chain, or as the free list's head, a full disk.
 constexpr uint16_t kFatEnd = 0xFFFF;
 
+// Returns the sector holding the FAT's word `index`.
+int GetFatSector(int index) {
+  return kFatHeadSector + index / kDiskSectorWords;
+}
+
 // The cluster formatting gives the root directory.
 constexpr int kFormatRootCluster = 1;
 
@@ -216,12 +221,7 @@ DiskStatus DiskFileSystem::Open(const DiskFilename& name, DiskFile* file) {
       return status;
     }
   }
-  // The directory slot stays open, keeping its sector, until the volume is
-  // reset.
-  if (dir_.state == SlotState::kOpen) {
-    dir_.position = 0;
-  } else if (DiskStatus status = OpenRootSlot(&dir_);
-             status != DiskStatus::kOk) {
+  if (DiskStatus status = RewindDirectory(); status != DiskStatus::kOk) {
     return status;
   }
   DiskDirEntry entry;
@@ -267,6 +267,72 @@ DiskStatus DiskFileSystem::OpenRoot(DiskFile* file) {
       status != DiskStatus::kOk) {
     return status;
   }
+  *file = free_slot;
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::Create(const DiskFilename& name, DateTime now,
+                                  DiskFile* file) {
+  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (name.IsPattern()) {
+    return DiskStatus::kBadName;
+  }
+  const DiskFile free_slot = FindFreeSlot();
+  if (free_slot < 0) {
+    return DiskStatus::kTooManyOpen;
+  }
+  if (DiskStatus status = RewindDirectory(); status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // One pass finds both the name and the first free entry.
+  std::optional<EntryLocation> free_entry;
+  const DiskStatus find_status =
+      VisitEntries(&dir_, [&name, &free_entry](const DiskDirEntry& entry,
+                                               const EntryLocation& location) {
+        if (entry.IsFree()) {
+          if (!free_entry.has_value()) {
+            free_entry = location;
+          }
+          return false;
+        }
+        return entry.GetName() == name;
+      });
+  if (find_status == DiskStatus::kOk) {
+    return DiskStatus::kExists;
+  }
+  if (find_status != DiskStatus::kNotFound) {
+    return find_status;
+  }
+  if (DiskStatus status = CountFreeClusters(); status != DiskStatus::kOk) {
+    return status;
+  }
+
+  DiskDirEntry entry;
+  entry.SetName(name);
+  entry.SetModified(now);
+  EntryLocation location;
+  DiskStatus status = DiskStatus::kOk;
+  if (free_entry.has_value()) {
+    location = *free_entry;
+    status = PutEntry(location, entry);
+  } else {
+    status = GrowRoot(entry, &location);
+  }
+  if (status == DiskStatus::kOk) {
+    status = CommitDirectory();
+  }
+  if (status != DiskStatus::kOk) {
+    // The buffers may hold changes that never reached the disk.
+    DiscardBuffers();
+    return status;
+  }
+  OpenSlot(&slots_[free_slot], location, /*first_cluster=*/0, /*size=*/0);
   *file = free_slot;
   return DiskStatus::kOk;
 }
@@ -393,11 +459,17 @@ bool DiskFileSystem::IsValidSuperblock(const Sector& superblock,
 void DiskFileSystem::ResetVolume() {
   formatted_ = false;
   superblock_ = {};
+  DiscardBuffers();
+  // Formatting starts from a zeroed FAT head.
+  fat_head_.words.fill(0);
+}
+
+void DiskFileSystem::DiscardBuffers() {
   free_count_.reset();
   dir_.state = SlotState::kFree;
-  dir_.buffer.sector = -1;
-  fat_head_ = {};
-  fat_work_ = {};
+  dir_.buffer.Reset();
+  fat_head_.Reset();
+  fat_work_.Reset();
 }
 
 DiskStatus DiskFileSystem::GetVolumeStatus() const {
@@ -491,7 +563,7 @@ void DiskFileSystem::OpenSlot(Slot* slot,
   slot->first_cluster = first_cluster;
   slot->last_cluster = 0;
   slot->last_cluster_index = 0;
-  slot->buffer.sector = -1;
+  slot->buffer.Reset();
 }
 
 DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
@@ -506,6 +578,26 @@ DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskFileSystem::ReachCluster(Slot* slot, int cluster_index) {
+  if (slot->last_cluster == 0 || cluster_index < slot->last_cluster_index) {
+    slot->last_cluster = slot->first_cluster;
+    slot->last_cluster_index = 0;
+  }
+  while (slot->last_cluster_index < cluster_index) {
+    int next = 0;
+    if (DiskStatus status = GetNextCluster(slot->last_cluster, &next);
+        status != DiskStatus::kOk) {
+      return status;
+    }
+    if (next == 0) {
+      return DiskStatus::kCorrupt;
+    }
+    slot->last_cluster = next;
+    ++slot->last_cluster_index;
+  }
+  return DiskStatus::kOk;
+}
+
 //------------------------------------------------------------------------------
 // Sectors
 //------------------------------------------------------------------------------
@@ -513,6 +605,9 @@ DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
 DiskStatus DiskFileSystem::LoadSector(int sector, SectorBuffer* buffer) {
   if (buffer->sector == sector) {
     return DiskStatus::kOk;
+  }
+  if (DiskStatus status = WriteBuffer(buffer); status != DiskStatus::kOk) {
+    return status;
   }
   buffer->sector = -1;
   if (DiskStatus status =
@@ -524,25 +619,22 @@ DiskStatus DiskFileSystem::LoadSector(int sector, SectorBuffer* buffer) {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskFileSystem::BlankSector(int sector, SectorBuffer* buffer) {
+  if (DiskStatus status = WriteBuffer(buffer); status != DiskStatus::kOk) {
+    return status;
+  }
+  buffer->sector = sector;
+  buffer->dirty = true;
+  buffer->words.fill(0);
+  return DiskStatus::kOk;
+}
+
 DiskStatus DiskFileSystem::LoadSlotSector(Slot* slot) {
   const int cluster_size = GetClusterSize();
-  const int cluster_index = slot->position / cluster_size;
-  if (slot->last_cluster == 0 || cluster_index < slot->last_cluster_index) {
-    slot->last_cluster = slot->first_cluster;
-    slot->last_cluster_index = 0;
-  }
-  while (slot->last_cluster_index < cluster_index) {
-    int next = 0;
-    if (DiskStatus status = GetNextCluster(slot->last_cluster, &next);
-        status != DiskStatus::kOk) {
-      return status;
-    }
-    // The chain is shorter than the file's size.
-    if (next == 0) {
-      return DiskStatus::kCorrupt;
-    }
-    slot->last_cluster = next;
-    ++slot->last_cluster_index;
+  // A chain shorter than the file's size is corrupt.
+  if (DiskStatus status = ReachCluster(slot, slot->position / cluster_size);
+      status != DiskStatus::kOk) {
+    return status;
   }
   const int sector =
       GetLayout(superblock_).GetClusterSector(slot->last_cluster) +
@@ -550,20 +642,74 @@ DiskStatus DiskFileSystem::LoadSlotSector(Slot* slot) {
   return LoadSector(sector, &slot->buffer);
 }
 
+DiskStatus DiskFileSystem::WriteBuffer(SectorBuffer* buffer) {
+  if (!buffer->dirty) {
+    return DiskStatus::kOk;
+  }
+  if (buffer == &fat_work_) {
+    if (DiskStatus status = WriteBuffer(&fat_head_);
+        status != DiskStatus::kOk) {
+      return status;
+    }
+  }
+  if (DiskStatus status = hardware_.WriteSector(
+          buffer->sector, buffer->words,
+          buffer == &fat_head_ ? WriteCaching::kSkip : WriteCaching::kCache);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  buffer->dirty = false;
+  const auto update = [buffer](SectorBuffer& other) {
+    if (&other != buffer && other.sector == buffer->sector) {
+      other.words = buffer->words;
+    }
+  };
+  update(dir_.buffer);
+  for (Slot& slot : slots_) {
+    if (slot.state == SlotState::kOpen) {
+      update(slot.buffer);
+    }
+  }
+  return DiskStatus::kOk;
+}
+
 //------------------------------------------------------------------------------
 // FAT
 //------------------------------------------------------------------------------
 
-DiskStatus DiskFileSystem::ReadFatWord(int index, uint16_t* value) {
+DiskStatus DiskFileSystem::WriteFat() {
+  if (DiskStatus status = WriteBuffer(&fat_head_); status != DiskStatus::kOk) {
+    return status;
+  }
+  return WriteBuffer(&fat_work_);
+}
+
+DiskStatus DiskFileSystem::LoadFatSector(int index, SectorBuffer** buffer) {
   CHECK_GE(index, 0);
   CHECK_LE(index, GetLayout(superblock_).cluster_count);
-  const int sector = kFatHeadSector + index / kDiskSectorWords;
-  SectorBuffer* buffer = (sector == kFatHeadSector ? &fat_head_ : &fat_work_);
-  if (DiskStatus status = LoadSector(sector, buffer);
+  const int sector = GetFatSector(index);
+  *buffer = (sector == kFatHeadSector ? &fat_head_ : &fat_work_);
+  return LoadSector(sector, *buffer);
+}
+
+DiskStatus DiskFileSystem::ReadFatWord(int index, uint16_t* value) {
+  SectorBuffer* buffer = nullptr;
+  if (DiskStatus status = LoadFatSector(index, &buffer);
       status != DiskStatus::kOk) {
     return status;
   }
   *value = buffer->words[index % kDiskSectorWords];
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::SetFatWord(int index, uint16_t value) {
+  SectorBuffer* buffer = nullptr;
+  if (DiskStatus status = LoadFatSector(index, &buffer);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  buffer->words[index % kDiskSectorWords] = value;
+  buffer->dirty = true;
   return DiskStatus::kOk;
 }
 
@@ -604,13 +750,74 @@ DiskStatus DiskFileSystem::CountChain(int first_cluster, int* count) {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskFileSystem::GetFreeHead(int* head) {
+  if (*free_count_ == 0) {
+    return DiskStatus::kDiskFull;
+  }
+  // Word 0 is the link of an imaginary cluster 0, to the free list's head.
+  if (DiskStatus status = GetNextCluster(0, head); status != DiskStatus::kOk) {
+    return status;
+  }
+  // The count and the list disagree.
+  if (*head == 0) {
+    return DiskStatus::kCorrupt;
+  }
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::AllocateCluster(int last_cluster, int* cluster) {
+  int head = 0;
+  if (DiskStatus status = GetFreeHead(&head); status != DiskStatus::kOk) {
+    return status;
+  }
+  int next = 0;
+  if (DiskStatus status = GetNextCluster(head, &next);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status =
+          SetFatWord(0, next == 0 ? kFatEnd : static_cast<uint16_t>(next));
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = SetFatWord(head, kFatEnd);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  --*free_count_;
+  if (last_cluster != 0) {
+    // A link in another sector than the cluster's end could reach the disk
+    // first, so the end is written now.
+    if (GetFatSector(last_cluster) != GetFatSector(head)) {
+      if (DiskStatus status = WriteFat(); status != DiskStatus::kOk) {
+        return status;
+      }
+    }
+    if (DiskStatus status =
+            SetFatWord(last_cluster, static_cast<uint16_t>(head));
+        status != DiskStatus::kOk) {
+      return status;
+    }
+  }
+  *cluster = head;
+  return DiskStatus::kOk;
+}
+
 //------------------------------------------------------------------------------
 // Directory
 //------------------------------------------------------------------------------
 
-DiskStatus DiskFileSystem::FindNextEntry(
-    Slot* slot, absl::FunctionRef<bool(const DiskFilename&)> matches,
-    DiskDirEntry* entry, EntryLocation* location) {
+DiskStatus DiskFileSystem::RewindDirectory() {
+  if (dir_.state == SlotState::kOpen) {
+    dir_.position = 0;
+    return DiskStatus::kOk;
+  }
+  return OpenRootSlot(&dir_);
+}
+
+DiskStatus DiskFileSystem::VisitEntries(
+    Slot* slot,
+    absl::FunctionRef<bool(const DiskDirEntry&, const EntryLocation&)> visit) {
   // Entries start at multiples of their size, and a directory's size is a
   // multiple of a sector's, so each sector is whole entries.
   slot->position += DiskDirEntry::kWordCount - 1;
@@ -623,26 +830,105 @@ DiskStatus DiskFileSystem::FindNextEntry(
     for (int offset = slot->position % kDiskSectorWords;
          offset < kDiskSectorWords; offset += DiskDirEntry::kWordCount) {
       slot->position += DiskDirEntry::kWordCount;
-      // A free entry's first word is 0.
-      if (words[offset] == 0) {
-        continue;
-      }
-      const DiskDirEntry candidate = DiskDirEntry::FromWords(
-          words.subspan(offset, DiskDirEntry::kWordCount));
-      if (const std::optional<DiskFilename> name = candidate.GetName();
-          name.has_value() && matches(*name)) {
-        *entry = candidate;
-        if (location != nullptr) {
-          *location = {
-              .sector = slot->buffer.sector,
-              .index = offset / DiskDirEntry::kWordCount,
-          };
-        }
+      if (visit(DiskDirEntry::FromWords(
+                    words.subspan(offset, DiskDirEntry::kWordCount)),
+                {
+                    .sector = slot->buffer.sector,
+                    .index = offset / DiskDirEntry::kWordCount,
+                })) {
         return DiskStatus::kOk;
       }
     }
   }
   return DiskStatus::kNotFound;
+}
+
+DiskStatus DiskFileSystem::FindNextEntry(
+    Slot* slot, absl::FunctionRef<bool(const DiskFilename&)> matches,
+    DiskDirEntry* entry, EntryLocation* location) {
+  return VisitEntries(slot, [&](const DiskDirEntry& candidate,
+                                const EntryLocation& candidate_location) {
+    if (candidate.IsFree()) {
+      return false;
+    }
+    if (const std::optional<DiskFilename> name = candidate.GetName();
+        !name.has_value() || !matches(*name)) {
+      return false;
+    }
+    *entry = candidate;
+    if (location != nullptr) {
+      *location = candidate_location;
+    }
+    return true;
+  });
+}
+
+DiskStatus DiskFileSystem::CommitDirectory() {
+  if (DiskStatus status = WriteFat(); status != DiskStatus::kOk) {
+    return status;
+  }
+  return WriteBuffer(&dir_.buffer);
+}
+
+DiskStatus DiskFileSystem::PutEntry(const EntryLocation& location,
+                                    const DiskDirEntry& entry) {
+  if (DiskStatus status = LoadSector(location.sector, &dir_.buffer);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  std::copy(
+      entry.GetWords().begin(), entry.GetWords().end(),
+      dir_.buffer.words.begin() + location.index * DiskDirEntry::kWordCount);
+  dir_.buffer.dirty = true;
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::GrowRoot(const DiskDirEntry& entry,
+                                    EntryLocation* location) {
+  const int cluster_size = GetClusterSize();
+  if (DiskStatus status = ReachCluster(&dir_, dir_.size / cluster_size - 1);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  int cluster = 0;
+  if (DiskStatus status = GetFreeHead(&cluster); status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // The cluster is written while it is still free, in order, so its sectors
+  // are continuous. Blanking each sector writes the one before it.
+  const DiskLayout layout = GetLayout(superblock_);
+  const int first_sector = layout.GetClusterSector(cluster);
+  *location = {.sector = first_sector, .index = 0};
+  for (int sector = first_sector;
+       sector < first_sector + layout.sectors_per_cluster; ++sector) {
+    if (DiskStatus status = BlankSector(sector, &dir_.buffer);
+        status != DiskStatus::kOk) {
+      return status;
+    }
+    if (sector == first_sector) {
+      if (DiskStatus status = PutEntry(*location, entry);
+          status != DiskStatus::kOk) {
+        return status;
+      }
+    }
+  }
+  if (DiskStatus status = WriteBuffer(&dir_.buffer);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = AllocateCluster(dir_.last_cluster, &cluster);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+
+  dir_.size += cluster_size;
+  for (Slot& slot : slots_) {
+    if (slot.state == SlotState::kOpen && !slot.entry.has_value()) {
+      slot.size += cluster_size;
+    }
+  }
+  return DiskStatus::kOk;
 }
 
 }  // namespace oz3

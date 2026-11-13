@@ -25,8 +25,10 @@ namespace oz3 {
 namespace {
 
 using ::testing::Each;
+using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 
 constexpr char kPath[] = "mem:/disk.img";
 
@@ -412,6 +414,25 @@ TEST_F(DiskImageTest, CreateFailsWhenTheHostWriteFails) {
       DiskImage::Create(&file_system_, kPath, 200);
   EXPECT_EQ(image.status().code(), absl::StatusCode::kDataLoss);
   EXPECT_THAT(image.status().message(), HasSubstr("couldn't be written"));
+}
+
+TEST_F(DiskImageTest, TheProtocolRecordsWhereWritesStart) {
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Create(&file_system_, kPath, 3);
+  ASSERT_TRUE(image.ok()) << image.status();
+  protocol_->CollectWriteOffsets();
+  ASSERT_EQ((*image)->WriteSector(2, MakeSector(0)), DiskStatus::kOk);
+  ASSERT_EQ((*image)->WriteSector(0, MakeSector(0)), DiskStatus::kOk);
+  ASSERT_EQ((*image)->SetWriteProtected(true), DiskStatus::kOk);
+  EXPECT_THAT(protocol_->CollectWriteOffsets(),
+              ElementsAre(kHeaderBytes + 2 * kSectorBytes, kHeaderBytes, 12));
+
+  // Failed writes are left out, and collecting forgets what it returned.
+  ASSERT_EQ((*image)->SetWriteProtected(false), DiskStatus::kOk);
+  protocol_->SetLimits({.writes = 0});
+  EXPECT_EQ((*image)->WriteSector(1, MakeSector(0)), DiskStatus::kIoError);
+  EXPECT_THAT(protocol_->CollectWriteOffsets(), ElementsAre(12));
+  EXPECT_THAT(protocol_->CollectWriteOffsets(), IsEmpty());
 }
 
 TEST_F(DiskImageTest, OpenFailsWhenTheHostReadFails) {

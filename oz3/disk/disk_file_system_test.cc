@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -34,12 +35,18 @@ namespace oz3 {
 namespace {
 
 using ::testing::Each;
+using ::testing::ElementsAre;
+using ::testing::IsEmpty;
 
 using Sector = std::array<uint16_t, kDiskSectorWords>;
 
 constexpr char kPath[] = "mem:/disk.img";
 constexpr char kOtherPath[] = "mem:/other.img";
 constexpr int kMaxOpenFiles = 4;
+
+// Where an image's sectors are in its file, after the header.
+constexpr int64_t kHeaderBytes = 16;
+constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
 
 // A 360 KB floppy: 716 clusters of one sector, after 3 FAT sectors.
 constexpr int kFloppySectors = 720;
@@ -55,6 +62,11 @@ constexpr absl::Duration kLatency = absl::Milliseconds(100);
 
 DateTime GetNow() {
   return DateTime::FromCivil(absl::CivilSecond(2026, 11, 11, 9, 30, 15));
+}
+
+// A time after GetNow(), for what is created after formatting.
+DateTime GetLater() {
+  return DateTime::FromCivil(absl::CivilSecond(2026, 11, 12, 14, 5, 45));
 }
 
 DiskLabel GetLabel(std::string_view text) { return *DiskLabel::Parse(text); }
@@ -83,15 +95,15 @@ std::vector<uint16_t> MakeCountingWords(uint16_t first, int count) {
   return words;
 }
 
-// Returns a directory entry for the file `name`, modified at GetNow().
+// Returns a directory entry for the file `name`, modified at `modified`.
 DiskDirEntry MakeEntry(std::string_view name, int first_cluster, int size,
-                       uint16_t attributes = 0) {
+                       uint16_t attributes = 0, DateTime modified = GetNow()) {
   DiskDirEntry entry;
   entry.SetName(GetName(name));
   entry.SetAttributes(attributes);
   entry.SetFirstCluster(first_cluster);
   entry.SetSize(size);
-  entry.SetModified(GetNow());
+  entry.SetModified(modified);
   return entry;
 }
 
@@ -104,6 +116,21 @@ Sector ReadSector(DiskImage& image, int sector) {
 void WriteSector(DiskImage& image, int sector, const Sector& words) {
   EXPECT_EQ(image.WriteSector(sector, words), DiskStatus::kOk);
 }
+
+// Returns entry `index` of directory sector `sector`.
+DiskDirEntry ReadEntry(DiskImage& image, int sector, int index) {
+  const Sector words = ReadSector(image, sector);
+  return DiskDirEntry::FromWords(absl::MakeConstSpan(words).subspan(
+      index * DiskDirEntry::kWordCount, DiskDirEntry::kWordCount));
+}
+
+// Returns the entry Create makes for `name`, modified GetLater().
+DiskDirEntry MakeCreatedEntry(std::string_view name) {
+  return MakeEntry(name, 0, 0, 0, GetLater());
+}
+
+// Returns the name of the `index`th filler file, for filling directories.
+std::string GetFillerName(int index) { return "F" + std::to_string(index); }
 
 // Writes a formatted disk's parts straight into its image, as tests set up the
 // files they read. It changes only what it is asked to, so the free list is
@@ -151,6 +178,14 @@ class DiskEditor {
   void SetRootEntry(int index, const DiskDirEntry& entry) {
     SetEntry(layout_.GetClusterSector(1) + index / kEntriesPerSector,
              index % kEntriesPerSector, entry);
+  }
+
+  // Fills directory sector `sector` with empty files, named from
+  // GetFillerName(first_index) on.
+  void FillSector(int sector, int first_index) {
+    for (int i = 0; i < kEntriesPerSector; ++i) {
+      SetEntry(sector, i, MakeEntry(GetFillerName(first_index + i), 0, 0));
+    }
   }
 
   // Writes `size` words counting up from `first_word` into `clusters`, in
@@ -260,6 +295,29 @@ class DiskFileSystemTest : public ::testing::Test {
     DiskFile file = -1;
     EXPECT_EQ(file_system_.OpenRoot(&file), DiskStatus::kOk);
     return file;
+  }
+
+  // Creates `name`, modified GetLater(), returning its handle, or -1 if it
+  // fails.
+  DiskFile CreateFile(std::string_view name) {
+    DiskFile file = -1;
+    EXPECT_EQ(file_system_.Create(GetName(name), GetLater(), &file),
+              DiskStatus::kOk)
+        << name;
+    return file;
+  }
+
+  // Returns the sectors written to images since the last call, in order, with
+  // -1 for a write to an image's header.
+  std::vector<int> CollectSectorWrites() {
+    std::vector<int> sectors;
+    for (int64_t offset : protocol_->CollectWriteOffsets()) {
+      sectors.push_back(
+          offset < kHeaderBytes
+              ? -1
+              : static_cast<int>((offset - kHeaderBytes) / kSectorBytes));
+    }
+    return sectors;
   }
 
   // Returns `file`'s position and size, or -1 for each if it fails.
@@ -1294,6 +1352,270 @@ TEST_F(DiskFileSystemTest, ReadFailsWhenTheHostReadFails) {
             DiskStatus::kIoError);
   EXPECT_EQ(count, 0);
   EXPECT_EQ(GetInfo(file).position, 0);
+}
+
+TEST_F(DiskFileSystemTest, CreateMakesAnEmptyOpenFile) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "FOO", {}, 0);
+    editor.AddFile(2, "BAR", {}, 0);
+  });
+  const int free_clusters = GetFreeClusters();
+  CollectSectorWrites();
+
+  const DiskFile file = CreateFile("new.txt");
+  EXPECT_EQ(file, 0);
+  EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 0, .size = 0}));
+  DiskFile other = -1;
+  EXPECT_EQ(file_system_.Open(GetName("NEW.TXT"), &other), DiskStatus::kInUse);
+
+  // Only the root's sector is written, and no cluster is taken.
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_EQ(GetFreeClusters(), free_clusters);
+
+  ASSERT_EQ(file_system_.Close(file), DiskStatus::kOk);
+  const DiskFile reopened = OpenFile("NEW.TXT");
+  EXPECT_EQ(GetInfo(reopened).size, 0);
+  EXPECT_THAT(ReadToEnd(reopened, 10), IsEmpty());
+
+  // The entry went into the free entry between the others.
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadEntry(*image, 2, 1), MakeCreatedEntry("NEW.TXT"));
+  EXPECT_EQ(ReadEntry(*image, 2, 2), MakeEntry("BAR", 0, 0));
+  EXPECT_TRUE(ReadEntry(*image, 2, 3).IsFree());
+}
+
+TEST_F(DiskFileSystemTest, CreateFillsTheLastEntryOfASector) {
+  // The root is one cluster of four sectors.
+  AttachFormatted(kFloppySectors, 4);
+  EditDisk([](DiskEditor& editor) {
+    for (int i = 0; i < 15; ++i) {
+      editor.AddFile(i, GetFillerName(i), {}, 0);
+    }
+  });
+  CollectSectorWrites();
+  ASSERT_EQ(file_system_.Close(CreateFile("LAST")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  ASSERT_EQ(file_system_.Close(CreateFile("NEXT")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3));
+
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadEntry(*image, 2, 15), MakeCreatedEntry("LAST"));
+  EXPECT_EQ(ReadEntry(*image, 3, 0), MakeCreatedEntry("NEXT"));
+}
+
+TEST_F(DiskFileSystemTest, CreateRefusals) {
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kNoDisk);
+  ASSERT_EQ(file_system_.AttachImage(MakeImage(kSmallSectors, kOtherPath)),
+            DiskStatus::kUnformatted);
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kUnformatted);
+
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OLD", {}, 0); });
+  CollectSectorWrites();
+  ASSERT_EQ(file_system_.GetMedia()->SetWriteProtected(true), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kWriteProtected);
+  ASSERT_EQ(file_system_.GetMedia()->SetWriteProtected(false), DiskStatus::kOk);
+  CollectSectorWrites();
+
+  EXPECT_EQ(file_system_.Create(GetPattern("A*"), GetLater(), &file),
+            DiskStatus::kBadName);
+  EXPECT_EQ(file_system_.Create(GetName("OLD"), GetLater(), &file),
+            DiskStatus::kExists);
+
+  // A name is taken whether its file is open or not.
+  const DiskFile a = CreateFile("A");
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kExists);
+  ASSERT_EQ(file_system_.Close(a), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kExists);
+
+  for (int i = 0; i < kMaxOpenFiles; ++i) {
+    CreateFile(GetFillerName(i));
+  }
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.Create(GetName("B"), GetLater(), &file),
+            DiskStatus::kTooManyOpen);
+  EXPECT_EQ(file, -1);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+}
+
+TEST_F(DiskFileSystemTest, CreateNeedsTheFreeList) {
+  AttachFormatted(kSmallSectors);
+  EditDisk(
+      [](DiskEditor& editor) { editor.SetFatWord(0, kSmallClusters + 1); });
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kCorrupt);
+}
+
+TEST_F(DiskFileSystemTest, CreateGrowsAFullRoot) {
+  // The free list's head is cluster 2, at sector 5, which holds old words.
+  AttachFormatted(kFloppySectors);
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  DiskEditor(image.get()).FillSector(4, 0);
+  WriteSector(*image, 5, MakeFilledSector(0xEEEE));
+  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+  EXPECT_EQ(GetFreeClusters(), 715);
+  CollectSectorWrites();
+
+  ASSERT_EQ(file_system_.Close(CreateFile("NEW")), DiskStatus::kOk);
+
+  // The new cluster is written, zeroed but for the entry, then the FAT links
+  // it.
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(5, 1));
+  EXPECT_EQ(GetFreeClusters(), 714);
+
+  image = file_system_.DetachImage();
+  const Sector fat = ReadSector(*image, 1);
+  EXPECT_EQ(fat[0], 3);
+  EXPECT_EQ(fat[1], 2);
+  EXPECT_EQ(fat[2], 0xFFFF);
+  EXPECT_EQ(ReadEntry(*image, 5, 0), MakeCreatedEntry("NEW"));
+  Sector rest = ReadSector(*image, 5);
+  std::fill_n(rest.begin(), DiskDirEntry::kWordCount, 0);
+  EXPECT_THAT(rest, Each(0));
+
+  // It is all on the disk.
+  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+  EXPECT_EQ(GetFreeClusters(), 714);
+  EXPECT_EQ(GetInfo(OpenRoot()).size, 2 * kDiskSectorWords);
+  OpenFile("NEW");
+}
+
+TEST_F(DiskFileSystemTest, CreateGrowsARootOfFourSectorClusters) {
+  // The root is sectors 2 to 5, and the free list's head is 6 to 9.
+  AttachFormatted(kFloppySectors, 4);
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  for (int sector = 2; sector < 6; ++sector) {
+    DiskEditor(image.get()).FillSector(sector, (sector - 2) * 16);
+  }
+  for (int sector = 6; sector < 10; ++sector) {
+    WriteSector(*image, sector, MakeFilledSector(0xEEEE));
+  }
+  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+  CollectSectorWrites();
+
+  ASSERT_EQ(file_system_.Close(CreateFile("NEW")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(6, 7, 8, 9, 1));
+  EXPECT_EQ(GetFreeClusters(), 177);
+
+  image = file_system_.DetachImage();
+  EXPECT_EQ(ReadSector(*image, 1)[1], 2);
+  EXPECT_EQ(ReadEntry(*image, 6, 0), MakeCreatedEntry("NEW"));
+  EXPECT_TRUE(ReadEntry(*image, 6, 1).IsFree());
+  for (int sector = 7; sector < 10; ++sector) {
+    EXPECT_THAT(ReadSector(*image, sector), Each(0)) << "Sector " << sector;
+  }
+}
+
+TEST_F(DiskFileSystemTest, GrowingWritesTheNewEndBeforeALinkInALaterSector) {
+  // The root's chain is 1 then 300, whose FAT word is in sector 2, and the
+  // free list skips 300. The head, 2, ends in sector 1.
+  AttachFormatted(kFloppySectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.SetChain({1, 300});
+    editor.SetFatWord(299, 301);
+    editor.FillSector(4, 0);
+    editor.FillSector(303, 16);
+  });
+  EXPECT_EQ(GetFreeClusters(), 714);
+  CollectSectorWrites();
+
+  ASSERT_EQ(file_system_.Close(CreateFile("NEW")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(5, 1, 2));
+
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadSector(*image, 1)[0], 3);
+  EXPECT_EQ(ReadSector(*image, 1)[2], 0xFFFF);
+  EXPECT_EQ(ReadSector(*image, 2)[300 - kDiskSectorWords], 2);
+  EXPECT_EQ(ReadEntry(*image, 5, 0), MakeCreatedEntry("NEW"));
+}
+
+TEST_F(DiskFileSystemTest, GrowingWritesANewEndInALaterSectorBeforeTheLink) {
+  // The free list starts at 400, whose FAT word is in sector 2, so the root's
+  // link to it, in sector 1, must wait for its end.
+  AttachFormatted(kFloppySectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.SetFatWord(0, 400);
+    editor.FillSector(4, 0);
+  });
+  EXPECT_EQ(GetFreeClusters(), 317);
+  CollectSectorWrites();
+
+  ASSERT_EQ(file_system_.Close(CreateFile("NEW")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(403, 1, 2, 1));
+  EXPECT_EQ(GetFreeClusters(), 316);
+
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadSector(*image, 1)[0], 401);
+  EXPECT_EQ(ReadSector(*image, 1)[1], 400);
+  EXPECT_EQ(ReadSector(*image, 2)[400 - kDiskSectorWords], 0xFFFF);
+  EXPECT_EQ(ReadEntry(*image, 403, 0), MakeCreatedEntry("NEW"));
+}
+
+TEST_F(DiskFileSystemTest, AnOpenRootSeesCreatedEntries) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) { editor.AddFile(0, "FOO", {}, 0); });
+  const DiskFile root = OpenRoot();
+  DiskDirEntry entry;
+  ASSERT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+            DiskStatus::kOk);
+
+  // The root handle holds the sector the entry is written to.
+  ASSERT_EQ(file_system_.Close(CreateFile("BAR")), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+            DiskStatus::kOk);
+  EXPECT_EQ(entry, MakeCreatedEntry("BAR"));
+
+  // Filling the root's one sector, and growing it.
+  for (int i = 2; i < 16; ++i) {
+    ASSERT_EQ(file_system_.Close(CreateFile(GetFillerName(i))),
+              DiskStatus::kOk);
+  }
+  EXPECT_EQ(GetInfo(root).size, kDiskSectorWords);
+  ASSERT_EQ(file_system_.Close(CreateFile("GROWN")), DiskStatus::kOk);
+  EXPECT_EQ(GetInfo(root).size, 2 * kDiskSectorWords);
+  ASSERT_EQ(file_system_.Find(root, GetPattern("GROWN"), &entry),
+            DiskStatus::kOk);
+  EXPECT_EQ(GetInfo(root).position,
+            kDiskSectorWords + DiskDirEntry::kWordCount);
+}
+
+TEST_F(DiskFileSystemTest, AFullRootOnAFullDiskIsDiskFull) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.FillSector(2, 0);
+    editor.SetFatWord(0, 0xFFFF);
+  });
+  EXPECT_EQ(GetFreeClusters(), 0);
+  CollectSectorWrites();
+
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Create(GetName("NEW"), GetLater(), &file),
+            DiskStatus::kDiskFull);
+  EXPECT_EQ(file, -1);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_EQ(OpenRoot(), 0);
+  EXPECT_EQ(GetInfo(0).size, kDiskSectorWords);
+}
+
+TEST_F(DiskFileSystemTest, CreateFailsWhenTheHostWriteFails) {
+  AttachFormatted(kSmallSectors);
+  protocol_->SetLimits({.writes = 0});
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Create(GetName("NEW"), GetLater(), &file),
+            DiskStatus::kIoError);
+  EXPECT_EQ(file, -1);
+
+  // The entry that wasn't written isn't found in a buffer either.
+  EXPECT_EQ(file_system_.Open(GetName("NEW"), &file), DiskStatus::kIoError);
 }
 
 }  // namespace

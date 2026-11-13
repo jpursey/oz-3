@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
+#include <vector>
 
 #include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
@@ -17,7 +18,8 @@
 namespace oz3 {
 
 // For tests: a gb::MemoryFileProtocol whose files fail as a failing host's
-// would, once told to. Until then, it is a memory protocol like any other.
+// would, once told to. Until then, it is a memory protocol like any other. It
+// also records where each write lands, so tests can check the order of writes.
 class FaultyFileProtocol final : public gb::MemoryFileProtocol {
  public:
   //----------------------------------------------------------------------------
@@ -47,6 +49,16 @@ class FaultyFileProtocol final : public gb::MemoryFileProtocol {
   // them.
   void SetLimits(const Limits& limits) { limits_ = limits; }
 
+  //----------------------------------------------------------------------------
+  // Writes
+  //----------------------------------------------------------------------------
+
+  // Returns the byte offset each write to the protocol's files started at,
+  // since the last call, in order, and forgets them. Failed writes are left
+  // out. A file's position is taken to start at 0, as it does unless the file
+  // is opened to append.
+  std::vector<int64_t> CollectWriteOffsets();
+
  protected:
   //----------------------------------------------------------------------------
   // gb::MemoryFileProtocol overrides
@@ -64,6 +76,7 @@ class FaultyFileProtocol final : public gb::MemoryFileProtocol {
   class FaultyFile;
 
   Limits limits_;
+  std::vector<int64_t> write_offsets_;
 };
 
 }  // namespace oz3

@@ -148,7 +148,7 @@ The timer gives the date as two words (the year, then the month in the high byte
 
 - Only the modified time is kept. A creation time would push entries to 20 words.
 - All zeros means no date, since month 0 is invalid. A drive with no clock, or a tool that doesn't know the date, writes zeros.
-- The drive stamps a file when it closes it after a write, using the host clock, so a file written in many requests gets one stamp.
+- The drive stamps a file with the host clock when it creates it, and again when it closes it after a write, so every file it makes is stamped, and a file written in many requests gets one stamp.
 
 #### Subdirectories later
 
@@ -407,7 +407,7 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 | 14h | FLUSH h | — | status | status |
 
 - `OPEN` of a file that is already open fails with **in use**; two slots on one file would clobber each other. `OPEN ROOT` is the same for the root, which is open in at most one slot like any file.
-- `CREATE` fails with **exists** if the name is taken; to replace a file, delete it first. It makes an empty file and opens it.
+- `CREATE` fails with **exists** if the name is taken; to replace a file, delete it first. It makes an empty file, stamped with the host clock, and opens it.
 - `CLOSE` writes back the slot's dirty sectors and its directory entry, stamping the modified time if the file was written. `CLOSE` with h = FFh closes every slot. `CLOSE` on a stale slot frees it and succeeds.
 
 `FLUSH` commits the slot's dirty data sector, the FAT sectors its writes changed, and its directory entry, leaving the file open (see Committing). On a directory handle it does nothing and succeeds.
