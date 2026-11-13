@@ -64,7 +64,7 @@ is how code calls it:
   Only the drive changes the free count, so the promise holds. That leaves
   nothing to free after a write that stops short, and no begin and end calls
   to pair. disk_design.md's `WRITE` walkthrough (allocating right after
-  accept) changes to match, in CL7.
+  accept) changes to match, in CL8.
 
 ## Design
 
@@ -226,7 +226,7 @@ class DiskImage final : public DiskMedia {
   ID), its version or sector size isn't supported, its sector count is 0, or
   the file is too short to hold the sectors its header counts.
 - A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
-  a write-protected image, whatever its header says, from CL11. `Open` opens
+  a write-protected image, whatever its header says, from CL12. `Open` opens
   it for reading only, and its flags have the write-protect bit set, so
   `MEDIA` reports it. The header's bit is the floppy's notch, which travels
   with the image; the host's attribute is the host's own protection, and the
@@ -246,7 +246,7 @@ class DiskImage final : public DiskMedia {
 - Tests reach the `kIoError` paths through `FaultyFileProtocol`, a test-only
   `gb::MemoryFileProtocol` in `oz3_disk_test` whose files' reads, writes, and
   flushes fail once its `Limits` (how many more of each succeed) run out. So
-  nothing for tests is in `DiskImage`. CL7's crash test uses it to stop the
+  nothing for tests is in `DiskImage`. CL8's crash test uses it to stop the
   image's writes after a given number of sectors. Names:
   `FaultyFileProtocol`. Alternatives: `FailingFileProtocol` (reads as always
   failing), `FaultInjectionFileProtocol` (long). Recommended:
@@ -688,9 +688,40 @@ Depends on: CL5.
   entries between, the hardware time of a sequential read (no walking), and
   broken chains as `kCorrupt`.
 
-### CL7 [ ] disk: creating and writing files
+### CL7 [ ] disk: int for sectors, sizes, and positions
 
 Depends on: CL6.
+
+- The limits come from `DiskLayout`'s: `DiskMedia::kMaxSectorCount` is the
+  largest image a format can use, 4,194,433 sectors (the superblock, 256 FAT
+  sectors, and 65,534 clusters of 64 sectors), and `DiskDirEntry::kMaxSize`
+  is what the most clusters hold, 1,073,709,056 words. To confirm in review:
+  `DiskLayout::kMaxFatSectors` becomes 256, the FAT the most clusters need,
+  so a superblock can't claim a FAT no format writes.
+- Sector numbers and counts, sizes, positions, and transfer counts are `int`
+  throughout the library (`DiskMedia`, `DiskImage`, `DiskHardware`,
+  `DiskLayout`, `DiskDirEntry`, `DiskFileInfo`, and `DiskFileSystem`), and in
+  this plan's interfaces above. Byte offsets in an image file stay `int64_t`,
+  as the largest image is just over 2 GiB.
+- Dwords read from a disk can exceed the limits, so they are checked before
+  they become `int`: `DiskImage::Open` already refuses a header's sector
+  count above the limit, and `DiskDirEntry` gives a size above `kMaxSize` as
+  invalid (to settle in the CL, for example as nullopt, like a bad name), which
+  `Open` returns as `kCorrupt`.
+- disk_design.md: an image header's sector count is 1 to 4,194,433, and a
+  directory entry's size is at most what the disk holds. The drive's dword
+  fields are unchanged, so it casts at the protocol.
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests: `Create` and `Open` refusing one sector past the limit, an
+  entry on the disk one word past the biggest size as invalid, and `Open` of
+  it as `kCorrupt`.
+
+### CL8 [ ] disk: creating and writing files
+
+Depends on: CL7.
 
 - `DiskFileSystem`: `Create`, `Write`, `GetWritableWords`, `Flush`, and
   `Truncate`, with allocation, freeing, directory growth, timestamps, and
@@ -714,12 +745,12 @@ Depends on: CL6.
 - A crash test: for each operation sequence, stop the image's writes with
   `FaultyFileProtocol` after every possible number of sector writes, detach and
   reattach the image, and check that no cluster is cross-linked or on both
-  the free list and a chain (with CL9's `Check` once it exists; here by
+  the free list and a chain (with CL10's `Check` once it exists; here by
   walking the chains in the test).
 
-### CL8 [ ] disk: deleting, renaming, and attributes
+### CL9 [ ] disk: deleting, renaming, and attributes
 
-Depends on: CL7.
+Depends on: CL8.
 
 - `DiskFileSystem`: `Delete`, `Rename`, and `SetAttributes`.
 - Unused, so no visible change.
@@ -731,9 +762,9 @@ Depends on: CL7.
   the freed clusters' order on the free list, entries staying in their slots
   for an open root handle, write protection, and the crash test for each.
 
-### CL9 [ ] disk: consistency checks
+### CL10 [ ] disk: consistency checks
 
-Depends on: CL8.
+Depends on: CL9.
 
 - `DiskFileSystem::Check` and `DiskCheckReport`: orphaned clusters,
   cross-linked clusters, clusters both free and in a chain, chains that don't
@@ -741,7 +772,7 @@ Depends on: CL8.
   slack join the free list, a short chain cuts its file's size, and a
   cross-link cuts the later file in directory order before the shared
   cluster. Fails with `in use` while any file is open.
-- The crash tests in CL7 and CL8 use it.
+- The crash tests in CL8 and CL9 use it.
 - Unused, so no visible change.
 
 **Verify**
@@ -749,7 +780,7 @@ Depends on: CL8.
 - Unit tests: each problem on a hand-made disk, reported and then repaired,
   and a clean disk reporting nothing, before and after.
 
-### CL10 [ ] disk: host transfer helpers
+### CL11 [ ] disk: host transfer helpers
 
 Depends on: CL2.
 
@@ -761,7 +792,7 @@ Depends on: CL2.
 - Unit tests: odd and even byte counts each way, CRLF, CR, and LF going in,
   and zero bytes dropped coming out.
 
-### CL11 [ ] disk: read-only image files
+### CL12 [ ] disk: read-only image files
 
 Depends on: CL2.
 
