@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -47,6 +48,9 @@ constexpr int kMaxOpenFiles = 4;
 // Where an image's sectors are in its file, after the header.
 constexpr int64_t kHeaderBytes = 16;
 constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
+
+// The directory entries a sector holds.
+constexpr int kEntriesPerSector = kDiskSectorWords / DiskDirEntry::kWordCount;
 
 // A 360 KB floppy: 716 clusters of one sector, after 3 FAT sectors.
 constexpr int kFloppySectors = 720;
@@ -129,6 +133,25 @@ DiskDirEntry ReadEntry(DiskImage& image, int sector, int index) {
       index * DiskDirEntry::kWordCount, DiskDirEntry::kWordCount));
 }
 
+// Returns the layout a formatted image's superblock gives.
+DiskLayout ReadLayout(DiskImage& image) {
+  const Sector superblock = ReadSector(image, 0);
+  return {
+      .sectors_per_cluster = superblock[3],  // Sectors per cluster
+      .cluster_count = superblock[4],        // Clusters
+      .fat_sectors = superblock[5],          // FAT sectors
+  };
+}
+
+// Returns the sector holding word `position` of a file whose chain is
+// `clusters`.
+int GetDataSector(const DiskLayout& layout, absl::Span<const int> clusters,
+                  int position) {
+  const int cluster_words = layout.sectors_per_cluster * kDiskSectorWords;
+  return layout.GetClusterSector(clusters[position / cluster_words]) +
+         position % cluster_words / kDiskSectorWords;
+}
+
 // Returns the entry Create makes for `name`, modified GetLater().
 DiskDirEntry MakeCreatedEntry(std::string_view name) {
   return MakeEntry(name, 0, 0, 0, GetLater());
@@ -142,14 +165,8 @@ std::string GetFillerName(int index) { return "F" + std::to_string(index); }
 // left as it was.
 class DiskEditor {
  public:
-  explicit DiskEditor(DiskImage* image) : image_(*image) {
-    const Sector superblock = ReadSector(image_, 0);
-    layout_ = {
-        .sectors_per_cluster = superblock[3],  // Sectors per cluster
-        .cluster_count = superblock[4],        // Clusters
-        .fat_sectors = superblock[5],          // FAT sectors
-    };
-  }
+  explicit DiskEditor(DiskImage* image)
+      : image_(*image), layout_(ReadLayout(*image)) {}
 
   const DiskLayout& GetLayout() const { return layout_; }
 
@@ -197,17 +214,12 @@ class DiskEditor {
   // order, filling the rest of the last sector with EEEEh.
   void WriteData(absl::Span<const int> clusters, int size,
                  uint16_t first_word) {
-    const int cluster_words = layout_.sectors_per_cluster * kDiskSectorWords;
     for (int start = 0; start < size; start += kDiskSectorWords) {
       Sector words = MakeFilledSector(0xEEEE);
       for (int i = 0; i < kDiskSectorWords && start + i < size; ++i) {
         words[i] = static_cast<uint16_t>(first_word + start + i);
       }
-      const int cluster = clusters[static_cast<int>(start / cluster_words)];
-      WriteSector(image_,
-                  layout_.GetClusterSector(cluster) +
-                      start % cluster_words / kDiskSectorWords,
-                  words);
+      WriteSector(image_, GetDataSector(layout_, clusters, start), words);
     }
   }
 
@@ -225,12 +237,147 @@ class DiskEditor {
   }
 
  private:
-  static constexpr int kEntriesPerSector =
-      kDiskSectorWords / DiskDirEntry::kWordCount;
-
   DiskImage& image_;
   DiskLayout layout_;
 };
+
+// A file a crash test writes, whose word at each position is `first_word` plus
+// the position, whatever a crash leaves of it, and whose size is `size` after
+// the test's operations, without a crash.
+struct CrashFile {
+  std::string_view name;
+  uint16_t first_word = 0;
+  int size = 0;
+};
+
+// A file ReadDiskContents finds in the root.
+struct FoundFile {
+  std::string name;
+  int size = 0;
+};
+
+// What ReadDiskContents finds on a disk.
+struct DiskContents {
+  // The root's files, in the order of their entries.
+  std::vector<FoundFile> files;
+
+  // Each cluster's owner, by cluster: "the free list", "the root", a file's
+  // name, or empty for a cluster on no chain.
+  std::vector<std::string> owners;
+
+  // Returns the file `name`, or null if the root has none.
+  const FoundFile* FindFile(std::string_view name) const {
+    const auto file = std::find_if(
+        files.begin(), files.end(),
+        [&](const FoundFile& found) { return found.name == name; });
+    return file == files.end() ? nullptr : &*file;
+  }
+};
+
+// Returns what `image` holds, by walking its FAT and root directory itself,
+// and checks that it is consistent: the free list, the root, and every file in
+// the root each have a chain no other shares a cluster of, every file's chain
+// covers its size, and no two files share a name. Each of `files` holds its
+// words up to its size, and every other file is empty.
+DiskContents ReadDiskContents(DiskImage& image,
+                              absl::Span<const CrashFile> files) {
+  const DiskLayout layout = ReadLayout(image);
+  const int root_cluster = ReadSector(image, 0)[6];  // Root cluster
+  const int cluster_words = layout.sectors_per_cluster * kDiskSectorWords;
+  std::vector<uint16_t> fat;
+  for (int i = 0; i < layout.fat_sectors; ++i) {
+    const Sector words = ReadSector(image, 1 + i);
+    fat.insert(fat.end(), words.begin(), words.end());
+  }
+
+  // Returns the cluster after `cluster`, or 0 at the end. A link of 0 is the
+  // next cluster, or the end after the last one.
+  const auto get_next = [&](int cluster) {
+    const uint16_t link = fat[cluster];
+    if (link == 0xFFFF || (link == 0 && cluster == layout.cluster_count)) {
+      return 0;
+    }
+    return link == 0 ? cluster + 1 : static_cast<int>(link);
+  };
+
+  DiskContents contents;
+  std::vector<std::string>& owners = contents.owners;
+  owners.resize(layout.cluster_count + 1);
+  const auto take_chain = [&](const std::string& owner, int chain_first) {
+    std::vector<int> chain;
+    for (int cluster = chain_first; cluster != 0; cluster = get_next(cluster)) {
+      if (cluster > layout.cluster_count) {
+        ADD_FAILURE() << owner << "'s chain has a link past the last cluster";
+        break;
+      }
+      if (owners[cluster] == owner) {
+        ADD_FAILURE() << owner << "'s chain loops at cluster " << cluster;
+        break;
+      }
+      if (!owners[cluster].empty()) {
+        ADD_FAILURE() << owner << " and " << owners[cluster]
+                      << " share cluster " << cluster;
+        break;
+      }
+      owners[cluster] = owner;
+      chain.push_back(cluster);
+    }
+    return chain;
+  };
+
+  // Word 0 is the link of an imaginary cluster 0, to the free list's head.
+  take_chain("the free list", get_next(0));
+  std::vector<DiskDirEntry> entries;
+  for (int cluster : take_chain("the root", root_cluster)) {
+    for (int i = 0; i < layout.sectors_per_cluster; ++i) {
+      for (int index = 0; index < kEntriesPerSector; ++index) {
+        entries.push_back(
+            ReadEntry(image, layout.GetClusterSector(cluster) + i, index));
+      }
+    }
+  }
+
+  for (const DiskDirEntry& entry : entries) {
+    if (entry.IsFree()) {
+      continue;
+    }
+    const std::optional<DiskFilename> name = entry.GetName();
+    const std::optional<int> size = entry.GetSize();
+    if (!name.has_value() || !size.has_value()) {
+      ADD_FAILURE() << "The root has a broken entry";
+      continue;
+    }
+    const std::string text = name->ToString();
+    if (contents.FindFile(text) != nullptr) {
+      ADD_FAILURE() << "The root has two files named " << text;
+      continue;
+    }
+    contents.files.push_back({.name = text, .size = *size});
+    const std::vector<int> chain = take_chain(text, entry.GetFirstCluster());
+    const int chain_count = static_cast<int>(chain.size());
+    if (chain_count * cluster_words < *size) {
+      ADD_FAILURE() << text << "'s chain of " << chain_count
+                    << " clusters doesn't cover its size of " << *size;
+      continue;
+    }
+    const auto file = std::find_if(
+        files.begin(), files.end(),
+        [&](const CrashFile& crash_file) { return crash_file.name == text; });
+    if (file == files.end()) {
+      EXPECT_EQ(*size, 0) << text;
+      continue;
+    }
+    std::vector<uint16_t> data;
+    for (int position = 0; position < *size; position += kDiskSectorWords) {
+      const Sector words =
+          ReadSector(image, GetDataSector(layout, chain, position));
+      const int count = std::min(kDiskSectorWords, *size - position);
+      data.insert(data.end(), words.begin(), words.begin() + count);
+    }
+    EXPECT_EQ(data, MakeCountingWords(file->first_word, *size)) << text;
+  }
+  return contents;
+}
 
 class DiskFileSystemTest : public ::testing::Test {
  protected:
@@ -426,9 +573,113 @@ class DiskFileSystemTest : public ::testing::Test {
     return ReadToEnd(file, kDiskSectorWords);
   }
 
+  // Runs `run` on a disk of `sector_count` sectors set up by `setup`, once to
+  // count its sector writes, and then once for each number of them a crash
+  // could let reach the disk, each on a new disk. After each, the image is
+  // reopened, as it is after a crash, and checked with ReadDiskContents for
+  // `files`. Without a crash, each of `files` has its size. A crash may
+  // orphan only a cluster `run` moves from one owner to another, or one on no
+  // chain before or after it, and may lose only a file `run` creates or
+  // deletes. `run` passes each status to KeepStatus, and closes every file it
+  // opens, as a crash leaves each operation failing.
+  void RunCrashTest(int sector_count,
+                    absl::FunctionRef<void(DiskEditor& editor)> setup,
+                    absl::FunctionRef<void()> run,
+                    absl::Span<const CrashFile> files) {
+    // Returns ReadDiskContents for the attached image.
+    const auto read_contents = [&] {
+      std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+      DiskContents contents = ReadDiskContents(*image, files);
+      EXPECT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+      return contents;
+    };
+    const auto start = [&] {
+      file_system_.DetachImage().reset();
+      AttachFormatted(sector_count);
+      EditDisk(setup);
+      CollectSectorWrites();
+      crash_status_ = DiskStatus::kOk;
+    };
+    start();
+    const DiskContents before = read_contents();
+    run();
+    ASSERT_EQ(crash_status_, DiskStatus::kOk);
+    const int write_count = static_cast<int>(CollectSectorWrites().size());
+    const DiskContents after = read_contents();
+    for (const CrashFile& file : files) {
+      const FoundFile* found = after.FindFile(file.name);
+      ASSERT_NE(found, nullptr) << file.name;
+      EXPECT_EQ(found->size, file.size) << file.name;
+    }
+    for (int writes = 0; writes <= write_count; ++writes) {
+      SCOPED_TRACE(std::to_string(writes) + " of " +
+                   std::to_string(write_count) + " writes");
+      start();
+      protocol_->SetLimits({.writes = writes});
+      run();
+      EXPECT_EQ(crash_status_,
+                writes < write_count ? DiskStatus::kIoError : DiskStatus::kOk);
+      ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
+      const DiskContents contents = read_contents();
+      for (int cluster = 1; cluster < static_cast<int>(contents.owners.size());
+           ++cluster) {
+        const std::string& owner = before.owners[cluster];
+        if (contents.owners[cluster].empty() && !owner.empty() &&
+            owner == after.owners[cluster]) {
+          ADD_FAILURE() << "Cluster " << cluster << " of " << owner
+                        << " is orphaned";
+        }
+      }
+      for (const FoundFile& file : before.files) {
+        if (after.FindFile(file.name) != nullptr) {
+          EXPECT_NE(contents.FindFile(file.name), nullptr)
+              << file.name << " is lost";
+        }
+      }
+    }
+  }
+
+  // Keeps `status` as the crash test's, if it is the first that isn't kOk.
+  void KeepStatus(DiskStatus status) {
+    if (crash_status_ == DiskStatus::kOk) {
+      crash_status_ = status;
+    }
+  }
+
+  // Create, Open, and Close for a crash test, which keep their statuses. A
+  // failed Create or Open returns -1, which Close refuses.
+  DiskFile CreateForCrash(std::string_view name) {
+    DiskFile file = -1;
+    KeepStatus(file_system_.Create(GetName(name), GetLater(), &file));
+    return file;
+  }
+  DiskFile OpenForCrash(std::string_view name) {
+    DiskFile file = -1;
+    KeepStatus(file_system_.Open(GetName(name), &file));
+    return file;
+  }
+  void CloseForCrash(DiskFile file) {
+    KeepStatus(file_system_.Close(file, GetLatest()));
+  }
+
+  // Writes `words` to `file` from its position for a crash test, stopping at
+  // the first failure.
+  void WriteForCrash(DiskFile file, absl::Span<const uint16_t> words) {
+    while (!words.empty()) {
+      int count = 0;
+      const DiskStatus status = file_system_.Write(file, words, &count);
+      KeepStatus(status);
+      if (status != DiskStatus::kOk) {
+        return;
+      }
+      words.remove_prefix(count);
+    }
+  }
+
   gb::FileSystem host_;
   FaultyFileProtocol* protocol_ = nullptr;
   DiskFileSystem file_system_;
+  DiskStatus crash_status_ = DiskStatus::kOk;  // See KeepStatus.
 };
 
 TEST_F(DiskFileSystemTest, Properties) {
@@ -2387,6 +2638,123 @@ TEST_F(DiskFileSystemTest, TruncateRefusals) {
             DiskStatus::kDiskChanged);
   EXPECT_EQ(file_system_.Truncate(OpenFile("OPEN"), GetLatest()),
             DiskStatus::kWriteProtected);
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileCreating) {
+  RunCrashTest(
+      kSmallSectors, [](DiskEditor&) {},
+      [&] {
+        const DiskFile file = CreateForCrash("NEW");
+        CloseForCrash(file);
+      },
+      {{"NEW", 0, 0}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileCreatingGrowsTheRoot) {
+  // The free cluster the root takes, 2, holds old data, which the root must
+  // never link to.
+  RunCrashTest(
+      kSmallSectors,
+      [](DiskEditor& editor) {
+        editor.FillSector(2, 0);
+        editor.WriteData({2}, kDiskSectorWords, 0xE000);
+      },
+      [&] {
+        const DiskFile file = CreateForCrash("NEW");
+        CloseForCrash(file);
+      },
+      {{"NEW", 0, 0}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileWritingAcrossClusters) {
+  RunCrashTest(
+      kSmallSectors, [](DiskEditor&) {},
+      [&] {
+        const DiskFile file = CreateForCrash("NEW");
+        WriteForCrash(file, MakeCountingWords(1, 600));
+        CloseForCrash(file);
+      },
+      {{"NEW", 1, 600}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileWritingOverSlack) {
+  // OLD's chain runs a cluster past its size.
+  RunCrashTest(
+      kSmallSectors,
+      [](DiskEditor& editor) {
+        editor.AddFile(0, "OLD", {2, 3, 4}, 300, 1000);
+        editor.SetFatWord(0, 5);
+      },
+      [&] {
+        const DiskFile file = OpenForCrash("OLD");
+        KeepStatus(file_system_.Seek(file, 300));
+        WriteForCrash(file, MakeCountingWords(1300, 500));
+        CloseForCrash(file);
+      },
+      {{"OLD", 1000, 800}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileWritingTwoFiles) {
+  // Their clusters alternate.
+  RunCrashTest(
+      kSmallSectors, [](DiskEditor&) {},
+      [&] {
+        const DiskFile a = CreateForCrash("A");
+        const DiskFile b = CreateForCrash("B");
+        for (int position = 0; position < 600; position += 200) {
+          WriteForCrash(a, MakeCountingWords(1 + position, 200));
+          WriteForCrash(b, MakeCountingWords(5000 + position, 200));
+        }
+        CloseForCrash(a);
+        CloseForCrash(b);
+      },
+      {{"A", 1, 600}, {"B", 5000, 600}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileGrowingAcrossFatSectors) {
+  // OLD's entry is on the disk, so its chain is reachable as it grows. The
+  // free list jumps between FAT sectors, so most clusters taken change sector
+  // 1 and another, linked from a third, but 260 and 270 share sector 2, which
+  // is left dirty with sector 1 until taking 600 moves the working buffer.
+  // 610 and 280 stay free.
+  RunCrashTest(
+      kFloppySectors,
+      [](DiskEditor& editor) {
+        editor.AddFile(0, "OLD", {250}, kDiskSectorWords, 1000);
+        editor.SetChain({300, 520, 260, 270, 600, 610, 280});
+        editor.SetFatWord(0, 300);
+      },
+      [&] {
+        const DiskFile file = OpenForCrash("OLD");
+        KeepStatus(file_system_.Seek(file, kDiskSectorWords));
+        WriteForCrash(file, MakeCountingWords(1000 + kDiskSectorWords,
+                                              5 * kDiskSectorWords));
+        CloseForCrash(file);
+      },
+      {{"OLD", 1000, 6 * kDiskSectorWords}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileTruncating) {
+  // OLD's FAT words are in all three FAT sectors, so freeing changes each, and
+  // the free list starts at 600. The first truncate frees 301 and 520, after
+  // a write leaves its data sector dirty, and the second frees the rest.
+  RunCrashTest(
+      kFloppySectors,
+      [](DiskEditor& editor) {
+        editor.AddFile(0, "OLD", {250, 300, 301, 520},
+                       3 * kDiskSectorWords + 100, 1000);
+        editor.SetFatWord(0, 600);
+      },
+      [&] {
+        const DiskFile file = OpenForCrash("OLD");
+        WriteForCrash(file, MakeCountingWords(1000, 100));
+        KeepStatus(file_system_.Seek(file, 300));
+        KeepStatus(file_system_.Truncate(file, GetLatest()));
+        KeepStatus(file_system_.Seek(file, 0));
+        KeepStatus(file_system_.Truncate(file, GetLatest()));
+        CloseForCrash(file);
+      },
+      {{"OLD", 1000, 0}});
 }
 
 }  // namespace

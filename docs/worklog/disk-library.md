@@ -922,18 +922,26 @@ Depends on: CL11.
   reading and writing after it, each refusal, and the exact order of sector
   writes.
 
-### CL13 [ ] disk: the crash test
+### CL13 [x] disk: the crash test
 
 Depends on: CL12.
 
 - A test only: for each operation sequence (creating, creating that grows
   the root, writing across clusters and closing, writing over slack, two
-  files written at once, and truncating), stop the image's writes with
-  `FaultyFileProtocol` after every possible number of sector writes, detach
-  and reattach the image, and check that no cluster is cross-linked or on
-  both the free list and a chain, and that every file's chain covers its size
-  (with CL15's `Check` once it exists; here by walking the chains in the
-  test).
+  files written at once, growing a file across FAT sectors, and truncating),
+  stop the image's writes with `FaultyFileProtocol` after every possible
+  number of sector writes, detach and reattach the image, and check that no
+  cluster is cross-linked or on both the free list and a chain, and that
+  every file's chain covers its size (with CL15's `Check` once it exists;
+  here by walking the chains in the test).
+- Each file's words are its position plus a fixed first word, so the test
+  also checks every file's data up to its size, which catches a size reaching
+  the disk before its data. A cluster may be orphaned only if the sequence
+  moves it between owners, or it is on no chain before or after, so losing
+  the free list fails too, and a file may be lost only if the sequence
+  creates it. The root's new cluster starts with old data, so linking it
+  before it is written fails. Without a crash, each file has the size the
+  sequence gives it.
 - Unused, so no visible change.
 
 **Verify**
