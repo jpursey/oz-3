@@ -102,9 +102,9 @@ class DiskHardware final {
 
   // Returns the attached image's medium, or null if the drive is empty. Its
   // sectors are only read and written through the hardware, so the cache is
-  // never stale.
+  // never stale, and its write protection is changed only while it is
+  // detached.
   const DiskMedia* GetMedia() const { return image_.get(); }
-  DiskMedia* GetMedia() { return image_.get(); }
 
   //----------------------------------------------------------------------------
   // Sectors

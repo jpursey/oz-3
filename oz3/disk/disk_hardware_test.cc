@@ -427,8 +427,10 @@ TEST_F(DiskHardwareTest, WrongSizedBuffersAreBadArguments) {
 
 TEST_F(DiskHardwareTest, WriteProtectedWritesLeaveTheCache) {
   MakeHardware(GetTimedSettings(2));
+  std::unique_ptr<DiskImage> image = hardware_->DetachImage();
+  ASSERT_EQ(image->SetWriteProtected(true), DiskStatus::kOk);
+  hardware_->AttachImage(std::move(image));
   Read(0);
-  ASSERT_EQ(hardware_->GetMedia()->SetWriteProtected(true), DiskStatus::kOk);
   hardware_->CollectBusyTime();
   EXPECT_EQ(hardware_->WriteSector(0, MakeSector(0x1234), WriteCaching::kCache),
             DiskStatus::kWriteProtected);

@@ -68,7 +68,7 @@ is how code calls it:
   count, so the promise holds. That leaves
   nothing to free after a write that stops short, and no begin and end calls
   to pair. disk_design.md's `WRITE` walkthrough (allocating right after
-  accept) changes to match, in CL10.
+  accept) changes to match, in CL11.
 
 ## Design
 
@@ -232,7 +232,7 @@ class DiskImage final : public DiskMedia {
   ID), its version or sector size isn't supported, its sector count is 0, or
   the file is too short to hold the sectors its header counts.
 - A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
-  a write-protected image, whatever its header says, from CL16. `Open` opens
+  a write-protected image, whatever its header says, from CL17. `Open` opens
   it for reading only, and its flags have the write-protect bit set, so
   `MEDIA` reports it. The header's bit is the floppy's notch, which travels
   with the image; the host's attribute is the host's own protection, and the
@@ -248,11 +248,13 @@ class DiskImage final : public DiskMedia {
   an OS write (the local protocol's `fflush`), not a sync to the device, so a
   flush per sector costs nothing at the drive's rates.
 - Once a host read, write, or flush fails, `gb::File` is invalid, so every
-  later operation on the image is `kIoError` too.
+  later operation on the image is `kIoError` too. From CL10, the hardware and
+  file system fail with it until an image is attached again, so reattaching
+  the reopened image is the retry (see CL10).
 - Tests reach the `kIoError` paths through `FaultyFileProtocol`, a test-only
   `gb::MemoryFileProtocol` in `oz3_disk_test` whose files' reads, writes, and
   flushes fail once its `Limits` (how many more of each succeed) run out. So
-  nothing for tests is in `DiskImage`. CL12's crash test uses it to stop the
+  nothing for tests is in `DiskImage`. CL13's crash test uses it to stop the
   image's writes after a given number of sectors. Names:
   `FaultyFileProtocol`. Alternatives: `FailingFileProtocol` (reads as always
   failing), `FaultInjectionFileProtocol` (long). Recommended:
@@ -783,7 +785,7 @@ Depends on: CL7.
   `kDiskFull` for a full root on a full disk, changing nothing; and the
   exact sector writes of a create that doesn't grow (just the entry's sector).
 
-### CL9 [ ] disk: writing files
+### CL9 [x] disk: writing files
 
 Depends on: CL8.
 
@@ -795,23 +797,25 @@ Depends on: CL8.
 - `DiskFileSystem`: `Write` and `GetWritableWords`.
 - `Write` writes at most up to the next sector boundary, allocating each
   cluster when its first word is written, after following any chain already
-  past the file's size (slack). A sector the write starts at the beginning of,
-  wholly past the size, starts zeroed rather than read. It returns
+  past the file's size (slack). A sector the write covers from its start up
+  to the size or the sector's end starts zeroed rather than read, as it keeps
+  nothing of the file. It returns
   `kWrongHandleType` for a directory handle, `kReadOnly` for a read-only file
   (the attribute is kept in the slot at open), `kWriteProtected`, and
   `kDiskFull` when the write needs a cluster and none is free. The data and
   FAT buffers it changes are written only when they take another sector, or
-  by CL10's commits.
+  by CL11's commits.
 - `GetWritableWords`: the words from the file's position to its size, the
   room left in its last cluster, and the free clusters', without the disk,
   with the same refusals as `Write`.
 - A failed `Create` no longer discards the buffers, which can now hold other
-  files' allocations: it puts back the free entry it filled, leaving the
-  directory buffer clean, and a grown root takes its new size only once the
-  commit succeeds. Every other change it can leave follows a failed host
+  files' allocations: it drops only the directory buffer, so the entry it
+  filled is read again as the disk has it, and a grown root takes its new
+  size only once the commit succeeds. Every other change it can leave follows a failed host
   write, after which the image refuses everything.
-- `Close` still writes nothing, so a write not yet written by a buffer taking
-  another sector is lost at `Close` until CL10.
+- `Close` still writes nothing, so until CL11 a write not yet written by a
+  buffer taking another sector is lost at `Close`, and the clusters it
+  allocated are orphaned once a later commit writes the FAT.
 - Unused, so no visible change.
 
 **Verify**
@@ -824,9 +828,43 @@ Depends on: CL8.
   exact order of sector writes for a buffer taking another sector, and a
   failed `Create` leaving another file's allocation in place.
 
-### CL10 [ ] disk: committing files
+### CL10 [ ] disk: failed images
 
 Depends on: CL9.
+
+- A host failure fails the image until it is attached again, in one place:
+  `DiskHardware` remembers the first `kIoError` from its image, and returns
+  `kIoError` for every later read and write, cached reads included, until an
+  image is attached. `DiskFileSystem` checks it in `GetVolumeStatus` and
+  `GetSlot`, so every operation returns `kIoError` from then on, including
+  those its buffers could answer (`Seek`, `GetFileInfo`, `GetWritableWords`,
+  and `Open` and `Find` of buffered sectors). `Close` still frees the slot,
+  and a stale slot is still `kDiskChanged`.
+- Reattaching is the retry: the host detaches the image, discarding the
+  buffers unwritten, opens it again with `DiskImage::Open`, and attaches it.
+  The commit orders leave the disk as a crash at that point would, with at
+  worst orphaned clusters or slack, so the disk is consistent as it was last
+  written. Retrying within an attachment would need each operation to undo
+  its changes in memory, which this avoids.
+- So a failed operation needs no cleanup of its own: `Create`'s failure
+  branch from CL9 goes, and `GrowRoot` grows the root's slots itself again.
+  `Write`, `Close`, `Flush`, and `Truncate` need none either.
+- disk_design.md: **I/O error** fails the disk until it is ejected and
+  inserted again (the status codes, and Images and disk changes).
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests: the hardware returning `kIoError` after a failed write, for a
+  cached read too, until an image is attached; after a failed write, a
+  cached read, `Seek`, `GetFileInfo`, `GetWritableWords`, `Find`, and `Open`
+  from buffers all returning `kIoError`; `Close` freeing the slot; and
+  reattaching the reopened image reading what was written before the
+  failure.
+
+### CL11 [ ] disk: committing files
+
+Depends on: CL10.
 
 - `DiskFileSystem`: `Flush(file, now)`, `Flush(now)`, and `Close(file, now)`.
 - A slot remembers it was written since its last stamp. `Close` and `Flush`
@@ -850,9 +888,9 @@ Depends on: CL9.
   when its commit fails, `Find` showing the committed size, and the exact
   order of sector writes for each commit.
 
-### CL11 [ ] disk: truncating files
+### CL12 [ ] disk: truncating files
 
-Depends on: CL10.
+Depends on: CL11.
 
 - `DiskFileSystem::Truncate`: sets the file's size to its position and frees
   the clusters past what the size needs. It commits the file first (as
@@ -873,9 +911,9 @@ Depends on: CL10.
   reading and writing after it, each refusal, and the exact order of sector
   writes.
 
-### CL12 [ ] disk: the crash test
+### CL13 [ ] disk: the crash test
 
-Depends on: CL11.
+Depends on: CL12.
 
 - A test only: for each operation sequence (creating, creating that grows
   the root, writing across clusters and closing, writing over slack, two
@@ -883,7 +921,7 @@ Depends on: CL11.
   `FaultyFileProtocol` after every possible number of sector writes, detach
   and reattach the image, and check that no cluster is cross-linked or on
   both the free list and a chain, and that every file's chain covers its size
-  (with CL14's `Check` once it exists; here by walking the chains in the
+  (with CL15's `Check` once it exists; here by walking the chains in the
   test).
 - Unused, so no visible change.
 
@@ -891,9 +929,9 @@ Depends on: CL11.
 - Standard checks.
 - The test passes, and fails if any commit's order is reversed.
 
-### CL13 [ ] disk: deleting, renaming, and attributes
+### CL14 [ ] disk: deleting, renaming, and attributes
 
-Depends on: CL12.
+Depends on: CL13.
 
 - `DiskFileSystem`: `Delete`, `Rename`, and `SetAttributes`.
 - Unused, so no visible change.
@@ -905,9 +943,9 @@ Depends on: CL12.
   the freed clusters' order on the free list, entries staying in their slots
   for an open root handle, write protection, and the crash test for each.
 
-### CL14 [ ] disk: consistency checks
+### CL15 [ ] disk: consistency checks
 
-Depends on: CL13.
+Depends on: CL14.
 
 - `DiskFileSystem::Check` and `DiskCheckReport`: orphaned clusters,
   cross-linked clusters, clusters both free and in a chain, chains that don't
@@ -915,7 +953,7 @@ Depends on: CL13.
   slack join the free list, a short chain cuts its file's size, and a
   cross-link cuts the later file in directory order before the shared
   cluster. Fails with `in use` while any file is open.
-- The crash tests in CL12 and CL13 use it.
+- The crash tests in CL13 and CL14 use it.
 - Unused, so no visible change.
 
 **Verify**
@@ -923,7 +961,7 @@ Depends on: CL13.
 - Unit tests: each problem on a hand-made disk, reported and then repaired,
   and a clean disk reporting nothing, before and after.
 
-### CL15 [ ] disk: host transfer helpers
+### CL16 [ ] disk: host transfer helpers
 
 Depends on: CL2.
 
@@ -935,7 +973,7 @@ Depends on: CL2.
 - Unit tests: odd and even byte counts each way, CRLF, CR, and LF going in,
   and zero bytes dropped coming out.
 
-### CL16 [ ] disk: read-only image files
+### CL17 [ ] disk: read-only image files
 
 Depends on: CL2.
 

@@ -108,9 +108,9 @@ class DiskFileSystem final {
   bool HasImage() const { return hardware_.HasImage(); }
 
   // Returns the attached image's medium, formatted or not, or null if the
-  // drive is empty.
+  // drive is empty. Its write protection is changed only while it is
+  // detached, as a floppy's notch is.
   const DiskMedia* GetMedia() const { return hardware_.GetMedia(); }
-  DiskMedia* GetMedia() { return hardware_.GetMedia(); }
 
   //----------------------------------------------------------------------------
   // Time
@@ -183,6 +183,22 @@ class DiskFileSystem final {
   // file's chain is broken or shorter than its size.
   DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int* count);
 
+  // Writes up to `words.size()` words at `file`'s position, but not past the
+  // end of its sector, setting `count` to the words written, moving the
+  // position past them, and growing the size to cover them. A cluster is
+  // allocated when its first word is written, after following any chain left
+  // past the size. The file's sector and the FAT are written when their
+  // buffers take other sectors. Returns kWrongHandleType for a directory's
+  // handle, kReadOnly for a read-only file, kWriteProtected on a protected
+  // disk, kDiskFull if the write needs a cluster and none is free, and
+  // kCorrupt for a broken chain or free list.
+  DiskStatus Write(DiskFile file, absl::Span<const uint16_t> words, int* count);
+
+  // Sets `count` to the words writes at `file`'s position are sure to fit,
+  // without the disk: those up to its size, the rest of its last cluster, and
+  // every free cluster's. Returns what Write does before writing.
+  DiskStatus GetWritableWords(DiskFile file, int* count);
+
   // Moves `file`'s position to `position`, without the disk. Returns kPastEnd
   // beyond the file's size, and kBadArgument for a negative position.
   DiskStatus Seek(DiskFile file, int position);
@@ -244,6 +260,7 @@ class DiskFileSystem final {
     SlotState state = SlotState::kFree;
     // A file's directory entry, or none for the root.
     std::optional<EntryLocation> entry;
+    bool read_only = false;  // The file's read-only attribute, at open.
     int size = 0;
     int position = 0;
 
@@ -280,11 +297,6 @@ class DiskFileSystem final {
   // Forgets the attached disk's superblock, free count, and buffers.
   void ResetVolume();
 
-  // Forgets the free count and the directory and FAT buffers, unwritten, so
-  // they are read again when next needed, as after a change that failed
-  // partway.
-  void DiscardBuffers();
-
   // Returns kNoDisk with no image, kUnformatted with no file system, or else
   // kOk.
   DiskStatus GetVolumeStatus() const;
@@ -310,6 +322,11 @@ class DiskFileSystem final {
   // out of range or free, and kDiskChanged if it is stale, with `slot` set.
   DiskStatus GetSlot(DiskFile file, Slot** slot);
 
+  // Sets `slot` to `file`'s slot if it can be written, as GetSlot does.
+  // Returns kWrongHandleType for a directory's slot, kReadOnly for a read-only
+  // file, and kWriteProtected on a protected disk.
+  DiskStatus GetWritableSlot(DiskFile file, Slot** slot);
+
   // Returns the lowest free slot, or -1 if every slot is taken.
   DiskFile FindFreeSlot() const;
 
@@ -321,7 +338,7 @@ class DiskFileSystem final {
   // position 0, with its buffer empty. `entry` is the file's directory entry,
   // or none for the root.
   void OpenSlot(Slot* slot, const std::optional<EntryLocation>& entry,
-                int first_cluster, int size);
+                bool read_only, int first_cluster, int size);
 
   // Opens `slot` on the root directory, whose size is its chain's full length.
   // Returns kCorrupt for a broken root chain.
@@ -331,6 +348,13 @@ class DiskFileSystem final {
   // into its chain, following the chain from the cluster last reached, or from
   // the start to go back. Returns kCorrupt if the chain is shorter.
   DiskStatus ReachCluster(Slot* slot, int cluster_index);
+
+  // Moves `slot`'s last cluster reached to the cluster at its position, for a
+  // write there. One that starts a cluster at the size is the next in any
+  // chain left past the size, or else one allocated onto the chain's end.
+  // Returns kDiskFull, changing nothing, if it needs a cluster and none is
+  // free, and kCorrupt for a broken chain or free list.
+  DiskStatus ReachWriteCluster(Slot* slot);
 
   //----------------------------------------------------------------------------
   // Sectors
@@ -343,6 +367,10 @@ class DiskFileSystem final {
   // Loads `sector` into `buffer` as all zeros, without reading it, and marks
   // it dirty, first writing the sector it held if it is dirty.
   DiskStatus BlankSector(int sector, SectorBuffer* buffer);
+
+  // Returns the sector at `slot`'s position, in the cluster it last reached,
+  // which must be the position's.
+  int GetSlotSector(const Slot& slot) const;
 
   // Loads the sector at `slot`'s position, which must be before its end, into
   // its buffer.
@@ -443,10 +471,14 @@ class DiskFileSystem final {
   // Grows the root, open in dir_, by a cluster holding `entry` as its first
   // entry, setting `location` to it. The cluster's sectors, zeroed but for the
   // entry, are written before the link that adds it, as a directory has no
-  // size to stop reads, and dir_ and any open root handle take the new size.
-  // The link is left for CommitDirectory to write. Returns kDiskFull, changing
-  // nothing, with no cluster free.
+  // size to stop reads. The link is left for CommitDirectory to write, and the
+  // new size for GrowRootSlots. Returns kDiskFull, changing nothing, with no
+  // cluster free.
   DiskStatus GrowRoot(const DiskDirEntry& entry, EntryLocation* location);
+
+  // Grows dir_ and every open root slot by a cluster, once GrowRoot's link is
+  // committed.
+  void GrowRootSlots();
 
   //----------------------------------------------------------------------------
   // State
