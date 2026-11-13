@@ -16,6 +16,7 @@ set(oz3_disk_SOURCE
   disk_status.h
 )
 set(oz3_disk_DEPS
+  absl::function_ref
   absl::memory
   absl::span
   absl::status

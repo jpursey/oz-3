@@ -456,16 +456,17 @@ class DiskFileSystem {
   DiskStatus GetVolumeInfo(DiskVolumeInfo* info);
 
   // Files.
-  DiskStatus Open(const DiskFilename& name, DiskFile* file, int64_t* size);
-  DiskStatus OpenRoot(DiskFile* file, int64_t* size);
+  DiskStatus Open(const DiskFilename& name, DiskFile* file);
+  DiskStatus OpenRoot(DiskFile* file);
   DiskStatus Create(const DiskFilename& name, DiskFile* file);
   DiskStatus Close(DiskFile file, DateTime now);
   DiskStatus Flush(DiskFile file, DateTime now);
   DiskStatus Flush(DateTime now);  // Every open file and buffer.
 
   // Data. Read and Write move at most up to the next sector boundary.
-  DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int* count);
-  DiskStatus Write(DiskFile file, absl::Span<const uint16_t> words, int* count);
+  DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int64_t* count);
+  DiskStatus Write(DiskFile file, absl::Span<const uint16_t> words,
+                   int64_t* count);
   DiskStatus Seek(DiskFile file, int64_t position);
   DiskStatus GetFileInfo(DiskFile file, DiskFileInfo* info);
   DiskStatus GetWritableWords(DiskFile file, int64_t* words);
@@ -663,13 +664,14 @@ Depends on: CL3, CL4.
   links); a broken free list as `kCorrupt`; the label; and write protection
   refusing `Format` and `SetLabel`.
 
-### CL6 [ ] disk: opening and reading files
+### CL6 [x] disk: opening and reading files
 
 Depends on: CL5.
 
 - `DiskFileSystem`: `Open`, `OpenRoot`, `Close`, `Read`, `Seek`,
   `GetFileInfo`, and `Find`, with the open-file table, stale slots, and
-  directory handles.
+  directory handles. `Format` refuses with `kInUse` while a file is open.
+  `Close` takes no time yet, as nothing can be written to stamp.
 - disk_design.md: stale slots are the library's (see Behavior), and
   `DiskFile` is a slot number with no generation.
 - Unused, so no visible change.
@@ -679,7 +681,7 @@ Depends on: CL5.
 - Unit tests, on disks whose files are written into the image by the test:
   reading whole files and across sectors and clusters, one sector per call at
   most, seeking (to the end, past it), reading at the end, `in use` for a
-  second open, several root handles, too many open, the lowest free slot
+  second open of a file or the root, too many open, the lowest free slot
   taken, slots out of range or closed as `kBadHandle`, slots open across a
   detach as `kDiskChanged` until closed, and staying taken until then, `Find`
   with patterns over several directory sectors with free
@@ -692,7 +694,10 @@ Depends on: CL6.
 
 - `DiskFileSystem`: `Create`, `Write`, `GetWritableWords`, `Flush`, and
   `Truncate`, with allocation, freeing, directory growth, timestamps, and
-  every commit in the crash-safe order.
+  every commit in the crash-safe order. `Close` gains the time to stamp with.
+  Growing the root updates the size of the file system's own root slot, which
+  `Open` keeps open to find names, and of any open root handle. A directory
+  sector written through one buffer is updated in any other buffer holding it.
 - disk_design.md: the `WRITE` walkthrough allocates as it writes (see
   Behavior).
 - Unused, so no visible change.

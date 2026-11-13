@@ -193,14 +193,15 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is it
 | `DiskLabel` | A value: the 8-word volume label. Parses, formats, and validates |
 | `DateTime` | In core: the 4-word date and time, as the timer answers it and timestamps store it |
 | `DiskDirEntry` | A value: a 16-word directory entry, with getters and setters, returning its name as a `DiskFilename` |
-| `DiskFile` | A value: a handle to an open file, an index and a generation |
+| `DiskFile` | A value: a handle to an open file, the number of its slot in the open-file table |
 | `DiskStatus` | An enum of the drive's status codes, `kOk` included |
 
 The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the value types. The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
 
 - **One owner per image.** `DiskFileSystem` owns the `DiskHardware`, which owns the `DiskImage`, so nothing else can write the image behind the file system's back.
 - **Patterns are filenames.** `DiskFilename::ParsePattern("*.TXT")` expands each `*` into `?` bytes at construction, and `Matches(const DiskFilename& name)` is a byte compare where `?` matches anything. A plain parse rejects `?` and `*`, so a pattern can't be mistaken for a name.
-- **Files are handles, like `FILE*`.** `DiskFileSystem` keeps the open-file table and does every operation, as in `Read(DiskFile, span)`, so it can refuse to delete an open file, give open files' sizes in listings, and write back at close. The caller sets the table's size: the drive passes its slot count, and tools a large one. A handle's generation catches use of a closed handle whose index has been reused.
+- **Files are handles, like `FILE*`.** `DiskFileSystem` keeps the open-file table and does every operation, as in `Read(DiskFile, span)`, so it can refuse to delete an open file, give open files' sizes in listings, and write back at close. The caller sets the table's size: the drive passes its slot count, and tools a large one. A handle is only its slot's number, as the drive's are, so a handle kept past its close reaches whatever is opened in that slot next, which is the caller's bug to avoid.
+- **Stale slots are the library's.** A file open when its image is detached stays open but stale: every operation on it fails with **disk changed**, except closing it, which frees the slot. So a tool swapping images can't write into the wrong disk, and the drive's slots need no state of their own.
 - **Buffers are explicit.** `DiskFileSystem` holds one sector per open file, one directory sector, and two FAT sectors, one fixed on sector 1. There's no generic cache between it and the hardware, so it always knows exactly what it holds and when it's written, and its memory is fixed by its open-file limit.
 - **Commits are explicit.** `DiskFileSystem` writes its buffers at the points the drive needs: at the end of every directory-changing operation, in `Close`, `Flush(DiskFile)`, and `Truncate(DiskFile)`, and when a dirty buffer is reused, always in the crash-safe order. `Flush()` with no file writes everything, for a clean shutdown.
 - **Per-sector work.** A read or write moves at most up to the next sector boundary per call, so the drive can stream a sector at a time, and a failure lands at the right point.
@@ -209,7 +210,7 @@ The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`
 - **Consistency checks** are `DiskFileSystem::Check`, reporting orphaned and cross-linked clusters and chains that don't match sizes, and optionally repairing them.
 - **Host transfer helpers** convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend.
 
-The drive maps its slots one to one onto `DiskFile` handles. Stale slots after a disk change are its only extra state: detaching an image destroys its `DiskFileSystem`, with no write-back.
+The drive maps its slots one to one onto `DiskFile` handles, and its `DiskFileSystem` lives as long as it does, with images attached and detached as disks are inserted and ejected. Detaching an image discards the file system's buffers with no write-back, and leaves its open slots stale.
 
 ## Drive device
 
@@ -282,7 +283,7 @@ The worst a crash can leave is orphaned clusters or slack, which a check reclaim
 
 Files written at once share the FAT's working buffer, so writing it for one file can write another's new links before that file's data or size. That is safe: the other file's recorded size hasn't grown, so its chain on disk is simply longer than its size requires. Nothing reads past the size, and the extra clusters aren't on the free list, so a crash leaves them as slack that a check trims. When a file grows, the drive follows any links already past its size before allocating new clusters, so slack left this way is reused rather than leaked.
 
-An open file's size lives in its slot, and its directory entry is written at `CLOSE`. When a listing or `OPEN` meets the entry of an open file, the drive gives the slot's size instead, so nobody sees a stale size.
+An open file's size lives in its slot, and its directory entry is written at `CLOSE`. When a listing meets the entry of an open file, the drive gives the slot's size instead, so nobody sees a stale size.
 
 #### Timing
 
@@ -399,13 +400,13 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 
 | Code | Command | Arguments (OS writes) | Accept (OS reads) | Completion (OS reads) |
 | --- | --- | --- | --- | --- |
-| 10h | OPEN | name (8) | status | status, handle, size (dword) |
-| 11h | OPEN ROOT | — | status | status, handle, size (dword) |
+| 10h | OPEN | name (8) | status | status, handle |
+| 11h | OPEN ROOT | — | status | status, handle |
 | 12h | CREATE | name (8) | status | status, handle |
 | 13h | CLOSE h | — | status | status |
 | 14h | FLUSH h | — | status | status |
 
-- `OPEN` of a file that is already open fails with **in use**; two slots on one file would clobber each other. The root can be open in several slots, since directory handles are read-only.
+- `OPEN` of a file that is already open fails with **in use**; two slots on one file would clobber each other. `OPEN ROOT` is the same for the root, which is open in at most one slot like any file.
 - `CREATE` fails with **exists** if the name is taken; to replace a file, delete it first. It makes an empty file and opens it.
 - `CLOSE` writes back the slot's dirty sectors and its directory entry, stamping the modified time if the file was written. `CLOSE` with h = FFh closes every slot. `CLOSE` on a stale slot frees it and succeeds.
 
