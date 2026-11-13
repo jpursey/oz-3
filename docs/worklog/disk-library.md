@@ -40,9 +40,10 @@ is how code calls it:
   to one onto handles with no state of their own, and a tool swapping images
   can't write into the wrong disk either. disk_design.md's Disk library
   section changes to match, in CL6.
-- **Time comes in as values.** `Format`, `Close`, and `Flush` take the
-  `DateTime` to stamp with. A file written since it was last stamped is
-  stamped at `Close` or `Flush`. So the drive passes its host clock's time,
+- **Time comes in as values.** `Format`, `Create`, `Close`, and `Flush` take
+  the `DateTime` to stamp with. A file is stamped when it is created, so no
+  entry on a disk has a zero time unless something wrote it so, and a file
+  written since it was last stamped is stamped again at `Close` or `Flush`. So the drive passes its host clock's time,
   and a tool copying a host file in passes that file's time at `Close`.
 - **Busy time** is the simulated time the disk spent on the operations since
   it was last collected. It accumulates as an `absl::Duration`, and
@@ -64,7 +65,7 @@ is how code calls it:
   Only the drive changes the free count, so the promise holds. That leaves
   nothing to free after a write that stops short, and no begin and end calls
   to pair. disk_design.md's `WRITE` walkthrough (allocating right after
-  accept) changes to match, in CL8.
+  accept) changes to match, in CL9.
 
 ## Design
 
@@ -228,7 +229,7 @@ class DiskImage final : public DiskMedia {
   ID), its version or sector size isn't supported, its sector count is 0, or
   the file is too short to hold the sectors its header counts.
 - A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
-  a write-protected image, whatever its header says, from CL12. `Open` opens
+  a write-protected image, whatever its header says, from CL15. `Open` opens
   it for reading only, and its flags have the write-protect bit set, so
   `MEDIA` reports it. The header's bit is the floppy's notch, which travels
   with the image; the host's attribute is the host's own protection, and the
@@ -248,7 +249,7 @@ class DiskImage final : public DiskMedia {
 - Tests reach the `kIoError` paths through `FaultyFileProtocol`, a test-only
   `gb::MemoryFileProtocol` in `oz3_disk_test` whose files' reads, writes, and
   flushes fail once its `Limits` (how many more of each succeed) run out. So
-  nothing for tests is in `DiskImage`. CL8's crash test uses it to stop the
+  nothing for tests is in `DiskImage`. CL11's crash test uses it to stop the
   image's writes after a given number of sectors. Names:
   `FaultyFileProtocol`. Alternatives: `FailingFileProtocol` (reads as always
   failing), `FaultInjectionFileProtocol` (long). Recommended:
@@ -464,7 +465,7 @@ class DiskFileSystem {
   // Files.
   DiskStatus Open(const DiskFilename& name, DiskFile* file);
   DiskStatus OpenRoot(DiskFile* file);
-  DiskStatus Create(const DiskFilename& name, DiskFile* file);
+  DiskStatus Create(const DiskFilename& name, DateTime now, DiskFile* file);
   DiskStatus Close(DiskFile file, DateTime now);
   DiskStatus Flush(DiskFile file, DateTime now);
   DiskStatus Flush(DateTime now);  // Every open file and buffer.
@@ -727,38 +728,131 @@ Depends on: CL6.
   entry on the disk one word past the biggest size as invalid, and `Open` of
   it as `kCorrupt`.
 
-### CL8 [ ] disk: creating and writing files
+### CL8 [ ] disk: creating files
 
 Depends on: CL7.
 
-- `DiskFileSystem`: `Create`, `Write`, `GetWritableWords`, `Flush`, and
-  `Truncate`, with allocation, freeing, directory growth, timestamps, and
-  every commit in the crash-safe order. `Close` gains the time to stamp with.
-  Growing the root updates the size of the file system's own root slot, which
-  `Open` keeps open to find names, and of any open root handle. A directory
-  sector written through one buffer is updated in any other buffer holding it.
-- disk_design.md: the `WRITE` walkthrough allocates as it writes (see
-  Behavior).
+- `DiskFileSystem::Create`: finds the name and the first free entry in one
+  pass over the root, through the root slot `Open` keeps. Returns
+  `kWriteProtected`, `kUnformatted`, `kBadName` for a pattern, `kTooManyOpen`,
+  `kExists` if the name is taken (open or not), and `kDiskFull` if the root
+  has no free entry and no cluster to grow by. Writes the new entry (the name,
+  `now` as its modified time, and zeros for everything else) into the first
+  free entry, and opens the empty file in the lowest free slot. Like `Open`,
+  it counts the free clusters if nothing has yet.
+- Growing the root: with no free entry, it allocates a cluster, zeroes and
+  writes its sectors, then links it onto the root's chain, then writes the
+  entry into its first sector. The root slot `Open` keeps and any open root
+  handle take the new size, so an open listing reaches the new entries.
+- The write path: `SectorBuffer` gains a dirty flag, and every write goes
+  through one private function that knows which buffer it is. It writes
+  sector 1 with `kSkip` and every other with `kCache`; it writes sector 1
+  first if it is dirty before the working FAT sector, so the free list's head
+  reaches the disk before any link to a cluster taken from it; and a
+  directory sector written through one buffer is copied into any other buffer
+  holding it, so an open root handle sees each entry as it is written.
+  Loading another sector into a dirty buffer writes it first.
+- Allocating: takes the free list's head, sets the head to its next, writes
+  the cluster's own word as FFFFh, and links the chain's old last cluster to
+  it, as disk_design.md's FAT and free list says, keeping the free count.
+- `Create` commits before returning, in disk_design.md's order: the new root
+  cluster's zeroed sectors, sector 1, the working FAT sector, then the entry's
+  sector.
+- disk_design.md: the drive stamps a file when it creates it, as well as when
+  it closes it after a write, so no reachable entry is left with a zero time
+  by the drive (Timestamps, and `CREATE`'s notes).
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests: creating into a full directory (growing it), `exists`, writing
-  across sector and cluster boundaries, overwriting inside a file, growing
-  over slack past the size, filling the disk to `disk full` with
-  `GetWritableWords` exact at each step, `Truncate` at 0, mid-cluster, and on
-  a cluster boundary, the free count after each, stamps at `Close` and
-  `Flush` only after writes, and the exact order of sector writes for each
-  commit.
-- A crash test: for each operation sequence, stop the image's writes with
-  `FaultyFileProtocol` after every possible number of sector writes, detach and
-  reattach the image, and check that no cluster is cross-linked or on both
-  the free list and a chain (with CL10's `Check` once it exists; here by
-  walking the chains in the test).
+- Unit tests: creating into a free entry between used ones and at the end of
+  a sector, with the entry's exact words (its modified time `now`), then
+  opening it (`kInUse`) and reading it empty after closing;
+  each refusal; `kExists` for an open and a closed file; growing a full root,
+  with the exact order of sector writes, a 1-sector and a 4-sector cluster,
+  and the FAT's head and the new link in different FAT sectors; an open root
+  handle seeing the new entry and the grown size; the free count after each;
+  `kDiskFull` for a full root on a full disk, changing nothing; and the
+  exact sector writes of a create that doesn't grow (just the entry's sector).
 
-### CL9 [ ] disk: deleting, renaming, and attributes
+### CL9 [ ] disk: writing files
 
 Depends on: CL8.
+
+- `DiskFileSystem`: `Write`, `GetWritableWords`, `Flush(file, now)`,
+  `Flush(now)`, and `Close(file, now)`.
+- `Write` writes at most up to the next sector boundary, allocating each
+  cluster when its first word is written, after following any chain already
+  past the file's size (slack). A sector the write starts at the beginning of,
+  wholly past the size, starts zeroed rather than read. It returns
+  `kWrongHandleType` for a directory handle, `kReadOnly` for a read-only file
+  (the attribute is kept in the slot at open), `kWriteProtected`, and
+  `kDiskFull` when not even one word fits; it writes what fits of the rest.
+- `GetWritableWords`: the room left in the file's last cluster past its
+  size, plus the free clusters', without the disk.
+- A slot remembers it was written since its last stamp. `Close` and `Flush`
+  commit the file: its
+  dirty data sector, then the FAT (sector 1 first), then its entry, with the
+  size, first cluster, and, if written, `now` as the modified time. A
+  directory handle's `Close` and `Flush` write nothing. `Flush(now)` commits
+  every open file, then any dirty FAT buffer.
+- `Find` and `Open` give an open file's size from its slot, not its entry.
+- disk_design.md: the `WRITE` walkthrough allocates as it writes (see
+  Behavior), and nothing is freed after a write that stops short.
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests: writing across sector and cluster boundaries, overwriting
+  inside a file, growing over slack past the size, filling the disk to `disk
+  full` with `GetWritableWords` exact at each step, each refusal, the free
+  count, stamps at `Close` and `Flush` only after writes (a created file
+  closed unwritten keeps its creation stamp), two files written at once sharing the working FAT sector,
+  `Find` showing an open file's size, and the exact order of sector writes for
+  each commit and for a buffer taking another sector.
+
+### CL10 [ ] disk: truncating files
+
+Depends on: CL9.
+
+- `DiskFileSystem::Truncate`: sets the file's size to its position and frees
+  the clusters past what the size needs. It commits the file first (as
+  `Flush` does, without stamping), then writes the entry with the new size
+  (and first cluster 0 at size 0), then the FAT marking the chain's new end
+  and the freed chain's last link to the old head, then sector 1 with the
+  freed chain as the head, as disk_design.md's `TRUNCATE` orders them. It
+  counts as a write, so `Close` stamps it. Returns `kWrongHandleType` for a
+  directory handle, `kReadOnly`, and `kWriteProtected`.
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests: `Truncate` at 0, mid-cluster, on a cluster boundary, and at the
+  end (freeing nothing), the free count and the free list's order after each,
+  reading and writing after it, each refusal, and the exact order of sector
+  writes.
+
+### CL11 [ ] disk: the crash test
+
+Depends on: CL10.
+
+- A test only: for each operation sequence (creating, creating that grows
+  the root, writing across clusters and closing, writing over slack, two
+  files written at once, and truncating), stop the image's writes with
+  `FaultyFileProtocol` after every possible number of sector writes, detach
+  and reattach the image, and check that no cluster is cross-linked or on
+  both the free list and a chain, and that every file's chain covers its size
+  (with CL13's `Check` once it exists; here by walking the chains in the
+  test).
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- The test passes, and fails if any commit's order is reversed.
+
+### CL12 [ ] disk: deleting, renaming, and attributes
+
+Depends on: CL11.
 
 - `DiskFileSystem`: `Delete`, `Rename`, and `SetAttributes`.
 - Unused, so no visible change.
@@ -770,9 +864,9 @@ Depends on: CL8.
   the freed clusters' order on the free list, entries staying in their slots
   for an open root handle, write protection, and the crash test for each.
 
-### CL10 [ ] disk: consistency checks
+### CL13 [ ] disk: consistency checks
 
-Depends on: CL9.
+Depends on: CL12.
 
 - `DiskFileSystem::Check` and `DiskCheckReport`: orphaned clusters,
   cross-linked clusters, clusters both free and in a chain, chains that don't
@@ -780,7 +874,7 @@ Depends on: CL9.
   slack join the free list, a short chain cuts its file's size, and a
   cross-link cuts the later file in directory order before the shared
   cluster. Fails with `in use` while any file is open.
-- The crash tests in CL8 and CL9 use it.
+- The crash tests in CL11 and CL12 use it.
 - Unused, so no visible change.
 
 **Verify**
@@ -788,7 +882,7 @@ Depends on: CL9.
 - Unit tests: each problem on a hand-made disk, reported and then repaired,
   and a clean disk reporting nothing, before and after.
 
-### CL11 [ ] disk: host transfer helpers
+### CL14 [ ] disk: host transfer helpers
 
 Depends on: CL2.
 
@@ -800,7 +894,7 @@ Depends on: CL2.
 - Unit tests: odd and even byte counts each way, CRLF, CR, and LF going in,
   and zero bytes dropped coming out.
 
-### CL12 [ ] disk: read-only image files
+### CL15 [ ] disk: read-only image files
 
 Depends on: CL2.
 
