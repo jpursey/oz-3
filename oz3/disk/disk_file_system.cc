@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
+#include <iterator>
 #include <optional>
 #include <utility>
 
@@ -35,8 +37,8 @@ constexpr uint16_t kVersion = 1;
 
 // The superblock and the FAT's first sector, which hold where everything else
 // is and the free list's head.
-constexpr int64_t kSuperblockSector = 0;
-constexpr int64_t kFatHeadSector = 1;
+constexpr int kSuperblockSector = 0;
+constexpr int kFatHeadSector = 1;
 
 // A FAT link ending a chain, or as the free list's head, a full disk.
 constexpr uint16_t kFatEnd = 0xFFFF;
@@ -58,7 +60,7 @@ DiskFileSystem::DiskFileSystem(const DiskHardwareSettings& settings,
 DiskStatus DiskFileSystem::AttachImage(std::unique_ptr<DiskImage> image) {
   CHECK(image != nullptr);
   DetachImage();
-  const int64_t sector_count = image->GetSectorCount();
+  const int sector_count = image->GetSectorCount();
   hardware_.AttachImage(std::move(image));
   const DiskStatus status =
       hardware_.ReadSector(kSuperblockSector, absl::MakeSpan(superblock_));
@@ -120,7 +122,7 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
       status != DiskStatus::kOk) {
     return status;
   }
-  for (int64_t sector = kFatHeadSector + 1; sector <= layout->fat_sectors;
+  for (int sector = kFatHeadSector + 1; sector <= layout->fat_sectors;
        ++sector) {
     if (DiskStatus status =
             hardware_.WriteSector(sector, kZeroSector, WriteCaching::kCache);
@@ -128,7 +130,7 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
       return status;
     }
   }
-  const int64_t root_sector = layout->GetClusterSector(kFormatRootCluster);
+  const int root_sector = layout->GetClusterSector(kFormatRootCluster);
   for (int i = 0; i < layout->sectors_per_cluster; ++i) {
     if (DiskStatus status = hardware_.WriteSector(root_sector + i, kZeroSector,
                                                   WriteCaching::kCache);
@@ -236,17 +238,16 @@ DiskStatus DiskFileSystem::Open(const DiskFilename& name, DiskFile* file) {
   }
 
   // A file has exactly the clusters its size needs, so only an empty file has
-  // no first cluster, and no file is bigger than the disk without the root's
-  // first cluster.
+  // no first cluster.
   const int first_cluster = entry.GetFirstCluster();
-  const int64_t entry_size = entry.GetSize();
-  const int cluster_count = GetLayout(superblock_).cluster_count;
-  if (first_cluster > cluster_count ||
-      (first_cluster == 0) != (entry_size == 0) ||
-      entry_size > (cluster_count - 1) * GetClusterSize()) {
+  const std::optional<int> entry_size = entry.GetSize();
+  const DiskLayout layout = GetLayout(superblock_);
+  if (!entry_size.has_value() || first_cluster > layout.cluster_count ||
+      (first_cluster == 0) != (*entry_size == 0) ||
+      *entry_size > layout.GetMaxFileSize()) {
     return DiskStatus::kCorrupt;
   }
-  OpenSlot(&slots_[free_slot], location, first_cluster, entry_size);
+  OpenSlot(&slots_[free_slot], location, first_cluster, *entry_size);
   *file = free_slot;
   return DiskStatus::kOk;
 }
@@ -281,16 +282,17 @@ DiskStatus DiskFileSystem::Close(DiskFile file) {
 }
 
 DiskStatus DiskFileSystem::Read(DiskFile file, absl::Span<uint16_t> words,
-                                int64_t* count) {
+                                int* count) {
   *count = 0;
   Slot* slot = nullptr;
   if (DiskStatus status = GetSlot(file, &slot); status != DiskStatus::kOk) {
     return status;
   }
-  const int offset = static_cast<int>(slot->position % kDiskSectorWords);
-  const int64_t read_count =
-      std::min({static_cast<int64_t>(words.size()), slot->size - slot->position,
-                static_cast<int64_t>(kDiskSectorWords - offset)});
+  const int offset = slot->position % kDiskSectorWords;
+  const int left =
+      std::min(slot->size - slot->position, kDiskSectorWords - offset);
+  const int read_count =
+      static_cast<int>(std::min<int64_t>(std::ssize(words), left));
   if (read_count == 0) {
     return DiskStatus::kOk;
   }
@@ -303,7 +305,7 @@ DiskStatus DiskFileSystem::Read(DiskFile file, absl::Span<uint16_t> words,
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskFileSystem::Seek(DiskFile file, int64_t position) {
+DiskStatus DiskFileSystem::Seek(DiskFile file, int position) {
   Slot* slot = nullptr;
   if (DiskStatus status = GetSlot(file, &slot); status != DiskStatus::kOk) {
     return status;
@@ -371,7 +373,7 @@ void DiskFileSystem::PutLabel(const DiskLabel& label, Sector* superblock) {
 }
 
 bool DiskFileSystem::IsValidSuperblock(const Sector& superblock,
-                                       int64_t sector_count) {
+                                       int sector_count) {
   if (!std::equal(std::begin(kFormatId), std::end(kFormatId),
                   superblock.begin() + kFormatIdWord) ||
       superblock[kVersionWord] != kVersion) {
@@ -419,9 +421,8 @@ DiskStatus DiskFileSystem::GetWritableStatus() const {
   return DiskStatus::kOk;
 }
 
-int64_t DiskFileSystem::GetClusterSize() const {
-  return static_cast<int64_t>(GetLayout(superblock_).sectors_per_cluster) *
-         kDiskSectorWords;
+int DiskFileSystem::GetClusterSize() const {
+  return GetLayout(superblock_).sectors_per_cluster * kDiskSectorWords;
 }
 
 DiskStatus DiskFileSystem::CountFreeClusters() {
@@ -482,7 +483,7 @@ bool DiskFileSystem::IsOpen(const std::optional<EntryLocation>& entry) const {
 
 void DiskFileSystem::OpenSlot(Slot* slot,
                               const std::optional<EntryLocation>& entry,
-                              int first_cluster, int64_t size) {
+                              int first_cluster, int size) {
   slot->state = SlotState::kOpen;
   slot->entry = entry;
   slot->size = size;
@@ -509,7 +510,7 @@ DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
 // Sectors
 //------------------------------------------------------------------------------
 
-DiskStatus DiskFileSystem::LoadSector(int64_t sector, SectorBuffer* buffer) {
+DiskStatus DiskFileSystem::LoadSector(int sector, SectorBuffer* buffer) {
   if (buffer->sector == sector) {
     return DiskStatus::kOk;
   }
@@ -524,8 +525,8 @@ DiskStatus DiskFileSystem::LoadSector(int64_t sector, SectorBuffer* buffer) {
 }
 
 DiskStatus DiskFileSystem::LoadSlotSector(Slot* slot) {
-  const int64_t cluster_size = GetClusterSize();
-  const int cluster_index = static_cast<int>(slot->position / cluster_size);
+  const int cluster_size = GetClusterSize();
+  const int cluster_index = slot->position / cluster_size;
   if (slot->last_cluster == 0 || cluster_index < slot->last_cluster_index) {
     slot->last_cluster = slot->first_cluster;
     slot->last_cluster_index = 0;
@@ -543,7 +544,7 @@ DiskStatus DiskFileSystem::LoadSlotSector(Slot* slot) {
     slot->last_cluster = next;
     ++slot->last_cluster_index;
   }
-  const int64_t sector =
+  const int sector =
       GetLayout(superblock_).GetClusterSector(slot->last_cluster) +
       slot->position % cluster_size / kDiskSectorWords;
   return LoadSector(sector, &slot->buffer);
@@ -556,7 +557,7 @@ DiskStatus DiskFileSystem::LoadSlotSector(Slot* slot) {
 DiskStatus DiskFileSystem::ReadFatWord(int index, uint16_t* value) {
   CHECK_GE(index, 0);
   CHECK_LE(index, GetLayout(superblock_).cluster_count);
-  const int64_t sector = kFatHeadSector + index / kDiskSectorWords;
+  const int sector = kFatHeadSector + index / kDiskSectorWords;
   SectorBuffer* buffer = (sector == kFatHeadSector ? &fat_head_ : &fat_work_);
   if (DiskStatus status = LoadSector(sector, buffer);
       status != DiskStatus::kOk) {
@@ -619,7 +620,7 @@ DiskStatus DiskFileSystem::FindNextEntry(
       return status;
     }
     const absl::Span<const uint16_t> words = slot->buffer.words;
-    for (int offset = static_cast<int>(slot->position % kDiskSectorWords);
+    for (int offset = slot->position % kDiskSectorWords;
          offset < kDiskSectorWords; offset += DiskDirEntry::kWordCount) {
       slot->position += DiskDirEntry::kWordCount;
       // A free entry's first word is 0.

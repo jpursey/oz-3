@@ -35,12 +35,12 @@ An image file is an 8-word container header followed by the sectors in order. Th
 | 0, 1 | Image ID | `"OZDK"` packed: 5A4Fh, 4B44h |
 | 2 | Version | 1 |
 | 3 | Sector size | In words; 256 |
-| 4, 5 | Sector count | A dword; 1 or more |
+| 4, 5 | Sector count | A dword; 1 to 4,194,433 |
 | 6 | Flags | Bit 0: write-protected. Others reserved |
 | 7 | Reserved |  |
 
 - Sector size is fixed at 256 words (512 bytes). It is recorded so another size remains possible in a later version.
-- The sector count is the disk's physical size. A file system may use fewer sectors; any beyond it are unused.
+- The sector count is the disk's physical size. A file system may use fewer sectors; any beyond it are unused. The most is 4,194,433, the most a file system uses (the superblock, 256 FAT sectors, and 65,534 clusters of 64 sectors), since a bigger disk can't be formatted.
 - Write protection belongs to the medium, like a floppy's notch, so it lives here rather than in the drive's configuration. The drive reports it through `MEDIA` and refuses changes to a protected disk.
 - A read-only host file is a write-protected image too, whatever its header says: it is opened for reading only, and its flags have bit 0 set. The header's bit is the notch, which travels with the image, and the host's read-only attribute is the host's own protection, which the image never changes. Protection can't be cleared on a read-only host file.
 - A blank image is all zero sectors: an unformatted disk.
@@ -81,7 +81,7 @@ The superblock is words 0–31 of sector 0, and records everything needed to fin
 | 2 | Version | 1 |
 | 3 | Sectors per cluster | A power of two, 1 to 64 |
 | 4 | Cluster count | 1 to 65,534 |
-| 5 | FAT sectors | At least (cluster count + 1) ÷ 256, rounded up |
+| 5 | FAT sectors | At least (cluster count + 1) ÷ 256, rounded up, and at most 256 |
 | 6 | Root cluster | The root directory's first cluster |
 | 7 | Flags | Reserved |
 | 8–15 | Volume label | Packed text of 0–16 characters from the name set, zero-padded |
@@ -126,7 +126,7 @@ A directory is a cluster chain of 16-word entries, 16 to a sector. The root dire
 | 0–7 | Name | The 12.4 name field (see Names and patterns) |
 | 8 | Attributes | Bits, below |
 | 9 | First cluster | 0 for an empty file |
-| 10, 11 | Size | A dword, in words |
+| 10, 11 | Size | A dword, in words, at most what the clusters other than the root's first hold |
 | 12–15 | Modified | Date and time in the timer's layout, or all zeros |
 
 | Attribute bit | Meaning |

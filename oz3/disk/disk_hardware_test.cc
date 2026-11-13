@@ -28,7 +28,7 @@ using WriteCaching = DiskHardware::WriteCaching;
 
 constexpr char kPath[] = "mem:/disk.img";
 constexpr char kOtherPath[] = "mem:/other.img";
-constexpr int64_t kSectorCount = 8;
+constexpr int kSectorCount = 8;
 
 // Timing that is easy to add up: a read takes 1 second, a write 2 seconds, a
 // seek 100 milliseconds, and a read from the cache 10 milliseconds.
@@ -79,7 +79,7 @@ class DiskHardwareTest : public ::testing::Test {
     if (!image.ok()) {
       return nullptr;
     }
-    for (int64_t sector = 0; sector < kSectorCount; ++sector) {
+    for (int sector = 0; sector < kSectorCount; ++sector) {
       EXPECT_EQ((*image)->WriteSector(sector, MakeSector(static_cast<uint16_t>(
                                                   sector * 0x100 + first))),
                 DiskStatus::kOk);
@@ -97,7 +97,7 @@ class DiskHardwareTest : public ::testing::Test {
   }
 
   // Reads `sector`, expecting kOk, and returns its words.
-  Sector Read(int64_t sector) {
+  Sector Read(int sector) {
     Sector words(kDiskSectorWords);
     EXPECT_EQ(hardware_->ReadSector(sector, absl::MakeSpan(words)),
               DiskStatus::kOk);
@@ -105,7 +105,7 @@ class DiskHardwareTest : public ::testing::Test {
   }
 
   // Writes `words` to `sector` with `caching`, expecting kOk.
-  void Write(int64_t sector, const Sector& words, WriteCaching caching) {
+  void Write(int sector, const Sector& words, WriteCaching caching) {
     EXPECT_EQ(hardware_->WriteSector(sector, words, caching), DiskStatus::kOk);
   }
 

@@ -14,13 +14,11 @@
 #include "absl/types/span.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
+#include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 
 namespace oz3 {
-
-// The words in a sector.
-inline constexpr int kDiskSectorWords = 256;
 
 // A disk image: a host file holding an 8-word header, and then a flat array of
 // sectors. Words are stored two bytes each, low byte first, so sector n starts
@@ -42,13 +40,13 @@ class DiskImage final : public DiskMedia {
   // outlive the image. Fails if `sector_count` is not 1 to kMaxSectorCount, or
   // the host file can't be written.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Create(
-      gb::FileSystem* file_system, std::string_view path, int64_t sector_count);
+      gb::FileSystem* file_system, std::string_view path, int sector_count);
 
   // Opens the existing image at `path` for reading and writing. `file_system`
   // must outlive the image. Fails with a message saying what is wrong if the
   // file is missing, can't be opened for reading and writing, isn't an image,
-  // has a version or sector size this doesn't support, has no sectors, or is
-  // too short for the sectors its header counts.
+  // has a version or sector size this doesn't support, has no sectors or more
+  // than kMaxSectorCount, or is too short for the sectors its header counts.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Open(
       gb::FileSystem* file_system, std::string_view path);
 
@@ -63,23 +61,22 @@ class DiskImage final : public DiskMedia {
   // Reads sector `sector` into `words`. Returns kOk, kBadArgument if the
   // sector is out of range or `words` isn't kDiskSectorWords long, or kIoError
   // if the host read fails.
-  DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
+  DiskStatus ReadSector(int sector, absl::Span<uint16_t> words);
 
   // Writes `words` to sector `sector`. Returns kOk, kBadArgument as for
   // ReadSector, kWriteProtected if the image is write-protected, or kIoError
   // if the host write or flush fails.
-  DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words);
+  DiskStatus WriteSector(int sector, absl::Span<const uint16_t> words);
 
  private:
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
 
-  DiskImage(std::unique_ptr<gb::File> file, int64_t sector_count,
-            uint16_t flags);
+  DiskImage(std::unique_ptr<gb::File> file, int sector_count, uint16_t flags);
 
-  // Returns whether `sector` and `size` are a sector and a sector's words.
-  bool IsValidSector(int64_t sector, int64_t size) const;
+  // Returns whether `sector` is a sector, and `words` a sector's words.
+  bool IsValidSector(int sector, absl::Span<const uint16_t> words) const;
 
   // Writes `flags` to the header, flushing it.
   DiskStatus WriteFlags(uint16_t flags) override;

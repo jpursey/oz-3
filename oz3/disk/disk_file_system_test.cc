@@ -42,10 +42,10 @@ constexpr char kOtherPath[] = "mem:/other.img";
 constexpr int kMaxOpenFiles = 4;
 
 // A 360 KB floppy: 716 clusters of one sector, after 3 FAT sectors.
-constexpr int64_t kFloppySectors = 720;
+constexpr int kFloppySectors = 720;
 
 // A disk of 10 clusters of one sector, after 1 FAT sector.
-constexpr int64_t kSmallSectors = 12;
+constexpr int kSmallSectors = 12;
 constexpr int kSmallClusters = 10;
 
 // What reads take with timed settings: a sector read takes 1 second, and a
@@ -75,16 +75,16 @@ Sector MakeFilledSector(uint16_t value) {
 }
 
 // Returns `count` words counting up from `first`, as a file's data.
-std::vector<uint16_t> MakeCountingWords(uint16_t first, int64_t count) {
+std::vector<uint16_t> MakeCountingWords(uint16_t first, int count) {
   std::vector<uint16_t> words(count);
-  for (int64_t i = 0; i < count; ++i) {
+  for (int i = 0; i < count; ++i) {
     words[i] = static_cast<uint16_t>(first + i);
   }
   return words;
 }
 
 // Returns a directory entry for the file `name`, modified at GetNow().
-DiskDirEntry MakeEntry(std::string_view name, int first_cluster, int64_t size,
+DiskDirEntry MakeEntry(std::string_view name, int first_cluster, int size,
                        uint16_t attributes = 0) {
   DiskDirEntry entry;
   entry.SetName(GetName(name));
@@ -95,13 +95,13 @@ DiskDirEntry MakeEntry(std::string_view name, int first_cluster, int64_t size,
   return entry;
 }
 
-Sector ReadSector(DiskImage& image, int64_t sector) {
+Sector ReadSector(DiskImage& image, int sector) {
   Sector words;
   EXPECT_EQ(image.ReadSector(sector, absl::MakeSpan(words)), DiskStatus::kOk);
   return words;
 }
 
-void WriteSector(DiskImage& image, int64_t sector, const Sector& words) {
+void WriteSector(DiskImage& image, int sector, const Sector& words) {
   EXPECT_EQ(image.WriteSector(sector, words), DiskStatus::kOk);
 }
 
@@ -123,7 +123,7 @@ class DiskEditor {
 
   // Sets the FAT's word `index` to `value`.
   void SetFatWord(int index, uint16_t value) {
-    const int64_t sector = 1 + index / kDiskSectorWords;
+    const int sector = 1 + index / kDiskSectorWords;
     Sector words = ReadSector(image_, sector);
     words[index % kDiskSectorWords] = value;
     WriteSector(image_, sector, words);
@@ -140,7 +140,7 @@ class DiskEditor {
   }
 
   // Sets entry `index` of directory sector `sector` to `entry`.
-  void SetEntry(int64_t sector, int index, const DiskDirEntry& entry) {
+  void SetEntry(int sector, int index, const DiskDirEntry& entry) {
     Sector words = ReadSector(image_, sector);
     std::copy(entry.GetWords().begin(), entry.GetWords().end(),
               words.begin() + index * DiskDirEntry::kWordCount);
@@ -155,11 +155,10 @@ class DiskEditor {
 
   // Writes `size` words counting up from `first_word` into `clusters`, in
   // order, filling the rest of the last sector with EEEEh.
-  void WriteData(absl::Span<const int> clusters, int64_t size,
+  void WriteData(absl::Span<const int> clusters, int size,
                  uint16_t first_word) {
-    const int64_t cluster_words =
-        layout_.sectors_per_cluster * int64_t{kDiskSectorWords};
-    for (int64_t start = 0; start < size; start += kDiskSectorWords) {
+    const int cluster_words = layout_.sectors_per_cluster * kDiskSectorWords;
+    for (int start = 0; start < size; start += kDiskSectorWords) {
       Sector words = MakeFilledSector(0xEEEE);
       for (int i = 0; i < kDiskSectorWords && start + i < size; ++i) {
         words[i] = static_cast<uint16_t>(first_word + start + i);
@@ -175,7 +174,7 @@ class DiskEditor {
   // Adds the file `name` as the root's entry `index`, with `size` words
   // counting up from `first_word` in `clusters`, and returns its entry.
   DiskDirEntry AddFile(int index, std::string_view name,
-                       std::vector<int> clusters, int64_t size,
+                       std::vector<int> clusters, int size,
                        uint16_t first_word = 0, uint16_t attributes = 0) {
     SetChain(clusters);
     WriteData(clusters, size, first_word);
@@ -203,7 +202,7 @@ class DiskFileSystemTest : public ::testing::Test {
   }
 
   // Returns a new blank image of `sector_count` sectors at `path`.
-  std::unique_ptr<DiskImage> MakeImage(int64_t sector_count,
+  std::unique_ptr<DiskImage> MakeImage(int sector_count,
                                        std::string_view path = kPath) {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Create(&host_, path, sector_count);
@@ -213,7 +212,7 @@ class DiskFileSystemTest : public ::testing::Test {
 
   // Attaches a new image of `sector_count` sectors, and formats it with the
   // label "WORK" and `sectors_per_cluster`.
-  void AttachFormatted(int64_t sector_count, int sectors_per_cluster = 0) {
+  void AttachFormatted(int sector_count, int sectors_per_cluster = 0) {
     EXPECT_EQ(file_system_.AttachImage(MakeImage(sector_count)),
               DiskStatus::kUnformatted);
     EXPECT_EQ(
@@ -232,7 +231,7 @@ class DiskFileSystemTest : public ::testing::Test {
 
   // Detaches the image, sets word `index` of its sector `sector` to `value`,
   // and attaches it again, returning what attaching does.
-  DiskStatus PatchWord(int64_t sector, int index, uint16_t value) {
+  DiskStatus PatchWord(int sector, int index, uint16_t value) {
     std::unique_ptr<DiskImage> image = file_system_.DetachImage();
     Sector words = ReadSector(*image, sector);
     words[index] = value;
@@ -273,7 +272,7 @@ class DiskFileSystemTest : public ::testing::Test {
   // Checks that every operation on `file` but Close returns `status`.
   void ExpectOperationsReturn(DiskFile file, DiskStatus status) {
     std::vector<uint16_t> words(10);
-    int64_t count = -1;
+    int count = -1;
     EXPECT_EQ(file_system_.Read(file, absl::MakeSpan(words), &count), status);
     EXPECT_EQ(count, 0);
     EXPECT_EQ(file_system_.Seek(file, 0), status);
@@ -291,10 +290,10 @@ class DiskFileSystemTest : public ::testing::Test {
     std::vector<uint16_t> buffer(chunk);
     while (true) {
       const DiskFileInfo info = GetInfo(file);
-      const int64_t expected =
-          std::min({int64_t{chunk}, info.size - info.position,
+      const int expected =
+          std::min({chunk, info.size - info.position,
                     kDiskSectorWords - info.position % kDiskSectorWords});
-      int64_t count = -1;
+      int count = -1;
       EXPECT_EQ(file_system_.Read(file, absl::MakeSpan(buffer), &count),
                 DiskStatus::kOk);
       EXPECT_EQ(count, expected) << "At " << info.position;
@@ -352,7 +351,7 @@ TEST_F(DiskFileSystemTest, MediaIsTheImageFormattedOrNot) {
 TEST_F(DiskFileSystemTest, FormatWritesTheSuperblockFatAndRoot) {
   // Fill every sector, to see what formatting clears.
   std::unique_ptr<DiskImage> image = MakeImage(kFloppySectors);
-  for (int64_t sector = 0; sector < kFloppySectors; ++sector) {
+  for (int sector = 0; sector < kFloppySectors; ++sector) {
     WriteSector(*image, sector, MakeFilledSector(0xEEEE));
   }
   ASSERT_EQ(file_system_.AttachImage(std::move(image)),
@@ -391,7 +390,7 @@ TEST_F(DiskFileSystemTest, FormatWritesTheSuperblockFatAndRoot) {
 
 TEST_F(DiskFileSystemTest, FormatZeroesTheRootsWholeCluster) {
   std::unique_ptr<DiskImage> image = MakeImage(kFloppySectors);
-  for (int64_t sector = 0; sector < 8; ++sector) {
+  for (int sector = 0; sector < 8; ++sector) {
     WriteSector(*image, sector, MakeFilledSector(0xEEEE));
   }
   ASSERT_EQ(file_system_.AttachImage(std::move(image)),
@@ -408,7 +407,7 @@ TEST_F(DiskFileSystemTest, FormatZeroesTheRootsWholeCluster) {
   // One FAT sector, then the root's four.
   image = file_system_.DetachImage();
   EXPECT_EQ(ReadSector(*image, 0)[5], 1);
-  for (int64_t sector = 2; sector < 6; ++sector) {
+  for (int sector = 2; sector < 6; ++sector) {
     EXPECT_THAT(ReadSector(*image, sector), Each(0)) << "Sector " << sector;
   }
   EXPECT_THAT(ReadSector(*image, 6), Each(0xEEEE));
@@ -542,7 +541,7 @@ TEST_F(DiskFileSystemTest, ADiskBiggerThanItsImageIsUnformatted) {
   // Copy the disk into an image one sector smaller.
   std::unique_ptr<DiskImage> smaller =
       MakeImage(kFloppySectors - 1, kOtherPath);
-  for (int64_t sector = 0; sector < kFloppySectors - 1; ++sector) {
+  for (int sector = 0; sector < kFloppySectors - 1; ++sector) {
     WriteSector(*smaller, sector, ReadSector(*image, sector));
   }
   EXPECT_EQ(file_system_.AttachImage(std::move(smaller)),
@@ -858,7 +857,7 @@ TEST_F(DiskFileSystemTest, ReadingAnEmptyFile) {
   const DiskFile file = OpenFile("EMPTY");
   EXPECT_EQ(GetInfo(file).size, 0);
   std::vector<uint16_t> words(10);
-  int64_t count = -1;
+  int count = -1;
   EXPECT_EQ(file_system_.Read(file, absl::MakeSpan(words), &count),
             DiskStatus::kOk);
   EXPECT_EQ(count, 0);
@@ -871,7 +870,7 @@ TEST_F(DiskFileSystemTest, Seeking) {
   });
   const DiskFile file = OpenFile("HELLO.TXT");
   std::vector<uint16_t> words(1000);
-  int64_t count = 0;
+  int count = 0;
 
   // Into the second cluster, and partway into a sector.
   ASSERT_EQ(file_system_.Seek(file, 300), DiskStatus::kOk);
@@ -936,7 +935,7 @@ TEST_F(DiskFileSystemTest, AnOpenRootIsInUse) {
 
   // It reads the raw entries.
   std::vector<uint16_t> words(DiskDirEntry::kWordCount);
-  int64_t count = 0;
+  int count = 0;
   ASSERT_EQ(file_system_.Read(root, absl::MakeSpan(words), &count),
             DiskStatus::kOk);
   ASSERT_EQ(count, DiskDirEntry::kWordCount);
@@ -1062,7 +1061,7 @@ TEST_F(DiskFileSystemTest, FindListsMatchesInOrder) {
 
   DiskFile root = -1;
   ASSERT_EQ(file_system_.OpenRoot(&root), DiskStatus::kOk);
-  const int64_t size = GetInfo(root).size;
+  const int size = GetInfo(root).size;
   ASSERT_EQ(size, 4 * kDiskSectorWords);
   DiskDirEntry entry;
   for (const DiskDirEntry& expected : {a, c, hidden, last}) {
@@ -1154,7 +1153,7 @@ TEST_F(DiskFileSystemTest, SequentialReadsFollowTheChainWithoutWalking) {
   timed.CollectBusyTime();
 
   std::vector<uint16_t> words(kDiskSectorWords);
-  int64_t count = 0;
+  int count = 0;
   for (int i = 0; i < 3; ++i) {
     ASSERT_EQ(timed.Read(file, absl::MakeSpan(words), &count), DiskStatus::kOk);
     ASSERT_EQ(count, kDiskSectorWords);
@@ -1203,7 +1202,7 @@ TEST_F(DiskFileSystemTest, BrokenChainsAreCorrupt) {
   for (std::string_view name : {"SHORT", "OUT"}) {
     SCOPED_TRACE(name);
     const DiskFile file = OpenFile(name);
-    int64_t count = 0;
+    int count = 0;
     ASSERT_EQ(file_system_.Read(file, absl::MakeSpan(words), &count),
               DiskStatus::kOk);
     EXPECT_EQ(file_system_.Read(file, absl::MakeSpan(words), &count),
@@ -1216,7 +1215,7 @@ TEST_F(DiskFileSystemTest, BrokenChainsAreCorrupt) {
 TEST_F(DiskFileSystemTest, EntriesThatCantBeOnTheDiskAreCorrupt) {
   struct BadEntry {
     int first_cluster;
-    int64_t size;
+    int size;
   };
   const BadEntry kBadEntries[] = {
       {kSmallClusters + 1, 10},  // First cluster
@@ -1235,6 +1234,15 @@ TEST_F(DiskFileSystemTest, EntriesThatCantBeOnTheDiskAreCorrupt) {
     DiskFile file = -1;
     EXPECT_EQ(file_system_.Open(GetName("BAD"), &file), DiskStatus::kCorrupt);
   }
+
+  // A size no disk holds can only come from the disk's own words.
+  EditDisk([](DiskEditor& editor) {
+    DiskDirEntry::Words words = MakeEntry("HUGE", 2, 10).GetWords();
+    words[10] = words[11] = 0xFFFF;
+    editor.SetRootEntry(0, DiskDirEntry::FromWords(words));
+  });
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Open(GetName("HUGE"), &file), DiskStatus::kCorrupt);
 
   // Every cluster but the root's is the most a file can have.
   EditDisk([](DiskEditor& editor) {
@@ -1281,7 +1289,7 @@ TEST_F(DiskFileSystemTest, ReadFailsWhenTheHostReadFails) {
 
   protocol_->SetLimits({.reads = 0});
   std::vector<uint16_t> words(10);
-  int64_t count = -1;
+  int count = -1;
   EXPECT_EQ(file_system_.Read(file, absl::MakeSpan(words), &count),
             DiskStatus::kIoError);
   EXPECT_EQ(count, 0);

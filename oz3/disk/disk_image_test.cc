@@ -68,7 +68,7 @@ class DiskImageTest : public ::testing::Test {
   // Writes a host file at kPath holding `header` and then `sector_count`
   // zero sectors.
   void WriteImageFile(std::initializer_list<uint16_t> header,
-                      int64_t sector_count) {
+                      int sector_count) {
     std::vector<std::byte> bytes = GetBytes(header);
     bytes.resize(bytes.size() + sector_count * kSectorBytes);
     ASSERT_TRUE(file_system_.WriteFile(kPath, bytes));
@@ -112,8 +112,7 @@ TEST_F(DiskImageTest, CreateReplacesAnExistingFile) {
 }
 
 TEST_F(DiskImageTest, CreateFailsForBadSectorCounts) {
-  for (int64_t sector_count :
-       {int64_t{-1}, int64_t{0}, DiskImage::kMaxSectorCount + 1}) {
+  for (int sector_count : {-1, 0, DiskImage::kMaxSectorCount + 1}) {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Create(&file_system_, kPath, sector_count);
     EXPECT_EQ(image.status().code(), absl::StatusCode::kInvalidArgument)
@@ -152,7 +151,7 @@ TEST_F(DiskImageTest, OpenReadsWhatWasWritten) {
 }
 
 TEST_F(DiskImageTest, SectorCountIsADword) {
-  const int64_t sector_count = 0x10001;
+  const int sector_count = 0x10001;
   {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Create(&file_system_, kPath, sector_count);
@@ -214,7 +213,7 @@ TEST_F(DiskImageTest, RejectsSectorsOutOfRange) {
       DiskImage::Create(&file_system_, kPath, 5);
   ASSERT_TRUE(image.ok()) << image.status();
   Sector sector(kDiskSectorWords);
-  for (int64_t index : {int64_t{-1}, int64_t{5}}) {
+  for (int index : {-1, 5}) {
     EXPECT_EQ((*image)->ReadSector(index, absl::MakeSpan(sector)),
               DiskStatus::kBadArgument)
         << index;
@@ -299,6 +298,16 @@ TEST_F(DiskImageTest, OpenFailsForNoSectors) {
       DiskImage::Open(&file_system_, kPath);
   EXPECT_EQ(image.status().code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(image.status().message(), HasSubstr("has no sectors"));
+}
+
+TEST_F(DiskImageTest, OpenFailsForMoreSectorsThanTheMost) {
+  // One more than the most, 4,194,434 = 00400082h.
+  static_assert(DiskImage::kMaxSectorCount + 1 == 0x0040'0082);
+  WriteImageFile({0x5A4F, 0x4B44, 1, 256, 0x0082, 0x0040, 0, 0}, 0);
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Open(&file_system_, kPath);
+  EXPECT_EQ(image.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(image.status().message(), HasSubstr("has 4194434 sectors"));
 }
 
 TEST_F(DiskImageTest, OpenFailsForAFileTooShortForItsSectors) {

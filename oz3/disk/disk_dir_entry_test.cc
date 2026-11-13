@@ -5,6 +5,7 @@
 
 #include "oz3/disk/disk_dir_entry.h"
 
+#include <cstdint>
 #include <optional>
 
 #include "absl/time/civil_time.h"
@@ -85,14 +86,26 @@ TEST(DiskDirEntryTest, SettersChangeOnlyTheirWords) {
 
 TEST(DiskDirEntryTest, SizeLimits) {
   DiskDirEntry entry;
+  // 65,533 clusters of 64 sectors, as the root has one of 65,534.
+  EXPECT_EQ(DiskDirEntry::kMaxSize, 1'073'692'672);
   entry.SetSize(DiskDirEntry::kMaxSize);
-  EXPECT_EQ(entry.GetSize(), 0xFFFF'FFFF);
-  EXPECT_EQ(entry.GetWords()[10], 0xFFFF);
-  EXPECT_EQ(entry.GetWords()[11], 0xFFFF);
+  EXPECT_EQ(entry.GetSize(), 0x3FFF'4000);
+  EXPECT_EQ(entry.GetWords()[10], 0x4000);
+  EXPECT_EQ(entry.GetWords()[11], 0x3FFF);
   entry.SetSize(0x10000);
   EXPECT_EQ(entry.GetSize(), 0x10000);
   EXPECT_EQ(entry.GetWords()[10], 0);
   EXPECT_EQ(entry.GetWords()[11], 1);
+}
+
+TEST(DiskDirEntryTest, SizesNoDiskHoldsReadAsNone) {
+  for (uint32_t size : {0x3FFF'4001u, 0xFFFF'FFFFu}) {
+    SCOPED_TRACE(size);
+    DiskDirEntry::Words words = {};
+    words[10] = static_cast<uint16_t>(size);
+    words[11] = static_cast<uint16_t>(size >> 16);
+    EXPECT_EQ(DiskDirEntry::FromWords(words).GetSize(), std::nullopt);
+  }
 }
 
 TEST(DiskDirEntryTest, FirstClusterLimit) {

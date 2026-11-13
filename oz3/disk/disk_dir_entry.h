@@ -13,6 +13,7 @@
 #include "absl/types/span.h"
 #include "oz3/core/date_time.h"
 #include "oz3/disk/disk_filename.h"
+#include "oz3/disk/disk_layout.h"
 
 namespace oz3 {
 
@@ -48,8 +49,13 @@ class DiskDirEntry final {
   // The words in a directory entry.
   static constexpr int kWordCount = static_cast<int>(Words().size());
 
-  // The largest size, in words.
-  static constexpr int64_t kMaxSize = 0xFFFF'FFFF;
+  // The largest size, in words: the most a file on the largest disk can have.
+  static constexpr int kMaxSize =
+      DiskLayout{
+          .sectors_per_cluster = DiskLayout::kMaxSectorsPerCluster,
+          .cluster_count = DiskLayout::kMaxClusterCount,
+      }
+          .GetMaxFileSize();
 
   // The largest first cluster word.
   static constexpr int kMaxFirstCluster = 0xFFFF;
@@ -96,9 +102,12 @@ class DiskDirEntry final {
   int GetFirstCluster() const { return words_[kFirstClusterWord]; }
   void SetFirstCluster(int cluster);
 
-  // Returns or sets the size, in words. `size` must be 0 to kMaxSize.
-  int64_t GetSize() const;
-  void SetSize(int64_t size);
+  // Returns the size, in words, or nullopt if it is more than kMaxSize, which
+  // no disk holds.
+  std::optional<int> GetSize() const;
+
+  // Sets the size, in words. `size` must be 0 to kMaxSize.
+  void SetSize(int size);
 
   // Returns or sets the modified time.
   DateTime GetModified() const;

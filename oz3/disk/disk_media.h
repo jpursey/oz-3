@@ -8,6 +8,7 @@
 
 #include <cstdint>
 
+#include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_status.h"
 
 namespace oz3 {
@@ -27,8 +28,9 @@ class DiskMedia {
   // The header's flags: bit 0 is write protection. The others are reserved.
   static constexpr uint16_t kWriteProtectedFlag = 0x0001;
 
-  // The most sectors a medium can have, as its header counts them in a dword.
-  static constexpr int64_t kMaxSectorCount = 0xFFFF'FFFF;
+  // The most sectors a medium can have: the most a disk uses, as a bigger
+  // medium can't be formatted to use them.
+  static constexpr int kMaxSectorCount = DiskLayout::kMaxSectorCount;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -42,7 +44,7 @@ class DiskMedia {
   //----------------------------------------------------------------------------
 
   // Returns the number of sectors, from 1 to kMaxSectorCount.
-  int64_t GetSectorCount() const { return sector_count_; }
+  int GetSectorCount() const { return sector_count_; }
 
   // Returns the header's flags word, as the drive's MEDIA command reports it.
   uint16_t GetFlags() const { return flags_; }
@@ -64,7 +66,7 @@ class DiskMedia {
   //----------------------------------------------------------------------------
 
   // `sector_count` must be 1 to kMaxSectorCount.
-  DiskMedia(int64_t sector_count, uint16_t flags);
+  DiskMedia(int sector_count, uint16_t flags);
   ~DiskMedia() = default;
 
  private:
@@ -75,7 +77,7 @@ class DiskMedia {
   // Writes `flags` to the header. Returns kOk, or kIoError if the write fails.
   virtual DiskStatus WriteFlags(uint16_t flags) = 0;
 
-  const int64_t sector_count_;
+  const int sector_count_;
   uint16_t flags_;
 };
 

@@ -133,8 +133,10 @@ confused with Game Bits' `gb::File`, `gb::FileSystem`, `gb::RawFile`, or
   `DiskDirEntry::kWordCount` (16). Names and labels being the same size is
   happenstance, so each has its own.
 
-Words are `uint16_t`. Sector numbers, positions, and sizes are `int64_t`, as
-they need 32 bits unsigned. Cluster numbers are `int`.
+Words are `uint16_t`. Sector numbers, positions, sizes, and cluster numbers
+are `int`: an image has at most the sectors a file system can use, so the
+largest fits with room to spare (see CL7). Byte offsets in an image file are
+`int64_t`, as the largest image is just over 2 GiB.
 
 ### core: DateTime
 
@@ -179,7 +181,7 @@ class DateTime {
 // it, setting the header's flags through WriteFlags.
 class DiskMedia {
  public:
-  int64_t GetSectorCount() const;
+  int GetSectorCount() const;
   uint16_t GetFlags() const;  // The header's flags word, as MEDIA reports it.
   bool IsWriteProtected() const;
 
@@ -188,7 +190,7 @@ class DiskMedia {
   DiskStatus SetWriteProtected(bool write_protected);
 
  protected:
-  DiskMedia(int64_t sector_count, uint16_t flags);
+  DiskMedia(int sector_count, uint16_t flags);
   ~DiskMedia();
 
  private:
@@ -202,7 +204,7 @@ class DiskImage final : public DiskMedia {
   // file there. `file_system` must outlive the image.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Create(
       gb::FileSystem* file_system, std::string_view path,
-      int64_t sector_count);
+      int sector_count);
 
   // Opens an existing image, for reading and writing, or only reading, as a
   // write-protected image, if the host file is read-only.
@@ -211,8 +213,8 @@ class DiskImage final : public DiskMedia {
 
   // Reads or writes one whole sector. Fail with kIoError, and writes with
   // kWriteProtected on a protected image.
-  DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
-  DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words);
+  DiskStatus ReadSector(int sector, absl::Span<uint16_t> words);
+  DiskStatus WriteSector(int sector, absl::Span<const uint16_t> words);
 };
 ```
 
@@ -285,8 +287,8 @@ class DiskHardware {
   DiskMedia* GetMedia();
 
   // kNoDisk with no image.
-  DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
-  DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words,
+  DiskStatus ReadSector(int sector, absl::Span<uint16_t> words);
+  DiskStatus WriteSector(int sector, absl::Span<const uint16_t> words,
                         WriteCaching caching);
 
   // Returns the simulated time the reads and writes took since the last call,
@@ -379,20 +381,24 @@ with no file system, so disk_design.md's layout rules live in one place:
 struct DiskLayout {
   static constexpr int kMaxSectorsPerCluster = 64;
   static constexpr int kMaxClusterCount = 0xFFFE;
-  static constexpr int kMaxFatSectors = 0xFFFF;  // As a word holds.
+  static constexpr int kMaxFatSectors = 256;  // What the most clusters need.
+  static constexpr int kMaxSectorCount = 4'194'433;  // The largest disk.
 
   auto operator<=>(const DiskLayout&) const = default;
 
   // Returns whether every field is in range, and the disk fits in an image of
   // `sector_count` sectors. The FAT needs ⌈(cluster_count + 1) ÷ 256⌉ sectors,
   // a word per cluster and the free list's head, but may have more.
-  bool IsValid(int64_t sector_count) const;
+  bool IsValid(int sector_count) const;
 
   // Returns the sectors the disk uses: 1 + FAT + clusters.
-  int64_t GetSectorCount() const;
+  int GetSectorCount() const;
 
   // Returns the first sector of `cluster` (1 to cluster_count).
-  int64_t GetClusterSector(int cluster) const;
+  int GetClusterSector(int cluster) const;
+
+  // Returns the most words a file can have: every cluster but the root's.
+  constexpr int GetMaxFileSize() const;
 
   int sectors_per_cluster = 0;  // A power of two, 1 to 64.
   int cluster_count = 0;        // 1 to 65,534.
@@ -402,7 +408,7 @@ struct DiskLayout {
 // Returns the layout that formatting an image of `sector_count` sectors gives
 // with `sectors_per_cluster` (0 picks the smallest that covers the image), or
 // nullopt if none does.
-std::optional<DiskLayout> ChooseDiskLayout(int64_t sector_count,
+std::optional<DiskLayout> ChooseDiskLayout(int sector_count,
                                            int sectors_per_cluster);
 ```
 
@@ -464,12 +470,12 @@ class DiskFileSystem {
   DiskStatus Flush(DateTime now);  // Every open file and buffer.
 
   // Data. Read and Write move at most up to the next sector boundary.
-  DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int64_t* count);
+  DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int* count);
   DiskStatus Write(DiskFile file, absl::Span<const uint16_t> words,
-                   int64_t* count);
-  DiskStatus Seek(DiskFile file, int64_t position);
+                   int* count);
+  DiskStatus Seek(DiskFile file, int position);
   DiskStatus GetFileInfo(DiskFile file, DiskFileInfo* info);
-  DiskStatus GetWritableWords(DiskFile file, int64_t* words);
+  DiskStatus GetWritableWords(DiskFile file, int* words);
   DiskStatus Truncate(DiskFile file);
 
   // Directory.
@@ -688,14 +694,15 @@ Depends on: CL5.
   entries between, the hardware time of a sequential read (no walking), and
   broken chains as `kCorrupt`.
 
-### CL7 [ ] disk: int for sectors, sizes, and positions
+### CL7 [x] disk: int for sectors, sizes, and positions
 
 Depends on: CL6.
 
 - The limits come from `DiskLayout`'s: `DiskMedia::kMaxSectorCount` is the
   largest image a format can use, 4,194,433 sectors (the superblock, 256 FAT
   sectors, and 65,534 clusters of 64 sectors), and `DiskDirEntry::kMaxSize`
-  is what the most clusters hold, 1,073,709,056 words. To confirm in review:
+  is what the largest disk's clusters hold but for the root's first,
+  1,073,692,672 words. To confirm in review:
   `DiskLayout::kMaxFatSectors` becomes 256, the FAT the most clusters need,
   so a superblock can't claim a FAT no format writes.
 - Sector numbers and counts, sizes, positions, and transfer counts are `int`
@@ -704,13 +711,14 @@ Depends on: CL6.
   this plan's interfaces above. Byte offsets in an image file stay `int64_t`,
   as the largest image is just over 2 GiB.
 - Dwords read from a disk can exceed the limits, so they are checked before
-  they become `int`: `DiskImage::Open` already refuses a header's sector
-  count above the limit, and `DiskDirEntry` gives a size above `kMaxSize` as
-  invalid (to settle in the CL, for example as nullopt, like a bad name), which
-  `Open` returns as `kCorrupt`.
+  they become `int`: `DiskImage::Open` refuses a header's sector count above
+  the limit, and `DiskDirEntry::GetSize` gives nullopt for a size above
+  `kMaxSize`, as `GetName` does for a bad name, which `Open` returns as
+  `kCorrupt`.
 - disk_design.md: an image header's sector count is 1 to 4,194,433, and a
   directory entry's size is at most what the disk holds. The drive's dword
-  fields are unchanged, so it casts at the protocol.
+  fields are unchanged, so it checks a dword against the limit before it
+  casts: a `SEEK` beyond the largest size is past the end, not negative.
 - Unused, so no visible change.
 
 **Verify**

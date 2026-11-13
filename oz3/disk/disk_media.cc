@@ -7,7 +7,7 @@
 
 namespace oz3 {
 
-DiskMedia::DiskMedia(int64_t sector_count, uint16_t flags)
+DiskMedia::DiskMedia(int sector_count, uint16_t flags)
     : sector_count_(sector_count), flags_(flags) {}
 
 DiskStatus DiskMedia::SetWriteProtected(bool write_protected) {

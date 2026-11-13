@@ -45,8 +45,8 @@ using DiskFile = int;
 struct DiskFileInfo {
   bool operator==(const DiskFileInfo&) const = default;
 
-  int64_t position = 0;
-  int64_t size = 0;
+  int position = 0;
+  int size = 0;
 };
 
 // A drive's file system: the disk format in docs/disk_design.md, on whatever
@@ -172,11 +172,11 @@ class DiskFileSystem final {
   // of its sector or of the file, setting `count` to the words read and moving
   // the position past them. At the end, `count` is 0. Returns kCorrupt if the
   // file's chain is broken or shorter than its size.
-  DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int64_t* count);
+  DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int* count);
 
   // Moves `file`'s position to `position`, without the disk. Returns kPastEnd
   // beyond the file's size, and kBadArgument for a negative position.
-  DiskStatus Seek(DiskFile file, int64_t position);
+  DiskStatus Seek(DiskFile file, int position);
 
   // Sets `info` to `file`'s position and size.
   DiskStatus GetFileInfo(DiskFile file, DiskFileInfo* info);
@@ -203,7 +203,7 @@ class DiskFileSystem final {
 
   // A buffer holding one sector.
   struct SectorBuffer {
-    int64_t sector = -1;  // -1 for none.
+    int sector = -1;  // -1 for none.
     Sector words = {};
   };
 
@@ -218,7 +218,7 @@ class DiskFileSystem final {
   struct EntryLocation {
     auto operator<=>(const EntryLocation&) const = default;
 
-    int64_t sector = -1;
+    int sector = -1;
     int index = 0;
   };
 
@@ -227,8 +227,8 @@ class DiskFileSystem final {
     SlotState state = SlotState::kFree;
     // A file's directory entry, or none for the root.
     std::optional<EntryLocation> entry;
-    int64_t size = 0;
-    int64_t position = 0;
+    int size = 0;
+    int position = 0;
 
     // The chain, from its first cluster (0 for an empty file), and the cluster
     // the slot last reached in it (0 for none), by its index in the chain.
@@ -254,7 +254,7 @@ class DiskFileSystem final {
 
   // Returns whether `superblock` describes a file system on an image of
   // `sector_count` sectors, with every field valid.
-  static bool IsValidSuperblock(const Sector& superblock, int64_t sector_count);
+  static bool IsValidSuperblock(const Sector& superblock, int sector_count);
 
   //----------------------------------------------------------------------------
   // Volume
@@ -272,7 +272,7 @@ class DiskFileSystem final {
   DiskStatus GetWritableStatus() const;
 
   // Returns a cluster's size, in words.
-  int64_t GetClusterSize() const;
+  int GetClusterSize() const;
 
   // Sets free_count_, if it isn't already, by walking the free list.
   DiskStatus CountFreeClusters();
@@ -299,7 +299,7 @@ class DiskFileSystem final {
   // position 0, with its buffer empty. `entry` is the file's directory entry,
   // or none for the root.
   void OpenSlot(Slot* slot, const std::optional<EntryLocation>& entry,
-                int first_cluster, int64_t size);
+                int first_cluster, int size);
 
   // Opens `slot` on the root directory, whose size is its chain's full length.
   // Returns kCorrupt for a broken root chain.
@@ -310,7 +310,7 @@ class DiskFileSystem final {
   //----------------------------------------------------------------------------
 
   // Reads `sector` into `buffer`, unless it already holds it.
-  DiskStatus LoadSector(int64_t sector, SectorBuffer* buffer);
+  DiskStatus LoadSector(int sector, SectorBuffer* buffer);
 
   // Loads the sector at `slot`'s position, which must be before its end, into
   // its buffer, following its chain from the cluster last reached, or from the

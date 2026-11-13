@@ -14,6 +14,7 @@
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "oz3/disk/disk_image.h"
+#include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 
@@ -112,12 +113,12 @@ class DiskHardware final {
   // Reads sector `sector` into `words`, from the cache if it is there, or else
   // from the image, caching it. Returns kNoDisk if the drive is empty, and
   // otherwise what DiskImage::ReadSector does.
-  DiskStatus ReadSector(int64_t sector, absl::Span<uint16_t> words);
+  DiskStatus ReadSector(int sector, absl::Span<uint16_t> words);
 
   // Writes `words` to sector `sector` on the image, and then caches it as
   // `caching` says. Returns kNoDisk if the drive is empty, and otherwise what
   // DiskImage::WriteSector does.
-  DiskStatus WriteSector(int64_t sector, absl::Span<const uint16_t> words,
+  DiskStatus WriteSector(int sector, absl::Span<const uint16_t> words,
                          WriteCaching caching);
 
   //----------------------------------------------------------------------------
@@ -142,7 +143,7 @@ class DiskHardware final {
 
   // A sector in the read cache.
   struct CacheEntry {
-    int64_t sector = -1;  // -1 for an empty entry.
+    int sector = -1;  // -1 for an empty entry.
     int64_t last_used = 0;
     std::array<uint16_t, kDiskSectorWords> words = {};
   };
@@ -151,15 +152,15 @@ class DiskHardware final {
   void Reset();
 
   // Returns the cache entry holding `sector`, or null.
-  CacheEntry* FindCached(int64_t sector);
+  CacheEntry* FindCached(int sector);
 
   // Puts `words` in the cache as `sector`, replacing the least recently used
   // entry if it isn't there. Does nothing with no cache.
-  void AddCached(int64_t sector, absl::Span<const uint16_t> words);
+  void AddCached(int sector, absl::Span<const uint16_t> words);
 
   // Charges a transfer of `sector` in `transfer`'s direction, taking
   // `sector_time`, and moves the head there.
-  void Charge(int64_t sector, Transfer transfer, absl::Duration sector_time);
+  void Charge(int sector, Transfer transfer, absl::Duration sector_time);
 
   const DiskHardwareSettings settings_;
   std::unique_ptr<DiskImage> image_;
@@ -169,7 +170,7 @@ class DiskHardware final {
   std::vector<CacheEntry> cache_;
   int64_t use_count_ = 0;
   Transfer last_transfer_ = Transfer::kNone;
-  int64_t last_sector_ = 0;
+  int last_sector_ = 0;
   absl::Duration busy_time_ = absl::ZeroDuration();
 };
 

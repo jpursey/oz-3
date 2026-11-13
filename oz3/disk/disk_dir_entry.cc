@@ -35,12 +35,16 @@ void DiskDirEntry::SetFirstCluster(int cluster) {
   words_[kFirstClusterWord] = static_cast<uint16_t>(cluster);
 }
 
-int64_t DiskDirEntry::GetSize() const {
-  return static_cast<int64_t>(words_[kSizeWord]) |
-         (static_cast<int64_t>(words_[kSizeWord + 1]) << 16);
+std::optional<int> DiskDirEntry::GetSize() const {
+  const int64_t size = static_cast<int64_t>(words_[kSizeWord]) |
+                       (static_cast<int64_t>(words_[kSizeWord + 1]) << 16);
+  if (size > kMaxSize) {
+    return std::nullopt;
+  }
+  return static_cast<int>(size);
 }
 
-void DiskDirEntry::SetSize(int64_t size) {
+void DiskDirEntry::SetSize(int size) {
   CHECK_GE(size, 0);
   CHECK_LE(size, kMaxSize);
   words_[kSizeWord] = static_cast<uint16_t>(size);

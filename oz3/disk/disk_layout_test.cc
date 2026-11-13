@@ -105,13 +105,24 @@ TEST(DiskLayoutTest, IsValidChecksTheClusterCount) {
       MakeLayout(1, DiskLayout::kMaxClusterCount + 1, 257).IsValid(70'000));
 }
 
+TEST(DiskLayoutTest, TheLargestDiskUsesEverySector) {
+  EXPECT_EQ(DiskLayout::kMaxSectorCount, 4'194'433);
+  const std::optional<DiskLayout> layout =
+      ChooseDiskLayout(DiskLayout::kMaxSectorCount, 0);
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(*layout, MakeLayout(64, DiskLayout::kMaxClusterCount, 256));
+  EXPECT_EQ(layout->GetSectorCount(), DiskLayout::kMaxSectorCount);
+  EXPECT_TRUE(layout->IsValid(DiskLayout::kMaxSectorCount));
+}
+
 TEST(DiskLayoutTest, IsValidChecksTheFatSectors) {
   EXPECT_FALSE(MakeLayout(1, 255, 0).IsValid(1'000));
   EXPECT_TRUE(MakeLayout(1, 255, 1).IsValid(1'000));
   EXPECT_FALSE(MakeLayout(1, 256, 1).IsValid(1'000));
   EXPECT_TRUE(MakeLayout(1, 256, 2).IsValid(1'000));
 
-  // More FAT sectors than needed, up to what a word holds.
+  // More FAT sectors than needed, up to what the most clusters need.
+  EXPECT_EQ(DiskLayout::kMaxFatSectors, 256);
   EXPECT_TRUE(MakeLayout(1, 716, 4).IsValid(721));
   EXPECT_TRUE(MakeLayout(1, 1, DiskLayout::kMaxFatSectors).IsValid(70'000));
   EXPECT_FALSE(

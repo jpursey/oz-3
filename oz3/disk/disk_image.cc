@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <iterator>
 #include <utility>
 #include <vector>
 
@@ -39,10 +40,10 @@ constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
 constexpr int64_t kFlagsOffset = kFlagsWord * 2;
 
 // The sectors Create writes at a time.
-constexpr int64_t kCreateSectors = 64;
+constexpr int kCreateSectors = 64;
 
 // Returns the host file offset of `sector`.
-int64_t GetSectorOffset(int64_t sector) {
+int64_t GetSectorOffset(int sector) {
   return kHeaderBytes + sector * kSectorBytes;
 }
 
@@ -59,7 +60,7 @@ void SwapToHostOrder(absl::Span<uint16_t> words) {
 }  // namespace
 
 absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Create(
-    gb::FileSystem* file_system, std::string_view path, int64_t sector_count) {
+    gb::FileSystem* file_system, std::string_view path, int sector_count) {
   if (sector_count < 1 || sector_count > kMaxSectorCount) {
     return absl::InvalidArgumentError(
         absl::StrCat("Disk image ", path, " can't have ", sector_count,
@@ -83,9 +84,9 @@ absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Create(
   bool written = file->Write(header.data(), kHeaderWords) == kHeaderWords;
 
   const std::vector<uint16_t> zeros(kCreateSectors * kDiskSectorWords, 0);
-  for (int64_t sector = 0; written && sector < sector_count;
+  for (int sector = 0; written && sector < sector_count;
        sector += kCreateSectors) {
-    const int64_t count =
+    const int count =
         std::min(kCreateSectors, sector_count - sector) * kDiskSectorWords;
     written = file->Write(zeros.data(), count) == count;
   }
@@ -132,13 +133,20 @@ absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Open(
         "Disk image ", path, " has sectors of ", header[kSectorSizeWord],
         " words, but only ", kDiskSectorWords, " is supported"));
   }
-  const int64_t sector_count =
+  // The header's dword can count more sectors than any disk uses.
+  const int64_t header_sector_count =
       header[kSectorCountWord] |
       static_cast<int64_t>(header[kSectorCountWord + 1]) << 16;
-  if (sector_count == 0) {
+  if (header_sector_count == 0) {
     return absl::InvalidArgumentError(
         absl::StrCat("Disk image ", path, " has no sectors"));
   }
+  if (header_sector_count > kMaxSectorCount) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Disk image ", path, " has ", header_sector_count,
+                     " sectors, but an image has at most ", kMaxSectorCount));
+  }
+  const int sector_count = static_cast<int>(header_sector_count);
   const int64_t size = file->SeekEnd();
   if (size < GetSectorOffset(sector_count)) {
     return absl::InvalidArgumentError(absl::StrCat(
@@ -149,12 +157,14 @@ absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Open(
       new DiskImage(std::move(file), sector_count, header[kFlagsWord]));
 }
 
-DiskImage::DiskImage(std::unique_ptr<gb::File> file, int64_t sector_count,
+DiskImage::DiskImage(std::unique_ptr<gb::File> file, int sector_count,
                      uint16_t flags)
     : DiskMedia(sector_count, flags), file_(std::move(file)) {}
 
-bool DiskImage::IsValidSector(int64_t sector, int64_t size) const {
-  return sector >= 0 && sector < GetSectorCount() && size == kDiskSectorWords;
+bool DiskImage::IsValidSector(int sector,
+                              absl::Span<const uint16_t> words) const {
+  return sector >= 0 && sector < GetSectorCount() &&
+         std::ssize(words) == kDiskSectorWords;
 }
 
 DiskStatus DiskImage::WriteFlags(uint16_t flags) {
@@ -167,8 +177,8 @@ DiskStatus DiskImage::WriteFlags(uint16_t flags) {
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskImage::ReadSector(int64_t sector, absl::Span<uint16_t> words) {
-  if (!IsValidSector(sector, static_cast<int64_t>(words.size()))) {
+DiskStatus DiskImage::ReadSector(int sector, absl::Span<uint16_t> words) {
+  if (!IsValidSector(sector, words)) {
     return DiskStatus::kBadArgument;
   }
   const int64_t offset = GetSectorOffset(sector);
@@ -180,9 +190,9 @@ DiskStatus DiskImage::ReadSector(int64_t sector, absl::Span<uint16_t> words) {
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskImage::WriteSector(int64_t sector,
+DiskStatus DiskImage::WriteSector(int sector,
                                   absl::Span<const uint16_t> words) {
-  if (!IsValidSector(sector, static_cast<int64_t>(words.size()))) {
+  if (!IsValidSector(sector, words)) {
     return DiskStatus::kBadArgument;
   }
   if (IsWriteProtected()) {

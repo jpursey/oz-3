@@ -47,8 +47,7 @@ std::unique_ptr<DiskImage> DiskHardware::DetachImage() {
   return std::move(image_);
 }
 
-DiskStatus DiskHardware::ReadSector(int64_t sector,
-                                    absl::Span<uint16_t> words) {
+DiskStatus DiskHardware::ReadSector(int sector, absl::Span<uint16_t> words) {
   if (image_ == nullptr) {
     return DiskStatus::kNoDisk;
   }
@@ -70,7 +69,7 @@ DiskStatus DiskHardware::ReadSector(int64_t sector,
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskHardware::WriteSector(int64_t sector,
+DiskStatus DiskHardware::WriteSector(int sector,
                                      absl::Span<const uint16_t> words,
                                      WriteCaching caching) {
   if (image_ == nullptr) {
@@ -101,7 +100,7 @@ void DiskHardware::Reset() {
   last_transfer_ = Transfer::kNone;
 }
 
-DiskHardware::CacheEntry* DiskHardware::FindCached(int64_t sector) {
+DiskHardware::CacheEntry* DiskHardware::FindCached(int sector) {
   for (CacheEntry& entry : cache_) {
     if (entry.sector == sector) {
       return &entry;
@@ -110,7 +109,7 @@ DiskHardware::CacheEntry* DiskHardware::FindCached(int64_t sector) {
   return nullptr;
 }
 
-void DiskHardware::AddCached(int64_t sector, absl::Span<const uint16_t> words) {
+void DiskHardware::AddCached(int sector, absl::Span<const uint16_t> words) {
   if (cache_.empty()) {
     return;
   }
@@ -127,7 +126,7 @@ void DiskHardware::AddCached(int64_t sector, absl::Span<const uint16_t> words) {
   entry->last_used = ++use_count_;
 }
 
-void DiskHardware::Charge(int64_t sector, Transfer transfer,
+void DiskHardware::Charge(int sector, Transfer transfer,
                           absl::Duration sector_time) {
   if (transfer != last_transfer_ || sector != last_sector_ + 1) {
     busy_time_ += settings_.latency;
