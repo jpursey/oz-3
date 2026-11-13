@@ -298,6 +298,7 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 - **Attaching:** the drive reads the image's container header right away, for `MEDIA` and write protection, then reads and checks the superblock, charging its time as usual. A command that arrives meanwhile simply waits for the read to finish. FAT sectors are read only when an operation first needs them, typically when clusters are allocated or freed.
 - **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale, and a command in progress completes with **no disk**.
 - **Stale slots:** every command on a stale slot fails with **disk changed**, except `CLOSE`, which frees the slot and succeeds. A program can't keep writing into a different disk by accident.
+- **Failing:** once the host fails to read or write the image, the disk has failed: every command fails with **I/O error**, even one the drive's buffers could answer, except `CLOSE`, which still frees the slot. Ejecting the disk discards the buffers, leaving it as a crash at the failure would, and inserting it again, with its image reopened, is the retry. Retrying on the same insertion would need every command to undo its changes to the buffers.
 - **Shutting down:** when the Ozzy app shuts down cleanly, the drive writes back everything dirty, so the image stays consistent.
 - **No outside changes:** while an image is attached to a drive, nothing else may modify it, including `oz3dsk` or another program on the host. This is a documented contract, not enforced across processes. The drive's buffers, open files, and free count all assume it's the only writer. A way for a running Ozzy to cooperate with `oz3dsk` is out of scope for this design.
 
@@ -464,7 +465,7 @@ The drive keeps a count of free clusters in memory, never on the disk. The first
 
 #### Where errors land
 
-- **At accept:** anything knowable without the disk: bad command, bad handle, disk changed, bad name, bad pattern, bad label, bad attributes, too many open, past end, wrong handle type, read-only (for `WRITE` and `TRUNCATE`), write protected, in use (for `FORMAT`), no disk, and disk full for a `WRITE` where n would be 0.
+- **At accept:** anything knowable without the disk: bad command, bad handle, disk changed, bad name, bad pattern, bad label, bad attributes, too many open, past end, wrong handle type, read-only (for `WRITE` and `TRUNCATE`), write protected, in use (for `FORMAT`), no disk, I/O error once the disk has failed, and disk full for a `WRITE` where n would be 0.
 - **At completion:** anything that needs the disk: not found, exists, in use, read-only (for `DELETE`), disk full (a partial write, or a directory that can't grow), unformatted, corrupt, I/O error, and no disk if the image disappears mid-command. For `READ` and `WRITE`, a failure in the disk work, allocating included, is an early completion.
 
 ### Reading and writing
@@ -542,7 +543,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 | 22h | Disk full | No free clusters for the data or directory growth |
 | 23h | Unformatted | No valid file system on the disk |
 | 24h | Corrupt | The file system is inconsistent, such as a broken chain |
-| 25h | I/O error | The host failed to read or write the image |
+| 25h | I/O error | The host failed to read or write the image, which fails the disk until it is ejected and inserted again |
 
 ## Tools
 
@@ -693,6 +694,7 @@ The loader opens the `.oz3` file, reads its header with `READ`, then reads each 
 ### Disk changes and recovery
 
 - A **disk changed** status means the slot's disk is gone: the OS closes the slot, which frees it, and reports the failure to the program that owned the file.
+- An **I/O error** means the disk has failed: the OS closes its slots and reports it, and the disk works again once it is ejected and inserted.
 - If the OS ever loses track of the protocol, such as after a fault in its drive code, it resets through the control port and reissues the command. The control port's phase shows whether that's needed.
 
 ## Open questions

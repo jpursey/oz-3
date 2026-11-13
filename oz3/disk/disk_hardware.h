@@ -54,6 +54,11 @@ struct DiskHardwareSettings {
 // writing) first costs the latency, and so does the first transfer. Cached
 // reads don't move the head, so they don't change what is continuous. Only a
 // transfer that succeeds takes time or moves the head.
+//
+// The first kIoError from an image fails it: every later read and write
+// returns kIoError, cached reads included, until an image is attached. Once
+// the host has failed, the image may not hold what the drive last wrote, so
+// reattaching the reopened image is the retry.
 class DiskHardware final {
  public:
   //----------------------------------------------------------------------------
@@ -89,8 +94,8 @@ class DiskHardware final {
   //----------------------------------------------------------------------------
 
   // Attaches `image`, destroying any image already attached. A null `image`
-  // leaves the drive empty. Either way the cache is emptied, and the next
-  // transfer costs the latency.
+  // leaves the drive empty. Either way the cache is emptied, the next transfer
+  // costs the latency, and any failure is forgotten.
   void AttachImage(std::unique_ptr<DiskImage> image);
 
   // Detaches and returns the image, or null if the drive is empty. The cache
@@ -99,6 +104,10 @@ class DiskHardware final {
 
   // Returns whether an image is attached.
   bool HasImage() const { return image_ != nullptr; }
+
+  // Returns kNoDisk if the drive is empty, kIoError if its image has failed,
+  // and otherwise kOk.
+  DiskStatus GetImageStatus() const;
 
   // Returns the attached image's medium, or null if the drive is empty. Its
   // sectors are only read and written through the hardware, so the cache is
@@ -111,13 +120,13 @@ class DiskHardware final {
   //----------------------------------------------------------------------------
 
   // Reads sector `sector` into `words`, from the cache if it is there, or else
-  // from the image, caching it. Returns kNoDisk if the drive is empty, and
-  // otherwise what DiskImage::ReadSector does.
+  // from the image, caching it. Returns what GetImageStatus does if it isn't
+  // kOk, and otherwise what DiskImage::ReadSector does.
   DiskStatus ReadSector(int sector, absl::Span<uint16_t> words);
 
   // Writes `words` to sector `sector` on the image, and then caches it as
-  // `caching` says. Returns kNoDisk if the drive is empty, and otherwise what
-  // DiskImage::WriteSector does.
+  // `caching` says. Returns what GetImageStatus does if it isn't kOk, and
+  // otherwise what DiskImage::WriteSector does.
   DiskStatus WriteSector(int sector, absl::Span<const uint16_t> words,
                          WriteCaching caching);
 
@@ -148,8 +157,12 @@ class DiskHardware final {
     std::array<uint16_t, kDiskSectorWords> words = {};
   };
 
-  // Empties the cache, and forgets where the head is, as a disk change does.
+  // Empties the cache, forgets where the head is, and forgets any failure, as
+  // a disk change does.
   void Reset();
+
+  // Returns `status`, failing the image if it is kIoError.
+  DiskStatus FailOnIoError(DiskStatus status);
 
   // Returns the cache entry holding `sector`, or null.
   CacheEntry* FindCached(int sector);
@@ -171,6 +184,7 @@ class DiskHardware final {
   int64_t use_count_ = 0;
   Transfer last_transfer_ = Transfer::kNone;
   int last_sector_ = 0;
+  bool failed_ = false;
   absl::Duration busy_time_ = absl::ZeroDuration();
 };
 

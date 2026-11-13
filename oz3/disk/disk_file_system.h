@@ -59,6 +59,12 @@ struct DiskFileInfo {
 // only when an operation first needs them. Detaching an image discards them,
 // unwritten, as pulling a floppy would.
 //
+// Once the host fails to read or write the image, every operation returns
+// kIoError until an image is attached, even one the buffers could answer
+// (see DiskHardware). Close still frees a slot. A failed operation leaves its
+// changes in the buffers, so the retry is to detach the image, discarding
+// them, and attach it again reopened.
+//
 // A DiskFile is only a slot number, so a handle kept past its Close reaches
 // whatever is opened in the slot next. Operations on a handle return
 // kBadHandle for a slot out of range or with nothing open. A slot open when
@@ -96,8 +102,8 @@ class DiskFileSystem final {
   // Attaches `image`, which must not be null, detaching any image already
   // attached first. Reads the superblock, charging its time, and returns kOk
   // for a formatted disk, kUnformatted for one with no valid file system (which
-  // can still be formatted), or kIoError. The image stays attached for all
-  // three.
+  // can still be formatted), or kIoError, which fails the image. The image
+  // stays attached for all three.
   DiskStatus AttachImage(std::unique_ptr<DiskImage> image);
 
   // Detaches and returns the image, or null if the drive is empty. The
@@ -135,8 +141,7 @@ class DiskFileSystem final {
                     DateTime now);
 
   // Rewrites the superblock's label. Returns kWriteProtected on a protected
-  // disk, and kUnformatted with no file system. If the write fails, the file
-  // system keeps the label it had.
+  // disk, and kUnformatted with no file system.
   DiskStatus SetLabel(const DiskLabel& label);
 
   // Sets `info` to the file system, counting the free clusters if this is
@@ -297,12 +302,13 @@ class DiskFileSystem final {
   // Forgets the attached disk's superblock, free count, and buffers.
   void ResetVolume();
 
-  // Returns kNoDisk with no image, kUnformatted with no file system, or else
-  // kOk.
+  // Returns kNoDisk with no image, kIoError for a failed one, kUnformatted
+  // with no file system, or else kOk.
   DiskStatus GetVolumeStatus() const;
 
-  // Returns kNoDisk with no image, kWriteProtected for a protected one, or
-  // else kOk, as every change to the disk checks first.
+  // Returns kNoDisk with no image, kIoError for a failed one, kWriteProtected
+  // for a protected one, or else kOk, as every change to the disk checks
+  // first.
   DiskStatus GetWritableStatus() const;
 
   // Returns a cluster's size, in words.
@@ -319,7 +325,8 @@ class DiskFileSystem final {
   void InvalidateOpenFiles();
 
   // Sets `slot` to `file`'s slot if it is taken. Returns kBadHandle if it is
-  // out of range or free, and kDiskChanged if it is stale, with `slot` set.
+  // out of range or free, and with `slot` set, kDiskChanged if it is stale,
+  // and kIoError if the image has failed.
   DiskStatus GetSlot(DiskFile file, Slot** slot);
 
   // Sets `slot` to `file`'s slot if it can be written, as GetSlot does.
@@ -471,14 +478,10 @@ class DiskFileSystem final {
   // Grows the root, open in dir_, by a cluster holding `entry` as its first
   // entry, setting `location` to it. The cluster's sectors, zeroed but for the
   // entry, are written before the link that adds it, as a directory has no
-  // size to stop reads. The link is left for CommitDirectory to write, and the
-  // new size for GrowRootSlots. Returns kDiskFull, changing nothing, with no
-  // cluster free.
+  // size to stop reads. The link is left for CommitDirectory to write. Grows
+  // dir_ and every open root slot by the cluster. Returns kDiskFull, changing
+  // nothing, with no cluster free.
   DiskStatus GrowRoot(const DiskDirEntry& entry, EntryLocation* location);
-
-  // Grows dir_ and every open root slot by a cluster, once GrowRoot's link is
-  // committed.
-  void GrowRootSlots();
 
   //----------------------------------------------------------------------------
   // State

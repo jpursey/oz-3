@@ -47,9 +47,19 @@ std::unique_ptr<DiskImage> DiskHardware::DetachImage() {
   return std::move(image_);
 }
 
-DiskStatus DiskHardware::ReadSector(int sector, absl::Span<uint16_t> words) {
+DiskStatus DiskHardware::GetImageStatus() const {
   if (image_ == nullptr) {
     return DiskStatus::kNoDisk;
+  }
+  if (failed_) {
+    return DiskStatus::kIoError;
+  }
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskHardware::ReadSector(int sector, absl::Span<uint16_t> words) {
+  if (DiskStatus status = GetImageStatus(); status != DiskStatus::kOk) {
+    return status;
   }
   if (words.size() != kDiskSectorWords) {
     return DiskStatus::kBadArgument;
@@ -60,7 +70,7 @@ DiskStatus DiskHardware::ReadSector(int sector, absl::Span<uint16_t> words) {
     busy_time_ += cache_sector_time_;
     return DiskStatus::kOk;
   }
-  const DiskStatus status = image_->ReadSector(sector, words);
+  const DiskStatus status = FailOnIoError(image_->ReadSector(sector, words));
   if (status != DiskStatus::kOk) {
     return status;
   }
@@ -72,10 +82,10 @@ DiskStatus DiskHardware::ReadSector(int sector, absl::Span<uint16_t> words) {
 DiskStatus DiskHardware::WriteSector(int sector,
                                      absl::Span<const uint16_t> words,
                                      WriteCaching caching) {
-  if (image_ == nullptr) {
-    return DiskStatus::kNoDisk;
+  if (DiskStatus status = GetImageStatus(); status != DiskStatus::kOk) {
+    return status;
   }
-  const DiskStatus status = image_->WriteSector(sector, words);
+  const DiskStatus status = FailOnIoError(image_->WriteSector(sector, words));
   if (status != DiskStatus::kOk) {
     return status;
   }
@@ -98,6 +108,14 @@ void DiskHardware::Reset() {
     entry.last_used = 0;
   }
   last_transfer_ = Transfer::kNone;
+  failed_ = false;
+}
+
+DiskStatus DiskHardware::FailOnIoError(DiskStatus status) {
+  if (status == DiskStatus::kIoError) {
+    failed_ = true;
+  }
+  return status;
 }
 
 DiskHardware::CacheEntry* DiskHardware::FindCached(int sector) {

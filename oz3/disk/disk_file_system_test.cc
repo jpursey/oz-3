@@ -283,6 +283,21 @@ class DiskFileSystemTest : public ::testing::Test {
     return file_system_.AttachImage(std::move(image));
   }
 
+  // Detaches the image at kPath, discarding the buffers, lets the host
+  // succeed again, and attaches the image reopened, as the retry after a host
+  // failure is. Returns what attaching does.
+  DiskStatus ReopenImage() {
+    file_system_.DetachImage().reset();
+    protocol_->SetLimits({});
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(&host_, kPath);
+    EXPECT_TRUE(image.ok()) << image.status();
+    if (!image.ok()) {
+      return DiskStatus::kNoDisk;
+    }
+    return file_system_.AttachImage(*std::move(image));
+  }
+
   // Returns the free clusters GetVolumeInfo reports, or -1 if it fails.
   int GetFreeClusters() {
     DiskVolumeInfo info;
@@ -842,7 +857,8 @@ TEST_F(DiskFileSystemTest, AttachingFailsWhenTheHostReadFails) {
   EXPECT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kIoError);
   EXPECT_TRUE(file_system_.HasImage());
   DiskVolumeInfo volume;
-  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
+  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kIoError);
+  EXPECT_EQ(ReopenImage(), DiskStatus::kUnformatted);
 }
 
 TEST_F(DiskFileSystemTest, CountingFailsWhenTheHostReadFails) {
@@ -861,7 +877,8 @@ TEST_F(DiskFileSystemTest, FormatFailsWhenTheHostWriteFails) {
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
             DiskStatus::kIoError);
   DiskVolumeInfo volume;
-  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
+  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kIoError);
+  EXPECT_EQ(ReopenImage(), DiskStatus::kUnformatted);
 }
 
 TEST_F(DiskFileSystemTest, FormatFailingPartwayLeavesTheDiskUnformatted) {
@@ -874,26 +891,17 @@ TEST_F(DiskFileSystemTest, FormatFailingPartwayLeavesTheDiskUnformatted) {
     protocol_->SetLimits({.writes = writes});
     EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
               DiskStatus::kIoError);
-    DiskVolumeInfo volume;
-    EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
-
-    // The failure leaves the image unusable, so the file is opened again.
-    file_system_.DetachImage().reset();
-    protocol_->SetLimits({});
-    absl::StatusOr<std::unique_ptr<DiskImage>> image =
-        DiskImage::Open(&host_, kPath);
-    ASSERT_TRUE(image.ok()) << image.status();
-    EXPECT_EQ(file_system_.AttachImage(*std::move(image)),
-              DiskStatus::kUnformatted);
+    EXPECT_EQ(ReopenImage(), DiskStatus::kUnformatted);
     ASSERT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
               DiskStatus::kOk);
   }
 }
 
-TEST_F(DiskFileSystemTest, SetLabelFailingKeepsTheLabel) {
+TEST_F(DiskFileSystemTest, AFailedSetLabelLeavesTheDisksLabel) {
   AttachFormatted(kFloppySectors);
   protocol_->SetLimits({.writes = 0});
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")), DiskStatus::kIoError);
+  ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
   DiskVolumeInfo volume;
   ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
   EXPECT_EQ(volume.label, GetLabel("WORK"));
@@ -1395,7 +1403,58 @@ TEST_F(DiskFileSystemTest, ReadFailsWhenTheHostReadFails) {
   EXPECT_EQ(file_system_.Read(file, absl::MakeSpan(words), &count),
             DiskStatus::kIoError);
   EXPECT_EQ(count, 0);
-  EXPECT_EQ(GetInfo(file).position, 0);
+}
+
+TEST_F(DiskFileSystemTest, AFailedImageFailsEveryOperationUntilReattached) {
+  AttachFormatted(kSmallSectors);
+  EditDisk(
+      [](DiskEditor& editor) { editor.AddFile(0, "HELLO.TXT", {2}, 10, 1); });
+  const std::vector<uint16_t> data = MakeCountingWords(1, 10);
+  const DiskFile file = OpenFile("HELLO.TXT");
+  const DiskFile root = OpenRoot();
+  const DiskFile created = CreateFile("NEW");
+
+  // Every buffer, and the free count, could answer what follows.
+  ASSERT_EQ(ReadFile(file), data);
+  DiskDirEntry entry;
+  ASSERT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+            DiskStatus::kOk);
+  int writable = 0;
+  ASSERT_EQ(file_system_.GetWritableWords(created, &writable), DiskStatus::kOk);
+
+  protocol_->SetLimits({.writes = 0});
+  DiskFile other = -1;
+  EXPECT_EQ(file_system_.Create(GetName("FAILED"), GetLater(), &other),
+            DiskStatus::kIoError);
+  protocol_->SetLimits({});
+
+  ExpectOperationsReturn(file, DiskStatus::kIoError);
+  ExpectOperationsReturn(root, DiskStatus::kIoError);
+  ExpectOperationsReturn(created, DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.Open(GetName("HELLO.TXT"), &other),
+            DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.Create(GetName("MORE"), GetLater(), &other),
+            DiskStatus::kIoError);
+  DiskVolumeInfo volume;
+  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")), DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
+            DiskStatus::kIoError);
+
+  // Close still frees the slot.
+  EXPECT_EQ(file_system_.Close(file), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Close(file), DiskStatus::kBadHandle);
+
+  // Reattaching the reopened image is the retry: what reached the disk before
+  // the failure is there, and the slots still open are stale.
+  ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
+  ExpectOperationsReturn(root, DiskStatus::kDiskChanged);
+  EXPECT_EQ(file_system_.Close(root), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Close(created), DiskStatus::kOk);
+  EXPECT_EQ(ReadFile(OpenFile("HELLO.TXT")), data);
+  EXPECT_EQ(GetInfo(OpenFile("NEW")).size, 0);
+  EXPECT_EQ(file_system_.Open(GetName("FAILED"), &other),
+            DiskStatus::kNotFound);
 }
 
 TEST_F(DiskFileSystemTest, CreateMakesAnEmptyOpenFile) {
@@ -1657,22 +1716,27 @@ TEST_F(DiskFileSystemTest, CreateFailsWhenTheHostWriteFails) {
   EXPECT_EQ(file_system_.Create(GetName("NEW"), GetLater(), &file),
             DiskStatus::kIoError);
   EXPECT_EQ(file, -1);
-
-  // The entry that wasn't written isn't found in a buffer either.
-  EXPECT_EQ(file_system_.Open(GetName("NEW"), &file), DiskStatus::kIoError);
+  ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Open(GetName("NEW"), &file), DiskStatus::kNotFound);
 }
 
-TEST_F(DiskFileSystemTest, AFailedGrowLeavesTheRootsSize) {
+TEST_F(DiskFileSystemTest, AFailedGrowLeavesTheRootOnTheDisk) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) { editor.FillSector(2, 0); });
-  const DiskFile root = OpenRoot();
+  const int free_clusters = GetFreeClusters();
 
   // The new cluster is written, but not the FAT linking it.
   protocol_->SetLimits({.writes = 1});
   DiskFile file = -1;
   EXPECT_EQ(file_system_.Create(GetName("NEW"), GetLater(), &file),
             DiskStatus::kIoError);
-  EXPECT_EQ(GetInfo(root).size, kDiskSectorWords);
+  ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
+  EXPECT_EQ(GetInfo(OpenRoot()).size, kDiskSectorWords);
+  EXPECT_EQ(GetFreeClusters(), free_clusters);
+
+  // The retry grows it.
+  CreateFile("NEW");
+  EXPECT_EQ(GetFreeClusters(), free_clusters - 1);
 }
 
 TEST_F(DiskFileSystemTest, AFailedCreateKeepsAnotherFilesClusters) {

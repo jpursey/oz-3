@@ -142,6 +142,7 @@ TEST_F(DiskHardwareTest, StartsEmpty) {
 
 TEST_F(DiskHardwareTest, EmptyDriveHasNoDisk) {
   DiskHardware hardware(GetTimedSettings(2));
+  EXPECT_EQ(hardware.GetImageStatus(), DiskStatus::kNoDisk);
   Sector words(kDiskSectorWords);
   EXPECT_EQ(hardware.ReadSector(0, absl::MakeSpan(words)), DiskStatus::kNoDisk);
   EXPECT_EQ(hardware.WriteSector(0, words, WriteCaching::kCache),
@@ -407,6 +408,7 @@ TEST_F(DiskHardwareTest, FailedTransfersTakeNoTimeAndDontMoveTheHead) {
             DiskStatus::kBadArgument);
   EXPECT_EQ(hardware_->WriteSector(-1, words, WriteCaching::kCache),
             DiskStatus::kBadArgument);
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kOk);
   Read(1);  // Continuous with sector 0.
   EXPECT_EQ(hardware_->CollectBusyTime(), kLatency + 2 * kRead);
 }
@@ -436,6 +438,7 @@ TEST_F(DiskHardwareTest, WriteProtectedWritesLeaveTheCache) {
             DiskStatus::kWriteProtected);
   EXPECT_EQ(hardware_->WriteSector(0, MakeSector(0x1234), WriteCaching::kSkip),
             DiskStatus::kWriteProtected);
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kOk);
   EXPECT_EQ(Read(0), MakeSector(0));
   EXPECT_EQ(hardware_->CollectBusyTime(), kCached);
 }
@@ -449,6 +452,52 @@ TEST_F(DiskHardwareTest, HostFailuresAreIoErrors) {
   EXPECT_EQ(hardware_->ReadSector(0, absl::MakeSpan(words)),
             DiskStatus::kIoError);
   EXPECT_EQ(hardware_->CollectBusyTime(), absl::ZeroDuration());
+}
+
+TEST_F(DiskHardwareTest, AFailedWriteFailsTheImageUntilItIsAttached) {
+  MakeHardware(GetTimedSettings(2));
+  Read(0);
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kOk);
+  protocol_->SetLimits({.writes = 0});
+  EXPECT_EQ(hardware_->WriteSector(1, MakeSector(0x1234), WriteCaching::kCache),
+            DiskStatus::kIoError);
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kIoError);
+
+  // Even the cached sector fails, and nothing takes time.
+  protocol_->SetLimits({});
+  hardware_->CollectBusyTime();
+  Sector words(kDiskSectorWords);
+  EXPECT_EQ(hardware_->ReadSector(0, absl::MakeSpan(words)),
+            DiskStatus::kIoError);
+  EXPECT_EQ(hardware_->WriteSector(2, MakeSector(0x1234), WriteCaching::kCache),
+            DiskStatus::kIoError);
+  EXPECT_EQ(hardware_->CollectBusyTime(), absl::ZeroDuration());
+
+  // Reattaching the reopened image is the retry.
+  hardware_->DetachImage().reset();
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kNoDisk);
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Open(&file_system_, kPath);
+  ASSERT_TRUE(image.ok()) << image.status();
+  hardware_->AttachImage(*std::move(image));
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kOk);
+  EXPECT_EQ(Read(0), MakeSector(0));
+  Write(1, MakeSector(0x1234), WriteCaching::kCache);
+  EXPECT_EQ(Read(1), MakeSector(0x1234));
+}
+
+TEST_F(DiskHardwareTest, AFailedReadFailsTheImageUntilAnotherIsAttached) {
+  MakeHardware(GetTimedSettings(2));
+  protocol_->SetLimits({.reads = 0});
+  Sector words(kDiskSectorWords);
+  EXPECT_EQ(hardware_->ReadSector(0, absl::MakeSpan(words)),
+            DiskStatus::kIoError);
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kIoError);
+
+  protocol_->SetLimits({});
+  hardware_->AttachImage(MakeImage(kOtherPath, 0x8000));
+  EXPECT_EQ(hardware_->GetImageStatus(), DiskStatus::kOk);
+  EXPECT_EQ(Read(0), MakeSector(0x8000));
 }
 
 }  // namespace

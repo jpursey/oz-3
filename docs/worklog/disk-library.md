@@ -828,7 +828,7 @@ Depends on: CL8.
   exact order of sector writes for a buffer taking another sector, and a
   failed `Create` leaving another file's allocation in place.
 
-### CL10 [ ] disk: failed images
+### CL10 [x] disk: failed images
 
 Depends on: CL9.
 
@@ -847,8 +847,8 @@ Depends on: CL9.
   written. Retrying within an attachment would need each operation to undo
   its changes in memory, which this avoids.
 - So a failed operation needs no cleanup of its own: `Create`'s failure
-  branch from CL9 goes, and `GrowRoot` grows the root's slots itself again.
-  `Write`, `Close`, `Flush`, and `Truncate` need none either.
+  branch from CL9 goes, `GrowRoot` grows the root's slots itself again, and
+  `SetLabel` no longer puts back the old label. `Write`, `Close`, `Flush`, and `Truncate` need none either.
 - disk_design.md: **I/O error** fails the disk until it is ejected and
   inserted again (the status codes, and Images and disk changes).
 - Unused, so no visible change.

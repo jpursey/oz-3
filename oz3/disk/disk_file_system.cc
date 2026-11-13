@@ -175,16 +175,9 @@ DiskStatus DiskFileSystem::SetLabel(const DiskLabel& label) {
   if (!formatted_) {
     return DiskStatus::kUnformatted;
   }
-  // The label was checked when the superblock was attached or written.
-  const DiskLabel old_label = *GetLabel(superblock_);
   PutLabel(label, &superblock_);
-  if (DiskStatus status = hardware_.WriteSector(kSuperblockSector, superblock_,
-                                                WriteCaching::kSkip);
-      status != DiskStatus::kOk) {
-    PutLabel(old_label, &superblock_);
-    return status;
-  }
-  return DiskStatus::kOk;
+  return hardware_.WriteSector(kSuperblockSector, superblock_,
+                               WriteCaching::kSkip);
 }
 
 DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
@@ -319,26 +312,18 @@ DiskStatus DiskFileSystem::Create(const DiskFilename& name, DateTime now,
   entry.SetName(name);
   entry.SetModified(now);
   EntryLocation location;
-  DiskStatus status = DiskStatus::kOk;
   if (free_entry.has_value()) {
     location = *free_entry;
-    status = PutEntry(location, entry);
-  } else {
-    status = GrowRoot(entry, &location);
-  }
-  if (status == DiskStatus::kOk) {
-    status = CommitDirectory();
-  }
-  if (status != DiskStatus::kOk) {
-    // The directory buffer may hold the entry, unwritten, so it is read again
-    // when next needed. Every other change a failure can leave follows a
-    // failed host write, after which the image refuses everything. The FAT
-    // buffers are kept, as they may hold other files' allocations.
-    dir_.buffer.Reset();
+    if (DiskStatus status = PutEntry(location, entry);
+        status != DiskStatus::kOk) {
+      return status;
+    }
+  } else if (DiskStatus status = GrowRoot(entry, &location);
+             status != DiskStatus::kOk) {
     return status;
   }
-  if (!free_entry.has_value()) {
-    GrowRootSlots();
+  if (DiskStatus status = CommitDirectory(); status != DiskStatus::kOk) {
+    return status;
   }
   OpenSlot(&slots_[free_slot], location, /*read_only=*/false,
            /*first_cluster=*/0, /*size=*/0);
@@ -528,8 +513,9 @@ void DiskFileSystem::ResetVolume() {
 }
 
 DiskStatus DiskFileSystem::GetVolumeStatus() const {
-  if (!HasImage()) {
-    return DiskStatus::kNoDisk;
+  if (DiskStatus status = hardware_.GetImageStatus();
+      status != DiskStatus::kOk) {
+    return status;
   }
   if (!formatted_) {
     return DiskStatus::kUnformatted;
@@ -538,11 +524,11 @@ DiskStatus DiskFileSystem::GetVolumeStatus() const {
 }
 
 DiskStatus DiskFileSystem::GetWritableStatus() const {
-  const DiskMedia* media = GetMedia();
-  if (media == nullptr) {
-    return DiskStatus::kNoDisk;
+  if (DiskStatus status = hardware_.GetImageStatus();
+      status != DiskStatus::kOk) {
+    return status;
   }
-  if (media->IsWriteProtected()) {
+  if (GetMedia()->IsWriteProtected()) {
     return DiskStatus::kWriteProtected;
   }
   return DiskStatus::kOk;
@@ -590,7 +576,8 @@ DiskStatus DiskFileSystem::GetSlot(DiskFile file, Slot** slot) {
   if ((*slot)->state == SlotState::kStale) {
     return DiskStatus::kDiskChanged;
   }
-  return DiskStatus::kOk;
+  // An open slot has an image, so this is only a failure.
+  return hardware_.GetImageStatus();
 }
 
 DiskStatus DiskFileSystem::GetWritableSlot(DiskFile file, Slot** slot) {
@@ -1022,17 +1009,18 @@ DiskStatus DiskFileSystem::GrowRoot(const DiskDirEntry& entry,
       status != DiskStatus::kOk) {
     return status;
   }
-  return AllocateCluster(dir_.last_cluster, &cluster);
-}
+  if (DiskStatus status = AllocateCluster(dir_.last_cluster, &cluster);
+      status != DiskStatus::kOk) {
+    return status;
+  }
 
-void DiskFileSystem::GrowRootSlots() {
-  const int cluster_size = GetClusterSize();
   dir_.size += cluster_size;
   for (Slot& slot : slots_) {
     if (slot.state == SlotState::kOpen && !slot.entry.has_value()) {
       slot.size += cluster_size;
     }
   }
+  return DiskStatus::kOk;
 }
 
 }  // namespace oz3
