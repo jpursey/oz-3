@@ -193,9 +193,14 @@ class DiskFileSystem final {
   // system.
   DiskStatus Flush(DateTime now);
 
-  //----------------------------------------------------------------------------
-  // Data
-  //----------------------------------------------------------------------------
+  // Flushes `file` as Flush does, after setting its size to its position and
+  // before freeing the clusters past those the size needs, along with any
+  // chain left past the size. A Truncate that changes the file counts as a
+  // write, so its entry is stamped `now` with the new size. The freeing writes
+  // the FAT ending its chain, then the freed chain's link to the free list,
+  // then sector 1 with the freed chain as the free list's head. Returns what
+  // Write does before writing, and kCorrupt for a broken chain or free list.
+  DiskStatus Truncate(DiskFile file, DateTime now);
 
   // Reads up to `words.size()` words at `file`'s position, but not past the end
   // of its sector or of the file, setting `count` to the words read and moving
@@ -376,6 +381,13 @@ class DiskFileSystem final {
   // the start to go back. Returns kCorrupt if the chain is shorter.
   DiskStatus ReachCluster(Slot* slot, int cluster_index);
 
+  // Moves `slot`'s last cluster reached to the one before `cluster_index` in
+  // its chain, setting `previous` to it (0 at index 0), and `cluster` to the
+  // one at `cluster_index` (0 past the chain's end). Returns kCorrupt if the
+  // chain is shorter than `cluster_index`.
+  DiskStatus ReachClusterBefore(Slot* slot, int cluster_index, int* previous,
+                                int* cluster);
+
   // Moves `slot`'s last cluster reached to the cluster at its position, for a
   // write there. One that starts a cluster at the size is the next in any
   // chain left past the size, or else one allocated onto the chain's end.
@@ -443,9 +455,10 @@ class DiskFileSystem final {
   // for a link out of range.
   DiskStatus GetNextCluster(int cluster, int* next);
 
-  // Sets `count` to the clusters in the chain from `first_cluster`. Returns
+  // Sets `chain_count` to the clusters in the chain from `chain_first`, and
+  // `chain_last` (if not null) to its last, or 0 for an empty chain. Returns
   // kCorrupt for a broken chain, or one longer than the disk (a loop).
-  DiskStatus CountChain(int first_cluster, int* count);
+  DiskStatus CountChain(int chain_first, int* chain_count, int* chain_last);
 
   // Sets `head` to the free list's head, which free_count_ must be set for.
   // Returns kDiskFull with no cluster free, and kCorrupt for a broken link or
@@ -458,6 +471,17 @@ class DiskFileSystem final {
   // leave the chain running on into the free list. Returns kDiskFull, changing
   // nothing, with no cluster free, and kCorrupt for a broken free list.
   DiskStatus AllocateCluster(int last_cluster, int* cluster);
+
+  // Frees the `chain_count` clusters from `chain_first` to `chain_last` onto
+  // the free list's head, unlinking them from the cluster `unlink_from` links
+  // them from, or from nothing for an `unlink_from` of 0 (a whole chain).
+  // Every FAT buffer must be clean, as the chain's entry must already be on
+  // the disk without the clusters. Writes unlink_from's new end, then the
+  // link from chain_last to the old head, then the new head, with one write for
+  // changes next to each other in a sector, so a crash leaves the clusters at
+  // worst orphaned, on neither the chain nor the free list.
+  DiskStatus FreeChain(int unlink_from, int chain_first, int chain_last,
+                       int chain_count);
 
   //----------------------------------------------------------------------------
   // Directory

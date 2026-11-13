@@ -473,15 +473,15 @@ class DiskFileSystem {
   DiskStatus Close(DiskFile file, DateTime now);
   DiskStatus Flush(DiskFile file, DateTime now);
   DiskStatus Flush(DateTime now);  // Every open file and buffer.
+  DiskStatus Truncate(DiskFile file, DateTime now);
 
-  // Data. Read and Write move at most up to the next sector boundary.
+  // Read and Write move at most up to the next sector boundary.
   DiskStatus Read(DiskFile file, absl::Span<uint16_t> words, int* count);
   DiskStatus Write(DiskFile file, absl::Span<const uint16_t> words,
                    int* count);
   DiskStatus Seek(DiskFile file, int position);
   DiskStatus GetFileInfo(DiskFile file, DiskFileInfo* info);
   DiskStatus GetWritableWords(DiskFile file, int* words);
-  DiskStatus Truncate(DiskFile file);
 
   // Directory.
   DiskStatus Find(DiskFile directory, const DiskFilename& pattern,
@@ -895,20 +895,24 @@ Depends on: CL10.
   when its commit fails, `Find` showing the committed size, and the exact
   order of sector writes for each commit.
 
-### CL12 [ ] disk: truncating files
+### CL12 [x] disk: truncating files
 
 Depends on: CL11.
 
 - `DiskFileSystem::Truncate`: sets the file's size to its position and frees
-  the clusters past what the size needs. It commits the file first (as
-  `Flush` does, without stamping), then writes the entry with the new size
-  (and first cluster 0 at size 0), then the FAT marking the chain's new end
-  and the freed chain's last link to the old head, then sector 1 with the
-  freed chain as the head, as disk_design.md's `TRUNCATE` orders them.
-  Freeing is the reverse of allocating's order, which the write path keeps
-  for dirty FAT buffers (see CL8), so it starts with every FAT buffer clean
-  and writes each in its turn. It counts as a write, so `Close` stamps it. Returns `kWrongHandleType` for a
-  directory handle, `kReadOnly`, and `kWriteProtected`.
+  the clusters past what the size needs, and any chain left past the size,
+  walking them before writing anything. It takes a stamp, as it changes the
+  entry: one that changes the file counts as a write, and it flushes the
+  file as `Flush` does, with the entry giving the new size (and first
+  cluster 0 at size 0), then writes the FAT marking the chain's new end, the
+  freed chain's last link to the old head, and sector 1 with the freed chain
+  as the head, as disk_design.md's `TRUNCATE` orders them, with one write
+  for changes next to each other in a sector. Freeing is the reverse of
+  allocating's order, which the write path keeps for dirty FAT buffers (see
+  CL8), so it starts with every FAT buffer clean and writes each in its
+  turn. One at the end with nothing past it only flushes. Returns
+  `kWrongHandleType` for a directory handle, `kReadOnly`, and
+  `kWriteProtected`.
 - Unused, so no visible change.
 
 **Verify**

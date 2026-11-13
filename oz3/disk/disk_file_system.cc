@@ -372,6 +372,52 @@ DiskStatus DiskFileSystem::Flush(DateTime now) {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskFileSystem::Truncate(DiskFile file, DateTime now) {
+  Slot* slot = nullptr;
+  if (DiskStatus status = GetWritableSlot(file, &slot);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // The chain is walked before the file is committed, so a broken one leaves
+  // the file as it was.
+  const int cluster_size = GetClusterSize();
+  const int kept_count = (slot->position + cluster_size - 1) / cluster_size;
+  int kept_last = 0;
+  int freed_first = 0;
+  if (DiskStatus status =
+          ReachClusterBefore(slot, kept_count, &kept_last, &freed_first);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  int freed_count = 0;
+  int freed_last = 0;
+  if (DiskStatus status = CountChain(freed_first, &freed_count, &freed_last);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // The entry with the new size reaches the disk before the clusters are
+  // freed, and the commit leaves every FAT buffer clean. One that changes
+  // nothing only flushes the file.
+  if (slot->position < slot->size || freed_count > 0) {
+    slot->written_since_stamp = true;
+  }
+  slot->size = slot->position;
+  if (kept_count == 0) {
+    slot->first_cluster = 0;
+    slot->last_cluster = 0;
+    slot->last_cluster_index = 0;
+  }
+  if (DiskStatus status = CommitSlot(slot, now); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (freed_count == 0) {
+    return DiskStatus::kOk;
+  }
+  return FreeChain(kept_last, freed_first, freed_last, freed_count);
+}
+
 DiskStatus DiskFileSystem::Read(DiskFile file, absl::Span<uint16_t> words,
                                 int* count) {
   *count = 0;
@@ -580,7 +626,8 @@ DiskStatus DiskFileSystem::CountFreeClusters() {
     return status;
   }
   int count = 0;
-  if (DiskStatus status = CountChain(head, &count); status != DiskStatus::kOk) {
+  if (DiskStatus status = CountChain(head, &count, /*chain_last=*/nullptr);
+      status != DiskStatus::kOk) {
     return status;
   }
   free_count_ = count;
@@ -658,7 +705,8 @@ void DiskFileSystem::OpenSlot(Slot* slot,
 DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
   const int root_cluster = GetRootCluster(superblock_);
   int chain_count = 0;
-  if (DiskStatus status = CountChain(root_cluster, &chain_count);
+  if (DiskStatus status = CountChain(root_cluster, &chain_count,
+                                     /*chain_last=*/nullptr);
       status != DiskStatus::kOk) {
     return status;
   }
@@ -717,6 +765,21 @@ DiskStatus DiskFileSystem::ReachCluster(Slot* slot, int cluster_index) {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskFileSystem::ReachClusterBefore(Slot* slot, int cluster_index,
+                                              int* previous, int* cluster) {
+  if (cluster_index == 0) {
+    *previous = 0;
+    *cluster = slot->first_cluster;
+    return DiskStatus::kOk;
+  }
+  if (DiskStatus status = ReachCluster(slot, cluster_index - 1);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  *previous = slot->last_cluster;
+  return GetNextCluster(*previous, cluster);
+}
+
 DiskStatus DiskFileSystem::ReachWriteCluster(Slot* slot) {
   const int cluster_size = GetClusterSize();
   const int cluster_index = slot->position / cluster_size;
@@ -725,18 +788,12 @@ DiskStatus DiskFileSystem::ReachWriteCluster(Slot* slot) {
   if (slot->position < slot->size || slot->position % cluster_size != 0) {
     return ReachCluster(slot, cluster_index);
   }
-  int cluster = slot->first_cluster;
   int last_cluster = 0;
-  if (cluster_index > 0) {
-    if (DiskStatus status = ReachCluster(slot, cluster_index - 1);
-        status != DiskStatus::kOk) {
-      return status;
-    }
-    last_cluster = slot->last_cluster;
-    if (DiskStatus status = GetNextCluster(last_cluster, &cluster);
-        status != DiskStatus::kOk) {
-      return status;
-    }
+  int cluster = 0;
+  if (DiskStatus status =
+          ReachClusterBefore(slot, cluster_index, &last_cluster, &cluster);
+      status != DiskStatus::kOk) {
+    return status;
   }
   if (cluster == 0) {
     if (DiskStatus status = AllocateCluster(last_cluster, &cluster);
@@ -888,20 +945,26 @@ DiskStatus DiskFileSystem::GetNextCluster(int cluster, int* next) {
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskFileSystem::CountChain(int first_cluster, int* count) {
+DiskStatus DiskFileSystem::CountChain(int chain_first, int* chain_count,
+                                      int* chain_last) {
   const int cluster_count = GetLayout(superblock_).cluster_count;
-  int chain_count = 0;
-  for (int cluster = first_cluster; cluster != 0;) {
+  int counted = 0;
+  int last = 0;
+  for (int cluster = chain_first; cluster != 0;) {
     // A chain longer than the disk loops.
-    if (++chain_count > cluster_count) {
+    if (++counted > cluster_count) {
       return DiskStatus::kCorrupt;
     }
+    last = cluster;
     if (DiskStatus status = GetNextCluster(cluster, &cluster);
         status != DiskStatus::kOk) {
       return status;
     }
   }
-  *count = chain_count;
+  *chain_count = counted;
+  if (chain_last != nullptr) {
+    *chain_last = last;
+  }
   return DiskStatus::kOk;
 }
 
@@ -955,6 +1018,46 @@ DiskStatus DiskFileSystem::AllocateCluster(int last_cluster, int* cluster) {
     }
   }
   *cluster = head;
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::FreeChain(int unlink_from, int chain_first,
+                                     int chain_last, int chain_count) {
+  int head = 0;
+  if (DiskStatus status = GetNextCluster(0, &head); status != DiskStatus::kOk) {
+    return status;
+  }
+  // Each change first writes the other FAT buffer, if a change left it dirty.
+  // Moving the working buffer to another sector writes it too.
+  const auto change = [this](int index, uint16_t value) {
+    if (DiskStatus status = WriteBuffer(
+            GetFatSector(index) == kFatHeadSector ? &fat_work_ : &fat_head_);
+        status != DiskStatus::kOk) {
+      return status;
+    }
+    return SetFatWord(index, value);
+  };
+  if (unlink_from != 0) {
+    if (DiskStatus status = change(unlink_from, kFatEnd);
+        status != DiskStatus::kOk) {
+      return status;
+    }
+  }
+  // The freed chain already ends where the free list is empty.
+  if (head != 0) {
+    if (DiskStatus status = change(chain_last, static_cast<uint16_t>(head));
+        status != DiskStatus::kOk) {
+      return status;
+    }
+  }
+  if (DiskStatus status = change(0, static_cast<uint16_t>(chain_first));
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = WriteFat(); status != DiskStatus::kOk) {
+    return status;
+  }
+  *free_count_ += chain_count;
   return DiskStatus::kOk;
 }
 

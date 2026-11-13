@@ -267,7 +267,7 @@ The file system's dirty buffers are the drive's only unwritten state, so a **com
 - **Every command that changes a directory** (`CREATE`, `DELETE`, `RENAME`, `ATTRIB`, `LABEL`, and `FORMAT`) writes its dirty directory and FAT buffers before completing. Work spanning many entries, like a wildcard delete in a tool, does everything it can within each directory sector before writing it.
 - **`CLOSE`** of a file written since its last commit writes its dirty buffer, the dirty FAT buffers, and its directory entry, stamped with the host clock. A file only read, and a directory, write nothing.
 - **`FLUSH`** does the same as `CLOSE` without closing, so a program can make sure its data is on the disk while keeping the file open.
-- **`TRUNCATE`** writes the file's new size, the FAT marking its chain's new end, and the freed clusters, in that order, before completing, since it frees clusters (see Data commands).
+- **`TRUNCATE`** flushes the file as `FLUSH` does, stamped with the host clock and with its new size, then writes the FAT marking its chain's new end, and then the freed clusters, before completing, since it frees clusters (see Data commands). The directory entry changes anyway, so it is stamped like any other write, and a `CLOSE` straight after has nothing to write.
 - **`WRITE`** doesn't commit by itself, so a run of writes isn't charged a commit each time.
 - **Reusing a buffer** for another sector writes it first if it's dirty. This is a forced commit of that one buffer, and the only way a `WRITE`'s data reaches the disk before `FLUSH` or `CLOSE`.
 
