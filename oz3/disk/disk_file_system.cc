@@ -331,13 +331,44 @@ DiskStatus DiskFileSystem::Create(const DiskFilename& name, DateTime now,
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskFileSystem::Close(DiskFile file) {
+DiskStatus DiskFileSystem::Close(DiskFile file, DateTime now) {
   Slot* slot = nullptr;
-  // A stale slot is freed too.
-  if (GetSlot(file, &slot) == DiskStatus::kBadHandle) {
-    return DiskStatus::kBadHandle;
+  const DiskStatus slot_status = GetSlot(file, &slot);
+  if (slot_status == DiskStatus::kBadHandle) {
+    return slot_status;
+  }
+  // A stale slot's disk is gone, so its writes are lost. On a failed image,
+  // a slot with nothing to commit closes cleanly, and one with writes fails.
+  DiskStatus status = DiskStatus::kOk;
+  if (slot_status != DiskStatus::kDiskChanged) {
+    status = CommitSlot(slot, now);
+  } else if (slot->written_since_stamp) {
+    status = DiskStatus::kDiskChanged;
   }
   slot->state = SlotState::kFree;
+  return status;
+}
+
+DiskStatus DiskFileSystem::Flush(DiskFile file, DateTime now) {
+  Slot* slot = nullptr;
+  if (DiskStatus status = GetSlot(file, &slot); status != DiskStatus::kOk) {
+    return status;
+  }
+  return CommitSlot(slot, now);
+}
+
+DiskStatus DiskFileSystem::Flush(DateTime now) {
+  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  for (Slot& slot : slots_) {
+    if (slot.state != SlotState::kOpen) {
+      continue;
+    }
+    if (DiskStatus status = CommitSlot(&slot, now); status != DiskStatus::kOk) {
+      return status;
+    }
+  }
   return DiskStatus::kOk;
 }
 
@@ -395,6 +426,7 @@ DiskStatus DiskFileSystem::Write(DiskFile file,
   }
   std::copy_n(words.begin(), write_count, slot->buffer.words.begin() + offset);
   slot->buffer.dirty = true;
+  slot->written_since_stamp = true;
   slot->position += write_count;
   slot->size = std::max(slot->size, slot->position);
   *count = write_count;
@@ -614,6 +646,7 @@ void DiskFileSystem::OpenSlot(Slot* slot,
   slot->state = SlotState::kOpen;
   slot->entry = entry;
   slot->read_only = read_only;
+  slot->written_since_stamp = false;
   slot->size = size;
   slot->position = 0;
   slot->first_cluster = first_cluster;
@@ -631,6 +664,36 @@ DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
   }
   OpenSlot(slot, /*entry=*/std::nullopt, /*read_only=*/false, root_cluster,
            chain_count * GetClusterSize());
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::CommitSlot(Slot* slot, DateTime now) {
+  // Only a file is written, so a directory never has anything to commit.
+  if (!slot->written_since_stamp) {
+    return DiskStatus::kOk;
+  }
+  // Data before the size covering it, and CommitDirectory writes the links
+  // before the entry using them.
+  if (DiskStatus status = WriteBuffer(&slot->buffer);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  DiskDirEntry entry;
+  if (DiskStatus status = GetEntry(*slot->entry, &entry);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  entry.SetFirstCluster(slot->first_cluster);
+  entry.SetSize(slot->size);
+  entry.SetModified(now);
+  if (DiskStatus status = PutEntry(*slot->entry, entry);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = CommitDirectory(); status != DiskStatus::kOk) {
+    return status;
+  }
+  slot->written_since_stamp = false;
   return DiskStatus::kOk;
 }
 
@@ -960,6 +1023,19 @@ DiskStatus DiskFileSystem::CommitDirectory() {
     return status;
   }
   return WriteBuffer(&dir_.buffer);
+}
+
+DiskStatus DiskFileSystem::GetEntry(const EntryLocation& location,
+                                    DiskDirEntry* entry) {
+  if (DiskStatus status = LoadSector(location.sector, &dir_.buffer);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  *entry = DiskDirEntry::FromWords(
+      absl::MakeConstSpan(dir_.buffer.words)
+          .subspan(location.index * DiskDirEntry::kWordCount,
+                   DiskDirEntry::kWordCount));
+  return DiskStatus::kOk;
 }
 
 DiskStatus DiskFileSystem::PutEntry(const EntryLocation& location,

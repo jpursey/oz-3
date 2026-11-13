@@ -36,7 +36,8 @@ is how code calls it:
   `Flush` first. Attaching while an image is attached detaches it first.
 - **Stale handles are the library's.** A file open when its image is
   detached stays open but stale: every operation on it is `kDiskChanged`,
-  except `Close`, which frees it and succeeds. So the drive's slots map one
+  except `Close`, which frees it (from CL11, failing with `kDiskChanged` if
+  it had uncommitted writes, which are lost). So the drive's slots map one
   to one onto handles with no state of their own, and a tool swapping images
   can't write into the wrong disk either. disk_design.md's Disk library
   section changes to match, in CL6.
@@ -862,7 +863,7 @@ Depends on: CL9.
   reattaching the reopened image reading what was written before the
   failure.
 
-### CL11 [ ] disk: committing files
+### CL11 [x] disk: committing files
 
 Depends on: CL10.
 
@@ -871,13 +872,19 @@ Depends on: CL10.
   of a written file commit it: its dirty data sector, then the FAT (sector 1
   first), then its entry, with the size, first cluster, and `now` as the
   modified time. A file not written since, and a directory handle, write
-  nothing. `Close` frees the slot even if its commit fails, returning the
-  failure. `Flush(now)` commits every open file, then any dirty FAT buffer.
+  nothing. `Close` always frees the slot, even when it fails, returning the
+  commit's failure, or for a stale slot with uncommitted writes,
+  `kDiskChanged`, as they are lost. `Flush(now)` commits every open file,
+  stopping at the first failure. That leaves no buffer dirty, as only a
+  write leaves the FAT dirty, and a write that fails partway fails the image.
 - `Find` returns entries exactly as they are on the disk, so an open file
   lists as it was last committed.
 - disk_design.md: the `WRITE` walkthrough allocates as it writes (see
   Behavior), and nothing is freed after a write that stops short; `FIND` and
-  Committing's listings give the entry on the disk, not an open file's slot.
+  Committing's listings give the entry on the disk, not an open file's slot;
+  `CLOSE` on a stale slot with uncommitted writes fails with **disk
+  changed** (the Disk library section, Images and disk changes, `CLOSE`'s
+  notes, and Disk changes and recovery).
 - Unused, so no visible change.
 
 **Verify**

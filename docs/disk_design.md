@@ -201,7 +201,7 @@ The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`
 - **One owner per image.** `DiskFileSystem` owns the `DiskHardware`, which owns the `DiskImage`, so nothing else can write the image behind the file system's back.
 - **Patterns are filenames.** `DiskFilename::ParsePattern("*.TXT")` expands each `*` into `?` bytes at construction, and `Matches(const DiskFilename& name)` is a byte compare where `?` matches anything. A plain parse rejects `?` and `*`, so a pattern can't be mistaken for a name.
 - **Files are handles, like `FILE*`.** `DiskFileSystem` keeps the open-file table and does every operation, as in `Read(DiskFile, span)`, so it can refuse to delete an open file, give open files' sizes in listings, and write back at close. The caller sets the table's size: the drive passes its slot count, and tools a large one. A handle is only its slot's number, as the drive's are, so a handle kept past its close reaches whatever is opened in that slot next, which is the caller's bug to avoid.
-- **Stale slots are the library's.** A file open when its image is detached stays open but stale: every operation on it fails with **disk changed**, except closing it, which frees the slot. So a tool swapping images can't write into the wrong disk, and the drive's slots need no state of their own.
+- **Stale slots are the library's.** A file open when its image is detached stays open but stale: every operation on it fails with **disk changed**, except closing it, which frees the slot and fails only if the file had writes not yet committed, which are lost. So a tool swapping images can't write into the wrong disk, and the drive's slots need no state of their own.
 - **Buffers are explicit.** `DiskFileSystem` holds one sector per open file, one directory sector, and two FAT sectors, one fixed on sector 1. There's no generic cache between it and the hardware, so it always knows exactly what it holds and when it's written, and its memory is fixed by its open-file limit.
 - **Commits are explicit.** `DiskFileSystem` writes its buffers at the points the drive needs: at the end of every directory-changing operation, in `Close`, `Flush(DiskFile)`, and `Truncate(DiskFile)`, and when a dirty buffer is reused, always in the crash-safe order. `Flush()` with no file writes everything, for a clean shutdown.
 - **Per-sector work.** A read or write moves at most up to the next sector boundary per call, so the drive can stream a sector at a time, and a failure lands at the right point.
@@ -265,7 +265,7 @@ A slot's buffer holds the sector at its position: file data, or for a directory 
 The file system's dirty buffers are the drive's only unwritten state, so a **commit** is simply the file system writing them. It happens at known points:
 
 - **Every command that changes a directory** (`CREATE`, `DELETE`, `RENAME`, `ATTRIB`, `LABEL`, and `FORMAT`) writes its dirty directory and FAT buffers before completing. Work spanning many entries, like a wildcard delete in a tool, does everything it can within each directory sector before writing it.
-- **`CLOSE`** writes the file's dirty buffer, the dirty FAT buffers, and its directory entry.
+- **`CLOSE`** of a file written since its last commit writes its dirty buffer, the dirty FAT buffers, and its directory entry, stamped with the host clock. A file only read, and a directory, write nothing.
 - **`FLUSH`** does the same as `CLOSE` without closing, so a program can make sure its data is on the disk while keeping the file open.
 - **`TRUNCATE`** writes the file's new size, the FAT marking its chain's new end, and the freed clusters, in that order, before completing, since it frees clusters (see Data commands).
 - **`WRITE`** doesn't commit by itself, so a run of writes isn't charged a commit each time.
@@ -283,7 +283,7 @@ The worst a crash can leave is orphaned clusters or slack, which a check reclaim
 
 Files written at once share the FAT's working buffer, so writing it for one file can write another's new links before that file's data or size. That is safe: the other file's recorded size hasn't grown, so its chain on disk is simply longer than its size requires. Nothing reads past the size, and the extra clusters aren't on the free list, so a crash leaves them as slack that a check trims. When a file grows, the drive follows any links already past its size before allocating new clusters, so slack left this way is reused rather than leaked.
 
-An open file's size lives in its slot, and its directory entry is written at `CLOSE`. When a listing meets the entry of an open file, the drive gives the slot's size instead, so nobody sees a stale size.
+An open file's size lives in its slot, and its directory entry is written at `CLOSE` or `FLUSH`. A listing gives every entry as it is on the disk, so an open file lists as it was last committed. A program that wants a listing to show its progress flushes.
 
 #### Timing
 
@@ -297,7 +297,7 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 
 - **Attaching:** the drive reads the image's container header right away, for `MEDIA` and write protection, then reads and checks the superblock, charging its time as usual. A command that arrives meanwhile simply waits for the read to finish. FAT sectors are read only when an operation first needs them, typically when clusters are allocated or freed.
 - **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale, and a command in progress completes with **no disk**.
-- **Stale slots:** every command on a stale slot fails with **disk changed**, except `CLOSE`, which frees the slot and succeeds. A program can't keep writing into a different disk by accident.
+- **Stale slots:** every command on a stale slot fails with **disk changed**, except `CLOSE`, which frees the slot. It succeeds unless the file was written since its last commit, when it fails with **disk changed**, as those writes are lost. A program can't keep writing into a different disk by accident.
 - **Failing:** once the host fails to read or write the image, the disk has failed: every command fails with **I/O error**, even one the drive's buffers could answer, except `CLOSE`, which still frees the slot. Ejecting the disk discards the buffers, leaving it as a crash at the failure would, and inserting it again, with its image reopened, is the retry. Retrying on the same insertion would need every command to undo its changes to the buffers.
 - **Shutting down:** when the Ozzy app shuts down cleanly, the drive writes back everything dirty, so the image stays consistent.
 - **No outside changes:** while an image is attached to a drive, nothing else may modify it, including `oz3dsk` or another program on the host. This is a documented contract, not enforced across processes. The drive's buffers, open files, and free count all assume it's the only writer. A way for a running Ozzy to cooperate with `oz3dsk` is out of scope for this design.
@@ -409,7 +409,7 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 
 - `OPEN` of a file that is already open fails with **in use**; two slots on one file would clobber each other. `OPEN ROOT` is the same for the root, which is open in at most one slot like any file.
 - `CREATE` fails with **exists** if the name is taken; to replace a file, delete it first. It makes an empty file, stamped with the host clock, and opens it.
-- `CLOSE` writes back the slot's dirty sectors and its directory entry, stamping the modified time if the file was written. `CLOSE` with h = FFh closes every slot. `CLOSE` on a stale slot frees it and succeeds.
+- `CLOSE` writes back the slot's dirty sectors and its directory entry, stamping the modified time if the file was written. `CLOSE` with h = FFh closes every slot. `CLOSE` always frees the slot, even when it fails. On a stale slot it succeeds, or fails with **disk changed** if the file had writes not yet committed.
 
 `FLUSH` commits the slot's dirty data sector, the FAT sectors its writes changed, and its directory entry, leaving the file open (see Committing). On a directory handle it does nothing and succeeds.
 
@@ -441,7 +441,7 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 | 32h | RENAME | old (8), new (8) | status | status |
 | 33h | ATTRIB | name (8), attributes | status | status |
 
-- `FIND` takes a directory handle and scans forward from its position for the next entry matching the pattern. It returns the raw 16-word entry, with an open file's current size, and leaves the position just past it. At the end it fails with **not found**. `SEEK h, 0` restarts a listing.
+- `FIND` takes a directory handle and scans forward from its position for the next entry matching the pattern. It returns the raw 16-word entry as it is on the disk (an open file's as it was last committed; see Committing), and leaves the position just past it. At the end it fails with **not found**. `SEEK h, 0` restarts a listing.
 - `DELETE`, `RENAME`, and `ATTRIB` fail with **in use** if the file is open. `DELETE` also fails on a read-only file.
 - `ATTRIB` sets read-only and hidden; any other bit is **bad attributes**.
 
@@ -488,11 +488,11 @@ An example: handle 2 is a 500-word file positioned at its end, the OS writes 100
 
 1. The OS writes `WRITE` with handle 2, then the count, 100, to the command port.
 2. The drive checks the handle, the file's read-only bit, the handle's type, and write protection. It then works out n without the disk: the file's last cluster has 12 words left, the rest needs one more cluster, and the free count (known since the file was opened; see Free count) says there is one. n is the words that fit, here all 100. The OS reads OK, then 100, from the command port.
-3. Right after accept, the drive allocates the cluster the write needs: it pops the free list's head and links it onto the file's chain, reading the FAT sectors that takes. Position 500 is partway into a sector, so it then loads that sector. The OS's first `OUTS` to the data port succeeds, but the drive doesn't take that word until the sector is loaded, so the OS's next write waits. The drive stalls the OS just by not taking the word in the port.
-4. The drive takes words 0–11, filling that sector, and writes it back. It takes words 12–99 into a zeroed buffer for the new cluster, and writes that sector at the end of the command (or holds it, if a later write continues it).
+3. Right after accept, the drive loads the sector at position 500, which is partway into a sector, so its first words are kept. The OS's first `OUTS` to the data port succeeds, but the drive doesn't take that word until the sector is loaded, so the OS's next write waits. The drive stalls the OS just by not taking the word in the port.
+4. The drive takes words 0–11, filling that sector. Word 12 is the first of a new cluster, so before taking it the drive allocates the cluster: it pops the free list's head and links it onto the file's chain, reading the FAT sectors that takes. It writes the filled sector back as its buffer moves on, and takes words 12–99 into a zeroed buffer for the new cluster. That sector and the FAT's changes stay in their buffers until a buffer moves on again, or the file is flushed or closed (see Committing).
 5. The slot records the new size, 600. The drive puts OK, then 100 words written, on the command port, and **raises its interrupt**.
 
-Because n comes from the free count, which only this drive changes, n is a promise, which stays true even if a later drive streams several files at once. If only some of the count fits, accept still says OK with a smaller n, the OS sends only n words, and completion reports **disk full**. If none fits, accept fails with **disk full**. A failure while allocating, such as a broken free list, is an early completion (see below). Clusters allocated for words that never arrive, after an abort or failure, are freed at completion, so a chain is always exactly as long as its file's size requires.
+Because n comes from the free count, which only this drive changes, n is a promise, which stays true even if a later drive streams several files at once. If only some of the count fits, accept still says OK with a smaller n, the OS sends only n words, and completion reports **disk full**. If none fits, accept fails with **disk full**. A failure while allocating, such as a broken free list, is an early completion (see below). A cluster is allocated only when its first word arrives, so after an abort or failure there is nothing to free, and a chain is never longer than its file's size requires, but for slack a crash leaves (see Committing).
 
 Writing at a position before the end overwrites, needing no allocation unless the write runs past the end. Files only grow by writing at or across their end.
 
@@ -693,7 +693,7 @@ The loader opens the `.oz3` file, reads its header with `READ`, then reads each 
 
 ### Disk changes and recovery
 
-- A **disk changed** status means the slot's disk is gone: the OS closes the slot, which frees it, and reports the failure to the program that owned the file.
+- A **disk changed** status means the slot's disk is gone: the OS closes the slot, which frees it, and reports the failure to the program that owned the file. A `CLOSE` that fails this way means the file's last writes never reached the disk.
 - An **I/O error** means the disk has failed: the OS closes its slots and reports it, and the disk works again once it is ejected and inserted.
 - If the OS ever loses track of the protocol, such as after a fault in its drive code, it resets through the control port and reissues the command. The control port's phase shows whether that's needed.
 

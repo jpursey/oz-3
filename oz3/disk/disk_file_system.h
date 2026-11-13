@@ -61,7 +61,7 @@ struct DiskFileInfo {
 //
 // Once the host fails to read or write the image, every operation returns
 // kIoError until an image is attached, even one the buffers could answer
-// (see DiskHardware). Close still frees a slot. A failed operation leaves its
+// (see DiskHardware). Close still frees the slot. A failed operation leaves its
 // changes in the buffers, so the retry is to detach the image, discarding
 // them, and attach it again reopened.
 //
@@ -100,14 +100,15 @@ class DiskFileSystem final {
   //----------------------------------------------------------------------------
 
   // Attaches `image`, which must not be null, detaching any image already
-  // attached first. Reads the superblock, charging its time, and returns kOk
-  // for a formatted disk, kUnformatted for one with no valid file system (which
-  // can still be formatted), or kIoError, which fails the image. The image
-  // stays attached for all three.
+  // attached first, as DetachImage does. Reads the superblock, charging its
+  // time, and returns kOk for a formatted disk, kUnformatted for one with no
+  // valid file system (which can still be formatted), or kIoError, which fails
+  // the image. The image stays attached for all three.
   DiskStatus AttachImage(std::unique_ptr<DiskImage> image);
 
   // Detaches and returns the image, or null if the drive is empty. The
-  // buffers are discarded unwritten.
+  // buffers are discarded unwritten, so a host wanting the disk to hold
+  // everything written calls Flush first.
   std::unique_ptr<DiskImage> DetachImage();
 
   // Returns whether an image is attached.
@@ -175,8 +176,22 @@ class DiskFileSystem final {
   // kCorrupt for a broken root chain or free list.
   DiskStatus Create(const DiskFilename& name, DateTime now, DiskFile* file);
 
-  // Closes `file`, freeing its slot. A stale slot is freed too.
-  DiskStatus Close(DiskFile file);
+  // Commits `file` as Flush does, and closes it. The slot is always freed,
+  // even when Close fails, so a handle is never left open. Returns the
+  // commit's failure, and for a stale slot, kDiskChanged if it was written
+  // since its last commit, as those writes are lost, and otherwise kOk.
+  DiskStatus Close(DiskFile file, DateTime now);
+
+  // Commits `file` if it was written since it was last stamped: its dirty
+  // data sector, then the dirty FAT buffers (sector 1 first), then its
+  // directory entry, with its size, first cluster, and `now` as the modified
+  // time. A file not written since, and a directory handle, write nothing.
+  DiskStatus Flush(DiskFile file, DateTime now);
+
+  // Commits every open file as Flush does, so the disk holds everything
+  // written, stopping at the first failure. Returns kUnformatted with no file
+  // system.
+  DiskStatus Flush(DateTime now);
 
   //----------------------------------------------------------------------------
   // Data
@@ -193,10 +208,10 @@ class DiskFileSystem final {
   // position past them, and growing the size to cover them. A cluster is
   // allocated when its first word is written, after following any chain left
   // past the size. The file's sector and the FAT are written when their
-  // buffers take other sectors. Returns kWrongHandleType for a directory's
-  // handle, kReadOnly for a read-only file, kWriteProtected on a protected
-  // disk, kDiskFull if the write needs a cluster and none is free, and
-  // kCorrupt for a broken chain or free list.
+  // buffers take other sectors, or at Flush or Close. Returns kWrongHandleType
+  // for a directory's handle, kReadOnly for a read-only file, kWriteProtected
+  // on a protected disk, kDiskFull if the write needs a cluster and none is
+  // free, and kCorrupt for a broken chain or free list.
   DiskStatus Write(DiskFile file, absl::Span<const uint16_t> words, int* count);
 
   // Sets `count` to the words writes at `file`'s position are sure to fit,
@@ -217,9 +232,10 @@ class DiskFileSystem final {
 
   // Finds the next entry of `directory` whose name `pattern` matches, from the
   // first entry starting at or after its position, setting `entry` to it and
-  // moving the position just past it. Free entries, and entries whose names
-  // break the rules, never match. Returns kNotFound at the end, leaving the
-  // position there, and kWrongHandleType for a file's handle.
+  // moving the position just past it. The entry is as it is on the disk, so
+  // an open file's is as it was last committed. Free entries, and entries
+  // whose names break the rules, never match. Returns kNotFound at the end,
+  // leaving the position there, and kWrongHandleType for a file's handle.
   DiskStatus Find(DiskFile directory, const DiskFilename& pattern,
                   DiskDirEntry* entry);
 
@@ -266,6 +282,7 @@ class DiskFileSystem final {
     // A file's directory entry, or none for the root.
     std::optional<EntryLocation> entry;
     bool read_only = false;  // The file's read-only attribute, at open.
+    bool written_since_stamp = false;
     int size = 0;
     int position = 0;
 
@@ -350,6 +367,9 @@ class DiskFileSystem final {
   // Opens `slot` on the root directory, whose size is its chain's full length.
   // Returns kCorrupt for a broken root chain.
   DiskStatus OpenRootSlot(Slot* slot);
+
+  // Commits `slot`, stamping it `now`, as Flush describes.
+  DiskStatus CommitSlot(Slot* slot, DateTime now);
 
   // Moves `slot`'s last cluster reached to the one `cluster_index` clusters
   // into its chain, following the chain from the cluster last reached, or from
@@ -470,6 +490,10 @@ class DiskFileSystem final {
   // Writes the dirty FAT buffers, then the directory buffer, as every change
   // to the directory does before returning.
   DiskStatus CommitDirectory();
+
+  // Sets `entry` to the entry at `location`, loading its sector into dir_'s
+  // buffer if needed.
+  DiskStatus GetEntry(const EntryLocation& location, DiskDirEntry* entry);
 
   // Puts `entry` at `location` in dir_'s buffer, loading its sector if
   // needed, for CommitDirectory to write.
