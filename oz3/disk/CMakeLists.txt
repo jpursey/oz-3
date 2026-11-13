@@ -5,6 +5,7 @@
 
 set(oz3_disk_SOURCE
   disk_dir_entry.cc disk_dir_entry.h
+  disk_fat.cc disk_fat.h
   disk_file_system.cc disk_file_system.h
   disk_filename.cc disk_filename.h
   disk_hardware.cc disk_hardware.h
@@ -13,6 +14,7 @@ set(oz3_disk_SOURCE
   disk_layout.cc disk_layout.h
   disk_media.cc disk_media.h
   disk_packed_text.cc disk_packed_text.h
+  disk_sector_buffer.h
   disk_status.h
   disk_superblock.cc disk_superblock.h
 )
@@ -33,6 +35,7 @@ set(oz3_disk_LIBS
 
 set(oz3_disk_TEST_SOURCE
   disk_dir_entry_test.cc
+  disk_fat_test.cc
   disk_file_system_test.cc
   disk_filename_test.cc
   disk_hardware_test.cc

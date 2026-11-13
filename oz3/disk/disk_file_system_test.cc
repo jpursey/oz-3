@@ -725,43 +725,27 @@ TEST_F(DiskFileSystemTest, MediaIsTheImageFormattedOrNot) {
 }
 
 TEST_F(DiskFileSystemTest, FormatWritesTheSuperblockFatAndRoot) {
-  // Fill every sector, to see what formatting clears.
+  // Fill the root's sector, to see formatting clear it.
   std::unique_ptr<DiskImage> image = MakeImage(kFloppySectors);
-  for (int sector = 0; sector < kFloppySectors; ++sector) {
-    WriteSector(*image, sector, MakeFilledSector(0xEEEE));
-  }
+  WriteSector(*image, 4, MakeFilledSector(0xEEEE));
   ASSERT_EQ(file_system_.AttachImage(std::move(image)),
             DiskStatus::kUnformatted);
+  CollectSectorWrites();
   ASSERT_EQ(file_system_.Format(GetLabel("work"), 0, GetNow()),
             DiskStatus::kOk);
+
+  // The blank superblock, the FAT (see DiskFatTest), the root's one sector,
+  // and the superblock, and nothing else.
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(0, 1, 2, 3, 4, 0));
   image = file_system_.DetachImage();
-
-  Sector superblock = {};
-  superblock[0] = 0x5A4F;  // "OZFS"
-  superblock[1] = 0x5346;
-  superblock[2] = 1;    // Version
-  superblock[3] = 1;    // Sectors per cluster
-  superblock[4] = 716;  // Clusters
-  superblock[5] = 3;    // FAT sectors
-  superblock[6] = 1;    // Root cluster
-  superblock[8] = 'W' | 'O' << 8;
-  superblock[9] = 'R' | 'K' << 8;
-  const DateTime::Words& now = GetNow().GetWords();
-  std::copy(now.begin(), now.end(), superblock.begin() + 16);
-  EXPECT_EQ(ReadSector(*image, 0), superblock);
-
-  // The root took cluster 1, leaving the free list's head at 2.
-  Sector fat_head = {};
-  fat_head[0] = 2;
-  fat_head[1] = 0xFFFF;
-  EXPECT_EQ(ReadSector(*image, 1), fat_head);
-  EXPECT_THAT(ReadSector(*image, 2), Each(0));
-  EXPECT_THAT(ReadSector(*image, 3), Each(0));
-
-  // The root's one sector is zeroed, and nothing after it is written.
+  constexpr DiskLayout kLayout = {
+      .sectors_per_cluster = 1,
+      .cluster_count = 716,
+      .fat_sectors = 3,
+  };
+  EXPECT_EQ(ReadSuperblock(*image),
+            DiskSuperblock(kLayout, 1, GetLabel("WORK"), GetNow()));
   EXPECT_THAT(ReadSector(*image, 4), Each(0));
-  EXPECT_THAT(ReadSector(*image, 5), Each(0xEEEE));
-  EXPECT_THAT(ReadSector(*image, kFloppySectors - 1), Each(0xEEEE));
 }
 
 TEST_F(DiskFileSystemTest, FormatZeroesTheRootsWholeCluster) {
@@ -782,23 +766,11 @@ TEST_F(DiskFileSystemTest, FormatZeroesTheRootsWholeCluster) {
 
   // One FAT sector, then the root's four.
   image = file_system_.DetachImage();
-  EXPECT_EQ(ReadSector(*image, 0)[5], 1);
+  EXPECT_EQ(ReadSuperblock(*image).GetLayout().fat_sectors, 1);
   for (int sector = 2; sector < 6; ++sector) {
     EXPECT_THAT(ReadSector(*image, sector), Each(0)) << "Sector " << sector;
   }
   EXPECT_THAT(ReadSector(*image, 6), Each(0xEEEE));
-}
-
-TEST_F(DiskFileSystemTest, FormatOfOneClusterIsFull) {
-  AttachFormatted(3);
-  EXPECT_EQ(GetFreeClusters(), 0);
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  EXPECT_EQ(ReadSector(*image, 1)[0], 0xFFFF);
-  EXPECT_EQ(ReadSector(*image, 1)[1], 0xFFFF);
-
-  // Walking the free list agrees.
-  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
-  EXPECT_EQ(GetFreeClusters(), 0);
 }
 
 TEST_F(DiskFileSystemTest, FormatRefusesBadSectorsPerCluster) {
@@ -852,62 +824,13 @@ TEST_F(DiskFileSystemTest, AttachingAFormattedDisk) {
                                     .free_clusters = 715}));
 }
 
-TEST_F(DiskFileSystemTest, AttachingAcceptsExtraFatSectors) {
-  // 715 clusters after 4 FAT sectors still fit 720 sectors.
+TEST_F(DiskFileSystemTest, AnInvalidSuperblockIsUnformatted) {
+  // Each way a superblock is invalid is DiskSuperblockTest's.
   AttachFormatted(kFloppySectors);
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  Sector superblock = ReadSector(*image, 0);
-  superblock[4] = 715;
-  superblock[5] = 4;
-  WriteSector(*image, 0, superblock);
-  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+  ASSERT_EQ(PatchWord(DiskLayout::kSuperblockSector, 2, 2),
+            DiskStatus::kUnformatted);
   DiskVolumeInfo volume;
-  ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
-  EXPECT_EQ(volume.cluster_count, 715);
-  EXPECT_EQ(volume.free_clusters, 714);
-}
-
-TEST_F(DiskFileSystemTest, EachWayADiskIsUnformatted) {
-  struct Patch {
-    int index;
-    uint16_t value;
-  };
-  const Patch kPatches[] = {
-      {0, 0x5A50},    // Format ID
-      {1, 0x5347},    // Format ID
-      {2, 0},         // Version
-      {2, 2},         // Version
-      {3, 0},         // Sectors per cluster
-      {3, 3},         // Sectors per cluster
-      {3, 128},       // Sectors per cluster
-      {3, 2},         // Sectors per cluster, making the disk too big
-      {4, 0},         // Cluster count
-      {4, 717},       // Cluster count, making the disk too big
-      {4, 0xFFFF},    // Cluster count
-      {5, 2},         // FAT sectors, too few
-      {5, 4},         // FAT sectors, making the disk too big
-      {6, 0},         // Root cluster
-      {6, 717},       // Root cluster
-      {8, '.'},       // Label
-      {8, 'A' << 8},  // Label, with a zero before a character
-  };
-  AttachFormatted(kFloppySectors);
-  for (const Patch& patch : kPatches) {
-    std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-    const Sector superblock = ReadSector(*image, 0);
-    Sector patched = superblock;
-    patched[patch.index] = patch.value;
-    WriteSector(*image, 0, patched);
-    EXPECT_EQ(file_system_.AttachImage(std::move(image)),
-              DiskStatus::kUnformatted)
-        << "Word " << patch.index << " = " << patch.value;
-    DiskVolumeInfo volume;
-    EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
-
-    image = file_system_.DetachImage();
-    WriteSector(*image, 0, superblock);
-    ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
-  }
+  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
 }
 
 TEST_F(DiskFileSystemTest, ADiskBiggerThanItsImageIsUnformatted) {
@@ -988,102 +911,39 @@ TEST_F(DiskFileSystemTest, AttachingChargesTheSuperblockWithAFreshCache) {
   EXPECT_EQ(timed.CollectBusyTime(), kLatency + kRead);
   EXPECT_EQ(timed.CollectBusyTime(), absl::ZeroDuration());
 
-  // Attaching again reads the disk again, rather than the cache.
+  // Attaching again reads the disk again, rather than the cache. How counting
+  // the free clusters reads is DiskFatTest's.
   ASSERT_EQ(timed.AttachImage(timed.DetachImage()), DiskStatus::kOk);
   EXPECT_EQ(timed.CollectBusyTime(), kLatency + kRead);
-
-  // Counting the free clusters reads each FAT sector once, continuously.
-  DiskVolumeInfo volume;
-  ASSERT_EQ(timed.GetVolumeInfo(&volume), DiskStatus::kOk);
-  EXPECT_EQ(timed.CollectBusyTime(), 3 * kRead);
-  ASSERT_EQ(timed.GetVolumeInfo(&volume), DiskStatus::kOk);
-  EXPECT_EQ(timed.CollectBusyTime(), absl::ZeroDuration());
 }
 
-TEST_F(DiskFileSystemTest, FreeCountOfAFragmentedFreeList) {
-  // Clusters 1, 2, 5, and 6 are taken. The free list is 3, 4 (a zero run),
-  // then 7 to 10 (a link, then a zero run to the end).
+TEST_F(DiskFileSystemTest, ABrokenFreeListIsCorrupt) {
+  // Each way a free list is broken is DiskFatTest's.
   AttachFormatted(kSmallSectors);
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  Sector fat = {};
-  fat[0] = 3;
-  fat[1] = 0xFFFF;
-  fat[2] = 0xFFFF;
-  fat[4] = 7;
-  fat[5] = 6;
-  fat[6] = 0xFFFF;
-  WriteSector(*image, 1, fat);
-  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
-  EXPECT_EQ(GetFreeClusters(), 6);
-}
-
-TEST_F(DiskFileSystemTest, FreeCountFollowsLinksBackward) {
-  // The free list is 10, 4, 3, then the end.
-  AttachFormatted(kSmallSectors);
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  Sector fat = MakeFilledSector(0xFFFF);
-  fat[0] = 10;
-  fat[10] = 4;
-  fat[4] = 3;
-  WriteSector(*image, 1, fat);
-  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
-  EXPECT_EQ(GetFreeClusters(), 3);
-}
-
-TEST_F(DiskFileSystemTest, FreeCountOfAFullDisk) {
-  AttachFormatted(kSmallSectors);
-  ASSERT_EQ(PatchWord(1, 0, 0xFFFF), DiskStatus::kOk);
-  EXPECT_EQ(GetFreeClusters(), 0);
-}
-
-TEST_F(DiskFileSystemTest, BrokenFreeListsAreCorrupt) {
-  AttachFormatted(kSmallSectors);
-  DiskVolumeInfo volume;
-
-  // A head out of range.
   ASSERT_EQ(PatchWord(1, 0, kSmallClusters + 1), DiskStatus::kOk);
-  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kCorrupt);
-  ASSERT_EQ(PatchWord(1, 0, 2), DiskStatus::kOk);
-  EXPECT_EQ(GetFreeClusters(), kSmallClusters - 1);
-
-  // A link out of range.
-  ASSERT_EQ(PatchWord(1, 5, kSmallClusters + 1), DiskStatus::kOk);
-  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kCorrupt);
-
-  // A loop, from 5 back to 3, and it stays corrupt.
-  ASSERT_EQ(PatchWord(1, 5, 3), DiskStatus::kOk);
-  EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kCorrupt);
+  DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kCorrupt);
 }
 
 TEST_F(DiskFileSystemTest, SetLabelRewritesOnlyTheLabel) {
+  // The superblock it attached, reserved flags and boot area included, with
+  // only the label changed (see DiskSuperblockTest).
   AttachFormatted(kFloppySectors);
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  Sector superblock = ReadSector(*image, 0);
-  superblock[7] = 0x1234;    // Reserved flags
-  superblock[100] = 0x5678;  // The boot area
-  WriteSector(*image, 0, superblock);
+  Sector words = ReadSector(*image, 0);
+  words[7] = 0x1234;    // Reserved flags
+  words[100] = 0x5678;  // The boot area
+  WriteSector(*image, 0, words);
   ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
 
   ASSERT_EQ(file_system_.SetLabel(GetLabel("archive")), DiskStatus::kOk);
   DiskVolumeInfo volume;
   ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
   EXPECT_EQ(volume.label, GetLabel("ARCHIVE"));
-
   image = file_system_.DetachImage();
-  superblock[8] = 'A' | 'R' << 8;
-  superblock[9] = 'C' | 'H' << 8;
-  superblock[10] = 'I' | 'V' << 8;
-  superblock[11] = 'E';
-  EXPECT_EQ(ReadSector(*image, 0), superblock);
-
-  // An empty label clears it.
-  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
-  ASSERT_EQ(file_system_.SetLabel(DiskLabel()), DiskStatus::kOk);
-  ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
-  EXPECT_EQ(volume.label, DiskLabel());
-  image = file_system_.DetachImage();
-  EXPECT_EQ(ReadSector(*image, 0)[8], 0);
+  DiskSuperblock expected = DiskSuperblock::FromWords(words);
+  expected.SetLabel(GetLabel("ARCHIVE"));
+  EXPECT_EQ(ReadSuperblock(*image), expected);
 }
 
 TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
@@ -1621,20 +1481,14 @@ TEST_F(DiskFileSystemTest, EntriesThatCantBeOnTheDiskAreCorrupt) {
   EXPECT_EQ(OpenFile("BIG"), 0);
 }
 
-TEST_F(DiskFileSystemTest, BrokenRootChainsAreCorrupt) {
-  const uint16_t kBadLinks[] = {
-      1,                   // A loop
-      kSmallClusters + 1,  // Out of range
-  };
+TEST_F(DiskFileSystemTest, ABrokenRootChainIsCorrupt) {
+  // A loop. Each way a chain is broken is DiskFatTest's.
   AttachFormatted(kSmallSectors);
-  for (uint16_t link : kBadLinks) {
-    SCOPED_TRACE(link);
-    ASSERT_EQ(PatchWord(1, 1, link), DiskStatus::kOk);
-    DiskFile file = -1;
-    EXPECT_EQ(file_system_.OpenRoot(&file), DiskStatus::kCorrupt);
-    EXPECT_EQ(file_system_.Open(GetName("HELLO.TXT"), &file),
-              DiskStatus::kCorrupt);
-  }
+  ASSERT_EQ(PatchWord(1, 1, 1), DiskStatus::kOk);
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.OpenRoot(&file), DiskStatus::kCorrupt);
+  EXPECT_EQ(file_system_.Open(GetName("HELLO.TXT"), &file),
+            DiskStatus::kCorrupt);
 }
 
 TEST_F(DiskFileSystemTest, OpenCountsTheFreeListOnlyOnAWritableDisk) {
@@ -1886,9 +1740,11 @@ TEST_F(DiskFileSystemTest, CreateGrowsARootOfFourSectorClusters) {
   }
 }
 
-TEST_F(DiskFileSystemTest, GrowingWritesTheNewEndBeforeALinkInALaterSector) {
-  // The root's chain is 1 then 300, whose FAT word is in sector 2, and the
-  // free list skips 300. The head, 2, ends in sector 1.
+TEST_F(DiskFileSystemTest, GrowingARootOfTwoClustersLinksFromItsLast) {
+  // The root's chain is 1 then 300, and the free list skips 300. The new
+  // cluster, 2, is written while it is still free, before allocating it
+  // writes sector 1 with its end, and then the link from 300 in sector 2 (see
+  // DiskFatTest).
   AttachFormatted(kFloppySectors);
   EditDisk([](DiskEditor& editor) {
     editor.SetChain({1, 300});
@@ -1902,35 +1758,11 @@ TEST_F(DiskFileSystemTest, GrowingWritesTheNewEndBeforeALinkInALaterSector) {
   ASSERT_EQ(file_system_.Close(CreateFile("NEW"), GetLatest()),
             DiskStatus::kOk);
   EXPECT_THAT(CollectSectorWrites(), ElementsAre(5, 1, 2));
+  EXPECT_EQ(GetInfo(OpenRoot()).size, 3 * kDiskSectorWords);
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  EXPECT_EQ(ReadSector(*image, 1)[0], 3);
-  EXPECT_EQ(ReadSector(*image, 1)[2], 0xFFFF);
   EXPECT_EQ(ReadSector(*image, 2)[300 - kDiskSectorWords], 2);
   EXPECT_EQ(ReadEntry(*image, 5, 0), MakeCreatedEntry("NEW"));
-}
-
-TEST_F(DiskFileSystemTest, GrowingWritesANewEndInALaterSectorBeforeTheLink) {
-  // The free list starts at 400, whose FAT word is in sector 2, so the root's
-  // link to it, in sector 1, must wait for its end.
-  AttachFormatted(kFloppySectors);
-  EditDisk([](DiskEditor& editor) {
-    editor.SetFatWord(0, 400);
-    editor.FillSector(4, 0);
-  });
-  EXPECT_EQ(GetFreeClusters(), 317);
-  CollectSectorWrites();
-
-  ASSERT_EQ(file_system_.Close(CreateFile("NEW"), GetLatest()),
-            DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(403, 1, 2, 1));
-  EXPECT_EQ(GetFreeClusters(), 316);
-
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  EXPECT_EQ(ReadSector(*image, 1)[0], 401);
-  EXPECT_EQ(ReadSector(*image, 1)[1], 400);
-  EXPECT_EQ(ReadSector(*image, 2)[400 - kDiskSectorWords], 0xFFFF);
-  EXPECT_EQ(ReadEntry(*image, 403, 0), MakeCreatedEntry("NEW"));
 }
 
 TEST_F(DiskFileSystemTest, AnOpenRootSeesCreatedEntries) {
@@ -2511,28 +2343,6 @@ TEST_F(DiskFileSystemTest, TruncatingMidClusterAndOnABoundary) {
   EXPECT_EQ(ReadFile(reopened), expected);
 }
 
-TEST_F(DiskFileSystemTest, FreeingWritesEachChangeInOrderAcrossSectors) {
-  // OLD is clusters 250 and 300, so its new end is in sector 1 and the freed
-  // cluster's link in sector 2. The free list starts at 400.
-  AttachFormatted(kFloppySectors);
-  EditDisk([](DiskEditor& editor) {
-    editor.AddFile(0, "OLD", {250, 300}, 2 * kDiskSectorWords, 1000);
-    editor.SetFatWord(0, 400);
-  });
-  const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
-
-  ASSERT_EQ(file_system_.Seek(file, kDiskSectorWords), DiskStatus::kOk);
-  EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 1, 2, 1));
-
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  const Sector head = ReadSector(*image, 1);
-  EXPECT_EQ(head[0], 300);
-  EXPECT_EQ(head[250], 0xFFFF);
-  EXPECT_EQ(ReadSector(*image, 2)[300 - kDiskSectorWords], 400);
-}
-
 TEST_F(DiskFileSystemTest, TruncatingAtTheEndOnlyFlushes) {
   // OLD is cluster 2 (sector 3), and the free list starts after it. The root
   // is sector 2.
@@ -2691,23 +2501,6 @@ TEST_F(DiskFileSystemTest, DeleteFreesTheEntryThenTheChain) {
   for (int index = 0; index < 3; ++index) {
     EXPECT_EQ(ReadEntry(*image, 2, index), DiskDirEntry()) << index;
   }
-}
-
-TEST_F(DiskFileSystemTest, DeletingWritesEachChangeInOrderAcrossSectors) {
-  // OLD is clusters 250 and 520, so its last link is in sector 3, and the free
-  // list starts at 600. The root is sector 4.
-  AttachFormatted(kFloppySectors);
-  EditDisk([](DiskEditor& editor) {
-    editor.AddFile(0, "OLD", {250, 520}, 2 * kDiskSectorWords, 1000);
-    editor.SetFatWord(0, 600);
-  });
-  CollectSectorWrites();
-  EXPECT_EQ(file_system_.Delete(GetName("OLD")), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 3, 1));
-
-  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  EXPECT_EQ(ReadSector(*image, 1)[0], 250);
-  EXPECT_EQ(ReadSector(*image, 3)[520 - 2 * kDiskSectorWords], 600);
 }
 
 TEST_F(DiskFileSystemTest, DeletingACorruptFileChangesNothing) {

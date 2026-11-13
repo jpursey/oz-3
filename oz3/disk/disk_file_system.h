@@ -6,7 +6,6 @@
 #ifndef OZ3_DISK_DISK_FILE_SYSTEM_H_
 #define OZ3_DISK_DISK_FILE_SYSTEM_H_
 
-#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -17,12 +16,14 @@
 #include "absl/types/span.h"
 #include "oz3/core/date_time.h"
 #include "oz3/disk/disk_dir_entry.h"
+#include "oz3/disk/disk_fat.h"
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_hardware.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
+#include "oz3/disk/disk_sector_buffer.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
 
@@ -55,10 +56,9 @@ struct DiskFileInfo {
 // drive's status codes, and kNoDisk while the drive is empty.
 //
 // The file system holds its own sector buffers, belonging to the attached
-// image: one per open file, a directory sector, the FAT's first sector (sector
-// 1, with the free list's head), and one working FAT sector. They are read
-// only when an operation first needs them. Detaching an image discards them,
-// unwritten, as pulling a floppy would.
+// image: one per open file, a directory sector, and the FAT's two (see
+// DiskFat). They are read only when an operation first needs them. Detaching an
+// image discards them, unwritten, as pulling a floppy would.
 //
 // Once the host fails to read or write the image, every operation returns
 // kIoError until an image is attached, even one the buffers could answer
@@ -276,23 +276,6 @@ class DiskFileSystem final {
   // Types
   //----------------------------------------------------------------------------
 
-  // A sector's words.
-  using Sector = std::array<uint16_t, kDiskSectorWords>;
-
-  // A buffer holding one sector.
-  struct SectorBuffer {
-    // Makes the buffer hold no sector, discarding any change, without
-    // clearing its words.
-    void Reset() {
-      sector = -1;
-      dirty = false;
-    }
-
-    int sector = -1;     // -1 for none.
-    bool dirty = false;  // Changed since it was read or written.
-    Sector words = {};
-  };
-
   // Whether a slot is in use.
   enum class SlotState {
     kFree,
@@ -324,7 +307,7 @@ class DiskFileSystem final {
     int last_cluster = 0;
     int last_cluster_index = 0;
 
-    SectorBuffer buffer;  // The sector at the position, once read.
+    DiskSectorBuffer buffer;  // The sector at the position, once read.
   };
 
   //----------------------------------------------------------------------------
@@ -346,9 +329,6 @@ class DiskFileSystem final {
 
   // Returns a cluster's size, in words.
   int GetClusterSize() const;
-
-  // Sets free_count_, if it isn't already, by walking the free list.
-  DiskStatus CountFreeClusters();
 
   //----------------------------------------------------------------------------
   // Slots
@@ -412,11 +392,11 @@ class DiskFileSystem final {
 
   // Reads `sector` into `buffer`, unless it already holds it, first writing
   // the sector it held if it is dirty.
-  DiskStatus LoadSector(int sector, SectorBuffer* buffer);
+  DiskStatus LoadSector(int sector, DiskSectorBuffer* buffer);
 
   // Loads `sector` into `buffer` as all zeros, without reading it, and marks
   // it dirty, first writing the sector it held if it is dirty.
-  DiskStatus BlankSector(int sector, SectorBuffer* buffer);
+  DiskStatus BlankSector(int sector, DiskSectorBuffer* buffer);
 
   // Returns the sector at `slot`'s position, in the cluster it last reached,
   // which must be the position's.
@@ -426,75 +406,15 @@ class DiskFileSystem final {
   // its buffer.
   DiskStatus LoadSlotSector(Slot* slot);
 
-  // Writes `buffer`'s sector if it is dirty. Every write of a buffer comes
-  // here, to keep the order disk_design.md's Committing gives.
+  // Writes `buffer`'s sector if it is dirty. Every write of a buffer but the
+  // FAT's comes here, to keep the order disk_design.md's Committing gives,
+  // with the FAT's order kept by DiskFat.
   //
-  // Only allocating leaves the FAT buffers dirty past the operation that
-  // changed them, so the order kept here is allocating's: the working FAT
-  // sector's write first writes sector 1 if it is dirty, so the free list's
-  // head reaches the disk before a cluster taken from it is linked to.
-  // Freeing writes its own order, starting with every FAT buffer clean.
-  //
-  // Sector 1 isn't cached, as its buffer always holds it. A sector written is
-  // copied into every other buffer holding it, so an open root handle sees
-  // each entry as it is written. That relies on no sector being dirty in two
-  // buffers: only a file's own slot holds its data, and dir_ is clean between
-  // operations.
-  DiskStatus WriteBuffer(SectorBuffer* buffer);
-
-  //----------------------------------------------------------------------------
-  // FAT
-  //----------------------------------------------------------------------------
-
-  // Writes the dirty FAT buffers, sector 1 first.
-  DiskStatus WriteFat();
-
-  // Sets `buffer` to the FAT buffer for the FAT's word `index`, reading its
-  // sector into it if needed.
-  DiskStatus LoadFatSector(int index, SectorBuffer** buffer);
-
-  // Sets `value` to the FAT's word `index`, from its buffer, reading the
-  // sector into it if needed.
-  DiskStatus ReadFatWord(int index, uint16_t* value);
-
-  // Sets the FAT's word `index` to `value`, in its buffer, reading the sector
-  // into it if needed.
-  DiskStatus SetFatWord(int index, uint16_t value);
-
-  // Sets `next` to the cluster after `cluster` in its chain, or 0 at the
-  // chain's end. A `cluster` of 0 gives the free list's head. Returns kCorrupt
-  // for a link out of range.
-  DiskStatus GetNextCluster(int cluster, int* next);
-
-  // Sets `chain_count` to the clusters in the chain from `chain_first`, and
-  // `chain_last` (if not null) to its last, or 0 for an empty chain. Returns
-  // kCorrupt for a broken chain, starting at or linking to a cluster out of
-  // range, or one longer than the disk (a loop).
-  DiskStatus CountChain(int chain_first, int* chain_count, int* chain_last);
-
-  // Sets `head` to the free list's head, which free_count_ must be set for.
-  // Returns kDiskFull with no cluster free, and kCorrupt for a broken link or
-  // an empty list the count says isn't.
-  DiskStatus GetFreeHead(int* head);
-
-  // Takes the free list's head, ends a chain with it, and links it after
-  // `last_cluster`, unless that is 0 for a new chain, setting `cluster` to it.
-  // The cluster's end reaches the disk before the link to it, so a crash can't
-  // leave the chain running on into the free list. Returns kDiskFull, changing
-  // nothing, with no cluster free, and kCorrupt for a broken free list.
-  DiskStatus AllocateCluster(int last_cluster, int* cluster);
-
-  // Frees the `chain_count` clusters from `chain_first` to `chain_last` onto
-  // the free list's head, unlinking them from the cluster `unlink_from` links
-  // them from, or from nothing for an `unlink_from` of 0 (a whole chain), and
-  // adds them to the free count if it is known. A `chain_count` of 0 frees
-  // nothing. Every FAT buffer must be clean, as the chain's entry must already
-  // be on the disk without the clusters. Writes unlink_from's new end, then
-  // the link from chain_last to the old head, then the new head, with one
-  // write for changes next to each other in a sector, so a crash leaves the
-  // clusters at worst orphaned, on neither the chain nor the free list.
-  DiskStatus FreeChain(int unlink_from, int chain_first, int chain_last,
-                       int chain_count);
+  // A sector written is copied into every other buffer holding it, so an open
+  // root handle sees each entry as it is written. That relies on no sector
+  // being dirty in two buffers: only a file's own slot holds its data, and
+  // dir_ is clean between operations.
+  DiskStatus WriteBuffer(DiskSectorBuffer* buffer);
 
   //----------------------------------------------------------------------------
   // Directory
@@ -565,10 +485,8 @@ class DiskFileSystem final {
 
   // Only valid while formatted_.
   DiskSuperblock superblock_;
-  std::optional<int> free_count_;
-  Slot dir_;               // The root, for finding names, open once needed.
-  SectorBuffer fat_head_;  // Sector 1 only.
-  SectorBuffer fat_work_;  // Any other FAT sector.
+  std::optional<DiskFat> fat_;
+  Slot dir_;  // The root, for finding names, open once needed.
 };
 
 }  // namespace oz3

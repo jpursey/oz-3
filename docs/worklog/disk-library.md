@@ -519,7 +519,8 @@ class DiskFileSystem {
   as disk_design.md's Memory describes. A buffer that takes another sector
   writes its old one first if it is dirty. Every write goes through one
   private function that knows which buffer it is, so the commit orders in
-  disk_design.md's Committing are kept in one place.
+  disk_design.md's Committing are kept in one place (from CL16, the FAT's
+  in `DiskFat`, and the rest in the file system).
 - **The free count** is counted by walking the free list the first time
   `GetVolumeInfo`, `Create`, or an `Open` on a writable disk needs it, and kept
   current from then on, so `GetWritableWords` never needs the disk.
@@ -610,13 +611,11 @@ buffers and the order they are written in is in one place.
 // sector for any other.
 class DiskFat final {
  public:
-  explicit DiskFat(DiskHardware* hardware);
+  DiskFat(DiskHardware* hardware, const DiskLayout& layout);
 
-  // Forgets the buffers and the free count, for a disk of `layout`.
-  void Reset(const DiskLayout& layout);
-
-  // Writes a formatted disk's FAT, with only `root_cluster` taken.
-  DiskStatus Format(int root_cluster);
+  // Writes a formatted disk's FAT, with only the root's cluster taken, as
+  // allocating would take it, setting `root_cluster` to it.
+  DiskStatus Format(int* root_cluster);
 
   DiskStatus CountFreeClusters();          // Once, walking the free list.
   std::optional<int> GetFreeCount() const;
@@ -634,7 +633,16 @@ class DiskFat final {
 - Each function is `DiskFileSystem`'s of the same name moved, with the same
   write orders. FAT sectors are only ever in the FAT's buffers, so its writes
   never need copying into the file system's other buffers.
-- `SectorBuffer` moves to a header of its own, as both use it.
+- `SectorBuffer` moves to a header of its own, as both use it, as
+  `DiskSectorBuffer` (`disk_sector_buffer.h`), now that it is in the `oz3`
+  namespace.
+- The file system holds it as a `std::optional<DiskFat>`, made with the
+  superblock's layout when a disk is attached or formatted, and dropped with
+  its buffers when the disk goes, so the layout has no second copy to keep
+  in step.
+- `Format` takes the root's cluster with `AllocateCluster`, on a zeroed sector
+  1, so which cluster the root takes is the allocator's choice, with no rule
+  of its own.
 - What stays in `DiskFileSystem` is the order between the FAT and everything
   else: FAT before directory when linking, directory before FAT when
   freeing.
@@ -1183,18 +1191,33 @@ Depends on: CL14.
   FFFFh, 0 before and on the last cluster, word 0, and a link past the last
   cluster. The file system's tests pass, with only their helpers changed.
 
-### CL16 [ ] disk: the FAT
+### CL16 [x] disk: the FAT
 
 Depends on: CL15.
 
 - `disk_fat.h` and `.cc`: `DiskFat` (see disk: DiskFat), moved out of
-  `DiskFileSystem`, with `SectorBuffer` in a header of its own.
+  `DiskFileSystem`, with `SectorBuffer` in a header of its own as
+  `DiskSectorBuffer`.
 - No change in behavior.
+- `disk_fat_test.cc`: `DiskFat`'s own tests, on hardware with nothing else
+  attached. The file system's tests that only tested the FAT (free counts,
+  broken free lists, a one-cluster format, and the FAT's write orders across
+  sectors, and the time counting takes) move there. The superblock checks
+  covered by `DiskSuperblock`'s and `DiskLayout`'s tests shrink to one case
+  each. Growing a root of two clusters stays, as linking from the root's last
+  cluster is the file system's.
 
 **Verify**
 - Standard checks.
-- The file system's tests pass unchanged, including every exact order of
-  writes and the crash tests.
+- Unit tests: `Format`'s FAT and its writes, links and chains (counts, the
+  last cluster, and each way one is broken), counting the free list once
+  (fragmented, backward, full, and broken, reading each FAT sector once,
+  continuously), host failures passed on, allocating (from the head, the
+  last free cluster, and each write order across sectors), the working
+  buffer writing sector 1 before itself as it moves, and freeing (onto the
+  head, onto an empty list, each write order across sectors, and nothing).
+- The file system's remaining tests pass unchanged, including every exact
+  order of writes and the crash tests.
 
 ### CL17 [ ] disk: consistency checks
 
