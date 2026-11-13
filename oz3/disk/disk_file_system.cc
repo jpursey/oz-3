@@ -91,7 +91,9 @@ absl::Duration DiskFileSystem::CollectBusyTime() {
 
 DiskStatus DiskFileSystem::Format(const DiskLabel& label,
                                   int sectors_per_cluster, DateTime now) {
-  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+  // An unformatted disk is what formatting is for.
+  if (DiskStatus status = GetWritableStatus();
+      status != DiskStatus::kOk && status != DiskStatus::kUnformatted) {
     return status;
   }
   if (std::any_of(slots_.begin(), slots_.end(), [](const Slot& slot) {
@@ -172,9 +174,6 @@ DiskStatus DiskFileSystem::SetLabel(const DiskLabel& label) {
   if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
     return status;
   }
-  if (!formatted_) {
-    return DiskStatus::kUnformatted;
-  }
   PutLabel(label, &superblock_);
   return hardware_.WriteSector(kSuperblockSector, superblock_,
                                WriteCaching::kSkip);
@@ -214,35 +213,20 @@ DiskStatus DiskFileSystem::Open(const DiskFilename& name, DiskFile* file) {
       return status;
     }
   }
-  if (DiskStatus status = RewindDirectory(); status != DiskStatus::kOk) {
-    return status;
-  }
   DiskDirEntry entry;
   EntryLocation location;
-  if (DiskStatus status = FindNextEntry(
-          &dir_,
-          [&name](const DiskFilename& candidate) { return candidate == name; },
-          &entry, &location);
+  if (DiskStatus status = FindClosedFile(name, &entry, &location);
       status != DiskStatus::kOk) {
     return status;
   }
-  if (IsOpen(location)) {
-    return DiskStatus::kInUse;
-  }
 
-  // A file has exactly the clusters its size needs, so only an empty file has
-  // no first cluster.
-  const int first_cluster = entry.GetFirstCluster();
-  const std::optional<int> entry_size = entry.GetSize();
-  const DiskLayout layout = GetLayout(superblock_);
-  if (!entry_size.has_value() || first_cluster > layout.cluster_count ||
-      (first_cluster == 0) != (*entry_size == 0) ||
-      *entry_size > layout.GetMaxFileSize()) {
-    return DiskStatus::kCorrupt;
+  if (DiskStatus status = GetFileEntryStatus(entry);
+      status != DiskStatus::kOk) {
+    return status;
   }
   OpenSlot(&slots_[free_slot], location,
-           (entry.GetAttributes() & kDiskAttribReadOnly) != 0, first_cluster,
-           *entry_size);
+           (entry.GetAttributes() & kDiskAttribReadOnly) != 0,
+           entry.GetFirstCluster(), *entry.GetSize());
   *file = free_slot;
   return DiskStatus::kOk;
 }
@@ -269,9 +253,6 @@ DiskStatus DiskFileSystem::OpenRoot(DiskFile* file) {
 DiskStatus DiskFileSystem::Create(const DiskFilename& name, DateTime now,
                                   DiskFile* file) {
   if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
-    return status;
-  }
-  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
     return status;
   }
   if (name.IsPattern()) {
@@ -412,9 +393,6 @@ DiskStatus DiskFileSystem::Truncate(DiskFile file, DateTime now) {
   if (DiskStatus status = CommitSlot(slot, now); status != DiskStatus::kOk) {
     return status;
   }
-  if (freed_count == 0) {
-    return DiskStatus::kOk;
-  }
   return FreeChain(kept_last, freed_first, freed_last, freed_count);
 }
 
@@ -533,6 +511,134 @@ DiskStatus DiskFileSystem::Find(DiskFile directory, const DiskFilename& pattern,
       entry, /*location=*/nullptr);
 }
 
+DiskStatus DiskFileSystem::Delete(const DiskFilename& name) {
+  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (name.IsPattern()) {
+    return DiskStatus::kBadName;
+  }
+  DiskDirEntry entry;
+  EntryLocation location;
+  if (DiskStatus status = FindClosedFile(name, &entry, &location);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if ((entry.GetAttributes() & kDiskAttribReadOnly) != 0) {
+    return DiskStatus::kReadOnly;
+  }
+  if (DiskStatus status = GetFileEntryStatus(entry);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // The chain is walked before the entry is freed, so a broken one leaves the
+  // file as it was.
+  const int chain_first = entry.GetFirstCluster();
+  int chain_count = 0;
+  int chain_last = 0;
+  if (DiskStatus status = CountChain(chain_first, &chain_count, &chain_last);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // The free entry reaches the disk before the chain is freed, and the commit
+  // leaves every FAT buffer clean.
+  if (DiskStatus status = PutEntry(location, DiskDirEntry());
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = CommitDirectory(); status != DiskStatus::kOk) {
+    return status;
+  }
+  return FreeChain(/*unlink_from=*/0, chain_first, chain_last, chain_count);
+}
+
+DiskStatus DiskFileSystem::Rename(const DiskFilename& old_name,
+                                  const DiskFilename& new_name) {
+  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (old_name.IsPattern() || new_name.IsPattern()) {
+    return DiskStatus::kBadName;
+  }
+  if (DiskStatus status = RewindDirectory(); status != DiskStatus::kOk) {
+    return status;
+  }
+
+  // One pass finds both the file, as the first entry with its name, and
+  // whether the new name is taken. It stops once it knows the result, which
+  // for an open file is kInUse whether or not the new name is taken.
+  DiskDirEntry entry;
+  std::optional<EntryLocation> location;
+  bool file_open = false;
+  bool new_name_taken = false;
+  const DiskStatus find_status =
+      VisitEntries(&dir_, [&](const DiskDirEntry& candidate,
+                              const EntryLocation& candidate_location) {
+        // A free entry, or one whose name breaks the rules, has no name.
+        const std::optional<DiskFilename> name = candidate.GetName();
+        if (!location.has_value() && name == old_name) {
+          entry = candidate;
+          location = candidate_location;
+          file_open = IsOpen(location);
+        }
+        if (name == new_name) {
+          new_name_taken = true;
+        }
+        return location.has_value() && (file_open || new_name_taken);
+      });
+  if (find_status != DiskStatus::kOk && find_status != DiskStatus::kNotFound) {
+    return find_status;
+  }
+  if (!location.has_value()) {
+    return DiskStatus::kNotFound;
+  }
+  if (file_open) {
+    return DiskStatus::kInUse;
+  }
+  if (new_name_taken) {
+    return DiskStatus::kExists;
+  }
+  entry.SetName(new_name);
+  if (DiskStatus status = PutEntry(*location, entry);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  return CommitDirectory();
+}
+
+DiskStatus DiskFileSystem::SetAttributes(const DiskFilename& name,
+                                         uint16_t attributes) {
+  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (name.IsPattern()) {
+    return DiskStatus::kBadName;
+  }
+  if ((attributes & ~kDiskAttribSettable) != 0) {
+    return DiskStatus::kBadAttributes;
+  }
+  DiskDirEntry entry;
+  EntryLocation location;
+  if (DiskStatus status = FindClosedFile(name, &entry, &location);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  // The bits ATTRIB doesn't set keep their meaning.
+  const uint16_t new_attributes = static_cast<uint16_t>(
+      (entry.GetAttributes() & ~kDiskAttribSettable) | attributes);
+  if (entry.GetAttributes() == new_attributes) {
+    return DiskStatus::kOk;
+  }
+  entry.SetAttributes(new_attributes);
+  if (DiskStatus status = PutEntry(location, entry);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  return CommitDirectory();
+}
+
 //------------------------------------------------------------------------------
 // Superblock
 //------------------------------------------------------------------------------
@@ -609,6 +715,9 @@ DiskStatus DiskFileSystem::GetWritableStatus() const {
   if (GetMedia()->IsWriteProtected()) {
     return DiskStatus::kWriteProtected;
   }
+  if (!formatted_) {
+    return DiskStatus::kUnformatted;
+  }
   return DiskStatus::kOk;
 }
 
@@ -669,7 +778,11 @@ DiskStatus DiskFileSystem::GetWritableSlot(DiskFile file, Slot** slot) {
   if ((*slot)->read_only) {
     return DiskStatus::kReadOnly;
   }
-  return GetWritableStatus();
+  // GetSlot has checked the image, which the open slot's file is on.
+  if (GetMedia()->IsWriteProtected()) {
+    return DiskStatus::kWriteProtected;
+  }
+  return DiskStatus::kOk;
 }
 
 DiskFile DiskFileSystem::FindFreeSlot() const {
@@ -948,6 +1061,10 @@ DiskStatus DiskFileSystem::GetNextCluster(int cluster, int* next) {
 DiskStatus DiskFileSystem::CountChain(int chain_first, int* chain_count,
                                       int* chain_last) {
   const int cluster_count = GetLayout(superblock_).cluster_count;
+  // GetNextCluster checks every link, but not the first cluster.
+  if (chain_first > cluster_count) {
+    return DiskStatus::kCorrupt;
+  }
   int counted = 0;
   int last = 0;
   for (int cluster = chain_first; cluster != 0;) {
@@ -1023,6 +1140,9 @@ DiskStatus DiskFileSystem::AllocateCluster(int last_cluster, int* cluster) {
 
 DiskStatus DiskFileSystem::FreeChain(int unlink_from, int chain_first,
                                      int chain_last, int chain_count) {
+  if (chain_count == 0) {
+    return DiskStatus::kOk;
+  }
   int head = 0;
   if (DiskStatus status = GetNextCluster(0, &head); status != DiskStatus::kOk) {
     return status;
@@ -1057,7 +1177,9 @@ DiskStatus DiskFileSystem::FreeChain(int unlink_from, int chain_first,
   if (DiskStatus status = WriteFat(); status != DiskStatus::kOk) {
     return status;
   }
-  *free_count_ += chain_count;
+  if (free_count_.has_value()) {
+    *free_count_ += chain_count;
+  }
   return DiskStatus::kOk;
 }
 
@@ -1119,6 +1241,38 @@ DiskStatus DiskFileSystem::FindNextEntry(
     }
     return true;
   });
+}
+
+DiskStatus DiskFileSystem::FindClosedFile(const DiskFilename& name,
+                                          DiskDirEntry* entry,
+                                          EntryLocation* location) {
+  if (DiskStatus status = RewindDirectory(); status != DiskStatus::kOk) {
+    return status;
+  }
+  if (DiskStatus status = FindNextEntry(
+          &dir_,
+          [&name](const DiskFilename& candidate) { return candidate == name; },
+          entry, location);
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  if (IsOpen(*location)) {
+    return DiskStatus::kInUse;
+  }
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::GetFileEntryStatus(const DiskDirEntry& entry) const {
+  // A file has exactly the clusters its size needs, so only an empty file has
+  // no first cluster.
+  const int first_cluster = entry.GetFirstCluster();
+  const std::optional<int> size = entry.GetSize();
+  const DiskLayout layout = GetLayout(superblock_);
+  if (!size.has_value() || first_cluster > layout.cluster_count ||
+      (first_cluster == 0) != (*size == 0) || *size > layout.GetMaxFileSize()) {
+    return DiskStatus::kCorrupt;
+  }
+  return DiskStatus::kOk;
 }
 
 DiskStatus DiskFileSystem::CommitDirectory() {

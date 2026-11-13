@@ -244,6 +244,32 @@ class DiskFileSystem final {
   DiskStatus Find(DiskFile directory, const DiskFilename& pattern,
                   DiskDirEntry* entry);
 
+  // Deletes the file `name` from the root directory, freeing its entry, and
+  // then its chain onto the free list's head. Its chain is walked first, then
+  // the free entry is written, and then the chain is freed as Truncate frees,
+  // so a crash leaves its clusters at worst orphaned. Returns kWriteProtected
+  // on a protected disk, kUnformatted with no file system, kBadName for a
+  // pattern, kNotFound, kInUse if the file is open, kReadOnly for a read-only
+  // file, and kCorrupt for an entry that can't be on the disk (as Open) or a
+  // broken chain or free list.
+  DiskStatus Delete(const DiskFilename& name);
+
+  // Renames the file `old_name` in the root directory to `new_name`, in its
+  // own entry, keeping everything else in the entry. With two entries named
+  // `old_name`, it renames the first, which Open finds. Returns kWriteProtected
+  // on a protected disk, kUnformatted with no file system, kBadName for a
+  // pattern, kNotFound if `old_name` isn't found, kInUse if the file is open,
+  // and kExists if `new_name` is taken, even by the file itself.
+  DiskStatus Rename(const DiskFilename& old_name, const DiskFilename& new_name);
+
+  // Sets the attributes of the file `name` in the root directory that
+  // kDiskAttribSettable holds to `attributes`, keeping the rest, and writing
+  // nothing if they don't change. Returns
+  // kWriteProtected on a protected disk, kUnformatted with no file system,
+  // kBadName for a pattern, kBadAttributes for any other bit, kNotFound, and
+  // kInUse if the file is open.
+  DiskStatus SetAttributes(const DiskFilename& name, uint16_t attributes);
+
  private:
   //----------------------------------------------------------------------------
   // Types
@@ -329,8 +355,9 @@ class DiskFileSystem final {
   DiskStatus GetVolumeStatus() const;
 
   // Returns kNoDisk with no image, kIoError for a failed one, kWriteProtected
-  // for a protected one, or else kOk, as every change to the disk checks
-  // first.
+  // for a protected one, kUnformatted with no file system, or else kOk, as
+  // every change to the disk checks first. Protection comes before
+  // formatting, as the drive finds it at accept and formatting at completion.
   DiskStatus GetWritableStatus() const;
 
   // Returns a cluster's size, in words.
@@ -457,7 +484,8 @@ class DiskFileSystem final {
 
   // Sets `chain_count` to the clusters in the chain from `chain_first`, and
   // `chain_last` (if not null) to its last, or 0 for an empty chain. Returns
-  // kCorrupt for a broken chain, or one longer than the disk (a loop).
+  // kCorrupt for a broken chain, starting at or linking to a cluster out of
+  // range, or one longer than the disk (a loop).
   DiskStatus CountChain(int chain_first, int* chain_count, int* chain_last);
 
   // Sets `head` to the free list's head, which free_count_ must be set for.
@@ -474,12 +502,13 @@ class DiskFileSystem final {
 
   // Frees the `chain_count` clusters from `chain_first` to `chain_last` onto
   // the free list's head, unlinking them from the cluster `unlink_from` links
-  // them from, or from nothing for an `unlink_from` of 0 (a whole chain).
-  // Every FAT buffer must be clean, as the chain's entry must already be on
-  // the disk without the clusters. Writes unlink_from's new end, then the
-  // link from chain_last to the old head, then the new head, with one write for
-  // changes next to each other in a sector, so a crash leaves the clusters at
-  // worst orphaned, on neither the chain nor the free list.
+  // them from, or from nothing for an `unlink_from` of 0 (a whole chain), and
+  // adds them to the free count if it is known. A `chain_count` of 0 frees
+  // nothing. Every FAT buffer must be clean, as the chain's entry must already
+  // be on the disk without the clusters. Writes unlink_from's new end, then
+  // the link from chain_last to the old head, then the new head, with one
+  // write for changes next to each other in a sector, so a crash leaves the
+  // clusters at worst orphaned, on neither the chain nor the free list.
   DiskStatus FreeChain(int unlink_from, int chain_first, int chain_last,
                        int chain_count);
 
@@ -510,6 +539,17 @@ class DiskFileSystem final {
   DiskStatus FindNextEntry(Slot* slot,
                            absl::FunctionRef<bool(const DiskFilename&)> matches,
                            DiskDirEntry* entry, EntryLocation* location);
+
+  // Finds the file `name` in the root directory, setting `entry` to its entry
+  // and `location` to where it is. Returns kNotFound, and kInUse if the file is
+  // open.
+  DiskStatus FindClosedFile(const DiskFilename& name, DiskDirEntry* entry,
+                            EntryLocation* location);
+
+  // Returns kCorrupt for a file's entry that can't be on the disk: a size
+  // past the disk's largest file, a first cluster past its last, or a first
+  // cluster without a size or a size without one. Otherwise returns kOk.
+  DiskStatus GetFileEntryStatus(const DiskDirEntry& entry) const;
 
   // Writes the dirty FAT buffers, then the directory buffer, as every change
   // to the directory does before returning.

@@ -443,7 +443,9 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 
 - `FIND` takes a directory handle and scans forward from its position for the next entry matching the pattern. It returns the raw 16-word entry as it is on the disk (an open file's as it was last committed; see Committing), and leaves the position just past it. At the end it fails with **not found**. `SEEK h, 0` restarts a listing.
 - `DELETE`, `RENAME`, and `ATTRIB` fail with **in use** if the file is open. `DELETE` also fails on a read-only file.
-- `ATTRIB` sets read-only and hidden; any other bit is **bad attributes**.
+- `DELETE` frees the file's entry, then its chain onto the free list's head (see Committing).
+- `RENAME` fails with **exists** if the new name is taken, even by the file itself. It changes only the entry's name, keeping its modified time.
+- `ATTRIB` sets read-only and hidden, keeping the entry's other bits; any other bit in its argument is **bad attributes**.
 
 #### Disk
 

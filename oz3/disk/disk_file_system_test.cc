@@ -243,11 +243,11 @@ class DiskEditor {
 
 // A file a crash test writes, whose word at each position is `first_word` plus
 // the position, whatever a crash leaves of it, and whose size is `size` after
-// the test's operations, without a crash.
+// the test's operations, without a crash, or none for a file they delete.
 struct CrashFile {
   std::string_view name;
   uint16_t first_word = 0;
-  int size = 0;
+  std::optional<int> size;
 };
 
 // A file ReadDiskContents finds in the root.
@@ -579,9 +579,10 @@ class DiskFileSystemTest : public ::testing::Test {
   // reopened, as it is after a crash, and checked with ReadDiskContents for
   // `files`. Without a crash, each of `files` has its size. A crash may
   // orphan only a cluster `run` moves from one owner to another, or one on no
-  // chain before or after it, and may lose only a file `run` creates or
-  // deletes. `run` passes each status to KeepStatus, and closes every file it
-  // opens, as a crash leaves each operation failing.
+  // chain before or after it, and may lose only a file `run` creates,
+  // deletes, or renames, leaving no fewer files than both before and after.
+  // `run` passes each status to KeepStatus, and closes every file it opens, as
+  // a crash leaves each operation failing.
   void RunCrashTest(int sector_count,
                     absl::FunctionRef<void(DiskEditor& editor)> setup,
                     absl::FunctionRef<void()> run,
@@ -608,8 +609,12 @@ class DiskFileSystemTest : public ::testing::Test {
     const DiskContents after = read_contents();
     for (const CrashFile& file : files) {
       const FoundFile* found = after.FindFile(file.name);
+      if (!file.size.has_value()) {
+        EXPECT_EQ(found, nullptr) << file.name;
+        continue;
+      }
       ASSERT_NE(found, nullptr) << file.name;
-      EXPECT_EQ(found->size, file.size) << file.name;
+      EXPECT_EQ(found->size, *file.size) << file.name;
     }
     for (int writes = 0; writes <= write_count; ++writes) {
       SCOPED_TRACE(std::to_string(writes) + " of " +
@@ -636,6 +641,10 @@ class DiskFileSystemTest : public ::testing::Test {
               << file.name << " is lost";
         }
       }
+      // A renamed file is lost if neither name has it.
+      EXPECT_GE(contents.files.size(),
+                std::min(before.files.size(), after.files.size()))
+          << "A file is lost";
     }
   }
 
@@ -1696,6 +1705,11 @@ TEST_F(DiskFileSystemTest, AFailedImageFailsEveryOperationUntilReattached) {
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")), DiskStatus::kIoError);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.Delete(GetName("NEW")), DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.Rename(GetName("NEW"), GetName("OTHER")),
+            DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.SetAttributes(GetName("NEW"), kDiskAttribHidden),
+            DiskStatus::kIoError);
 
   // Close still frees the slot.
   EXPECT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
@@ -2640,6 +2654,318 @@ TEST_F(DiskFileSystemTest, TruncateRefusals) {
             DiskStatus::kWriteProtected);
 }
 
+TEST_F(DiskFileSystemTest, DeleteFreesTheEntryThenTheChain) {
+  // OLD is clusters 2 to 4 and TWO is 5, and the free list starts at 6. The
+  // root is sector 2.
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "OLD", {2, 3, 4}, 2 * kDiskSectorWords + 100, 1000);
+    editor.AddFile(1, "TWO", {5}, 10);
+    editor.AddFile(2, "EMPTY", {}, 0);
+    editor.SetFatWord(0, 6);
+  });
+  CollectSectorWrites();
+
+  // An empty file only frees its entry.
+  EXPECT_EQ(file_system_.Delete(GetName("EMPTY")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+
+  // The free entry is written, then the FAT with the chain on the free list's
+  // head. Nothing has counted the free clusters, and deleting doesn't.
+  EXPECT_EQ(file_system_.Delete(GetName("OLD")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2, 1));
+  EXPECT_EQ(GetFreeClusters(), kSmallClusters - 2);
+
+  // Once counted, deleting keeps the count.
+  EXPECT_EQ(file_system_.Delete(GetName("TWO")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2, 1));
+  EXPECT_EQ(GetFreeClusters(), kSmallClusters - 1);
+  DiskFile file = -1;
+  for (std::string_view name : {"OLD", "TWO", "EMPTY"}) {
+    EXPECT_EQ(file_system_.Open(GetName(name), &file), DiskStatus::kNotFound)
+        << name;
+  }
+
+  // The free list runs 5, 2, 3, 4, 6, and the entries are zeroed.
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  const Sector fat = ReadSector(*image, 1);
+  EXPECT_EQ(fat[0], 5);
+  EXPECT_EQ(fat[5], 2);
+  EXPECT_EQ(fat[2], 3);
+  EXPECT_EQ(fat[3], 4);
+  EXPECT_EQ(fat[4], 6);
+  for (int index = 0; index < 3; ++index) {
+    EXPECT_EQ(ReadEntry(*image, 2, index), DiskDirEntry()) << index;
+  }
+}
+
+TEST_F(DiskFileSystemTest, DeletingWritesEachChangeInOrderAcrossSectors) {
+  // OLD is clusters 250 and 520, so its last link is in sector 3, and the free
+  // list starts at 600. The root is sector 4.
+  AttachFormatted(kFloppySectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "OLD", {250, 520}, 2 * kDiskSectorWords, 1000);
+    editor.SetFatWord(0, 600);
+  });
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.Delete(GetName("OLD")), DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 3, 1));
+
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadSector(*image, 1)[0], 250);
+  EXPECT_EQ(ReadSector(*image, 3)[520 - 2 * kDiskSectorWords], 600);
+}
+
+TEST_F(DiskFileSystemTest, DeletingACorruptFileChangesNothing) {
+  // BROKEN's chain runs past the last cluster, OUT starts past it, and EMPTY
+  // has no size but a first cluster, the free list's head, which Open
+  // refuses too.
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "BROKEN", {2, 3}, 300, 1000);
+    editor.SetFatWord(3, kSmallClusters + 1);
+    editor.SetRootEntry(1, MakeEntry("OUT", kSmallClusters + 1, 10));
+    editor.SetRootEntry(2, MakeEntry("EMPTY", 4, 0));
+    editor.SetFatWord(0, 4);
+  });
+  CollectSectorWrites();
+  for (std::string_view name : {"BROKEN", "OUT", "EMPTY"}) {
+    EXPECT_EQ(file_system_.Delete(GetName(name)), DiskStatus::kCorrupt) << name;
+  }
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_EQ(GetFreeClusters(), kSmallClusters - 3);
+}
+
+TEST_F(DiskFileSystemTest, DeleteRefusals) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "LOCKED", {2}, 10, 0, kDiskAttribReadOnly);
+    editor.AddFile(1, "OPEN", {3}, 10);
+    editor.SetFatWord(0, 4);
+  });
+  const DiskFile file = OpenFile("OPEN");
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.Delete(GetPattern("*")), DiskStatus::kBadName);
+  EXPECT_EQ(file_system_.Delete(GetName("MISSING")), DiskStatus::kNotFound);
+  EXPECT_EQ(file_system_.Delete(GetName("OPEN")), DiskStatus::kInUse);
+  EXPECT_EQ(file_system_.Delete(GetName("LOCKED")), DiskStatus::kReadOnly);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+
+  // Once closed, the file can be deleted.
+  ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Delete(GetName("OPEN")), DiskStatus::kOk);
+}
+
+TEST_F(DiskFileSystemTest, RenameChangesOnlyTheName) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "OTHER", {}, 0);
+    editor.AddFile(1, "OLD", {2}, 10, 1000, kDiskAttribHidden);
+    editor.SetFatWord(0, 3);
+  });
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.Rename(GetName("old"), GetName("new.txt")),
+            DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Open(GetName("OLD"), &file), DiskStatus::kNotFound);
+  EXPECT_EQ(ReadFile(OpenFile("NEW.TXT")), MakeCountingWords(1000, 10));
+
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadEntry(*image, 2, 1),
+            MakeEntry("NEW.TXT", 2, 10, kDiskAttribHidden));
+}
+
+TEST_F(DiskFileSystemTest, RenameTakesTheFirstOfTwoEntriesWithTheName) {
+  // Only a corrupt disk has two, and Open finds the first.
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.SetRootEntry(0, MakeEntry("OLD", 0, 0));
+    editor.SetRootEntry(1, MakeEntry("OLD", 0, 0, kDiskAttribHidden));
+  });
+  EXPECT_EQ(file_system_.Rename(GetName("OLD"), GetName("NEW")),
+            DiskStatus::kOk);
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadEntry(*image, 2, 0), MakeEntry("NEW", 0, 0));
+  EXPECT_EQ(ReadEntry(*image, 2, 1), MakeEntry("OLD", 0, 0, kDiskAttribHidden));
+}
+
+TEST_F(DiskFileSystemTest, RenameRefusals) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "A", {}, 0);
+    editor.AddFile(1, "B", {}, 0);
+    editor.AddFile(2, "OPEN", {}, 0);
+  });
+  const DiskFile file = OpenFile("OPEN");
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.Rename(GetPattern("A*"), GetName("C")),
+            DiskStatus::kBadName);
+  EXPECT_EQ(file_system_.Rename(GetName("A"), GetPattern("C?")),
+            DiskStatus::kBadName);
+  EXPECT_EQ(file_system_.Rename(GetName("MISSING"), GetName("C")),
+            DiskStatus::kNotFound);
+  EXPECT_EQ(file_system_.Rename(GetName("OPEN"), GetName("C")),
+            DiskStatus::kInUse);
+  EXPECT_EQ(file_system_.Rename(GetName("OPEN"), GetName("A")),
+            DiskStatus::kInUse);
+
+  // A name is taken by any file, before or after the one renamed, open or
+  // not, or the file itself.
+  EXPECT_EQ(file_system_.Rename(GetName("A"), GetName("B")),
+            DiskStatus::kExists);
+  EXPECT_EQ(file_system_.Rename(GetName("B"), GetName("A")),
+            DiskStatus::kExists);
+  EXPECT_EQ(file_system_.Rename(GetName("B"), GetName("OPEN")),
+            DiskStatus::kExists);
+  EXPECT_EQ(file_system_.Rename(GetName("A"), GetName("a")),
+            DiskStatus::kExists);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+
+  // Once closed, the file can be renamed.
+  ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Rename(GetName("OPEN"), GetName("C")),
+            DiskStatus::kOk);
+}
+
+TEST_F(DiskFileSystemTest, SetAttributesKeepsTheOtherBits) {
+  // OLD has a reserved bit set, which setting its attributes keeps.
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "OLD", {2}, 10, 1000, 0x8000 | kDiskAttribHidden);
+    editor.SetFatWord(0, 3);
+  });
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), kDiskAttribReadOnly),
+            DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+
+  // Setting them again writes nothing.
+  EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), kDiskAttribReadOnly),
+            DiskStatus::kOk);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+
+  // Read-only, the file can be read, but not written or deleted.
+  const DiskFile file = OpenFile("OLD");
+  EXPECT_EQ(ReadFile(file), MakeCountingWords(1000, 10));
+  int count = -1;
+  EXPECT_EQ(file_system_.Write(file, MakeCountingWords(0, 1), &count),
+            DiskStatus::kReadOnly);
+  ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Delete(GetName("OLD")), DiskStatus::kReadOnly);
+
+  EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), kDiskAttribSettable),
+            DiskStatus::kOk);
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  EXPECT_EQ(ReadEntry(*image, 2, 0),
+            MakeEntry("OLD", 2, 10, 0x8000 | kDiskAttribSettable));
+  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+
+  EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), 0), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.Delete(GetName("OLD")), DiskStatus::kOk);
+}
+
+TEST_F(DiskFileSystemTest, SetAttributesRefusals) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OPEN", {}, 0); });
+  const DiskFile file = OpenFile("OPEN");
+  CollectSectorWrites();
+  EXPECT_EQ(file_system_.SetAttributes(GetPattern("*"), kDiskAttribHidden),
+            DiskStatus::kBadName);
+  for (uint16_t attributes :
+       {kDiskAttribDirectory, uint16_t{1 << 3}, uint16_t{0x8000}}) {
+    EXPECT_EQ(file_system_.SetAttributes(GetName("OPEN"), attributes),
+              DiskStatus::kBadAttributes)
+        << attributes;
+  }
+  EXPECT_EQ(file_system_.SetAttributes(GetName("MISSING"), kDiskAttribHidden),
+            DiskStatus::kNotFound);
+  EXPECT_EQ(file_system_.SetAttributes(GetName("OPEN"), kDiskAttribHidden),
+            DiskStatus::kInUse);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+
+  // Once closed, the file's attributes can be set.
+  ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.SetAttributes(GetName("OPEN"), kDiskAttribHidden),
+            DiskStatus::kOk);
+}
+
+TEST_F(DiskFileSystemTest, DirectoryChangesNeedAWritableFileSystem) {
+  const auto expect_refused = [this](DiskStatus status) {
+    EXPECT_EQ(file_system_.Delete(GetName("OLD")), status);
+    EXPECT_EQ(file_system_.Rename(GetName("OLD"), GetName("NEW")), status);
+    EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), kDiskAttribHidden),
+              status);
+  };
+  expect_refused(DiskStatus::kNoDisk);
+  ASSERT_EQ(file_system_.AttachImage(MakeImage(kSmallSectors, kOtherPath)),
+            DiskStatus::kUnformatted);
+  expect_refused(DiskStatus::kUnformatted);
+
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OLD", {2}, 10); });
+  ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
+  CollectSectorWrites();
+  expect_refused(DiskStatus::kWriteProtected);
+  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_EQ(GetInfo(OpenFile("OLD")).size, 10);
+}
+
+TEST_F(DiskFileSystemTest, WriteProtectionComesBeforeFormatting) {
+  std::unique_ptr<DiskImage> image = MakeImage(kSmallSectors);
+  ASSERT_EQ(image->SetWriteProtected(true), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.AttachImage(std::move(image)),
+            DiskStatus::kUnformatted);
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
+            DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.SetLabel(GetLabel("WORK")),
+            DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
+            DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.Delete(GetName("A")), DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.Rename(GetName("A"), GetName("B")),
+            DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.SetAttributes(GetName("A"), kDiskAttribHidden),
+            DiskStatus::kWriteProtected);
+}
+
+TEST_F(DiskFileSystemTest, AnOpenRootKeepsItsPlaceThroughDirectoryChanges) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "A", {}, 0);
+    editor.AddFile(1, "B", {}, 0);
+    editor.AddFile(2, "C", {}, 0);
+  });
+  const DiskFile root = OpenRoot();
+  DiskDirEntry entry;
+  ASSERT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+            DiskStatus::kOk);
+  EXPECT_EQ(entry, MakeEntry("A", 0, 0));
+
+  // Entries stay in their places, so the root goes on from A's, seeing each
+  // change.
+  ASSERT_EQ(file_system_.Delete(GetName("A")), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.Rename(GetName("B"), GetName("D")), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.SetAttributes(GetName("C"), kDiskAttribHidden),
+            DiskStatus::kOk);
+  for (const DiskDirEntry& expected :
+       {MakeEntry("D", 0, 0), MakeEntry("C", 0, 0, kDiskAttribHidden)}) {
+    ASSERT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+              DiskStatus::kOk);
+    EXPECT_EQ(entry, expected) << entry.GetName()->ToString();
+  }
+  EXPECT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+            DiskStatus::kNotFound);
+
+  // Starting again, A's entry is free.
+  ASSERT_EQ(file_system_.Seek(root, 0), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.Find(root, GetPattern("*.*"), &entry),
+            DiskStatus::kOk);
+  EXPECT_EQ(entry, MakeEntry("D", 0, 0));
+  EXPECT_EQ(GetInfo(root).position, 2 * DiskDirEntry::kWordCount);
+}
+
 TEST_F(DiskFileSystemTest, CrashWhileCreating) {
   RunCrashTest(
       kSmallSectors, [](DiskEditor&) {},
@@ -2755,6 +3081,41 @@ TEST_F(DiskFileSystemTest, CrashWhileTruncating) {
         CloseForCrash(file);
       },
       {{"OLD", 1000, 0}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileDeleting) {
+  // OLD's FAT words are in all three FAT sectors, so freeing changes each, and
+  // the free list starts at 600. NEW takes 600 and 601 first, leaving its
+  // links dirty for deleting to write before OLD's free entry.
+  RunCrashTest(
+      kFloppySectors,
+      [](DiskEditor& editor) {
+        editor.AddFile(0, "OLD", {250, 300, 301, 520},
+                       3 * kDiskSectorWords + 100, 1000);
+        editor.SetFatWord(0, 600);
+      },
+      [&] {
+        const DiskFile file = CreateForCrash("NEW");
+        WriteForCrash(file, MakeCountingWords(1, 300));
+        KeepStatus(file_system_.Delete(GetName("OLD")));
+        CloseForCrash(file);
+      },
+      {{"OLD", 1000, std::nullopt}, {"NEW", 1, 300}});
+}
+
+TEST_F(DiskFileSystemTest, CrashWhileRenamingAndSettingAttributes) {
+  RunCrashTest(
+      kSmallSectors,
+      [](DiskEditor& editor) {
+        editor.AddFile(0, "OLD", {2}, 10, 1000);
+        editor.SetFatWord(0, 3);
+      },
+      [&] {
+        KeepStatus(file_system_.Rename(GetName("OLD"), GetName("NEW")));
+        KeepStatus(
+            file_system_.SetAttributes(GetName("NEW"), kDiskAttribReadOnly));
+      },
+      {{"OLD", 1000, std::nullopt}, {"NEW", 1000, 10}});
 }
 
 }  // namespace

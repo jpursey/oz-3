@@ -948,11 +948,25 @@ Depends on: CL12.
 - Standard checks.
 - The test passes, and fails if any commit's order is reversed.
 
-### CL14 [ ] disk: deleting, renaming, and attributes
+### CL14 [x] disk: deleting, renaming, and attributes
 
 Depends on: CL13.
 
-- `DiskFileSystem`: `Delete`, `Rename`, and `SetAttributes`.
+- `DiskFileSystem`: `Delete`, `Rename`, and `SetAttributes`, each refusing
+  an open file with `kInUse` and committing before returning. `Delete` walks
+  the chain first, so a broken one changes nothing, then writes the free
+  entry, then frees the chain with `FreeChain`, which leaves an unknown free
+  count unknown and does nothing for an empty chain. `CountChain` returns
+  `kCorrupt` for a first cluster out of range. `Rename` finds the file (the
+  first entry with its name) and whether the new name is taken in one pass,
+  and a name is taken even by the file itself. `SetAttributes` sets the
+  read-only and hidden bits, keeping the rest, and writes nothing when they
+  don't change. `Open` shares the lookup with them (`FindClosedFile`), and
+  its entry checks with `Delete` (`GetFileEntryStatus`).
+- `GetWritableStatus` also returns `kUnformatted`, after `kWriteProtected`,
+  so every change checks once, and `Format` accepts `kUnformatted`.
+- The crash test can expect a file to be deleted, and fails a crash that
+  leaves fewer files than both before and after, as a lost rename would.
 - Unused, so no visible change.
 
 **Verify**
