@@ -3,7 +3,7 @@
 The new `oz3/disk` library (`oz3_disk`) is the one implementation of the disk
 format in [disk_design.md](../disk_design.md): disk images, the dumb drive's
 cache and timing under them, and the file system on top, with names,
-timestamps, directory entries, consistency checks, and host transfer helpers.
+timestamps, directory entries, and consistency checks.
 The drive device, `DiskFileProtocol`, and `oz3dsk` are all built on it later
 (the backlog's *Disk drive device* and *Disk tools*), so they can never
 disagree about what is on a disk.
@@ -123,7 +123,19 @@ confused with Game Bits' `gb::File`, `gb::FileSystem`, `gb::RawFile`, or
 - **`DiskLayout`:** what a format chooses (sectors per cluster, cluster count,
   FAT sectors), from `ChooseDiskLayout`. Alternatives: "geometry" (suggests
   tracks and heads, which the disk doesn't have), "format" (the operation).
-- **`DiskCheckReport`:** what `Check` finds and repairs.
+- **`DiskSuperblock`:** sector 0's words, with getters and setters, as
+  `DiskDirEntry` is an entry's. Alternatives: `DiskVolumeHeader` (but
+  "header" is the image's), keeping static functions in `DiskFileSystem`
+  (which the checks couldn't share). Recommended: `DiskSuperblock`, the
+  format's own word for it.
+- **`DiskFat`:** the file system's FAT and free list, through its two FAT
+  buffers. Alternatives: `DiskAllocator` (but it also walks chains),
+  `DiskClusterTable` (long, and not the format's word). Recommended:
+  `DiskFat`.
+- **`CheckDisk`**, **`RepairDisk`**, and **`DiskCheckReport`:** what a check
+  finds wrong with an image, and fixes. "Check" is the one exception to
+  "Validate" for judging: a disk check (chkdsk) is a known thing, and it
+  gives a full report rather than a pass or a status.
 - **`CollectBusyTime()`:** returns the busy time since the last call, and
   resets it. "Busy time" says it's the disk's simulated time, not the
   caller's, and "collect" that it's gathered up and cleared, as a fare is.
@@ -131,8 +143,6 @@ confused with Game Bits' `gb::File`, `gb::FileSystem`, `gb::RawFile`, or
   for time), `GetElapsed()` with a separate `ResetElapsed()` (a pair to
   remember). Recommended: `CollectBusyTime()`. The hardware has the same
   call, which the file system's adds to its own.
-- **Host transfer:** `WordsFromBytes`, `BytesFromWords`, `WordsFromText`, and
-  `TextFromWords`, in `disk_transfer.h`.
 - Constants: `kDiskSectorWords` (256), and each value's own size,
   `DiskFilename::kWordCount` (8), `DiskLabel::kWordCount` (8), and
   `DiskDirEntry::kWordCount` (16). Names and labels being the same size is
@@ -233,7 +243,7 @@ class DiskImage final : public DiskMedia {
   ID), its version or sector size isn't supported, its sector count is 0, or
   the file is too short to hold the sectors its header counts.
 - A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
-  a write-protected image, whatever its header says, from CL17. `Open` opens
+  a write-protected image, whatever its header says, from CL19. `Open` opens
   it for reading only, and its flags have the write-protect bit set, so
   `MEDIA` reports it. The header's bit is the floppy's notch, which travels
   with the image; the host's attribute is the host's own protection, and the
@@ -406,6 +416,17 @@ struct DiskLayout {
   // Returns the most words a file can have: every cluster but the root's.
   constexpr int GetMaxFileSize() const;
 
+  // From CL15: the FAT's link rule, so the file system and the checks share
+  // it. A `cluster` of 0 is word 0, whose link is the free list's head.
+  static constexpr int kSuperblockSector = 0;
+  static constexpr int kFirstFatSector = 1;  // Holds the free list's head.
+  static constexpr uint16_t kFatEnd = 0xFFFF;
+  // Returns the sector holding the FAT's word `index`.
+  static constexpr int GetFatSector(int index);
+  // Returns the cluster `cluster`'s FAT word `link` gives next, 0 at the
+  // chain's end, or nullopt for a link past the last cluster.
+  std::optional<int> GetNextCluster(int cluster, uint16_t link) const;
+
   int sectors_per_cluster = 0;  // A power of two, 1 to 64.
   int cluster_count = 0;        // 1 to 65,534.
   int fat_sectors = 0;          // At least ⌈(cluster_count + 1) ÷ 256⌉.
@@ -427,7 +448,8 @@ The file system uses it throughout, not only in tests:
   superblock may record more FAT sectors than the minimum, as disk_design.md
   allows, so attaching checks the layout rather than recomputing it.
 - **Every cluster access** turns a cluster into its sector with
-  `GetClusterSector`, and `Check` uses the same layout for its range checks.
+  `GetClusterSector`, and `CheckDisk` uses the same layout for its range
+  checks.
 
 Being separate also lets its tests cover every row of disk_design.md's table,
 up to 128 MiB, without making images that size.
@@ -489,9 +511,6 @@ class DiskFileSystem {
   DiskStatus Delete(const DiskFilename& name);
   DiskStatus Rename(const DiskFilename& from, const DiskFilename& to);
   DiskStatus SetAttributes(const DiskFilename& name, uint16_t attributes);
-
-  // Consistency.
-  DiskStatus Check(bool repair, DiskCheckReport* report);
 };
 ```
 
@@ -536,12 +555,178 @@ has it, which ownership enforces within a process (the file system owns the
 hardware, which owns the image), and which across processes is documented,
 as disk_design.md says.
 
-### disk: host transfer
+### disk: DiskSuperblock
 
-`disk_transfer.h`: `WordsFromBytes` (pads an odd last byte with zero) and
-`BytesFromWords`, in `std::byte`, and `WordsFromText` (host line endings to
-LF) and `TextFromWords` (dropping zero bytes). They know nothing about the
-file system, for `oz3dsk` and any frontend.
+From CL15, the superblock is a value, as an entry is, so the file system and
+the checks read it the same way:
+
+```
+// A disk's sector 0: the superblock's fields (words 0-31), then the boot
+// area. It holds its words exactly, as the disk has them, so one read from a
+// disk may describe no file system, which IsValid says. The setters change
+// only their own words.
+class DiskSuperblock final {
+ public:
+  using Words = std::array<uint16_t, kDiskSectorWords>;
+
+  DiskSuperblock() = default;  // All zeros, describing no file system.
+
+  // What formatting writes: the format ID and version, `layout`, the root at
+  // `root_cluster`, `label`, and `formatted`, with every other word 0.
+  DiskSuperblock(const DiskLayout& layout, int root_cluster,
+                 const DiskLabel& label, DateTime formatted);
+
+  // Returns `words` exactly as given.
+  static DiskSuperblock FromWords(const Words& words);
+
+  bool operator==(const DiskSuperblock&) const = default;
+
+  // Returns whether it describes a file system on an image of `sector_count`
+  // sectors: the format ID and version known, the layout valid, the root
+  // cluster in range, and the label valid.
+  bool IsValid(int sector_count) const;
+
+  DiskLayout GetLayout() const;
+  int GetRootCluster() const;
+  std::optional<DiskLabel> GetLabel() const;  // nullopt if it isn't valid.
+  void SetLabel(const DiskLabel& label);
+  const Words& GetWords() const;
+};
+```
+
+- It replaces `DiskFileSystem`'s static superblock functions and word
+  offsets. The file system keeps one as `superblock_`, and `SetLabel` writes
+  its words, so the boot area and reserved words are kept.
+
+### disk: DiskFat
+
+From CL16, the FAT is a class of its own, which `DiskFileSystem` holds, as
+the cleanest part of the file system to split out: everything about the FAT's
+buffers and the order they are written in is in one place.
+
+```
+// The FAT and free list of the disk attached to `hardware`, through two
+// sector buffers: sector 1, holding the free list's head, and one working
+// sector for any other.
+class DiskFat final {
+ public:
+  explicit DiskFat(DiskHardware* hardware);
+
+  // Forgets the buffers and the free count, for a disk of `layout`.
+  void Reset(const DiskLayout& layout);
+
+  // Writes a formatted disk's FAT, with only `root_cluster` taken.
+  DiskStatus Format(int root_cluster);
+
+  DiskStatus CountFreeClusters();          // Once, walking the free list.
+  std::optional<int> GetFreeCount() const;
+
+  DiskStatus GetNextCluster(int cluster, int* next);
+  DiskStatus CountChain(int chain_first, int* chain_count, int* chain_last);
+  DiskStatus GetFreeHead(int* head);
+  DiskStatus AllocateCluster(int last_cluster, int* cluster);
+  DiskStatus FreeChain(int unlink_from, int chain_first, int chain_last,
+                       int chain_count);
+  DiskStatus Write();  // The dirty buffers, sector 1 first.
+};
+```
+
+- Each function is `DiskFileSystem`'s of the same name moved, with the same
+  write orders. FAT sectors are only ever in the FAT's buffers, so its writes
+  never need copying into the file system's other buffers.
+- `SectorBuffer` moves to a header of its own, as both use it.
+- What stays in `DiskFileSystem` is the order between the FAT and everything
+  else: FAT before directory when linking, directory before FAT when
+  freeing.
+- Not split out: the directory. It is read through the same slot code as an
+  open root handle, and growing the root grows every open root slot, so it
+  would take the slots with it.
+
+### disk: checks
+
+`disk_check.h`, from CL17. The checks work on an image no file system has
+attached, as the drive never checks a disk, and a host checking one in a
+drive detaches it first. So no file can be open during a check, by
+ownership rather than a status, and a repair leaves no free count or buffer
+behind to go stale.
+
+```
+// What a check finds wrong with a disk. A crash leaves at most orphaned
+// clusters and long chains (see disk_design.md's Committing).
+struct DiskCheckReport {
+  // What is wrong with a file's chain: the first problem walking it finds.
+  enum class ChainProblem {
+    kLong,         // It goes on past the clusters its size needs.
+    kShort,        // It ends before covering its size.
+    kBroken,       // It has a link out of range, or loops.
+    kCrossLinked,  // It runs into the root's chain or an earlier file's.
+  };
+
+  // A file whose chain doesn't match its size, with its entry as it is on
+  // the disk.
+  struct FileProblem {
+    bool operator==(const FileProblem&) const = default;
+
+    DiskDirEntry entry;
+    ChainProblem problem = ChainProblem::kLong;
+  };
+
+  bool operator==(const DiskCheckReport&) const = default;
+
+  bool broken_root = false;       // A link out of range, or a loop.
+  bool broken_free_list = false;  // The same, or it runs into a chain.
+  int orphaned_clusters = 0;      // On no chain, and not free.
+  std::vector<FileProblem> file_problems;      // In directory order.
+  std::vector<DiskDirEntry> bad_names;         // Names breaking the rules.
+  std::vector<DiskFilename> duplicate_names;   // Each one once.
+};
+
+// Sets `report` to what is wrong with the file system on `image`, writing
+// nothing. Returns kUnformatted with no file system, and kIoError. Never
+// kCorrupt, as corruption is what it reports.
+DiskStatus CheckDisk(DiskImage& image, DiskCheckReport* report);
+
+// Checks as CheckDisk does, then fixes what it found (from CL18). Returns
+// kWriteProtected on a protected image.
+DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
+```
+
+- **Reading:** the whole FAT is read into memory at once (64 Kiw at most),
+  and the root's sectors as its chain reaches them, straight from the image.
+  It takes no simulated time, which only the drive charges.
+- **Claiming:** each cluster belongs to the first chain to reach it: the
+  root's, then each file's in directory order, then the free list's. So a
+  cross-link is the later file's problem, and a cluster both free and in a
+  chain stays in the chain, with the free list broken there. A cluster no
+  chain reaches is orphaned. The free list is last, as a crash never leaves
+  a chain running into it.
+- **A file's chain** is walked only as far as its size needs. A long chain's
+  tail claims nothing, so it counts as orphaned too, and repairing frees it
+  with the other orphans. A size past the disk's largest file is short.
+  Entries with bad names are walked as files, so their clusters aren't
+  orphaned.
+- **The root's entries** are read from the clusters its walk claimed, so a
+  broken root is still read up to the break.
+- **Repairing** (CL18) writes, in order: the entries that change (a short or
+  broken file's size cut to its chain, cross-linked files cut before the
+  shared cluster, and first cluster 0 for an emptied file), then each chain's
+  new end, then a free list rebuilt from every cluster nothing claims. The
+  rebuild first empties the free list (word 0 to FFFFh), then links the
+  clusters in order, then writes the head, so a crash in it leaves at worst
+  orphans. Every write goes straight to the image, so this order is the
+  code's. Duplicate names are only reported: `Delete` and `Rename` act on the
+  first, so a user can fix them. What to do with bad names is settled in
+  CL18: freeing them, or leaving them.
+- disk_design.md changes to match, in CL17: checks are `CheckDisk` on an
+  image, not `DiskFileSystem::Check`, and `DiskFileProtocol` doesn't offer
+  them through `GetFileSystem()`.
+- Names: **`RepairDisk`**, a call of its own. Alternatives: `CheckDisk(bool
+  repair, ...)` (as first planned, but `CheckDisk(image, true, &report)`
+  doesn't say what the bool does), `FixDisk` (as `oz3dsk check --fix`, but
+  terse). Recommended: `RepairDisk`. **`kLong` and `kShort`**, a pair
+  matching "a chain that doesn't match its size". Alternatives: `kSlack`
+  (disk_design.md's word for the tail, but slack usually means the unused
+  end of a last cluster), `kTooLong`. Recommended: `kLong` and `kShort`.
 
 ### To confirm
 
@@ -932,7 +1117,7 @@ Depends on: CL12.
   stop the image's writes with `FaultyFileProtocol` after every possible
   number of sector writes, detach and reattach the image, and check that no
   cluster is cross-linked or on both the free list and a chain, and that
-  every file's chain covers its size (with CL15's `Check` once it exists;
+  every file's chain covers its size (with CL17's `CheckDisk` once it exists;
   here by walking the chains in the test).
 - Each file's words are its position plus a fixed first word, so the test
   also checks every file's data up to its size, which catches a size reaching
@@ -976,37 +1161,79 @@ Depends on: CL13.
   the freed clusters' order on the free list, entries staying in their slots
   for an open root handle, write protection, and the crash test for each.
 
-### CL15 [ ] disk: consistency checks
+### CL15 [x] disk: superblocks and FAT links
 
 Depends on: CL14.
 
-- `DiskFileSystem::Check` and `DiskCheckReport`: orphaned clusters,
-  cross-linked clusters, clusters both free and in a chain, chains that don't
-  match their file's size, and duplicate names, with repair: orphans and
-  slack join the free list, a short chain cuts its file's size, and a
-  cross-link cuts the later file in directory order before the shared
-  cluster. Fails with `in use` while any file is open.
-- The crash tests in CL13 and CL14 use it.
+- `disk_superblock.h` and `.cc`: `DiskSuperblock` (see disk:
+  DiskSuperblock), replacing `DiskFileSystem`'s static superblock functions.
+- `DiskLayout`: the superblock's and the FAT's first sectors, `kFatEnd`,
+  `GetFatSector`, and `GetNextCluster`, the FAT's link rule, which
+  `DiskFileSystem` uses in place of its own.
+- The file system tests' helpers read superblocks and links with them too.
+- `DiskLayout`'s `GetMostClusters` (for `ChooseDiskLayout`) counts sectors
+  with `GetSectorCount`, the same sum `IsValid` checks.
+- No change in behavior.
+
+**Verify**
+- Standard checks.
+- Unit tests: `DiskSuperblock`'s words from formatting's constructor, each
+  field read back, `SetLabel` keeping every other word, and `IsValid` failing
+  for each field out of range, as attaching did. `GetNextCluster` for a link,
+  FFFFh, 0 before and on the last cluster, word 0, and a link past the last
+  cluster. The file system's tests pass, with only their helpers changed.
+
+### CL16 [ ] disk: the FAT
+
+Depends on: CL15.
+
+- `disk_fat.h` and `.cc`: `DiskFat` (see disk: DiskFat), moved out of
+  `DiskFileSystem`, with `SectorBuffer` in a header of its own.
+- No change in behavior.
+
+**Verify**
+- Standard checks.
+- The file system's tests pass unchanged, including every exact order of
+  writes and the crash tests.
+
+### CL17 [ ] disk: consistency checks
+
+Depends on: CL16.
+
+- `disk_check.h` and `.cc`: `CheckDisk` and `DiskCheckReport` (see disk:
+  checks): a broken root or free list, orphaned clusters, files whose chains
+  are long, short, broken, or cross-linked, bad names, and duplicate names,
+  writing nothing.
+- The crash tests check every crash with it, which may leave only orphaned
+  clusters and long chains, and a clean disk before and after.
+- disk_design.md: checks are `CheckDisk` on a detached image.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests: each problem on a hand-made disk, reported and then repaired,
-  and a clean disk reporting nothing, before and after.
+- Unit tests: a clean disk reporting nothing, each problem on a hand-made
+  disk, a cluster both free and in a chain, a long chain's tail as orphaned,
+  a loop in each of the root, a file, and the free list, links out of range,
+  a size past the disk's largest file, an unformatted image, and nothing
+  written.
 
-### CL16 [ ] disk: host transfer helpers
+### CL18 [ ] disk: consistency repairs
 
-Depends on: CL2.
+Depends on: CL17.
 
-- `disk_transfer.h` and `.cc`.
+- `RepairDisk` (see disk: checks): cuts files' sizes and chains, then
+  rebuilds the free list from every cluster nothing claims.
+- The crash tests repair after every crash, then expect a clean check with
+  every file's data intact, and a crash test of repairing itself.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests: odd and even byte counts each way, CRLF, CR, and LF going in,
-  and zero bytes dropped coming out.
+- Unit tests: each problem on a hand-made disk repaired, then checking clean,
+  the exact order of writes, write protection, and a clean disk writing
+  nothing.
 
-### CL17 [ ] disk: read-only image files
+### CL19 [ ] disk: read-only image files
 
 Depends on: CL2.
 

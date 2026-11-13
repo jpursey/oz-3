@@ -30,6 +30,7 @@
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
 
 namespace oz3 {
@@ -133,14 +134,10 @@ DiskDirEntry ReadEntry(DiskImage& image, int sector, int index) {
       index * DiskDirEntry::kWordCount, DiskDirEntry::kWordCount));
 }
 
-// Returns the layout a formatted image's superblock gives.
-DiskLayout ReadLayout(DiskImage& image) {
-  const Sector superblock = ReadSector(image, 0);
-  return {
-      .sectors_per_cluster = superblock[3],  // Sectors per cluster
-      .cluster_count = superblock[4],        // Clusters
-      .fat_sectors = superblock[5],          // FAT sectors
-  };
+// Returns an image's superblock.
+DiskSuperblock ReadSuperblock(DiskImage& image) {
+  return DiskSuperblock::FromWords(
+      ReadSector(image, DiskLayout::kSuperblockSector));
 }
 
 // Returns the sector holding word `position` of a file whose chain is
@@ -166,13 +163,13 @@ std::string GetFillerName(int index) { return "F" + std::to_string(index); }
 class DiskEditor {
  public:
   explicit DiskEditor(DiskImage* image)
-      : image_(*image), layout_(ReadLayout(*image)) {}
+      : image_(*image), layout_(ReadSuperblock(*image).GetLayout()) {}
 
   const DiskLayout& GetLayout() const { return layout_; }
 
   // Sets the FAT's word `index` to `value`.
   void SetFatWord(int index, uint16_t value) {
-    const int sector = 1 + index / kDiskSectorWords;
+    const int sector = DiskLayout::GetFatSector(index);
     Sector words = ReadSector(image_, sector);
     words[index % kDiskSectorWords] = value;
     WriteSector(image_, sector, words);
@@ -184,7 +181,7 @@ class DiskEditor {
     for (int i = 0; i < count; ++i) {
       SetFatWord(clusters[i], i + 1 < count
                                   ? static_cast<uint16_t>(clusters[i + 1])
-                                  : 0xFFFF);
+                                  : DiskLayout::kFatEnd);
     }
   }
 
@@ -281,23 +278,20 @@ struct DiskContents {
 // words up to its size, and every other file is empty.
 DiskContents ReadDiskContents(DiskImage& image,
                               absl::Span<const CrashFile> files) {
-  const DiskLayout layout = ReadLayout(image);
-  const int root_cluster = ReadSector(image, 0)[6];  // Root cluster
+  const DiskSuperblock superblock = ReadSuperblock(image);
+  const DiskLayout layout = superblock.GetLayout();
   const int cluster_words = layout.sectors_per_cluster * kDiskSectorWords;
   std::vector<uint16_t> fat;
   for (int i = 0; i < layout.fat_sectors; ++i) {
-    const Sector words = ReadSector(image, 1 + i);
+    const Sector words = ReadSector(image, DiskLayout::kFirstFatSector + i);
     fat.insert(fat.end(), words.begin(), words.end());
   }
 
-  // Returns the cluster after `cluster`, or 0 at the end. A link of 0 is the
-  // next cluster, or the end after the last one.
+  // Returns the cluster after `cluster`, 0 at the end, or one past the last
+  // cluster for a link out of range.
   const auto get_next = [&](int cluster) {
-    const uint16_t link = fat[cluster];
-    if (link == 0xFFFF || (link == 0 && cluster == layout.cluster_count)) {
-      return 0;
-    }
-    return link == 0 ? cluster + 1 : static_cast<int>(link);
+    return layout.GetNextCluster(cluster, fat[cluster])
+        .value_or(layout.cluster_count + 1);
   };
 
   DiskContents contents;
@@ -328,7 +322,7 @@ DiskContents ReadDiskContents(DiskImage& image,
   // Word 0 is the link of an imaginary cluster 0, to the free list's head.
   take_chain("the free list", get_next(0));
   std::vector<DiskDirEntry> entries;
-  for (int cluster : take_chain("the root", root_cluster)) {
+  for (int cluster : take_chain("the root", superblock.GetRootCluster())) {
     for (int i = 0; i < layout.sectors_per_cluster; ++i) {
       for (int index = 0; index < kEntriesPerSector; ++index) {
         entries.push_back(
@@ -1567,7 +1561,7 @@ TEST_F(DiskFileSystemTest, BrokenChainsAreCorrupt) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) {
     editor.AddFile(0, "SHORT", {2, 5}, 300);
-    editor.SetFatWord(2, 0xFFFF);
+    editor.SetFatWord(2, DiskLayout::kFatEnd);
     editor.AddFile(1, "OUT", {3, 4}, 300);
     editor.SetFatWord(3, kSmallClusters + 1);
   });
@@ -1973,7 +1967,7 @@ TEST_F(DiskFileSystemTest, AFullRootOnAFullDiskIsDiskFull) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) {
     editor.FillSector(2, 0);
-    editor.SetFatWord(0, 0xFFFF);
+    editor.SetFatWord(0, DiskLayout::kFatEnd);
   });
   EXPECT_EQ(GetFreeClusters(), 0);
   CollectSectorWrites();

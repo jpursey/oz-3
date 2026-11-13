@@ -208,7 +208,6 @@ The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`
 - **Time belongs to the hardware.** `DiskHardware` adds up the time of the operations it performs, without waiting. The drive reads and resets that total after each file system call, and waits that long before going on. Tools ignore it.
 - **No clock.** Timestamps come in as core's `DateTime` values, from the host clock in the drive and from host file times in tools.
 - **Consistency checks** are `DiskFileSystem::Check`, reporting orphaned and cross-linked clusters and chains that don't match sizes, and optionally repairing them.
-- **Host transfer helpers** convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend.
 
 The drive maps its slots one to one onto `DiskFile` handles, and its `DiskFileSystem` lives as long as it does, with images attached and detached as disks are inserted and ejected. Detaching an image discards the file system's buffers with no write-back, and leaves its open slots stale.
 
@@ -559,7 +558,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 - **Attributes:** it supports `gb::FileAttribute::kReadOnly` and `kHidden`, the disk's read-only and hidden bits. `PathInfo` reports them from the file's entry, and `gb::FileSystem::SetAttributes` sets them as `ATTRIB` does, failing with the file open. A read-only file can't be opened for writing or deleted, as on the drive, and a hidden one is still listed. Copies and moves keep them, as for any protocol, so a read-only host file copied in stays read-only, and back out again.
 - **Moves** within the protocol are renames, through `gb::FileSystem::MoveFile`.
 - **Timestamps:** the protocol stamps written files using a clock given when it's created, or zeros without one.
-- **Text conversion** stays outside, in the library's host transfer helpers, since a `RawFile` has no notion of text.
+- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host transfer helpers beside the protocol in `tools`. They convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
 
 #### Ownership
 

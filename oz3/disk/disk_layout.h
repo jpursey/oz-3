@@ -7,6 +7,7 @@
 #define OZ3_DISK_DISK_LAYOUT_H_
 
 #include <compare>
+#include <cstdint>
 #include <optional>
 
 namespace oz3 {
@@ -23,10 +24,20 @@ constexpr int GetMinDiskFatSectors(int cluster_count) {
 // Where a formatted disk's parts are, as its superblock records them: the
 // superblock in sector 0, then the FAT's sectors, then the clusters, numbered
 // from 1. It is only arithmetic, with no disk.
+//
+// The FAT has a word for each cluster, linking it to the next in its chain,
+// and word 0 links to the free list's head, as if it were a cluster 0's.
 struct DiskLayout {
   //----------------------------------------------------------------------------
   // Constants
   //----------------------------------------------------------------------------
+
+  // The superblock's sector, and the FAT's first, which holds word 0.
+  static constexpr int kSuperblockSector = 0;
+  static constexpr int kFirstFatSector = 1;
+
+  // A FAT link ending a chain, or as word 0, the free list of a full disk.
+  static constexpr uint16_t kFatEnd = 0xFFFF;
 
   // The most sectors in a cluster. Sectors per cluster is a power of two, from
   // 1 to this.
@@ -62,7 +73,12 @@ struct DiskLayout {
 
   // Returns the first sector of `cluster`, which must be 1 to cluster_count.
   int GetClusterSector(int cluster) const {
-    return 1 + fat_sectors + (cluster - 1) * sectors_per_cluster;
+    return kFirstFatSector + fat_sectors + (cluster - 1) * sectors_per_cluster;
+  }
+
+  // Returns the sector holding the FAT's word `index`.
+  static constexpr int GetFatSector(int index) {
+    return kFirstFatSector + index / kDiskSectorWords;
   }
 
   // Returns the most words a file can have: what every cluster holds but the
@@ -80,6 +96,12 @@ struct DiskLayout {
   // for the free list's head, but may have more sectors than that, up to
   // kMaxFatSectors.
   bool IsValid(int sector_count) const;
+
+  // Returns the cluster after `cluster` that its FAT word, `link`, gives, or
+  // 0 at the chain's end, or nullopt for a link past the last cluster. A link
+  // of 0 is the next cluster, or the end on the last one, and kFatEnd is the
+  // end. A `cluster` of 0 gives the free list's head from word 0.
+  std::optional<int> GetNextCluster(int cluster, uint16_t link) const;
 
   //----------------------------------------------------------------------------
   // Data

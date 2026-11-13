@@ -71,6 +71,13 @@ design:
 
 `DiskFileProtocol`, a `gb::FileProtocol` over a mounted image, in `tools`, and
 the `oz3dsk` command line tool for making, formatting, and filling images.
+Both convert host files with host transfer helpers in `tools`
+(`disk_transfer.h`): `WordsFromBytes` (padding an odd last byte with zero)
+and `BytesFromWords`, in `std::byte`, and `WordsFromText` (host line endings
+to LF) and `TextFromWords` (dropping zero bytes), tested with odd and even
+byte counts each way, CRLF, CR, and LF going in, and zero bytes dropped
+coming out. They were planned for *Disk library*, but nothing in the disk
+format needs them.
 
 ## Ozzy drives
 

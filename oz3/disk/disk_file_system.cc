@@ -21,33 +21,6 @@ namespace {
 
 using WriteCaching = DiskHardware::WriteCaching;
 
-// The superblock's fields, by word.
-constexpr int kFormatIdWord = 0;  // Two words.
-constexpr int kVersionWord = 2;
-constexpr int kSectorsPerClusterWord = 3;
-constexpr int kClusterCountWord = 4;
-constexpr int kFatSectorsWord = 5;
-constexpr int kRootClusterWord = 6;
-constexpr int kLabelWord = 8;
-constexpr int kFormattedWord = 16;
-
-// "OZFS", packed.
-constexpr uint16_t kFormatId[] = {'O' | 'Z' << 8, 'F' | 'S' << 8};
-constexpr uint16_t kVersion = 1;
-
-// The superblock and the FAT's first sector, which hold where everything else
-// is and the free list's head.
-constexpr int kSuperblockSector = 0;
-constexpr int kFatHeadSector = 1;
-
-// A FAT link ending a chain, or as the free list's head, a full disk.
-constexpr uint16_t kFatEnd = 0xFFFF;
-
-// Returns the sector holding the FAT's word `index`.
-int GetFatSector(int index) {
-  return kFatHeadSector + index / kDiskSectorWords;
-}
-
 // The cluster formatting gives the root directory.
 constexpr int kFormatRootCluster = 1;
 
@@ -67,12 +40,14 @@ DiskStatus DiskFileSystem::AttachImage(std::unique_ptr<DiskImage> image) {
   DetachImage();
   const int sector_count = image->GetSectorCount();
   hardware_.AttachImage(std::move(image));
-  const DiskStatus status =
-      hardware_.ReadSector(kSuperblockSector, absl::MakeSpan(superblock_));
-  if (status != DiskStatus::kOk) {
+  Sector superblock_words;
+  if (DiskStatus status = hardware_.ReadSector(
+          DiskLayout::kSuperblockSector, absl::MakeSpan(superblock_words));
+      status != DiskStatus::kOk) {
     return status;
   }
-  if (!IsValidSuperblock(superblock_, sector_count)) {
+  superblock_ = DiskSuperblock::FromWords(superblock_words);
+  if (!superblock_.IsValid(sector_count)) {
     return DiskStatus::kUnformatted;
   }
   formatted_ = true;
@@ -111,8 +86,8 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
   // The superblock is blanked first and written last, so a format that fails
   // partway leaves the disk unformatted, rather than a file system over a
   // broken FAT.
-  if (DiskStatus status = hardware_.WriteSector(kSuperblockSector, kZeroSector,
-                                                WriteCaching::kSkip);
+  if (DiskStatus status = hardware_.WriteSector(
+          DiskLayout::kSuperblockSector, kZeroSector, WriteCaching::kSkip);
       status != DiskStatus::kOk) {
     return status;
   }
@@ -122,15 +97,15 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
   // the buffer.
   fat_head_.words[0] = (layout->cluster_count > kFormatRootCluster
                             ? static_cast<uint16_t>(kFormatRootCluster + 1)
-                            : kFatEnd);
-  fat_head_.words[kFormatRootCluster] = kFatEnd;
-  if (DiskStatus status = hardware_.WriteSector(kFatHeadSector, fat_head_.words,
-                                                WriteCaching::kSkip);
+                            : DiskLayout::kFatEnd);
+  fat_head_.words[kFormatRootCluster] = DiskLayout::kFatEnd;
+  if (DiskStatus status = hardware_.WriteSector(
+          DiskLayout::kFirstFatSector, fat_head_.words, WriteCaching::kSkip);
       status != DiskStatus::kOk) {
     return status;
   }
-  for (int sector = kFatHeadSector + 1; sector <= layout->fat_sectors;
-       ++sector) {
+  for (int sector = DiskLayout::kFirstFatSector + 1;
+       sector <= layout->fat_sectors; ++sector) {
     if (DiskStatus status =
             hardware_.WriteSector(sector, kZeroSector, WriteCaching::kCache);
         status != DiskStatus::kOk) {
@@ -146,27 +121,17 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
     }
   }
 
-  std::copy(std::begin(kFormatId), std::end(kFormatId),
-            superblock_.begin() + kFormatIdWord);
-  superblock_[kVersionWord] = kVersion;
-  superblock_[kSectorsPerClusterWord] =
-      static_cast<uint16_t>(layout->sectors_per_cluster);
-  superblock_[kClusterCountWord] = static_cast<uint16_t>(layout->cluster_count);
-  superblock_[kFatSectorsWord] = static_cast<uint16_t>(layout->fat_sectors);
-  superblock_[kRootClusterWord] = kFormatRootCluster;
-  PutLabel(label, &superblock_);
-  const DateTime::Words& formatted = now.GetWords();
-  std::copy(formatted.begin(), formatted.end(),
-            superblock_.begin() + kFormattedWord);
-  if (DiskStatus status = hardware_.WriteSector(kSuperblockSector, superblock_,
-                                                WriteCaching::kSkip);
+  superblock_ = DiskSuperblock(*layout, kFormatRootCluster, label, now);
+  if (DiskStatus status =
+          hardware_.WriteSector(DiskLayout::kSuperblockSector,
+                                superblock_.GetWords(), WriteCaching::kSkip);
       status != DiskStatus::kOk) {
     return status;
   }
 
   formatted_ = true;
   free_count_ = layout->cluster_count - 1;
-  fat_head_.sector = kFatHeadSector;
+  fat_head_.sector = DiskLayout::kFirstFatSector;
   return DiskStatus::kOk;
 }
 
@@ -174,9 +139,9 @@ DiskStatus DiskFileSystem::SetLabel(const DiskLabel& label) {
   if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
     return status;
   }
-  PutLabel(label, &superblock_);
-  return hardware_.WriteSector(kSuperblockSector, superblock_,
-                               WriteCaching::kSkip);
+  superblock_.SetLabel(label);
+  return hardware_.WriteSector(DiskLayout::kSuperblockSector,
+                               superblock_.GetWords(), WriteCaching::kSkip);
 }
 
 DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
@@ -186,10 +151,10 @@ DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
   if (DiskStatus status = CountFreeClusters(); status != DiskStatus::kOk) {
     return status;
   }
-  const DiskLayout layout = GetLayout(superblock_);
+  const DiskLayout layout = superblock_.GetLayout();
   // The label was checked when the superblock was attached or written.
   *info = {
-      .label = *GetLabel(superblock_),
+      .label = *superblock_.GetLabel(),
       .sectors_per_cluster = layout.sectors_per_cluster,
       .cluster_count = layout.cluster_count,
       .free_clusters = *free_count_,
@@ -640,47 +605,6 @@ DiskStatus DiskFileSystem::SetAttributes(const DiskFilename& name,
 }
 
 //------------------------------------------------------------------------------
-// Superblock
-//------------------------------------------------------------------------------
-
-DiskLayout DiskFileSystem::GetLayout(const Sector& superblock) {
-  return {
-      .sectors_per_cluster = superblock[kSectorsPerClusterWord],
-      .cluster_count = superblock[kClusterCountWord],
-      .fat_sectors = superblock[kFatSectorsWord],
-  };
-}
-
-int DiskFileSystem::GetRootCluster(const Sector& superblock) {
-  return superblock[kRootClusterWord];
-}
-
-std::optional<DiskLabel> DiskFileSystem::GetLabel(const Sector& superblock) {
-  return DiskLabel::FromWords(absl::MakeConstSpan(superblock)
-                                  .subspan(kLabelWord, DiskLabel::kWordCount));
-}
-
-void DiskFileSystem::PutLabel(const DiskLabel& label, Sector* superblock) {
-  const DiskLabel::Words label_words = label.GetWords();
-  std::copy(label_words.begin(), label_words.end(),
-            superblock->begin() + kLabelWord);
-}
-
-bool DiskFileSystem::IsValidSuperblock(const Sector& superblock,
-                                       int sector_count) {
-  if (!std::equal(std::begin(kFormatId), std::end(kFormatId),
-                  superblock.begin() + kFormatIdWord) ||
-      superblock[kVersionWord] != kVersion) {
-    return false;
-  }
-  const DiskLayout layout = GetLayout(superblock);
-  const int root_cluster = GetRootCluster(superblock);
-  return layout.IsValid(sector_count) && root_cluster >= 1 &&
-         root_cluster <= layout.cluster_count &&
-         GetLabel(superblock).has_value();
-}
-
-//------------------------------------------------------------------------------
 // Volume
 //------------------------------------------------------------------------------
 
@@ -722,7 +646,7 @@ DiskStatus DiskFileSystem::GetWritableStatus() const {
 }
 
 int DiskFileSystem::GetClusterSize() const {
-  return GetLayout(superblock_).sectors_per_cluster * kDiskSectorWords;
+  return superblock_.GetLayout().sectors_per_cluster * kDiskSectorWords;
 }
 
 DiskStatus DiskFileSystem::CountFreeClusters() {
@@ -816,7 +740,7 @@ void DiskFileSystem::OpenSlot(Slot* slot,
 }
 
 DiskStatus DiskFileSystem::OpenRootSlot(Slot* slot) {
-  const int root_cluster = GetRootCluster(superblock_);
+  const int root_cluster = superblock_.GetRootCluster();
   int chain_count = 0;
   if (DiskStatus status = CountChain(root_cluster, &chain_count,
                                      /*chain_last=*/nullptr);
@@ -954,7 +878,7 @@ DiskStatus DiskFileSystem::BlankSector(int sector, SectorBuffer* buffer) {
 }
 
 int DiskFileSystem::GetSlotSector(const Slot& slot) const {
-  return GetLayout(superblock_).GetClusterSector(slot.last_cluster) +
+  return superblock_.GetLayout().GetClusterSector(slot.last_cluster) +
          slot.position % GetClusterSize() / kDiskSectorWords;
 }
 
@@ -1011,9 +935,9 @@ DiskStatus DiskFileSystem::WriteFat() {
 
 DiskStatus DiskFileSystem::LoadFatSector(int index, SectorBuffer** buffer) {
   CHECK_GE(index, 0);
-  CHECK_LE(index, GetLayout(superblock_).cluster_count);
-  const int sector = GetFatSector(index);
-  *buffer = (sector == kFatHeadSector ? &fat_head_ : &fat_work_);
+  CHECK_LE(index, superblock_.GetLayout().cluster_count);
+  const int sector = DiskLayout::GetFatSector(index);
+  *buffer = (sector == DiskLayout::kFirstFatSector ? &fat_head_ : &fat_work_);
   return LoadSector(sector, *buffer);
 }
 
@@ -1044,23 +968,18 @@ DiskStatus DiskFileSystem::GetNextCluster(int cluster, int* next) {
       status != DiskStatus::kOk) {
     return status;
   }
-  // A link of 0 is the next cluster, or the end after the last one.
-  const int cluster_count = GetLayout(superblock_).cluster_count;
-  if (link == kFatEnd || (link == 0 && cluster == cluster_count)) {
-    *next = 0;
-  } else if (link == 0) {
-    *next = cluster + 1;
-  } else if (link > cluster_count) {
+  const std::optional<int> link_next =
+      superblock_.GetLayout().GetNextCluster(cluster, link);
+  if (!link_next.has_value()) {
     return DiskStatus::kCorrupt;
-  } else {
-    *next = link;
   }
+  *next = *link_next;
   return DiskStatus::kOk;
 }
 
 DiskStatus DiskFileSystem::CountChain(int chain_first, int* chain_count,
                                       int* chain_last) {
-  const int cluster_count = GetLayout(superblock_).cluster_count;
+  const int cluster_count = superblock_.GetLayout().cluster_count;
   // GetNextCluster checks every link, but not the first cluster.
   if (chain_first > cluster_count) {
     return DiskStatus::kCorrupt;
@@ -1110,12 +1029,12 @@ DiskStatus DiskFileSystem::AllocateCluster(int last_cluster, int* cluster) {
       status != DiskStatus::kOk) {
     return status;
   }
-  if (DiskStatus status =
-          SetFatWord(0, next == 0 ? kFatEnd : static_cast<uint16_t>(next));
+  if (DiskStatus status = SetFatWord(
+          0, next == 0 ? DiskLayout::kFatEnd : static_cast<uint16_t>(next));
       status != DiskStatus::kOk) {
     return status;
   }
-  if (DiskStatus status = SetFatWord(head, kFatEnd);
+  if (DiskStatus status = SetFatWord(head, DiskLayout::kFatEnd);
       status != DiskStatus::kOk) {
     return status;
   }
@@ -1123,7 +1042,8 @@ DiskStatus DiskFileSystem::AllocateCluster(int last_cluster, int* cluster) {
   if (last_cluster != 0) {
     // A link in another sector than the cluster's end could reach the disk
     // first, so the end is written now.
-    if (GetFatSector(last_cluster) != GetFatSector(head)) {
+    if (DiskLayout::GetFatSector(last_cluster) !=
+        DiskLayout::GetFatSector(head)) {
       if (DiskStatus status = WriteFat(); status != DiskStatus::kOk) {
         return status;
       }
@@ -1150,15 +1070,17 @@ DiskStatus DiskFileSystem::FreeChain(int unlink_from, int chain_first,
   // Each change first writes the other FAT buffer, if a change left it dirty.
   // Moving the working buffer to another sector writes it too.
   const auto change = [this](int index, uint16_t value) {
-    if (DiskStatus status = WriteBuffer(
-            GetFatSector(index) == kFatHeadSector ? &fat_work_ : &fat_head_);
+    if (DiskStatus status = WriteBuffer(DiskLayout::GetFatSector(index) ==
+                                                DiskLayout::kFirstFatSector
+                                            ? &fat_work_
+                                            : &fat_head_);
         status != DiskStatus::kOk) {
       return status;
     }
     return SetFatWord(index, value);
   };
   if (unlink_from != 0) {
-    if (DiskStatus status = change(unlink_from, kFatEnd);
+    if (DiskStatus status = change(unlink_from, DiskLayout::kFatEnd);
         status != DiskStatus::kOk) {
       return status;
     }
@@ -1267,7 +1189,7 @@ DiskStatus DiskFileSystem::GetFileEntryStatus(const DiskDirEntry& entry) const {
   // no first cluster.
   const int first_cluster = entry.GetFirstCluster();
   const std::optional<int> size = entry.GetSize();
-  const DiskLayout layout = GetLayout(superblock_);
+  const DiskLayout layout = superblock_.GetLayout();
   if (!size.has_value() || first_cluster > layout.cluster_count ||
       (first_cluster == 0) != (*size == 0) || *size > layout.GetMaxFileSize()) {
     return DiskStatus::kCorrupt;
@@ -1322,7 +1244,7 @@ DiskStatus DiskFileSystem::GrowRoot(const DiskDirEntry& entry,
 
   // The cluster is written while it is still free, in order, so its sectors
   // are continuous. Blanking each sector writes the one before it.
-  const DiskLayout layout = GetLayout(superblock_);
+  const DiskLayout layout = superblock_.GetLayout();
   const int first_sector = layout.GetClusterSector(cluster);
   *location = {.sector = first_sector, .index = 0};
   for (int sector = first_sector;

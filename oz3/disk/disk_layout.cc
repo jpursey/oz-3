@@ -23,9 +23,12 @@ bool IsValidSectorsPerCluster(int sectors_per_cluster) {
 // no more than kMaxClusterCount + 1, which is too many.
 int GetMostClusters(int sector_count, int sectors_per_cluster) {
   const auto fits = [&](int cluster_count) {
-    return 1 + GetMinDiskFatSectors(cluster_count) +
-               cluster_count * sectors_per_cluster <=
-           sector_count;
+    const DiskLayout layout = {
+        .sectors_per_cluster = sectors_per_cluster,
+        .cluster_count = cluster_count,
+        .fat_sectors = GetMinDiskFatSectors(cluster_count),
+    };
+    return layout.GetSectorCount() <= sector_count;
   };
   // Every count up to `low` fits, and none from `high` does.
   int low = 0;
@@ -48,6 +51,20 @@ bool DiskLayout::IsValid(int sector_count) const {
          cluster_count <= kMaxClusterCount &&
          fat_sectors >= GetMinDiskFatSectors(cluster_count) &&
          fat_sectors <= kMaxFatSectors && GetSectorCount() <= sector_count;
+}
+
+std::optional<int> DiskLayout::GetNextCluster(int cluster,
+                                              uint16_t link) const {
+  if (link == kFatEnd || (link == 0 && cluster == cluster_count)) {
+    return 0;
+  }
+  if (link == 0) {
+    return cluster + 1;
+  }
+  if (link > cluster_count) {
+    return std::nullopt;
+  }
+  return link;
 }
 
 std::optional<DiskLayout> ChooseDiskLayout(int sector_count,

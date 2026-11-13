@@ -140,5 +140,47 @@ TEST(DiskLayoutTest, ClusterSectors) {
   EXPECT_EQ(hard_drive.GetSectorCount(), 262'141);
 }
 
+TEST(DiskLayoutTest, FatSectors) {
+  EXPECT_EQ(DiskLayout::kSuperblockSector, 0);
+  EXPECT_EQ(DiskLayout::kFirstFatSector, 1);
+  EXPECT_EQ(DiskLayout::GetFatSector(0), 1);
+  EXPECT_EQ(DiskLayout::GetFatSector(255), 1);
+  EXPECT_EQ(DiskLayout::GetFatSector(256), 2);
+  EXPECT_EQ(DiskLayout::GetFatSector(DiskLayout::kMaxClusterCount), 256);
+}
+
+TEST(DiskLayoutTest, NextClusters) {
+  const DiskLayout floppy = MakeLayout(1, 716, 3);
+  EXPECT_EQ(DiskLayout::kFatEnd, 0xFFFF);
+
+  // A link is the next cluster, up to the last.
+  EXPECT_THAT(floppy.GetNextCluster(5, 9), Optional(9));
+  EXPECT_THAT(floppy.GetNextCluster(5, 716), Optional(716));
+  EXPECT_THAT(floppy.GetNextCluster(5, 5), Optional(5));
+
+  // 0 is the cluster after, or the end on the last.
+  EXPECT_THAT(floppy.GetNextCluster(5, 0), Optional(6));
+  EXPECT_THAT(floppy.GetNextCluster(715, 0), Optional(716));
+  EXPECT_THAT(floppy.GetNextCluster(716, 0), Optional(0));
+
+  // FFFFh is the end.
+  EXPECT_THAT(floppy.GetNextCluster(5, 0xFFFF), Optional(0));
+  EXPECT_THAT(floppy.GetNextCluster(716, 0xFFFF), Optional(0));
+
+  // Word 0 gives the free list's head the same way.
+  EXPECT_THAT(floppy.GetNextCluster(0, 0), Optional(1));
+  EXPECT_THAT(floppy.GetNextCluster(0, 2), Optional(2));
+  EXPECT_THAT(floppy.GetNextCluster(0, 0xFFFF), Optional(0));
+
+  // Past the last cluster is out of range.
+  EXPECT_EQ(floppy.GetNextCluster(5, 717), std::nullopt);
+  EXPECT_EQ(floppy.GetNextCluster(0, 0xFFFE), std::nullopt);
+
+  // With one cluster, a 0 on it is the end.
+  const DiskLayout tiny = MakeLayout(1, 1, 1);
+  EXPECT_THAT(tiny.GetNextCluster(1, 0), Optional(0));
+  EXPECT_THAT(tiny.GetNextCluster(0, 0), Optional(1));
+}
+
 }  // namespace
 }  // namespace oz3

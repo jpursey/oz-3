@@ -24,6 +24,7 @@
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 
 namespace oz3 {
 
@@ -327,23 +328,6 @@ class DiskFileSystem final {
   };
 
   //----------------------------------------------------------------------------
-  // Superblock
-  //----------------------------------------------------------------------------
-
-  // Return a superblock's fields, as they are. The label is nullopt if it
-  // isn't valid.
-  static DiskLayout GetLayout(const Sector& superblock);
-  static int GetRootCluster(const Sector& superblock);
-  static std::optional<DiskLabel> GetLabel(const Sector& superblock);
-
-  // Sets `superblock`'s label to `label`.
-  static void PutLabel(const DiskLabel& label, Sector* superblock);
-
-  // Returns whether `superblock` describes a file system on an image of
-  // `sector_count` sectors, with every field valid.
-  static bool IsValidSuperblock(const Sector& superblock, int sector_count);
-
-  //----------------------------------------------------------------------------
   // Volume
   //----------------------------------------------------------------------------
 
@@ -580,7 +564,7 @@ class DiskFileSystem final {
   bool formatted_ = false;
 
   // Only valid while formatted_.
-  Sector superblock_ = {};
+  DiskSuperblock superblock_;
   std::optional<int> free_count_;
   Slot dir_;               // The root, for finding names, open once needed.
   SectorBuffer fat_head_;  // Sector 1 only.
