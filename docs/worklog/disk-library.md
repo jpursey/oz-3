@@ -55,17 +55,20 @@ is how code calls it:
   settings and time, so the file system doesn't expose it. What callers need
   of the image is its medium, which the file system's `GetMedia` returns
   (null with no image): the sector count and header flags, as `MEDIA`
-  reports them, without a file system on the disk, and `SetWriteProtected`,
-  for `oz3dsk protect`.
+  reports them, without a file system on the disk. It is const: write
+  protection is the floppy's notch, changed only with the disk out of the
+  drive, so `oz3dsk protect` calls `SetWriteProtected` on an image no drive
+  has attached (from CL9).
 - **Writes allocate as they go.** `Write` allocates each cluster when its
   first word is written, after following any chain already past the file's
   size, rather than allocating a whole request's clusters up front.
   `GetWritableWords(file)` gives, without the disk, how much a write can be
-  promised: the room left in the file's last cluster, plus the free clusters'.
-  Only the drive changes the free count, so the promise holds. That leaves
+  promised: the words from its position to its size, the room left in its
+  last cluster, and the free clusters'. Only the drive changes the free
+  count, so the promise holds. That leaves
   nothing to free after a write that stops short, and no begin and end calls
   to pair. disk_design.md's `WRITE` walkthrough (allocating right after
-  accept) changes to match, in CL9.
+  accept) changes to match, in CL10.
 
 ## Design
 
@@ -229,7 +232,7 @@ class DiskImage final : public DiskMedia {
   ID), its version or sector size isn't supported, its sector count is 0, or
   the file is too short to hold the sectors its header counts.
 - A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
-  a write-protected image, whatever its header says, from CL15. `Open` opens
+  a write-protected image, whatever its header says, from CL16. `Open` opens
   it for reading only, and its flags have the write-protect bit set, so
   `MEDIA` reports it. The header's bit is the floppy's notch, which travels
   with the image; the host's attribute is the host's own protection, and the
@@ -249,7 +252,7 @@ class DiskImage final : public DiskMedia {
 - Tests reach the `kIoError` paths through `FaultyFileProtocol`, a test-only
   `gb::MemoryFileProtocol` in `oz3_disk_test` whose files' reads, writes, and
   flushes fail once its `Limits` (how many more of each succeed) run out. So
-  nothing for tests is in `DiskImage`. CL11's crash test uses it to stop the
+  nothing for tests is in `DiskImage`. CL12's crash test uses it to stop the
   image's writes after a given number of sectors. Names:
   `FaultyFileProtocol`. Alternatives: `FailingFileProtocol` (reads as always
   failing), `FaultInjectionFileProtocol` (long). Recommended:
@@ -285,7 +288,6 @@ class DiskHardware {
   std::unique_ptr<DiskImage> DetachImage();  // Null if empty.
   bool HasImage() const;
   const DiskMedia* GetMedia() const;  // Null if empty.
-  DiskMedia* GetMedia();
 
   // kNoDisk with no image.
   DiskStatus ReadSector(int sector, absl::Span<uint16_t> words);
@@ -450,7 +452,6 @@ class DiskFileSystem {
   std::unique_ptr<DiskImage> DetachImage();
   bool HasImage() const;
   const DiskMedia* GetMedia() const;  // Null if empty.
-  DiskMedia* GetMedia();
 
   // Returns the simulated time the disk spent since the last call, and
   // resets it.
@@ -786,40 +787,72 @@ Depends on: CL7.
 
 Depends on: CL8.
 
-- `DiskFileSystem`: `Write`, `GetWritableWords`, `Flush(file, now)`,
-  `Flush(now)`, and `Close(file, now)`.
+- Write protection changes only with the disk out of the drive:
+  `DiskHardware` and `DiskFileSystem` lose their non-const `GetMedia`, so
+  `SetWriteProtected` is called only on an image no drive has attached.
+  Attaching resets the free count, so every file open on a writable disk has
+  it, and `GetWritableWords` never needs the disk.
+- `DiskFileSystem`: `Write` and `GetWritableWords`.
 - `Write` writes at most up to the next sector boundary, allocating each
   cluster when its first word is written, after following any chain already
   past the file's size (slack). A sector the write starts at the beginning of,
   wholly past the size, starts zeroed rather than read. It returns
   `kWrongHandleType` for a directory handle, `kReadOnly` for a read-only file
   (the attribute is kept in the slot at open), `kWriteProtected`, and
-  `kDiskFull` when not even one word fits; it writes what fits of the rest.
-- `GetWritableWords`: the room left in the file's last cluster past its
-  size, plus the free clusters', without the disk.
-- A slot remembers it was written since its last stamp. `Close` and `Flush`
-  commit the file: its dirty data sector, then the FAT (sector 1 first), then its entry, with the
-  size, first cluster, and, if written, `now` as the modified time. A
-  directory handle's `Close` and `Flush` write nothing. `Flush(now)` commits
-  every open file, then any dirty FAT buffer.
-- `Find` and `Open` give an open file's size from its slot, not its entry.
-- disk_design.md: the `WRITE` walkthrough allocates as it writes (see
-  Behavior), and nothing is freed after a write that stops short.
+  `kDiskFull` when the write needs a cluster and none is free. The data and
+  FAT buffers it changes are written only when they take another sector, or
+  by CL10's commits.
+- `GetWritableWords`: the words from the file's position to its size, the
+  room left in its last cluster, and the free clusters', without the disk,
+  with the same refusals as `Write`.
+- A failed `Create` no longer discards the buffers, which can now hold other
+  files' allocations: it puts back the free entry it filled, leaving the
+  directory buffer clean, and a grown root takes its new size only once the
+  commit succeeds. Every other change it can leave follows a failed host
+  write, after which the image refuses everything.
+- `Close` still writes nothing, so a write not yet written by a buffer taking
+  another sector is lost at `Close` until CL10.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests: writing across sector and cluster boundaries, overwriting
-  inside a file, growing over slack past the size, filling the disk to `disk
-  full` with `GetWritableWords` exact at each step, each refusal, the free
-  count, stamps at `Close` and `Flush` only after writes (a created file
-  closed unwritten keeps its creation stamp), two files written at once
-  sharing the working FAT sector, `Find` showing an open file's size, and the exact order of sector writes for
-  each commit and for a buffer taking another sector.
+- Unit tests, reading back through the same handle: writing across sector
+  and cluster boundaries, overwriting inside a file, a fresh sector zeroed
+  rather than read, growing over slack past the size, filling the disk to
+  `kDiskFull` with `GetWritableWords` exact at each step, each refusal, the
+  free count, two files written at once sharing the working FAT sector, the
+  exact order of sector writes for a buffer taking another sector, and a
+  failed `Create` leaving another file's allocation in place.
 
-### CL10 [ ] disk: truncating files
+### CL10 [ ] disk: committing files
 
 Depends on: CL9.
+
+- `DiskFileSystem`: `Flush(file, now)`, `Flush(now)`, and `Close(file, now)`.
+- A slot remembers it was written since its last stamp. `Close` and `Flush`
+  of a written file commit it: its dirty data sector, then the FAT (sector 1
+  first), then its entry, with the size, first cluster, and `now` as the
+  modified time. A file not written since, and a directory handle, write
+  nothing. `Close` frees the slot even if its commit fails, returning the
+  failure. `Flush(now)` commits every open file, then any dirty FAT buffer.
+- `Find` returns entries exactly as they are on the disk, so an open file
+  lists as it was last committed.
+- disk_design.md: the `WRITE` walkthrough allocates as it writes (see
+  Behavior), and nothing is freed after a write that stops short; `FIND` and
+  Committing's listings give the entry on the disk, not an open file's slot.
+- Unused, so no visible change.
+
+**Verify**
+- Standard checks.
+- Unit tests: data surviving `Close` and reattaching, stamps at `Close` and
+  `Flush` only after writes (a created file closed unwritten keeps its
+  creation stamp), `Flush(now)` with several files, `Close` freeing the slot
+  when its commit fails, `Find` showing the committed size, and the exact
+  order of sector writes for each commit.
+
+### CL11 [ ] disk: truncating files
+
+Depends on: CL10.
 
 - `DiskFileSystem::Truncate`: sets the file's size to its position and frees
   the clusters past what the size needs. It commits the file first (as
@@ -840,9 +873,9 @@ Depends on: CL9.
   reading and writing after it, each refusal, and the exact order of sector
   writes.
 
-### CL11 [ ] disk: the crash test
+### CL12 [ ] disk: the crash test
 
-Depends on: CL10.
+Depends on: CL11.
 
 - A test only: for each operation sequence (creating, creating that grows
   the root, writing across clusters and closing, writing over slack, two
@@ -850,7 +883,7 @@ Depends on: CL10.
   `FaultyFileProtocol` after every possible number of sector writes, detach
   and reattach the image, and check that no cluster is cross-linked or on
   both the free list and a chain, and that every file's chain covers its size
-  (with CL13's `Check` once it exists; here by walking the chains in the
+  (with CL14's `Check` once it exists; here by walking the chains in the
   test).
 - Unused, so no visible change.
 
@@ -858,9 +891,9 @@ Depends on: CL10.
 - Standard checks.
 - The test passes, and fails if any commit's order is reversed.
 
-### CL12 [ ] disk: deleting, renaming, and attributes
+### CL13 [ ] disk: deleting, renaming, and attributes
 
-Depends on: CL11.
+Depends on: CL12.
 
 - `DiskFileSystem`: `Delete`, `Rename`, and `SetAttributes`.
 - Unused, so no visible change.
@@ -872,9 +905,9 @@ Depends on: CL11.
   the freed clusters' order on the free list, entries staying in their slots
   for an open root handle, write protection, and the crash test for each.
 
-### CL13 [ ] disk: consistency checks
+### CL14 [ ] disk: consistency checks
 
-Depends on: CL12.
+Depends on: CL13.
 
 - `DiskFileSystem::Check` and `DiskCheckReport`: orphaned clusters,
   cross-linked clusters, clusters both free and in a chain, chains that don't
@@ -882,7 +915,7 @@ Depends on: CL12.
   slack join the free list, a short chain cuts its file's size, and a
   cross-link cuts the later file in directory order before the shared
   cluster. Fails with `in use` while any file is open.
-- The crash tests in CL11 and CL12 use it.
+- The crash tests in CL12 and CL13 use it.
 - Unused, so no visible change.
 
 **Verify**
@@ -890,7 +923,7 @@ Depends on: CL12.
 - Unit tests: each problem on a hand-made disk, reported and then repaired,
   and a clean disk reporting nothing, before and after.
 
-### CL14 [ ] disk: host transfer helpers
+### CL15 [ ] disk: host transfer helpers
 
 Depends on: CL2.
 
@@ -902,7 +935,7 @@ Depends on: CL2.
 - Unit tests: odd and even byte counts each way, CRLF, CR, and LF going in,
   and zero bytes dropped coming out.
 
-### CL15 [ ] disk: read-only image files
+### CL16 [ ] disk: read-only image files
 
 Depends on: CL2.
 
