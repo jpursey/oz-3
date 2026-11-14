@@ -31,8 +31,9 @@ Each item carries:
 - **Layers:** devices, wiki
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Disk library*
-- **Background:** [disk_design.md](disk_design.md) (Drive device)
+- **Depends on:** nothing
+- **Background:** [disk_design.md](disk_design.md) (Drive device), and
+  [disk-library.md](worklog/disk-library.md) for the library
 
 The smart drive on the disk library: its settings and timing presets, the
 command, data, and control ports, the command protocol with aborts and reset,
@@ -66,8 +67,9 @@ design:
 - **Layers:** tools, apps, wiki
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Disk library*
-- **Background:** [disk_design.md](disk_design.md) (Tools)
+- **Depends on:** nothing
+- **Background:** [disk_design.md](disk_design.md) (Tools), and
+  [disk-library.md](worklog/disk-library.md) for the library
 
 `DiskFileProtocol`, a `gb::FileProtocol` over a mounted image, in `tools`, and
 the `oz3dsk` command line tool for making, formatting, and filling images.
@@ -78,6 +80,25 @@ to LF) and `TextFromWords` (dropping zero bytes), tested with odd and even
 byte counts each way, CRLF, CR, and LF going in, and zero bytes dropped
 coming out. They were planned for *Disk library*, but nothing in the disk
 format needs them.
+
+## Shared disk entry and write helpers
+
+- **Layers:** disk
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [disk-library.md](worklog/disk-library.md)
+
+Two things the disk library writes by hand more than once:
+- **A directory entry in a sector:** reading entry `index` out of a sector's
+  words with `DiskDirEntry::FromWords` on a subspan, and copying one back, is
+  written out in `disk_check.cc`, `disk_file_system.cc`, and the tests of
+  both. `DiskDirEntry` could read and write an entry in a sector itself.
+- **Test helpers:** `CollectSectorWrites`, which turns `FaultyFileProtocol`'s
+  write offsets into sector numbers, is copied in `disk_fat_test.cc`,
+  `disk_file_system_test.cc`, and `disk_check_test.cc`, and the crash tests'
+  walk of whole chains has a near twin in `disk_check_test.cc`. A test-only
+  header beside `faulty_file_protocol.h` would hold them once.
 
 ## Ozzy drives
 
