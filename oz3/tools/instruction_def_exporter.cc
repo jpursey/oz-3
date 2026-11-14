@@ -98,6 +98,10 @@ void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
     case ArgType::kDwordReg:
       ret_name = CpuCore::GetVirtualDwordRegName(code.ret);
       break;
+    case ArgType::kNone:
+    case ArgType::kImmediate:
+    case ArgType::kMacro:
+      break;
   }
   if (!ret_name.empty()) {
     // Macro registers may be returned, which need to have their name converted

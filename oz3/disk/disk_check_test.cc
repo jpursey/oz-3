@@ -586,7 +586,7 @@ TEST_F(DiskCheckTest, ClustersOnNoChainAreOrphaned) {
 TEST_F(DiskCheckTest, BadNamesAreReportedAndWalked) {
   // "A." packed, as a dot is no name character.
   AddFile(0, "BAD", {3}, 1);
-  const DiskDirEntry entry = PatchRootEntry(0, 0, {{'A' | ('.' << 8)}});
+  const DiskDirEntry entry = PatchRootEntry(0, 0, {'A' | ('.' << 8)});
   ASSERT_EQ(entry.GetName(), std::nullopt);
   FreeUnchained();
   EXPECT_EQ(Check(), DiskCheckReport{.bad_names = {entry}});
@@ -807,7 +807,7 @@ TEST_F(DiskCheckTest, RepairingRenamesBadNames) {
   AddFile(0, "FILE00000000.CHK", {}, 0);
   // A bad name with a short chain is cut too.
   AddFile(1, "BAD", {3}, 2 * kClusterWords);
-  DiskDirEntry bad = PatchRootEntry(1, 0, {{'A' | ('.' << 8)}});
+  DiskDirEntry bad = PatchRootEntry(1, 0, {'A' | ('.' << 8)});
   AddFile(2, "GONE", {4, 5}, kClusterWords + 1);
   DiskDirEntry gone = PatchRootEntry(2, 0, DiskFilename::Words());
   // Taken, though it comes after the bad names.

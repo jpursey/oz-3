@@ -19,11 +19,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Game Bits configuration
 ###############################################################################
 
+# Game Bits is found through the GB_DIR environment variable, or else beside
+# this project, as it is checked out in cloud sessions and CI.
 if(NOT DEFINED GB_DIR)
-  if(NOT DEFINED ENV{GB_DIR})
-    message(FATAL_ERROR "GB_DIR environment variable not defined.")
+  if(DEFINED ENV{GB_DIR})
+    set(GB_DIR "$ENV{GB_DIR}")
+  elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../game-bits/CMakeLists.txt")
+    get_filename_component(GB_DIR "${CMAKE_CURRENT_LIST_DIR}/../game-bits"
+                           ABSOLUTE)
+  else()
+    message(FATAL_ERROR "GB_DIR environment variable not defined, and there "
+                        "is no game-bits directory beside this one.")
   endif()
-  set(GB_DIR "$ENV{GB_DIR}")
 endif()
 
 STRING(REGEX REPLACE "\\\\" "/" CURRENT_DIR ${CMAKE_CURRENT_LIST_DIR})

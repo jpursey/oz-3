@@ -127,6 +127,26 @@ The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
+## Linux console
+
+- **Layers:** ozzy
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `oz3/ozzy/console.h`, `win_console.cc`, and
+  `gen_console.cc`
+
+The `ozzy` app builds on Linux, but can't run there: `Console` is only
+implemented for Windows, and `gen_console.cc` stands in for it elsewhere, so
+creating one fails. Implement it for Linux terminals with termios and the
+same virtual terminal sequences: raw input, so every key (Ctrl+C too) is a
+key press, the alternate screen for `kScreen`, the window size, and the
+terminal given back as it was. A terminal reports keys typed rather than
+pressed and released, so the key changes (by where each key is) are made up
+from what was typed, or left empty, which the console devices' worklog
+should settle. It needs a name prefix for Linux files alongside `win_` and
+`gen_`, as Game Bits' *Linux and Clang* left for later too.
+
 ## Graphical frontend
 
 - **Layers:** ozzy, apps

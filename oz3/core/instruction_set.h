@@ -30,7 +30,7 @@ struct DecodedInstruction {
   uint16_t c[2];  // Value of C0 and C1 registers from instruction
   int8_t r[4];    // Indexes into r_ in CpuCore from instruction
 
-  auto operator<=>(const DecodedInstruction&) const = default;
+  bool operator==(const DecodedInstruction&) const = default;
 };
 
 //==============================================================================

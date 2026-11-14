@@ -2,7 +2,7 @@
 
 The OZ-3 is a 16-bit virtual CPU, made to be embedded in games as a programmable execution engine that "feels" like an old school CPU, where the CPU architecture is itself part of the gameplay. It is not a scripting language or an engine for one. The runtime simulates cores, memory banks, ports, and interrupts, with cycle counts derived from each instruction's microcode. Instruction sets are not fixed: they are written in microcode assembly, and each core can run its own.
 
-This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It currently only works on Windows, and is built with Visual Studio 2022 Community and CMake. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Parallel sessions).
+This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds and passes its tests on Linux with clang (see Linux below), where the `ozzy` app builds but can't run, as only Windows has a console implementation. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Local sessions), or in cloud sessions (see Cloud sessions).
 
 See README.md for an overview, and the wiki (see Wiki) for the specification.
 
@@ -10,7 +10,7 @@ See README.md for an overview, and the wiki (see Wiki) for the specification.
 
 @E:/Projects/game-bits/docs/workflow.md
 
-The workflow above is shared with Game Bits and every project built on it, and lives in Game Bits as `docs/workflow.md`. Imports can't read environment variables, so it is imported by absolute path. Game Bits is always checked out beside this project, so the path is the directory holding both repositories (`E:/Projects` today), followed by `game-bits/docs/workflow.md`, which is also `$GB_DIR/docs/workflow.md`. The extra directories in `.claude/settings.json` are absolute for the same reason, so they also work from a worktree. If the drive or machine changes, update the paths to match. Everything below is specific to OZ-3.
+The workflow above is shared with Game Bits and every project built on it, and lives in Game Bits as `docs/workflow.md`. Imports can't read environment variables, so it is imported by absolute path. Game Bits is always checked out beside this project, so the path is the directory holding both repositories (`E:/Projects` today), followed by `game-bits/docs/workflow.md`, which is also `$GB_DIR/docs/workflow.md`. The extra directories in `.claude/settings.json` are absolute for the same reason, so they also work from a worktree. If the drive or machine changes, update the paths to match. A cloud session has no `E:` drive, so the import doesn't load there: it reads the workflow from its Game Bits clone, `../game-bits/docs/workflow.md`, before anything else (see Cloud sessions). Everything below is specific to OZ-3.
 
 ## Directory Structure
 
@@ -36,7 +36,7 @@ Libraries depend strictly in the order `core` → `disk` → `tools` → `instru
 - `tools` (`oz3_tools`): Libraries and tools for working with the OZ-3 that a host application can use on its own: `InstructionAssembler` (instruction set source files to an `InstructionSetDef`), `InstructionDefExporter` (an `InstructionSetDef` to C++), and `ProgramLoader` (loading a `Program` into a `Processor`'s memory). The program assembler (`AssembleProgramFile`) turns program source into a `Program` and its `ProgramMap`, which program files, map files, and listings are written from.
 - `instruction_sets` (`oz3_instruction_sets`): Ready-made instruction sets, currently the default one (see Default instruction set). It links only `core`.
 - `devices` (`oz3_devices`): Ready-made devices for a `ProcessorConfig`, currently the teletype, the keyboard, and the screen (the console devices Ozzy is built from; see `docs/worklog/console-devices.md`). Each is a `Device` and its `DeviceFactory`, configured by a name and one `<Device>Settings` struct holding its wiring and behavior, with rates in real time that it turns into cycles with the processor's clock rate (a factory whose settings can be invalid is made by a static `Create`). A host finds a device with `Processor::GetDevice` and casts it to the type it named. It links only `core`; its tests also link `tools` and `instruction_sets`, to run programs against the devices with `DeviceProgramTest`.
-- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs. It also holds the console frontend the `ozzy` app is built from (`ConsoleDisplay`, `DrawConsoleText`, and the `Console` interface, whose only implementation is `win_console.cc`), so it is tested.
+- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs. It also holds the console frontend the `ozzy` app is built from (`ConsoleDisplay`, `DrawConsoleText`, and the `Console` interface, implemented by `win_console.cc` on Windows and by `gen_console.cc` elsewhere, where creating one fails), so it is tested.
 - `apps`: Every executable, and no libraries. `oz3ism` is the command line instruction set assembler, `oz3asm` the command line program assembler, and `ozzy` (`ozzy_main.cc`) runs an Ozzy in the console. Each links only what it needs: `oz3asm` links `instruction_sets` for its default instruction set, and `oz3ism` doesn't (see Default instruction set).
 
 ### Default instruction set
@@ -47,13 +47,15 @@ The default instruction set's source is `oz3/instruction_sets/default_instructio
 bin/oz3ism.exe oz3/instruction_sets/default_instruction_set.izm oz3/instruction_sets/default_instruction_set.inc
 ```
 
+On Linux the executable is `bin/oz3ism`, with no `.exe`, and needs nothing on PATH. It writes the same `.inc` byte for byte.
+
 The build doesn't do this step, as running a Debug `oz3ism` needs the debug CRT. `oz3ism` doesn't link `oz3_instruction_sets`, so it still builds when the `.inc` doesn't compile. Debug and Release both write `bin/oz3ism.exe`, so it is whichever was built last; a Debug one needs the debug CRT on PATH (see Test below).
 
 Programs depend on the default instruction set's code words, so they never change. Opcodes are numbered in the order instructions appear in the `.izm`, and each variant's code word comes from its instruction's argument and macro layout. So existing instructions are never reordered, removed, or given new variants, and their arguments and macros keep their layout. A new instruction goes at the end of the `.izm`, after the last opcode. `default_instruction_set_test.cc` fails if a pinned instruction's code words change, and new instructions are pinned too by raising `kPinnedInstructionCount` and updating `kPinnedFingerprint`. Microcode changes that keep every code word (fixes, cycle changes) are fine.
 
 ## Commands
 
-Everything is driven directly by CMake using the Ninja generator, which is exactly what Visual Studio's "open a local folder" CMake integration does (see CMakeSettings.json). Command line builds and IDE builds use the same build.
+Everything is driven directly by CMake using the Ninja generator, which is exactly what Visual Studio's "open a local folder" CMake integration does (see CMakeSettings.json). Command line builds, IDE builds, and CI all use the same build.
 
 ### Developer environment (once per shell)
 
@@ -115,6 +117,22 @@ $env:PATH = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\M
 
 The `14.44.35112` version directory changes with Visual Studio updates. Only Debug needs this; the release CRT is already in System32.
 
+### Linux
+
+OZ-3 also builds and passes its tests on Linux with clang, as Game Bits does (see Linux in Game Bits' CLAUDE.md). It needs clang, CMake, and Ninja (Ubuntu's `clang`, `cmake`, and `ninja-build` packages), and no developer environment or PATH changes:
+
+```
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/linux-clang-Debug
+cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/linux-clang-RelWithDebInfo
+cmake --build out/build/linux-clang-Debug
+ctest --test-dir out/build/linux-clang-Debug --output-on-failure
+out/build/linux-clang-Debug/oz3/instruction_sets/oz3_instruction_sets_test --gtest_filter=InstructionTest.*
+```
+
+Game Bits is found through `GB_DIR` as on Windows, or, when it isn't set, beside this checkout as `../game-bits` (see the root `CMakeLists.txt`), with its submodules checked out. A full build, Game Bits' libraries and `flatc` included, takes about 4 minutes on 4 cores. Executables and test binaries have no `.exe`. Every file is portable apart from the console: `win_console.cc` is only built on Windows, and `gen_console.cc` stands in for it elsewhere, so `ozzy` reports that there is no console and exits.
+
+Clang rejects some things MSVC accepts. The ones found so far are narrowing a non-constant in a braced initializer (`Microcode{.arg1 = reg | mask}` needs a `static_cast<int8_t>`), braces around a scalar (`Span` arguments written `{{5}}` rather than `{5}`), a `switch` over an enum that doesn't name every value, a defaulted `operator<=>` over a member with no `<=>` (such as `absl::Span`), a nested struct's default member initializers used by a default argument of the enclosing class (`Init(InitConfig config = {})`), and a `friend class` inside a nested namespace that names a class outside it.
+
 ### Format
 
 The reference clang-format is the one that ships with Visual Studio (currently 19.1.5), which is also what Visual Studio's Format Document uses:
@@ -126,13 +144,14 @@ $clangFormat = "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools
 & $clangFormat --dry-run -Werror <files>   # check only
 ```
 
-A `clang-format` on PATH may be a different version, so use this one. Style comes from `oz3/.clang-format` (Google style); clang-format finds it automatically for any file under `oz3/`. Only format files you actually touch.
+A `clang-format` on PATH may be a different version, so use this one. A cloud session installs the same version from PyPI (see Cloud sessions). Style comes from `oz3/.clang-format` (Google style); clang-format finds it automatically for any file under `oz3/`. Only format files you actually touch.
 
 ### Checks
 
 Every change is checked as follows:
 - It builds cleanly (warnings are errors) in both Debug and Release.
 - `ctest` passes in Debug.
+- A local session checks these on Windows, and a cloud session on Linux, leaving Windows to CI (see Cloud sessions).
 - Touched files pass the clang-format check (see Format above).
 - New and changed behavior has unit tests.
 - A change to the default instruction set's `.izm` regenerates the `.inc` (see Default instruction set), and `git diff` of the `.inc` shows only what the change meant to change, with no existing opcode or code word changed.
@@ -142,8 +161,9 @@ Every change is checked as follows:
 
 The specification lives in the GitHub wiki (https://github.com/jpursey/oz-3/wiki), cloned in the main checkout as `wiki/`: its history, the hardware specification (`2-Specifications.md`), and the microcode reference (`2.1-Microcode.md`). Read it before changing behavior the spec covers. Where the code and the wiki disagree, say so rather than silently picking one.
 - A change to specified behavior (the hardware model, microcode, the default instruction set, or tools the wiki documents) updates the wiki pages in the same piece of work, and the user reviews both together.
-- Wiki edits are made in the main checkout's `wiki/` (`E:/Projects/oz-3/wiki`), even from a worktree, since `wiki/` is not part of this repository. Once the user approves, commit them there, adding only the pages you changed, as other sessions may have edits of their own in progress.
-- Don't push the wiki, just as with this repository. The user pushes.
+- A local session makes wiki edits in the main checkout's `wiki/` (`E:/Projects/oz-3/wiki`), even from a worktree, since `wiki/` is not part of this repository. Once the user approves, commit them there, adding only the pages you changed, as other sessions may have edits of their own in progress.
+- A local session doesn't push the wiki, just as with this repository. The user pushes.
+- A cloud session clones the wiki into its clone's `wiki/` (`git clone https://github.com/jpursey/oz-3.wiki.git wiki`), which it can read but not push, and GitHub wikis take no pull requests. It makes its wiki edits there, and puts them in a comment on the PR as a patch (`git -C wiki diff`), for the user to review with the PR and apply to their own `wiki/` once it is merged.
 - Wiki pages link to each other by page name in lower case without the extension (`[History](1-history)`), which is how GitHub wikis resolve links.
 
 ## Build system
@@ -165,16 +185,20 @@ These add to the C++ style in the workflow.
 - Unit tests live next to the code they test as `<file>_test.cc`, written with GoogleTest/GoogleMock inside `namespace oz3 { namespace { ... } }`. Tests of the default instruction set are split by instruction group (`instruction_test_<group>.cc`), built on `InstructionTest` in `instruction_test.h`, and check results, flags, and exact cycle counts.
 - Game Bits' libraries are in `$GB_DIR/src/gb/` (such as `gb/container`, `gb/file`, and `gb/parse`), and the third-party libraries it vendors are in `$GB_DIR/third_party/`.
 - Some code predates the workflow's C++ style (`size_t` in a couple of places). Bring it in line when otherwise changing it, rather than in sweeping cleanups.
-- C++20, built with both MSVC and clang-cl.
+- C++20, built with MSVC on Windows and clang on Linux.
 
-## Parallel sessions
+## Local sessions
+
+These add to Local sessions in the workflow. A cloud session follows Cloud sessions below instead.
+
+### Parallel sessions
 
 These add to Parallel sessions in the workflow. Nothing builds against OZ-3's checkout, and there is nothing that only the main checkout can test, so work isn't tied to it:
 - A session may work in the main checkout, or in its own git worktree. Use a worktree whenever another session may be working at the same time.
 - Each session lands its own commits. Once the user approves a change and it is committed on the worktree's branch, land it on `main` from the main checkout: `git merge --ff-only <branch>`, or a cherry-pick if `main` has moved. Then tell the session named in the prompt, if there is one, as the workflow describes.
 - Wiki edits always happen in the main checkout's `wiki/` (see Wiki).
 
-### Worktrees
+#### Worktrees
 
 Create the worktree from the local `main`, not `origin/main`, which is behind whenever the user hasn't pushed. Then switch the session into it (EnterWorktree with its `path`; EnterWorktree's `name` form branches from `origin/main`):
 
@@ -196,6 +220,14 @@ git branch -d <branch>
 ```
 
 If removal fails with "Permission denied", git has already unregistered the worktree. Delete the leftover folder, then run `git worktree prune`.
+
+## Cloud sessions
+
+These add to Cloud sessions in the workflow, which a cloud session reads from `../game-bits/docs/workflow.md` (see Workflow). It works in its own clone, so it needs no worktree, and its PRs reach `main` when the user merges them. It builds and tests on Linux with the commands above (see Linux), leaving Windows to CI:
+- Game Bits is cloned beside this clone, as `../game-bits`, at `origin/main`, with its submodules: `git clone https://github.com/jpursey/game-bits ../game-bits`, then `git -C ../game-bits submodule update --init --depth 1`. CMake finds it there without `GB_DIR`. Game Bits' own docs changes (a backlog item or the workflow) are PRs in Game Bits, which needs it attached to the session for push.
+- It runs as root, so it runs the tests as an ordinary user it adds, who owns the build tree, as Game Bits does: `useradd -m gbtest` once, then `chown -R gbtest out/build/linux-clang-Debug` and `su gbtest -c "ctest --test-dir out/build/linux-clang-Debug --output-on-failure"` from the clone. Root ignores read-only permissions, so a test of a read-only file passes as root when it shouldn't, as in Game Bits.
+- It formats with clang-format 19.1.5 from PyPI, installed in a virtual environment in the session's scratchpad: `python3 -m venv <dir>`, then `<dir>/bin/pip install clang-format==19.1.5`, then `<dir>/bin/clang-format` as in Format above.
+- CI (`.github/workflows/cmake.yml`) builds and tests on Windows in Release, and on Linux with clang in Debug, each against Game Bits' `main`. It runs by itself for pushes to `main` that change more than docs. On a PR's branch it runs only when started by hand (a `workflow_dispatch` run of the CMake workflow on that branch), which the session does as the workflow's Cloud sessions describes. A comment on the PR says that Windows Debug, and anything checked by running `ozzy` by hand, are left for the user.
 
 ## Don't
 - Don't add or modify code outside `oz3/` without asking. Game Bits code is changed only in Game Bits sessions (see the workflow).

@@ -3,13 +3,21 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-# The console's implementation for the platform. Only Windows has one.
+# The console's implementation for the platform. Only Windows has one, and
+# elsewhere creating a console fails.
 if (WIN32)
   set(oz3_ozzy_internal_SOURCE
     win_console.cc win_console.h
   )
   set(oz3_ozzy_internal_TEST_SOURCE
     win_console_test.cc
+  )
+else()
+  set(oz3_ozzy_internal_SOURCE
+    gen_console.cc
+  )
+  set(oz3_ozzy_internal_TEST_SOURCE
+    gen_console_test.cc
   )
 endif()
 

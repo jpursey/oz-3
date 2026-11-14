@@ -991,7 +991,7 @@ TEST_F(EncodingTest, ValidateCodeWordValues) {
   EXPECT_FALSE(mov.ValidateCodeWordValues({{16, 0}}, &arg_index, &error));
   EXPECT_EQ(arg_index, 0);
   EXPECT_EQ(error, "Register 16 is not R0 to SP");
-  EXPECT_FALSE(mov.ValidateCodeWordValues({{5}}, &arg_index, &error));
+  EXPECT_FALSE(mov.ValidateCodeWordValues({5}, &arg_index, &error));
   EXPECT_EQ(arg_index, -1);
   EXPECT_EQ(error, "Expected 2 values, but got 1");
   EXPECT_FALSE(mov.ValidateCodeWordValues({{5, 5}}));
@@ -1013,11 +1013,11 @@ TEST_F(EncodingTest, DisassembleRegistersThatBreakRules) {
   def_.instructions[1].distinct_args = true;
   syntax_ = InstructionSetSyntax::Create(def_.GetDef());
   ASSERT_NE(syntax_, nullptr);
-  EXPECT_EQ(GetForm("MOV").Disassemble({{0x0233}}, 0),
+  EXPECT_EQ(GetForm("MOV").Disassemble({0x0233}, 0),
             "MOV R3, R3 ; MOV can't use R3 for both registers");
-  EXPECT_EQ(GetForm("MOV").Disassemble({{0x0270}}, 0),
+  EXPECT_EQ(GetForm("MOV").Disassemble({0x0270}, 0),
             "MOV R0, R7 ; MOV can't use R7 for this argument");
-  EXPECT_EQ(GetForm("MOV").Disassemble({{0x0234}}, 0), "MOV R4, R3");
+  EXPECT_EQ(GetForm("MOV").Disassemble({0x0234}, 0), "MOV R4, R3");
 }
 
 TEST_F(EncodingTest, DisassembleRegistersThatBreakRulesWithValues) {
@@ -1029,19 +1029,19 @@ TEST_F(EncodingTest, DisassembleRegistersThatBreakRulesWithValues) {
 }
 
 TEST_F(EncodingTest, DisassembleRegisters) {
-  EXPECT_EQ(GetForm("ADD.W").Disassemble({{0x012B}}, 0), "ADD.W R3, R5");
-  EXPECT_EQ(GetForm("MOV").Disassemble({{0x029F}}, 0), "MOV SP, BS");
+  EXPECT_EQ(GetForm("ADD.W").Disassemble({0x012B}, 0), "ADD.W R3, R5");
+  EXPECT_EQ(GetForm("MOV").Disassemble({0x029F}, 0), "MOV SP, BS");
   EXPECT_EQ(GetForm("MOV.D").Disassemble({{0x0302, 0, 0}}, 0),
             "MOV.D D2, 00000000h");
 }
 
 TEST_F(EncodingTest, DisassembleCodeValues) {
   const InstructionForm& clrf = GetForm("CLRF");
-  EXPECT_EQ(clrf.Disassemble({{0x0400}}, 0), "CLRF 0");
-  EXPECT_EQ(clrf.Disassemble({{0x0401}}, 0), "CLRF Z");
-  EXPECT_EQ(clrf.Disassemble({{0x0402}}, 0), "CLRF C");
-  EXPECT_EQ(clrf.Disassemble({{0x0403}}, 0), "CLRF 3");
-  EXPECT_EQ(GetForm("MVQ").Disassemble({{0x05FF}}, 0), "MVQ R7, 31");
+  EXPECT_EQ(clrf.Disassemble({0x0400}, 0), "CLRF 0");
+  EXPECT_EQ(clrf.Disassemble({0x0401}, 0), "CLRF Z");
+  EXPECT_EQ(clrf.Disassemble({0x0402}, 0), "CLRF C");
+  EXPECT_EQ(clrf.Disassemble({0x0403}, 0), "CLRF 3");
+  EXPECT_EQ(GetForm("MVQ").Disassemble({0x05FF}, 0), "MVQ R7, 31");
 }
 
 TEST_F(EncodingTest, DisassembleValues) {
@@ -1077,25 +1077,25 @@ TEST(InstructionSetSyntaxTest, DisassembleFlags) {
 
   // Exact names, including 0 and names with several bits after their bits.
   const InstructionForm* setf = syntax->GetForms("SETF")[0];
-  EXPECT_EQ(setf->Disassemble({{0x0000}}, 0), "SETF NONE");
-  EXPECT_EQ(setf->Disassemble({{0x0004}}, 0), "SETF C");
-  EXPECT_EQ(setf->Disassemble({{0x0003}}, 0), "SETF ZS");
-  EXPECT_EQ(setf->Disassemble({{0x0006}}, 0), "SETF SC");
+  EXPECT_EQ(setf->Disassemble({0x0000}, 0), "SETF NONE");
+  EXPECT_EQ(setf->Disassemble({0x0004}, 0), "SETF C");
+  EXPECT_EQ(setf->Disassemble({0x0003}, 0), "SETF ZS");
+  EXPECT_EQ(setf->Disassemble({0x0006}, 0), "SETF SC");
 
   // Names with the most bits first, then ties in the set's order, then bits
   // no name has.
-  EXPECT_EQ(setf->Disassemble({{0x0005}}, 0), "SETF Z | C");
-  EXPECT_EQ(setf->Disassemble({{0x0007}}, 0), "SETF ZS | C");
-  EXPECT_EQ(setf->Disassemble({{0x000D}}, 0), "SETF Z | C | 8");
-  EXPECT_EQ(setf->Disassemble({{0x000F}}, 0), "SETF ZS | C | 8");
-  EXPECT_EQ(setf->Disassemble({{0x0008}}, 0), "SETF 8");
+  EXPECT_EQ(setf->Disassemble({0x0005}, 0), "SETF Z | C");
+  EXPECT_EQ(setf->Disassemble({0x0007}, 0), "SETF ZS | C");
+  EXPECT_EQ(setf->Disassemble({0x000D}, 0), "SETF Z | C | 8");
+  EXPECT_EQ(setf->Disassemble({0x000F}, 0), "SETF ZS | C | 8");
+  EXPECT_EQ(setf->Disassemble({0x0008}, 0), "SETF 8");
 
   // Without a name for 0, or for any of the bits.
   const InstructionForm* setb = syntax->GetForms("SETB")[0];
-  EXPECT_EQ(setb->Disassemble({{0x0100}}, 0), "SETB 0");
-  EXPECT_EQ(setb->Disassemble({{0x0103}}, 0), "SETB A | B");
-  EXPECT_EQ(setb->Disassemble({{0x0105}}, 0), "SETB A | 4");
-  EXPECT_EQ(setb->Disassemble({{0x010C}}, 0), "SETB 12");
+  EXPECT_EQ(setb->Disassemble({0x0100}, 0), "SETB 0");
+  EXPECT_EQ(setb->Disassemble({0x0103}, 0), "SETB A | B");
+  EXPECT_EQ(setb->Disassemble({0x0105}, 0), "SETB A | 4");
+  EXPECT_EQ(setb->Disassemble({0x010C}, 0), "SETB 12");
 }
 
 TEST(InstructionSetSyntaxTest, DisassembleKeepsPatternSpacing) {
@@ -1104,7 +1104,7 @@ TEST(InstructionSetSyntaxTest, DisassembleKeepsPatternSpacing) {
   )---");
   auto syntax = InstructionSetSyntax::Create(def.GetDef());
   ASSERT_NE(syntax, nullptr);
-  EXPECT_EQ(syntax->GetForms("MVQ")[0]->Disassemble({{0x000A}}, 0), "MVQ R2,1");
+  EXPECT_EQ(syntax->GetForms("MVQ")[0]->Disassemble({0x000A}, 0), "MVQ R2,1");
 }
 
 TEST_F(EncodingTest, DisassembleEncodedForms) {
