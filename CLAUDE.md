@@ -131,7 +131,7 @@ out/build/linux-clang-Debug/oz3/instruction_sets/oz3_instruction_sets_test --gte
 
 Game Bits is found through `GB_DIR` as on Windows, or, when it isn't set, beside this checkout as `../game-bits` (see the root `CMakeLists.txt`), with its submodules checked out. A full build is about 430 steps, Game Bits' libraries included, and takes about 3 minutes on 4 cores. Executables and test binaries have no `.exe`. Every file is portable apart from the console: `win_console.cc` is only built on Windows, and `gen_console.cc` stands in for it elsewhere, so `ozzy` reports that there is no console and exits.
 
-Clang rejects some things MSVC accepts. The ones found so far are narrowing a non-constant in a braced initializer (`Microcode{.arg1 = reg | mask}` needs a `static_cast<int8_t>`), braces around a scalar (`Span` arguments written `{{5}}` rather than `{5}`), a `switch` over an enum that doesn't name every value, a defaulted `operator<=>` over a member with no `<=>` (such as `absl::Span`), a nested struct's default member initializers used by a default argument of the enclosing class (`Init(InitConfig config = {})`), and a `friend class` inside a nested namespace that names a class outside it.
+Clang rejects some things MSVC accepts, such as narrowing a non-constant in a braced initializer, braces around a scalar, and a `switch` over an enum that doesn't name every value, so a change made on Windows can still fail here (and in CI).
 
 ### Format
 
