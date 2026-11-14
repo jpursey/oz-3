@@ -15,6 +15,7 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "gb/file/file_types.h"
 
 namespace oz3 {
 
@@ -100,15 +101,18 @@ absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Create(
 
 absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Open(
     gb::FileSystem* file_system, std::string_view path) {
-  if (!file_system->IsValidFile(path)) {
+  const gb::PathInfo info = file_system->GetPathInfo(path);
+  if (info.type != gb::PathType::kFile) {
     return absl::NotFoundError(
         absl::StrCat("Disk image ", path, " doesn't exist"));
   }
-  std::unique_ptr<gb::File> file =
-      file_system->OpenFile(path, gb::kReadWriteFileFlags);
+  const bool read_only = info.attributes.IsSet(gb::FileAttribute::kReadOnly);
+  std::unique_ptr<gb::File> file = file_system->OpenFile(
+      path, read_only ? gb::kReadFileFlags : gb::kReadWriteFileFlags);
   if (file == nullptr) {
-    return absl::FailedPreconditionError(absl::StrCat(
-        "Disk image ", path, " can't be opened for reading and writing"));
+    return absl::FailedPreconditionError(
+        absl::StrCat("Disk image ", path, " can't be opened for ",
+                     read_only ? "reading" : "reading and writing"));
   }
 
   std::array<uint16_t, kHeaderWords> header = {};
@@ -153,8 +157,11 @@ absl::StatusOr<std::unique_ptr<DiskImage>> DiskImage::Open(
         "Disk image ", path, " is ", size, " bytes, too short for its ",
         sector_count, " sectors (", GetSectorOffset(sector_count), " bytes)"));
   }
-  return absl::WrapUnique(
-      new DiskImage(std::move(file), sector_count, header[kFlagsWord]));
+  uint16_t flags = header[kFlagsWord];
+  if (read_only) {
+    flags |= kWriteProtectedFlag;
+  }
+  return absl::WrapUnique(new DiskImage(std::move(file), sector_count, flags));
 }
 
 DiskImage::DiskImage(std::unique_ptr<gb::File> file, int sector_count,
@@ -168,6 +175,11 @@ bool DiskImage::IsValidSector(int sector,
 }
 
 DiskStatus DiskImage::WriteFlags(uint16_t flags) {
+  // A read-only host file keeps the image protected, so this is never a
+  // failure of the host.
+  if (!file_->GetFlags().IsSet(gb::FileFlag::kWrite)) {
+    return DiskStatus::kWriteProtected;
+  }
   uint16_t stored = flags;
   SwapToHostOrder({&stored, 1});
   if (file_->SeekTo(kFlagsOffset) != kFlagsOffset ||

@@ -14,6 +14,9 @@ DiskStatus DiskMedia::SetWriteProtected(bool write_protected) {
   const uint16_t flags =
       write_protected ? (flags_ | kWriteProtectedFlag)
                       : static_cast<uint16_t>(flags_ & ~kWriteProtectedFlag);
+  if (flags == flags_) {
+    return DiskStatus::kOk;
+  }
   if (DiskStatus status = WriteFlags(flags); status != DiskStatus::kOk) {
     return status;
   }

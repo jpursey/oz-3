@@ -24,11 +24,18 @@ namespace oz3 {
 // sectors. Words are stored two bytes each, low byte first, so sector n starts
 // at byte 16 + 512 * n. The header is the medium's (see DiskMedia).
 //
-// The image owns its host file, open for reading and writing until the image
-// is destroyed. It is write-through: each write is flushed to the host before
-// it returns, so a host failure is the result of the write it failed. Once a
-// host read, write, or flush fails, the host file is unusable, and every later
-// operation fails with kIoError too.
+// The image owns its host file, open until the image is destroyed. A read-only
+// host file is open for reading only, and is always a write-protected image,
+// whatever its header says: the header's bit travels with the image, and the
+// host file's protection is the host's own, which the image never changes.
+//
+// The image is write-through: each write is flushed to the host before it
+// returns, so a host failure is the result of the write it failed. Once a host
+// read, write, or flush fails, the host file is unusable, and every later
+// operation that reaches it fails with kIoError too. One that never reaches it
+// is unaffected: a write to a protected image still fails with
+// kWriteProtected, and setting write protection to what it already is still
+// succeeds.
 class DiskImage final : public DiskMedia {
  public:
   //----------------------------------------------------------------------------
@@ -42,11 +49,12 @@ class DiskImage final : public DiskMedia {
   static absl::StatusOr<std::unique_ptr<DiskImage>> Create(
       gb::FileSystem* file_system, std::string_view path, int sector_count);
 
-  // Opens the existing image at `path` for reading and writing. `file_system`
-  // must outlive the image. Fails with a message saying what is wrong if the
-  // file is missing, can't be opened for reading and writing, isn't an image,
-  // has a version or sector size this doesn't support, has no sectors or more
-  // than kMaxSectorCount, or is too short for the sectors its header counts.
+  // Opens the existing image at `path`, for reading and writing, or only
+  // reading, as a write-protected image, if the host file is read-only.
+  // `file_system` must outlive the image. Fails with a message saying what is
+  // wrong if the file is missing, can't be opened, isn't an image, has a
+  // version or sector size this doesn't support, has no sectors or more than
+  // kMaxSectorCount, or is too short for the sectors its header counts.
   static absl::StatusOr<std::unique_ptr<DiskImage>> Open(
       gb::FileSystem* file_system, std::string_view path);
 

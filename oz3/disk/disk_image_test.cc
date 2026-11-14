@@ -16,6 +16,7 @@
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
+#include "gb/file/file_types.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/disk/disk_status.h"
@@ -29,6 +30,7 @@ using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using ::testing::Not;
 
 constexpr char kPath[] = "mem:/disk.img";
 
@@ -405,6 +407,98 @@ TEST_F(DiskImageTest, WriteProtectionKeepsReservedFlags) {
   EXPECT_EQ((*image)->GetFlags(), 0x8001);
   EXPECT_EQ((*image)->SetWriteProtected(false), DiskStatus::kOk);
   EXPECT_EQ((*image)->GetFlags(), 0x8000);
+}
+
+TEST_F(DiskImageTest, UnchangedWriteProtectionWritesNothing) {
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Create(&file_system_, kPath, 1);
+  ASSERT_TRUE(image.ok()) << image.status();
+  protocol_->CollectWriteOffsets();
+  protocol_->SetLimits({.writes = 0});
+  EXPECT_EQ((*image)->SetWriteProtected(false), DiskStatus::kOk);
+  EXPECT_FALSE((*image)->IsWriteProtected());
+
+  protocol_->SetLimits({});
+  ASSERT_EQ((*image)->SetWriteProtected(true), DiskStatus::kOk);
+  protocol_->CollectWriteOffsets();
+  protocol_->SetLimits({.writes = 0});
+  EXPECT_EQ((*image)->SetWriteProtected(true), DiskStatus::kOk);
+  EXPECT_TRUE((*image)->IsWriteProtected());
+  EXPECT_THAT(protocol_->CollectWriteOffsets(), IsEmpty());
+}
+
+TEST_F(DiskImageTest, AReadOnlyFileOpensWriteProtected) {
+  // The header's flags have only a reserved bit set.
+  WriteImageFile({0x5A4F, 0x4B44, 1, 256, 2, 0, 0x8000, 0}, 2);
+  {
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(&file_system_, kPath);
+    ASSERT_TRUE(image.ok()) << image.status();
+    ASSERT_EQ((*image)->WriteSector(1, MakeSector(10)), DiskStatus::kOk);
+  }
+  const std::vector<std::byte> bytes = ReadImageFile();
+  ASSERT_TRUE(file_system_.SetAttributes(kPath, gb::FileAttribute::kReadOnly));
+
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Open(&file_system_, kPath);
+  ASSERT_TRUE(image.ok()) << image.status();
+  EXPECT_EQ((*image)->GetSectorCount(), 2);
+  EXPECT_TRUE((*image)->IsWriteProtected());
+  EXPECT_EQ((*image)->GetFlags(), 0x8001);
+  Sector sector(kDiskSectorWords);
+  EXPECT_EQ((*image)->ReadSector(1, absl::MakeSpan(sector)), DiskStatus::kOk);
+  EXPECT_EQ(sector, MakeSector(10));
+  EXPECT_EQ((*image)->WriteSector(1, MakeSector(20)),
+            DiskStatus::kWriteProtected);
+
+  // The host file, header included, is unchanged.
+  image->reset();
+  EXPECT_EQ(ReadImageFile(), bytes);
+}
+
+TEST_F(DiskImageTest, AReadOnlyFileCantBeUnprotected) {
+  ASSERT_TRUE(DiskImage::Create(&file_system_, kPath, 1).ok());
+  ASSERT_TRUE(file_system_.SetAttributes(kPath, gb::FileAttribute::kReadOnly));
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Open(&file_system_, kPath);
+  ASSERT_TRUE(image.ok()) << image.status();
+  protocol_->CollectWriteOffsets();
+  protocol_->SetLimits({.writes = 0});
+
+  EXPECT_EQ((*image)->SetWriteProtected(false), DiskStatus::kWriteProtected);
+  EXPECT_TRUE((*image)->IsWriteProtected());
+  EXPECT_EQ((*image)->GetFlags(), DiskImage::kWriteProtectedFlag);
+  EXPECT_EQ((*image)->SetWriteProtected(true), DiskStatus::kOk);
+  EXPECT_THAT(protocol_->CollectWriteOffsets(), IsEmpty());
+
+  // The image is still usable.
+  Sector sector(kDiskSectorWords, 1);
+  EXPECT_EQ((*image)->ReadSector(0, absl::MakeSpan(sector)), DiskStatus::kOk);
+  EXPECT_EQ(sector, Sector(kDiskSectorWords, 0));
+}
+
+TEST_F(DiskImageTest, OpenFailsForAReadOnlyFileAlreadyOpen) {
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Create(&file_system_, kPath, 1);
+  ASSERT_TRUE(image.ok()) << image.status();
+  ASSERT_TRUE(file_system_.SetAttributes(kPath, gb::FileAttribute::kReadOnly));
+  absl::StatusOr<std::unique_ptr<DiskImage>> other =
+      DiskImage::Open(&file_system_, kPath);
+  EXPECT_EQ(other.status().code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_THAT(other.status().message(),
+              HasSubstr("can't be opened for reading"));
+  EXPECT_THAT(other.status().message(), Not(HasSubstr("writing")));
+}
+
+TEST_F(DiskImageTest, CreateFailsForAReadOnlyFile) {
+  WriteImageFile({0x5A4F, 0x4B44, 1, 256, 1, 0, 0, 0}, 1);
+  const std::vector<std::byte> bytes = ReadImageFile();
+  ASSERT_TRUE(file_system_.SetAttributes(kPath, gb::FileAttribute::kReadOnly));
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Create(&file_system_, kPath, 2);
+  EXPECT_EQ(image.status().code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_THAT(image.status().message(), HasSubstr("can't be created"));
+  EXPECT_EQ(ReadImageFile(), bytes);
 }
 
 TEST_F(DiskImageTest, CreateFailsWhenTheHostWriteFails) {

@@ -239,9 +239,10 @@ class DiskImage final : public DiskMedia {
   Only a big-endian host swaps each word's bytes, after reading and before
   writing.
 - `Open` fails with an `absl::Status` naming the problem: the file is missing
-  or can't be opened for reading and writing, it isn't an image (the wrong
-  ID), its version or sector size isn't supported, its sector count is 0, or
-  the file is too short to hold the sectors its header counts.
+  or can't be opened (for reading only, if it is read-only, or for reading and
+  writing), it isn't an image (the wrong ID), its version or sector size isn't
+  supported, its sector count is 0, or the file is too short to hold the
+  sectors its header counts.
 - A read-only host file (`gb::FileAttribute::kReadOnly` in its `PathInfo`) is
   a write-protected image, whatever its header says, from CL19. `Open` opens
   it for reading only, and its flags have the write-protect bit set, so
@@ -249,9 +250,11 @@ class DiskImage final : public DiskMedia {
   with the image; the host's attribute is the host's own protection, and the
   image never changes it. Clearing protection on a read-only host file fails
   with kWriteProtected: the host file's protection is one the image can't
-  change. It is checked before trying, as a failed host write would leave the
-  image unusable (see below), and setting protection when already set writes
-  nothing.
+  change. `WriteFlags` checks the host file's open flags (`gb::File::GetFlags`)
+  before trying, rather than keeping a flag of its own, so the result is
+  kWriteProtected, not the kIoError of a write to a file not open for writing
+  (which `gb::File` refuses without making the file unusable). Setting
+  protection when already set writes nothing.
 - `Create` writes the header and zero sectors, a few sectors at a time.
 - It is write-through to the host: `WriteSector` and `SetWriteProtected`
   flush the host file before returning, so a host failure is the result of
@@ -1321,7 +1324,7 @@ Depends on: CL17.
 - Mutation: writing the entries after the FAT fails the crash test of
   repairing.
 
-### CL19 [ ] disk: read-only image files
+### CL19 [x] disk: read-only image files
 
 Depends on: CL2.
 

@@ -57,7 +57,9 @@ class DiskMedia {
   //----------------------------------------------------------------------------
 
   // Sets or clears the header's write-protect bit, which a protected medium
-  // still allows. Returns kOk, or kIoError if the header can't be written.
+  // still allows, writing nothing if it is unchanged. Returns kOk,
+  // kWriteProtected if the medium can't be unprotected (as a read-only image
+  // file can't), or kIoError if the header can't be written.
   DiskStatus SetWriteProtected(bool write_protected);
 
  protected:
@@ -74,7 +76,9 @@ class DiskMedia {
   // Implementation
   //----------------------------------------------------------------------------
 
-  // Writes `flags` to the header. Returns kOk, or kIoError if the write fails.
+  // Writes `flags`, which differ from the current flags, to the header.
+  // Returns kOk, kIoError if the write fails, or kWriteProtected if the header
+  // can't be changed, in which case nothing is written.
   virtual DiskStatus WriteFlags(uint16_t flags) = 0;
 
   const int sector_count_;

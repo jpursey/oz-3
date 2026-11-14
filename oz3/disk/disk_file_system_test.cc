@@ -21,6 +21,7 @@
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
+#include "gb/file/file_types.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/date_time.h"
@@ -2736,6 +2737,23 @@ TEST_F(DiskFileSystemTest, WriteProtectionComesBeforeFormatting) {
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.SetAttributes(GetName("A"), kDiskAttribHidden),
             DiskStatus::kWriteProtected);
+}
+
+TEST_F(DiskFileSystemTest, AReadOnlyImageFileAttachesWriteProtected) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OLD", {2}, 10); });
+  ASSERT_TRUE(host_.SetAttributes(kPath, gb::FileAttribute::kReadOnly));
+  ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
+
+  EXPECT_EQ(GetInfo(OpenFile("OLD")).size, 10);
+  DiskFile file = -1;
+  EXPECT_EQ(file_system_.Create(GetName("NEW"), GetLater(), &file),
+            DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")),
+            DiskStatus::kWriteProtected);
+  DiskVolumeInfo volume;
+  ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
+  EXPECT_EQ(volume.label, GetLabel("WORK"));
 }
 
 TEST_F(DiskFileSystemTest, AnOpenRootKeepsItsPlaceThroughDirectoryChanges) {
