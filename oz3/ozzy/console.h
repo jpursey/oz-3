@@ -54,7 +54,8 @@ struct ConsoleKeys {
 // The host's text console, which the ozzy app runs an Ozzy in: it draws the
 // screen's picture as text, and its key presses are the keyboard's.
 //
-// Each platform implements this in its own file (win_console.cc).
+// Each platform implements this in its own file: win_console.cc for Windows,
+// and gen_console.cc elsewhere, where Create always fails.
 class Console {
  public:
   //----------------------------------------------------------------------------
@@ -64,8 +65,9 @@ class Console {
   // Takes over the console, to show text in `mode`: virtual terminal output
   // in UTF-8, and raw key input, so that every key (Ctrl+C too) is a key
   // press. Returns an error if the program has no console, or a Console
-  // already exists, as there is only one. The console is given back as it
-  // was when the Console is destroyed.
+  // already exists, as there is only one, or the platform has no Console
+  // implementation (see above). The console is given back as it was when the
+  // Console is destroyed.
   static absl::StatusOr<std::unique_ptr<Console>> Create(ConsoleMode mode);
 
   Console(const Console&) = delete;

@@ -18,6 +18,8 @@
 
 namespace oz3 {
 
+class PortBank;
+
 namespace internal {
 // Internal class to support caching of lockables in a PortBank
 class PortLockable : public Lockable {
@@ -29,7 +31,7 @@ class PortLockable : public Lockable {
   void OnUnlocked() override;
 
  private:
-  friend class PortBank;
+  friend class oz3::PortBank;
 
   PortLockable(PortBank* bank, int port_index)
       : bank_(bank), port_index_(port_index) {}
@@ -109,7 +111,7 @@ class Port final {
   //----------------------------------------------------------------------------
   // Implementation
   //----------------------------------------------------------------------------
-  friend class PortBank;
+  friend class oz3::PortBank;
 
   void WakeComponents() {
     for (ExecutionComponent* component : components_) {

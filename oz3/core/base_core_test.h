@@ -40,7 +40,7 @@ class BaseCoreTest : public testing::Test {
   };
 
   struct Arg {
-    Arg() = default;
+    Arg() : value(0) {}
     Arg(int in_value) : value(in_value) {}
     Arg(const char* in_macro_code, int in_value = 0)
         : macro_code(in_macro_code), value(in_value) {}
@@ -48,7 +48,7 @@ class BaseCoreTest : public testing::Test {
         : macro_code(in_macro_code), value(in_value) {}
 
     std::string_view macro_code;
-    uint16_t value = 0;
+    uint16_t value;
   };
 
   // Helper class to sequentially write code and read/write data ina MemoryBank.
@@ -198,14 +198,16 @@ class BaseCoreTest : public testing::Test {
 
   // Initializes the processor and cores. This must be called first before any
   // other calls can be made.
-  bool Init(InitConfig config = {});
+  bool Init() { return Init(InitConfig()); }
+  bool Init(InitConfig config);
 
   // Initializes the processor and cores, and then resets each core, setting the
   // memory banks to cores in a round robin fashion, the exception being the
   // EXTRA bank which is set to the last memory bank. The BD register is set to
   // to 1000 and the BE register is set to 2000. The BC, BS, IP, FP, and SP
   // registers are all left at zero. Interrupts are enabled.
-  bool InitAndReset(InitConfig config = {});
+  bool InitAndReset() { return InitAndReset(InitConfig()); }
+  bool InitAndReset(InitConfig config);
 
   // Returns the processor, such as to load a program into it. Init() must have
   // been called.

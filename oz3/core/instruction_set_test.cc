@@ -29,6 +29,10 @@ constexpr uint8_t kOp_TEST = 128;
 constexpr uint8_t kMicro_TEST_NOP = 254;
 constexpr uint8_t kMicro_TEST = 255;
 
+// Returns a register index computed in a test, such as a register with a mask,
+// as a Microcode argument.
+int8_t RegArg(int reg) { return static_cast<int8_t>(reg); }
+
 InstructionDef MakeDef(std::string_view code) {
   return InstructionDef{.op = kOp_TEST, .op_name = "TEST", .code = code};
 }
@@ -711,14 +715,15 @@ TEST(InstructionSetTest, RegByteArgsDecodedCorrectly) {
     EXPECT_EQ(decoded.r[1], 0);
     EXPECT_EQ(decoded.r[2], 0);
     EXPECT_EQ(decoded.r[3], 0);
-    EXPECT_THAT(decoded.code,
-                ElementsAre(Microcode{.op = kMicro_UL},
-                            Microcode{.op = kMicro_TEST,
-                                      .arg1 = i | CpuCore::kRegMaskByte0,
-                                      .arg2 = i | CpuCore::kRegMaskByte1},
-                            Microcode{.op = kMicro_TEST,
-                                      .arg1 = i | CpuCore::kRegMaskByte1,
-                                      .arg2 = i | CpuCore::kRegMaskByte0}))
+    EXPECT_THAT(
+        decoded.code,
+        ElementsAre(Microcode{.op = kMicro_UL},
+                    Microcode{.op = kMicro_TEST,
+                              .arg1 = RegArg(i | CpuCore::kRegMaskByte0),
+                              .arg2 = RegArg(i | CpuCore::kRegMaskByte1)},
+                    Microcode{.op = kMicro_TEST,
+                              .arg1 = RegArg(i | CpuCore::kRegMaskByte1),
+                              .arg2 = RegArg(i | CpuCore::kRegMaskByte0)}))
         << "i = " << i;
   }
 }
@@ -748,14 +753,15 @@ TEST(InstructionSetTest, RegNibbleArgsDecodedCorrectly) {
     EXPECT_EQ(decoded.r[1], 0);
     EXPECT_EQ(decoded.r[2], 0);
     EXPECT_EQ(decoded.r[3], 0);
-    EXPECT_THAT(decoded.code,
-                ElementsAre(Microcode{.op = kMicro_UL},
-                            Microcode{.op = kMicro_TEST,
-                                      .arg1 = i | CpuCore::kRegMaskNibble0,
-                                      .arg2 = i | CpuCore::kRegMaskNibble1},
-                            Microcode{.op = kMicro_TEST,
-                                      .arg1 = i | CpuCore::kRegMaskNibble2,
-                                      .arg2 = i | CpuCore::kRegMaskNibble3}))
+    EXPECT_THAT(
+        decoded.code,
+        ElementsAre(Microcode{.op = kMicro_UL},
+                    Microcode{.op = kMicro_TEST,
+                              .arg1 = RegArg(i | CpuCore::kRegMaskNibble0),
+                              .arg2 = RegArg(i | CpuCore::kRegMaskNibble1)},
+                    Microcode{.op = kMicro_TEST,
+                              .arg1 = RegArg(i | CpuCore::kRegMaskNibble2),
+                              .arg2 = RegArg(i | CpuCore::kRegMaskNibble3)}))
         << "i = " << i;
   }
 }
@@ -1626,9 +1632,9 @@ TEST(InstructionSetTest, MacroWordToRegByteParamDecodedCorrectly) {
         ElementsAre(Microcode{.op = kMicro_UL},
                     Microcode{.op = kMicro_TEST,
                               .arg1 = CpuCore::R0 | CpuCore::kRegMaskByte0,
-                              .arg2 = reg | CpuCore::kRegMaskByte1},
+                              .arg2 = RegArg(reg | CpuCore::kRegMaskByte1)},
                     Microcode{.op = kMicro_TEST,
-                              .arg1 = reg | CpuCore::kRegMaskByte0,
+                              .arg1 = RegArg(reg | CpuCore::kRegMaskByte0),
                               .arg2 = CpuCore::R1 | CpuCore::kRegMaskByte1}))
         << context;
   }
@@ -1723,9 +1729,9 @@ TEST(InstructionSetTest, MacroWordToRegNibbleParamDecodedCorrectly) {
         ElementsAre(Microcode{.op = kMicro_UL},
                     Microcode{.op = kMicro_TEST,
                               .arg1 = CpuCore::R0 | CpuCore::kRegMaskNibble0,
-                              .arg2 = reg | CpuCore::kRegMaskNibble1},
+                              .arg2 = RegArg(reg | CpuCore::kRegMaskNibble1)},
                     Microcode{.op = kMicro_TEST,
-                              .arg1 = reg | CpuCore::kRegMaskNibble2,
+                              .arg1 = RegArg(reg | CpuCore::kRegMaskNibble2),
                               .arg2 = CpuCore::R1 | CpuCore::kRegMaskNibble3}))
         << context;
   }
@@ -1915,9 +1921,9 @@ TEST(InstructionSetTest, MacroWordToRegByteReturnDecodedCorrectly) {
                               .arg2 = CpuCore::R1 | CpuCore::kRegMaskByte1},
                     Microcode{.op = kMicro_TEST,
                               .arg1 = CpuCore::R0 | CpuCore::kRegMaskByte0,
-                              .arg2 = reg | CpuCore::kRegMaskByte1},
+                              .arg2 = RegArg(reg | CpuCore::kRegMaskByte1)},
                     Microcode{.op = kMicro_TEST,
-                              .arg1 = reg | CpuCore::kRegMaskByte0,
+                              .arg1 = RegArg(reg | CpuCore::kRegMaskByte0),
                               .arg2 = CpuCore::R1 | CpuCore::kRegMaskByte1}))
         << context;
   }
@@ -2430,9 +2436,9 @@ TEST(InstructionSetTest, MacroWordToRegNibbleReturnDecodedCorrectly) {
                               .arg2 = CpuCore::R1 | CpuCore::kRegMaskNibble1},
                     Microcode{.op = kMicro_TEST,
                               .arg1 = CpuCore::R0 | CpuCore::kRegMaskNibble0,
-                              .arg2 = reg | CpuCore::kRegMaskNibble1},
+                              .arg2 = RegArg(reg | CpuCore::kRegMaskNibble1)},
                     Microcode{.op = kMicro_TEST,
-                              .arg1 = reg | CpuCore::kRegMaskNibble2,
+                              .arg1 = RegArg(reg | CpuCore::kRegMaskNibble2),
                               .arg2 = CpuCore::R1 | CpuCore::kRegMaskNibble3}))
         << context;
   }
@@ -3730,13 +3736,14 @@ TEST(InstructionSetTest, MacroDwordToRegByteParamDecodedCorrectly) {
     EXPECT_EQ(decoded.r[3], 1) << context;
     EXPECT_THAT(
         decoded.code,
-        ElementsAre(Microcode{.op = kMicro_UL},
-                    Microcode{.op = kMicro_MVB,
-                              .arg1 = reg | CpuCore::kRegMaskByte0,
-                              .arg2 = (reg + 1) | CpuCore::kRegMaskByte1},
-                    Microcode{.op = kMicro_MVB,
-                              .arg1 = (reg + 1) | CpuCore::kRegMaskByte0,
-                              .arg2 = reg | CpuCore::kRegMaskByte1}))
+        ElementsAre(
+            Microcode{.op = kMicro_UL},
+            Microcode{.op = kMicro_MVB,
+                      .arg1 = RegArg(reg | CpuCore::kRegMaskByte0),
+                      .arg2 = RegArg((reg + 1) | CpuCore::kRegMaskByte1)},
+            Microcode{.op = kMicro_MVB,
+                      .arg1 = RegArg((reg + 1) | CpuCore::kRegMaskByte0),
+                      .arg2 = RegArg(reg | CpuCore::kRegMaskByte1)}))
         << context;
   }
   codes =
@@ -3834,13 +3841,14 @@ TEST(InstructionSetTest, MacroDwordToRegNibbleParamDecodedCorrectly) {
     EXPECT_EQ(decoded.r[3], 1) << context;
     EXPECT_THAT(
         decoded.code,
-        ElementsAre(Microcode{.op = kMicro_UL},
-                    Microcode{.op = kMicro_MVN,
-                              .arg1 = reg | CpuCore::kRegMaskNibble0,
-                              .arg2 = (reg + 1) | CpuCore::kRegMaskNibble1},
-                    Microcode{.op = kMicro_MVN,
-                              .arg1 = (reg + 1) | CpuCore::kRegMaskNibble2,
-                              .arg2 = reg | CpuCore::kRegMaskNibble3}))
+        ElementsAre(
+            Microcode{.op = kMicro_UL},
+            Microcode{.op = kMicro_MVN,
+                      .arg1 = RegArg(reg | CpuCore::kRegMaskNibble0),
+                      .arg2 = RegArg((reg + 1) | CpuCore::kRegMaskNibble1)},
+            Microcode{.op = kMicro_MVN,
+                      .arg1 = RegArg((reg + 1) | CpuCore::kRegMaskNibble2),
+                      .arg2 = RegArg(reg | CpuCore::kRegMaskNibble3)}))
         << context;
   }
   codes =
@@ -3945,9 +3953,12 @@ TEST(InstructionSetTest, MacroDwordParamDecodedCorrectly) {
             Microcode{.op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = reg},
             Microcode{.op = kMicro_TEST, .arg1 = reg, .arg2 = CpuCore::D1},
             Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = reg},
-            Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R5, .arg2 = reg + 1},
+            Microcode{
+                .op = kMicro_MOV, .arg1 = CpuCore::R5, .arg2 = RegArg(reg + 1)},
             Microcode{.op = kMicro_MOV, .arg1 = reg, .arg2 = CpuCore::R6},
-            Microcode{.op = kMicro_MOV, .arg1 = reg + 1, .arg2 = CpuCore::R7}))
+            Microcode{.op = kMicro_MOV,
+                      .arg1 = RegArg(reg + 1),
+                      .arg2 = CpuCore::R7}))
         << context;
   }
   codes =
@@ -4054,15 +4065,15 @@ TEST(InstructionSetTest, MacroDwordReturnToRegByteDecodedCorrectly) {
                 .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
             Microcode{.op = kMicro_MVB,
                       .arg1 = CpuCore::R4 | CpuCore::kRegMaskByte0,
-                      .arg2 = reg | CpuCore::kRegMaskByte1},
+                      .arg2 = RegArg(reg | CpuCore::kRegMaskByte1)},
             Microcode{.op = kMicro_MVB,
-                      .arg1 = reg | CpuCore::kRegMaskByte0,
+                      .arg1 = RegArg(reg | CpuCore::kRegMaskByte0),
                       .arg2 = CpuCore::R5 | CpuCore::kRegMaskByte1},
             Microcode{.op = kMicro_MVB,
                       .arg1 = CpuCore::R6 | CpuCore::kRegMaskByte0,
-                      .arg2 = (reg + 1) | CpuCore::kRegMaskByte1},
+                      .arg2 = RegArg((reg + 1) | CpuCore::kRegMaskByte1)},
             Microcode{.op = kMicro_MVB,
-                      .arg1 = (reg + 1) | CpuCore::kRegMaskByte0,
+                      .arg1 = RegArg((reg + 1) | CpuCore::kRegMaskByte0),
                       .arg2 = CpuCore::R7 | CpuCore::kRegMaskByte1}))
         << context;
   }
@@ -4311,15 +4322,15 @@ TEST(InstructionSetTest, MacroDwordReturnToRegNibbleDecodedCorrectly) {
                 .op = kMicro_TEST, .arg1 = CpuCore::D0, .arg2 = CpuCore::D1},
             Microcode{.op = kMicro_MVN,
                       .arg1 = CpuCore::R4 | CpuCore::kRegMaskNibble0,
-                      .arg2 = reg | CpuCore::kRegMaskNibble1},
+                      .arg2 = RegArg(reg | CpuCore::kRegMaskNibble1)},
             Microcode{.op = kMicro_MVN,
-                      .arg1 = reg | CpuCore::kRegMaskNibble2,
+                      .arg1 = RegArg(reg | CpuCore::kRegMaskNibble2),
                       .arg2 = CpuCore::R5 | CpuCore::kRegMaskNibble3},
             Microcode{.op = kMicro_MVN,
                       .arg1 = CpuCore::R6 | CpuCore::kRegMaskNibble0,
-                      .arg2 = (reg + 1) | CpuCore::kRegMaskNibble1},
+                      .arg2 = RegArg((reg + 1) | CpuCore::kRegMaskNibble1)},
             Microcode{.op = kMicro_MVN,
-                      .arg1 = (reg + 1) | CpuCore::kRegMaskNibble2,
+                      .arg1 = RegArg((reg + 1) | CpuCore::kRegMaskNibble2),
                       .arg2 = CpuCore::R7 | CpuCore::kRegMaskNibble3}))
         << context;
   }
@@ -4570,8 +4581,11 @@ TEST(InstructionSetTest, MacroDwordReturnDecodedCorrectly) {
             Microcode{.op = kMicro_TEST, .arg1 = reg, .arg2 = CpuCore::D1},
             Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R4, .arg2 = reg},
             Microcode{.op = kMicro_MOV, .arg1 = reg, .arg2 = CpuCore::R5},
-            Microcode{.op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = reg + 1},
-            Microcode{.op = kMicro_MOV, .arg1 = reg + 1, .arg2 = CpuCore::R7}))
+            Microcode{
+                .op = kMicro_MOV, .arg1 = CpuCore::R6, .arg2 = RegArg(reg + 1)},
+            Microcode{.op = kMicro_MOV,
+                      .arg1 = RegArg(reg + 1),
+                      .arg2 = CpuCore::R7}))
         << context;
   }
 

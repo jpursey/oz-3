@@ -10,13 +10,7 @@ out/
 /.claude/worktrees/
 
 # Output directories
-bin/Debug/
-bin/Release/
-bin/MinSizeRel/
-bin/RelWithDebInfo/
-bin/*.exe
-bin/*.pdb
-bin/*.ilk
+/bin/
 
 # Local files
 *.sublime-workspace
