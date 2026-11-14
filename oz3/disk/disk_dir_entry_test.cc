@@ -52,6 +52,11 @@ TEST(DiskDirEntryTest, FieldsRoundTrip) {
   EXPECT_EQ(DiskDirEntry::FromWords(entry.GetWords()), entry);
 }
 
+TEST(DiskDirEntryTest, ASectorHoldsSixteenEntries) {
+  EXPECT_EQ(DiskDirEntry::kWordCount, 16);
+  EXPECT_EQ(DiskDirEntry::kEntriesPerSector, 16);
+}
+
 TEST(DiskDirEntryTest, SettersChangeOnlyTheirWords) {
   DiskDirEntry::Words words;
   for (int i = 0; i < DiskDirEntry::kWordCount; ++i) {

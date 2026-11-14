@@ -630,7 +630,7 @@ DiskStatus DiskFileSystem::GetWritableStatus() const {
 }
 
 int DiskFileSystem::GetClusterSize() const {
-  return superblock_.GetLayout().sectors_per_cluster * kDiskSectorWords;
+  return superblock_.GetLayout().GetClusterWords();
 }
 
 //------------------------------------------------------------------------------

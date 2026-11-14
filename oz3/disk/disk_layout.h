@@ -81,10 +81,15 @@ struct DiskLayout {
     return kFirstFatSector + index / kDiskSectorWords;
   }
 
+  // Returns the words a cluster holds.
+  constexpr int GetClusterWords() const {
+    return sectors_per_cluster * kDiskSectorWords;
+  }
+
   // Returns the most words a file can have: what every cluster holds but the
   // root's first.
   constexpr int GetMaxFileSize() const {
-    return (cluster_count - 1) * sectors_per_cluster * kDiskSectorWords;
+    return (cluster_count - 1) * GetClusterWords();
   }
 
   //----------------------------------------------------------------------------

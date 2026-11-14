@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_disk_SOURCE
+  disk_check.cc disk_check.h
   disk_dir_entry.cc disk_dir_entry.h
   disk_fat.cc disk_fat.h
   disk_file_system.cc disk_file_system.h
@@ -19,6 +20,7 @@ set(oz3_disk_SOURCE
   disk_superblock.cc disk_superblock.h
 )
 set(oz3_disk_DEPS
+  absl::btree
   absl::function_ref
   absl::memory
   absl::span
@@ -34,6 +36,7 @@ set(oz3_disk_LIBS
 )
 
 set(oz3_disk_TEST_SOURCE
+  disk_check_test.cc
   disk_dir_entry_test.cc
   disk_fat_test.cc
   disk_file_system_test.cc

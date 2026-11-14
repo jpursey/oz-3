@@ -140,6 +140,12 @@ TEST(DiskLayoutTest, ClusterSectors) {
   EXPECT_EQ(hard_drive.GetSectorCount(), 262'141);
 }
 
+TEST(DiskLayoutTest, ClusterWords) {
+  EXPECT_EQ(MakeLayout(1, 716, 3).GetClusterWords(), 256);
+  EXPECT_EQ(MakeLayout(4, 65'471, 256).GetClusterWords(), 1024);
+  EXPECT_EQ(MakeLayout(64, 100, 1).GetClusterWords(), 16384);
+}
+
 TEST(DiskLayoutTest, FatSectors) {
   EXPECT_EQ(DiskLayout::kSuperblockSector, 0);
   EXPECT_EQ(DiskLayout::kFirstFatSector, 1);

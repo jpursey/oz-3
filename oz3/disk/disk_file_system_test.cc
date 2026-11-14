@@ -24,6 +24,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/date_time.h"
+#include "oz3/disk/disk_check.h"
 #include "oz3/disk/disk_dir_entry.h"
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_image.h"
@@ -49,9 +50,6 @@ constexpr int kMaxOpenFiles = 4;
 // Where an image's sectors are in its file, after the header.
 constexpr int64_t kHeaderBytes = 16;
 constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
-
-// The directory entries a sector holds.
-constexpr int kEntriesPerSector = kDiskSectorWords / DiskDirEntry::kWordCount;
 
 // A 360 KB floppy: 716 clusters of one sector, after 3 FAT sectors.
 constexpr int kFloppySectors = 720;
@@ -144,7 +142,7 @@ DiskSuperblock ReadSuperblock(DiskImage& image) {
 // `clusters`.
 int GetDataSector(const DiskLayout& layout, absl::Span<const int> clusters,
                   int position) {
-  const int cluster_words = layout.sectors_per_cluster * kDiskSectorWords;
+  const int cluster_words = layout.GetClusterWords();
   return layout.GetClusterSector(clusters[position / cluster_words]) +
          position % cluster_words / kDiskSectorWords;
 }
@@ -195,14 +193,15 @@ class DiskEditor {
 
   // Sets the root directory's entry `index`, in its first cluster, to `entry`.
   void SetRootEntry(int index, const DiskDirEntry& entry) {
-    SetEntry(layout_.GetClusterSector(1) + index / kEntriesPerSector,
-             index % kEntriesPerSector, entry);
+    SetEntry(
+        layout_.GetClusterSector(1) + index / DiskDirEntry::kEntriesPerSector,
+        index % DiskDirEntry::kEntriesPerSector, entry);
   }
 
   // Fills directory sector `sector` with empty files, named from
   // GetFillerName(first_index) on.
   void FillSector(int sector, int first_index) {
-    for (int i = 0; i < kEntriesPerSector; ++i) {
+    for (int i = 0; i < DiskDirEntry::kEntriesPerSector; ++i) {
       SetEntry(sector, i, MakeEntry(GetFillerName(first_index + i), 0, 0));
     }
   }
@@ -259,7 +258,8 @@ struct DiskContents {
   std::vector<FoundFile> files;
 
   // Each cluster's owner, by cluster: "the free list", "the root", a file's
-  // name, or empty for a cluster on no chain.
+  // name, or empty for a cluster on no chain. A long chain's tail is its
+  // file's.
   std::vector<std::string> owners;
 
   // Returns the file `name`, or null if the root has none.
@@ -272,15 +272,28 @@ struct DiskContents {
 };
 
 // Returns what `image` holds, by walking its FAT and root directory itself,
-// and checks that it is consistent: the free list, the root, and every file in
-// the root each have a chain no other shares a cluster of, every file's chain
-// covers its size, and no two files share a name. Each of `files` holds its
-// words up to its size, and every other file is empty.
+// and checks that it is consistent. CheckDisk must find only what a crash may
+// leave: orphaned clusters and long chains. The walk here takes each chain
+// whole, so it also fails a chain whose long tail shares a cluster, which
+// CheckDisk only calls long, as a tail claims nothing. Each of `files` holds
+// its words up to its size, and every other file is empty.
 DiskContents ReadDiskContents(DiskImage& image,
                               absl::Span<const CrashFile> files) {
+  DiskCheckReport report;
+  EXPECT_EQ(CheckDisk(image, &report), DiskStatus::kOk);
+  EXPECT_FALSE(report.broken_root);
+  EXPECT_FALSE(report.broken_free_list);
+  for (const DiskCheckReport::FileProblem& problem : report.file_problems) {
+    const std::optional<DiskFilename> name = problem.entry.GetName();
+    EXPECT_EQ(problem.problem, DiskCheckReport::ChainProblem::kLong)
+        << (name.has_value() ? name->ToString() : "A bad name");
+  }
+  EXPECT_THAT(report.bad_names, IsEmpty());
+  EXPECT_THAT(report.duplicate_names, IsEmpty());
+
   const DiskSuperblock superblock = ReadSuperblock(image);
   const DiskLayout layout = superblock.GetLayout();
-  const int cluster_words = layout.sectors_per_cluster * kDiskSectorWords;
+  const int cluster_words = layout.GetClusterWords();
   std::vector<uint16_t> fat;
   for (int i = 0; i < layout.fat_sectors; ++i) {
     const Sector words = ReadSector(image, DiskLayout::kFirstFatSector + i);
@@ -324,7 +337,7 @@ DiskContents ReadDiskContents(DiskImage& image,
   std::vector<DiskDirEntry> entries;
   for (int cluster : take_chain("the root", superblock.GetRootCluster())) {
     for (int i = 0; i < layout.sectors_per_cluster; ++i) {
-      for (int index = 0; index < kEntriesPerSector; ++index) {
+      for (int index = 0; index < DiskDirEntry::kEntriesPerSector; ++index) {
         entries.push_back(
             ReadEntry(image, layout.GetClusterSector(cluster) + i, index));
       }
@@ -337,21 +350,18 @@ DiskContents ReadDiskContents(DiskImage& image,
     }
     const std::optional<DiskFilename> name = entry.GetName();
     const std::optional<int> size = entry.GetSize();
+    // CheckDisk fails each of these: a bad name, a size no disk holds, a
+    // duplicate name, and a short chain.
     if (!name.has_value() || !size.has_value()) {
-      ADD_FAILURE() << "The root has a broken entry";
       continue;
     }
     const std::string text = name->ToString();
     if (contents.FindFile(text) != nullptr) {
-      ADD_FAILURE() << "The root has two files named " << text;
       continue;
     }
     contents.files.push_back({.name = text, .size = *size});
     const std::vector<int> chain = take_chain(text, entry.GetFirstCluster());
-    const int chain_count = static_cast<int>(chain.size());
-    if (chain_count * cluster_words < *size) {
-      ADD_FAILURE() << text << "'s chain of " << chain_count
-                    << " clusters doesn't cover its size of " << *size;
+    if (static_cast<int>(chain.size()) * cluster_words < *size) {
       continue;
     }
     const auto file = std::find_if(

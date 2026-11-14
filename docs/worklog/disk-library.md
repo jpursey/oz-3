@@ -666,7 +666,7 @@ struct DiskCheckReport {
   enum class ChainProblem {
     kLong,         // It goes on past the clusters its size needs.
     kShort,        // It ends before covering its size.
-    kBroken,       // It has a link out of range, or loops.
+    kBroken,       // It has a cluster out of range, or loops.
     kCrossLinked,  // It runs into the root's chain or an earlier file's.
   };
 
@@ -682,7 +682,8 @@ struct DiskCheckReport {
   bool operator==(const DiskCheckReport&) const = default;
 
   bool broken_root = false;       // A link out of range, or a loop.
-  bool broken_free_list = false;  // The same, or it runs into a chain.
+  bool broken_free_list = false;  // A link out of range, a loop, or a link
+                                  // into a chain.
   int orphaned_clusters = 0;      // On no chain, and not free.
   std::vector<FileProblem> file_problems;      // In directory order.
   std::vector<DiskDirEntry> bad_names;         // Names breaking the rules.
@@ -690,8 +691,8 @@ struct DiskCheckReport {
 };
 
 // Sets `report` to what is wrong with the file system on `image`, writing
-// nothing. Returns kUnformatted with no file system, and kIoError. Never
-// kCorrupt, as corruption is what it reports.
+// nothing. Returns kUnformatted if the image has no file system, and kIoError
+// if the host fails. Never returns kCorrupt, as corruption is what it reports.
 DiskStatus CheckDisk(DiskImage& image, DiskCheckReport* report);
 
 // Checks as CheckDisk does, then fixes what it found (from CL18). Returns
@@ -707,14 +708,22 @@ DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
   cross-link is the later file's problem, and a cluster both free and in a
   chain stays in the chain, with the free list broken there. A cluster no
   chain reaches is orphaned. The free list is last, as a crash never leaves
-  a chain running into it.
+  a chain running into it. Each cluster records only the number of the walk
+  that claimed it, as which file has it doesn't matter: reaching one this
+  walk claimed is a loop, and one an earlier walk claimed is a cross-link.
 - **A file's chain** is walked only as far as its size needs. A long chain's
   tail claims nothing, so it counts as orphaned too, and repairing frees it
-  with the other orphans. A size past the disk's largest file is short.
-  Entries with bad names are walked as files, so their clusters aren't
-  orphaned.
+  with the other orphans. A size past the disk's largest file is short. A
+  first cluster out of range is broken, even for an empty file, whose chain
+  in range is long. Entries with bad names are walked as files, so their
+  clusters aren't orphaned. As the tail isn't walked, one running into
+  another chain or the free list is only long, which repairing fixes by
+  cutting it.
 - **The root's entries** are read from the clusters its walk claimed, so a
-  broken root is still read up to the break.
+  broken root is still read up to the break. An entry is free only if all
+  its words are 0, as freeing writes, though the drive takes a first word of
+  0 as free. One with only its name zeroed is a bad name, so its chain is
+  walked, and repairing treats it as any other bad name.
 - **Repairing** (CL18) writes, in order: the entries that change (a short or
   broken file's size cut to its chain, cross-linked files cut before the
   shared cluster, and first cluster 0 for an emptied file), then each chain's
@@ -1219,7 +1228,7 @@ Depends on: CL15.
 - The file system's remaining tests pass unchanged, including every exact
   order of writes and the crash tests.
 
-### CL17 [ ] disk: consistency checks
+### CL17 [x] disk: consistency checks
 
 Depends on: CL16.
 
@@ -1227,9 +1236,18 @@ Depends on: CL16.
   checks): a broken root or free list, orphaned clusters, files whose chains
   are long, short, broken, or cross-linked, bad names, and duplicate names,
   writing nothing.
-- The crash tests check every crash with it, which may leave only orphaned
-  clusters and long chains, and a clean disk before and after.
+- The crash tests check every disk they read with it (each crash, and the
+  disk before and after), which may hold only orphaned clusters and long
+  chains. Before and after aren't clean, as the setups leave clusters off
+  the free list, and writing over slack starts with a long chain. They keep
+  their own walk of whole chains too, for the owners they compare and each
+  file's data, which also fails a long chain's tail sharing a cluster, and
+  leave the rest of the judging to `CheckDisk`.
+- `DiskLayout::GetClusterWords` and `DiskDirEntry::kEntriesPerSector`, for
+  the check and the file system and their tests, which each had their own.
 - disk_design.md: checks are `CheckDisk` on a detached image.
+- `disk_check_test.cc` builds its disks by hand, in memory, with no file
+  system.
 - Unused, so no visible change.
 
 **Verify**
@@ -1237,8 +1255,8 @@ Depends on: CL16.
 - Unit tests: a clean disk reporting nothing, each problem on a hand-made
   disk, a cluster both free and in a chain, a long chain's tail as orphaned,
   a loop in each of the root, a file, and the free list, links out of range,
-  a size past the disk's largest file, an unformatted image, and nothing
-  written.
+  a size past the disk's largest file, an entry with only its name zeroed as
+  a bad name, an unformatted image, and nothing written.
 
 ### CL18 [ ] disk: consistency repairs
 

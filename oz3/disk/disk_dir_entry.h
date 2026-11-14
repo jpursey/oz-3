@@ -49,6 +49,9 @@ class DiskDirEntry final {
   // The words in a directory entry.
   static constexpr int kWordCount = static_cast<int>(Words().size());
 
+  // The directory entries a sector holds.
+  static constexpr int kEntriesPerSector = kDiskSectorWords / kWordCount;
+
   // The largest size, in words: the most a file on the largest disk can have.
   static constexpr int kMaxSize =
       DiskLayout{

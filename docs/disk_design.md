@@ -207,7 +207,7 @@ The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`
 - **Per-sector work.** A read or write moves at most up to the next sector boundary per call, so the drive can stream a sector at a time, and a failure lands at the right point.
 - **Time belongs to the hardware.** `DiskHardware` adds up the time of the operations it performs, without waiting. The drive reads and resets that total after each file system call, and waits that long before going on. Tools ignore it.
 - **No clock.** Timestamps come in as core's `DateTime` values, from the host clock in the drive and from host file times in tools.
-- **Consistency checks** are `DiskFileSystem::Check`, reporting orphaned and cross-linked clusters and chains that don't match sizes, and optionally repairing them.
+- **Consistency checks** are `CheckDisk` on an image no file system has attached, reporting orphaned and cross-linked clusters, chains that don't match sizes, and bad and duplicate names, and `RepairDisk` repairs them. The drive never checks a disk, and a host checking one in a drive detaches it first, so no file is open and no buffer is unwritten during a check.
 
 The drive maps its slots one to one onto `DiskFile` handles, and its `DiskFileSystem` lives as long as it does, with images attached and detached as disks are inserted and ejected. Detaching an image discards the file system's buffers with no write-back, and leaves its open slots stale.
 
@@ -564,7 +564,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 
 The protocol owns its `DiskFileSystem`. It mounts one, unmounts it, and can swap one image for another. With nothing mounted, every path is invalid.
 
-Everything beyond the protocol (the label, write protection, and checks) goes through `GetFileSystem()`, which returns the mounted `DiskFileSystem`, or null. No separate interface is needed, and since the protocol and direct calls share one file system, they share one open-file table and one set of buffers: deleting a file the protocol has open still fails with **in use**, and every view stays consistent.
+Everything beyond the protocol (the label and write protection) goes through `GetFileSystem()`, which returns the mounted `DiskFileSystem`, or null. Checks are not among them: `CheckDisk` takes an image, so a host unmounts one to check it. No separate interface is needed, and since the protocol and direct calls share one file system, they share one open-file table and one set of buffers: deleting a file the protocol has open still fails with **in use**, and every view stays consistent.
 
 The host keeps a pointer to the protocol before passing it to `gb::FileSystem::Register`, which owns it from then on. Protocols live as long as their file system, so the pointer stays valid. Direct calls bypass the protocol's `Lock` and `Unlock`, so a multithreaded host needs its own locking around them; the OZ-3 tools are single-threaded.
 
