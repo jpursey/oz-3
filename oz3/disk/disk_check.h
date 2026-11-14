@@ -84,6 +84,21 @@ struct DiskCheckReport {
 // if the host fails. Never returns kCorrupt, as corruption is what it reports.
 DiskStatus CheckDisk(DiskImage& image, DiskCheckReport* report);
 
+// Checks `image` as CheckDisk does, setting `report` to what was wrong, then
+// repairs it, so a check finds at most duplicate names, which renaming or
+// deleting the first fixes. A file whose chain doesn't match its size keeps
+// what both cover. An entry with a bad name keeps its file, under the first
+// unused name of FILE00000000.CHK, FILE00000001.CHK, and so on. Every cluster
+// on no chain is freed.
+//
+// If a crash interrupts repairing, repairing again finishes the job. If the
+// disk had only problems a crash could leave (see DiskCheckReport), the crash
+// adds no others.
+//
+// If `image` is write-protected and needs repairing, nothing is written and
+// kWriteProtected is returned.
+DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
+
 }  // namespace oz3
 
 #endif  // OZ3_DISK_DISK_CHECK_H_

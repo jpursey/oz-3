@@ -248,6 +248,8 @@ struct CrashFile {
 
 // A file ReadDiskContents finds in the root.
 struct FoundFile {
+  bool operator==(const FoundFile&) const = default;
+
   std::string name;
   int size = 0;
 };
@@ -581,7 +583,8 @@ class DiskFileSystemTest : public ::testing::Test {
   // count its sector writes, and then once for each number of them a crash
   // could let reach the disk, each on a new disk. After each, the image is
   // reopened, as it is after a crash, and checked with ReadDiskContents for
-  // `files`. Without a crash, each of `files` has its size. A crash may
+  // `files`, and then repaired, which must leave a clean disk with the same
+  // files and data. Without a crash, each of `files` has its size. A crash may
   // orphan only a cluster `run` moves from one owner to another, or one on no
   // chain before or after it, and may lose only a file `run` creates,
   // deletes, or renames, leaving no fewer files than both before and after.
@@ -649,6 +652,14 @@ class DiskFileSystemTest : public ::testing::Test {
       EXPECT_GE(contents.files.size(),
                 std::min(before.files.size(), after.files.size()))
           << "A file is lost";
+
+      // Repairing leaves a clean disk, with the same files and their data.
+      std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+      DiskCheckReport report;
+      EXPECT_EQ(RepairDisk(*image, &report), DiskStatus::kOk);
+      EXPECT_EQ(CheckDisk(*image, &report), DiskStatus::kOk);
+      EXPECT_EQ(report, DiskCheckReport());
+      EXPECT_EQ(ReadDiskContents(*image, files).files, contents.files);
     }
   }
 

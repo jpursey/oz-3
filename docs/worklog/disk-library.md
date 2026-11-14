@@ -695,8 +695,19 @@ struct DiskCheckReport {
 // if the host fails. Never returns kCorrupt, as corruption is what it reports.
 DiskStatus CheckDisk(DiskImage& image, DiskCheckReport* report);
 
-// Checks as CheckDisk does, then fixes what it found (from CL18). Returns
-// kWriteProtected on a protected image.
+// Checks `image` as CheckDisk does, setting `report` to what was wrong, then
+// repairs it, so a check finds at most duplicate names, which renaming or
+// deleting the first fixes. A file whose chain doesn't match its size keeps
+// what both cover. An entry with a bad name keeps its file, under the first
+// unused name of FILE00000000.CHK, FILE00000001.CHK, and so on. Every cluster
+// on no chain is freed.
+//
+// If a crash interrupts repairing, repairing again finishes the job. If the
+// disk had only problems a crash could leave (see DiskCheckReport), the crash
+// adds no others.
+//
+// If `image` is write-protected and needs repairing, nothing is written and
+// kWriteProtected is returned.
 DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
 ```
 
@@ -724,16 +735,45 @@ DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
   its words are 0, as freeing writes, though the drive takes a first word of
   0 as free. One with only its name zeroed is a bad name, so its chain is
   walked, and repairing treats it as any other bad name.
-- **Repairing** (CL18) writes, in order: the entries that change (a short or
-  broken file's size cut to its chain, cross-linked files cut before the
-  shared cluster, and first cluster 0 for an emptied file), then each chain's
-  new end, then a free list rebuilt from every cluster nothing claims. The
-  rebuild first empties the free list (word 0 to FFFFh), then links the
-  clusters in order, then writes the head, so a crash in it leaves at worst
-  orphans. Every write goes straight to the image, so this order is the
-  code's. Duplicate names are only reported: `Delete` and `Rename` act on the
-  first, so a user can fix them. What to do with bad names is settled in
-  CL18: freeing them, or leaving them.
+- **Repairing** (CL18) cuts every file problem the same way: the chain ends
+  at the last cluster its walk claimed, and the size is cut to what those
+  clusters hold, with first cluster 0 if the walk claimed none. So a long
+  chain loses its tail, a short or broken one keeps its size up to the break,
+  and a cross-linked file ends before the shared cluster, which stays the
+  earlier file's. A broken root ends at its break, losing any entries past
+  it. It writes, in order: the root sectors whose entries change, in
+  directory order, then each FAT sector holding a chain's new end, and if
+  any cluster is orphaned or the free list is broken, then a free list
+  rebuilt from every cluster no chain claims. Entries go first so that no
+  entry reaches a cluster once it is freed. The rebuild first empties the
+  free list (word 0 to FFFFh, with the chain ends), then links the clusters
+  in order, writing the FAT's sectors in order with sector 1 last, for the
+  head, so a crash in it leaves at worst orphans. Every write goes straight
+  to the image, so this order is the code's. A clean disk writes nothing.
+- **The rebuilt free list** keeps each word that already links to the right
+  cluster, in either form, and writes any other as a zeroed FAT has it where
+  it can: 0 for the next cluster in order, or for the end at the last
+  cluster. So a free part of a newly formatted disk, or of a list already in
+  order, is left as it is, and only sectors that change are written. The
+  file system writes explicit links, which the format reads the same.
+  Alternative: pushing only the orphans onto an intact free list, which
+  writes only their sectors, but needs a second path beside the rebuild,
+  for a host tool whose writes cost no simulated time.
+- **Bad names** keep their files, renamed `FILE00000000.CHK`,
+  `FILE00000001.CHK`, and so on, each the first number no name on the disk
+  has, in directory order, as chkdsk does with lost chains. The drive skips
+  them in listings, `OPEN`, `DELETE`, and `RENAME`, so otherwise nothing could
+  ever reach them or their clusters. A root holds fewer than 10⁸ entries
+  (65534 × 64 × 16), so eight digits never run out. Alternatives: freeing
+  them (losing data a user may want, such as a file whose name alone was
+  zeroed), leaving them (their clusters used for good). Orphaned clusters
+  are still freed, not made into files, as nothing says where one chain of
+  them starts.
+- **Duplicate names** are only reported: `Delete` and `Rename` act on the
+  first, so a user can fix them.
+- **Write protection** needs no check of its own: the first write fails with
+  kWriteProtected before anything reaches the image, and a disk needing no
+  repairs writes nothing, so it repairs with kOk.
 - disk_design.md changes to match, in CL17: checks are `CheckDisk` on an
   image, not `DiskFileSystem::Check`, and `DiskFileProtocol` doesn't offer
   them through `GetFileSystem()`.
@@ -1258,21 +1298,28 @@ Depends on: CL16.
   a size past the disk's largest file, an entry with only its name zeroed as
   a bad name, an unformatted image, and nothing written.
 
-### CL18 [ ] disk: consistency repairs
+### CL18 [x] disk: consistency repairs
 
 Depends on: CL17.
 
-- `RepairDisk` (see disk: checks): cuts files' sizes and chains, then
-  rebuilds the free list from every cluster nothing claims.
-- The crash tests repair after every crash, then expect a clean check with
-  every file's data intact, and a crash test of repairing itself.
+- `RepairDisk` (see disk: checks): cuts files' sizes and chains, renames bad
+  names, then rebuilds the free list from every cluster nothing claims.
+- The file system's crash tests repair after every crash, then expect a
+  clean check with the same files and their data.
+- `disk_check_test.cc`'s disk grows to 300 clusters and two FAT sectors, so
+  repairs show their order of writes across FAT sectors, and has a crash
+  test of repairing itself: each crash leaves only what a crash may, with no
+  cluster on two chains walked whole, and repairing again finishes.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
 - Unit tests: each problem on a hand-made disk repaired, then checking clean,
-  the exact order of writes, write protection, and a clean disk writing
-  nothing.
+  the exact order of writes, the rebuilt free list's words, bad names
+  renamed around names already taken, duplicate names kept, write
+  protection, an unformatted image, and a clean disk writing nothing.
+- Mutation: writing the entries after the FAT fails the crash test of
+  repairing.
 
 ### CL19 [ ] disk: read-only image files
 
