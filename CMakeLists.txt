@@ -38,7 +38,7 @@ STRING(REGEX REPLACE "\\\\" "/" GB_DIR ${GB_DIR})
 
 set(GB_BIN_DIR "${CURRENT_DIR}/bin")
 set(GB_BUILD_TESTS OFF)
-add_subdirectory("${GB_DIR}" gb)
+add_subdirectory("${GB_DIR}" gb EXCLUDE_FROM_ALL)
 gb_config()
 gb_external_libraries()
 

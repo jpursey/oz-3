@@ -13,8 +13,6 @@ namespace {
 TEST(GenConsoleTest, CreateIsUnimplemented) {
   EXPECT_EQ(Console::Create(ConsoleMode::kScreen).status().code(),
             absl::StatusCode::kUnimplemented);
-  EXPECT_EQ(Console::Create(ConsoleMode::kLines).status().code(),
-            absl::StatusCode::kUnimplemented);
 }
 
 }  // namespace

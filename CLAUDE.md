@@ -2,7 +2,7 @@
 
 The OZ-3 is a 16-bit virtual CPU, made to be embedded in games as a programmable execution engine that "feels" like an old school CPU, where the CPU architecture is itself part of the gameplay. It is not a scripting language or an engine for one. The runtime simulates cores, memory banks, ports, and interrupts, with cycle counts derived from each instruction's microcode. Instruction sets are not fixed: they are written in microcode assembly, and each core can run its own.
 
-This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds and passes its tests on Linux with clang (see Linux below), where the `ozzy` app builds but can't run, as only Windows has a console implementation. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Local sessions), or in cloud sessions (see Cloud sessions).
+This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds and passes its tests on Linux with clang (see Linux below), where the `ozzy` app builds but can't run yet. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Local sessions), or in cloud sessions (see Cloud sessions).
 
 See README.md for an overview, and the wiki (see Wiki) for the specification.
 
@@ -36,7 +36,7 @@ Libraries depend strictly in the order `core` → `disk` → `tools` → `instru
 - `tools` (`oz3_tools`): Libraries and tools for working with the OZ-3 that a host application can use on its own: `InstructionAssembler` (instruction set source files to an `InstructionSetDef`), `InstructionDefExporter` (an `InstructionSetDef` to C++), and `ProgramLoader` (loading a `Program` into a `Processor`'s memory). The program assembler (`AssembleProgramFile`) turns program source into a `Program` and its `ProgramMap`, which program files, map files, and listings are written from.
 - `instruction_sets` (`oz3_instruction_sets`): Ready-made instruction sets, currently the default one (see Default instruction set). It links only `core`.
 - `devices` (`oz3_devices`): Ready-made devices for a `ProcessorConfig`, currently the teletype, the keyboard, and the screen (the console devices Ozzy is built from; see `docs/worklog/console-devices.md`). Each is a `Device` and its `DeviceFactory`, configured by a name and one `<Device>Settings` struct holding its wiring and behavior, with rates in real time that it turns into cycles with the processor's clock rate (a factory whose settings can be invalid is made by a static `Create`). A host finds a device with `Processor::GetDevice` and casts it to the type it named. It links only `core`; its tests also link `tools` and `instruction_sets`, to run programs against the devices with `DeviceProgramTest`.
-- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs. It also holds the console frontend the `ozzy` app is built from (`ConsoleDisplay`, `DrawConsoleText`, and the `Console` interface, implemented by `win_console.cc` on Windows and by `gen_console.cc` elsewhere, where creating one fails), so it is tested.
+- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs. It also holds the console frontend the `ozzy` app is built from (`ConsoleDisplay`, `DrawConsoleText`, and the `Console` interface, implemented per platform; see Linux), so it is tested.
 - `apps`: Every executable, and no libraries. `oz3ism` is the command line instruction set assembler, `oz3asm` the command line program assembler, and `ozzy` (`ozzy_main.cc`) runs an Ozzy in the console. Each links only what it needs: `oz3asm` links `instruction_sets` for its default instruction set, and `oz3ism` doesn't (see Default instruction set).
 
 ### Default instruction set
@@ -89,7 +89,7 @@ cmake --build out/build/x64-Debug
 cmake --build out/build/x64-Debug --target oz3_core_test
 ```
 
-Debug is the default build. The build includes the Game Bits libraries OZ-3 uses, so a full build is about 500 steps and takes about 30 seconds; incremental builds take a few seconds.
+Debug is the default build. The build includes the Game Bits libraries OZ-3 uses, and only those (Game Bits is added with `EXCLUDE_FROM_ALL`), so a full build takes under a minute; incremental builds take a few seconds.
 
 OZ-3 code (everything under `oz3/`) compiles with warnings as errors (`/WX` on MSVC, `-Werror` on Clang).
 
@@ -129,7 +129,7 @@ ctest --test-dir out/build/linux-clang-Debug --output-on-failure
 out/build/linux-clang-Debug/oz3/instruction_sets/oz3_instruction_sets_test --gtest_filter=InstructionTest.*
 ```
 
-Game Bits is found through `GB_DIR` as on Windows, or, when it isn't set, beside this checkout as `../game-bits` (see the root `CMakeLists.txt`), with its submodules checked out. A full build, Game Bits' libraries and `flatc` included, takes about 4 minutes on 4 cores. Executables and test binaries have no `.exe`. Every file is portable apart from the console: `win_console.cc` is only built on Windows, and `gen_console.cc` stands in for it elsewhere, so `ozzy` reports that there is no console and exits.
+Game Bits is found through `GB_DIR` as on Windows, or, when it isn't set, beside this checkout as `../game-bits` (see the root `CMakeLists.txt`), with its submodules checked out. A full build is about 430 steps, Game Bits' libraries included, and takes about 3 minutes on 4 cores. Executables and test binaries have no `.exe`. Every file is portable apart from the console: `win_console.cc` is only built on Windows, and `gen_console.cc` stands in for it elsewhere, so `ozzy` reports that there is no console and exits.
 
 Clang rejects some things MSVC accepts. The ones found so far are narrowing a non-constant in a braced initializer (`Microcode{.arg1 = reg | mask}` needs a `static_cast<int8_t>`), braces around a scalar (`Span` arguments written `{{5}}` rather than `{5}`), a `switch` over an enum that doesn't name every value, a defaulted `operator<=>` over a member with no `<=>` (such as `absl::Span`), a nested struct's default member initializers used by a default argument of the enclosing class (`Init(InitConfig config = {})`), and a `friend class` inside a nested namespace that names a class outside it.
 

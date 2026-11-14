@@ -42,7 +42,7 @@ jobs:
         call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
         cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -S . -B out/build/ci || exit /b 1
         cmake --build out/build/ci || exit /b 1
-        ctest --test-dir out/build/ci --output-on-failure || exit /b 1
+        ctest --test-dir out/build/ci --output-on-failure -j 4 || exit /b 1
 
   # Linux builds and tests with clang in Debug. It is pinned to 24.04 (clang
   # 18), as Game Bits is, since clang 21's new warnings fail Game Bits' build.
@@ -61,11 +61,11 @@ jobs:
         submodules: "recursive"
 
     - name: Install Ninja
-      run: sudo apt-get install -y ninja-build
+      run: sudo apt-get update && sudo apt-get install -y ninja-build
 
     - name: Build and test OZ-3
       working-directory: ${{github.workspace}}/oz-3
       run: |
         cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -S . -B out/build/ci
         cmake --build out/build/ci
-        ctest --test-dir out/build/ci --output-on-failure
+        ctest --test-dir out/build/ci --output-on-failure -j 4

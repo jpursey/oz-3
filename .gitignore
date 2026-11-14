@@ -10,17 +10,7 @@ out/
 /.claude/worktrees/
 
 # Output directories
-bin/Debug/
-bin/Release/
-bin/MinSizeRel/
-bin/RelWithDebInfo/
-bin/*.exe
-bin/*.pdb
-bin/*.ilk
-# Executables built elsewhere than Windows, which have no extension
-bin/oz3asm
-bin/oz3ism
-bin/ozzy
+/bin/
 
 # Local files
 *.sublime-workspace
