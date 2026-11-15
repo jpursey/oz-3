@@ -298,7 +298,7 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 - **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale, and a command in progress completes with **no disk**.
 - **Stale slots:** every command on a stale slot fails with **disk changed**, except `CLOSE`, which frees the slot. It succeeds unless the file was written since its last commit, when it fails with **disk changed**, as those writes are lost. A program can't keep writing into a different disk by accident.
 - **Failing:** once the host fails to read or write the image, the disk has failed: every command fails with **I/O error**, even one the drive's buffers could answer, except `CLOSE`, which still frees the slot. Ejecting the disk discards the buffers, leaving it as a crash at the failure would, and inserting it again, with its image reopened, is the retry. Retrying on the same insertion would need every command to undo its changes to the buffers.
-- **Shutting down:** when the Ozzy app shuts down cleanly, the drive writes back everything dirty, so the image stays consistent.
+- **Shutting down:** when the drive is destroyed, as when the Ozzy app shuts down cleanly, it writes back everything dirty, so the image stays consistent.
 - **No outside changes:** while an image is attached to a drive, nothing else may modify it, including `oz3dsk` or another program on the host. This is a documented contract, not enforced across processes. The drive's buffers, open files, and free count all assume it's the only writer. A way for a running Ozzy to cooperate with `oz3dsk` is out of scope for this design.
 
 ### Ports
@@ -344,7 +344,7 @@ The OS writes a request word with `OUTS`, setting the port's flag. Each bit is a
 | 0 | Reset |
 | 1–15 | Reserved, such as a future interrupt enable |
 
-**Reset** aborts whatever is in progress, silently and with the same outcomes as an abort by a command word (see Aborts), withdraws any words waiting on the command and data ports, clears both ports' flags, and returns the drive to idle. It works in every phase, so it is the one sure way back to a known state.
+**Reset** aborts whatever is in progress, silently and with the outcomes in Aborts, withdraws any words waiting on the command and data ports, clears both ports' flags, and returns the drive to idle. It works in every phase, so it is the one sure way back to a known state.
 
 To know a request is done, the OS tests the port's flag with `TSTP`, which sets **S** to a port's flag without loading or clearing anything. The drive never sets the control port's flag itself, so a set flag can only mean the OS's request is still waiting. When the drive finishes a request, it restores the state word and clears the flag in the same step. So a reset is:
 
@@ -369,17 +369,15 @@ The interrupt has exactly one meaning: the current command's completion is ready
 
 #### Aborts
 
-The reliable way to abandon a command is a **reset** through the control port (see Control port: requests), which works in every phase: it withdraws any word waiting on the command and data ports, clears both ports' flags, and returns the drive to idle.
+The only way to abandon a command is a **reset** through the control port (see Control port: requests), which works in every phase: it withdraws any word waiting on the command and data ports, clears both ports' flags, and returns the drive to idle.
 
-A new command word also aborts the current command, but only when the command port is idle, with no word waiting in it from either side. That is in phase 2 (working), 4 (reading), and 5 (writing). If the OS's `OUTS` of a command word succeeds in one of those phases, the drive abandons the current command, silently, and starts the new one with that word. The OS chose to abandon it, so it isn't told, and no completion is sent for it.
+A command word never aborts. The drive reads the command port only while it is waiting for a command's words, so in other phases a word the OS writes there doesn't start a command:
 
-In other phases a new command word can't abort:
-
+- **Phases 2 (working), 4 (reading), and 5 (writing):** the OS's `OUTS` succeeds, as the port is empty, but the drive isn't reading it. The word is lost when the drive puts its next word there, the completion's status. The OS waits for the completion, or resets.
 - **Phase 3 (sending):** a word from the drive is waiting on the command port, so `OUTS` fails with **S** clear. The OS reads the waiting words first, or resets. An unconditional `OUT` replaces the waiting word, but the port's flag was already set, so the drive can't tell the port changed hands: it treats the word as its own, still unread, and the command word is lost. The OS never `OUT`s to the command port.
 - **Phase 1 (arguments):** the drive takes the word as the command's next argument, since nothing tells the two apart. A confused OS that stops partway through a command's arguments can't be caught this way, which is what reset is for.
-- **Phase 0 (idle):** there is nothing to abort, and the word starts a command as usual.
 
-Whether by a command word or a reset, an abort has the same outcomes:
+A reset's abort has these outcomes:
 
 - **Unsent statuses and results** are discarded.
 - **`READ`:** streaming stops, any word waiting on the data port is withdrawn, and the handle's position is just past the words the OS actually took.
@@ -501,14 +499,14 @@ Writing at a position before the end overwrites, needing no allocation unless th
 
 If something fails mid-transfer (a broken chain, a host I/O error, or the image disappearing), the drive posts the completion at once, before the data phase is over: the error status alone, since an error carries no further words, and **raises its interrupt**. A `WRITE` first flushes what it has taken. The handle's position, which `INFO` reports, shows how much really moved. Until the OS reads the completion, the control port shows phase 3; once it has, it shows phase 4 (or 5 for `WRITE`) again until the data phase ends.
 
-The data phase still honors n, so the OS's loop never hangs: the rest of a read comes through as zeros, and the rest of a write is taken and discarded. These words move at port speed, with no disk time. The OS may run its loop to the end and then read the completion, or read the completion first and then cut the loop short by issuing its next command, which ends the data phase as an abort does (see Aborts), or reset at any point.
+The data phase still honors n, so the OS's loop never hangs: the rest of a read comes through as zeros, and the rest of a write is taken and discarded. These words move at port speed, with no disk time. The OS may run its loop to the end and then read the completion, or read the completion first and then cut the loop short with a reset (see Aborts), at any point.
 
 The OS can also notice the failure early, without extra cost on the fast path. Its loop on the data port only stalls at sector boundaries, and only then does it check the control port:
 
 1. Set R7 to n, and point R4 or R5 at the buffer, which puts it in the EXTRA bank, so the buffer can be the calling program's memory.
 2. `INR` from the data port (or `OUTR` to it, for `WRITE`).
 3. If **S** is set, all n handoffs are done, and the completion is on the command port. If the transfer failed, it may have been waiting there for a while.
-4. Otherwise, `IN` the control port. Phase 4 (or 5 for `WRITE`) means the drive is moving a sector, so go back to step 2. Phase 3 means a completion is already waiting, so the transfer failed: read it, then either finish the loop or issue the next command.
+4. Otherwise, `IN` the control port. Phase 4 (or 5 for `WRITE`) means the drive is moving a sector, so go back to step 2. Phase 3 means a completion is already waiting, so the transfer failed: read it, then either finish the loop or reset.
 
 #### Packed transfers
 
@@ -637,7 +635,7 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 
   A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't exist is a config error, as a typo would be, and so are two drives of one letter or one image. An Ozzy has at most one of each other device, but one drive per letter. There is no drive by default.
 - **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores, no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
-- **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. The Ozzy gives each drive the host's clock, as it gives the timer, and flushes every drive when it shuts down cleanly.
+- **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. The Ozzy gives each drive the host's clock, as it gives the timer, and each drive writes back everything dirty as the Ozzy is destroyed.
 - **The `ozzy` app** attaches the config's images at power on. Changing disks while it runs needs the console frontend's help (see Open questions).
 - **Wiki:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors.
 
