@@ -155,8 +155,10 @@ class DiskDrive final : public Device {
 A new `3.5-Disk-Drive.md` page, as a program sees the drive. It has the
 wiring, settings, and presets; the disk itself (images, the file system, and
 names and patterns, which disk-library.md left for this page); and the ports,
-the protocol, the commands, and the statuses. It is written over CL3 to CL6.
-CL6 also adds a row to `3-Devices.md`'s table and a line to `Home.md`.
+the protocol, the commands, and the statuses. It is written in one piece at
+the end of the feature, in CL7, once the drive's behavior has settled, rather
+than piece by piece with CL3 to CL6. CL7 also adds a row to `3-Devices.md`'s
+table and a line to `Home.md`.
 
 ## Design
 
@@ -407,9 +409,9 @@ class DiskDriveFactory final : public DeviceFactory {
   run, which then does nothing else, so a command word or request that arrives
   meanwhile waits for it. The one thing that run still does is notice that the
   OS has taken a step's last field, as the OS may write its next command word
-  straight after, which would hide that it took it. A run with nothing more to do then sleeps until it
-  is woken. The drive can't run again until its cycles have passed, so a wake
-  while it is busy only takes effect after.
+  straight after, which would hide that it took it. A run with nothing more
+  to do then sleeps until it is woken. The drive can't run again until its
+  cycles have passed, so a wake while it is busy only takes effect after.
 - **Transfers** move one word or dword at a time, with `Read` and `Write` of
   one or two words. A file system call stops at a sector boundary, so a dword
   that crosses a sector is two calls. Calling once per word keeps each
@@ -518,9 +520,6 @@ Depends on: CL1, CL2.
   of each kind but transfers.
 - `CMakeLists.txt`: the new files, and `oz3_disk`, with `oz3_disk_testing` for
   the tests. CLAUDE.md's library list says `devices` links `core` and `disk`.
-- Wiki: `3.5-Disk-Drive.md`: wiring, settings, presets, the disk (images, the
-  file system, names and patterns), the ports, the protocol, aborts, the
-  commands so far, and the statuses.
 
 **Verify**
 - Standard checks.
@@ -551,7 +550,6 @@ Depends on: CL1, CL2.
     it, and the drive asleep while idle;
   - an assembled program opening and closing the root with `OUTR`, `INR`, and
     `WAIT` on the interrupt.
-- Wiki: the pages above, as a patch on the PR.
 
 ### CL4 [ ] devices: file commands
 
@@ -559,7 +557,6 @@ Depends on: CL3.
 
 - `disk_drive.cc`: `OPEN`, `CREATE`, `CLOSE` of every slot, `FLUSH`, `SEEK`,
   and `INFO`.
-- Wiki: `3.5-Disk-Drive.md`'s file commands.
 
 **Verify**
 - Standard checks.
@@ -568,7 +565,6 @@ Depends on: CL3.
   against the file system and the image after it (`CREATE` stamped with the
   clock, `CLOSE` of every slot with a failure partway, `SEEK` past the end and
   past the largest size); stale slots and failed images through each command.
-- Wiki: the sections above, as a patch on the PR.
 
 ### CL5 [ ] devices: reading and writing
 
@@ -577,8 +573,6 @@ Depends on: CL4.
 - `disk_drive.cc`: `READ`, `WRITE`, `READ PACKED`, `WRITE PACKED`, and
   `TRUNCATE`, with the data phase, early completion (zeros out, words thrown
   away), and resets while reading and writing.
-- Wiki: `3.5-Disk-Drive.md`'s data commands, reading and writing, early
-  completion, and packed transfers.
 
 **Verify**
 - Standard checks.
@@ -599,16 +593,13 @@ Depends on: CL4.
     with the clock (the first command that leaves anything uncommitted).
 - Performance: a 64 Kiw `READ` in a program, its host time measured in
   Release, and the result recorded here.
-- Wiki: the sections above, as a patch on the PR.
 
 ### CL6 [ ] devices: directory and disk commands
 
-Depends on: CL4 (CL5 only for the order of the wiki page's sections).
+Depends on: CL4.
 
 - `disk_drive.cc`: `FIND`, `DELETE`, `RENAME`, `ATTRIB`, `VOLUME`, `FORMAT`,
   and `LABEL`.
-- Wiki: `3.5-Disk-Drive.md`'s directory and disk commands, the free count, and
-  the OS examples' listing; a row in `3-Devices.md`; a line in `Home.md`.
 
 **Verify**
 - Standard checks.
@@ -619,4 +610,22 @@ Depends on: CL4 (CL5 only for the order of the wiki page's sections).
   a listing and restarting with `SEEK`; `VOLUME`'s free count; and the image
   after each change. One assembled program that formats, lists with `FIND`,
   and reads the entries with `INR.ID`.
+
+### CL7 [ ] wiki: the disk drive
+
+Depends on: CL3 to CL6.
+
+- Wiki: `3.5-Disk-Drive.md`, the whole page, for the finished drive: wiring,
+  settings, and presets; the disk (images, the file system, and names and
+  patterns); the ports, the protocol, aborts, timing, and disks coming and
+  going; every command, reading and writing, early completion, packed
+  transfers, the free count, and the OS examples' listing; and the statuses.
+  A row in `3-Devices.md`, and a line in `Home.md`. A draft of the page as of
+  CL3 is in a comment on CL3's PR (#4), to start from.
+- In the repository, this CL only marks itself done. The wiki patch is in a
+  comment on its PR.
+
+**Verify**
+- The page against the code and docs/disk_design.md, section by section.
+- Its links resolve, by page name in lower case.
 - Wiki: the pages above, as a patch on the PR.
