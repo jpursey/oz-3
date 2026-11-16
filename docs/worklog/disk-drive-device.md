@@ -595,7 +595,7 @@ Depends on: CL1, CL2.
   - an assembled program opening and closing the root with `OUTR`, `INR`, and
     `WAIT` on the interrupt.
 
-### CL4 [~] devices: file commands
+### CL4 [x] devices: file commands
 
 Depends on: CL3.
 

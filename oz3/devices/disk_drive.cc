@@ -492,6 +492,11 @@ DiskStatus DiskDrive::GetNewSlotStatus(DiskStatus disk_status) const {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskDrive::GetHandleStatus(DiskFile file) {
+  DiskFileInfo info;
+  return file_system_.GetFileInfo(file, &info);
+}
+
 DiskDrive::CommandResponse DiskDrive::MakeOpenResponse(DiskStatus status,
                                                        DiskFile file) {
   if (status != DiskStatus::kOk) {
@@ -546,9 +551,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptClose(const Command& command) {
 
   // A stale slot, or one on a failed image, still closes, and its completion
   // says what became of its writes.
-  DiskFileInfo info;
-  if (file_system_.GetFileInfo(command.GetHandle(), &info) ==
-      DiskStatus::kBadHandle) {
+  if (GetHandleStatus(command.GetHandle()) == DiskStatus::kBadHandle) {
     return {.status = DiskStatus::kBadHandle};
   }
   return {.status = DiskStatus::kOk};
@@ -574,8 +577,7 @@ DiskDrive::CommandResponse DiskDrive::RunClose(const Command& command) {
 
 DiskDrive::CommandResponse DiskDrive::AcceptFlush(const Command& command) {
   // A directory's handle flushes too, writing nothing.
-  DiskFileInfo info;
-  return {.status = file_system_.GetFileInfo(command.GetHandle(), &info)};
+  return {.status = GetHandleStatus(command.GetHandle())};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunFlush(const Command& command) {

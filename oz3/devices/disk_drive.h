@@ -471,6 +471,10 @@ class DiskDrive final : public Device {
   // too many open.
   DiskStatus GetNewSlotStatus(DiskStatus disk_status) const;
 
+  // Returns what a command on handle `file` fails with at accept: bad handle,
+  // disk changed, or I/O error, in that order. Returns kOk if it is open.
+  DiskStatus GetHandleStatus(DiskFile file);
+
   // Returns the response to a command that opens `file`, with `status`.
   static CommandResponse MakeOpenResponse(DiskStatus status, DiskFile file);
 

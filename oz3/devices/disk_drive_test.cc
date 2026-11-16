@@ -43,6 +43,7 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 
 // The processor ports of the drive's command, data, and control ports, and its
 // interrupt.
@@ -1082,9 +1083,17 @@ TEST_F(DiskDriveTest, OpenChecksAtAccept) {
               ElementsAre(Field(kOk), PortWords::FromWord(0)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(DiskStatus::kTooManyOpen)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen),
+                      NameFields(DiskFilename::Words())),
+              ElementsAre(Field(DiskStatus::kBadName)));
   ASSERT_NE(drive_->DetachImage(), nullptr);
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(DiskStatus::kNoDisk)));
+  std::unique_ptr<DiskImage> image = MakeImage(/*formatted=*/true, kOtherPath);
+  protocol_->SetLimits({.reads = 0});
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kIoError)));
 }
 
 TEST_F(DiskDriveTest, CreateMakesAnEmptyFileStampedWithTheClock) {
@@ -1139,6 +1148,9 @@ TEST_F(DiskDriveTest, CreateChecksAtAccept) {
   drive_->AttachImage(std::move(image));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kCreate), NameFields("A")),
               ElementsAre(Field(DiskStatus::kWriteProtected)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kCreate),
+                      NameFields(DiskFilename::Words())),
+              ElementsAre(Field(DiskStatus::kBadName)));
 
   // OPEN only reads, so a protected disk doesn't stop it.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
@@ -1190,7 +1202,7 @@ TEST_F(DiskDriveTest, FlushWritesNothingUnwritten) {
     EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kFlush, handle)),
                 ElementsAre(Field(kOk)));
   }
-  EXPECT_THAT(protocol_->CollectWriteOffsets(), ::testing::IsEmpty());
+  EXPECT_THAT(protocol_->CollectWriteOffsets(), IsEmpty());
 }
 
 TEST_F(DiskDriveTest, SeekMovesThePosition) {
