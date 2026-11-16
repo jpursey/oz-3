@@ -49,53 +49,41 @@ enum class DiskDrivePreset {
   kHardDisk40m,  // 40 MB hard disk, AT class (1986).
 };
 
+namespace internal {
+
+// Returns a preset with rates in Kiw (1024 words) a second, and the latency in
+// milliseconds.
+constexpr DiskHardwareSettings MakeDiskDrivePreset(int64_t read_kiw_per_sec,
+                                                   int64_t write_kiw_per_sec,
+                                                   int latency_ms) {
+  return {.read_cache_sectors = 4,
+          .read_words_per_sec = read_kiw_per_sec * 1024,
+          .write_words_per_sec = write_kiw_per_sec * 1024,
+          .cache_words_per_sec = 1'000'000,
+          .latency = absl::Milliseconds(latency_ms)};
+}
+
+}  // namespace internal
+
 // Returns the hardware settings of `preset`: its read and write rates and
 // latency, with the drive's default read cache of 4 sectors, and a cache rate
 // of 1,000,000 words a second (a 1 MHz controller copying a word a cycle).
 constexpr DiskHardwareSettings GetDiskDrivePreset(DiskDrivePreset preset) {
-  constexpr int kReadCacheSectors = 4;
-  constexpr int64_t kCacheWordsPerSec = 1'000'000;
-  constexpr int64_t kKiw = 1024;
-  int64_t read_kiw_per_sec = 20;
-  int64_t write_kiw_per_sec = 16;
-  int latency_ms = 100;
   switch (preset) {
     case DiskDrivePreset::kFloppy360k:
-      read_kiw_per_sec = 8;
-      write_kiw_per_sec = 6;
-      latency_ms = 150;
-      break;
+      return internal::MakeDiskDrivePreset(8, 6, 150);
     case DiskDrivePreset::kFloppy720k:
-      read_kiw_per_sec = 10;
-      write_kiw_per_sec = 8;
-      latency_ms = 120;
-      break;
+      return internal::MakeDiskDrivePreset(10, 8, 120);
     case DiskDrivePreset::kFloppy1440k:
-      read_kiw_per_sec = 20;
-      write_kiw_per_sec = 16;
-      latency_ms = 100;
-      break;
+      return internal::MakeDiskDrivePreset(20, 16, 100);
     case DiskDrivePreset::kHardDisk10m:
-      read_kiw_per_sec = 40;
-      write_kiw_per_sec = 40;
-      latency_ms = 85;
-      break;
+      return internal::MakeDiskDrivePreset(40, 40, 85);
     case DiskDrivePreset::kHardDisk20m:
-      read_kiw_per_sec = 64;
-      write_kiw_per_sec = 64;
-      latency_ms = 65;
-      break;
+      return internal::MakeDiskDrivePreset(64, 64, 65);
     case DiskDrivePreset::kHardDisk40m:
-      read_kiw_per_sec = 128;
-      write_kiw_per_sec = 128;
-      latency_ms = 40;
-      break;
+      return internal::MakeDiskDrivePreset(128, 128, 40);
   }
-  return {.read_cache_sectors = kReadCacheSectors,
-          .read_words_per_sec = read_kiw_per_sec * kKiw,
-          .write_words_per_sec = write_kiw_per_sec * kKiw,
-          .cache_words_per_sec = kCacheWordsPerSec,
-          .latency = absl::Milliseconds(latency_ms)};
+  return {};
 }
 
 //==============================================================================
@@ -285,8 +273,10 @@ class DiskDrive final : public Device {
   DateTime GetNow();
 
   // Charges the busy time the file system has collected to the disk's
-  // timeline, from the end of the work before it or now, whichever is later.
-  void ChargeBusyTime();
+  // timeline, from the end of the work before it or now, whichever is later,
+  // and returns the cycle the disk is done. Called after every file system
+  // call that may touch the disk.
+  Cycles ChargeBusyTime();
 
   //----------------------------------------------------------------------------
   // Ports
@@ -338,8 +328,10 @@ class DiskDrive final : public Device {
   void Send(DiskStatus status, absl::Span<const DiskPortWidth> widths,
             absl::Span<const uint16_t> results, bool completion);
 
-  // Ends the command once it has nothing left to send or do.
+  // Ends the command once it has nothing left to send or do, or at once,
+  // discarding what is left of it.
   void EndCommandIfDone();
+  void EndCommand();
 
   //----------------------------------------------------------------------------
   // Commands

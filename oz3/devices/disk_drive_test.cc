@@ -348,37 +348,34 @@ TEST(DiskCommandDefTest, EveryCommandIsAsDesigned) {
       {kFormat, false, kLatent, false, Join(name, {kWord}), {}, {}},
       {kLabel, false, kLatent, false, name, {}, {}},
   };
-  int found = 0;
-  for (int code = 0; code < 256; ++code) {
-    SCOPED_TRACE(code);
-    const DiskCommandDef* def = GetDiskCommandDef(static_cast<uint8_t>(code));
-    const ExpectedCommand* command = nullptr;
-    for (const ExpectedCommand& candidate : expected) {
-      if (static_cast<int>(candidate.command) == code) {
-        command = &candidate;
-      }
-    }
-    if (command == nullptr) {
-      EXPECT_EQ(def, nullptr);
-      continue;
-    }
-    ++found;
+  for (const ExpectedCommand& command : expected) {
+    SCOPED_TRACE(static_cast<int>(command.command));
+    const DiskCommandDef* def =
+        GetDiskCommandDef(static_cast<uint8_t>(command.command));
     ASSERT_NE(def, nullptr);
-    EXPECT_EQ(def->command, command->command);
-    EXPECT_EQ(def->takes_handle, command->takes_handle);
-    EXPECT_EQ(def->kind, command->kind);
-    EXPECT_EQ(def->packed, command->packed);
+    EXPECT_EQ(def->command, command.command);
+    EXPECT_EQ(def->takes_handle, command.takes_handle);
+    EXPECT_EQ(def->kind, command.kind);
+    EXPECT_EQ(def->packed, command.packed);
     EXPECT_EQ(std::vector<DiskPortWidth>(def->arguments.begin(),
                                          def->arguments.end()),
-              command->arguments);
+              command.arguments);
     EXPECT_EQ(std::vector<DiskPortWidth>(def->accept_results.begin(),
                                          def->accept_results.end()),
-              command->accept_results);
+              command.accept_results);
     EXPECT_EQ(std::vector<DiskPortWidth>(def->completion_results.begin(),
                                          def->completion_results.end()),
-              command->completion_results);
+              command.completion_results);
   }
-  EXPECT_EQ(found, static_cast<int>(expected.size()));
+
+  // Every other code is no command.
+  int defined = 0;
+  for (int code = 0; code < 256; ++code) {
+    if (GetDiskCommandDef(static_cast<uint8_t>(code)) != nullptr) {
+      ++defined;
+    }
+  }
+  EXPECT_EQ(defined, static_cast<int>(expected.size()));
 }
 
 //==============================================================================
@@ -478,13 +475,6 @@ TEST_F(DiskDriveTest, StateWordShowsEachPhaseAndTheCommand) {
   AttachFormatted();
   const uint16_t disk = DiskDrive::kDiskAttached;
 
-  // Arguments: OPEN takes a name.
-  Start(CommandWord(DiskDriveCommand::kOpen));
-  Execute(1);
-  EXPECT_EQ(GetStateWord(), 0x1000 | disk | 1);
-  Request(DiskDrive::kResetRequest);
-  EXPECT_EQ(GetStateWord(), disk);
-
   // Sending, then working, then sending the completion, then idle.
   Start(CommandWord(DiskDriveCommand::kOpenRoot));
   Execute(1);
@@ -503,12 +493,13 @@ TEST_F(DiskDriveTest, ResetAbortsEveryPhase) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
 
-  // Arguments, with an argument word waiting.
+  // Arguments, as OPEN takes a name, with an argument word waiting.
   Start(CommandWord(DiskDriveCommand::kOpen));
   Execute(1);
+  EXPECT_EQ(GetStateWord(), 0x1000 | DiskDrive::kDiskAttached | 1);
   ASSERT_TRUE(Out(kCommandPort, kDword, {1, 2}));
   Request(DiskDrive::kResetRequest);
-  EXPECT_EQ(GetPhase(), 0);
+  EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
   EXPECT_FALSE(IsSet(kCommandPort));
 
   // Sending, with the accept status waiting, and a word in the data port.
@@ -614,13 +605,17 @@ TEST_F(DiskDriveTest, MediaDescribesTheMedium) {
               ElementsAre(kOk, kSectors, 0, DiskMedia::kWriteProtectedFlag));
 }
 
-TEST_F(DiskDriveTest, AFailedImageFailsMedia) {
+TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
   ASSERT_TRUE(InitDrive());
   std::unique_ptr<DiskImage> image = MakeImage();
   protocol_->SetLimits({.reads = 0});
   ASSERT_EQ(drive_->AttachImage(std::move(image)), DiskStatus::kIoError);
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
-              ElementsAre(Word(DiskStatus::kIoError)));
+  for (const DiskDriveCommand command :
+       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot}) {
+    SCOPED_TRACE(static_cast<int>(command));
+    EXPECT_THAT(Command(CommandWord(command)),
+                ElementsAre(Word(DiskStatus::kIoError)));
+  }
 }
 
 TEST_F(DiskDriveTest, AWordInAnArgumentPhaseIsAnArgument) {
@@ -773,15 +768,6 @@ TEST_F(DiskDriveTest, OpenRootChecksAtAccept) {
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
               ElementsAre(kOk));
   EXPECT_THAT(Complete(), ElementsAre(Word(DiskStatus::kUnformatted)));
-}
-
-TEST_F(DiskDriveTest, OpenRootOnAFailedImageIsAnIoError) {
-  ASSERT_TRUE(InitDrive());
-  std::unique_ptr<DiskImage> image = MakeImage();
-  protocol_->SetLimits({.reads = 0});
-  ASSERT_EQ(drive_->AttachImage(std::move(image)), DiskStatus::kIoError);
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(Word(DiskStatus::kIoError)));
 }
 
 TEST_F(DiskDriveTest, CloseNeedsAnOpenSlot) {

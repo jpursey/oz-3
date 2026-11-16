@@ -28,14 +28,7 @@ constexpr int kControlPort = 2;
 
 // Returns the cycles `busy` takes at `clock_hz`, rounded up.
 Cycles GetBusyCycles(absl::Duration busy, int64_t clock_hz) {
-  // Whole seconds first, so the product can't overflow.
-  absl::Duration remainder;
-  const int64_t seconds =
-      absl::IDivDuration(busy, absl::Seconds(1), &remainder);
-  constexpr int64_t kNanosPerSecond = 1'000'000'000;
-  return seconds * clock_hz + (absl::ToInt64Nanoseconds(remainder) * clock_hz +
-                               kNanosPerSecond - 1) /
-                                  kNanosPerSecond;
+  return absl::ToInt64Seconds(absl::Ceil(busy * clock_hz, absl::Seconds(1)));
 }
 
 // Loads a field from `port` with `lock`, clearing its status. The port's
@@ -179,13 +172,13 @@ DateTime DiskDrive::GetNow() {
   return clock_ != nullptr ? DateTime::FromCivil(clock_()) : DateTime();
 }
 
-void DiskDrive::ChargeBusyTime() {
+Cycles DiskDrive::ChargeBusyTime() {
   const absl::Duration busy = file_system_.CollectBusyTime();
-  if (busy <= absl::ZeroDuration()) {
-    return;
+  disk_free_cycle_ = std::max(disk_free_cycle_, GetCycles());
+  if (busy > absl::ZeroDuration()) {
+    disk_free_cycle_ += GetBusyCycles(busy, GetClockHz());
   }
-  disk_free_cycle_ = std::max(disk_free_cycle_, GetCycles()) +
-                     GetBusyCycles(busy, GetClockHz());
+  return disk_free_cycle_;
 }
 
 //------------------------------------------------------------------------------
@@ -223,14 +216,7 @@ void DiskDrive::Reset(const Lock& command_lock, const Lock& data_lock) {
   uint16_t word = 0;
   GetPort(kCommandPort).LoadWord(command_lock, Port::S, word);
   GetPort(kDataPort).LoadWord(data_lock, Port::S, word);
-  active_ = false;
-  command_word_ = 0;
-  def_ = nullptr;
-  arguments_.clear();
-  arguments_received_ = 0;
-  outgoing_.clear();
-  front_stored_ = false;
-  completion_.reset();
+  EndCommand();
 }
 
 void DiskDrive::ExecuteCompletion() {
@@ -388,8 +374,7 @@ void DiskDrive::Accept() {
   // it, after any work before it.
   Completion completion;
   completion.status = RunCommand(&completion.results);
-  ChargeBusyTime();
-  completion.cycle = std::max(disk_free_cycle_, GetCycles());
+  completion.cycle = ChargeBusyTime();
   completion_ = std::move(completion);
 }
 
@@ -415,9 +400,17 @@ void DiskDrive::Send(DiskStatus status, absl::Span<const DiskPortWidth> widths,
 void DiskDrive::EndCommandIfDone() {
   if (active_ && !IsReceiving() && outgoing_.empty() &&
       !completion_.has_value()) {
-    active_ = false;
-    def_ = nullptr;
+    EndCommand();
   }
+}
+
+void DiskDrive::EndCommand() {
+  // A command's other state is only read while it is active, and starting
+  // the next sets it.
+  active_ = false;
+  outgoing_.clear();
+  front_stored_ = false;
+  completion_.reset();
 }
 
 //------------------------------------------------------------------------------

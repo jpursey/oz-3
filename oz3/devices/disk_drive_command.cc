@@ -28,7 +28,6 @@ constexpr DiskPortWidth kMediaResults[] = {kDword, kWord};
 constexpr DiskPortWidth kVolumeResults[] = {kDword, kDword, kDword, kDword,
                                             kWord,  kWord,  kWord};
 
-constexpr DiskCommandKind kSynchronous = DiskCommandKind::kSynchronous;
 constexpr DiskCommandKind kLatent = DiskCommandKind::kLatent;
 constexpr DiskCommandKind kRead = DiskCommandKind::kRead;
 constexpr DiskCommandKind kWrite = DiskCommandKind::kWrite;
@@ -80,11 +79,9 @@ const DiskCommandDef kCommandDefs[] = {
      .completion_results = kOneWord},
     {.command = DiskDriveCommand::kSeek,
      .takes_handle = true,
-     .kind = kSynchronous,
      .arguments = kOneDword},
     {.command = DiskDriveCommand::kInfo,
      .takes_handle = true,
-     .kind = kSynchronous,
      .accept_results = kInfoResults},
     {.command = DiskDriveCommand::kTruncate,
      .takes_handle = true,
@@ -101,9 +98,7 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kAttrib,
      .kind = kLatent,
      .arguments = kNameAndWord},
-    {.command = DiskDriveCommand::kMedia,
-     .kind = kSynchronous,
-     .accept_results = kMediaResults},
+    {.command = DiskDriveCommand::kMedia, .accept_results = kMediaResults},
     {.command = DiskDriveCommand::kVolume,
      .kind = kLatent,
      .completion_results = kVolumeResults},
