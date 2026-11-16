@@ -84,7 +84,7 @@ void Teletype::Execute() {
   if (words.Load(port, *lock_, Port::T | Port::S) != 0) {
     // Word 1 is cleared once taken, so a word written later (which leaves word
     // 1 as it is) doesn't write its characters again.
-    PortWords::FromWords(words.GetWord(0), 0).Store(port, *lock_, 0);
+    PortWords::FromWord(words.GetWord(0)).Store(port, *lock_, 0);
     for (const uint16_t word : {words.GetWord(0), words.GetWord(1)}) {
       // Characters are 7 bits, as the eighth was a teletype's parity bit.
       for (const int c : {word & 0x7F, (word >> 8) & 0x7F}) {

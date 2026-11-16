@@ -62,13 +62,14 @@ uint16_t Port::StoreWord(const Lock& lock, uint16_t mode, uint16_t value) {
 }
 
 // Each word advances the address, so the second puts it back where it was.
+// Word 1 moves unconditionally once word 0 has, so only S applies to it.
 uint16_t PortWords::Load(Port& port, const Lock& lock, uint16_t mode) {
   const uint16_t t = mode & Port::T;
   const uint16_t status = port.LoadWord(lock, t | Port::A, words_[0]);
   if (t != 0 && status == 0) {
     return status;
   }
-  port.LoadWord(lock, mode | Port::A, words_[1]);
+  port.LoadWord(lock, (mode & Port::S) | Port::A, words_[1]);
   return status;
 }
 
@@ -78,7 +79,7 @@ uint16_t PortWords::Store(Port& port, const Lock& lock, uint16_t mode) const {
   if (t != 0 && status != 0) {
     return status;
   }
-  port.StoreWord(lock, mode | Port::A, words_[1]);
+  port.StoreWord(lock, (mode & Port::S) | Port::A, words_[1]);
   return status;
 }
 
