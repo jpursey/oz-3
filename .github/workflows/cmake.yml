@@ -34,11 +34,11 @@ jobs:
           build_type: Release
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         path: oz-3
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         repository: jpursey/game-bits
         path: game-bits
@@ -74,11 +74,11 @@ jobs:
           build_type: Release
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         path: oz-3
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         repository: jpursey/game-bits
         path: game-bits
