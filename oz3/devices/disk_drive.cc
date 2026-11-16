@@ -27,9 +27,9 @@ constexpr int kCommandPort = 0;
 constexpr int kDataPort = 1;
 constexpr int kControlPort = 2;
 
-// The mode the drive moves a field with: both words, ending at word 0 again,
-// with the status cleared by a load and set by a store.
-constexpr uint16_t kFieldMode = Port::S | Port::A;
+// The mode the drive moves a field with: the status cleared by a load, and set
+// by a store.
+constexpr uint16_t kFieldMode = Port::S;
 
 // Returns the cycles `busy` takes at `clock_hz`: the busy time rounded up to
 // whole nanoseconds, and then to whole cycles.
@@ -391,7 +391,8 @@ void DiskDrive::SetFields(DiskStatus status, std::vector<PortWords> results,
   if (status != DiskStatus::kOk) {
     results.clear();
   }
-  results.insert(results.begin(), PortWords(static_cast<uint16_t>(status)));
+  results.insert(results.begin(),
+                 PortWords::FromWord(static_cast<uint16_t>(status)));
   fields_ = std::move(results);
   fields_sent_ = 0;
 }
@@ -406,7 +407,8 @@ bool DiskDrive::IsStepTaken() {
 void DiskDrive::FinishSending() {
   // The step's status is its first field.
   const bool accepted =
-      fields_.front() == PortWords(static_cast<uint16_t>(DiskStatus::kOk));
+      fields_.front() ==
+      PortWords::FromWord(static_cast<uint16_t>(DiskStatus::kOk));
   if (state_ != State::kSendingAccept || !accepted ||
       def_->kind != DiskCommandKind::kLatent) {
     EndCommand();
@@ -477,7 +479,7 @@ DiskStatus DiskDrive::RunOpenRoot(std::vector<PortWords>* results) {
   DiskFile file = 0;
   const DiskStatus status = file_system_.OpenRoot(&file);
   if (status == DiskStatus::kOk) {
-    *results = {PortWords(static_cast<uint16_t>(file))};
+    *results = {PortWords::FromWord(static_cast<uint16_t>(file))};
   }
   return status;
 }
@@ -504,7 +506,7 @@ DiskStatus DiskDrive::AcceptMedia(std::vector<PortWords>* results) {
   const DiskMedia* media = file_system_.GetMedia();
   *results = {
       PortWords::FromDword(static_cast<uint32_t>(media->GetSectorCount())),
-      PortWords(media->GetFlags())};
+      PortWords::FromWord(media->GetFlags())};
   return DiskStatus::kOk;
 }
 
