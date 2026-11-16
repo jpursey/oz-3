@@ -326,8 +326,10 @@ class DiskDrive final : public Device {
   // accept's status and results.
   void Accept();
 
-  // Sets the fields of a step: `status`, and if it is kOk, `results`.
-  void SetFields(DiskStatus status, std::vector<PortWords> results);
+  // Sets the fields of a step: `status`, and if it is kOk, `results`, which
+  // must be `result_count` fields.
+  void SetFields(DiskStatus status, std::vector<PortWords> results,
+                 int result_count);
 
   // Moves on from the step whose fields the OS has taken all of: to running a
   // latent command's work after an OK accept, or else to idle.
@@ -370,11 +372,10 @@ class DiskDrive final : public Device {
   State state_ = State::kIdle;
 
   // The command in progress, outside kIdle: its command word and definition
-  // (null for an unknown code), its arguments, and its accept status.
+  // (null for an unknown code), and its arguments.
   uint16_t command_word_ = 0;
   const DiskCommandDef* def_ = nullptr;
   std::vector<PortWords> arguments_;
-  DiskStatus accept_status_ = DiskStatus::kOk;
 
   // The fields of the step being sent, or of the completion in kWorking, and
   // how many have gone on the command port, the last of which the OS may not

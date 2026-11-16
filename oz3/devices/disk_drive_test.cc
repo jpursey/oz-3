@@ -75,7 +75,8 @@ PortWords Field(DiskStatus status) {
 
 // Returns a command word: `command`'s code in the high byte, and `handle`.
 constexpr uint16_t CommandWord(DiskDriveCommand command, int handle = 0) {
-  return static_cast<uint16_t>(static_cast<int>(command) << 8 | handle);
+  return static_cast<uint16_t>(
+      static_cast<int>(command) << DiskDrive::kCommandShift | handle);
 }
 
 // The host file system that images are made in. It is a base of
@@ -221,16 +222,16 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return fields;
   }
 
-  // Writes `command_word` alone, recording its definition for Complete.
-  void Start(uint16_t command_word) {
-    def_ = GetDiskCommandDef(static_cast<uint8_t>(command_word >> 8));
-    SendField(PortWords(command_word));
+  // Writes `command_word` alone, with `word1` in the field's word 1, recording
+  // its definition for ReceiveAccept and Complete.
+  void Start(uint16_t command_word, uint16_t word1 = 0) {
+    def_ = GetDiskCommandDef(
+        static_cast<uint8_t>(command_word >> DiskDrive::kCommandShift));
+    SendField(PortWords(command_word, word1));
   }
 
   // Writes `command_word` and its `arguments`, which must be as many fields as
-  // the command table gives it, waits for the drive to take them, as the OS
-  // does by reading the control port until the phase is 2 or higher, and
-  // returns the accept status and its results.
+  // the command table gives it, and returns ReceiveAccept().
   std::vector<PortWords> Command(uint16_t command_word,
                                  absl::Span<const PortWords> arguments = {}) {
     Start(command_word);
@@ -239,6 +240,13 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     for (const PortWords& argument : arguments) {
       SendField(argument);
     }
+    return ReceiveAccept();
+  }
+
+  // Waits for the drive to take the last command's words, as the OS does by
+  // reading the control port until the phase is 2 or higher, and returns the
+  // accept status and its results.
+  std::vector<PortWords> ReceiveAccept() {
     RunUntil([this] { return GetPhase() >= 2; });
     return ReceiveStep(def_ != nullptr ? def_->accept_results : 0);
   }
@@ -494,7 +502,7 @@ TEST_F(DiskDriveTest, OtherRequestsDoNothing) {
     Request(request);
     EXPECT_EQ(GetPhase(), 3);
   }
-  EXPECT_THAT(ReceiveStep(def_->accept_results),
+  EXPECT_THAT(ReceiveAccept(),
               ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
@@ -550,9 +558,8 @@ TEST_F(DiskDriveTest, TheDriveTakesAWordTheCycleAfter) {
 TEST_F(DiskDriveTest, AWordFieldIgnoresWord1) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
-  SendField(PortWords(CommandWord(DiskDriveCommand::kMedia), 0x1234));
-  RunUntil([this] { return GetPhase() >= 2; });
-  EXPECT_THAT(ReceiveStep(2),
+  Start(CommandWord(DiskDriveCommand::kMedia), 0x1234);
+  EXPECT_THAT(ReceiveAccept(),
               ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
@@ -619,7 +626,7 @@ TEST_F(DiskDriveTest, OutsIsRefusedWhileSending) {
   ASSERT_EQ(GetPhase(), 3);
   EXPECT_FALSE(
       Out(kCommandPort, PortWords(CommandWord(DiskDriveCommand::kMedia))));
-  EXPECT_THAT(ReceiveStep(def_->accept_results),
+  EXPECT_THAT(ReceiveAccept(),
               ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
@@ -756,6 +763,26 @@ TEST_F(DiskDriveTest, AHeldCommandPortDelaysTheDrive) {
   EXPECT_THAT(ReceiveStep(0), ElementsAre(Field(DiskStatus::kNoDisk)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
               ElementsAre(Field(DiskStatus::kNoDisk)));
+}
+
+TEST_F(DiskDriveTest, ACompletionWaitsForTheCommandPort) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk)));
+
+  // The phase stays at working until the completion's status is on the port.
+  {
+    std::unique_ptr<Lock> lock = LockPort(kCommandPort);
+    ASSERT_TRUE(lock->IsLocked());
+    Execute(kReadCycles + 5);
+    EXPECT_EQ(GetPhase(), 2);
+    EXPECT_FALSE(IsSet(kCommandPort));
+  }
+  Execute(1);
+  EXPECT_EQ(GetPhase(), 3);
+  EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
 }
 
 //==============================================================================

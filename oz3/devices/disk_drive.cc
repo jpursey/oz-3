@@ -232,9 +232,9 @@ bool DiskDrive::ExecuteControlPort() {
   uint16_t request = 0;
   control.LoadWord(*control_lock, Port::S, request);
 
-  // The state word is restored with the flag cleared, in one step.
-  state_shown_ = GetStateWord();
-  control.StoreWord(*control_lock, 0, state_shown_);
+  // The port now shows the request, and UpdateState restores the state word
+  // under the same lock, so the OS sees both in one step.
+  state_shown_ = request;
   return true;
 }
 
@@ -296,16 +296,12 @@ void DiskDrive::ExecuteIdle() {
     return;
   }
   command_word_ = field->GetWord(0);
-  def_ = GetDiskCommandDef(static_cast<uint8_t>(command_word_ >> 8));
+  def_ = GetDiskCommandDef(
+      static_cast<uint8_t>(command_word_ >> DiskDrive::kCommandShift));
   arguments_.clear();
-  if (def_ == nullptr) {
-    accept_status_ = DiskStatus::kBadCommand;
-    SetFields(accept_status_, {});
-    state_ = State::kSendingAccept;
-    ExecuteSending();
-    return;
-  }
-  if (def_->arguments == 0) {
+
+  // An unknown code fails at once, after the command word alone.
+  if (def_ == nullptr || def_->arguments == 0) {
     Accept();
     return;
   }
@@ -348,6 +344,10 @@ void DiskDrive::ExecuteSending() {
 }
 
 void DiskDrive::ExecuteWorking() {
+  // The phase shows sending only once the completion's status is on the port.
+  if (GetLock(kCommandPort) == nullptr) {
+    return;
+  }
   state_ = State::kSendingCompletion;
   ExecuteSending();
 }
@@ -373,24 +373,30 @@ std::optional<PortWords> DiskDrive::TakeField() {
 
 void DiskDrive::Accept() {
   std::vector<PortWords> results;
-  accept_status_ = AcceptCommand(&results);
-  DCHECK(accept_status_ != DiskStatus::kOk ||
-         static_cast<int>(results.size()) == def_->accept_results);
-  SetFields(accept_status_, std::move(results));
+  const DiskStatus status = AcceptCommand(&results);
+  SetFields(status, std::move(results),
+            def_ != nullptr ? def_->accept_results : 0);
   state_ = State::kSendingAccept;
   ExecuteSending();
 }
 
-void DiskDrive::SetFields(DiskStatus status, std::vector<PortWords> results) {
-  fields_ = {PortWords(static_cast<uint16_t>(status))};
-  if (status == DiskStatus::kOk) {
-    fields_.insert(fields_.end(), results.begin(), results.end());
+void DiskDrive::SetFields(DiskStatus status, std::vector<PortWords> results,
+                          int result_count) {
+  DCHECK(status != DiskStatus::kOk ||
+         static_cast<int>(results.size()) == result_count);
+  if (status != DiskStatus::kOk) {
+    results.clear();
   }
+  results.insert(results.begin(), PortWords(static_cast<uint16_t>(status)));
+  fields_ = std::move(results);
   fields_sent_ = 0;
 }
 
 void DiskDrive::FinishSending() {
-  if (state_ != State::kSendingAccept || accept_status_ != DiskStatus::kOk ||
+  // The step's status is its first field.
+  const bool accepted =
+      fields_.front() == PortWords(static_cast<uint16_t>(DiskStatus::kOk));
+  if (state_ != State::kSendingAccept || !accepted ||
       def_->kind != DiskCommandKind::kLatent) {
     EndCommand();
     return;
@@ -400,9 +406,7 @@ void DiskDrive::FinishSending() {
   // busy with it from the end of this run.
   std::vector<PortWords> results;
   const DiskStatus status = RunCommand(&results);
-  DCHECK(status != DiskStatus::kOk ||
-         static_cast<int>(results.size()) == def_->completion_results);
-  SetFields(status, std::move(results));
+  SetFields(status, std::move(results), def_->completion_results);
   state_ = State::kWorking;
 }
 
@@ -410,8 +414,6 @@ void DiskDrive::EndCommand() {
   // A command's other state is only read outside kIdle, and starting the next
   // sets it.
   state_ = State::kIdle;
-  fields_.clear();
-  fields_sent_ = 0;
 }
 
 //------------------------------------------------------------------------------
@@ -419,6 +421,9 @@ void DiskDrive::EndCommand() {
 //------------------------------------------------------------------------------
 
 DiskStatus DiskDrive::AcceptCommand(std::vector<PortWords>* results) {
+  if (def_ == nullptr) {
+    return DiskStatus::kBadCommand;
+  }
   switch (def_->command) {
     case DiskDriveCommand::kOpenRoot:
       return AcceptOpenRoot();
