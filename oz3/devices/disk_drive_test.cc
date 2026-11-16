@@ -328,9 +328,26 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return Complete();
   }
 
+  // Returns SEEK's status for `handle` and `position`.
+  std::vector<PortWords> Seek(int handle, uint32_t position) {
+    return Command(CommandWord(DiskDriveCommand::kSeek, handle),
+                   {PortWords::FromDword(position)});
+  }
+
   // Returns the INFO results for `handle`: its position and size.
   std::vector<PortWords> Info(int handle) {
     return Command(CommandWord(DiskDriveCommand::kInfo, handle));
+  }
+
+  // Expects every command but CLOSE that takes a handle to fail at accept with
+  // `status` for `handle`. SEEK is given a position past the end, which it
+  // checks after the handle.
+  void ExpectHandleCommandsFail(int handle, DiskStatus status) {
+    SCOPED_TRACE(handle);
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFlush, handle)),
+                ElementsAre(Field(status)));
+    EXPECT_THAT(Seek(handle, 0xFFFFFFFF), ElementsAre(Field(status)));
+    EXPECT_THAT(Info(handle), ElementsAre(Field(status)));
   }
 
   // Returns whether kInterrupt is raised on core 0.
@@ -700,16 +717,17 @@ TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
   std::unique_ptr<DiskImage> image = MakeImage();
   protocol_->SetLimits({.reads = 0});
   drive_->AttachImage(std::move(image));
-  const std::vector<PortWords> name = NameFields("HELLO");
   for (const DiskDriveCommand command :
-       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot,
-        DiskDriveCommand::kOpen, DiskDriveCommand::kCreate}) {
+       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot}) {
     SCOPED_TRACE(static_cast<int>(command));
-    const bool named = command == DiskDriveCommand::kOpen ||
-                       command == DiskDriveCommand::kCreate;
-    EXPECT_THAT(
-        Command(CommandWord(command), named ? name : std::vector<PortWords>()),
-        ElementsAre(Field(DiskStatus::kIoError)));
+    EXPECT_THAT(Command(CommandWord(command)),
+                ElementsAre(Field(DiskStatus::kIoError)));
+  }
+  for (const DiskDriveCommand command :
+       {DiskDriveCommand::kOpen, DiskDriveCommand::kCreate}) {
+    SCOPED_TRACE(static_cast<int>(command));
+    EXPECT_THAT(Command(CommandWord(command), NameFields("HELLO")),
+                ElementsAre(Field(DiskStatus::kIoError)));
   }
 }
 
@@ -1180,27 +1198,23 @@ TEST_F(DiskDriveTest, SeekMovesThePosition) {
   drive_->AttachImage(MakeImageWithFile("A", 300));
   EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(kOk), PortWords::FromWord(0)));
-  const auto seek = [this](uint32_t position) {
-    return Command(CommandWord(DiskDriveCommand::kSeek, 0),
-                   {PortWords::FromDword(position)});
-  };
 
   // The position may be anywhere up to the size.
-  EXPECT_THAT(seek(300), ElementsAre(Field(kOk)));
+  EXPECT_THAT(Seek(0, 300), ElementsAre(Field(kOk)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(300),
                                    PortWords::FromDword(300)));
-  EXPECT_THAT(seek(100), ElementsAre(Field(kOk)));
+  EXPECT_THAT(Seek(0, 100), ElementsAre(Field(kOk)));
 
   // Past the end, or past the largest size, leaves it as it was.
   for (const uint32_t position :
        {301u, static_cast<uint32_t>(DiskDirEntry::kMaxSize) + 1, 0x80000000u,
         0xFFFFFFFFu}) {
     SCOPED_TRACE(position);
-    EXPECT_THAT(seek(position), ElementsAre(Field(DiskStatus::kPastEnd)));
+    EXPECT_THAT(Seek(0, position), ElementsAre(Field(DiskStatus::kPastEnd)));
   }
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(100),
                                    PortWords::FromDword(300)));
-  EXPECT_THAT(seek(0), ElementsAre(Field(kOk)));
+  EXPECT_THAT(Seek(0, 0), ElementsAre(Field(kOk)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(0),
                                    PortWords::FromDword(300)));
 }
@@ -1214,14 +1228,10 @@ TEST_F(DiskDriveTest, SeekAndInfoWorkOnTheRoot) {
   ASSERT_EQ(info.size(), 3);
   const uint32_t size = info[2].GetDword();
   EXPECT_GT(size, 0);
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kSeek, 0),
-                      {PortWords::FromDword(size)}),
-              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Seek(0, size), ElementsAre(Field(kOk)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(size),
                                    PortWords::FromDword(size)));
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kSeek, 0),
-                      {PortWords::FromDword(size + 1)}),
-              ElementsAre(Field(DiskStatus::kPastEnd)));
+  EXPECT_THAT(Seek(0, size + 1), ElementsAre(Field(DiskStatus::kPastEnd)));
 }
 
 TEST_F(DiskDriveTest, HandleCommandsCheckTheHandleFirst) {
@@ -1232,23 +1242,13 @@ TEST_F(DiskDriveTest, HandleCommandsCheckTheHandleFirst) {
   EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(kOk), PortWords::FromWord(0)));
 
-  // Each is given a position past the end, which SEEK checks after the handle.
-  const auto check = [this](int handle, DiskStatus status) {
-    SCOPED_TRACE(handle);
-    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFlush, handle)),
-                ElementsAre(Field(status)));
-    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kSeek, handle),
-                        {PortWords::FromDword(0xFFFFFFFF)}),
-                ElementsAre(Field(status)));
-    EXPECT_THAT(Info(handle), ElementsAre(Field(status)));
-  };
-  check(1, DiskStatus::kBadHandle);
-  check(2, DiskStatus::kBadHandle);
-  check(0xFE, DiskStatus::kBadHandle);
+  ExpectHandleCommandsFail(1, DiskStatus::kBadHandle);
+  ExpectHandleCommandsFail(2, DiskStatus::kBadHandle);
+  ExpectHandleCommandsFail(0xFE, DiskStatus::kBadHandle);
 
   // Slot 0 is stale on another disk.
   drive_->AttachImage(MakeImageWithFile("A", 10, kOtherPath));
-  check(0, DiskStatus::kDiskChanged);
+  ExpectHandleCommandsFail(0, DiskStatus::kDiskChanged);
   EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kClose, 0)),
               ElementsAre(Field(kOk)));
 
@@ -1258,10 +1258,10 @@ TEST_F(DiskDriveTest, HandleCommandsCheckTheHandleFirst) {
   protocol_->SetLimits({.reads = 0});
   EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(DiskStatus::kIoError)));
-  check(0, DiskStatus::kIoError);
+  ExpectHandleCommandsFail(0, DiskStatus::kIoError);
   EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kClose, 0)),
               ElementsAre(Field(kOk)));
-  check(0, DiskStatus::kBadHandle);
+  ExpectHandleCommandsFail(0, DiskStatus::kBadHandle);
 }
 
 TEST_F(DiskDriveTest, DetachingLeavesWorkDoneAsItIs) {

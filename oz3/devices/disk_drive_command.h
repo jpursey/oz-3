@@ -73,6 +73,9 @@ enum class DiskCommandKind : uint8_t {
   kWrite,        // A data phase into the drive, then a completion.
 };
 
+// The fields of a name, pattern, or label: 8 words, two to a field.
+inline constexpr int kDiskNameFields = 4;
+
 // One command's definition: whether it takes a handle in its command word's low
 // byte, what follows its accept, and how many fields it moves at each step. A
 // field is both of the command port's words, whether it holds a word (in word

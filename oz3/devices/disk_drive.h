@@ -266,7 +266,8 @@ class DiskDrive final : public Device {
   //----------------------------------------------------------------------------
 
   // A command the OS has written: its command word, its definition (null for
-  // an unknown code), and the argument fields taken so far.
+  // an unknown code), the argument fields taken so far, and the arguments its
+  // accept decoded.
   struct Command {
     // Returns the handle in the command word.
     int GetHandle() const { return word & 0xFF; }
@@ -274,6 +275,9 @@ class DiskDrive final : public Device {
     uint16_t word = 0;
     const DiskCommandDef* def = nullptr;
     std::vector<PortWords> arguments;
+
+    // A name argument, once the accept has found it valid.
+    std::optional<DiskFilename> name;
   };
 
   // An accept or a completion: its status, its results, which a command has
@@ -449,27 +453,32 @@ class DiskDrive final : public Device {
   // work. Each returns its response, with results only for an OK status.
   //----------------------------------------------------------------------------
 
-  CommandResponse AcceptCommand(const Command& command);
+  // An accept may decode `command`'s arguments into it, for its work.
+  CommandResponse AcceptCommand(Command* command);
   CommandResponse RunCommand(const Command& command);
 
-  // Returns the name in `command`'s arguments from field `first`, or nullopt
-  // if it breaks the name rules.
-  static std::optional<DiskFilename> GetNameArgument(const Command& command,
-                                                     int first = 0);
+  // Returns the name in `command`'s arguments, or nullopt if it breaks the
+  // name rules.
+  static std::optional<DiskFilename> GetNameArgument(const Command& command);
 
-  // Returns what opening a file in a new slot fails with at accept, once its
-  // name is checked: no disk, I/O error, write protected if it `writes`, and
-  // too many open, in that order. Returns kOk if it can open.
-  DiskStatus GetNewSlotStatus(bool writes) const;
+  // Returns what a command that writes to the disk fails with at accept, for
+  // the disk: no disk, I/O error, or write protected, in that order. Returns
+  // kOk if it can write.
+  DiskStatus GetWritableDiskStatus() const;
+
+  // Returns what a command that opens a file in a new slot fails with at
+  // accept, given its disk's status: `disk_status` if it isn't kOk, and then
+  // too many open.
+  DiskStatus GetNewSlotStatus(DiskStatus disk_status) const;
 
   // Returns the response to a command that opens `file`, with `status`.
   static CommandResponse MakeOpenResponse(DiskStatus status, DiskFile file);
 
-  CommandResponse AcceptOpen(const Command& command);
+  CommandResponse AcceptOpen(Command* command);
   CommandResponse RunOpen(const Command& command);
   CommandResponse AcceptOpenRoot();
   CommandResponse RunOpenRoot();
-  CommandResponse AcceptCreate(const Command& command);
+  CommandResponse AcceptCreate(Command* command);
   CommandResponse RunCreate(const Command& command);
   CommandResponse AcceptClose(const Command& command);
   CommandResponse RunClose(const Command& command);
