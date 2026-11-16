@@ -20,7 +20,7 @@ ProcessorConfig config = {..., .devices = {*std::move(factory)}};
 auto processor = std::make_unique<Processor>(config);
 auto* drive = static_cast<DiskDrive*>(processor->GetDevice("Drive"));
 drive->SetClock([] { return HostNow(); });
-drive->AttachImage(*DiskImage::Open(&host, "local:/work.ozd"));  // kOk.
+drive->AttachImage(*DiskImage::Open(&host, "local:/work.ozd"));
 processor->Execute(...);  // Programs open, read, and write files.
 processor.reset();        // The drive writes back what it hasn't committed.
 ```
@@ -43,14 +43,19 @@ disk_design.md to match.
   command's words, in phases 0 and 1. A word the OS writes in phase 2, 4, or 5
   is lost when the drive puts its completion's status over it. An OS cuts a
   failed transfer short with a reset.
-- **Disk work is on one timeline.** The drive does a command's disk work by
-  calling the file system once, which does all of that work at once, and then
-  the drive charges the busy time it reports. Accepting a command never touches
-  the disk, so accepting never waits. Disk work starts once the disk has
-  finished the work before it, which may be the superblock read at attach or
-  the rest of a command a reset aborted. A completion is posted when its work
-  ends on that timeline. Busy time is rounded up to whole cycles, so any disk
-  work takes at least one cycle.
+- **The drive is busy while the disk is.** The drive does a command's disk
+  work by calling the file system once, which does all of that work at once.
+  The run that made the call then advances the drive's own cycles by the busy
+  time the file system reports, rounded up to whole cycles. Until those cycles
+  have passed, the drive does nothing at all: it takes no words, sends no
+  fields, and handles no requests. The disk couldn't act on a reset partway
+  through its work either, so a reset waits too, and `TSTP` shows it pending
+  until the drive gets to it. Accepting a command never touches the disk. A
+  latent command's work runs once the OS has read its accept status, so the
+  drive shows phase 2 while the disk is busy, then posts the completion. Disk
+  work the host starts, the superblock read at attach, is charged at the end of
+  the drive's next run, so a command that arrives meanwhile waits for it, as
+  disk_design.md first had it.
 - **A write takes the first word of a sector before loading the sector.**
   disk_design.md had the drive load the sector at the write's position right
   after accept, and leave the first word in the port until the load was done.
@@ -68,12 +73,20 @@ disk_design.md to match.
   describes. The drive reads one word (or dword) ahead into the data port. So
   after a reset that withdraws a word from the port, the drive seeks the handle
   back past that word, and the position is just past the words the OS took.
-- **Detaching an image** while a command is in progress completes that command
-  with **no disk**, and the drive does nothing more for it. A latent command's
-  work was done on the old image when it started, and detaching discards
-  whatever the file system hadn't committed, so the OS can't rely on the
-  outcome, as with a floppy pulled mid-command. The completion follows any
-  accept words the OS hasn't read. A transfer gets it as an early completion.
+- **Detaching an image** has no special case. The host detaches between
+  processor runs, so whatever the drive has done is done. A latent command
+  whose work has run completes with the status that work had, and one whose
+  work hasn't started finds no disk when it does. A transfer's next word fails
+  in the file system, which is an early completion with **no disk** (CL5).
+  Detaching discards whatever the file system hadn't committed, so the OS can't
+  rely on the outcome, as with a floppy pulled mid-command. disk_design.md had
+  a command in progress complete with no disk, which needed the drive to
+  replace a completion it already had.
+- **Fields are both of a port's words.** The drive always loads and stores both
+  words of a port, as a dword instruction does. A word field it sends has 0 in
+  word 1, and it ignores word 1 of a word field it takes. So a field's width
+  matters only to the command that builds or reads it, and the OS may move a
+  word field with either width.
 - **Accept checks in a fixed order:**
   1. The arguments, in the order they arrive, starting with the handle in the
      command word: bad handle, disk changed, I/O error, and wrong handle type
@@ -91,8 +104,8 @@ disk_design.md to match.
 - **Response time:** the drive runs the cycle after a core reads or writes one
   of its ports, which wakes it. So it takes a word, or puts the next one in a
   port, before the next instruction can get the port's lock, as the timer
-  answers its clock port. Between port accesses it sleeps until its disk work
-  is next due.
+  answers its clock port. Between port accesses it sleeps until a core wakes
+  it, and while the disk is busy it doesn't run.
 
 ### Host interface
 
@@ -112,19 +125,24 @@ class DiskDrive final : public Device {
   void SetClock(Clock clock);  // None stamps no date.
 
   // Attaches `image`, first detaching any image attached, as DetachImage
-  // does. The superblock is read on the drive's timeline, as disk work. Returns
-  // kOk, kUnformatted, or kIoError, as DiskFileSystem::AttachImage does.
-  DiskStatus AttachImage(std::unique_ptr<DiskImage> image);
+  // does. The drive reads its superblock, and is busy for that time from its
+  // next run. A program finds out what the disk holds, such as no file system,
+  // from its commands.
+  void AttachImage(std::unique_ptr<DiskImage> image);
 
   // Detaches and returns the image, or null if the drive is empty, discarding
-  // what the file system hadn't committed, as pulling a floppy would. A
-  // command in progress completes with kNoDisk.
+  // what the file system hadn't committed, as pulling a floppy would.
   std::unique_ptr<DiskImage> DetachImage();
 };
 ```
 
 - The image is owned by the drive while it is attached, so nothing else can
   write it, and an image can't be in two drives at once.
+- `AttachImage` returns nothing. The drive only ever reports a disk's state to
+  the program, at its next command, and a host that wants to tell its user
+  what is wrong with an image opens it with `DiskImage::Open` first, which
+  gives an `absl::Status` with a message. The file system's own `AttachImage`
+  keeps its status, for tools.
 - Each processor made from a factory has its own drive, empty until the host
   attaches an image.
 - There is no `Flush` for the host to call, as nothing needs it while the
@@ -137,8 +155,8 @@ class DiskDrive final : public Device {
 A new `3.5-Disk-Drive.md` page, as a program sees the drive. It has the
 wiring, settings, and presets; the disk itself (images, the file system, and
 names and patterns, which disk-library.md left for this page); and the ports,
-the protocol, the commands, and the statuses. It is written over CL2 to CL5.
-CL5 also adds a row to `3-Devices.md`'s table and a line to `Home.md`.
+the protocol, the commands, and the statuses. It is written over CL3 to CL6.
+CL6 also adds a row to `3-Devices.md`'s table and a line to `Home.md`.
 
 ## Design
 
@@ -157,22 +175,27 @@ CL5 also adds a row to `3-Devices.md`'s table and a line to `Home.md`.
   takes a handle, its kind, and the fields it moves at each step, as an
   `InstructionDef` defines an instruction. `DiskCommandLayout` would collide
   with the library's `DiskLayout`. "Form" would collide with instruction forms.
-- **`DiskPortWidth`**: `kWord` or `kDword`, how many of a port's two words one
-  field takes. Alternatives: `DiskPortSize`, but "size" is already a file's
-  size in words throughout the disk library, and the assembler's `SIZE(n)` is
-  a count of words; `DiskFieldWidth`, but data words aren't fields.
-  Recommended: `DiskPortWidth`. The plan says "a word or a dword on the port"
-  where disk_design.md says "handoff".
+- **`PortWords`**, in core's `port.h`: both words of a port as a value, with
+  word and dword accessors, and `Load` and `Store` that move both under a lock.
+  The timer's tests already had a struct of that name, and the timer stores
+  dwords too. `PortValue` would read as one word, as `Port::GetValue` gives
+  one; `PortPair` doesn't say what it holds. The plan says "a field" or "a
+  port's words" where disk_design.md says "handoff".
 - **Kinds:** `kSynchronous`, `kLatent`, `kRead`, and `kWrite`, using
   disk_design.md's words.
 - **`DiskDrivePreset`** and **`GetDiskDrivePreset`**: the timing presets.
   "Preset" is disk_design.md's word. "Profile" and "model" would suggest
   something more than the four numbers.
-- **The disk's timeline:** in code, `disk_free_cycle_`, the cycle when the disk
-  finishes the work it has been given. `busy_until_` was the alternative, but
-  "busy" already names the library's busy time, which is a duration.
+- **`State`**: the drive's private enum of where it is, which `GetPhase()` maps
+  to the `DiskDrivePhase` the control port shows. A separate name, since there
+  can be more states than phases where that's cleaner (see State machine).
+- **`ExecuteControlPort`**: the run's first step, reading a request off the
+  control port. The CL3 draft's `ExecuteRequest` read as running a command.
 - Settings: `slots` and `hardware`, a `DiskHardwareSettings`, as the
   library's own type rather than a copy of its fields.
+  `DiskDriveSettings::kMaxLatency` is the longest latency the factory takes.
+  `kDiskDriveReadCacheSectors` and `kDiskDriveCacheWordsPerSec` are the
+  presets' cache, as public constants.
 
 ### disk: what accept needs
 
@@ -210,11 +233,52 @@ struct DiskFileInfo {
   `oz3_disk_testing`, as `oz3_core_testing` holds `BaseCoreTest`, so the
   drive's tests can fail images too.
 
+### core: PortWords
+
+```
+// The two words of a port, as a device moves them: both at once, word 0 and
+// then word 1. Word 0 is a dword's low word.
+class PortWords final {
+ public:
+  PortWords() = default;
+  static PortWords FromWord(uint16_t word);  // Word 1 is 0.
+  static PortWords FromWords(uint16_t word0, uint16_t word1);
+  static PortWords FromDword(uint32_t value);
+
+  bool operator==(const PortWords&) const = default;
+
+  uint16_t GetWord(int index = 0) const;  // 0 or 1.
+  uint32_t GetDword() const;
+
+  // Load or store both words under `lock`, starting at the port's address and
+  // leaving it where it was. `mode` applies to the pair: with T, neither word
+  // moves unless the status allows, S applies after the second word, and A is
+  // ignored. Return the status before, as Port::LoadWord and StoreWord do.
+  uint16_t Load(Port& port, const Lock& lock, uint16_t mode);
+  uint16_t Store(Port& port, const Lock& lock, uint16_t mode) const;
+};
+```
+
+- A value class, so `Load` and `Store` are its own members, rather than
+  additions to `Port`.
+- `mode` applies as it does to one word, so T can't move one word without the
+  other. A is ignored: moving both words always passes through the other word,
+  so the address always ends where it started, which is word 0 unless
+  something moved it since the lock was granted.
+- The constructor taking both words is private, so each value says how it is
+  built: `FromWord`, `FromWords`, or `FromDword`.
+- Every device that moves both words moves onto it: the timer's tick count
+  and clock answers, the keyboard's key state, and the teletype's characters.
+  So do the timer's tests, which compare `PortWords` instead of a struct of
+  their own, and the instruction tests' 32-bit port helpers.
+- No setters, since a value is built whole (`FromDword` for a position, pairs
+  of words for a name) or loaded, and no ordering, which two words don't have.
+- It prints as `{abcdh, 0001h}` with `AbslStringify`, so a test's failures show
+  the words.
+
 ### devices: the command table
 
 ```
-enum class DiskPortWidth { kWord, kDword };
-
 enum class DiskCommandKind {
   kSynchronous,  // Answers at accept.
   kLatent,       // Completes later, with the interrupt.
@@ -227,9 +291,9 @@ struct DiskCommandDef {
   bool takes_handle = false;
   DiskCommandKind kind = DiskCommandKind::kSynchronous;
   bool packed = false;  // Data moves in dwords.
-  absl::Span<const DiskPortWidth> arguments;
-  absl::Span<const DiskPortWidth> accept_results;      // After an OK status.
-  absl::Span<const DiskPortWidth> completion_results;  // After an OK status.
+  int arguments = 0;           // Fields after the command word.
+  int accept_results = 0;      // Fields after an OK accept status.
+  int completion_results = 0;  // Fields after an OK completion status.
 };
 
 // Returns the definition of command `code`, or null for an unknown code.
@@ -238,21 +302,30 @@ const DiskCommandDef* GetDiskCommandDef(uint8_t code);
 
 - One constant array, one row per row of disk_design.md's Commands tables, in
   `disk_drive_command.h`. The drive's protocol reads it for how many fields
-  each step moves, and its commands for what they take, so where a command's
-  words end is written once, and a test can walk the table.
+  each step moves, so where a command's words end is written once, and a test
+  can walk the table. A field is one `PortWords`: a name is 4, and `FIND`'s
+  entry 8. Each command builds its results as `PortWords` itself (`FromDword`
+  for a position, pairs of words for a name), so widths live only there.
 
 ### devices: DiskDrive
 
 ```
 enum class DiskDrivePreset {
-  kFloppy360k, kFloppy720k, kFloppy1440k, kHd10m, kHd20m, kHd40m,
+  kFloppy360k, kFloppy720k, kFloppy1440k,
+  kHardDisk10m, kHardDisk20m, kHardDisk40m,
 };
 
-// The preset's rates and latency, with the drive's default read cache of 4
-// sectors and a cache rate of 1,000,000 words per second.
+// The read cache every preset has.
+inline constexpr int kDiskDriveReadCacheSectors = 4;
+inline constexpr int kDiskDriveCacheWordsPerSec = 1'000'000;
+
+// The preset's rates and latency, with the read cache above.
 constexpr DiskHardwareSettings GetDiskDrivePreset(DiskDrivePreset preset);
 
 struct DiskDriveSettings {
+  static constexpr int kMaxSlots = 255;
+  static constexpr absl::Duration kMaxLatency = absl::Minutes(1);
+
   int port = 0;               // The first of DiskDrive::kPorts.
   DeviceInterrupt interrupt;  // Raised at each completion.
   int slots = 4;              // Files open at once: 1 to 255.
@@ -262,8 +335,8 @@ struct DiskDriveSettings {
 
 class DiskDriveFactory final : public DeviceFactory {
  public:
-  // Returns an error if `settings` are invalid: slots out of range, or any
-  // hardware setting negative.
+  // Returns an error if `settings` are invalid: slots out of range, any
+  // hardware setting negative, or a latency over kMaxLatency.
   static absl::StatusOr<std::unique_ptr<DiskDriveFactory>> Create(
       std::string_view name, const DiskDriveSettings& settings);
 };
@@ -283,14 +356,29 @@ class DiskDriveFactory final : public DeviceFactory {
   one for its work, which calls the one file system operation and packs its
   results. A switch on the command calls them. Synchronous commands (`MEDIA`,
   `SEEK`, and `INFO`) need only the accept.
-- **State:** the command in progress and its definition, the argument words so
-  far, the words to send on the command port, the data phase's words or
-  dwords left (and whether it failed, after which it moves zeros out or throws
-  words away), and `disk_free_cycle_`. The phase the control port shows is
-  worked out from this rather than kept separately. Arguments still to come is
-  1. Words waiting to be sent is 3, which is how an early completion shows
-  over a data phase. A data phase is 4 or 5. Latent work is 2. Anything else
-  is idle.
+- **State machine.** The drive holds its `State` explicitly, and each run
+  first handles the control port (`ExecuteControlPort`), then calls the one
+  function for its state, which says what that state waits for and does:
+  - idle: take a command word;
+  - arguments: take argument fields, then accept;
+  - sending: put fields on the command port, one each time the OS takes the
+    last, then go on to working (after a latent command's accept) or idle;
+  - working: run the command's disk work, then post its completion, once the
+    disk's time has passed;
+  - in CL5, reading and writing.
+
+  Alongside it are the command in progress and its definition, the argument
+  fields so far, and the fields to send. The phase is mapped from the state,
+  so there can be more states than phases where that's cleaner than flags.
+  Working is likely two states, both showing phase 2: before its work runs, and
+  after, while the disk is busy, until the completion goes on the port. In CL5 a data
+  phase whose completion is already waiting (phase 3) and the rest of a failed
+  transfer are likely their own states too.
+- **Reset is its own step.** `ExecuteControlPort` reads a request off the
+  control port. A reset then drops the command, withdraws words from the
+  command and data ports, goes idle, and restores the state word with the
+  control port's flag cleared. A request with no reset bit only clears the
+  flag.
 - **Locks only as needed.** A device can read a port's flag without its lock,
   as the timer does, since a flag only changes under the lock. So each run
   checks the flags first, and requests the lock of a port only to read or
@@ -310,11 +398,12 @@ class DiskDriveFactory final : public DeviceFactory {
   port's lock, and otherwise once it gets it. So a phase can lag, but never
   run ahead of the ports. That is the order the OS's check relies on: when it
   sees phase 2 or higher, the drive has already taken the OS's last word.
-- **Time:** after each file system call, the drive collects the busy time,
-  turns it into cycles at the clock rate, rounded up, and adds it to
-  `max(disk_free_cycle_, now)`. A completion, or the next data word, waits for
-  `disk_free_cycle_`. Then the drive sleeps until it is woken, or until that
-  cycle.
+- **Time:** each run ends by collecting the file system's busy time, which
+  includes any host call's since the last run, and calling `AdvanceCycles` with
+  it in cycles: ⌈ns × Hz ÷ 10⁹⌉, in `absl::int128`, so the rounding is visible
+  and nothing can overflow. A run with nothing more to do then sleeps until it
+  is woken. The drive can't run again until its cycles have passed, so a wake
+  while it is busy only takes effect after.
 - **Transfers** move one word or dword at a time, with `Read` and `Write` of
   one or two words. A file system call stops at a sector boundary, so a dword
   that crosses a sector is two calls. Calling once per word keeps each
@@ -324,7 +413,7 @@ class DiskDriveFactory final : public DeviceFactory {
 - **The interrupt** is raised as a completion's status goes on the command
   port, whether it is a latent command's, a transfer's, or an early one.
 - **Host calls** wake the drive, as the teletype's `TakeOutput` does, since
-  attaching and detaching change the state word and may complete a command.
+  attaching and detaching change the state word, and attaching charges time.
 
 **Brittleness:**
 - The OS's side of the protocol is what disk_design.md describes: wait for
@@ -341,20 +430,20 @@ class DiskDriveFactory final : public DeviceFactory {
 ### Testing
 
 The drive's tests play the OS from the test, through the ports, as the timer's
-tests ask its clock port. A `DiskDriveTest` fixture moves each field with the
-width the command table gives it, and runs a command to the end of each step,
-returning the words the drive sent. So every command and error is tested
-through the real protocol, as concisely as a direct call. Assembled programs
-(`DeviceProgramTest`) check the OS's real loops (`OUTR`, `INR`, the dword
-forms, and `WAIT` on the interrupt) and exact cycles. Images are in a
-`gb::MemoryFileProtocol`, or `FaultyFileProtocol` to fail.
+tests ask its clock port. A `DiskDriveTest` fixture moves fields as
+`PortWords`, as many as the command table gives each step, and runs a command
+to the end of each step, returning the fields the drive sent. So every command
+and error is tested through the real protocol, as concisely as a direct call.
+Assembled programs (`DeviceProgramTest`) check the OS's real loops (`OUTR`,
+`INR`, the dword forms, and `WAIT` on the interrupt) and exact cycles. Images
+are in a `gb::MemoryFileProtocol`, or `FaultyFileProtocol` to fail.
 
 ### Performance
 
 A transfer costs, per word, one drive run with a port lock, a file system
 `Read` or `Write` of one word, and collecting the busy time. An OS's streaming
 loop moves about 100 Kiw/s at 1 MHz (see disk_design.md's Timing presets), so
-this should cost well under a microsecond of host time per simulated word. CL4
+this should cost well under a microsecond of host time per simulated word. CL5
 measures a 64 Kiw `READ`. If that is ever a problem, the drive can move a
 sector's words at a time, keeping the stall where it is.
 
@@ -362,15 +451,15 @@ sector's words at a time, keeping the stall where it is.
 
 - That a one-word `Read` or `Write` costs the whole sector's time at the word
   that loads, blanks, or allocates, and nothing for the words after it, so
-  per-word calls charge exactly what per-sector calls would (CL4).
+  per-word calls charge exactly what per-sector calls would (CL5).
 - That the drive, taking a word the cycle after an `INR` or `OUTR` releases the
   data port, keeps up with the 8 cycles a word of the loop, so a loop over a
-  loaded sector never stalls (CL4: disk_design.md's 300-word `READ` example, in
+  loaded sector never stalls (CL5: disk_design.md's 300-word `READ` example, in
   exact cycles).
 - That the drive gets the command port's lock in the cycle after an `INS` takes
   its last word, before the next instruction's `PLK`. Otherwise the OS's next
   command word, written straight after, would be taken for the drive's own
-  word, still unread (CL2; the timer relies on the same).
+  word, still unread (CL3; the timer relies on the same).
 
 ## CLs
 
@@ -390,17 +479,36 @@ Depends on: nothing.
   stale slots (taken, but not open files), and `directory` for the root and a
   file.
 
-### CL2 [ ] devices: the drive, its ports, and the protocol
+### CL2 [x] core: PortWords
 
-Depends on: CL1.
+Depends on: nothing.
 
-- `disk_drive_command.h`: `DiskDriveCommand`, `DiskPortWidth`,
-  `DiskCommandKind`, `DiskCommandDef`, and the table, with every command. A
-  command the drive doesn't run yet is bad command.
+- `port.h` and `.cc`: `PortWords`.
+- `timer.cc`, `keyboard.cc`, and `teletype.cc`: their pairs of port words on
+  `PortWords`, as are `timer_test.cc`'s and `instruction_test.h`'s.
+- disk_design.md: the drive busy while the disk is, attaching and detaching to
+  match, and fields moving both of a port's words.
+
+**Verify**
+- Standard checks.
+- Unit tests: the accessors, equality, and printing; `Load` and `Store` in
+  modes 0 and T|S, with T stopping both words and not just one, A ignored,
+  and both starting and ending at the port's address. The teletype clearing
+  word 1 once it takes the characters. The timer's, keyboard's, teletype's, and
+  instructions' tests pass unchanged in what they check.
+
+### CL3 [ ] devices: the drive, its ports, and the protocol
+
+Depends on: CL1, CL2.
+
+- `disk_drive_command.h`: `DiskDriveCommand`, `DiskCommandKind`,
+  `DiskCommandDef`, and the table, with every command. A command the drive
+  doesn't run yet is bad command.
 - `disk_drive.h` and `.cc`: the presets, settings, factory, and drive: the
-  ports and their locks, the control port's state word and reset, the command
-  protocol (command words, arguments and results, accept and completion, and
-  the interrupt), the timeline, the host interface and destructor, and the
+  ports and their locks, the control port's state word and reset, the state
+  machine, the command protocol (command words, arguments and results, accept
+  and completion, and the interrupt), busy time, the host interface and
+  destructor, and the
   first commands, `MEDIA`, `OPEN ROOT`, and `CLOSE`, one of each kind but
   transfers.
 - `CMakeLists.txt`: the new files, and `oz3_disk`, with `oz3_disk_testing` for
@@ -413,9 +521,10 @@ Depends on: CL1.
 - Standard checks.
 - Unit tests:
   - the table: every code from disk_design.md, its handle, kind, and field
-    widths, and null for every other code;
-  - the factory's wiring, and its errors for each setting; the presets'
-    numbers against disk_design.md's table;
+    counts, and null for every other code;
+  - the factory's wiring, and its errors for each setting, including a latency
+    just over `kMaxLatency`; the presets' numbers against disk_design.md's
+    table;
   - the state word in every phase, and with and without a disk;
   - reset in every phase, withdrawing words on both ports, and `TSTP` seeing
     the request done; a request of 0; reserved bits ignored;
@@ -423,21 +532,25 @@ Depends on: CL1.
     word alone, and `MEDIA`'s results on an unformatted and a write-protected
     image;
   - accept's order of checks, on `OPEN ROOT` and `CLOSE`;
-  - latent completions in exact cycles on the timeline, after the superblock
-    read at attach, and after a command a reset aborted;
+  - latent completions in exact cycles, with the work starting once the OS has
+    read the accept status, and phase 2 shown until the completion is posted;
+  - the drive doing nothing while busy: a command word, a field read, and a
+    reset all waiting for the superblock read at attach, and for a latent
+    command's work;
   - a command word written in phase 2 lost under the completion, one written in
     phase 1 taken as an argument, and `OUTS` refused in phase 3;
-  - detaching mid-command (no disk, after unread accept words), attaching over
-    an image, the disk bit, and the destructor writing back an open file;
+  - detaching mid-command: a latent command whose work has run completing with
+    its real status, and one whose work hasn't started with no disk;
+    attaching over an image, and the disk bit;
   - the drive locking only the ports it uses, a core holding a port delaying
     it, and the drive asleep while idle;
   - an assembled program opening and closing the root with `OUTR`, `INR`, and
     `WAIT` on the interrupt.
 - Wiki: the pages above, as a patch on the PR.
 
-### CL3 [ ] devices: file commands
+### CL4 [ ] devices: file commands
 
-Depends on: CL2.
+Depends on: CL3.
 
 - `disk_drive.cc`: `OPEN`, `CREATE`, `CLOSE` of every slot, `FLUSH`, `SEEK`,
   and `INFO`.
@@ -452,9 +565,9 @@ Depends on: CL2.
   past the largest size); stale slots and failed images through each command.
 - Wiki: the sections above, as a patch on the PR.
 
-### CL4 [ ] devices: reading and writing
+### CL5 [ ] devices: reading and writing
 
-Depends on: CL3.
+Depends on: CL4.
 
 - `disk_drive.cc`: `READ`, `WRITE`, `READ PACKED`, `WRITE PACKED`, and
   `TRUNCATE`, with the data phase, early completion (zeros out, words thrown
@@ -476,14 +589,16 @@ Depends on: CL3.
     every phase it can show, with the OS's loop running out its n words and
     with a reset cutting it short;
   - resets while reading (position just past the words taken, with and without
-    a word in the port) and while writing (the size covering the words taken).
+    a word in the port) and while writing (the size covering the words taken);
+  - the destructor writing back a file written and not yet committed, stamped
+    with the clock (the first command that leaves anything uncommitted).
 - Performance: a 64 Kiw `READ` in a program, its host time measured in
   Release, and the result recorded here.
 - Wiki: the sections above, as a patch on the PR.
 
-### CL5 [ ] devices: directory and disk commands
+### CL6 [ ] devices: directory and disk commands
 
-Depends on: CL3 (CL4 only for the order of the wiki page's sections).
+Depends on: CL4 (CL5 only for the order of the wiki page's sections).
 
 - `disk_drive.cc`: `FIND`, `DELETE`, `RENAME`, `ATTRIB`, `VOLUME`, `FORMAT`,
   and `LABEL`.

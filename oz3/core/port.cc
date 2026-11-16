@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_cat.h"
 #include "oz3/core/core_types.h"
 
 namespace oz3 {
@@ -58,6 +59,33 @@ uint16_t Port::StoreWord(const Lock& lock, uint16_t mode, uint16_t value) {
     address_ = 1 - address_;
   }
   return status;
+}
+
+// Each word advances the address, so the second puts it back where it was.
+// Word 1 moves unconditionally once word 0 has, so only S applies to it.
+uint16_t PortWords::Load(Port& port, const Lock& lock, uint16_t mode) {
+  const uint16_t t = mode & Port::T;
+  const uint16_t status = port.LoadWord(lock, t | Port::A, words_[0]);
+  if (t != 0 && status == 0) {
+    return status;
+  }
+  port.LoadWord(lock, (mode & Port::S) | Port::A, words_[1]);
+  return status;
+}
+
+uint16_t PortWords::Store(Port& port, const Lock& lock, uint16_t mode) const {
+  const uint16_t t = mode & Port::T;
+  const uint16_t status = port.StoreWord(lock, t | Port::A, words_[0]);
+  if (t != 0 && status != 0) {
+    return status;
+  }
+  port.StoreWord(lock, (mode & Port::S) | Port::A, words_[1]);
+  return status;
+}
+
+std::string PortWords::ToString() const {
+  return absl::StrCat("{", absl::Hex(words_[0], absl::kZeroPad4), "h, ",
+                      absl::Hex(words_[1], absl::kZeroPad4), "h}");
 }
 
 PortBank::PortBank(int num_ports) : ports_(num_ports) {

@@ -133,11 +133,11 @@ class KeyboardTest : public DeviceProgramTest {
   // Reads the key state port that holds `key` with `lock`, which holds it, as
   // ReadKeyState(key) does.
   KeyStateWords ReadKeyState(const Lock& lock, int key) {
-    Port& port = GetPort(GetKeyPort(key));
-    KeyStateWords words;
-    port.LoadWord(lock, Port::A, words.held);
-    words.status = port.LoadWord(lock, Port::S, words.pressed);
-    return words;
+    PortWords words;
+    const uint16_t status = words.Load(GetPort(GetKeyPort(key)), lock, Port::S);
+    return {.held = words.GetWord(0),
+            .pressed = words.GetWord(1),
+            .status = status};
   }
 
   // Reads the keyboard's port as INS does, which clears its status, and

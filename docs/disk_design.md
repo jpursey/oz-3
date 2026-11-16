@@ -291,11 +291,12 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 - Reading a sector costs 256 ÷ read rate, or 256 ÷ cache rate if it's in the read cache, with no latency. Writing a sector always costs 256 ÷ write rate.
 - A transfer that isn't continuous with the previous one, meaning a different sector than the next in order or a switch between reading and writing, first costs the fixed latency. This is a simplified seek, with no tracks. Reads from the cache don't move anything, so they don't affect continuity.
 - While a sector is in a slot's buffer, the drive puts each next word in the data port, or takes each word from it, before the processor can ask. A streaming loop only waits at sector loads and writes.
+- The drive is busy while the disk is: once it has done some disk work, it does nothing else until the time that work took has passed. It takes no words, sends no words, and handles no requests, not even a reset, as a real controller can't stop a sector partway either. A latent command's disk work starts once the OS has read its accept status, and the drive shows phase 2 until it is done.
 
 #### Images and disk changes
 
-- **Attaching:** the drive reads the image's container header right away, for `MEDIA` and write protection, then reads and checks the superblock, charging its time as usual. A command that arrives meanwhile is accepted as usual, and its disk work waits for the read to finish, as any disk work waits for the work before it. FAT sectors are read only when an operation first needs them, typically when clusters are allocated or freed.
-- **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale, and a command in progress completes with **no disk**.
+- **Attaching:** the drive reads the image's container header right away, for `MEDIA` and write protection, then reads and checks the superblock, charging its time as usual. The drive is busy meanwhile, so a command that arrives waits until the read is done, as everything the drive does waits for its disk work (see Timing). FAT sectors are read only when an operation first needs them, typically when clusters are allocated or freed.
+- **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale. Nothing else changes for a command in progress: a latent command whose disk work is done completes with the status that work had, and one whose work hasn't started finds no disk when it does. A transfer's next word fails, which is an early completion with **no disk**.
 - **Stale slots:** every command on a stale slot fails with **disk changed**, except `CLOSE`, which frees the slot. It succeeds unless the file was written since its last commit, when it fails with **disk changed**, as those writes are lost. A program can't keep writing into a different disk by accident.
 - **Failing:** once the host fails to read or write the image, the disk has failed: every command fails with **I/O error**, even one the drive's buffers could answer, except `CLOSE`, which still frees the slot. Ejecting the disk discards the buffers, leaving it as a crash at the failure would, and inserting it again, with its image reopened, is the retry. Retrying on the same insertion would need every command to undo its changes to the buffers.
 - **Shutting down:** when the drive is destroyed, as when the Ozzy app shuts down cleanly, it writes back everything dirty, so the image stays consistent.
@@ -314,6 +315,8 @@ The command and data ports use the OZ-3's port handshake. A write (`OUTS`, `OUTR
 On the data port, ordinary transfers use word 0 of the port, one word per handoff. Packed transfers use both words, the low word in word 0.
 
 On the command port, each field moves in its natural width. A word field (a command word, a status, a count) is one handoff in word 0. A dword field (a position or a size) is one dword handoff, the low word in word 0. The 8-word fields (names, patterns, and labels) are 4 dword handoffs, and `FIND`'s 16-word directory entry is 8, with the lower-numbered word of each pair in word 0. Dword and multi-word fields are only ever moved whole, so word handoffs would gain nothing.
+
+The drive always moves both of a port's words, as a dword instruction does, whatever a field's width: word 1 of a word field it sends is 0, and it ignores word 1 of a word field it takes. So an OS may move a word field with either width.
 
 #### Control port: reading
 
@@ -383,6 +386,8 @@ A reset's abort has these outcomes:
 - **`READ`:** streaming stops, any word waiting on the data port is withdrawn, and the handle's position is just past the words the OS actually took.
 - **`WRITE`:** the words the drive has taken are kept, as if the write had been for that many words, and the size is updated. A word still waiting untaken in the data port is discarded.
 - **Any other latent command** finishes its disk work, so a change is never left half done, and its completion is dropped.
+
+A request that arrives while the disk is busy waits in the control port until the work is done, as everything else does (see Timing), so `TSTP` shows it pending until then.
 
 The OS can check what happened afterward, with `INFO` or `FIND`.
 

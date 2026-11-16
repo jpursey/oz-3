@@ -37,15 +37,6 @@ constexpr int kInterrupt = 2;
 // cycle n * 1000 / 60.
 constexpr int64_t kSlowClockHz = 1000;
 
-// A port's words and status.
-struct PortWords {
-  bool operator==(const PortWords&) const = default;
-
-  uint16_t word0 = 0;
-  uint16_t word1 = 0;
-  uint16_t status = 0;
-};
-
 class TimerTest : public DeviceProgramTest {
  protected:
   // The most cycles ExecuteUntilTick waits.
@@ -69,13 +60,14 @@ class TimerTest : public DeviceProgramTest {
     return timer_ != nullptr;
   }
 
-  // Returns the words and status of `port`.
+  // Returns the words of `port`.
   PortWords GetWords(int port) {
     const Port& p = GetPort(port);
-    return {.word0 = p.GetValue(0),
-            .word1 = p.GetValue(1),
-            .status = p.GetStatus()};
+    return PortWords::FromWords(p.GetValue(0), p.GetValue(1));
   }
+
+  // Returns the status of `port`.
+  uint16_t GetStatus(int port) { return GetPort(port).GetStatus(); }
 
   // Asks the clock port for `index`, writing it as OUT does, which sets its
   // status, and returns its answer the cycle after, as a dword. No core may be
@@ -87,9 +79,8 @@ class TimerTest : public DeviceProgramTest {
       GetPort(kClockPort).StoreWord(*lock, Port::S, index);
     }
     Execute(1);
-    const PortWords words = GetWords(kClockPort);
-    EXPECT_EQ(words.status, 0);
-    return words.word0 | (static_cast<uint32_t>(words.word1) << 16);
+    EXPECT_EQ(GetStatus(kClockPort), 0);
+    return GetWords(kClockPort).GetDword();
   }
 
   // Executes until the next tick, and returns the processor's cycles when it
@@ -132,7 +123,8 @@ TEST_F(TimerTest, TickPortIsClearAtPowerOn) {
   ASSERT_TRUE(InitTimer());
   Execute(1);
   EXPECT_EQ(timer_->GetTickCount(), 0);
-  EXPECT_EQ(GetWords(kTickPort), PortWords{});
+  EXPECT_EQ(GetWords(kTickPort), PortWords());
+  EXPECT_EQ(GetStatus(kTickPort), 0);
   EXPECT_FALSE(IsInterruptRaised());
 }
 
@@ -144,8 +136,8 @@ TEST_F(TimerTest, TicksOnScheduleWithoutDrift) {
   for (const Cycles tick_cycle : {16, 33, 50, 66, 83, 100, 116}) {
     EXPECT_EQ(ExecuteUntilTick(), tick_cycle + 1);
     ++tick;
-    EXPECT_EQ(GetWords(kTickPort),
-              (PortWords{.word0 = tick, .word1 = 0, .status = 1}));
+    EXPECT_EQ(GetWords(kTickPort), PortWords::FromWord(tick));
+    EXPECT_EQ(GetStatus(kTickPort), 1);
   }
   EXPECT_EQ(timer_->GetTickCount(), 7);
 }
@@ -167,8 +159,8 @@ TEST_F(TimerTest, TickPortHoldsTheLow32Bits) {
   ASSERT_TRUE(InitTimer({.port = kTickPort}, /*clock_hz=*/60));
   Execute(0x10001);
   EXPECT_EQ(timer_->GetTickCount(), 0x10000);
-  EXPECT_EQ(GetWords(kTickPort),
-            (PortWords{.word0 = 0, .word1 = 1, .status = 1}));
+  EXPECT_EQ(GetWords(kTickPort), PortWords::FromWords(0, 1));
+  EXPECT_EQ(GetStatus(kTickPort), 1);
 }
 
 TEST_F(TimerTest, RaisesTheInterruptAtEachTick) {
@@ -245,7 +237,7 @@ TEST_F(TimerTest, TicksMissedWhileThePortIsHeldCatchUp) {
   lock.reset();
   EXPECT_EQ(ExecuteUntilTick(), 41);
   EXPECT_EQ(ExecuteUntilTick(), 42);
-  EXPECT_EQ(GetWords(kTickPort).word0, 2);
+  EXPECT_EQ(GetWords(kTickPort).GetWord(0), 2);
 
   // Tick 3 is back on the schedule, at cycle 50.
   EXPECT_EQ(ExecuteUntilTick(), 51);
@@ -301,8 +293,8 @@ TEST_F(TimerTest, TickAndAnswerWaitForTheirPortsTogether) {
   clock_lock.reset();
   Execute(1);
   EXPECT_EQ(timer_->GetTickCount(), 1);
-  EXPECT_EQ(GetWords(kClockPort),
-            (PortWords{.word0 = 20, .word1 = 0, .status = 0}));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(20));
+  EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
 TEST_F(TimerTest, SecondQuestionReplacesTheFirst) {
@@ -315,8 +307,8 @@ TEST_F(TimerTest, SecondQuestionReplacesTheFirst) {
   GetPort(kClockPort).StoreWord(*lock, Port::S, kTimerTime);
   lock.reset();
   Execute(1);
-  EXPECT_EQ(GetWords(kClockPort),
-            (PortWords{.word0 = 13, .word1 = 0x2D1E, .status = 0}));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWords(13, 0x2D1E));
+  EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
 TEST_F(TimerTest, MillisecondsAreTheCycleCountAtTheClockRate) {
@@ -344,12 +336,12 @@ TEST_F(TimerTest, AnswerWaitsWhileThePortIsHeld) {
   ASSERT_TRUE(lock->IsLocked());
   GetPort(kClockPort).StoreWord(*lock, Port::S, kTimerCycles);
   Execute(10);
-  EXPECT_EQ(GetWords(kClockPort),
-            (PortWords{.word0 = kTimerCycles, .word1 = 0, .status = 1}));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(kTimerCycles));
+  EXPECT_EQ(GetStatus(kClockPort), 1);
   lock.reset();
   Execute(1);
-  EXPECT_EQ(GetWords(kClockPort),
-            (PortWords{.word0 = 10, .word1 = 0, .status = 0}));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(10));
+  EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
 TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
@@ -363,8 +355,8 @@ TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
   port.LoadWord(*lock, Port::S, value);
   lock.reset();
   Execute(10);
-  EXPECT_EQ(GetWords(kClockPort),
-            (PortWords{.word0 = kTimerCycles, .word1 = 0, .status = 0}));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(kTimerCycles));
+  EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
 TEST_F(TimerTest, DateAndTimeAreZerosWithoutAClock) {

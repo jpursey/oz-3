@@ -22,18 +22,6 @@ namespace {
 constexpr int kTickPort = 0;
 constexpr int kClockPort = 1;
 
-// Returns `low` and `high` as the low and high words of a dword.
-uint32_t GetDword(uint16_t low, uint16_t high) {
-  return low | static_cast<uint32_t>(high) << 16;
-}
-
-// Stores `value` to `port` with `lock`, which holds it: the low word first,
-// and then the high word with `mode`.
-void StoreDword(Port& port, const Lock& lock, uint16_t mode, uint32_t value) {
-  port.StoreWord(lock, Port::A, static_cast<uint16_t>(value));
-  port.StoreWord(lock, mode, static_cast<uint16_t>(value >> 16));
-}
-
 }  // namespace
 
 //==============================================================================
@@ -95,8 +83,8 @@ bool Timer::ExecuteTick() {
     return true;
   }
   ++tick_count_;
-  StoreDword(GetPort(kTickPort), *tick_lock_, Port::S,
-             static_cast<uint32_t>(tick_count_));
+  PortWords::FromDword(static_cast<uint32_t>(tick_count_))
+      .Store(GetPort(kTickPort), *tick_lock_, Port::S);
   tick_lock_.reset();
   RaiseInterrupt(0);
   return false;
@@ -127,30 +115,31 @@ bool Timer::ExecuteClock() {
 }
 
 void Timer::AnswerClock(const Lock& lock, uint16_t index) {
-  uint32_t answer = 0;
+  PortWords answer;
   switch (index) {
     case kTimerCycles:
-      answer = static_cast<uint32_t>(GetCycles());
+      answer = PortWords::FromDword(static_cast<uint32_t>(GetCycles()));
       break;
     case kTimerMilliseconds: {
       // Whole seconds first, so the product can't overflow.
       const int64_t clock_hz = GetClockHz();
-      answer = static_cast<uint32_t>(GetCycles() / clock_hz * 1000 +
-                                     GetCycles() % clock_hz * 1000 / clock_hz);
+      answer = PortWords::FromDword(
+          static_cast<uint32_t>(GetCycles() / clock_hz * 1000 +
+                                GetCycles() % clock_hz * 1000 / clock_hz));
     } break;
     case kTimerDate: {
       const DateTime::Words& words = latched_.GetWords();
-      answer = GetDword(words[0], words[1]);
+      answer = PortWords::FromWords(words[0], words[1]);
     } break;
     case kTimerTime: {
       LatchDateTime();
       const DateTime::Words& words = latched_.GetWords();
-      answer = GetDword(words[2], words[3]);
+      answer = PortWords::FromWords(words[2], words[3]);
     } break;
   }
 
   // The status stays clear, as the timer took the index.
-  StoreDword(GetPort(kClockPort), lock, 0, answer);
+  answer.Store(GetPort(kClockPort), lock, 0);
 }
 
 void Timer::LatchDateTime() {
