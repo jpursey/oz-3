@@ -56,6 +56,13 @@ disk_design.md to match.
   work the host starts, the superblock read at attach, is charged at the start
   of the drive's next run, which does nothing else, so a command that arrives
   meanwhile waits for it, as disk_design.md first had it.
+- **The OS waits for idle before a command word.** A command ends only once
+  the drive sees that the OS has taken its last field, which may be after disk
+  work the host started. Until then the phase shows 3, and a command word
+  written meanwhile would set the command port's flag again, hiding that the
+  OS took the field. So the OS reads the control port until the phase is 0
+  before each command word, and the drive never has to see the take within a
+  set time.
 - **A write takes the first word of a sector before loading the sector.**
   disk_design.md had the drive load the sector at the write's position right
   after accept, and leave the first word in the port until the load was done.
@@ -188,11 +195,20 @@ table and a line to `Home.md`.
 - **`DiskDrivePreset`** and **`GetDiskDrivePreset`**: the timing presets.
   "Preset" is disk_design.md's word. "Profile" and "model" would suggest
   something more than the four numbers.
-- **`State`**: the drive's private enum of where it is, which `GetPhase()` maps
-  to the `DiskDrivePhase` the control port shows. A separate name, since there
+- **`State`**: the drive's private `std::variant` of where it is, one struct
+  per state (`IdleState`, `ArgumentsState`, and so on), each naming the
+  `DiskDrivePhase` the control port shows for it. A separate name, since there
   can be more states than phases where that's cleaner (see State machine).
-- **`ExecuteControlPort`**: the run's first step, reading a request off the
-  control port. The CL3 draft's `ExecuteRequest` read as running a command.
+- **The control word**: what the control port shows, its phase, disk bit, and
+  command code. "State word" collided with the drive's `State`; "status"
+  would collide with a port's status flag and with `DiskStatus`.
+- **`Command`** and **`CommandResponse`**: the command the OS wrote (its word,
+  definition, and arguments), and an accept or completion (its status, results,
+  and how many fields have gone on the port). "Response" covers both, where
+  "step" didn't say which.
+- **`TakeControlRequest`**: reading a request off the control port, before
+  the state's step. The CL3 draft's `ExecuteRequest` read as running a
+  command.
 - Settings: `slots` and `hardware`, a `DiskHardwareSettings`, as the
   library's own type rather than a copy of its fields.
   `DiskDriveSettings::kMaxLatency` is the longest latency the factory takes.
@@ -358,60 +374,67 @@ class DiskDriveFactory final : public DeviceFactory {
   one for its work, which calls the one file system operation and packs its
   results. A switch on the command calls them. Synchronous commands (`MEDIA`,
   `SEEK`, and `INFO`) need only the accept.
-- **State machine.** The drive holds its `State` explicitly, and each run
-  first handles the control port (`ExecuteControlPort`), then calls the one
-  function for its state, which says what that state waits for and does:
-  - `kIdle`: take a command word;
-  - `kArguments`: take argument fields, then accept;
-  - `kSendingAccept`: put the accept's fields on the command port, one each
-    time the OS takes the last. Once it has taken the last, a latent command
-    with an OK accept runs its disk work, holding the completion's fields, and
-    goes on to working; anything else goes idle;
-  - `kWorking`: once the work's disk time has passed, post the completion,
-    raising the interrupt;
-  - `kSendingCompletion`: put the completion's fields on the command port, as
-    for the accept, then go idle;
-  - in CL5, reading and writing.
+- **State machine.** The drive's `State` is a `std::variant`, and each
+  struct holds only what its state works on, so what every state shares (the
+  file system, the clock, the locks, and the control word shown) is the only
+  state on the drive itself. Each state has one `ExecuteState` overload, its
+  step, which says what it waits for and does, and returns whether it moved to
+  another state:
+  - `IdleState`: take a command word;
+  - `ArgumentsState`: take argument fields, then accept;
+  - `SendingAcceptState`: put the accept's fields on the command port, one
+    each time the OS takes the last. Once it has taken the last, a latent
+    command with an OK accept goes on to running its work; anything else goes
+    idle;
+  - `RunningWorkState`: run the latent command's work, with its arguments from
+    the `Command`, so it needs no port, and go on to sending its completion;
+  - `SendingCompletionState`: put the completion's fields on the command port,
+    as for the accept, raising the interrupt with the first, then go idle;
+  - `ResettingState`: see Reset;
+  - in CL5, reading and writing, which finish into `SendingCompletionState`.
 
-  Alongside it are the command in progress and its definition, the argument
-  fields so far, and the fields to send. The phase is mapped from the state:
-  both sending states show phase 3. In CL5 a data phase whose completion is
-  already waiting (phase 3) and the rest of a failed transfer are likely their
-  own states too.
-- **Reset is its own step.** `ExecuteControlPort` reads a request off the
-  control port. A reset then drops the command, withdraws words from the
-  command and data ports, goes idle, and restores the state word with the
-  control port's flag cleared. A request with no reset bit only clears the
-  flag.
-- **Locks only as needed.** A device can read a port's flag without its lock,
-  as the timer does, since a flag only changes under the lock. So each run
-  checks the flags first, and requests the lock of a port only to read or
-  write it:
-  - the control port, when its flag is set (a request) or the state word has
-    changed;
-  - the command port, in phases 0 and 1 when its flag is set (a word for the
-    drive), and in phase 3 when it is clear (the OS took the drive's word, so
-    the next goes in), or when a completion's status is due;
-  - the data port, in phases 4 and 5 once the disk is free, when its flag says
-    the port is ready to take the next word or give one.
-
-  A reset locks all three, as it withdraws words from both other ports and
-  restores the state word with the control port's flag cleared in one step.
-- **The state word follows the ports.** The drive updates the state word only
-  after the port change it describes: in the same run if it has the control
-  port's lock, and otherwise once it gets it. So a phase can lag, but never
-  run ahead of the ports. That is the order the OS's check relies on: when it
-  sees phase 2 or higher, the drive has already taken the OS's last word.
+  Each struct also names the ports its step needs locked (`kLocks`) and the
+  phase it shows (`kPhase`), so `GetPhase()` is one `std::visit`. Both sending
+  states show phase 3.
+- **A run** first charges any disk time the host started, and ends there if
+  there was some. It then takes any control request, and runs the state's
+  step in a loop while each step moves to another state. Before each step, it
+  gathers the locks the state names, and the control port's if the control
+  word has changed, then shows the control word, so each step runs with its
+  own phase shown. A loop ends when a step waits for the OS, which sleeps
+  until a port access wakes the drive, or does disk work, whose time is
+  charged at once. So work that takes no time, such as a `CLOSE` with nothing
+  to write, posts its completion in the same run.
+- **Reset** is its own state. `TakeControlRequest` reads a request off the
+  control port, without its lock unless the flag is set. A reset moves to
+  `ResettingState`, leaving the request pending, so `TSTP` still sees it.
+  That state's step locks all three ports, withdraws the command and data
+  ports' words, clears the request, and goes idle, and the next step's control
+  word restores the control port in the same run. A request with no reset bit
+  is cleared at once, and the state carries on, so there is never a state to
+  return to.
+- **Locks:** a device can read a port's flag without its lock, as the timer
+  does, since a flag only changes under the lock. The control port's flag is
+  checked that way each run. Each state's step then locks the ports it uses,
+  for the rest of the run: the command port in the idle, arguments, and
+  sending states, none while running work, and in CL5, the data port while
+  reading and writing. A run that has to wait for a lock keeps the ones it has
+  and tries again the next cycle, so it gathers them all.
+- **The control word follows the ports.** The OS can't read the control port
+  while the drive holds its lock, and the drive holds it from showing a
+  state's control word until the run ends. So the phase can lag the ports,
+  but never run ahead of them. That is the order the OS's check relies on:
+  when it sees phase 2 or higher, the drive has already taken the OS's last
+  word.
 - **Time:** the file system's busy time is charged with `AdvanceCycles`, in
   cycles: ⌈ns × Hz ÷ 10⁹⌉, in `absl::int128`, so the rounding is visible and
-  nothing can overflow. A run's own disk work is charged at its end. A host
-  call's (the superblock read at attach) is charged at the start of the next
-  run, which then does nothing else, so a command word or request that arrives
-  meanwhile waits for it. The one thing that run still does is notice that the
-  OS has taken a step's last field, as the OS may write its next command word
-  straight after, which would hide that it took it. A run with nothing more
-  to do then sleeps until it is woken. The drive can't run again until its
-  cycles have passed, so a wake while it is busy only takes effect after.
+  nothing can overflow. The drive releases every lock first, so it never holds
+  a port while the disk is busy. A step's disk work is charged as soon as the
+  step returns. A host call's (the superblock read at attach) is charged at
+  the start of the next run, which then does nothing else, so a command word
+  or request that arrives meanwhile waits for it. The drive can't run again
+  until its cycles have passed, so a wake while it is busy only takes effect
+  after.
 - **Transfers** move one word or dword at a time, with `Read` and `Write` of
   one or two words. A file system call stops at a sector boundary, so a dword
   that crosses a sector is two calls. Calling once per word keeps each
@@ -421,12 +444,14 @@ class DiskDriveFactory final : public DeviceFactory {
 - **The interrupt** is raised as a completion's status goes on the command
   port, whether it is a latent command's, a transfer's, or an early one.
 - **Host calls** wake the drive, as the teletype's `TakeOutput` does, since
-  attaching and detaching change the state word, and attaching charges time.
+  attaching and detaching change the control word, and attaching charges
+  time.
 
 **Brittleness:**
 - The OS's side of the protocol is what disk_design.md describes: wait for
-  phase 2 or higher before reading the command port, never `OUT` to the command
-  port, and never `IN` the control port while a request is pending. The drive
+  phase 0 before writing a command word, and for phase 2 or higher before
+  reading the command port after a command's last word, never `OUT` to the
+  command port, and never `IN` the control port while a request is pending. The drive
   can't catch an OS that breaks these. Reset is the way out, as designed.
 - One OS core issues commands. Two cores sharing a drive have to take turns
   themselves, as with the timer's clock port.
@@ -513,7 +538,7 @@ Depends on: CL1, CL2.
   `DiskCommandDef`, and the table, with every command. A command the drive
   doesn't run yet is bad command.
 - `disk_drive.h` and `.cc`: the presets, settings, factory, and drive: the
-  ports and their locks, the control port's state word and reset, the state
+  ports and their locks, the control port's control word and reset, the state
   machine, the command protocol (command words, arguments and results, accept
   and completion, and the interrupt), busy time, the host interface and
   destructor, and the first commands, `MEDIA`, `OPEN ROOT`, and `CLOSE`, one
@@ -529,9 +554,11 @@ Depends on: CL1, CL2.
   - the factory's wiring, and its errors for each setting, including a latency
     just over `kMaxLatency`; the presets' numbers against disk_design.md's
     table;
-  - the state word in every phase, and with and without a disk;
+  - the control word in every phase, and with and without a disk;
   - reset in every phase, withdrawing words on both ports, and `TSTP` seeing
     the request done; a request of 0; reserved bits ignored;
+  - the phase 0 wait before a command word, and a response taken as the host
+    attaches ending once the superblock is read;
   - the phase 2 wait before an accept status, bad command after the command
     word alone, and `MEDIA`'s results on an unformatted and a write-protected
     image;

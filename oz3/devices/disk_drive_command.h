@@ -51,7 +51,7 @@ enum class DiskDriveCommand : uint8_t {
 //==============================================================================
 
 // Where the drive's current command is, as the low nibble of its control
-// port's state word shows it.
+// port's control word shows it.
 enum class DiskDrivePhase : uint8_t {
   kIdle = 0,       // Waiting for a command word.
   kArguments = 1,  // Waiting for more argument words.

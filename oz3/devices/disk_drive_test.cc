@@ -162,9 +162,9 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // Returns whether `port`'s flag is set.
   bool IsSet(int port) { return GetPort(port).GetStatus() != 0; }
 
-  // Returns the control port's state word, as IN reads it, and its phase.
-  uint16_t GetStateWord() { return GetPort(kControlPort).GetValue(0); }
-  int GetPhase() { return GetStateWord() & DiskDrive::kPhaseMask; }
+  // Returns the control port's control word, as IN reads it, and its phase.
+  uint16_t GetControlWord() { return GetPort(kControlPort).GetValue(0); }
+  int GetPhase() { return GetControlWord() & DiskDrive::kPhaseMask; }
 
   // Writes both of `port`'s words as OUTS.D does, only if its flag is clear,
   // setting it. Returns whether it wrote. No core may be using the port.
@@ -222,9 +222,11 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return fields;
   }
 
-  // Writes `command_word` alone, with `word1` in the field's word 1, recording
-  // its definition for ReceiveAccept and Complete.
+  // Waits for the drive to be idle, as the OS does by reading the control port
+  // until the phase is 0, then writes `command_word` alone, with `word1` in the
+  // field's word 1, recording its definition for ReceiveAccept and Complete.
   void Start(uint16_t command_word, uint16_t word1 = 0) {
+    RunUntil([this] { return GetPhase() == 0; });
     def_ = GetDiskCommandDef(
         static_cast<uint8_t>(command_word >> DiskDrive::kCommandShift));
     SendField(PortWords::FromWords(command_word, word1));
@@ -412,26 +414,26 @@ TEST(DiskDrivePresetTest, PresetsAreAsDesigned) {
 // The control port
 //==============================================================================
 
-TEST_F(DiskDriveTest, StateWordShowsTheDisk) {
+TEST_F(DiskDriveTest, ControlWordShowsTheDisk) {
   ASSERT_TRUE(InitDrive());
   Execute(1);
-  EXPECT_EQ(GetStateWord(), 0);
+  EXPECT_EQ(GetControlWord(), 0);
   EXPECT_FALSE(IsSet(kControlPort));
 
   // The drive shows the disk once it has read its superblock.
   drive_->AttachImage(MakeImage());
   Execute(kAttachCycles);
-  EXPECT_EQ(GetStateWord(), 0);
+  EXPECT_EQ(GetControlWord(), 0);
   Execute(2);
-  EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
   EXPECT_FALSE(IsSet(kControlPort));
 
   ASSERT_NE(drive_->DetachImage(), nullptr);
   Execute(1);
-  EXPECT_EQ(GetStateWord(), 0);
+  EXPECT_EQ(GetControlWord(), 0);
 }
 
-TEST_F(DiskDriveTest, StateWordShowsEachPhaseAndTheCommand) {
+TEST_F(DiskDriveTest, ControlWordShowsEachPhaseAndTheCommand) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
   const uint16_t disk = DiskDrive::kDiskAttached;
@@ -439,13 +441,13 @@ TEST_F(DiskDriveTest, StateWordShowsEachPhaseAndTheCommand) {
   // Sending, then working, then sending the completion, then idle.
   Start(CommandWord(DiskDriveCommand::kOpenRoot));
   Execute(1);
-  EXPECT_EQ(GetStateWord(), 0x1100 | disk | 3);
+  EXPECT_EQ(GetControlWord(), 0x1100 | disk | 3);
   ASSERT_EQ(ReceiveField(), Field(kOk));
-  EXPECT_EQ(GetStateWord(), 0x1100 | disk | 2);
+  EXPECT_EQ(GetControlWord(), 0x1100 | disk | 2);
   RunUntil([this] { return IsSet(kCommandPort); });
-  EXPECT_EQ(GetStateWord(), 0x1100 | disk | 3);
+  EXPECT_EQ(GetControlWord(), 0x1100 | disk | 3);
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(0)));
-  EXPECT_EQ(GetStateWord(), disk);
+  EXPECT_EQ(GetControlWord(), disk);
 }
 
 TEST_F(DiskDriveTest, ResetAbortsEveryPhase) {
@@ -455,10 +457,10 @@ TEST_F(DiskDriveTest, ResetAbortsEveryPhase) {
   // Arguments, as OPEN takes a name, with an argument field waiting.
   Start(CommandWord(DiskDriveCommand::kOpen));
   Execute(1);
-  EXPECT_EQ(GetStateWord(), 0x1000 | DiskDrive::kDiskAttached | 1);
+  EXPECT_EQ(GetControlWord(), 0x1000 | DiskDrive::kDiskAttached | 1);
   ASSERT_TRUE(Out(kCommandPort, PortWords::FromWords(1, 2)));
   Request(DiskDrive::kResetRequest);
-  EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
   EXPECT_FALSE(IsSet(kCommandPort));
 
   // Sending, with the accept status waiting, and a word in the data port.
@@ -536,17 +538,17 @@ TEST_F(DiskDriveTest, OnlyAResetWaitsForTheOtherPorts) {
   EXPECT_FALSE(IsSet(kControlPort));
 }
 
-TEST_F(DiskDriveTest, StateWaitsForTheControlPort) {
+TEST_F(DiskDriveTest, ControlWordWaitsForTheControlPort) {
   ASSERT_TRUE(InitDrive());
   Execute(1);
   std::unique_ptr<Lock> lock = LockPort(kControlPort);
   ASSERT_TRUE(lock->IsLocked());
   drive_->AttachImage(MakeImage());
   Execute(kAttachCycles + 5);
-  EXPECT_EQ(GetStateWord(), 0);
+  EXPECT_EQ(GetControlWord(), 0);
   lock.reset();
   Execute(1);
-  EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
 }
 
 //==============================================================================
@@ -584,7 +586,7 @@ TEST_F(DiskDriveTest, AnUnknownCommandIsBadCommandAtOnce) {
     SCOPED_TRACE(code);
     SendField(PortWords::FromWord(static_cast<uint16_t>(code << 8 | 3)));
     Execute(1);
-    EXPECT_EQ(GetStateWord(), (code << 8) | DiskDrive::kDiskAttached | 3);
+    EXPECT_EQ(GetControlWord(), (code << 8) | DiskDrive::kDiskAttached | 3);
     EXPECT_EQ(ReceiveField(), Field(DiskStatus::kBadCommand));
     EXPECT_EQ(GetPhase(), 0);
   }
@@ -627,7 +629,7 @@ TEST_F(DiskDriveTest, AWordInAnArgumentPhaseIsAnArgument) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
   Start(CommandWord(DiskDriveCommand::kOpen));
-  Start(CommandWord(DiskDriveCommand::kMedia));
+  SendField(PortWords::FromWord(CommandWord(DiskDriveCommand::kMedia)));
   Execute(1);
   EXPECT_FALSE(IsSet(kCommandPort));
   EXPECT_EQ(GetPhase(), 1);
@@ -687,13 +689,13 @@ TEST_F(DiskDriveTest, CompletionsWaitForTheDisk) {
   EXPECT_TRUE(IsInterruptRaised());
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(0)));
 
-  // Closing the root writes nothing, so it completes the cycle after the drive
-  // sees its accept status read.
+  // Closing the root writes nothing, so it completes in the run that sees its
+  // accept status read.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
               ElementsAre(Field(kOk)));
-  EXPECT_EQ(GetPhase(), 2);
-  Execute(1);
+  EXPECT_EQ(GetPhase(), 3);
   EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_TRUE(IsInterruptRaised());
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
 }
 
@@ -744,13 +746,14 @@ TEST_F(DiskDriveTest, TheDriveDoesNothingWhileBusy) {
   EXPECT_EQ(GetPhase(), 3);
 }
 
-TEST_F(DiskDriveTest, AStepTakenAsTheHostAttachesStillEnds) {
+TEST_F(DiskDriveTest, AResponseTakenAsTheHostAttachesEndsOnceItIsRead) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
 
   // The OS takes MEDIA's last field, and before the drive runs again, the
-  // host attaches an image. The OS writes its next command word as soon as the
-  // phase shows the drive has seen it.
+  // host attaches an image. The drive sees the field taken only once it has
+  // read the superblock, so the phase shows sending until then, and the OS
+  // waits for idle before its next command word.
   Start(CommandWord(DiskDriveCommand::kMedia));
   RunUntil([this] { return GetPhase() >= 2; });
   EXPECT_EQ(ReceiveField(), Field(kOk));
@@ -759,11 +762,11 @@ TEST_F(DiskDriveTest, AStepTakenAsTheHostAttachesStillEnds) {
   EXPECT_EQ(In(kCommandPort), PortWords::FromWord(0));
   drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath));
   Execute(1);
+  const Cycles attached = GetCycles();
+  ASSERT_TRUE(RunUntil([this] { return GetPhase() != 3; }));
+  EXPECT_EQ(GetCycles(), attached + kAttachCycles);
   EXPECT_EQ(GetPhase(), 0);
-  Start(CommandWord(DiskDriveCommand::kMedia));
-
-  // The drive takes it once the superblock is read.
-  EXPECT_THAT(ReceiveAccept(),
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
               ElementsAre(Field(kOk), PortWords::FromWord(kSectors),
                           PortWords::FromWord(0)));
 }
@@ -905,7 +908,7 @@ TEST_F(DiskDriveTest, DetachingLeavesWorkDoneAsItIs) {
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(GetCycles(), accepted + kReadCycles);
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(0)));
-  EXPECT_EQ(GetStateWord(), 0);
+  EXPECT_EQ(GetControlWord(), 0);
 }
 
 TEST_F(DiskDriveTest, DetachingFailsWorkNotStarted) {
@@ -913,16 +916,15 @@ TEST_F(DiskDriveTest, DetachingFailsWorkNotStarted) {
   AttachFormatted();
 
   // The accept status is still to be read, so the work finds no disk, and
-  // completes at once.
+  // completes in the run that sees the accept status read.
   Start(CommandWord(DiskDriveCommand::kOpenRoot));
   Execute(1);
   ASSERT_EQ(GetPhase(), 3);
   ASSERT_NE(drive_->DetachImage(), nullptr);
   EXPECT_EQ(ReceiveField(), Field(kOk));
-  Execute(1);
   EXPECT_TRUE(IsSet(kCommandPort));
   EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kNoDisk)));
-  EXPECT_EQ(GetStateWord(), 0);
+  EXPECT_EQ(GetControlWord(), 0);
 }
 
 //==============================================================================
@@ -940,6 +942,10 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
         MVQ R6, 0               ; Completions handled
         EI
 
+    idle_open:
+        IN 18, R0
+        AND R0, 15              ; Phase 0
+        JC NZ, idle_open
         MOV R2, open_completion ; Where the handler reads to, and how much
         MVQ R3, 2
         MOV R1, open_root
@@ -957,6 +963,10 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
         CMP R6, 1
         JC NZ, wait_open_completion
 
+    idle_close:
+        IN 18, R0
+        AND R0, 15
+        JC NZ, idle_close
         MOV R2, close_completion
         MVQ R3, 1
         MOV R1, close
@@ -1014,7 +1024,7 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
   EXPECT_EQ(data.SetAddress(base + GetLabel("CLOSE_COMPLETION")).GetValue(),
             static_cast<uint16_t>(kOk));
   Execute(1);
-  EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
 }
 
 }  // namespace
