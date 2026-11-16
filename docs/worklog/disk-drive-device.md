@@ -206,8 +206,8 @@ table and a line to `Home.md`.
   definition, and arguments), and an accept or completion (its status, results,
   and how many fields have gone on the port). "Response" covers both, where
   "step" didn't say which.
-- **`TakeControlRequest`**: reading a request off the control port, before
-  the state's step. The CL3 draft's `ExecuteRequest` read as running a
+- **`TakeControlRequest`**: taking a request off the control port, and doing
+  a reset, before the state's step. The CL3 draft's `ExecuteRequest` read as running a
   command.
 - Settings: `slots` and `hardware`, a `DiskHardwareSettings`, as the
   library's own type rather than a copy of its fields.
@@ -383,43 +383,53 @@ class DiskDriveFactory final : public DeviceFactory {
   - `IdleState`: take a command word;
   - `ArgumentsState`: take argument fields, then accept;
   - `SendingAcceptState`: put the accept's fields on the command port, one
-    each time the OS takes the last. Once it has taken the last, a latent
-    command with an OK accept goes on to running its work; anything else goes
-    idle;
+    each time the OS takes the last. Its status goes on as the drive enters
+    it, while the drive still holds the port from taking the last word. Once
+    the OS has taken the last field, a latent command with an OK accept goes
+    on to running its work; anything else goes idle;
   - `RunningWorkState`: run the latent command's work, with its arguments from
     the `Command`, so it needs no port, and go on to sending its completion;
   - `SendingCompletionState`: put the completion's fields on the command port,
-    as for the accept, raising the interrupt with the first, then go idle;
-  - `ResettingState`: see Reset;
+    as for the accept, raising the interrupt with the first, then go idle. An
+    error response is its status alone;
   - in CL5, reading and writing, which finish into `SendingCompletionState`.
 
-  Each struct also names the ports its step needs locked (`kLocks`) and the
-  phase it shows (`kPhase`), so `GetPhase()` is one `std::visit`. Both sending
-  states show phase 3.
+  Each struct also returns the phase and the command word it shows
+  (`GetPhase()` and `GetCommandWord()`), so `GetControlWord()` is one
+  `std::visit`, and a new state that leaves either out doesn't compile. Phase
+  3 means a field from the drive is on the command port, so a completion shows
+  phase 2 until the drive holds the command and control ports, then puts its
+  status on the port, shows phase 3, and raises the interrupt together. A
+  step returns a `StepResult`: it moved to another state, it waits for the
+  OS, or it waits for a lock.
 - **A run** first charges any disk time the host started, and ends there if
   there was some. It then takes any control request, and runs the state's
   step in a loop while each step moves to another state. Before each step, it
-  gathers the locks the state names, and the control port's if the control
-  word has changed, then shows the control word, so each step runs with its
-  own phase shown. A loop ends when a step waits for the OS, which sleeps
-  until a port access wakes the drive, or does disk work, whose time is
-  charged at once. So work that takes no time, such as a `CLOSE` with nothing
+  shows the control word, locking the control port if the word has changed,
+  so each step runs with its own phase shown. A loop ends when a step waits
+  for a lock, which tries again the next cycle; for the OS, which sleeps until
+  a port access wakes the drive; or does disk work, whose time is charged at
+  once. So work that takes no time, such as a `CLOSE` with nothing
   to write, posts its completion in the same run.
-- **Reset** is its own state. `TakeControlRequest` reads a request off the
-  control port, without its lock unless the flag is set. A reset moves to
-  `ResettingState`, leaving the request pending, so `TSTP` still sees it.
-  That state's step locks all three ports, withdraws the command and data
-  ports' words, clears the request, and goes idle, and the next step's control
-  word restores the control port in the same run. A request with no reset bit
+- **Reset** happens as the drive takes the request. `HasControlRequest`
+  checks the control port's flag without its lock, and `TakeControlRequest`
+  then locks the port and reads the request. A reset also locks the command
+  and data ports, withdraws their words, and goes idle, before clearing the
+  request, so while it waits for a lock, `TSTP` still sees the request. The
+  first step's control word then restores the control port in the same run.
+  The state is still in hand until the reset replaces it, so CL5's abort of a
+  read or write can do what its state needs first. A request with no reset bit
   is cleared at once, and the state carries on, so there is never a state to
   return to.
 - **Locks:** a device can read a port's flag without its lock, as the timer
   does, since a flag only changes under the lock. The control port's flag is
-  checked that way each run. Each state's step then locks the ports it uses,
-  for the rest of the run: the command port in the idle, arguments, and
-  sending states, none while running work, and in CL5, the data port while
-  reading and writing. A run that has to wait for a lock keeps the ones it has
-  and tries again the next cycle, so it gathers them all.
+  checked that way each run, and each step checks its port's flag the same way
+  before it locks the port, for the rest of the run, only once it has
+  something to do: the command port in the idle, arguments, and sending
+  states, none while running work, and in CL5, the data port while reading and
+  writing. So a core using a port the drive has nothing to do with doesn't
+  delay it. A run that has to wait for a lock keeps the ones it has and tries
+  again the next cycle, so it gathers them all.
 - **The control word follows the ports.** The OS can't read the control port
   while the drive holds its lock, and the drive holds it from showing a
   state's control word until the run ends. So the phase can lag the ports,
@@ -573,8 +583,9 @@ Depends on: CL1, CL2.
   - detaching mid-command: a latent command whose work has run completing with
     its real status, and one whose work hasn't started with no disk;
     attaching over an image, and the disk bit;
-  - the drive locking only the ports it uses, a core holding a port delaying
-    it, and the drive asleep while idle;
+  - the drive locking only the ports it uses, and only once it has something
+    to do, a core holding a port delaying it, phase 3 shown only once a
+    completion's status is on the port, and the drive asleep while idle;
   - an assembled program opening and closing the root with `OUTR`, `INR`, and
     `WAIT` on the interrupt.
 

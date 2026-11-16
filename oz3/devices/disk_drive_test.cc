@@ -551,6 +551,16 @@ TEST_F(DiskDriveTest, ControlWordWaitsForTheControlPort) {
   EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
 }
 
+TEST_F(DiskDriveTest, AnIdleDriveDoesNotWaitForTheCommandPort) {
+  ASSERT_TRUE(InitDrive());
+  Execute(1);
+  std::unique_ptr<Lock> lock = LockPort(kCommandPort);
+  ASSERT_TRUE(lock->IsLocked());
+  drive_->AttachImage(MakeImage());
+  Execute(kAttachCycles + 1);
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
+}
+
 //==============================================================================
 // The command protocol
 //==============================================================================
@@ -825,6 +835,28 @@ TEST_F(DiskDriveTest, ACompletionWaitsForTheCommandPort) {
   Execute(1);
   EXPECT_EQ(GetPhase(), 3);
   EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(0)));
+}
+
+TEST_F(DiskDriveTest, ACompletionWaitsForTheControlPort) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk)));
+
+  // The status, phase 3, and the interrupt go out together.
+  {
+    std::unique_ptr<Lock> lock = LockPort(kControlPort);
+    ASSERT_TRUE(lock->IsLocked());
+    Execute(kReadCycles + 5);
+    EXPECT_EQ(GetPhase(), 2);
+    EXPECT_FALSE(IsSet(kCommandPort));
+    EXPECT_FALSE(IsInterruptRaised());
+  }
+  Execute(1);
+  EXPECT_EQ(GetPhase(), 3);
+  EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_TRUE(IsInterruptRaised());
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(0)));
 }
 

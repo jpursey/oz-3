@@ -5,7 +5,6 @@
 
 #include "oz3/devices/disk_drive.h"
 
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -83,11 +82,12 @@ std::unique_ptr<Device> DiskDriveFactory::CreateDevice() const {
 // A step that moves to another state lets that state's step run in the same
 // run, until a step waits for the OS or the disk.
 //
-// Each step first gathers the locks of the ports it uses, and the control
-// port's when the control word has changed, and shows the control word for its
-// state. So each step runs with its phase shown, and the OS, which can't read
-// the control port while the drive holds its lock, never sees a phase run
-// ahead of the ports.
+// Before each step, the drive shows its state's control word, locking the
+// control port if the word has changed. A step locks the ports it uses once
+// their flags show it has something to do, and a run that waits for a lock
+// keeps the ones it holds. So each step runs with its phase shown, and the OS,
+// which can't read the control port while the drive holds its lock, never sees
+// a phase run ahead of the ports.
 //
 // A run that does disk work ends by releasing its locks and advancing the
 // drive's cycles by the time the disk is busy with it. The drive can't run
@@ -135,18 +135,21 @@ void DiskDrive::Execute() {
     AdvanceCycles(1);
     return;
   }
-  bool moved = true;
-  while (moved) {
-    if (!LockPorts(GetLocksNeeded())) {
+  StepResult result = StepResult::kMoved;
+  while (result == StepResult::kMoved) {
+    if (!UpdateControlWord()) {
       AdvanceCycles(1);
       return;
     }
-    UpdateControlWord();
-    moved =
+    result =
         std::visit([this](auto& state) { return ExecuteState(state); }, state_);
     if (ChargeBusyTime()) {
       return;
     }
+  }
+  if (result == StepResult::kBlocked) {
+    AdvanceCycles(1);
+    return;
   }
   ReleaseLocks();
   Sleep();
@@ -210,8 +213,15 @@ bool DiskDrive::TakeControlRequest() {
     return false;
   }
   if ((GetPort(kControlPort).GetValue(0) & kResetRequest) != 0) {
-    state_ = ResettingState();
-    return true;
+    if (!LockPorts(kCommandLock | kDataLock)) {
+      return false;
+    }
+
+    // A reset discards what the state held.
+    uint16_t word = 0;
+    GetPort(kCommandPort).LoadWord(GetLock(kCommandPort), Port::S, word);
+    GetPort(kDataPort).LoadWord(GetLock(kDataPort), Port::S, word);
+    state_ = IdleState();
   }
   ClearControlRequest();
   return true;
@@ -223,54 +233,45 @@ void DiskDrive::ClearControlRequest() {
   control_word_shown_ = request;
 }
 
-void DiskDrive::UpdateControlWord() {
-  // The port shows a pending request's word until the drive clears it.
-  Port& control = GetPort(kControlPort);
-  if (IsControlWordShown() || control.GetStatus() != 0) {
-    return;
-  }
+bool DiskDrive::UpdateControlWord() {
+  // A request's word would be lost, but a run takes any request before this.
+  DCHECK(!HasControlRequest());
   const uint16_t control_word = GetControlWord();
-  control.StoreWord(GetLock(kControlPort), 0, control_word);
+  if (control_word == control_word_shown_) {
+    return true;
+  }
+  if (!LockPorts(kControlLock)) {
+    return false;
+  }
+  GetPort(kControlPort).StoreWord(GetLock(kControlPort), 0, control_word);
   control_word_shown_ = control_word;
+  return true;
 }
 
 uint16_t DiskDrive::GetControlWord() const {
-  uint16_t control_word = static_cast<uint16_t>(GetPhase());
+  const DiskDrivePhase phase =
+      std::visit([](const auto& state) { return state.GetPhase(); }, state_);
+  const uint16_t command_word = std::visit(
+      [](const auto& state) { return state.GetCommandWord(); }, state_);
+  uint16_t control_word =
+      static_cast<uint16_t>(phase) | (command_word & (0xFF << kCommandShift));
   if (file_system_.HasImage()) {
     control_word |= kDiskAttached;
   }
-  const uint16_t command_word = std::visit(
-      [](const auto& state) -> uint16_t {
-        if constexpr (requires { state.command; }) {
-          return state.command.word;
-        } else {
-          return 0;
-        }
-      },
-      state_);
-  return control_word | (command_word & (0xFF << kCommandShift));
-}
-
-DiskDrivePhase DiskDrive::GetPhase() const {
-  return std::visit([](const auto& state) { return state.kPhase; }, state_);
-}
-
-uint8_t DiskDrive::GetLocksNeeded() const {
-  const uint8_t locks =
-      std::visit([](const auto& state) { return state.kLocks; }, state_);
-  return IsControlWordShown() ? locks : locks | kControlLock;
+  return control_word;
 }
 
 //------------------------------------------------------------------------------
 // States
 //------------------------------------------------------------------------------
 
-bool DiskDrive::ExecuteState(IdleState&) {
-  const std::optional<PortWords> field = ReadCommandPort();
-  if (!field.has_value()) {
-    return false;
+DiskDrive::StepResult DiskDrive::ExecuteState(IdleState&) {
+  PortWords field;
+  if (const StepResult result = ReadCommandPort(field);
+      result != StepResult::kMoved) {
+    return result;
   }
-  const uint16_t word = field->GetWord(0);
+  const uint16_t word = field.GetWord(0);
   Command command = {
       .word = word,
       .def = GetDiskCommandDef(static_cast<uint8_t>(word >> kCommandShift))};
@@ -279,29 +280,30 @@ bool DiskDrive::ExecuteState(IdleState&) {
   if (command.def == nullptr || command.def->arguments == 0) {
     Accept(std::move(command));
   } else {
+    command.arguments.reserve(command.def->arguments);
     state_ = ArgumentsState{.command = std::move(command)};
   }
-  return true;
+  return StepResult::kMoved;
 }
 
-bool DiskDrive::ExecuteState(ArgumentsState& state) {
-  const std::optional<PortWords> field = ReadCommandPort();
-  if (!field.has_value()) {
-    return false;
+DiskDrive::StepResult DiskDrive::ExecuteState(ArgumentsState& state) {
+  PortWords field;
+  if (const StepResult result = ReadCommandPort(field);
+      result != StepResult::kMoved) {
+    return result;
   }
   std::vector<PortWords>& arguments = state.command.arguments;
-  arguments.push_back(*field);
+  arguments.push_back(field);
   if (static_cast<int>(arguments.size()) < state.command.def->arguments) {
-    return false;
+    return StepResult::kWaiting;
   }
   Accept(std::move(state.command));
-  return true;
+  return StepResult::kMoved;
 }
 
-bool DiskDrive::ExecuteState(SendingAcceptState& state) {
+DiskDrive::StepResult DiskDrive::ExecuteState(SendingAcceptState& state) {
   if (!IsCommandResponseTaken(state.accept)) {
-    SendNextField(state.accept);
-    return false;
+    return SendNextField(state.accept);
   }
 
   // A latent command's work runs once the OS has its accept.
@@ -311,75 +313,84 @@ bool DiskDrive::ExecuteState(SendingAcceptState& state) {
   } else {
     state_ = RunningWorkState{.command = std::move(state.command)};
   }
-  return true;
+  return StepResult::kMoved;
 }
 
-bool DiskDrive::ExecuteState(RunningWorkState& state) {
+DiskDrive::StepResult DiskDrive::ExecuteState(RunningWorkState& state) {
   CommandResponse completion = RunCommand(state.command);
-  DCHECK(completion.status != DiskStatus::kOk ||
-         static_cast<int>(completion.results.size()) ==
-             state.command.def->completion_results);
+  ValidateResponse(completion, state.command.def->completion_results);
   state_ = SendingCompletionState{.command = std::move(state.command),
                                   .completion = std::move(completion)};
-  return true;
+  return StepResult::kMoved;
 }
 
-bool DiskDrive::ExecuteState(SendingCompletionState& state) {
-  if (IsCommandResponseTaken(state.completion)) {
+DiskDrive::StepResult DiskDrive::ExecuteState(SendingCompletionState& state) {
+  CommandResponse& completion = state.completion;
+  if (IsCommandResponseTaken(completion)) {
     state_ = IdleState();
-    return true;
+    return StepResult::kMoved;
   }
-  if (SendNextField(state.completion) && state.completion.fields_sent == 1) {
-    RaiseInterrupt(0);
+  if (completion.fields_sent > 0) {
+    return SendNextField(completion);
   }
-  return false;
-}
 
-bool DiskDrive::ExecuteState(ResettingState&) {
-  // A reset discards what the state it replaced held.
-  uint16_t word = 0;
-  GetPort(kCommandPort).LoadWord(GetLock(kCommandPort), Port::S, word);
-  GetPort(kDataPort).LoadWord(GetLock(kDataPort), Port::S, word);
-  ClearControlRequest();
-  state_ = IdleState();
-  return true;
+  // The status, phase 3, and the interrupt all go out together.
+  if (!LockPorts(kCommandLock | kControlLock)) {
+    return StepResult::kBlocked;
+  }
+  SendNextField(completion);
+  DCHECK_EQ(completion.fields_sent, 1);
+  UpdateControlWord();
+  RaiseInterrupt(0);
+  return StepResult::kWaiting;
 }
 
 //------------------------------------------------------------------------------
 // Protocol
 //------------------------------------------------------------------------------
 
-std::optional<PortWords> DiskDrive::ReadCommandPort() {
+DiskDrive::StepResult DiskDrive::ReadCommandPort(PortWords& field) {
+  // The flag stays set until the drive loads the field.
   Port& port = GetPort(kCommandPort);
   if (port.GetStatus() == 0) {
-    return std::nullopt;
+    return StepResult::kWaiting;
   }
-  PortWords field;
+  if (!LockPorts(kCommandLock)) {
+    return StepResult::kBlocked;
+  }
   field.Load(port, GetLock(kCommandPort), kFieldMode);
-  return field;
+  return StepResult::kMoved;
 }
 
 void DiskDrive::Accept(Command command) {
   CommandResponse accept = AcceptCommand(command);
-  DCHECK(accept.status != DiskStatus::kOk ||
-         static_cast<int>(accept.results.size()) ==
-             (command.def != nullptr ? command.def->accept_results : 0));
+  ValidateResponse(accept,
+                   command.def != nullptr ? command.def->accept_results : 0);
+  SendNextField(accept);
+  DCHECK_EQ(accept.fields_sent, 1);
   state_ = SendingAcceptState{.command = std::move(command),
                               .accept = std::move(accept)};
 }
 
+void DiskDrive::ValidateResponse(const CommandResponse& response,
+                                 int result_count) {
+  DCHECK_EQ(static_cast<int>(response.results.size()),
+            response.status == DiskStatus::kOk ? result_count : 0);
+}
+
 bool DiskDrive::IsCommandResponseTaken(const CommandResponse& response) {
-  return response.fields_sent ==
-             1 + static_cast<int>(response.results.size()) &&
+  return response.fields_sent == response.GetFieldCount() &&
          GetPort(kCommandPort).GetStatus() == 0;
 }
 
-bool DiskDrive::SendNextField(CommandResponse& response) {
+DiskDrive::StepResult DiskDrive::SendNextField(CommandResponse& response) {
   Port& port = GetPort(kCommandPort);
-  const int field_count = 1 + static_cast<int>(response.results.size());
-  if (response.fields_sent == field_count ||
+  if (response.fields_sent == response.GetFieldCount() ||
       (response.fields_sent > 0 && port.GetStatus() != 0)) {
-    return false;
+    return StepResult::kWaiting;
+  }
+  if (!LockPorts(kCommandLock)) {
+    return StepResult::kBlocked;
   }
   const PortWords field =
       response.fields_sent == 0
@@ -387,7 +398,7 @@ bool DiskDrive::SendNextField(CommandResponse& response) {
           : response.results[response.fields_sent - 1];
   field.Store(port, GetLock(kCommandPort), kFieldMode);
   ++response.fields_sent;
-  return true;
+  return StepResult::kWaiting;
 }
 
 //------------------------------------------------------------------------------

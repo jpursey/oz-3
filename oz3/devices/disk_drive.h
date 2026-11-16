@@ -9,7 +9,6 @@
 #include <array>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -277,50 +276,59 @@ class DiskDrive final : public Device {
   // results) are on the command port, the last of which the OS may not have
   // taken yet.
   struct CommandResponse {
+    // Returns the number of fields: the status, then each result.
+    int GetFieldCount() const { return 1 + static_cast<int>(results.size()); }
+
     DiskStatus status = DiskStatus::kOk;
     std::vector<PortWords> results;
     int fields_sent = 0;
   };
 
-  // The drive's states. Each holds only what it works on, and names the phase
-  // the control port shows for it and the ports its step needs locked.
+  // The drive's states. Each holds only what it works on, and returns the
+  // phase and the command word the control port shows for it. Phase 3 means a
+  // field from the drive is on the command port, so the accept is sent as the
+  // drive enters its state, and a completion shows phase 2 until its status,
+  // phase 3, and the interrupt go out together.
   struct IdleState {
-    static constexpr DiskDrivePhase kPhase = DiskDrivePhase::kIdle;
-    static constexpr uint8_t kLocks = kCommandLock;
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kIdle; }
+    uint16_t GetCommandWord() const { return 0; }
   };
   struct ArgumentsState {
-    static constexpr DiskDrivePhase kPhase = DiskDrivePhase::kArguments;
-    static constexpr uint8_t kLocks = kCommandLock;
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kArguments; }
+    uint16_t GetCommandWord() const { return command.word; }
     Command command;
   };
   struct SendingAcceptState {
-    static constexpr DiskDrivePhase kPhase = DiskDrivePhase::kSending;
-    static constexpr uint8_t kLocks = kCommandLock;
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kSending; }
+    uint16_t GetCommandWord() const { return command.word; }
     Command command;
     CommandResponse accept;
   };
   struct RunningWorkState {
-    static constexpr DiskDrivePhase kPhase = DiskDrivePhase::kWorking;
-    static constexpr uint8_t kLocks = 0;
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kWorking; }
+    uint16_t GetCommandWord() const { return command.word; }
     Command command;
   };
   struct SendingCompletionState {
-    static constexpr DiskDrivePhase kPhase = DiskDrivePhase::kSending;
-    static constexpr uint8_t kLocks = kCommandLock;
+    DiskDrivePhase GetPhase() const {
+      return completion.fields_sent > 0 ? DiskDrivePhase::kSending
+                                        : DiskDrivePhase::kWorking;
+    }
+    uint16_t GetCommandWord() const { return command.word; }
     Command command;
     CommandResponse completion;
   };
 
-  // Withdrawing the words on the command and data ports. The reset request
-  // stays pending on the control port until this is done, and the drive idle.
-  struct ResettingState {
-    static constexpr DiskDrivePhase kPhase = DiskDrivePhase::kIdle;
-    static constexpr uint8_t kLocks = kCommandLock | kDataLock | kControlLock;
-  };
+  using State = std::variant<IdleState, ArgumentsState, SendingAcceptState,
+                             RunningWorkState, SendingCompletionState>;
 
-  using State =
-      std::variant<IdleState, ArgumentsState, SendingAcceptState,
-                   RunningWorkState, SendingCompletionState, ResettingState>;
+  // What a state's step did: moved to another state, whose step runs next;
+  // waited for the OS; or waited for a port's lock, which it keeps.
+  enum class StepResult {
+    kMoved,
+    kWaiting,
+    kBlocked,
+  };
 
   //----------------------------------------------------------------------------
   // Implementation
@@ -357,9 +365,10 @@ class DiskDrive final : public Device {
   // drive hasn't taken.
   bool HasControlRequest();
 
-  // Takes the request on the control port: a reset starts resetting, which
-  // leaves the request pending until it is done, and any other request is
-  // cleared. Returns false if the drive is waiting for the port's lock.
+  // Takes the request on the control port, and clears it. A reset first
+  // withdraws the words on the command and data ports, and goes idle. Returns
+  // false if the drive is waiting for a port's lock, which leaves the request
+  // pending.
   bool TakeControlRequest();
 
   // Clears the request on the control port, which then shows the request's
@@ -367,59 +376,57 @@ class DiskDrive final : public Device {
   // lock.
   void ClearControlRequest();
 
-  // Writes the control word to the control port if it has changed, unless a
-  // request is pending. The drive must hold the port's lock if it has.
-  void UpdateControlWord();
+  // Writes the control word to the control port if it has changed. Returns
+  // false if the drive is waiting for the port's lock. No request may be
+  // pending.
+  bool UpdateControlWord();
 
-  // Returns whether the control port shows the current control word.
-  bool IsControlWordShown() const {
-    return GetControlWord() == control_word_shown_;
-  }
-
-  // Returns the control word, and its phase.
+  // Returns the control word.
   uint16_t GetControlWord() const;
-  DiskDrivePhase GetPhase() const;
-
-  // Returns the ports the current state's step needs locked, and the control
-  // port too if its control word isn't shown.
-  uint8_t GetLocksNeeded() const;
 
   //----------------------------------------------------------------------------
   // States
   //
-  // Each runs its state's step, holding the ports in the state's kLocks, and
-  // returns true if it moved to another state, whose step then runs in the
-  // same run. A step that moves on doesn't use its state afterward, as the new
-  // state replaces it.
+  // Each runs its state's step, which locks the ports it uses once it has
+  // something to do. A step that moves on doesn't use its state afterward, as
+  // the new state replaces it.
   //----------------------------------------------------------------------------
 
-  bool ExecuteState(IdleState& state);
-  bool ExecuteState(ArgumentsState& state);
-  bool ExecuteState(SendingAcceptState& state);
-  bool ExecuteState(RunningWorkState& state);
-  bool ExecuteState(SendingCompletionState& state);
-  bool ExecuteState(ResettingState& state);
+  StepResult ExecuteState(IdleState& state);
+  StepResult ExecuteState(ArgumentsState& state);
+  StepResult ExecuteState(SendingAcceptState& state);
+  StepResult ExecuteState(RunningWorkState& state);
+  StepResult ExecuteState(SendingCompletionState& state);
 
   //----------------------------------------------------------------------------
   // Protocol
   //----------------------------------------------------------------------------
 
-  // Loads a field the OS wrote to the command port, clearing its status, or
-  // returns nullopt if there is none yet.
-  std::optional<PortWords> ReadCommandPort();
+  // Loads a field the OS wrote to the command port into `field`, clearing its
+  // status. Returns kWaiting if there is none yet, and kBlocked if the drive is
+  // waiting for the port's lock.
+  StepResult ReadCommandPort(PortWords& field);
 
-  // Accepts `command`, which has all its arguments, and starts sending the
-  // accept.
+  // Accepts `command`, which has all its arguments, puts the accept's status
+  // on the command port, and moves on to sending the rest. The drive must hold
+  // the command port's lock, as it does after taking the command's last word.
   void Accept(Command command);
+
+  // Validates that `response` has `result_count` results if its status is OK,
+  // and none otherwise, as an error ends a command's fields.
+  static void ValidateResponse(const CommandResponse& response,
+                               int result_count);
 
   // Returns whether the OS has taken every field of `response`.
   bool IsCommandResponseTaken(const CommandResponse& response);
 
   // Puts the next field of `response` on the command port, if it has one left
-  // and the OS has taken the last one sent. The first goes over any word the
-  // OS wrote while the drive wasn't taking words, which the drive never read.
-  // Returns whether it put one.
-  bool SendNextField(CommandResponse& response);
+  // and the OS has taken the last one sent. Returns kBlocked if the drive is
+  // waiting for the port's lock, and otherwise kWaiting, for the OS. The first
+  // field goes over any word the OS wrote while the drive wasn't taking words,
+  // which the drive never read; only a completion can meet one, as an accept's
+  // goes on as the drive takes the last word.
+  StepResult SendNextField(CommandResponse& response);
 
   //----------------------------------------------------------------------------
   // Commands
