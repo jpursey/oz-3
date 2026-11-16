@@ -15,6 +15,7 @@ set(oz3_devices_SOURCE
 set(oz3_devices_DEPS
   absl::any_invocable
   absl::civil_time
+  absl::int128
   absl::memory
   absl::span
   absl::status

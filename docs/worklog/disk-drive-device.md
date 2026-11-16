@@ -317,7 +317,7 @@ enum class DiskDrivePreset {
 
 // The read cache every preset has.
 inline constexpr int kDiskDriveReadCacheSectors = 4;
-inline constexpr int kDiskDriveCacheWordsPerSec = 1'000'000;
+inline constexpr int64_t kDiskDriveCacheWordsPerSec = 1'000'000;
 
 // The preset's rates and latency, with the read cache above.
 constexpr DiskHardwareSettings GetDiskDrivePreset(DiskDrivePreset preset);
@@ -359,21 +359,23 @@ class DiskDriveFactory final : public DeviceFactory {
 - **State machine.** The drive holds its `State` explicitly, and each run
   first handles the control port (`ExecuteControlPort`), then calls the one
   function for its state, which says what that state waits for and does:
-  - idle: take a command word;
-  - arguments: take argument fields, then accept;
-  - sending: put fields on the command port, one each time the OS takes the
-    last, then go on to working (after a latent command's accept) or idle;
-  - working: run the command's disk work, then post its completion, once the
-    disk's time has passed;
+  - `kIdle`: take a command word;
+  - `kArguments`: take argument fields, then accept;
+  - `kSendingAccept`: put the accept's fields on the command port, one each
+    time the OS takes the last. Once it has taken the last, a latent command
+    with an OK accept runs its disk work, holding the completion's fields, and
+    goes on to working; anything else goes idle;
+  - `kWorking`: once the work's disk time has passed, post the completion,
+    raising the interrupt;
+  - `kSendingCompletion`: put the completion's fields on the command port, as
+    for the accept, then go idle;
   - in CL5, reading and writing.
 
   Alongside it are the command in progress and its definition, the argument
-  fields so far, and the fields to send. The phase is mapped from the state,
-  so there can be more states than phases where that's cleaner than flags.
-  Working is likely two states, both showing phase 2: before its work runs, and
-  after, while the disk is busy, until the completion goes on the port. In CL5 a data
-  phase whose completion is already waiting (phase 3) and the rest of a failed
-  transfer are likely their own states too.
+  fields so far, and the fields to send. The phase is mapped from the state:
+  both sending states show phase 3. In CL5 a data phase whose completion is
+  already waiting (phase 3) and the rest of a failed transfer are likely their
+  own states too.
 - **Reset is its own step.** `ExecuteControlPort` reads a request off the
   control port. A reset then drops the command, withdraws words from the
   command and data ports, goes idle, and restores the state word with the
@@ -398,10 +400,12 @@ class DiskDriveFactory final : public DeviceFactory {
   port's lock, and otherwise once it gets it. So a phase can lag, but never
   run ahead of the ports. That is the order the OS's check relies on: when it
   sees phase 2 or higher, the drive has already taken the OS's last word.
-- **Time:** each run ends by collecting the file system's busy time, which
-  includes any host call's since the last run, and calling `AdvanceCycles` with
-  it in cycles: ⌈ns × Hz ÷ 10⁹⌉, in `absl::int128`, so the rounding is visible
-  and nothing can overflow. A run with nothing more to do then sleeps until it
+- **Time:** the file system's busy time is charged with `AdvanceCycles`, in
+  cycles: ⌈ns × Hz ÷ 10⁹⌉, in `absl::int128`, so the rounding is visible and
+  nothing can overflow. A run's own disk work is charged at its end. A host
+  call's (the superblock read at attach) is charged at the start of the next
+  run, which then does nothing else, so a command word or request that arrives
+  meanwhile waits for it. A run with nothing more to do then sleeps until it
   is woken. The drive can't run again until its cycles have passed, so a wake
   while it is busy only takes effect after.
 - **Transfers** move one word or dword at a time, with `Read` and `Write` of
@@ -497,7 +501,7 @@ Depends on: nothing.
   word 1 once it takes the characters. The timer's, keyboard's, teletype's, and
   instructions' tests pass unchanged in what they check.
 
-### CL3 [~] devices: the drive, its ports, and the protocol
+### CL3 [x] devices: the drive, its ports, and the protocol
 
 Depends on: CL1, CL2.
 
@@ -508,8 +512,7 @@ Depends on: CL1, CL2.
   ports and their locks, the control port's state word and reset, the state
   machine, the command protocol (command words, arguments and results, accept
   and completion, and the interrupt), busy time, the host interface and
-  destructor, and the
-  first commands, `MEDIA`, `OPEN ROOT`, and `CLOSE`, one of each kind but
+  destructor, and the first commands, `MEDIA`, `OPEN ROOT`, and `CLOSE`, one of each kind but
   transfers.
 - `CMakeLists.txt`: the new files, and `oz3_disk`, with `oz3_disk_testing` for
   the tests. CLAUDE.md's library list says `devices` links `core` and `disk`.

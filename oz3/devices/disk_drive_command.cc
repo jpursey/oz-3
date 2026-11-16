@@ -9,24 +9,13 @@ namespace oz3 {
 
 namespace {
 
-constexpr DiskPortWidth kWord = DiskPortWidth::kWord;
-constexpr DiskPortWidth kDword = DiskPortWidth::kDword;
-
-// The fields commands move, each named for what it holds. An 8-word field (a
-// name, pattern, or label) is 4 dwords, and a directory entry is 8.
-constexpr DiskPortWidth kOneWord[] = {kWord};
-constexpr DiskPortWidth kOneDword[] = {kDword};
-constexpr DiskPortWidth kName[] = {kDword, kDword, kDword, kDword};
-constexpr DiskPortWidth kTwoNames[] = {kDword, kDword, kDword, kDword,
-                                       kDword, kDword, kDword, kDword};
-constexpr DiskPortWidth kNameAndWord[] = {kDword, kDword, kDword, kDword,
-                                          kWord};
-constexpr DiskPortWidth kEntry[] = {kDword, kDword, kDword, kDword,
-                                    kDword, kDword, kDword, kDword};
-constexpr DiskPortWidth kInfoResults[] = {kDword, kDword};
-constexpr DiskPortWidth kMediaResults[] = {kDword, kWord};
-constexpr DiskPortWidth kVolumeResults[] = {kDword, kDword, kDword, kDword,
-                                            kWord,  kWord,  kWord};
+// The fields commands move, each named for what it holds. A name, pattern, or
+// label is 8 words, so 4 fields, and a directory entry is 8 fields.
+constexpr int kName = 4;
+constexpr int kEntry = 8;
+constexpr int kInfoResults = 2;            // Position and size.
+constexpr int kMediaResults = 2;           // Sectors and flags.
+constexpr int kVolumeResults = kName + 3;  // Label, and three counts.
 
 constexpr DiskCommandKind kLatent = DiskCommandKind::kLatent;
 constexpr DiskCommandKind kRead = DiskCommandKind::kRead;
@@ -37,14 +26,14 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kOpen,
      .kind = kLatent,
      .arguments = kName,
-     .completion_results = kOneWord},
+     .completion_results = 1},
     {.command = DiskDriveCommand::kOpenRoot,
      .kind = kLatent,
-     .completion_results = kOneWord},
+     .completion_results = 1},
     {.command = DiskDriveCommand::kCreate,
      .kind = kLatent,
      .arguments = kName,
-     .completion_results = kOneWord},
+     .completion_results = 1},
     {.command = DiskDriveCommand::kClose,
      .takes_handle = true,
      .kind = kLatent},
@@ -54,32 +43,30 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kRead,
      .takes_handle = true,
      .kind = kRead,
-     .arguments = kOneWord,
-     .accept_results = kOneWord,
-     .completion_results = kOneWord},
+     .arguments = 1,
+     .accept_results = 1,
+     .completion_results = 1},
     {.command = DiskDriveCommand::kWrite,
      .takes_handle = true,
      .kind = kWrite,
-     .arguments = kOneWord,
-     .accept_results = kOneWord,
-     .completion_results = kOneWord},
+     .arguments = 1,
+     .accept_results = 1,
+     .completion_results = 1},
     {.command = DiskDriveCommand::kReadPacked,
      .takes_handle = true,
      .kind = kRead,
      .packed = true,
-     .arguments = kOneWord,
-     .accept_results = kOneWord,
-     .completion_results = kOneWord},
+     .arguments = 1,
+     .accept_results = 1,
+     .completion_results = 1},
     {.command = DiskDriveCommand::kWritePacked,
      .takes_handle = true,
      .kind = kWrite,
      .packed = true,
-     .arguments = kOneWord,
-     .accept_results = kOneWord,
-     .completion_results = kOneWord},
-    {.command = DiskDriveCommand::kSeek,
-     .takes_handle = true,
-     .arguments = kOneDword},
+     .arguments = 1,
+     .accept_results = 1,
+     .completion_results = 1},
+    {.command = DiskDriveCommand::kSeek, .takes_handle = true, .arguments = 1},
     {.command = DiskDriveCommand::kInfo,
      .takes_handle = true,
      .accept_results = kInfoResults},
@@ -94,17 +81,17 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kDelete, .kind = kLatent, .arguments = kName},
     {.command = DiskDriveCommand::kRename,
      .kind = kLatent,
-     .arguments = kTwoNames},
+     .arguments = 2 * kName},
     {.command = DiskDriveCommand::kAttrib,
      .kind = kLatent,
-     .arguments = kNameAndWord},
+     .arguments = kName + 1},
     {.command = DiskDriveCommand::kMedia, .accept_results = kMediaResults},
     {.command = DiskDriveCommand::kVolume,
      .kind = kLatent,
      .completion_results = kVolumeResults},
     {.command = DiskDriveCommand::kFormat,
      .kind = kLatent,
-     .arguments = kNameAndWord},
+     .arguments = kName + 1},
     {.command = DiskDriveCommand::kLabel, .kind = kLatent, .arguments = kName},
 };
 

@@ -5,16 +5,17 @@
 
 #include "oz3/devices/disk_drive.h"
 
-#include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/memory/memory.h"
+#include "absl/numeric/int128.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-#include "oz3/core/port.h"
 #include "oz3/disk/disk_media.h"
 
 namespace oz3 {
@@ -26,35 +27,18 @@ constexpr int kCommandPort = 0;
 constexpr int kDataPort = 1;
 constexpr int kControlPort = 2;
 
-// Returns the cycles `busy` takes at `clock_hz`, rounded up.
+// The mode the drive moves a field with: both words, ending at word 0 again,
+// with the status cleared by a load and set by a store.
+constexpr uint16_t kFieldMode = Port::S | Port::A;
+
+// Returns the cycles `busy` takes at `clock_hz`: the busy time rounded up to
+// whole nanoseconds, and then to whole cycles.
 Cycles GetBusyCycles(absl::Duration busy, int64_t clock_hz) {
-  return absl::ToInt64Seconds(absl::Ceil(busy * clock_hz, absl::Seconds(1)));
-}
-
-// Loads a field from `port` with `lock`, clearing its status. The port's
-// address is back at word 0 after it.
-std::array<uint16_t, 2> LoadField(Port& port, const Lock& lock,
-                                  DiskPortWidth width) {
-  std::array<uint16_t, 2> words = {0, 0};
-  if (width == DiskPortWidth::kDword) {
-    port.LoadWord(lock, Port::A, words[0]);
-    port.LoadWord(lock, Port::A | Port::S, words[1]);
-  } else {
-    port.LoadWord(lock, Port::S, words[0]);
-  }
-  return words;
-}
-
-// Stores a field to `port` with `lock`, setting its status. The port's address
-// is back at word 0 after it.
-void StoreField(Port& port, const Lock& lock, DiskPortWidth width,
-                const std::array<uint16_t, 2>& words) {
-  if (width == DiskPortWidth::kDword) {
-    port.StoreWord(lock, Port::A, words[0]);
-    port.StoreWord(lock, Port::A | Port::S, words[1]);
-  } else {
-    port.StoreWord(lock, Port::S, words[0]);
-  }
+  constexpr int64_t kNanosPerSec = 1'000'000'000;
+  const absl::int128 nanos =
+      absl::ToInt64Nanoseconds(absl::Ceil(busy, absl::Nanoseconds(1)));
+  return static_cast<Cycles>((nanos * clock_hz + kNanosPerSec - 1) /
+                             kNanosPerSec);
 }
 
 }  // namespace
@@ -73,11 +57,14 @@ absl::StatusOr<std::unique_ptr<DiskDriveFactory>> DiskDriveFactory::Create(
   const DiskHardwareSettings& hardware = settings.hardware;
   if (hardware.read_cache_sectors < 0 || hardware.read_words_per_sec < 0 ||
       hardware.write_words_per_sec < 0 || hardware.cache_words_per_sec < 0 ||
-      hardware.latency < absl::ZeroDuration() ||
-      hardware.latency == absl::InfiniteDuration()) {
+      hardware.latency < absl::ZeroDuration()) {
     return absl::InvalidArgumentError(absl::StrCat(
-        "Disk drive ", name,
-        " has a negative read cache, rate, or latency, or an infinite one"));
+        "Disk drive ", name, " has a negative read cache, rate, or latency"));
+  }
+  if (hardware.latency > DiskDriveSettings::kMaxLatency) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Disk drive ", name, " has a latency of ", hardware.latency,
+        ", but it must be at most ", DiskDriveSettings::kMaxLatency));
   }
   return absl::WrapUnique(new DiskDriveFactory(name, settings));
 }
@@ -95,6 +82,22 @@ std::unique_ptr<Device> DiskDriveFactory::CreateDevice() const {
 
 //==============================================================================
 // DiskDrive
+//
+// The drive is a state machine (State), and each run does what its state is
+// waiting for, if it is there, after taking any request off the control port.
+// Each state shows a phase on the control port, which the drive updates after
+// the port changes it describes, so the phase can lag the ports, but never run
+// ahead of them.
+//
+// A run that does disk work ends by advancing the drive's cycles by the time
+// the disk is busy with it. The drive can't run again until those cycles have
+// passed, so it does nothing in the meantime, and a core's wake only takes
+// effect after them. Disk work the host started, such as an attach's superblock
+// read, is charged at the start of the drive's next run, which then does
+// nothing else.
+//
+// Otherwise, the drive runs the cycle after a core reads or writes one of its
+// ports, which wakes it, and sleeps between them.
 //==============================================================================
 
 DiskDrive::DiskDrive(DeviceConfig config, const DiskDriveSettings& settings)
@@ -107,40 +110,50 @@ DiskDrive::~DiskDrive() {
   file_system_.Flush(GetNow());
 }
 
-DiskStatus DiskDrive::AttachImage(std::unique_ptr<DiskImage> image) {
+void DiskDrive::AttachImage(std::unique_ptr<DiskImage> image) {
   CHECK(image != nullptr);
   DetachImage();
-  const DiskStatus status = file_system_.AttachImage(std::move(image));
+
+  // A program finds out what the disk holds from its commands.
+  file_system_.AttachImage(std::move(image));
   Wake();
-  return status;
 }
 
 std::unique_ptr<DiskImage> DiskDrive::DetachImage() {
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
-  if (image == nullptr) {
-    return nullptr;
+  if (image != nullptr) {
+    Wake();
   }
-
-  // The disk's work goes with it.
-  file_system_.CollectBusyTime();
-  disk_free_cycle_ = 0;
-  if (completion_.has_value()) {
-    completion_ = Completion{.status = DiskStatus::kNoDisk};
-  }
-  Wake();
   return image;
 }
 
 void DiskDrive::Execute() {
+  if (ChargeBusyTime()) {
+    return;
+  }
+
   waiting_ = false;
-
-  // Picks up disk work the host started, such as reading a superblock.
-  ChargeBusyTime();
-
-  if (ExecuteRequest()) {
-    ExecuteCompletion();
-    ExecuteCommandPort();
+  if (ExecuteControlPort()) {
+    switch (state_) {
+      case State::kIdle:
+        ExecuteIdle();
+        break;
+      case State::kArguments:
+        ExecuteArguments();
+        break;
+      case State::kSendingAccept:
+      case State::kSendingCompletion:
+        ExecuteSending();
+        break;
+      case State::kWorking:
+        ExecuteWorking();
+        break;
+    }
     UpdateState();
+  }
+
+  if (ChargeBusyTime()) {
+    return;
   }
 
   // Locks are kept while the drive waits for one, so it gathers them all.
@@ -148,11 +161,12 @@ void DiskDrive::Execute() {
     AdvanceCycles(1);
     return;
   }
-  for (std::unique_ptr<Lock>& lock : locks_) {
-    lock.reset();
-  }
-  if (completion_.has_value()) {
-    Sleep(std::max<Cycles>(completion_->cycle - GetCycles(), 1));
+  ReleaseLocks();
+
+  // A completion goes on the command port the run after its work, even work
+  // that took no time.
+  if (state_ == State::kWorking) {
+    AdvanceCycles(1);
     return;
   }
   Sleep();
@@ -170,24 +184,31 @@ Lock* DiskDrive::GetLock(int port) {
   return lock.get();
 }
 
+void DiskDrive::ReleaseLocks() {
+  for (std::unique_ptr<Lock>& lock : locks_) {
+    lock.reset();
+  }
+}
+
 DateTime DiskDrive::GetNow() {
   return clock_ != nullptr ? DateTime::FromCivil(clock_()) : DateTime();
 }
 
-Cycles DiskDrive::ChargeBusyTime() {
+bool DiskDrive::ChargeBusyTime() {
   const absl::Duration busy = file_system_.CollectBusyTime();
-  disk_free_cycle_ = std::max(disk_free_cycle_, GetCycles());
-  if (busy > absl::ZeroDuration()) {
-    disk_free_cycle_ += GetBusyCycles(busy, GetClockHz());
+  if (busy <= absl::ZeroDuration()) {
+    return false;
   }
-  return disk_free_cycle_;
+  ReleaseLocks();
+  AdvanceCycles(GetBusyCycles(busy, GetClockHz()));
+  return true;
 }
 
 //------------------------------------------------------------------------------
-// Ports
+// Control port
 //------------------------------------------------------------------------------
 
-bool DiskDrive::ExecuteRequest() {
+bool DiskDrive::ExecuteControlPort() {
   // A flag only changes under the port's lock, so a clear one needs no lock.
   Port& control = GetPort(kControlPort);
   if (control.GetStatus() == 0) {
@@ -224,66 +245,6 @@ void DiskDrive::Reset(const Lock& command_lock, const Lock& data_lock) {
   EndCommand();
 }
 
-void DiskDrive::ExecuteCompletion() {
-  if (!completion_.has_value() || completion_->cycle > GetCycles()) {
-    return;
-  }
-  Send(completion_->status, def_->completion_results, completion_->results,
-       /*completion=*/true);
-  completion_.reset();
-}
-
-void DiskDrive::ExecuteCommandPort() {
-  Port& port = GetPort(kCommandPort);
-  if (IsReceiving() && port.GetStatus() != 0) {
-    Lock* lock = GetLock(kCommandPort);
-    if (lock == nullptr) {
-      return;
-    }
-    if (!active_) {
-      StartCommand(LoadField(port, *lock, DiskPortWidth::kWord)[0]);
-    } else {
-      const DiskPortWidth width = def_->arguments[arguments_received_];
-      AddArgument(width, LoadField(port, *lock, width));
-    }
-  }
-  SendFields();
-  EndCommandIfDone();
-}
-
-void DiskDrive::SendFields() {
-  Port& port = GetPort(kCommandPort);
-  if (outgoing_.empty()) {
-    return;
-  }
-  // A field waits until the OS takes it. The next goes in under the lock the
-  // drive sees it taken with, so the port is never left empty for a word of
-  // the OS's while there is more to send.
-  if (front_stored_ && port.GetStatus() != 0) {
-    return;
-  }
-  Lock* lock = GetLock(kCommandPort);
-  if (lock == nullptr) {
-    return;
-  }
-  if (front_stored_) {
-    outgoing_.pop_front();
-    front_stored_ = false;
-    if (outgoing_.empty()) {
-      return;
-    }
-  }
-
-  // The first field after a quiet phase goes over any word the OS wrote then,
-  // which the drive never read.
-  const Field& field = outgoing_.front();
-  StoreField(port, *lock, field.width, field.words);
-  front_stored_ = true;
-  if (field.completion) {
-    RaiseInterrupt(0);
-  }
-}
-
 void DiskDrive::UpdateState() {
   const uint16_t state = GetStateWord();
   if (state == state_shown_) {
@@ -294,7 +255,7 @@ void DiskDrive::UpdateState() {
     return;
   }
 
-  // No request is waiting, as ExecuteRequest took any there was this cycle.
+  // No request is waiting, as ExecuteControlPort took any there was this run.
   GetPort(kControlPort).StoreWord(*lock, 0, state);
   state_shown_ = state;
 }
@@ -304,121 +265,160 @@ uint16_t DiskDrive::GetStateWord() const {
   if (file_system_.HasImage()) {
     state |= kDiskAttached;
   }
-  if (active_) {
+  if (state_ != State::kIdle) {
     state |= command_word_ & 0xFF00;
   }
   return state;
 }
 
 DiskDrivePhase DiskDrive::GetPhase() const {
-  if (!active_) {
-    return DiskDrivePhase::kIdle;
-  }
-  if (IsReceiving()) {
-    return DiskDrivePhase::kArguments;
-  }
-  if (!outgoing_.empty()) {
-    return DiskDrivePhase::kSending;
-  }
-  if (completion_.has_value()) {
-    return DiskDrivePhase::kWorking;
+  switch (state_) {
+    case State::kIdle:
+      return DiskDrivePhase::kIdle;
+    case State::kArguments:
+      return DiskDrivePhase::kArguments;
+    case State::kSendingAccept:
+    case State::kSendingCompletion:
+      return DiskDrivePhase::kSending;
+    case State::kWorking:
+      return DiskDrivePhase::kWorking;
   }
   return DiskDrivePhase::kIdle;
+}
+
+//------------------------------------------------------------------------------
+// States
+//------------------------------------------------------------------------------
+
+void DiskDrive::ExecuteIdle() {
+  const std::optional<PortWords> field = TakeField();
+  if (!field.has_value()) {
+    return;
+  }
+  command_word_ = field->GetWord(0);
+  def_ = GetDiskCommandDef(static_cast<uint8_t>(command_word_ >> 8));
+  arguments_.clear();
+  if (def_ == nullptr) {
+    accept_status_ = DiskStatus::kBadCommand;
+    SetFields(accept_status_, {});
+    state_ = State::kSendingAccept;
+    ExecuteSending();
+    return;
+  }
+  if (def_->arguments == 0) {
+    Accept();
+    return;
+  }
+  state_ = State::kArguments;
+}
+
+void DiskDrive::ExecuteArguments() {
+  const std::optional<PortWords> field = TakeField();
+  if (!field.has_value()) {
+    return;
+  }
+  arguments_.push_back(*field);
+  if (static_cast<int>(arguments_.size()) == def_->arguments) {
+    Accept();
+  }
+}
+
+void DiskDrive::ExecuteSending() {
+  // A field waits until the OS takes it, which a clear flag shows without the
+  // lock. The next goes in under the lock the drive gets once it has.
+  Port& port = GetPort(kCommandPort);
+  if (fields_sent_ > 0 && port.GetStatus() != 0) {
+    return;
+  }
+  if (fields_sent_ == static_cast<int>(fields_.size())) {
+    FinishSending();
+    return;
+  }
+  Lock* lock = GetLock(kCommandPort);
+  if (lock == nullptr) {
+    return;
+  }
+
+  // A step's first field goes over any word the OS wrote while the drive
+  // wasn't taking words, which the drive never read.
+  fields_[fields_sent_++].Store(port, *lock, kFieldMode);
+  if (fields_sent_ == 1 && state_ == State::kSendingCompletion) {
+    RaiseInterrupt(0);
+  }
+}
+
+void DiskDrive::ExecuteWorking() {
+  state_ = State::kSendingCompletion;
+  ExecuteSending();
 }
 
 //------------------------------------------------------------------------------
 // Protocol
 //------------------------------------------------------------------------------
 
-bool DiskDrive::IsReceiving() const {
-  return !active_ ||
-         (def_ != nullptr &&
-          arguments_received_ < static_cast<int>(def_->arguments.size()));
-}
-
-void DiskDrive::StartCommand(uint16_t command_word) {
-  active_ = true;
-  command_word_ = command_word;
-  def_ = GetDiskCommandDef(static_cast<uint8_t>(command_word >> 8));
-  arguments_.clear();
-  arguments_received_ = 0;
-  if (def_ == nullptr) {
-    Send(DiskStatus::kBadCommand, {}, {}, /*completion=*/false);
-    return;
+std::optional<PortWords> DiskDrive::TakeField() {
+  // A flag only changes under the port's lock, so a clear one needs no lock.
+  Port& port = GetPort(kCommandPort);
+  if (port.GetStatus() == 0) {
+    return std::nullopt;
   }
-  if (def_->arguments.empty()) {
-    Accept();
+  Lock* lock = GetLock(kCommandPort);
+  if (lock == nullptr) {
+    return std::nullopt;
   }
-}
-
-void DiskDrive::AddArgument(DiskPortWidth width,
-                            const std::array<uint16_t, 2>& words) {
-  arguments_.push_back(words[0]);
-  if (width == DiskPortWidth::kDword) {
-    arguments_.push_back(words[1]);
-  }
-  ++arguments_received_;
-  if (arguments_received_ == static_cast<int>(def_->arguments.size())) {
-    Accept();
-  }
+  PortWords field;
+  field.Load(port, *lock, kFieldMode);
+  return field;
 }
 
 void DiskDrive::Accept() {
-  std::vector<uint16_t> results;
-  const DiskStatus status = AcceptCommand(&results);
-  Send(status, def_->accept_results, results, /*completion=*/false);
-  if (status != DiskStatus::kOk || def_->kind != DiskCommandKind::kLatent) {
-    return;
-  }
-
-  // The work is done at once, and completes when the disk would have finished
-  // it, after any work before it.
-  Completion completion;
-  completion.status = RunCommand(&completion.results);
-  completion.cycle = ChargeBusyTime();
-  completion_ = std::move(completion);
+  std::vector<PortWords> results;
+  accept_status_ = AcceptCommand(&results);
+  DCHECK(accept_status_ != DiskStatus::kOk ||
+         static_cast<int>(results.size()) == def_->accept_results);
+  SetFields(accept_status_, std::move(results));
+  state_ = State::kSendingAccept;
+  ExecuteSending();
 }
 
-void DiskDrive::Send(DiskStatus status, absl::Span<const DiskPortWidth> widths,
-                     absl::Span<const uint16_t> results, bool completion) {
-  outgoing_.push_back(
-      {.words = {static_cast<uint16_t>(status), 0}, .completion = completion});
-  if (status != DiskStatus::kOk) {
-    return;
+void DiskDrive::SetFields(DiskStatus status, std::vector<PortWords> results) {
+  fields_ = {PortWords(static_cast<uint16_t>(status))};
+  if (status == DiskStatus::kOk) {
+    fields_.insert(fields_.end(), results.begin(), results.end());
   }
-  int index = 0;
-  for (const DiskPortWidth width : widths) {
-    Field field = {.width = width};
-    field.words[0] = results[index++];
-    if (width == DiskPortWidth::kDword) {
-      field.words[1] = results[index++];
-    }
-    outgoing_.push_back(field);
-  }
-  CHECK_EQ(index, static_cast<int>(results.size()));
+  fields_sent_ = 0;
 }
 
-void DiskDrive::EndCommandIfDone() {
-  if (active_ && !IsReceiving() && outgoing_.empty() &&
-      !completion_.has_value()) {
+void DiskDrive::FinishSending() {
+  if (state_ != State::kSendingAccept || accept_status_ != DiskStatus::kOk ||
+      def_->kind != DiskCommandKind::kLatent) {
     EndCommand();
+    return;
   }
+
+  // A latent command's work runs once the OS has its accept, and the disk is
+  // busy with it from the end of this run.
+  std::vector<PortWords> results;
+  const DiskStatus status = RunCommand(&results);
+  DCHECK(status != DiskStatus::kOk ||
+         static_cast<int>(results.size()) == def_->completion_results);
+  SetFields(status, std::move(results));
+  state_ = State::kWorking;
 }
 
 void DiskDrive::EndCommand() {
-  // A command's other state is only read while it is active, and starting
-  // the next sets it.
-  active_ = false;
-  outgoing_.clear();
-  front_stored_ = false;
-  completion_.reset();
+  // A command's other state is only read outside kIdle, and starting the next
+  // sets it.
+  state_ = State::kIdle;
+  fields_.clear();
+  fields_sent_ = 0;
 }
 
 //------------------------------------------------------------------------------
 // Commands
 //------------------------------------------------------------------------------
 
-DiskStatus DiskDrive::AcceptCommand(std::vector<uint16_t>* results) {
+DiskStatus DiskDrive::AcceptCommand(std::vector<PortWords>* results) {
   switch (def_->command) {
     case DiskDriveCommand::kOpenRoot:
       return AcceptOpenRoot();
@@ -431,7 +431,7 @@ DiskStatus DiskDrive::AcceptCommand(std::vector<uint16_t>* results) {
   }
 }
 
-DiskStatus DiskDrive::RunCommand(std::vector<uint16_t>* results) {
+DiskStatus DiskDrive::RunCommand(std::vector<PortWords>* results) {
   switch (def_->command) {
     case DiskDriveCommand::kOpenRoot:
       return RunOpenRoot(results);
@@ -457,11 +457,11 @@ DiskStatus DiskDrive::AcceptOpenRoot() {
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskDrive::RunOpenRoot(std::vector<uint16_t>* results) {
+DiskStatus DiskDrive::RunOpenRoot(std::vector<PortWords>* results) {
   DiskFile file = 0;
   const DiskStatus status = file_system_.OpenRoot(&file);
   if (status == DiskStatus::kOk) {
-    *results = {static_cast<uint16_t>(file)};
+    *results = {PortWords(static_cast<uint16_t>(file))};
   }
   return status;
 }
@@ -480,15 +480,15 @@ DiskStatus DiskDrive::RunClose() {
   return file_system_.Close(GetHandle(), GetNow());
 }
 
-DiskStatus DiskDrive::AcceptMedia(std::vector<uint16_t>* results) {
+DiskStatus DiskDrive::AcceptMedia(std::vector<PortWords>* results) {
   if (DiskStatus status = file_system_.GetImageStatus();
       status != DiskStatus::kOk) {
     return status;
   }
   const DiskMedia* media = file_system_.GetMedia();
-  const uint32_t sector_count = static_cast<uint32_t>(media->GetSectorCount());
-  *results = {static_cast<uint16_t>(sector_count),
-              static_cast<uint16_t>(sector_count >> 16), media->GetFlags()};
+  *results = {
+      PortWords::FromDword(static_cast<uint32_t>(media->GetSectorCount())),
+      PortWords(media->GetFlags())};
   return DiskStatus::kOk;
 }
 

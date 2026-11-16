@@ -8,7 +8,6 @@
 
 #include <array>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -19,13 +18,13 @@
 #include "absl/status/statusor.h"
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
-#include "absl/types/span.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_config.h"
 #include "oz3/core/device_factory.h"
 #include "oz3/core/lockable.h"
+#include "oz3/core/port.h"
 #include "oz3/devices/disk_drive_command.h"
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_hardware.h"
@@ -49,6 +48,11 @@ enum class DiskDrivePreset {
   kHardDisk40m,  // 40 MB hard disk, AT class (1986).
 };
 
+// The read cache every preset has: 4 sectors, copied out at 1,000,000 words a
+// second (a 1 MHz controller copying a word a cycle).
+inline constexpr int kDiskDriveReadCacheSectors = 4;
+inline constexpr int64_t kDiskDriveCacheWordsPerSec = 1'000'000;
+
 namespace internal {
 
 // Returns a preset with rates in Kiw (1024 words) a second, and the latency in
@@ -56,18 +60,17 @@ namespace internal {
 constexpr DiskHardwareSettings MakeDiskDrivePreset(int64_t read_kiw_per_sec,
                                                    int64_t write_kiw_per_sec,
                                                    int latency_ms) {
-  return {.read_cache_sectors = 4,
+  return {.read_cache_sectors = kDiskDriveReadCacheSectors,
           .read_words_per_sec = read_kiw_per_sec * 1024,
           .write_words_per_sec = write_kiw_per_sec * 1024,
-          .cache_words_per_sec = 1'000'000,
+          .cache_words_per_sec = kDiskDriveCacheWordsPerSec,
           .latency = absl::Milliseconds(latency_ms)};
 }
 
 }  // namespace internal
 
 // Returns the hardware settings of `preset`: its read and write rates and
-// latency, with the drive's default read cache of 4 sectors, and a cache rate
-// of 1,000,000 words a second (a 1 MHz controller copying a word a cycle).
+// latency, with the read cache above.
 constexpr DiskHardwareSettings GetDiskDrivePreset(DiskDrivePreset preset) {
   switch (preset) {
     case DiskDrivePreset::kFloppy360k:
@@ -98,8 +101,11 @@ struct DiskDriveSettings {
   // The most slots, as handle FFh means every slot.
   static constexpr int kMaxSlots = 255;
 
-  // The first of DiskDrive::kPorts consecutive processor ports: the command
-  // port, the data port, and then the control port.
+  // The longest latency, which is far longer than any real drive's.
+  static constexpr absl::Duration kMaxLatency = absl::Minutes(1);
+
+  // The first of DiskDrive::kPorts consecutive processor ports, in this order:
+  // the command port, the data port, and the control port.
   int port = 0;
 
   // The interrupt raised as each completion is posted.
@@ -108,7 +114,8 @@ struct DiskDriveSettings {
   // How many files can be open at once, 1 to kMaxSlots.
   int slots = 4;
 
-  // The read cache, rates, and latency, none of which may be negative.
+  // The read cache, rates, and latency, none of which may be negative, and
+  // the latency at most kMaxLatency.
   DiskHardwareSettings hardware =
       GetDiskDrivePreset(DiskDrivePreset::kFloppy1440k);
 };
@@ -165,12 +172,9 @@ class DiskDriveFactory final : public DeviceFactory {
 // once its disk work is done, raising the drive's interrupt. The control port
 // shows the drive's state, and resets it when the OS writes a request.
 //
-// The drive does a command's disk work all at once, and charges the time the
-// disk was busy for it in cycles. Disk work waits for the work before it, such
-// as reading the superblock of an image just attached.
-//
-// The drive runs the cycle after a core reads or writes one of its ports, and
-// otherwise sleeps until its disk work is done.
+// The drive is busy while its disk is, for the time the disk's settings give
+// the work, in the processor's cycles. Meanwhile it does nothing else, not even
+// a reset, so attaching an image makes it busy reading the superblock.
 class DiskDrive final : public Device {
  public:
   //----------------------------------------------------------------------------
@@ -219,16 +223,16 @@ class DiskDrive final : public Device {
 
   // Attaches `image`, which must not be null, first detaching any image
   // attached, as DetachImage does. The file system `image` is on must outlive
-  // the drive, which may write to it as it is destroyed. The superblock is read
-  // as disk work, which later disk work waits for. Returns kOk for a formatted
-  // disk, kUnformatted for one with no file system, or kIoError, which fails
-  // the image, as DiskFileSystem::AttachImage does. The image stays attached
-  // for all three.
-  DiskStatus AttachImage(std::unique_ptr<DiskImage> image);
+  // the drive, which may write to it as it is destroyed. The drive reads the
+  // superblock, and is busy for that time from its next run. A program finds
+  // out what the disk holds, such as no file system, from its commands; a host
+  // that wants to know first opens the image with DiskImage::Open.
+  void AttachImage(std::unique_ptr<DiskImage> image);
 
   // Detaches and returns the image, or null if the drive is empty, discarding
-  // what the file system hadn't committed, as pulling a floppy would. A
-  // command in progress on it completes with kNoDisk.
+  // what the file system hadn't committed, as pulling a floppy would. A command
+  // whose disk work is done keeps its status, and one whose work is still to
+  // run finds no disk.
   std::unique_ptr<DiskImage> DetachImage();
 
  protected:
@@ -243,18 +247,14 @@ class DiskDrive final : public Device {
   // Types
   //----------------------------------------------------------------------------
 
-  // A field to send on the command port.
-  struct Field {
-    DiskPortWidth width = DiskPortWidth::kWord;
-    std::array<uint16_t, 2> words = {0, 0};
-    bool completion = false;  // A completion's status, for the interrupt.
-  };
-
-  // A latent command's completion, posted at `cycle`.
-  struct Completion {
-    DiskStatus status = DiskStatus::kOk;
-    std::vector<uint16_t> results;
-    Cycles cycle = 0;
+  // Where the drive is in a command. GetPhase() gives the phase each shows.
+  enum class State {
+    kIdle,               // Waiting for a command word.
+    kArguments,          // Waiting for the command's argument fields.
+    kSendingAccept,      // Sending the accept's status and results.
+    kWorking,            // The latent command's work is done, while the disk
+                         // is busy with it, and its completion goes next.
+    kSendingCompletion,  // Sending the completion's status and results.
   };
 
   //----------------------------------------------------------------------------
@@ -271,88 +271,89 @@ class DiskDrive final : public Device {
   // cycle.
   Lock* GetLock(int port);
 
+  // Releases every lock the drive holds or has requested.
+  void ReleaseLocks();
+
   // Returns the clock's date and time, or no date without a clock.
   DateTime GetNow();
 
-  // Charges the busy time the file system has collected to the disk's
-  // timeline, from the end of the work before it or now, whichever is later,
-  // and returns the cycle the disk is done. Called after every file system
-  // call that may touch the disk.
-  Cycles ChargeBusyTime();
+  // Collects the busy time of the file system's work since the last call, and
+  // if there was any, releases the drive's locks and advances its cycles past
+  // it. Returns whether it did.
+  bool ChargeBusyTime();
 
   //----------------------------------------------------------------------------
-  // Ports
+  // Control port
   //----------------------------------------------------------------------------
 
-  // Acts on any request waiting on the control port. Returns false if the
-  // drive is waiting for the locks it needs, so nothing else runs this cycle.
-  bool ExecuteRequest();
+  // Takes any request waiting on the control port, resetting the drive for a
+  // reset. Returns false if the drive is waiting for the locks it needs, so
+  // nothing else runs this cycle.
+  bool ExecuteControlPort();
 
-  // Discards the command in progress and withdraws every word waiting on the
+  // Ends the command in progress and withdraws every word waiting on the
   // command and data ports, holding their locks.
   void Reset(const Lock& command_lock, const Lock& data_lock);
-
-  // Moves a latent command's completion to the command port if it is due.
-  void ExecuteCompletion();
-
-  // Takes a word for the drive from the command port, and sends the next
-  // field once the OS has taken the last.
-  void ExecuteCommandPort();
-  void SendFields();
 
   // Writes the state word to the control port if it has changed.
   void UpdateState();
 
-  // Returns the state word, as the control port shows it.
+  // Returns the state word, as the control port shows it, and its phase.
   uint16_t GetStateWord() const;
   DiskDrivePhase GetPhase() const;
+
+  //----------------------------------------------------------------------------
+  // States
+  //
+  // Each runs its state's step, if what it waits for is there.
+  //----------------------------------------------------------------------------
+
+  void ExecuteIdle();
+  void ExecuteArguments();
+  void ExecuteSending();
+  void ExecuteWorking();
 
   //----------------------------------------------------------------------------
   // Protocol
   //----------------------------------------------------------------------------
 
-  // Returns whether the drive is waiting for a command word or argument.
-  bool IsReceiving() const;
+  // Loads a field the OS wrote to the command port, clearing its status, or
+  // returns nullopt if there is none yet, or the drive is waiting for the
+  // port's lock.
+  std::optional<PortWords> TakeField();
 
-  // Starts the command `command_word` names, accepting it if it takes no
-  // arguments.
-  void StartCommand(uint16_t command_word);
-
-  // Adds an argument field, accepting the command once it is the last.
-  void AddArgument(DiskPortWidth width, const std::array<uint16_t, 2>& words);
-
-  // Accepts the command, sending its accept status and results, and then for a
-  // latent command does its work.
+  // Accepts the command once it has all its arguments, and starts sending the
+  // accept's status and results.
   void Accept();
 
-  // Queues `status` to send, and if it is kOk, `results`, as the fields
-  // `widths` gives, which must hold exactly as many words.
-  void Send(DiskStatus status, absl::Span<const DiskPortWidth> widths,
-            absl::Span<const uint16_t> results, bool completion);
+  // Sets the fields of a step: `status`, and if it is kOk, `results`.
+  void SetFields(DiskStatus status, std::vector<PortWords> results);
 
-  // Ends the command once it has nothing left to send or do, or at once,
-  // discarding what is left of it.
-  void EndCommandIfDone();
+  // Moves on from the step whose fields the OS has taken all of: to running a
+  // latent command's work after an OK accept, or else to idle.
+  void FinishSending();
+
+  // Ends the command in progress, discarding what is left of it.
   void EndCommand();
 
   //----------------------------------------------------------------------------
   // Commands
   //
-  // A command's accept checks it without the disk, setting `results` on kOk,
-  // and running it does its disk work, setting `results` on kOk.
+  // A command's accept checks it without the disk, and its work does its disk
+  // work. Each sets `results` on kOk.
   //----------------------------------------------------------------------------
 
   // Returns the handle in the command word.
   int GetHandle() const { return command_word_ & 0xFF; }
 
-  DiskStatus AcceptCommand(std::vector<uint16_t>* results);
-  DiskStatus RunCommand(std::vector<uint16_t>* results);
+  DiskStatus AcceptCommand(std::vector<PortWords>* results);
+  DiskStatus RunCommand(std::vector<PortWords>* results);
 
   DiskStatus AcceptOpenRoot();
-  DiskStatus RunOpenRoot(std::vector<uint16_t>* results);
+  DiskStatus RunOpenRoot(std::vector<PortWords>* results);
   DiskStatus AcceptClose();
   DiskStatus RunClose();
-  DiskStatus AcceptMedia(std::vector<uint16_t>* results);
+  DiskStatus AcceptMedia(std::vector<PortWords>* results);
 
   //----------------------------------------------------------------------------
   // State
@@ -366,24 +367,20 @@ class DiskDrive final : public Device {
   std::array<std::unique_ptr<Lock>, kPorts> locks_;
   bool waiting_ = false;
 
-  // The command in progress, if active_: its command word and definition
-  // (null for an unknown code), and its argument words so far.
-  bool active_ = false;
+  State state_ = State::kIdle;
+
+  // The command in progress, outside kIdle: its command word and definition
+  // (null for an unknown code), its arguments, and its accept status.
   uint16_t command_word_ = 0;
   const DiskCommandDef* def_ = nullptr;
-  std::vector<uint16_t> arguments_;
-  int arguments_received_ = 0;
+  std::vector<PortWords> arguments_;
+  DiskStatus accept_status_ = DiskStatus::kOk;
 
-  // The fields to send on the command port, the first already there if
-  // front_stored_.
-  std::deque<Field> outgoing_;
-  bool front_stored_ = false;
-
-  // A latent command's completion, until it is posted.
-  std::optional<Completion> completion_;
-
-  // The cycle the disk finishes the work it has been given.
-  Cycles disk_free_cycle_ = 0;
+  // The fields of the step being sent, or of the completion in kWorking, and
+  // how many have gone on the command port, the last of which the OS may not
+  // have taken yet.
+  std::vector<PortWords> fields_;
+  int fields_sent_ = 0;
 
   // The state word last written to the control port.
   uint16_t state_shown_ = 0;

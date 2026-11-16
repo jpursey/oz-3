@@ -8,8 +8,6 @@
 
 #include <cstdint>
 
-#include "absl/types/span.h"
-
 namespace oz3 {
 
 //==============================================================================
@@ -67,14 +65,6 @@ enum class DiskDrivePhase : uint8_t {
 // DiskCommandDef
 //==============================================================================
 
-// How many of a port's two words one field takes on the drive's command port:
-// a word field (a status or a count) is word 0, and a dword field (a position)
-// is both, the low word in word 0.
-enum class DiskPortWidth : uint8_t {
-  kWord,
-  kDword,
-};
-
 // What follows a command's accept, when its status is OK.
 enum class DiskCommandKind : uint8_t {
   kSynchronous,  // Nothing: the accept's results are the command's.
@@ -84,17 +74,19 @@ enum class DiskCommandKind : uint8_t {
 };
 
 // One command's definition: whether it takes a handle in its command word's low
-// byte, what follows its accept, and the fields it moves at each step. Each
-// step's status is a word field of its own, before the step's results, and an
-// error status ends the command's words, so results follow only an OK.
+// byte, what follows its accept, and how many fields it moves at each step. A
+// field is both of the command port's words, whether it holds a word (in word
+// 0) or a dword, and a name is 4 fields. Each step's status is a field of its
+// own, before the step's results, and an error status ends the command's
+// words, so results follow only an OK.
 struct DiskCommandDef {
   DiskDriveCommand command = DiskDriveCommand::kMedia;
   bool takes_handle = false;
   DiskCommandKind kind = DiskCommandKind::kSynchronous;
-  bool packed = false;  // A data phase moves dwords, not words.
-  absl::Span<const DiskPortWidth> arguments;
-  absl::Span<const DiskPortWidth> accept_results;
-  absl::Span<const DiskPortWidth> completion_results;
+  bool packed = false;         // A data phase moves dwords, not words.
+  int arguments = 0;           // Fields after the command word.
+  int accept_results = 0;      // Fields after an OK accept status.
+  int completion_results = 0;  // Fields after an OK completion status.
 };
 
 // Returns the definition of the command with code `code`, or null if there is

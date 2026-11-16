@@ -5,8 +5,8 @@
 
 #include "oz3/devices/disk_drive.h"
 
-#include <array>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string_view>
@@ -31,6 +31,7 @@
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
+#include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/faulty_file_protocol.h"
 
@@ -57,18 +58,19 @@ constexpr DiskHardwareSettings kHardware = {.read_words_per_sec = 256,
 constexpr Cycles kReadCycles = 1000;
 constexpr Cycles kLatencyCycles = 10;
 
+// The superblock read when an image is attached: a seek, then a sector.
+constexpr Cycles kAttachCycles = kLatencyCycles + kReadCycles;
+
 constexpr char kPath[] = "mem:/disk.ozd";
 constexpr char kOtherPath[] = "mem:/other.ozd";
+constexpr char kThirdPath[] = "mem:/third.ozd";
 constexpr int kSectors = 720;
 
-constexpr DiskPortWidth kWord = DiskPortWidth::kWord;
-constexpr DiskPortWidth kDword = DiskPortWidth::kDword;
+constexpr DiskStatus kOk = DiskStatus::kOk;
 
-constexpr uint16_t kOk = static_cast<uint16_t>(DiskStatus::kOk);
-
-// Returns `status` as the word the drive sends.
-constexpr uint16_t Word(DiskStatus status) {
-  return static_cast<uint16_t>(status);
+// Returns `status` as the field the drive sends.
+PortWords Field(DiskStatus status) {
+  return PortWords(static_cast<uint16_t>(status));
 }
 
 // Returns a command word: `command`'s code in the high byte, and `handle`.
@@ -139,8 +141,8 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // Attaches a new formatted image, and runs until the drive has read its
   // superblock.
   void AttachFormatted() {
-    ASSERT_EQ(drive_->AttachImage(MakeImage()), DiskStatus::kOk);
-    Execute(kLatencyCycles + kReadCycles + 1);
+    drive_->AttachImage(MakeImage());
+    Execute(kAttachCycles + 2);
   }
 
   // Executes until `condition` is true, checking it before each cycle. Adds a
@@ -163,39 +165,23 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   uint16_t GetStateWord() { return GetPort(kControlPort).GetValue(0); }
   int GetPhase() { return GetStateWord() & DiskDrive::kPhaseMask; }
 
-  // Writes a field to `port` as OUTS does, only if its flag is clear, setting
-  // it. Returns whether it wrote. No core may be using the port.
-  bool Out(int port, DiskPortWidth width, std::array<uint16_t, 2> words) {
+  // Writes both of `port`'s words as OUTS.D does, only if its flag is clear,
+  // setting it. Returns whether it wrote. No core may be using the port.
+  bool Out(int port, PortWords words) {
     std::unique_ptr<Lock> lock = LockPort(port);
     EXPECT_TRUE(lock->IsLocked());
-    Port& p = GetPort(port);
-    if (p.GetStatus() != 0) {
-      return false;
-    }
-    if (width == kDword) {
-      p.StoreWord(*lock, Port::A, words[0]);
-      p.StoreWord(*lock, Port::S, words[1]);
-    } else {
-      p.StoreWord(*lock, Port::S, words[0]);
-    }
-    return true;
+    return words.Store(GetPort(port), *lock, Port::T | Port::S) == 0;
   }
 
-  // Reads a field from `port` as INS does, only if its flag is set, clearing
-  // it. Returns nullopt if the flag is clear. No core may be using the port.
-  std::optional<std::array<uint16_t, 2>> In(int port, DiskPortWidth width) {
+  // Reads both of `port`'s words as INS.D does, only if its flag is set,
+  // clearing it. Returns nullopt if the flag is clear. No core may be using
+  // the port.
+  std::optional<PortWords> In(int port) {
     std::unique_ptr<Lock> lock = LockPort(port);
     EXPECT_TRUE(lock->IsLocked());
-    Port& p = GetPort(port);
-    if (p.GetStatus() == 0) {
+    PortWords words;
+    if (words.Load(GetPort(port), *lock, Port::T | Port::S) == 0) {
       return std::nullopt;
-    }
-    std::array<uint16_t, 2> words = {0, 0};
-    if (width == kDword) {
-      p.LoadWord(*lock, Port::A, words[0]);
-      p.LoadWord(*lock, Port::S, words[1]);
-    } else {
-      p.LoadWord(*lock, Port::S, words[0]);
     }
     return words;
   }
@@ -203,75 +189,63 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // Writes a request to the control port with OUTS, and runs until the drive
   // clears its flag, as TSTP sees it.
   void Request(uint16_t request) {
-    ASSERT_TRUE(Out(kControlPort, kWord, {request, 0}));
+    ASSERT_TRUE(Out(kControlPort, PortWords(request)));
     RunUntil([this] { return !IsSet(kControlPort); });
   }
 
   // Waits for the command port to be clear, then writes a field to it.
-  void SendField(DiskPortWidth width, std::array<uint16_t, 2> words) {
+  void SendField(PortWords field) {
     RunUntil([this] { return !IsSet(kCommandPort); });
-    EXPECT_TRUE(Out(kCommandPort, width, words));
+    EXPECT_TRUE(Out(kCommandPort, field));
   }
 
   // Waits for the drive to put a field on the command port, then reads it, and
   // executes the cycle the drive notices it in, as it would after INS.
-  std::array<uint16_t, 2> ReceiveField(DiskPortWidth width) {
+  PortWords ReceiveField() {
     RunUntil([this] { return IsSet(kCommandPort); });
-    std::optional<std::array<uint16_t, 2>> words = In(kCommandPort, width);
-    EXPECT_TRUE(words.has_value());
+    std::optional<PortWords> field = In(kCommandPort);
+    EXPECT_TRUE(field.has_value());
     Execute(1);
-    return words.value_or(std::array<uint16_t, 2>{0xFFFF, 0xFFFF});
+    return field.value_or(PortWords(0xFFFF, 0xFFFF));
   }
 
-  // Reads a status, and if it is OK, the fields `widths` gives, returning
-  // their words.
-  std::vector<uint16_t> ReceiveStep(absl::Span<const DiskPortWidth> widths) {
-    std::vector<uint16_t> words = {ReceiveField(kWord)[0]};
-    if (words[0] != kOk) {
-      return words;
+  // Reads a status, and if it is OK, `results` fields after it.
+  std::vector<PortWords> ReceiveStep(int results) {
+    std::vector<PortWords> fields = {ReceiveField()};
+    if (fields[0] != Field(kOk)) {
+      return fields;
     }
-    for (const DiskPortWidth width : widths) {
-      const std::array<uint16_t, 2> field = ReceiveField(width);
-      words.push_back(field[0]);
-      if (width == kDword) {
-        words.push_back(field[1]);
-      }
+    for (int i = 0; i < results; ++i) {
+      fields.push_back(ReceiveField());
     }
-    return words;
+    return fields;
   }
 
   // Writes `command_word` alone, recording its definition for Complete.
   void Start(uint16_t command_word) {
     def_ = GetDiskCommandDef(static_cast<uint8_t>(command_word >> 8));
-    SendField(kWord, {command_word, 0});
+    SendField(PortWords(command_word));
   }
 
-  // Writes `command_word` and the words of its `arguments`, as the command
-  // table moves them, waits for the drive to take them, as the OS does by
-  // reading the control port until the phase is 2 or higher, and returns the
-  // accept status and its results.
-  std::vector<uint16_t> Command(uint16_t command_word,
-                                absl::Span<const uint16_t> arguments = {}) {
+  // Writes `command_word` and its `arguments`, which must be as many fields as
+  // the command table gives it, waits for the drive to take them, as the OS
+  // does by reading the control port until the phase is 2 or higher, and
+  // returns the accept status and its results.
+  std::vector<PortWords> Command(uint16_t command_word,
+                                 absl::Span<const PortWords> arguments = {}) {
     Start(command_word);
-    int index = 0;
-    if (def_ != nullptr) {
-      for (const DiskPortWidth width : def_->arguments) {
-        std::array<uint16_t, 2> words = {arguments[index++], 0};
-        if (width == kDword) {
-          words[1] = arguments[index++];
-        }
-        SendField(width, words);
-      }
+    EXPECT_EQ(static_cast<int>(arguments.size()),
+              def_ != nullptr ? def_->arguments : 0);
+    for (const PortWords& argument : arguments) {
+      SendField(argument);
     }
-    EXPECT_EQ(index, static_cast<int>(arguments.size()));
     RunUntil([this] { return GetPhase() >= 2; });
-    return ReceiveStep(def_ != nullptr ? def_->accept_results
-                                       : absl::Span<const DiskPortWidth>());
+    return ReceiveStep(def_ != nullptr ? def_->accept_results : 0);
   }
 
   // Waits for the last command's completion, and returns its status and
   // results.
-  std::vector<uint16_t> Complete() {
+  std::vector<PortWords> Complete() {
     CHECK(def_ != nullptr);
     return ReceiveStep(def_->completion_results);
   }
@@ -289,73 +263,36 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
 // The command table
 //==============================================================================
 
-// A command as disk_design.md's tables give it.
-struct ExpectedCommand {
-  DiskDriveCommand command;
-  bool takes_handle;
-  DiskCommandKind kind;
-  bool packed;
-  std::vector<DiskPortWidth> arguments;
-  std::vector<DiskPortWidth> accept_results;
-  std::vector<DiskPortWidth> completion_results;
-};
-
-std::vector<DiskPortWidth> Repeat(DiskPortWidth width, int count) {
-  return std::vector<DiskPortWidth>(count, width);
-}
-
-std::vector<DiskPortWidth> Join(std::vector<DiskPortWidth> a,
-                                const std::vector<DiskPortWidth>& b) {
-  a.insert(a.end(), b.begin(), b.end());
-  return a;
-}
-
 TEST(DiskCommandDefTest, EveryCommandIsAsDesigned) {
   using enum DiskDriveCommand;
   constexpr DiskCommandKind kSynchronous = DiskCommandKind::kSynchronous;
   constexpr DiskCommandKind kLatent = DiskCommandKind::kLatent;
-  const std::vector<DiskPortWidth> name = Repeat(kDword, 4);
-  const std::vector<ExpectedCommand> expected = {
-      {kOpen, false, kLatent, false, name, {}, {kWord}},
-      {kOpenRoot, false, kLatent, false, {}, {}, {kWord}},
-      {kCreate, false, kLatent, false, name, {}, {kWord}},
-      {kClose, true, kLatent, false, {}, {}, {}},
-      {kFlush, true, kLatent, false, {}, {}, {}},
-      {kRead, true, DiskCommandKind::kRead, false, {kWord}, {kWord}, {kWord}},
-      {kWrite, true, DiskCommandKind::kWrite, false, {kWord}, {kWord}, {kWord}},
-      {kReadPacked,
-       true,
-       DiskCommandKind::kRead,
-       true,
-       {kWord},
-       {kWord},
-       {kWord}},
-      {kWritePacked,
-       true,
-       DiskCommandKind::kWrite,
-       true,
-       {kWord},
-       {kWord},
-       {kWord}},
-      {kSeek, true, kSynchronous, false, {kDword}, {}, {}},
-      {kInfo, true, kSynchronous, false, {}, {kDword, kDword}, {}},
-      {kTruncate, true, kLatent, false, {}, {}, {}},
-      {kFind, true, kLatent, false, name, {}, Repeat(kDword, 8)},
-      {kDelete, false, kLatent, false, name, {}, {}},
-      {kRename, false, kLatent, false, Repeat(kDword, 8), {}, {}},
-      {kAttrib, false, kLatent, false, Join(name, {kWord}), {}, {}},
-      {kMedia, false, kSynchronous, false, {}, {kDword, kWord}, {}},
-      {kVolume,
-       false,
-       kLatent,
-       false,
-       {},
-       {},
-       Join(name, {kWord, kWord, kWord})},
-      {kFormat, false, kLatent, false, Join(name, {kWord}), {}, {}},
-      {kLabel, false, kLatent, false, name, {}, {}},
+  constexpr DiskCommandKind kReads = DiskCommandKind::kRead;
+  constexpr DiskCommandKind kWrites = DiskCommandKind::kWrite;
+  constexpr int kName = 4;  // 8 words, in dword fields.
+  const DiskCommandDef expected[] = {
+      {kOpen, false, kLatent, false, kName, 0, 1},
+      {kOpenRoot, false, kLatent, false, 0, 0, 1},
+      {kCreate, false, kLatent, false, kName, 0, 1},
+      {kClose, true, kLatent, false, 0, 0, 0},
+      {kFlush, true, kLatent, false, 0, 0, 0},
+      {kRead, true, kReads, false, 1, 1, 1},
+      {kWrite, true, kWrites, false, 1, 1, 1},
+      {kReadPacked, true, kReads, true, 1, 1, 1},
+      {kWritePacked, true, kWrites, true, 1, 1, 1},
+      {kSeek, true, kSynchronous, false, 1, 0, 0},
+      {kInfo, true, kSynchronous, false, 0, 2, 0},
+      {kTruncate, true, kLatent, false, 0, 0, 0},
+      {kFind, true, kLatent, false, kName, 0, 8},
+      {kDelete, false, kLatent, false, kName, 0, 0},
+      {kRename, false, kLatent, false, 2 * kName, 0, 0},
+      {kAttrib, false, kLatent, false, kName + 1, 0, 0},
+      {kMedia, false, kSynchronous, false, 0, 2, 0},
+      {kVolume, false, kLatent, false, 0, 0, kName + 3},
+      {kFormat, false, kLatent, false, kName + 1, 0, 0},
+      {kLabel, false, kLatent, false, kName, 0, 0},
   };
-  for (const ExpectedCommand& command : expected) {
+  for (const DiskCommandDef& command : expected) {
     SCOPED_TRACE(static_cast<int>(command.command));
     const DiskCommandDef* def =
         GetDiskCommandDef(static_cast<uint8_t>(command.command));
@@ -364,15 +301,9 @@ TEST(DiskCommandDefTest, EveryCommandIsAsDesigned) {
     EXPECT_EQ(def->takes_handle, command.takes_handle);
     EXPECT_EQ(def->kind, command.kind);
     EXPECT_EQ(def->packed, command.packed);
-    EXPECT_EQ(std::vector<DiskPortWidth>(def->arguments.begin(),
-                                         def->arguments.end()),
-              command.arguments);
-    EXPECT_EQ(std::vector<DiskPortWidth>(def->accept_results.begin(),
-                                         def->accept_results.end()),
-              command.accept_results);
-    EXPECT_EQ(std::vector<DiskPortWidth>(def->completion_results.begin(),
-                                         def->completion_results.end()),
-              command.completion_results);
+    EXPECT_EQ(def->arguments, command.arguments);
+    EXPECT_EQ(def->accept_results, command.accept_results);
+    EXPECT_EQ(def->completion_results, command.completion_results);
   }
 
   // Every other code is no command.
@@ -382,7 +313,7 @@ TEST(DiskCommandDefTest, EveryCommandIsAsDesigned) {
       ++defined;
     }
   }
-  EXPECT_EQ(defined, static_cast<int>(expected.size()));
+  EXPECT_EQ(defined, static_cast<int>(std::size(expected)));
 }
 
 //==============================================================================
@@ -414,20 +345,27 @@ TEST(DiskDriveFactoryTest, RefusesBadSettings) {
       DiskDriveFactory::Create("Drive", {.slots = DiskDriveSettings::kMaxSlots})
           .ok());
 
-  const std::vector<DiskHardwareSettings> negatives = {
+  const DiskHardwareSettings refused[] = {
       {.read_cache_sectors = -1},
       {.read_words_per_sec = -1},
       {.write_words_per_sec = -1},
       {.cache_words_per_sec = -1},
       {.latency = -absl::Milliseconds(1)},
+      {.latency = DiskDriveSettings::kMaxLatency + absl::Nanoseconds(1)},
       {.latency = absl::InfiniteDuration()},
   };
-  for (const DiskHardwareSettings& hardware : negatives) {
+  for (const DiskHardwareSettings& hardware : refused) {
+    SCOPED_TRACE(hardware.latency);
     absl::StatusOr<std::unique_ptr<DiskDriveFactory>> factory =
         DiskDriveFactory::Create("Drive", {.hardware = hardware});
     EXPECT_EQ(factory.status().code(), absl::StatusCode::kInvalidArgument);
   }
   EXPECT_TRUE(DiskDriveFactory::Create("Drive", {.hardware = {}}).ok());
+  EXPECT_TRUE(
+      DiskDriveFactory::Create(
+          "Drive", {.hardware = {.latency = DiskDriveSettings::kMaxLatency}})
+          .ok());
+  EXPECT_EQ(DiskDriveSettings::kMaxLatency, absl::Minutes(1));
 }
 
 TEST(DiskDrivePresetTest, PresetsAreAsDesigned) {
@@ -455,6 +393,8 @@ TEST(DiskDrivePresetTest, PresetsAreAsDesigned) {
                   .cache_words_per_sec = 1'000'000,
                   .latency = absl::Milliseconds(preset.latency_ms)}));
   }
+  EXPECT_EQ(kDiskDriveReadCacheSectors, 4);
+  EXPECT_EQ(kDiskDriveCacheWordsPerSec, 1'000'000);
   EXPECT_EQ(DiskDriveSettings().hardware,
             GetDiskDrivePreset(DiskDrivePreset::kFloppy1440k));
   EXPECT_EQ(DiskDriveSettings().slots, 4);
@@ -470,8 +410,11 @@ TEST_F(DiskDriveTest, StateWordShowsTheDisk) {
   EXPECT_EQ(GetStateWord(), 0);
   EXPECT_FALSE(IsSet(kControlPort));
 
-  ASSERT_EQ(drive_->AttachImage(MakeImage()), DiskStatus::kOk);
-  Execute(1);
+  // The drive shows the disk once it has read its superblock.
+  drive_->AttachImage(MakeImage());
+  Execute(kAttachCycles);
+  EXPECT_EQ(GetStateWord(), 0);
+  Execute(2);
   EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
   EXPECT_FALSE(IsSet(kControlPort));
 
@@ -489,13 +432,11 @@ TEST_F(DiskDriveTest, StateWordShowsEachPhaseAndTheCommand) {
   Start(CommandWord(DiskDriveCommand::kOpenRoot));
   Execute(1);
   EXPECT_EQ(GetStateWord(), 0x1100 | disk | 3);
-  ASSERT_EQ(ReceiveField(kWord)[0], kOk);
-  Execute(1);
+  ASSERT_EQ(ReceiveField(), Field(kOk));
   EXPECT_EQ(GetStateWord(), 0x1100 | disk | 2);
   RunUntil([this] { return IsSet(kCommandPort); });
   EXPECT_EQ(GetStateWord(), 0x1100 | disk | 3);
-  EXPECT_EQ(Complete(), (std::vector<uint16_t>{kOk, 0}));
-  Execute(1);
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
   EXPECT_EQ(GetStateWord(), disk);
 }
 
@@ -503,11 +444,11 @@ TEST_F(DiskDriveTest, ResetAbortsEveryPhase) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
 
-  // Arguments, as OPEN takes a name, with an argument word waiting.
+  // Arguments, as OPEN takes a name, with an argument field waiting.
   Start(CommandWord(DiskDriveCommand::kOpen));
   Execute(1);
   EXPECT_EQ(GetStateWord(), 0x1000 | DiskDrive::kDiskAttached | 1);
-  ASSERT_TRUE(Out(kCommandPort, kDword, {1, 2}));
+  ASSERT_TRUE(Out(kCommandPort, PortWords(1, 2)));
   Request(DiskDrive::kResetRequest);
   EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
   EXPECT_FALSE(IsSet(kCommandPort));
@@ -516,37 +457,45 @@ TEST_F(DiskDriveTest, ResetAbortsEveryPhase) {
   Start(CommandWord(DiskDriveCommand::kMedia));
   Execute(1);
   ASSERT_EQ(GetPhase(), 3);
-  ASSERT_TRUE(Out(kDataPort, kWord, {5, 0}));
+  ASSERT_TRUE(Out(kDataPort, PortWords(5)));
   Request(DiskDrive::kResetRequest);
   EXPECT_EQ(GetPhase(), 0);
   EXPECT_FALSE(IsSet(kCommandPort));
   EXPECT_FALSE(IsSet(kDataPort));
 
-  // Working: the completion is dropped, and no interrupt is raised.
+  // Working: the reset waits for OPEN ROOT's read of the FAT, which still
+  // opens the root, but its completion is dropped, and no interrupt is raised.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
+              ElementsAre(Field(kOk)));
   ASSERT_EQ(GetPhase(), 2);
+  const Cycles requested = GetCycles();
   Request(DiskDrive::kResetRequest);
+  EXPECT_EQ(GetCycles(), requested + kReadCycles);
   EXPECT_EQ(GetPhase(), 0);
-  Execute(2 * kReadCycles);
+  Execute(10);
   EXPECT_FALSE(IsSet(kCommandPort));
   EXPECT_FALSE(IsInterruptRaised());
 
-  // The next command works as usual.
+  // The next commands work as usual, and the root is open in slot 0.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
-              ElementsAre(kOk, kSectors, 0, 0));
+              ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
 }
 
 TEST_F(DiskDriveTest, OtherRequestsDoNothing) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
+  Start(CommandWord(DiskDriveCommand::kMedia));
+  Execute(1);
   for (const uint16_t request : {uint16_t{0}, uint16_t{0xFFFE}}) {
+    SCOPED_TRACE(request);
     Request(request);
-    EXPECT_EQ(GetPhase(), 2);
+    EXPECT_EQ(GetPhase(), 3);
   }
-  EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+  EXPECT_THAT(ReceiveStep(def_->accept_results),
+              ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
 TEST_F(DiskDriveTest, OnlyAResetWaitsForTheOtherPorts) {
@@ -554,11 +503,11 @@ TEST_F(DiskDriveTest, OnlyAResetWaitsForTheOtherPorts) {
   Execute(1);
   std::unique_ptr<Lock> lock = LockPort(kDataPort);
   ASSERT_TRUE(lock->IsLocked());
-  ASSERT_TRUE(Out(kControlPort, kWord, {0, 0}));
+  ASSERT_TRUE(Out(kControlPort, PortWords(0)));
   Execute(2);
   EXPECT_FALSE(IsSet(kControlPort));
 
-  ASSERT_TRUE(Out(kControlPort, kWord, {DiskDrive::kResetRequest, 0}));
+  ASSERT_TRUE(Out(kControlPort, PortWords(DiskDrive::kResetRequest)));
   Execute(5);
   EXPECT_TRUE(IsSet(kControlPort));
   lock.reset();
@@ -571,8 +520,8 @@ TEST_F(DiskDriveTest, StateWaitsForTheControlPort) {
   Execute(1);
   std::unique_ptr<Lock> lock = LockPort(kControlPort);
   ASSERT_TRUE(lock->IsLocked());
-  ASSERT_EQ(drive_->AttachImage(MakeImage()), DiskStatus::kOk);
-  Execute(5);
+  drive_->AttachImage(MakeImage());
+  Execute(kAttachCycles + 5);
   EXPECT_EQ(GetStateWord(), 0);
   lock.reset();
   Execute(1);
@@ -590,13 +539,21 @@ TEST_F(DiskDriveTest, TheDriveTakesAWordTheCycleAfter) {
   // Until the drive takes the command word, the flag is the OS's, and the
   // phase is still 0, so the OS doesn't read its own word as the status.
   ASSERT_TRUE(
-      Out(kCommandPort, kWord, {CommandWord(DiskDriveCommand::kMedia), 0}));
+      Out(kCommandPort, PortWords(CommandWord(DiskDriveCommand::kMedia))));
   EXPECT_EQ(GetPhase(), 0);
   Execute(1);
   EXPECT_EQ(GetPhase(), 3);
-  EXPECT_EQ(ReceiveField(kWord)[0], Word(DiskStatus::kNoDisk));
-  Execute(1);
+  EXPECT_EQ(ReceiveField(), Field(DiskStatus::kNoDisk));
   EXPECT_EQ(GetPhase(), 0);
+}
+
+TEST_F(DiskDriveTest, AWordFieldIgnoresWord1) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  SendField(PortWords(CommandWord(DiskDriveCommand::kMedia), 0x1234));
+  RunUntil([this] { return GetPhase() >= 2; });
+  EXPECT_THAT(ReceiveStep(2),
+              ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
 TEST_F(DiskDriveTest, AnUnknownCommandIsBadCommandAtOnce) {
@@ -604,11 +561,10 @@ TEST_F(DiskDriveTest, AnUnknownCommandIsBadCommandAtOnce) {
   AttachFormatted();
   for (const int code : {0x00, 0x15, 0x99, 0xFF}) {
     SCOPED_TRACE(code);
-    SendField(kWord, {static_cast<uint16_t>(code << 8 | 3), 0});
+    SendField(PortWords(static_cast<uint16_t>(code << 8 | 3)));
     Execute(1);
     EXPECT_EQ(GetStateWord(), (code << 8) | DiskDrive::kDiskAttached | 3);
-    EXPECT_EQ(ReceiveField(kWord)[0], Word(DiskStatus::kBadCommand));
-    Execute(1);
+    EXPECT_EQ(ReceiveField(), Field(DiskStatus::kBadCommand));
     EXPECT_EQ(GetPhase(), 0);
   }
 }
@@ -617,31 +573,31 @@ TEST_F(DiskDriveTest, MediaDescribesTheMedium) {
   ASSERT_TRUE(InitDrive());
   Execute(1);
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
-              ElementsAre(Word(DiskStatus::kNoDisk)));
+              ElementsAre(Field(DiskStatus::kNoDisk)));
 
   // Unformatted is fine, as the medium is the image's header.
-  ASSERT_EQ(drive_->AttachImage(MakeImage(/*formatted=*/false)),
-            DiskStatus::kUnformatted);
+  drive_->AttachImage(MakeImage(/*formatted=*/false));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
-              ElementsAre(kOk, kSectors, 0, 0));
+              ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 
   std::unique_ptr<DiskImage> image = drive_->DetachImage();
   ASSERT_EQ(image->SetWriteProtected(true), DiskStatus::kOk);
-  ASSERT_EQ(drive_->AttachImage(std::move(image)), DiskStatus::kUnformatted);
+  drive_->AttachImage(std::move(image));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
-              ElementsAre(kOk, kSectors, 0, DiskMedia::kWriteProtectedFlag));
+              ElementsAre(Field(kOk), PortWords(kSectors),
+                          PortWords(DiskMedia::kWriteProtectedFlag)));
 }
 
 TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
   ASSERT_TRUE(InitDrive());
   std::unique_ptr<DiskImage> image = MakeImage();
   protocol_->SetLimits({.reads = 0});
-  ASSERT_EQ(drive_->AttachImage(std::move(image)), DiskStatus::kIoError);
+  drive_->AttachImage(std::move(image));
   for (const DiskDriveCommand command :
        {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot}) {
     SCOPED_TRACE(static_cast<int>(command));
     EXPECT_THAT(Command(CommandWord(command)),
-                ElementsAre(Word(DiskStatus::kIoError)));
+                ElementsAre(Field(DiskStatus::kIoError)));
   }
 }
 
@@ -662,23 +618,23 @@ TEST_F(DiskDriveTest, OutsIsRefusedWhileSending) {
   Execute(1);
   ASSERT_EQ(GetPhase(), 3);
   EXPECT_FALSE(
-      Out(kCommandPort, kWord, {CommandWord(DiskDriveCommand::kMedia), 0}));
-  EXPECT_THAT(ReceiveStep(GetDiskCommandDef(0x40)->accept_results),
-              ElementsAre(kOk, kSectors, 0, 0));
+      Out(kCommandPort, PortWords(CommandWord(DiskDriveCommand::kMedia))));
+  EXPECT_THAT(ReceiveStep(def_->accept_results),
+              ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
 TEST_F(DiskDriveTest, AWordWhileWorkingIsLostUnderTheCompletion) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
+              ElementsAre(Field(kOk)));
   ASSERT_EQ(GetPhase(), 2);
   ASSERT_TRUE(
-      Out(kCommandPort, kWord, {CommandWord(DiskDriveCommand::kMedia), 0}));
+      Out(kCommandPort, PortWords(CommandWord(DiskDriveCommand::kMedia))));
   Execute(10);
   EXPECT_EQ(GetPhase(), 2);
   RunUntil([this] { return GetPhase() == 3; });
-  EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
 }
 
 //==============================================================================
@@ -689,43 +645,80 @@ TEST_F(DiskDriveTest, CompletionsWaitForTheDisk) {
   ASSERT_TRUE(InitDrive());
   Execute(1);
 
-  // The superblock read starts the cycle after the attach, and OPEN ROOT's
-  // read of the FAT's first sector, for the root's chain, waits for it. It is
-  // the next sector, so it has no latency.
-  ASSERT_EQ(drive_->AttachImage(MakeImage()), DiskStatus::kOk);
+  // The drive is busy reading the superblock from the cycle after the attach,
+  // so it takes the command word the cycle after that.
+  drive_->AttachImage(MakeImage());
   const Cycles attached = GetCycles();
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
-  EXPECT_EQ(GetCycles(), attached + kLatencyCycles + 2 * kReadCycles + 1);
-  EXPECT_TRUE(IsInterruptRaised());
-  EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+  Start(CommandWord(DiskDriveCommand::kOpenRoot));
+  ASSERT_TRUE(RunUntil([this] { return GetPhase() >= 2; }));
+  EXPECT_EQ(GetCycles(), attached + kAttachCycles + 1);
 
-  // Closing the root writes nothing, so it completes at once, in the cycle the
-  // drive sees its accept status read.
+  // OPEN ROOT's work, a read of the FAT's first sector for the root's chain,
+  // starts once the OS has read its accept status. It is the next sector, so
+  // it has no latency, and the completion follows it.
+  EXPECT_THAT(ReceiveStep(0), ElementsAre(Field(kOk)));
+  const Cycles accepted = GetCycles();
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_EQ(GetCycles(), accepted + kReadCycles);
+  EXPECT_EQ(GetPhase(), 3);
+  EXPECT_TRUE(IsInterruptRaised());
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
+
+  // Closing the root writes nothing, so it completes the cycle after the drive
+  // sees its accept status read.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(kOk));
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(GetPhase(), 2);
+  Execute(1);
   EXPECT_TRUE(IsSet(kCommandPort));
-  EXPECT_THAT(Complete(), ElementsAre(kOk));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
 }
 
-TEST_F(DiskDriveTest, AResetCommandsWorkIsStillDone) {
+TEST_F(DiskDriveTest, BusyTimeRoundsUpToWholeCycles) {
+  // A sector read takes 256/300ths of a second, or 853 1/3 cycles, and the
+  // superblock read after the latency 863 1/3, so the drive is busy for 864.
+  DiskDriveSettings settings = GetSettings();
+  settings.hardware.read_words_per_sec = 300;
+  ASSERT_TRUE(InitDrive(settings));
+  Execute(1);
+  drive_->AttachImage(MakeImage());
+  const Cycles attached = GetCycles();
+  Start(CommandWord(DiskDriveCommand::kMedia));
+  ASSERT_TRUE(RunUntil([this] { return GetPhase() >= 2; }));
+  EXPECT_EQ(GetCycles(), attached + 864 + 1);
+}
+
+TEST_F(DiskDriveTest, TheDriveDoesNothingWhileBusy) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
 
-  // OPEN ROOT's work is done at once, so its slot is open after a reset, and
-  // the next command's completion waits for the disk to finish it.
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  const Cycles accepted = GetCycles();
-  Request(DiskDrive::kResetRequest);
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(kOk));
-  // The work started as the drive accepted OPEN ROOT, the cycle before the OS
-  // read its status.
+  // A field read while the drive reads a new image's superblock: the next
+  // field waits for the read.
+  Start(CommandWord(DiskDriveCommand::kMedia));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath));
+  Execute(1);
+  const Cycles attached = GetCycles();
+  EXPECT_EQ(In(kCommandPort), Field(kOk));
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
-  EXPECT_EQ(GetCycles(), accepted - 1 + kReadCycles);
-  EXPECT_THAT(Complete(), ElementsAre(kOk));
+  EXPECT_EQ(GetCycles(), attached + kAttachCycles);
+  EXPECT_EQ(ReceiveField(), PortWords(kSectors));
+  EXPECT_EQ(ReceiveField(), PortWords(0));
+
+  // A command word, and a request, while the drive reads its superblock.
+  drive_->AttachImage(MakeImage(/*formatted=*/true, kThirdPath));
+  Execute(2);
+  ASSERT_TRUE(
+      Out(kCommandPort, PortWords(CommandWord(DiskDriveCommand::kMedia))));
+  ASSERT_TRUE(Out(kControlPort, PortWords(0)));
+  Execute(kAttachCycles - 2);
+  EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_TRUE(IsSet(kControlPort));
+  EXPECT_EQ(GetPhase(), 0);
+  Execute(1);
+  EXPECT_FALSE(IsSet(kControlPort));
+  EXPECT_EQ(GetPhase(), 3);
 }
 
 TEST_F(DiskDriveTest, TheDriveSleepsWhileIdle) {
@@ -735,19 +728,19 @@ TEST_F(DiskDriveTest, TheDriveSleepsWhileIdle) {
   AttachFormatted();
   EXPECT_EQ(drive_->GetDueCycle(), kSleepForever);
 
-  // While working, it sleeps until its completion is due.
+  // While working, it runs again once the disk is done.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  Execute(1);
-  EXPECT_GT(drive_->GetDueCycle(), GetCycles() + kReadCycles / 2);
-  EXPECT_NE(drive_->GetDueCycle(), kSleepForever);
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(drive_->GetDueCycle(), GetCycles() - 1 + kReadCycles);
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
+  EXPECT_EQ(drive_->GetDueCycle(), kSleepForever);
 }
 
 TEST_F(DiskDriveTest, AHeldCommandPortDelaysTheDrive) {
   ASSERT_TRUE(InitDrive());
   Execute(1);
   ASSERT_TRUE(
-      Out(kCommandPort, kWord, {CommandWord(DiskDriveCommand::kMedia), 0}));
+      Out(kCommandPort, PortWords(CommandWord(DiskDriveCommand::kMedia))));
   {
     std::unique_ptr<Lock> lock = LockPort(kCommandPort);
     ASSERT_TRUE(lock->IsLocked());
@@ -760,9 +753,9 @@ TEST_F(DiskDriveTest, AHeldCommandPortDelaysTheDrive) {
   // The data port isn't the drive's to lock while it has no data phase.
   std::unique_ptr<Lock> data_lock = LockPort(kDataPort);
   ASSERT_TRUE(data_lock->IsLocked());
-  EXPECT_THAT(ReceiveStep({}), ElementsAre(Word(DiskStatus::kNoDisk)));
+  EXPECT_THAT(ReceiveStep(0), ElementsAre(Field(DiskStatus::kNoDisk)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
-              ElementsAre(Word(DiskStatus::kNoDisk)));
+              ElementsAre(Field(DiskStatus::kNoDisk)));
 }
 
 //==============================================================================
@@ -775,26 +768,25 @@ TEST_F(DiskDriveTest, OpenRootChecksAtAccept) {
   ASSERT_TRUE(InitDrive(settings));
   Execute(1);
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(Word(DiskStatus::kNoDisk)));
+              ElementsAre(Field(DiskStatus::kNoDisk)));
 
   // With the one slot taken, a second is too many open at accept, rather than
   // in use at completion.
   AttachFormatted();
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(Word(DiskStatus::kTooManyOpen)));
+              ElementsAre(Field(DiskStatus::kTooManyOpen)));
 
   // An unformatted disk is found at completion.
-  ASSERT_EQ(drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath)),
-            DiskStatus::kUnformatted);
+  drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(kOk));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(Word(DiskStatus::kUnformatted)));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kUnformatted)));
 }
 
 TEST_F(DiskDriveTest, CloseNeedsAnOpenSlot) {
@@ -803,51 +795,66 @@ TEST_F(DiskDriveTest, CloseNeedsAnOpenSlot) {
   for (const int handle : {0, 3, 4, 0xFF}) {
     SCOPED_TRACE(handle);
     EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, handle)),
-                ElementsAre(Word(DiskStatus::kBadHandle)));
+                ElementsAre(Field(DiskStatus::kBadHandle)));
   }
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(kOk));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(Word(DiskStatus::kBadHandle)));
+              ElementsAre(Field(DiskStatus::kBadHandle)));
 }
 
 TEST_F(DiskDriveTest, CloseFreesAStaleSlot) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
 
   // Attaching over the image leaves slot 0 stale, which closes without error,
   // as the root had nothing to write.
-  ASSERT_EQ(drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath)),
-            DiskStatus::kOk);
+  drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(kOk));
-  EXPECT_THAT(Complete(), ElementsAre(kOk));
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
 
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(Word(DiskStatus::kBadHandle)));
+              ElementsAre(Field(DiskStatus::kBadHandle)));
 }
 
-TEST_F(DiskDriveTest, DetachingCompletesTheCommandWithNoDisk) {
+TEST_F(DiskDriveTest, DetachingLeavesWorkDoneAsItIs) {
   ASSERT_TRUE(InitDrive());
   AttachFormatted();
 
-  // The accept status is still to be read, and the completion follows it.
+  // OPEN ROOT's work is done once the OS has read its accept status, so it
+  // completes as it did, after its time on the disk.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk)));
+  const Cycles accepted = GetCycles();
+  ASSERT_NE(drive_->DetachImage(), nullptr);
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_EQ(GetCycles(), accepted + kReadCycles);
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords(0)));
+  EXPECT_EQ(GetStateWord(), 0);
+}
+
+TEST_F(DiskDriveTest, DetachingFailsWorkNotStarted) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+
+  // The accept status is still to be read, so the work finds no disk, and
+  // completes at once.
   Start(CommandWord(DiskDriveCommand::kOpenRoot));
   Execute(1);
   ASSERT_EQ(GetPhase(), 3);
   ASSERT_NE(drive_->DetachImage(), nullptr);
-  EXPECT_EQ(ReceiveField(kWord)[0], kOk);
-  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
-  EXPECT_LT(GetCycles(), 10 + kLatencyCycles + kReadCycles);
-  EXPECT_THAT(Complete(), ElementsAre(Word(DiskStatus::kNoDisk)));
+  EXPECT_EQ(ReceiveField(), Field(kOk));
   Execute(1);
+  EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kNoDisk)));
   EXPECT_EQ(GetStateWord(), 0);
 }
 
@@ -930,13 +937,15 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
   EXPECT_EQ(state.r6, 2);
   MemAccessor data = GetState().data;
   const uint16_t base = state.bd;
-  EXPECT_EQ(data.SetAddress(base + GetLabel("OPEN_ACCEPT")).GetValue(), kOk);
+  EXPECT_EQ(data.SetAddress(base + GetLabel("OPEN_ACCEPT")).GetValue(),
+            static_cast<uint16_t>(kOk));
   EXPECT_EQ(data.SetAddress(base + GetLabel("OPEN_COMPLETION")).GetValue(),
-            kOk);
+            static_cast<uint16_t>(kOk));
   EXPECT_EQ(data.GetValue(), 0);
-  EXPECT_EQ(data.SetAddress(base + GetLabel("CLOSE_ACCEPT")).GetValue(), kOk);
+  EXPECT_EQ(data.SetAddress(base + GetLabel("CLOSE_ACCEPT")).GetValue(),
+            static_cast<uint16_t>(kOk));
   EXPECT_EQ(data.SetAddress(base + GetLabel("CLOSE_COMPLETION")).GetValue(),
-            kOk);
+            static_cast<uint16_t>(kOk));
   Execute(1);
   EXPECT_EQ(GetStateWord(), DiskDrive::kDiskAttached);
 }
