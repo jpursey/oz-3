@@ -372,18 +372,13 @@ TEST(PortWordsTest, WordsAndDwords) {
   EXPECT_EQ(PortWords(), PortWords(0, 0));
   EXPECT_EQ(PortWords(1), PortWords(1, 0));
 
-  PortWords words(0x5678, 0x1234);
+  const PortWords words(0x5678, 0x1234);
   EXPECT_EQ(words.GetWord(0), 0x5678);
   EXPECT_EQ(words.GetWord(1), 0x1234);
   EXPECT_EQ(words.GetDword(), 0x12345678u);
   EXPECT_EQ(PortWords::FromDword(0x12345678), words);
+  EXPECT_NE(PortWords::FromDword(0x12345679), words);
 
-  words.SetWord(1, 0xFFFF);
-  EXPECT_EQ(words.GetDword(), 0xFFFF5678u);
-  words.SetDword(0x0001ABCD);
-  EXPECT_EQ(words, PortWords(0xABCD, 1));
-
-  EXPECT_LT(PortWords(1, 0), PortWords(1, 1));
   EXPECT_EQ(absl::StrCat(PortWords(0xABCD, 1)), "{abcdh, 0001h}");
 }
 

@@ -236,20 +236,18 @@ struct DiskFileInfo {
 ### core: PortWords
 
 ```
-// The two words of a port, as a device moves them: both at once, as a dword
-// instruction does. Word 0 is a dword's low word.
+// The two words of a port, as a device moves them: both at once, word 0 and
+// then word 1. Word 0 is a dword's low word.
 class PortWords final {
  public:
   PortWords() = default;
   explicit PortWords(uint16_t word0, uint16_t word1 = 0);
   static PortWords FromDword(uint32_t value);
 
-  auto operator<=>(const PortWords&) const = default;
+  bool operator==(const PortWords&) const = default;
 
   uint16_t GetWord(int index) const;  // 0 or 1.
-  void SetWord(int index, uint16_t value);
   uint32_t GetDword() const;
-  void SetDword(uint32_t value);
 
   // Load or store both words under `lock`, starting at the port's address.
   // `mode` applies to the pair: with T, neither word moves unless the status
@@ -265,9 +263,12 @@ class PortWords final {
 - `mode` applies as it does to one word, so T can't move one word without the
   other. A dword instruction's microcode moves word 0 with A and word 1 with
   its mode, as these do, and a lock always starts at word 0.
-- The timer moves onto it: its tick count and clock answers are stores of
-  `PortWords`, and its tests compare `PortWords` instead of a struct of their
-  own.
+- Every device that moves both words moves onto it: the timer's tick count
+  and clock answers, the keyboard's key state, and the teletype's characters.
+  So do the timer's tests, which compare `PortWords` instead of a struct of
+  their own, and the instruction tests' 32-bit port helpers.
+- No setters, since a value is built whole (`FromDword` for a position, pairs
+  of words for a name) or loaded, and no ordering, which two words don't have.
 - It prints as `{abcdh, 0001h}` with `AbslStringify`, so a test's failures show
   the words.
 
@@ -479,17 +480,17 @@ Depends on: nothing.
 Depends on: nothing.
 
 - `port.h` and `.cc`: `PortWords`.
-- `timer.cc` and `timer_test.cc`: the timer's dwords and its tests' port words
-  on `PortWords`.
+- `timer.cc`, `keyboard.cc`, and `teletype.cc`: their pairs of port words on
+  `PortWords`, as are `timer_test.cc`'s and `instruction_test.h`'s.
 - disk_design.md: the drive busy while the disk is, attaching and detaching to
   match, and fields moving both of a port's words.
 
 **Verify**
 - Standard checks.
-- Unit tests: the accessors, comparison, and printing; `Load` and `Store` in
+- Unit tests: the accessors, equality, and printing; `Load` and `Store` in
   modes 0 and T|S|A, with T stopping both words and not just one, and both
-  starting at the port's address. The timer's tests pass unchanged in what
-  they check.
+  starting at the port's address. The timer's, keyboard's, teletype's, and
+  instructions' tests pass unchanged in what they check.
 
 ### CL3 [ ] devices: the drive, its ports, and the protocol
 

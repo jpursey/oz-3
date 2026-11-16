@@ -7,14 +7,13 @@
 #define OZ3_CORE_PORT_H_
 
 #include <array>
-#include <compare>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
-#include "absl/strings/str_cat.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/execution_component.h"
 #include "oz3/core/lockable.h"
@@ -133,8 +132,8 @@ class Port final {
 // PortWords
 //==============================================================================
 
-// The two words of a port, as a device moves them: both at once, as a dword
-// instruction does. Word 0 is a dword's low word.
+// The two words of a port, as a device moves them: both at once, word 0 and
+// then word 1. Word 0 is a dword's low word.
 class PortWords final {
  public:
   //----------------------------------------------------------------------------
@@ -148,34 +147,28 @@ class PortWords final {
     return PortWords(static_cast<uint16_t>(value),
                      static_cast<uint16_t>(value >> 16));
   }
-  auto operator<=>(const PortWords&) const = default;
+  bool operator==(const PortWords&) const = default;
 
+  // Prints as "{abcdh, 0001h}".
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const PortWords& words) {
-    sink.Append(absl::StrCat("{", absl::Hex(words.words_[0], absl::kZeroPad4),
-                             "h, ", absl::Hex(words.words_[1], absl::kZeroPad4),
-                             "h}"));
+    sink.Append(words.ToString());
   }
 
   //----------------------------------------------------------------------------
   // Accessors
   //----------------------------------------------------------------------------
 
-  // Gets or sets word `index`, which must be 0 or 1.
+  // Returns word `index`, which must be 0 or 1.
   uint16_t GetWord(int index) const {
     DCHECK(index == 0 || index == 1);
     return words_[index];
   }
-  void SetWord(int index, uint16_t value) {
-    DCHECK(index == 0 || index == 1);
-    words_[index] = value;
-  }
 
-  // Gets or sets both words as a dword.
+  // Returns both words as a dword.
   uint32_t GetDword() const {
     return words_[0] | static_cast<uint32_t>(words_[1]) << 16;
   }
-  void SetDword(uint32_t value) { *this = FromDword(value); }
 
   //----------------------------------------------------------------------------
   // Operations
@@ -195,6 +188,8 @@ class PortWords final {
   uint16_t Store(Port& port, const Lock& lock, uint16_t mode) const;
 
  private:
+  std::string ToString() const;
+
   std::array<uint16_t, 2> words_ = {0, 0};
 };
 

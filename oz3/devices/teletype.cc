@@ -80,14 +80,12 @@ void Teletype::Execute() {
   }
   const int start_size = static_cast<int>(output_.size());
   Port& port = GetPort(0);
-  uint16_t words[2] = {0, 0};
-  if (port.LoadWord(*lock_, Port::T | Port::A, words[0]) != 0) {
-    port.LoadWord(*lock_, Port::S, words[1]);
-
+  PortWords words;
+  if (words.Load(port, *lock_, Port::T | Port::S) != 0) {
     // Word 1 is cleared once taken, so a word written later (which leaves word
     // 1 as it is) doesn't write its characters again.
     port.StoreWord(*lock_, 0, 0);
-    for (const uint16_t word : words) {
+    for (const uint16_t word : {words.GetWord(0), words.GetWord(1)}) {
       // Characters are 7 bits, as the eighth was a teletype's parity bit.
       for (const int c : {word & 0x7F, (word >> 8) & 0x7F}) {
         if (c != 0) {

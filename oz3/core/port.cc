@@ -8,6 +8,7 @@
 #include <algorithm>
 
 #include "absl/memory/memory.h"
+#include "absl/strings/str_cat.h"
 #include "oz3/core/core_types.h"
 
 namespace oz3 {
@@ -60,24 +61,25 @@ uint16_t Port::StoreWord(const Lock& lock, uint16_t mode, uint16_t value) {
   return status;
 }
 
+// With T, a word 0 that doesn't move leaves the status as it was, so word 1
+// doesn't move either.
 uint16_t PortWords::Load(Port& port, const Lock& lock, uint16_t mode) {
-  const uint16_t t = mode & Port::T;
-  const uint16_t status = port.LoadWord(lock, t | Port::A, words_[0]);
-  if (t != 0 && status == 0) {
-    return status;
-  }
+  const uint16_t status =
+      port.LoadWord(lock, (mode & Port::T) | Port::A, words_[0]);
   port.LoadWord(lock, mode, words_[1]);
   return status;
 }
 
 uint16_t PortWords::Store(Port& port, const Lock& lock, uint16_t mode) const {
-  const uint16_t t = mode & Port::T;
-  const uint16_t status = port.StoreWord(lock, t | Port::A, words_[0]);
-  if (t != 0 && status != 0) {
-    return status;
-  }
+  const uint16_t status =
+      port.StoreWord(lock, (mode & Port::T) | Port::A, words_[0]);
   port.StoreWord(lock, mode, words_[1]);
   return status;
+}
+
+std::string PortWords::ToString() const {
+  return absl::StrCat("{", absl::Hex(words_[0], absl::kZeroPad4), "h, ",
+                      absl::Hex(words_[1], absl::kZeroPad4), "h}");
 }
 
 PortBank::PortBank(int num_ports) : ports_(num_ports) {

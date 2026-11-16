@@ -253,9 +253,7 @@ class InstructionTest : public BaseCoreTest {
   void WritePort32(int port_index, uint32_t value) {
     auto lock = LockPort(port_index);
     CHECK(lock->IsLocked());
-    Port& port = GetPort(port_index);
-    port.StoreWord(*lock, Port::A, value & 0xFFFF);
-    port.StoreWord(*lock, Port::S, value >> 16);
+    PortWords::FromDword(value).Store(GetPort(port_index), *lock, Port::S);
   }
 
   // Reads word 0 of the port and clears the port status, as a device would.
@@ -273,12 +271,9 @@ class InstructionTest : public BaseCoreTest {
   uint32_t ReadPort32(int port_index) {
     auto lock = LockPort(port_index);
     CHECK(lock->IsLocked());
-    Port& port = GetPort(port_index);
-    uint16_t low = 0;
-    uint16_t high = 0;
-    port.LoadWord(*lock, Port::A, low);
-    port.LoadWord(*lock, Port::S, high);
-    return low | (static_cast<uint32_t>(high) << 16);
+    PortWords words;
+    words.Load(GetPort(port_index), *lock, Port::S);
+    return words.GetDword();
   }
 };
 
