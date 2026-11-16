@@ -595,7 +595,7 @@ Depends on: CL1, CL2.
   - an assembled program opening and closing the root with `OUTR`, `INR`, and
     `WAIT` on the interrupt.
 
-### CL4 [ ] devices: file commands
+### CL4 [~] devices: file commands
 
 Depends on: CL3.
 
@@ -607,8 +607,11 @@ Depends on: CL3.
 - Unit tests: every accept error each command can give, and the order of
   checks where two can happen at once; each command's completion and results
   against the file system and the image after it (`CREATE` stamped with the
-  clock, `CLOSE` of every slot with a failure partway, `SEEK` past the end and
-  past the largest size); stale slots and failed images through each command.
+  clock and on the disk while open, `CLOSE` of every slot skipping free ones,
+  `FLUSH` of a file not written writing nothing, `SEEK` past the end and past
+  the largest size); stale slots and failed images through each command.
+  Nothing can write a file before CL5, so what a `CLOSE` or `FLUSH` of a
+  written file does is tested there.
 
 ### CL5 [ ] devices: reading and writing
 
@@ -634,7 +637,10 @@ Depends on: CL4.
   - resets while reading (position just past the words taken, with and without
     a word in the port) and while writing (the size covering the words taken);
   - the destructor writing back a file written and not yet committed, stamped
-    with the clock (the first command that leaves anything uncommitted).
+    with the clock (the first command that leaves anything uncommitted);
+  - `FLUSH` and `CLOSE` of a written file committing it, stamped with the
+    clock, and `CLOSE` of every slot with a failure partway, which still
+    closes the rest and completes with the first failure.
 - Performance: a 64 Kiw `READ` in a program, its host time measured in
   Release, and the result recorded here.
 

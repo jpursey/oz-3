@@ -25,6 +25,9 @@ namespace {
 // by a store.
 constexpr uint16_t kFieldMode = Port::S;
 
+// The fields of a name argument, each holding two of its words.
+constexpr int kNameFields = DiskFilename::kWordCount / 2;
+
 // Returns the cycles `busy` takes at `clock_hz`: the busy time rounded up to
 // whole nanoseconds, and then to whole cycles.
 Cycles GetBusyCycles(absl::Duration busy, int64_t clock_hz) {
@@ -415,10 +418,20 @@ DiskDrive::CommandResponse DiskDrive::AcceptCommand(const Command& command) {
     return {.status = DiskStatus::kBadCommand};
   }
   switch (command.def->command) {
+    case DiskDriveCommand::kOpen:
+      return AcceptOpen(command);
     case DiskDriveCommand::kOpenRoot:
       return AcceptOpenRoot();
+    case DiskDriveCommand::kCreate:
+      return AcceptCreate(command);
     case DiskDriveCommand::kClose:
       return AcceptClose(command);
+    case DiskDriveCommand::kFlush:
+      return AcceptFlush(command);
+    case DiskDriveCommand::kSeek:
+      return AcceptSeek(command);
+    case DiskDriveCommand::kInfo:
+      return AcceptInfo(command);
     case DiskDriveCommand::kMedia:
       return AcceptMedia();
     default:
@@ -428,10 +441,16 @@ DiskDrive::CommandResponse DiskDrive::AcceptCommand(const Command& command) {
 
 DiskDrive::CommandResponse DiskDrive::RunCommand(const Command& command) {
   switch (command.def->command) {
+    case DiskDriveCommand::kOpen:
+      return RunOpen(command);
     case DiskDriveCommand::kOpenRoot:
       return RunOpenRoot();
+    case DiskDriveCommand::kCreate:
+      return RunCreate(command);
     case DiskDriveCommand::kClose:
       return RunClose(command);
+    case DiskDriveCommand::kFlush:
+      return RunFlush(command);
     default:
       break;
   }
@@ -442,28 +461,87 @@ DiskDrive::CommandResponse DiskDrive::RunCommand(const Command& command) {
   return {.status = DiskStatus::kBadCommand};
 }
 
-DiskDrive::CommandResponse DiskDrive::AcceptOpenRoot() {
-  if (DiskStatus status = file_system_.GetImageStatus();
-      status != DiskStatus::kOk) {
-    return {.status = status};
+std::optional<DiskFilename> DiskDrive::GetNameArgument(const Command& command,
+                                                       int first) {
+  DiskFilename::Words words;
+  for (int i = 0; i < kNameFields; ++i) {
+    const PortWords& field = command.arguments[first + i];
+    words[i * 2] = field.GetWord(0);
+    words[i * 2 + 1] = field.GetWord(1);
   }
-  if (!file_system_.HasFreeSlot()) {
-    return {.status = DiskStatus::kTooManyOpen};
-  }
-  return {.status = DiskStatus::kOk};
+  return DiskFilename::FromWords(words);
 }
 
-DiskDrive::CommandResponse DiskDrive::RunOpenRoot() {
-  DiskFile file = 0;
-  if (DiskStatus status = file_system_.OpenRoot(&file);
+DiskStatus DiskDrive::GetNewSlotStatus(bool writes) const {
+  if (DiskStatus status = file_system_.GetImageStatus();
       status != DiskStatus::kOk) {
+    return status;
+  }
+  if (writes && file_system_.GetMedia()->IsWriteProtected()) {
+    return DiskStatus::kWriteProtected;
+  }
+  if (!file_system_.HasFreeSlot()) {
+    return DiskStatus::kTooManyOpen;
+  }
+  return DiskStatus::kOk;
+}
+
+DiskDrive::CommandResponse DiskDrive::MakeOpenResponse(DiskStatus status,
+                                                       DiskFile file) {
+  if (status != DiskStatus::kOk) {
     return {.status = status};
   }
   return {.status = DiskStatus::kOk,
           .results = {PortWords::FromWord(static_cast<uint16_t>(file))}};
 }
 
+DiskDrive::CommandResponse DiskDrive::AcceptOpen(const Command& command) {
+  if (!GetNameArgument(command).has_value()) {
+    return {.status = DiskStatus::kBadName};
+  }
+  return {.status = GetNewSlotStatus(/*writes=*/false)};
+}
+
+DiskDrive::CommandResponse DiskDrive::RunOpen(const Command& command) {
+  // The accept checked the name.
+  const std::optional<DiskFilename> name = GetNameArgument(command);
+  DCHECK(name.has_value());
+  DiskFile file = 0;
+  const DiskStatus status = file_system_.Open(*name, &file);
+  return MakeOpenResponse(status, file);
+}
+
+DiskDrive::CommandResponse DiskDrive::AcceptOpenRoot() {
+  return {.status = GetNewSlotStatus(/*writes=*/false)};
+}
+
+DiskDrive::CommandResponse DiskDrive::RunOpenRoot() {
+  DiskFile file = 0;
+  const DiskStatus status = file_system_.OpenRoot(&file);
+  return MakeOpenResponse(status, file);
+}
+
+DiskDrive::CommandResponse DiskDrive::AcceptCreate(const Command& command) {
+  if (!GetNameArgument(command).has_value()) {
+    return {.status = DiskStatus::kBadName};
+  }
+  return {.status = GetNewSlotStatus(/*writes=*/true)};
+}
+
+DiskDrive::CommandResponse DiskDrive::RunCreate(const Command& command) {
+  // The accept checked the name.
+  const std::optional<DiskFilename> name = GetNameArgument(command);
+  DCHECK(name.has_value());
+  DiskFile file = 0;
+  const DiskStatus status = file_system_.Create(*name, GetNow(), &file);
+  return MakeOpenResponse(status, file);
+}
+
 DiskDrive::CommandResponse DiskDrive::AcceptClose(const Command& command) {
+  if (command.GetHandle() == kAllSlots) {
+    return {.status = DiskStatus::kOk};
+  }
+
   // A stale slot, or one on a failed image, still closes, and its completion
   // says what became of its writes.
   DiskFileInfo info;
@@ -475,7 +553,59 @@ DiskDrive::CommandResponse DiskDrive::AcceptClose(const Command& command) {
 }
 
 DiskDrive::CommandResponse DiskDrive::RunClose(const Command& command) {
-  return {.status = file_system_.Close(command.GetHandle(), GetNow())};
+  const DateTime now = GetNow();
+  if (command.GetHandle() != kAllSlots) {
+    return {.status = file_system_.Close(command.GetHandle(), now)};
+  }
+
+  // Every slot is closed, even after a failure, and a free slot is a bad
+  // handle, which closes nothing.
+  DiskStatus result = DiskStatus::kOk;
+  for (DiskFile file = 0; file < file_system_.GetMaxOpenFiles(); ++file) {
+    const DiskStatus status = file_system_.Close(file, now);
+    if (result == DiskStatus::kOk && status != DiskStatus::kBadHandle) {
+      result = status;
+    }
+  }
+  return {.status = result};
+}
+
+DiskDrive::CommandResponse DiskDrive::AcceptFlush(const Command& command) {
+  // A directory's handle flushes too, writing nothing.
+  DiskFileInfo info;
+  return {.status = file_system_.GetFileInfo(command.GetHandle(), &info)};
+}
+
+DiskDrive::CommandResponse DiskDrive::RunFlush(const Command& command) {
+  return {.status = file_system_.Flush(command.GetHandle(), GetNow())};
+}
+
+DiskDrive::CommandResponse DiskDrive::AcceptSeek(const Command& command) {
+  DiskFileInfo info;
+  if (DiskStatus status = file_system_.GetFileInfo(command.GetHandle(), &info);
+      status != DiskStatus::kOk) {
+    return {.status = status};
+  }
+
+  // A size fits in an int, so a position that doesn't is past it.
+  const uint32_t position = command.arguments[0].GetDword();
+  if (position > static_cast<uint32_t>(info.size)) {
+    return {.status = DiskStatus::kPastEnd};
+  }
+  return {.status = file_system_.Seek(command.GetHandle(),
+                                      static_cast<int>(position))};
+}
+
+DiskDrive::CommandResponse DiskDrive::AcceptInfo(const Command& command) {
+  DiskFileInfo info;
+  if (DiskStatus status = file_system_.GetFileInfo(command.GetHandle(), &info);
+      status != DiskStatus::kOk) {
+    return {.status = status};
+  }
+  return {
+      .status = DiskStatus::kOk,
+      .results = {PortWords::FromDword(static_cast<uint32_t>(info.position)),
+                  PortWords::FromDword(static_cast<uint32_t>(info.size))}};
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptMedia() {

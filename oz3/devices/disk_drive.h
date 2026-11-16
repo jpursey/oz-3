@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -27,6 +28,7 @@
 #include "oz3/core/port.h"
 #include "oz3/devices/disk_drive_command.h"
 #include "oz3/disk/disk_file_system.h"
+#include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_hardware.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_status.h"
@@ -198,6 +200,9 @@ class DiskDrive final : public Device {
   static constexpr uint16_t kPhaseMask = 0x000F;
   static constexpr uint16_t kDiskAttached = 0x0010;
   static constexpr int kCommandShift = 8;
+
+  // The handle that means every slot, for CLOSE.
+  static constexpr int kAllSlots = 0xFF;
 
   // The request bits the OS writes to the control port.
   static constexpr uint16_t kResetRequest = 0x0001;
@@ -447,10 +452,31 @@ class DiskDrive final : public Device {
   CommandResponse AcceptCommand(const Command& command);
   CommandResponse RunCommand(const Command& command);
 
+  // Returns the name in `command`'s arguments from field `first`, or nullopt
+  // if it breaks the name rules.
+  static std::optional<DiskFilename> GetNameArgument(const Command& command,
+                                                     int first = 0);
+
+  // Returns what opening a file in a new slot fails with at accept, once its
+  // name is checked: no disk, I/O error, write protected if it `writes`, and
+  // too many open, in that order. Returns kOk if it can open.
+  DiskStatus GetNewSlotStatus(bool writes) const;
+
+  // Returns the response to a command that opens `file`, with `status`.
+  static CommandResponse MakeOpenResponse(DiskStatus status, DiskFile file);
+
+  CommandResponse AcceptOpen(const Command& command);
+  CommandResponse RunOpen(const Command& command);
   CommandResponse AcceptOpenRoot();
   CommandResponse RunOpenRoot();
+  CommandResponse AcceptCreate(const Command& command);
+  CommandResponse RunCreate(const Command& command);
   CommandResponse AcceptClose(const Command& command);
   CommandResponse RunClose(const Command& command);
+  CommandResponse AcceptFlush(const Command& command);
+  CommandResponse RunFlush(const Command& command);
+  CommandResponse AcceptSeek(const Command& command);
+  CommandResponse AcceptInfo(const Command& command);
   CommandResponse AcceptMedia();
 
   //----------------------------------------------------------------------------
