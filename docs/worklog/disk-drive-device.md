@@ -497,7 +497,7 @@ Depends on: nothing.
   word 1 once it takes the characters. The timer's, keyboard's, teletype's, and
   instructions' tests pass unchanged in what they check.
 
-### CL3 [ ] devices: the drive, its ports, and the protocol
+### CL3 [~] devices: the drive, its ports, and the protocol
 
 Depends on: CL1, CL2.
 

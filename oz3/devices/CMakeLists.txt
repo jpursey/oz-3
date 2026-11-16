@@ -4,6 +4,8 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_devices_SOURCE
+  disk_drive.cc disk_drive.h
+  disk_drive_command.cc disk_drive_command.h
   keyboard.cc keyboard.h
   screen.cc screen.h
   screen_characters.cc screen_characters.h
@@ -18,14 +20,18 @@ set(oz3_devices_DEPS
   absl::status
   absl::statusor
   absl::strings
+  absl::time
   gb_container
   oz3_core
+  oz3_disk
 )
 set(oz3_devices_LIBS
   absl::check
+  absl::log
 )
 set(oz3_devices_TEST_SOURCE
   device_program_test.h
+  disk_drive_test.cc
   keyboard_test.cc
   screen_characters_test.cc
   screen_test.cc
@@ -33,7 +39,9 @@ set(oz3_devices_TEST_SOURCE
   timer_test.cc
 )
 set(oz3_devices_TEST_DEPS
+  gb_file
   gb_parse
+  oz3_disk_testing
   oz3_core_testing
   oz3_instruction_sets
   oz3_tools
