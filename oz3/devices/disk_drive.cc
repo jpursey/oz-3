@@ -131,8 +131,8 @@ void DiskDrive::Execute() {
   if (ChargeBusyTime()) {
     return;
   }
-  if (!HasControlRequest() || TakeControlRequest()) {
-    while (UpdateControlWord()) {
+  if (HandleAnyControlRequest() == StateResult::kContinue) {
+    while (UpdateControlWord() == StateResult::kContinue) {
       const StateResult result = std::visit(
           [this](auto& state) { return ExecuteState(state); }, state_);
       if (ChargeBusyTime()) {
@@ -217,13 +217,16 @@ bool DiskDrive::HasControlRequest() {
   return GetPort(kControlPort).GetStatus() != 0;
 }
 
-bool DiskDrive::TakeControlRequest() {
+DiskDrive::StateResult DiskDrive::HandleAnyControlRequest() {
+  if (!HasControlRequest()) {
+    return StateResult::kContinue;
+  }
   if (!LockPorts(kControlLock)) {
-    return false;
+    return StateResult::kWait;
   }
   if ((GetPort(kControlPort).GetValue(0) & kResetRequest) != 0) {
     if (!LockPorts(kCommandLock | kDataLock)) {
-      return false;
+      return StateResult::kWait;
     }
 
     // A reset discards what the state held.
@@ -233,7 +236,7 @@ bool DiskDrive::TakeControlRequest() {
     state_ = IdleState();
   }
   ClearControlRequest();
-  return true;
+  return StateResult::kContinue;
 }
 
 void DiskDrive::ClearControlRequest() {
@@ -245,19 +248,19 @@ void DiskDrive::ClearControlRequest() {
   control.StoreWord(lock, 0, control_word_shown_);
 }
 
-bool DiskDrive::UpdateControlWord() {
+DiskDrive::StateResult DiskDrive::UpdateControlWord() {
   // A request's word would be lost, but a run takes any request before this.
   DCHECK(!HasControlRequest());
   const uint16_t control_word = GetControlWord();
   if (control_word == control_word_shown_) {
-    return true;
+    return StateResult::kContinue;
   }
   if (!LockPorts(kControlLock)) {
-    return false;
+    return StateResult::kWait;
   }
   GetPort(kControlPort).StoreWord(GetLock(kControlPort), 0, control_word);
   control_word_shown_ = control_word;
-  return true;
+  return StateResult::kContinue;
 }
 
 uint16_t DiskDrive::GetControlWord() const {

@@ -206,9 +206,11 @@ table and a line to `Home.md`.
   definition, and arguments), and an accept or completion (its status, results,
   and how many fields have gone on the port). "Response" covers both, where
   "step" didn't say which.
-- **`TakeControlRequest`**: taking a request off the control port, and doing
-  a reset, before the state's step. The CL3 draft's `ExecuteRequest` read as running a
-  command.
+- **`HandleAnyControlRequest`**: taking any request off the control port,
+  and doing a reset, before the state's step. The CL3 draft's `ExecuteRequest`
+  read as running a command, and `TakeControlRequest` left the check for a
+  request to its caller. It returns a `StateResult`, as `UpdateControlWord`
+  does, rather than a `bool` that doesn't say what it means.
 - Settings: `slots` and `hardware`, a `DiskHardwareSettings`, as the
   library's own type rather than a copy of its fields.
   `DiskDriveSettings::kMaxLatency` is the longest latency the factory takes.
@@ -415,8 +417,8 @@ class DiskDriveFactory final : public DeviceFactory {
   wakes it. So work that takes no time, such as a `CLOSE` with nothing
   to write, posts its completion in the same run.
 - **Reset** happens as the drive takes the request. `HasControlRequest`
-  checks the control port's flag without its lock, and `TakeControlRequest`
-  then locks the port and reads the request. A reset also locks the command
+  checks the control port's flag without its lock, and if it is set,
+  `HandleAnyControlRequest` locks the port and reads the request. A reset also locks the command
   and data ports, withdraws their words, and goes idle, before clearing the
   request, so while it waits for a lock, `TSTP` still sees the request.
   Clearing a request shows the control word in its place at once, so the OS

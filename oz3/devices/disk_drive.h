@@ -324,10 +324,11 @@ class DiskDrive final : public Device {
   using State = std::variant<IdleState, ArgumentsState, SendingAcceptState,
                              RunningWorkState, SendingCompletionState>;
 
-  // What a state's step did.
+  // Whether a run can go on, after a state's step or the work a run does
+  // before one.
   enum class StateResult {
-    // It did something, so the drive runs the step of its state, which may be
-    // a new one, again.
+    // It did what it could, so the run goes on to the step of the drive's
+    // state, which may be a new one.
     kContinue,
 
     // It can't go on until the OS reads or writes a port, or a lock it needs
@@ -373,20 +374,20 @@ class DiskDrive final : public Device {
   // drive hasn't taken.
   bool HasControlRequest();
 
-  // Takes the request on the control port, and clears it. A reset first
+  // Takes any request on the control port, and clears it. A reset first
   // withdraws the words on the command and data ports, and goes idle. Returns
-  // false if the drive is waiting for a port's lock, which leaves the request
+  // kWait if the drive is waiting for a port's lock, which leaves the request
   // pending.
-  bool TakeControlRequest();
+  StateResult HandleAnyControlRequest();
 
   // Clears the request on the control port, and shows the control word in
   // place of the request's word. The drive must hold the port's lock.
   void ClearControlRequest();
 
   // Writes the control word to the control port if it has changed. Returns
-  // false if the drive is waiting for the port's lock. No request may be
+  // kWait if the drive is waiting for the port's lock. No request may be
   // pending.
-  bool UpdateControlWord();
+  StateResult UpdateControlWord();
 
   // Returns the control word.
   uint16_t GetControlWord() const;
