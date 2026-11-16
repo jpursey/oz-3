@@ -320,7 +320,7 @@ The drive always moves both of a port's words, as a dword instruction does, what
 
 #### Control port: reading
 
-The drive keeps the control port's value current without setting its flag, so a plain `IN` reads the drive's state at any time and disturbs nothing.
+The drive keeps the control port's value, its **control word**, current without setting its flag, so a plain `IN` reads the drive's state at any time and disturbs nothing.
 
 | Bits | Field | What |
 | --- | --- | --- |
@@ -340,7 +340,7 @@ The drive keeps the control port's value current without setting its flag, so a 
 
 #### Control port: requests
 
-The OS writes a request word with `OUTS`, setting the port's flag. Each bit is a request; the drive acts on them, clears the flag, and restores the state word. Writing 0 requests nothing.
+The OS writes a request word with `OUTS`, setting the port's flag. Each bit is a request; the drive acts on them, clears the flag, and restores the control word. Writing 0 requests nothing.
 
 | Bit | Request |
 | --- | --- |
@@ -349,12 +349,12 @@ The OS writes a request word with `OUTS`, setting the port's flag. Each bit is a
 
 **Reset** aborts whatever is in progress, silently and with the outcomes in Aborts, withdraws any words waiting on the command and data ports, clears both ports' flags, and returns the drive to idle. It works in every phase, so it is the one sure way back to a known state.
 
-To know a request is done, the OS tests the port's flag with `TSTP`, which sets **S** to a port's flag without loading or clearing anything. The drive never sets the control port's flag itself, so a set flag can only mean the OS's request is still waiting. When the drive finishes a request, it restores the state word and clears the flag in the same step. So a reset is:
+To know a request is done, the OS tests the port's flag with `TSTP`, which sets **S** to a port's flag without loading or clearing anything. The drive never sets the control port's flag itself, so a set flag can only mean the OS's request is still waiting. When the drive finishes a request, it restores the control word and clears the flag in the same step. So a reset is:
 
 1. The OS writes 1 to the control port with `OUTS`.
-2. `TSTP` on the control port until **S** is clear. The reset is complete, the drive is idle, and the state word is current.
+2. `TSTP` on the control port until **S** is clear. The reset is complete, the drive is idle, and the control word is current.
 
-Don't `IN` the control port while a request is pending: `IN` clears the port's flag, which would hide the request. This is also why the handshake needs `TSTP` rather than a "resetting" bit in the state word: an `IN` that ran before the drive took the request would clear the flag, so the drive would never see it, and would read back the request word the OS just wrote instead of the state.
+Don't `IN` the control port while a request is pending: `IN` clears the port's flag, which would hide the request. This is also why the handshake needs `TSTP` rather than a "resetting" bit in the control word: an `IN` that ran before the drive took the request would clear the flag, so the drive would never see it, and would read back the request word the OS just wrote instead of the state.
 
 ### Command protocol
 
@@ -366,7 +366,9 @@ A command runs in up to three phases:
 2. **Data.** For `READ` and `WRITE` only: the words of the transfer move through the data port.
 3. **Completion.** For **latent** commands: the drive does the work, then puts the completion status and any results on the command port for the OS to read, and **raises its interrupt**.
 
-**Waiting for the accept status.** The command port's single flag serves both directions, so right after the OS writes a command's last word, the flag is set by that word, and an `INS` could read it back as if it were the status. So after the last word (the command word itself, for a command with no arguments), the OS reads the control port until its phase is 2 or higher, meaning the drive has taken the word. Only then does it read the command port. The control port's state word never sets a flag, so this check can't race. Later reads in the same command don't need it, since the flag is then only ever set by the drive.
+**Waiting for the accept status.** The command port's single flag serves both directions, so right after the OS writes a command's last word, the flag is set by that word, and an `INS` could read it back as if it were the status. So after the last word (the command word itself, for a command with no arguments), the OS reads the control port until its phase is 2 or higher, meaning the drive has taken the word. Only then does it read the command port. The control port's control word never sets a flag, so this check can't race. Later reads in the same command don't need it, since the flag is then only ever set by the drive.
+
+**Waiting for idle.** Before writing a command word, the OS reads the control port until its phase is 0. Once the OS has taken the last field of a command's accept or completion, the command only ends when the drive sees the field taken, the next time it runs, which may be after disk work the host started, such as an attach. Until then the phase still shows 3, and a command word written meanwhile would set the command port's flag again: the drive would take the flag for its own field still unread, and the OS would read its own word back as a status. A reset also ends with the drive idle, so once `TSTP` shows the reset done, the OS can write its next command word.
 
 The interrupt has exactly one meaning: the current command's completion is ready. Only one command is ever in flight, and the OS can't write a new command word over an unread status, so the interrupt always belongs to the last command the OS issued. An OS can `WAIT` after a latent command's accept, and let the drive's interrupt handler wake it.
 
@@ -383,6 +385,7 @@ A command word never aborts. The drive reads the command port only while it is w
 A reset's abort has these outcomes:
 
 - **Unsent statuses and results** are discarded.
+- **An interrupt already raised** for a completion, whose status went on the command port before the reset, isn't withdrawn, so the OS's handler still sees it. Core has no way to lower one.
 - **`READ`:** streaming stops, any word waiting on the data port is withdrawn, and the handle's position is just past the words the OS actually took.
 - **`WRITE`:** the words the drive has taken are kept, as if the write had been for that many words, and the size is updated. A word still waiting untaken in the data port is discarded.
 - **Any other latent command** finishes its disk work, so a change is never left half done, and its completion is dropped.
@@ -681,7 +684,7 @@ One OS core issues every drive command, so only one is ever in flight. Requests 
 
 1. The program fills a call block with its file handle, a count, and a buffer address, and raises the OS's call interrupt. It then waits, or carries on, depending on the call.
 2. The OS core looks up the drive slot, and sets its EXTRA bank to the program's bank.
-3. It sends `READ` with the slot and count using `OUTR`, and waits for the control port's phase to reach 2, then reads the accept status and n with `INR`.
+3. It waits for the control port's phase to be 0, sends `READ` with the slot and count using `OUTR`, and waits for the control port's phase to reach 2, then reads the accept status and n with `INR`.
 4. It points R4 at the program's buffer, sets R7 to n, and loops on `INR` from the data port, reading the control port only when `INR` stops early.
 5. It reads the completion status and words valid, writes them into the call block, and wakes the program, or signals it.
 
