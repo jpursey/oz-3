@@ -374,7 +374,7 @@ sector's words at a time, keeping the stall where it is.
 
 ## CLs
 
-### CL1 [ ] disk: what the drive's accept needs
+### CL1 [x] disk: what the drive's accept needs
 
 Depends on: nothing.
 
