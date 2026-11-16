@@ -5,6 +5,7 @@
 
 #include "oz3/core/port.h"
 
+#include "absl/strings/str_cat.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 
@@ -365,6 +366,112 @@ TEST(PortTest, SequentialPortLocking) {
   EXPECT_EQ(port.StoreWord(*lock3, 0, 3), 0);
   EXPECT_EQ(port.GetValue(0), 3);
   lock3.reset();
+}
+
+TEST(PortWordsTest, WordsAndDwords) {
+  EXPECT_EQ(PortWords(), PortWords(0, 0));
+  EXPECT_EQ(PortWords(1), PortWords(1, 0));
+
+  PortWords words(0x5678, 0x1234);
+  EXPECT_EQ(words.GetWord(0), 0x5678);
+  EXPECT_EQ(words.GetWord(1), 0x1234);
+  EXPECT_EQ(words.GetDword(), 0x12345678u);
+  EXPECT_EQ(PortWords::FromDword(0x12345678), words);
+
+  words.SetWord(1, 0xFFFF);
+  EXPECT_EQ(words.GetDword(), 0xFFFF5678u);
+  words.SetDword(0x0001ABCD);
+  EXPECT_EQ(words, PortWords(0xABCD, 1));
+
+  EXPECT_LT(PortWords(1, 0), PortWords(1, 1));
+  EXPECT_EQ(absl::StrCat(PortWords(0xABCD, 1)), "{abcdh, 0001h}");
+}
+
+TEST(PortWordsTest, StoreMode0) {
+  PortBank bank(1);
+  auto lock = bank.LockPort(0);
+  Port& port = bank.GetPort(0);
+
+  EXPECT_EQ(PortWords(1, 2).Store(port, *lock, 0), 0);
+  EXPECT_EQ(port.GetValue(0), 1);
+  EXPECT_EQ(port.GetValue(1), 2);
+  EXPECT_EQ(port.GetAddress(), 1);
+  EXPECT_EQ(port.GetStatus(), 0);
+}
+
+TEST(PortWordsTest, StoreModeTSA) {
+  PortBank bank(1);
+  auto lock = bank.LockPort(0);
+  Port& port = bank.GetPort(0);
+  const uint16_t mode = Port::T | Port::S | Port::A;
+
+  EXPECT_EQ(PortWords(1, 2).Store(port, *lock, mode), 0);
+  EXPECT_EQ(port.GetValue(0), 1);
+  EXPECT_EQ(port.GetValue(1), 2);
+  EXPECT_EQ(port.GetAddress(), 0);
+  EXPECT_EQ(port.GetStatus(), 1);
+
+  // The status is set, so neither word is stored.
+  EXPECT_EQ(PortWords(3, 4).Store(port, *lock, mode), 1);
+  EXPECT_EQ(port.GetValue(0), 1);
+  EXPECT_EQ(port.GetValue(1), 2);
+  EXPECT_EQ(port.GetAddress(), 0);
+  EXPECT_EQ(port.GetStatus(), 1);
+
+  // Without T, both are stored whatever the status.
+  EXPECT_EQ(PortWords(3, 4).Store(port, *lock, Port::A), 1);
+  EXPECT_EQ(port.GetValue(0), 3);
+  EXPECT_EQ(port.GetValue(1), 4);
+}
+
+TEST(PortWordsTest, LoadMode0) {
+  PortBank bank(1);
+  auto lock = bank.LockPort(0);
+  Port& port = bank.GetPort(0);
+  EXPECT_EQ(PortWords(1, 2).Store(port, *lock, Port::S | Port::A), 0);
+
+  PortWords words;
+  EXPECT_EQ(words.Load(port, *lock, 0), 1);
+  EXPECT_EQ(words, PortWords(1, 2));
+  EXPECT_EQ(port.GetAddress(), 1);
+  EXPECT_EQ(port.GetStatus(), 1);
+}
+
+TEST(PortWordsTest, LoadModeTSA) {
+  PortBank bank(1);
+  auto lock = bank.LockPort(0);
+  Port& port = bank.GetPort(0);
+  const uint16_t mode = Port::T | Port::S | Port::A;
+  EXPECT_EQ(PortWords(1, 2).Store(port, *lock, Port::A), 0);
+
+  // The status is clear, so neither word is loaded.
+  PortWords words(5, 6);
+  EXPECT_EQ(words.Load(port, *lock, mode), 0);
+  EXPECT_EQ(words, PortWords(5, 6));
+  EXPECT_EQ(port.GetAddress(), 0);
+
+  port.StoreWord(*lock, Port::S | Port::A, 3);
+  port.StoreWord(*lock, Port::A, 4);
+  EXPECT_EQ(words.Load(port, *lock, mode), 1);
+  EXPECT_EQ(words, PortWords(3, 4));
+  EXPECT_EQ(port.GetAddress(), 0);
+  EXPECT_EQ(port.GetStatus(), 0);
+}
+
+TEST(PortWordsTest, StartsAtThePortAddress) {
+  PortBank bank(1);
+  auto lock = bank.LockPort(0);
+  Port& port = bank.GetPort(0);
+  port.StoreWord(*lock, Port::A, 0);
+
+  EXPECT_EQ(PortWords(1, 2).Store(port, *lock, Port::A), 0);
+  EXPECT_EQ(port.GetValue(0), 2);
+  EXPECT_EQ(port.GetValue(1), 1);
+  EXPECT_EQ(port.GetAddress(), 1);
+
+  PortWords words;
+  EXPECT_EQ(words.Load(port, *lock, 0), 0);
+  EXPECT_EQ(words, PortWords(1, 2));
 }
 
 }  // namespace

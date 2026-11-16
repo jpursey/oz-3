@@ -60,6 +60,26 @@ uint16_t Port::StoreWord(const Lock& lock, uint16_t mode, uint16_t value) {
   return status;
 }
 
+uint16_t PortWords::Load(Port& port, const Lock& lock, uint16_t mode) {
+  const uint16_t t = mode & Port::T;
+  const uint16_t status = port.LoadWord(lock, t | Port::A, words_[0]);
+  if (t != 0 && status == 0) {
+    return status;
+  }
+  port.LoadWord(lock, mode, words_[1]);
+  return status;
+}
+
+uint16_t PortWords::Store(Port& port, const Lock& lock, uint16_t mode) const {
+  const uint16_t t = mode & Port::T;
+  const uint16_t status = port.StoreWord(lock, t | Port::A, words_[0]);
+  if (t != 0 && status != 0) {
+    return status;
+  }
+  port.StoreWord(lock, mode, words_[1]);
+  return status;
+}
+
 PortBank::PortBank(int num_ports) : ports_(num_ports) {
   DCHECK(num_ports >= 0 && num_ports <= kMaxPorts);
 }

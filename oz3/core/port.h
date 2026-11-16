@@ -6,12 +6,15 @@
 #ifndef OZ3_CORE_PORT_H_
 #define OZ3_CORE_PORT_H_
 
+#include <array>
+#include <compare>
 #include <cstdint>
 #include <optional>
 #include <vector>
 
 #include "absl/log/check.h"
 #include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/execution_component.h"
 #include "oz3/core/lockable.h"
@@ -124,6 +127,75 @@ class Port final {
   uint16_t value_[2] = {0, 0};  // Value of the port.
   std::unique_ptr<internal::PortLockable> lockable_;
   std::vector<ExecutionComponent*> components_;  // Woken by Load and Store.
+};
+
+//==============================================================================
+// PortWords
+//==============================================================================
+
+// The two words of a port, as a device moves them: both at once, as a dword
+// instruction does. Word 0 is a dword's low word.
+class PortWords final {
+ public:
+  //----------------------------------------------------------------------------
+  // Construction / Destruction
+  //----------------------------------------------------------------------------
+
+  PortWords() = default;
+  explicit PortWords(uint16_t word0, uint16_t word1 = 0)
+      : words_{word0, word1} {}
+  static PortWords FromDword(uint32_t value) {
+    return PortWords(static_cast<uint16_t>(value),
+                     static_cast<uint16_t>(value >> 16));
+  }
+  auto operator<=>(const PortWords&) const = default;
+
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const PortWords& words) {
+    sink.Append(absl::StrCat("{", absl::Hex(words.words_[0], absl::kZeroPad4),
+                             "h, ", absl::Hex(words.words_[1], absl::kZeroPad4),
+                             "h}"));
+  }
+
+  //----------------------------------------------------------------------------
+  // Accessors
+  //----------------------------------------------------------------------------
+
+  // Gets or sets word `index`, which must be 0 or 1.
+  uint16_t GetWord(int index) const {
+    DCHECK(index == 0 || index == 1);
+    return words_[index];
+  }
+  void SetWord(int index, uint16_t value) {
+    DCHECK(index == 0 || index == 1);
+    words_[index] = value;
+  }
+
+  // Gets or sets both words as a dword.
+  uint32_t GetDword() const {
+    return words_[0] | static_cast<uint32_t>(words_[1]) << 16;
+  }
+  void SetDword(uint32_t value) { *this = FromDword(value); }
+
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
+
+  // Loads both words from `port`, which `lock` holds, starting at the port's
+  // address (word 0 once a lock is granted). `mode` applies to the pair: with
+  // T, neither word is loaded unless the status is set, and S and A apply after
+  // the second word, so the address only ends back where it started with A.
+  // Returns the port status prior to the load, as Port::LoadWord does.
+  uint16_t Load(Port& port, const Lock& lock, uint16_t mode);
+
+  // Stores both words to `port`, which `lock` holds, as Load loads them: with
+  // T, neither word is stored unless the status is clear, and S and A apply
+  // after the second word. Returns the port status prior to the store, as
+  // Port::StoreWord does.
+  uint16_t Store(Port& port, const Lock& lock, uint16_t mode) const;
+
+ private:
+  std::array<uint16_t, 2> words_ = {0, 0};
 };
 
 //==============================================================================
