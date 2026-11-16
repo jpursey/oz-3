@@ -73,9 +73,11 @@ absl::StatusOr<std::unique_ptr<DiskDriveFactory>> DiskDriveFactory::Create(
   const DiskHardwareSettings& hardware = settings.hardware;
   if (hardware.read_cache_sectors < 0 || hardware.read_words_per_sec < 0 ||
       hardware.write_words_per_sec < 0 || hardware.cache_words_per_sec < 0 ||
-      hardware.latency < absl::ZeroDuration()) {
+      hardware.latency < absl::ZeroDuration() ||
+      hardware.latency == absl::InfiniteDuration()) {
     return absl::InvalidArgumentError(absl::StrCat(
-        "Disk drive ", name, " has a negative read cache, rate, or latency"));
+        "Disk drive ", name,
+        " has a negative read cache, rate, or latency, or an infinite one"));
   }
   return absl::WrapUnique(new DiskDriveFactory(name, settings));
 }
@@ -192,19 +194,22 @@ bool DiskDrive::ExecuteRequest() {
     return true;
   }
 
-  // Each lock is requested, so the drive waits for them all at once.
+  // Only a reset needs the other ports, whose locks are requested together, so
+  // the drive waits for them all at once.
   Lock* control_lock = GetLock(kControlPort);
-  Lock* command_lock = GetLock(kCommandPort);
-  Lock* data_lock = GetLock(kDataPort);
-  if (control_lock == nullptr || command_lock == nullptr ||
-      data_lock == nullptr) {
+  if (control_lock == nullptr) {
     return false;
+  }
+  if ((control.GetValue(0) & kResetRequest) != 0) {
+    Lock* command_lock = GetLock(kCommandPort);
+    Lock* data_lock = GetLock(kDataPort);
+    if (command_lock == nullptr || data_lock == nullptr) {
+      return false;
+    }
+    Reset(*command_lock, *data_lock);
   }
   uint16_t request = 0;
   control.LoadWord(*control_lock, Port::S, request);
-  if ((request & kResetRequest) != 0) {
-    Reset(*command_lock, *data_lock);
-  }
 
   // The state word is restored with the flag cleared, in one step.
   state_shown_ = GetStateWord();
@@ -251,11 +256,17 @@ void DiskDrive::SendFields() {
   if (outgoing_.empty()) {
     return;
   }
+  // A field waits until the OS takes it. The next goes in under the lock the
+  // drive sees it taken with, so the port is never left empty for a word of
+  // the OS's while there is more to send.
+  if (front_stored_ && port.GetStatus() != 0) {
+    return;
+  }
+  Lock* lock = GetLock(kCommandPort);
+  if (lock == nullptr) {
+    return;
+  }
   if (front_stored_) {
-    // The field waits until the OS takes it.
-    if (port.GetStatus() != 0) {
-      return;
-    }
     outgoing_.pop_front();
     front_stored_ = false;
     if (outgoing_.empty()) {
@@ -265,10 +276,6 @@ void DiskDrive::SendFields() {
 
   // The first field after a quiet phase goes over any word the OS wrote then,
   // which the drive never read.
-  Lock* lock = GetLock(kCommandPort);
-  if (lock == nullptr) {
-    return;
-  }
   const Field& field = outgoing_.front();
   StoreField(port, *lock, field.width, field.words);
   front_stored_ = true;
@@ -287,14 +294,8 @@ void DiskDrive::UpdateState() {
     return;
   }
 
-  // A request that came while the drive waited for the lock is acted on next
-  // cycle, as the state word mustn't go over it.
-  Port& control = GetPort(kControlPort);
-  if (control.GetStatus() != 0) {
-    waiting_ = true;
-    return;
-  }
-  control.StoreWord(*lock, 0, state);
+  // No request is waiting, as ExecuteRequest took any there was this cycle.
+  GetPort(kControlPort).StoreWord(*lock, 0, state);
   state_shown_ = state;
 }
 

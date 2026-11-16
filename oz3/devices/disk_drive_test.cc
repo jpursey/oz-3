@@ -408,9 +408,12 @@ TEST(DiskDriveFactoryTest, RefusesBadSettings) {
           .ok());
 
   const std::vector<DiskHardwareSettings> negatives = {
-      {.read_cache_sectors = -1},          {.read_words_per_sec = -1},
-      {.write_words_per_sec = -1},         {.cache_words_per_sec = -1},
+      {.read_cache_sectors = -1},
+      {.read_words_per_sec = -1},
+      {.write_words_per_sec = -1},
+      {.cache_words_per_sec = -1},
       {.latency = -absl::Milliseconds(1)},
+      {.latency = absl::InfiniteDuration()},
   };
   for (const DiskHardwareSettings& hardware : negatives) {
     absl::StatusOr<std::unique_ptr<DiskDriveFactory>> factory =
@@ -537,6 +540,23 @@ TEST_F(DiskDriveTest, OtherRequestsDoNothing) {
     EXPECT_EQ(GetPhase(), 2);
   }
   EXPECT_THAT(Complete(), ElementsAre(kOk, 0));
+}
+
+TEST_F(DiskDriveTest, OnlyAResetWaitsForTheOtherPorts) {
+  ASSERT_TRUE(InitDrive());
+  Execute(1);
+  std::unique_ptr<Lock> lock = LockPort(kDataPort);
+  ASSERT_TRUE(lock->IsLocked());
+  ASSERT_TRUE(Out(kControlPort, kWord, {0, 0}));
+  Execute(2);
+  EXPECT_FALSE(IsSet(kControlPort));
+
+  ASSERT_TRUE(Out(kControlPort, kWord, {DiskDrive::kResetRequest, 0}));
+  Execute(5);
+  EXPECT_TRUE(IsSet(kControlPort));
+  lock.reset();
+  Execute(1);
+  EXPECT_FALSE(IsSet(kControlPort));
 }
 
 TEST_F(DiskDriveTest, StateWaitsForTheControlPort) {
