@@ -53,8 +53,8 @@ set(oz3_disk_TEST_DEPS
 
 gb_add_library(oz3_disk)
 
-# Test support for libraries that use disks: a file protocol whose files fail
-# once told to, as a failing host's would.
+# Test support: a memory file protocol whose files fail once told to, as a
+# failing host's would, for tests of disks on a failing host.
 set(oz3_disk_testing_SOURCE
   faulty_file_protocol.cc faulty_file_protocol.h
 )

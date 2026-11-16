@@ -43,13 +43,14 @@ struct DiskVolumeInfo {
 // the drive's handles are.
 using DiskFile = int;
 
-// An open file, as the drive's INFO command reports it.
+// An open file: its position and size, as the drive's INFO command reports
+// them, and whether it is a directory's handle.
 struct DiskFileInfo {
   bool operator==(const DiskFileInfo&) const = default;
 
   int position = 0;
   int size = 0;
-  bool directory = false;  // Whether it is a directory's handle.
+  bool directory = false;
 };
 
 // A drive's file system: the disk format in docs/disk_design.md, on whatever
@@ -121,8 +122,8 @@ class DiskFileSystem final {
   // detached, as a floppy's notch is.
   const DiskMedia* GetMedia() const { return hardware_.GetMedia(); }
 
-  // Returns kNoDisk if the drive is empty, kIoError once the image has failed,
-  // and otherwise kOk, without the disk.
+  // Returns kNoDisk if the drive is empty, kIoError once the image has failed
+  // (until an image is attached), and otherwise kOk. It never reads the disk.
   DiskStatus GetImageStatus() const { return hardware_.GetImageStatus(); }
 
   //----------------------------------------------------------------------------

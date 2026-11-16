@@ -503,9 +503,9 @@ class DiskFileSystemTest : public ::testing::Test {
     return sectors;
   }
 
-  // Returns `file`'s position and size, or -1 for each if it fails.
+  // Returns `file`'s info, or -1 for its position and size if it fails.
   DiskFileInfo GetInfo(DiskFile file) {
-    DiskFileInfo info = {.position = -1, .size = -1};
+    DiskFileInfo info = {.position = -1, .size = -1, .directory = true};
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), DiskStatus::kOk);
     return info;
   }
@@ -1012,13 +1012,13 @@ TEST_F(DiskFileSystemTest, TheImageStatusNeedsNoDisk) {
   protocol_->SetLimits({.reads = 0, .writes = 0, .flushes = 0});
   EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kOk);
 
-  // A failure stays until the image is attached again.
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
             DiskStatus::kIoError);
   EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kIoError);
+
+  // A failure lasts until an image is attached.
   ASSERT_EQ(ReopenImage(), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kOk);
-
   file_system_.DetachImage();
   EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kNoDisk);
 }
@@ -1221,6 +1221,7 @@ TEST_F(DiskFileSystemTest, AnOpenRootIsInUse) {
 }
 
 TEST_F(DiskFileSystemTest, SlotsRunOut) {
+  EXPECT_TRUE(file_system_.HasFreeSlot());  // An empty drive's slots are free.
   AttachFormatted(kSmallSectors);
   const std::vector<std::string_view> names = {"A", "B", "C", "D", "E"};
   EditDisk([&names](DiskEditor& editor) {
@@ -1230,8 +1231,10 @@ TEST_F(DiskFileSystemTest, SlotsRunOut) {
   });
 
   for (int i = 0; i < kMaxOpenFiles; ++i) {
+    EXPECT_TRUE(file_system_.HasFreeSlot());
     EXPECT_EQ(OpenFile(names[i]), i);
   }
+  EXPECT_FALSE(file_system_.HasFreeSlot());
   DiskFile file = -1;
   EXPECT_EQ(file_system_.OpenRoot(&file), DiskStatus::kTooManyOpen);
   EXPECT_EQ(file_system_.Open(GetName(names[kMaxOpenFiles]), &file),
@@ -1239,49 +1242,10 @@ TEST_F(DiskFileSystemTest, SlotsRunOut) {
 
   // The lowest free slot is taken.
   ASSERT_EQ(file_system_.Close(2, GetLatest()), DiskStatus::kOk);
+  EXPECT_TRUE(file_system_.HasFreeSlot());
   ASSERT_EQ(file_system_.Close(1, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(OpenRoot(), 1);
   EXPECT_EQ(OpenFile(names[kMaxOpenFiles]), 2);
-}
-
-TEST_F(DiskFileSystemTest, HasFreeSlotUntilSlotsRunOut) {
-  EXPECT_TRUE(file_system_.HasFreeSlot());
-  AttachFormatted(kSmallSectors);
-  EditDisk([](DiskEditor& editor) {
-    editor.AddFile(0, "A", {}, 0);
-    editor.AddFile(1, "B", {}, 0);
-  });
-
-  ASSERT_EQ(OpenRoot(), 0);
-  ASSERT_EQ(OpenFile("A"), 1);
-  ASSERT_EQ(CreateFile("C"), 2);
-  EXPECT_TRUE(file_system_.HasFreeSlot());
-  ASSERT_EQ(OpenFile("B"), 3);
-  EXPECT_FALSE(file_system_.HasFreeSlot());
-
-  // Stale slots are taken until they are closed.
-  ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
-            DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasFreeSlot());
-  ASSERT_EQ(file_system_.Close(2, GetLatest()), DiskStatus::kOk);
-  EXPECT_TRUE(file_system_.HasFreeSlot());
-}
-
-TEST_F(DiskFileSystemTest, HasOpenFilesIgnoresStaleSlots) {
-  EXPECT_FALSE(file_system_.HasOpenFiles());
-  AttachFormatted(kSmallSectors);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
-  ASSERT_EQ(OpenRoot(), 0);
-  EXPECT_TRUE(file_system_.HasOpenFiles());
-
-  // A stale slot is another disk's.
-  ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
-            DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
-  ASSERT_EQ(OpenRoot(), 1);
-  EXPECT_TRUE(file_system_.HasOpenFiles());
-  ASSERT_EQ(file_system_.Close(1, GetLatest()), DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
 }
 
 TEST_F(DiskFileSystemTest, FileInfoSaysWhetherAHandleIsADirectory) {
@@ -1321,11 +1285,13 @@ TEST_F(DiskFileSystemTest, SlotsOpenAcrossADetachAreStaleUntilClosed) {
   ExpectOperationsReturn(0, DiskStatus::kDiskChanged);
   EXPECT_EQ(OpenFile("HELLO.TXT"), 2);
   EXPECT_EQ(OpenRoot(), 3);
+  EXPECT_FALSE(file_system_.HasFreeSlot());
   DiskFile file = -1;
   EXPECT_EQ(file_system_.OpenRoot(&file), DiskStatus::kTooManyOpen);
 
   // Closing frees a stale slot, once.
   EXPECT_EQ(file_system_.Close(0, GetLatest()), DiskStatus::kOk);
+  EXPECT_TRUE(file_system_.HasFreeSlot());
   EXPECT_EQ(file_system_.Close(0, GetLatest()), DiskStatus::kBadHandle);
   ASSERT_EQ(file_system_.Close(3, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(OpenRoot(), 0);
@@ -1340,11 +1306,14 @@ TEST_F(DiskFileSystemTest, AttachingOverAnImageMakesItsSlotsStale) {
 }
 
 TEST_F(DiskFileSystemTest, FormatIsInUseWhileAFileIsOpen) {
+  EXPECT_FALSE(file_system_.HasOpenFiles());
   AttachFormatted(kSmallSectors);
   ASSERT_EQ(OpenRoot(), 0);
+  EXPECT_TRUE(file_system_.HasOpenFiles());
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kInUse);
   ASSERT_EQ(file_system_.Close(0, GetLatest()), DiskStatus::kOk);
+  EXPECT_FALSE(file_system_.HasOpenFiles());
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kOk);
 
@@ -1353,9 +1322,14 @@ TEST_F(DiskFileSystemTest, FormatIsInUseWhileAFileIsOpen) {
   ASSERT_EQ(OpenRoot(), 0);
   ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
             DiskStatus::kOk);
+  EXPECT_FALSE(file_system_.HasOpenFiles());
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
             DiskStatus::kOk);
   EXPECT_EQ(file_system_.Seek(0, 0), DiskStatus::kDiskChanged);
+
+  // A file open on the new disk is, with the stale slot still taken.
+  ASSERT_EQ(OpenRoot(), 1);
+  EXPECT_TRUE(file_system_.HasOpenFiles());
 }
 
 TEST_F(DiskFileSystemTest, FindListsMatchesInOrder) {
