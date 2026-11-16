@@ -49,6 +49,7 @@ struct DiskFileInfo {
 
   int position = 0;
   int size = 0;
+  bool directory = false;  // Whether it is a directory's handle.
 };
 
 // A drive's file system: the disk format in docs/disk_design.md, on whatever
@@ -120,6 +121,10 @@ class DiskFileSystem final {
   // detached, as a floppy's notch is.
   const DiskMedia* GetMedia() const { return hardware_.GetMedia(); }
 
+  // Returns kNoDisk if the drive is empty, kIoError once the image has failed,
+  // and otherwise kOk, without the disk.
+  DiskStatus GetImageStatus() const { return hardware_.GetImageStatus(); }
+
   //----------------------------------------------------------------------------
   // Time
   //----------------------------------------------------------------------------
@@ -154,6 +159,14 @@ class DiskFileSystem final {
   //----------------------------------------------------------------------------
   // Files
   //----------------------------------------------------------------------------
+
+  // Returns whether a slot is free, so Open, OpenRoot, and Create don't
+  // return kTooManyOpen.
+  bool HasFreeSlot() const { return FindFreeSlot() >= 0; }
+
+  // Returns whether any file is open, stale slots aside, so Format returns
+  // kInUse.
+  bool HasOpenFiles() const;
 
   // Opens the file `name` in the root directory, in the lowest free slot,
   // setting `file` to the slot. GetFileInfo gives its size. On a writable

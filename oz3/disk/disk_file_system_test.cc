@@ -1002,6 +1002,27 @@ TEST_F(DiskFileSystemTest, AttachingFailsWhenTheHostReadFails) {
   EXPECT_EQ(ReopenImage(), DiskStatus::kUnformatted);
 }
 
+TEST_F(DiskFileSystemTest, TheImageStatusNeedsNoDisk) {
+  EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kNoDisk);
+
+  // Formatted or not, an image that hasn't failed is kOk, which reading the
+  // status doesn't need the host for.
+  ASSERT_EQ(file_system_.AttachImage(MakeImage(kSmallSectors)),
+            DiskStatus::kUnformatted);
+  protocol_->SetLimits({.reads = 0, .writes = 0, .flushes = 0});
+  EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kOk);
+
+  // A failure stays until the image is attached again.
+  EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
+            DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kIoError);
+  ASSERT_EQ(ReopenImage(), DiskStatus::kUnformatted);
+  EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kOk);
+
+  file_system_.DetachImage();
+  EXPECT_EQ(file_system_.GetImageStatus(), DiskStatus::kNoDisk);
+}
+
 TEST_F(DiskFileSystemTest, CountingFailsWhenTheHostReadFails) {
   AttachFormatted(kFloppySectors);
   ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
@@ -1221,6 +1242,54 @@ TEST_F(DiskFileSystemTest, SlotsRunOut) {
   ASSERT_EQ(file_system_.Close(1, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(OpenRoot(), 1);
   EXPECT_EQ(OpenFile(names[kMaxOpenFiles]), 2);
+}
+
+TEST_F(DiskFileSystemTest, HasFreeSlotUntilSlotsRunOut) {
+  EXPECT_TRUE(file_system_.HasFreeSlot());
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) {
+    editor.AddFile(0, "A", {}, 0);
+    editor.AddFile(1, "B", {}, 0);
+  });
+
+  ASSERT_EQ(OpenRoot(), 0);
+  ASSERT_EQ(OpenFile("A"), 1);
+  ASSERT_EQ(CreateFile("C"), 2);
+  EXPECT_TRUE(file_system_.HasFreeSlot());
+  ASSERT_EQ(OpenFile("B"), 3);
+  EXPECT_FALSE(file_system_.HasFreeSlot());
+
+  // Stale slots are taken until they are closed.
+  ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
+            DiskStatus::kOk);
+  EXPECT_FALSE(file_system_.HasFreeSlot());
+  ASSERT_EQ(file_system_.Close(2, GetLatest()), DiskStatus::kOk);
+  EXPECT_TRUE(file_system_.HasFreeSlot());
+}
+
+TEST_F(DiskFileSystemTest, HasOpenFilesIgnoresStaleSlots) {
+  EXPECT_FALSE(file_system_.HasOpenFiles());
+  AttachFormatted(kSmallSectors);
+  EXPECT_FALSE(file_system_.HasOpenFiles());
+  ASSERT_EQ(OpenRoot(), 0);
+  EXPECT_TRUE(file_system_.HasOpenFiles());
+
+  // A stale slot is another disk's.
+  ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
+            DiskStatus::kOk);
+  EXPECT_FALSE(file_system_.HasOpenFiles());
+  ASSERT_EQ(OpenRoot(), 1);
+  EXPECT_TRUE(file_system_.HasOpenFiles());
+  ASSERT_EQ(file_system_.Close(1, GetLatest()), DiskStatus::kOk);
+  EXPECT_FALSE(file_system_.HasOpenFiles());
+}
+
+TEST_F(DiskFileSystemTest, FileInfoSaysWhetherAHandleIsADirectory) {
+  AttachFormatted(kSmallSectors);
+  EditDisk([](DiskEditor& editor) { editor.AddFile(0, "HELLO.TXT", {2}, 10); });
+  EXPECT_FALSE(GetInfo(OpenFile("HELLO.TXT")).directory);
+  EXPECT_FALSE(GetInfo(CreateFile("NEW")).directory);
+  EXPECT_TRUE(GetInfo(OpenRoot()).directory);
 }
 
 TEST_F(DiskFileSystemTest, BadHandles) {

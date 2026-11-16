@@ -46,7 +46,20 @@ set(oz3_disk_TEST_SOURCE
   disk_label_test.cc
   disk_layout_test.cc
   disk_superblock_test.cc
-  faulty_file_protocol.cc faulty_file_protocol.h
+)
+set(oz3_disk_TEST_DEPS
+  oz3_disk_testing
 )
 
 gb_add_library(oz3_disk)
+
+# Test support for libraries that use disks: a file protocol whose files fail
+# once told to, as a failing host's would.
+set(oz3_disk_testing_SOURCE
+  faulty_file_protocol.cc faulty_file_protocol.h
+)
+set(oz3_disk_testing_DEPS
+  gb_file
+)
+
+gb_add_library(oz3_disk_testing)

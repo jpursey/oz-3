@@ -69,9 +69,7 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
       status != DiskStatus::kOk && status != DiskStatus::kUnformatted) {
     return status;
   }
-  if (std::any_of(slots_.begin(), slots_.end(), [](const Slot& slot) {
-        return slot.state == SlotState::kOpen;
-      })) {
+  if (HasOpenFiles()) {
     return DiskStatus::kInUse;
   }
   const std::optional<DiskLayout> layout =
@@ -143,6 +141,12 @@ DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
       .free_clusters = *fat_->GetFreeCount(),
   };
   return DiskStatus::kOk;
+}
+
+bool DiskFileSystem::HasOpenFiles() const {
+  return std::any_of(slots_.begin(), slots_.end(), [](const Slot& slot) {
+    return slot.state == SlotState::kOpen;
+  });
 }
 
 DiskStatus DiskFileSystem::Open(const DiskFilename& name, DiskFile* file) {
@@ -442,7 +446,9 @@ DiskStatus DiskFileSystem::GetFileInfo(DiskFile file, DiskFileInfo* info) {
   if (DiskStatus status = GetSlot(file, &slot); status != DiskStatus::kOk) {
     return status;
   }
-  *info = {.position = slot->position, .size = slot->size};
+  *info = {.position = slot->position,
+           .size = slot->size,
+           .directory = !slot->entry.has_value()};
   return DiskStatus::kOk;
 }
 
