@@ -76,17 +76,26 @@ constexpr uint16_t CommandWord(DiskDriveCommand command, int handle = 0) {
   return static_cast<uint16_t>(static_cast<int>(command) << 8 | handle);
 }
 
-class DiskDriveTest : public DeviceProgramTest {
+// The host file system that images are made in. It is a base of
+// DiskDriveTest, before the processor's, so it outlives the processor, whose
+// drive holds an image until it is destroyed.
+class DiskHost {
  protected:
-  // The most cycles RunUntil waits.
-  static constexpr Cycles kMaxRunCycles = 100'000;
-
-  DiskDriveTest() {
+  DiskHost() {
     std::unique_ptr<FaultyFileProtocol> protocol =
         std::make_unique<FaultyFileProtocol>();
     protocol_ = protocol.get();
     host_.Register(std::move(protocol));
   }
+
+  gb::FileSystem host_;
+  FaultyFileProtocol* protocol_ = nullptr;
+};
+
+class DiskDriveTest : public DiskHost, public DeviceProgramTest {
+ protected:
+  // The most cycles RunUntil waits.
+  static constexpr Cycles kMaxRunCycles = 100'000;
 
   // Initializes a processor with a drive named "Drive" with `settings`, and
   // sets drive_ to it. Returns whether it did.
@@ -272,8 +281,6 @@ class DiskDriveTest : public DeviceProgramTest {
     return (GetState().core.GetInterrupts() & (1u << kInterrupt)) != 0;
   }
 
-  gb::FileSystem host_;
-  FaultyFileProtocol* protocol_ = nullptr;
   DiskDrive* drive_ = nullptr;
   const DiskCommandDef* def_ = nullptr;
 };

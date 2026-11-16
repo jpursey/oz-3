@@ -218,10 +218,12 @@ class DiskDrive final : public Device {
   void SetClock(Clock clock) { clock_ = std::move(clock); }
 
   // Attaches `image`, which must not be null, first detaching any image
-  // attached, as DetachImage does. The superblock is read as disk work, which
-  // later disk work waits for. Returns kOk for a formatted disk, kUnformatted
-  // for one with no file system, or kIoError, which fails the image, as
-  // DiskFileSystem::AttachImage does. The image stays attached for all three.
+  // attached, as DetachImage does. The file system `image` is on must outlive
+  // the drive, which may write to it as it is destroyed. The superblock is read
+  // as disk work, which later disk work waits for. Returns kOk for a formatted
+  // disk, kUnformatted for one with no file system, or kIoError, which fails
+  // the image, as DiskFileSystem::AttachImage does. The image stays attached
+  // for all three.
   DiskStatus AttachImage(std::unique_ptr<DiskImage> image);
 
   // Detaches and returns the image, or null if the drive is empty, discarding
