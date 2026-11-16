@@ -177,14 +177,15 @@ class PortWords final {
   // Loads both words from `port`, which `lock` holds, starting at the port's
   // address (word 0 once a lock is granted). `mode` applies to the pair: with
   // T, neither word is loaded unless the status is set, and S and A apply after
-  // the second word, so the address only ends back where it started with A.
-  // Returns the port status prior to the load, as Port::LoadWord does.
+  // the second word. So once the words are loaded, the address ends back where
+  // it started only with A, and if T stops them, it doesn't move. Returns the
+  // port status prior to the load, as Port::LoadWord does.
   uint16_t Load(Port& port, const Lock& lock, uint16_t mode);
 
   // Stores both words to `port`, which `lock` holds, as Load loads them: with
   // T, neither word is stored unless the status is clear, and S and A apply
-  // after the second word. Returns the port status prior to the store, as
-  // Port::StoreWord does.
+  // after the second word, with the address as for Load. Returns the port
+  // status prior to the store, as Port::StoreWord does.
   uint16_t Store(Port& port, const Lock& lock, uint16_t mode) const;
 
  private:

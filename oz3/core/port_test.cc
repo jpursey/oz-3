@@ -406,12 +406,17 @@ TEST(PortWordsTest, StoreModeTSA) {
   EXPECT_EQ(port.GetAddress(), 0);
   EXPECT_EQ(port.GetStatus(), 1);
 
-  // The status is set, so neither word is stored.
+  // The status is set, so neither word is stored, and the address doesn't
+  // move.
   EXPECT_EQ(PortWords(3, 4).Store(port, *lock, mode), 1);
   EXPECT_EQ(port.GetValue(0), 1);
   EXPECT_EQ(port.GetValue(1), 2);
   EXPECT_EQ(port.GetAddress(), 0);
   EXPECT_EQ(port.GetStatus(), 1);
+  EXPECT_EQ(PortWords(3, 4).Store(port, *lock, Port::T), 1);
+  EXPECT_EQ(port.GetValue(0), 1);
+  EXPECT_EQ(port.GetValue(1), 2);
+  EXPECT_EQ(port.GetAddress(), 0);
 
   // Without T, both are stored whatever the status.
   EXPECT_EQ(PortWords(3, 4).Store(port, *lock, Port::A), 1);
@@ -439,9 +444,13 @@ TEST(PortWordsTest, LoadModeTSA) {
   const uint16_t mode = Port::T | Port::S | Port::A;
   EXPECT_EQ(PortWords(1, 2).Store(port, *lock, Port::A), 0);
 
-  // The status is clear, so neither word is loaded.
+  // The status is clear, so neither word is loaded, and the address doesn't
+  // move.
   PortWords words(5, 6);
   EXPECT_EQ(words.Load(port, *lock, mode), 0);
+  EXPECT_EQ(words, PortWords(5, 6));
+  EXPECT_EQ(port.GetAddress(), 0);
+  EXPECT_EQ(words.Load(port, *lock, Port::T), 0);
   EXPECT_EQ(words, PortWords(5, 6));
   EXPECT_EQ(port.GetAddress(), 0);
 

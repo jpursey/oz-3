@@ -61,18 +61,22 @@ uint16_t Port::StoreWord(const Lock& lock, uint16_t mode, uint16_t value) {
   return status;
 }
 
-// With T, a word 0 that doesn't move leaves the status as it was, so word 1
-// doesn't move either.
 uint16_t PortWords::Load(Port& port, const Lock& lock, uint16_t mode) {
-  const uint16_t status =
-      port.LoadWord(lock, (mode & Port::T) | Port::A, words_[0]);
+  const uint16_t t = mode & Port::T;
+  const uint16_t status = port.LoadWord(lock, t | Port::A, words_[0]);
+  if (t != 0 && status == 0) {
+    return status;
+  }
   port.LoadWord(lock, mode, words_[1]);
   return status;
 }
 
 uint16_t PortWords::Store(Port& port, const Lock& lock, uint16_t mode) const {
-  const uint16_t status =
-      port.StoreWord(lock, (mode & Port::T) | Port::A, words_[0]);
+  const uint16_t t = mode & Port::T;
+  const uint16_t status = port.StoreWord(lock, t | Port::A, words_[0]);
+  if (t != 0 && status != 0) {
+    return status;
+  }
   port.StoreWord(lock, mode, words_[1]);
   return status;
 }
