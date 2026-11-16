@@ -140,13 +140,23 @@ class PortWords final {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
+  // Both words are 0.
   PortWords() = default;
-  explicit PortWords(uint16_t word0, uint16_t word1 = 0)
-      : words_{word0, word1} {}
+
+  // Returns `word` as word 0, with word 1 as 0.
+  static PortWords FromWord(uint16_t word) { return PortWords(word, 0); }
+
+  // Returns `word0` and `word1` as words 0 and 1.
+  static PortWords FromWords(uint16_t word0, uint16_t word1) {
+    return PortWords(word0, word1);
+  }
+
+  // Returns `value`'s low word as word 0, and its high word as word 1.
   static PortWords FromDword(uint32_t value) {
     return PortWords(static_cast<uint16_t>(value),
                      static_cast<uint16_t>(value >> 16));
   }
+
   bool operator==(const PortWords&) const = default;
 
   // Prints as "{abcdh, 0001h}".
@@ -160,7 +170,7 @@ class PortWords final {
   //----------------------------------------------------------------------------
 
   // Returns word `index`, which must be 0 or 1.
-  uint16_t GetWord(int index) const {
+  uint16_t GetWord(int index = 0) const {
     DCHECK(index == 0 || index == 1);
     return words_[index];
   }
@@ -175,20 +185,22 @@ class PortWords final {
   //----------------------------------------------------------------------------
 
   // Loads both words from `port`, which `lock` holds, starting at the port's
-  // address (word 0 once a lock is granted). `mode` applies to the pair: with
-  // T, neither word is loaded unless the status is set, and S and A apply after
-  // the second word. So once the words are loaded, the address ends back where
-  // it started only with A, and if T stops them, it doesn't move. Returns the
-  // port status prior to the load, as Port::LoadWord does.
+  // address (port word 0 once a lock is granted), and leaves the address where
+  // it was. `mode` applies to the pair: with T, neither word is loaded unless
+  // the status is set, and S applies after the second word. A is ignored, as
+  // the address never changes. Returns the port status prior to the load, as
+  // Port::LoadWord does.
   uint16_t Load(Port& port, const Lock& lock, uint16_t mode);
 
   // Stores both words to `port`, which `lock` holds, as Load loads them: with
-  // T, neither word is stored unless the status is clear, and S and A apply
-  // after the second word, with the address as for Load. Returns the port
-  // status prior to the store, as Port::StoreWord does.
+  // T, neither word is stored unless the status is clear, S applies after the
+  // second word, A is ignored, and the address is left where it was. Returns
+  // the port status prior to the store, as Port::StoreWord does.
   uint16_t Store(Port& port, const Lock& lock, uint16_t mode) const;
 
  private:
+  PortWords(uint16_t word0, uint16_t word1) : words_{word0, word1} {}
+
   std::string ToString() const;
 
   std::array<uint16_t, 2> words_ = {0, 0};

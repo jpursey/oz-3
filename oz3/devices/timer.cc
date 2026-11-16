@@ -129,12 +129,12 @@ void Timer::AnswerClock(const Lock& lock, uint16_t index) {
     } break;
     case kTimerDate: {
       const DateTime::Words& words = latched_.GetWords();
-      answer = PortWords(words[0], words[1]);
+      answer = PortWords::FromWords(words[0], words[1]);
     } break;
     case kTimerTime: {
       LatchDateTime();
       const DateTime::Words& words = latched_.GetWords();
-      answer = PortWords(words[2], words[3]);
+      answer = PortWords::FromWords(words[2], words[3]);
     } break;
   }
 

@@ -63,7 +63,7 @@ class TimerTest : public DeviceProgramTest {
   // Returns the words of `port`.
   PortWords GetWords(int port) {
     const Port& p = GetPort(port);
-    return PortWords(p.GetValue(0), p.GetValue(1));
+    return PortWords::FromWords(p.GetValue(0), p.GetValue(1));
   }
 
   // Returns the status of `port`.
@@ -136,7 +136,7 @@ TEST_F(TimerTest, TicksOnScheduleWithoutDrift) {
   for (const Cycles tick_cycle : {16, 33, 50, 66, 83, 100, 116}) {
     EXPECT_EQ(ExecuteUntilTick(), tick_cycle + 1);
     ++tick;
-    EXPECT_EQ(GetWords(kTickPort), PortWords(tick));
+    EXPECT_EQ(GetWords(kTickPort), PortWords::FromWord(tick));
     EXPECT_EQ(GetStatus(kTickPort), 1);
   }
   EXPECT_EQ(timer_->GetTickCount(), 7);
@@ -159,7 +159,7 @@ TEST_F(TimerTest, TickPortHoldsTheLow32Bits) {
   ASSERT_TRUE(InitTimer({.port = kTickPort}, /*clock_hz=*/60));
   Execute(0x10001);
   EXPECT_EQ(timer_->GetTickCount(), 0x10000);
-  EXPECT_EQ(GetWords(kTickPort), PortWords(0, 1));
+  EXPECT_EQ(GetWords(kTickPort), PortWords::FromWords(0, 1));
   EXPECT_EQ(GetStatus(kTickPort), 1);
 }
 
@@ -293,7 +293,7 @@ TEST_F(TimerTest, TickAndAnswerWaitForTheirPortsTogether) {
   clock_lock.reset();
   Execute(1);
   EXPECT_EQ(timer_->GetTickCount(), 1);
-  EXPECT_EQ(GetWords(kClockPort), PortWords(20));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(20));
   EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
@@ -307,7 +307,7 @@ TEST_F(TimerTest, SecondQuestionReplacesTheFirst) {
   GetPort(kClockPort).StoreWord(*lock, Port::S, kTimerTime);
   lock.reset();
   Execute(1);
-  EXPECT_EQ(GetWords(kClockPort), PortWords(13, 0x2D1E));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWords(13, 0x2D1E));
   EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
@@ -336,11 +336,11 @@ TEST_F(TimerTest, AnswerWaitsWhileThePortIsHeld) {
   ASSERT_TRUE(lock->IsLocked());
   GetPort(kClockPort).StoreWord(*lock, Port::S, kTimerCycles);
   Execute(10);
-  EXPECT_EQ(GetWords(kClockPort), PortWords(kTimerCycles));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(kTimerCycles));
   EXPECT_EQ(GetStatus(kClockPort), 1);
   lock.reset();
   Execute(1);
-  EXPECT_EQ(GetWords(kClockPort), PortWords(10));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(10));
   EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
@@ -355,7 +355,7 @@ TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
   port.LoadWord(*lock, Port::S, value);
   lock.reset();
   Execute(10);
-  EXPECT_EQ(GetWords(kClockPort), PortWords(kTimerCycles));
+  EXPECT_EQ(GetWords(kClockPort), PortWords::FromWord(kTimerCycles));
   EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 

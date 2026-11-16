@@ -175,7 +175,7 @@ bool Keyboard::ExecuteKeyState() {
     if (port.GetStatus() == 0) {
       state.pressed &= ~state.written;
     }
-    PortWords(state.held, state.pressed)
+    PortWords::FromWords(state.held, state.pressed)
         .Store(port, *state.lock, state.pressed != 0 ? Port::S : 0);
     state.written = state.pressed;
     state.changed = false;

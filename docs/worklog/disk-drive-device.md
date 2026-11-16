@@ -241,18 +241,19 @@ struct DiskFileInfo {
 class PortWords final {
  public:
   PortWords() = default;
-  explicit PortWords(uint16_t word0, uint16_t word1 = 0);
+  static PortWords FromWord(uint16_t word);  // Word 1 is 0.
+  static PortWords FromWords(uint16_t word0, uint16_t word1);
   static PortWords FromDword(uint32_t value);
 
   bool operator==(const PortWords&) const = default;
 
-  uint16_t GetWord(int index) const;  // 0 or 1.
+  uint16_t GetWord(int index = 0) const;  // 0 or 1.
   uint32_t GetDword() const;
 
-  // Load or store both words under `lock`, starting at the port's address.
-  // `mode` applies to the pair: with T, neither word moves unless the status
-  // allows, and S and A apply after the second word. Return the status before,
-  // as Port::LoadWord and StoreWord do.
+  // Load or store both words under `lock`, starting at the port's address and
+  // leaving it where it was. `mode` applies to the pair: with T, neither word
+  // moves unless the status allows, S applies after the second word, and A is
+  // ignored. Return the status before, as Port::LoadWord and StoreWord do.
   uint16_t Load(Port& port, const Lock& lock, uint16_t mode);
   uint16_t Store(Port& port, const Lock& lock, uint16_t mode) const;
 };
@@ -261,8 +262,11 @@ class PortWords final {
 - A value class, so `Load` and `Store` are its own members, rather than
   additions to `Port`.
 - `mode` applies as it does to one word, so T can't move one word without the
-  other. A dword instruction's microcode moves word 0 with A and word 1 with
-  its mode, as these do, and a lock always starts at word 0.
+  other. A is ignored: moving both words always passes through the other word,
+  so the address always ends where it started, which is word 0 unless
+  something moved it since the lock was granted.
+- The constructor taking both words is private, so each value says how it is
+  built: `FromWord`, `FromWords`, or `FromDword`.
 - Every device that moves both words moves onto it: the timer's tick count
   and clock answers, the keyboard's key state, and the teletype's characters.
   So do the timer's tests, which compare `PortWords` instead of a struct of
@@ -488,8 +492,9 @@ Depends on: nothing.
 **Verify**
 - Standard checks.
 - Unit tests: the accessors, equality, and printing; `Load` and `Store` in
-  modes 0 and T|S|A, with T stopping both words and not just one, and both
-  starting at the port's address. The timer's, keyboard's, teletype's, and
+  modes 0 and T|S, with T stopping both words and not just one, A ignored,
+  and both starting and ending at the port's address. The teletype clearing
+  word 1 once it takes the characters. The timer's, keyboard's, teletype's, and
   instructions' tests pass unchanged in what they check.
 
 ### CL3 [ ] devices: the drive, its ports, and the protocol
