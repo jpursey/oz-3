@@ -383,10 +383,9 @@ class DiskDriveFactory final : public DeviceFactory {
   - `IdleState`: take a command word;
   - `ArgumentsState`: take argument fields, then accept;
   - `SendingAcceptState`: put the accept's fields on the command port, one
-    each time the OS takes the last. Its status goes on as the drive enters
-    it, while the drive still holds the port from taking the last word. Once
-    the OS has taken the last field, a latent command with an OK accept goes
-    on to running its work; anything else goes idle;
+    each time the OS takes the last. Once the OS has taken the last field, a
+    latent command with an OK accept goes on to running its work; anything
+    else goes idle;
   - `RunningWorkState`: run the latent command's work, with its arguments from
     the `Command`, so it needs no port, and go on to sending its completion;
   - `SendingCompletionState`: put the completion's fields on the command port,
@@ -397,26 +396,31 @@ class DiskDriveFactory final : public DeviceFactory {
   Each struct also returns the phase and the command word it shows
   (`GetPhase()` and `GetCommandWord()`), so `GetControlWord()` is one
   `std::visit`, and a new state that leaves either out doesn't compile. Phase
-  3 means a field from the drive is on the command port, so a completion shows
-  phase 2 until the drive holds the command and control ports, then puts its
-  status on the port, shows phase 3, and raises the interrupt together. A
-  step returns a `StepResult`: it moved to another state, it waits for the
-  OS, or it waits for a lock.
+  3 means a field from the drive is on the command port, so both sending
+  states show phase 2 until their first field is there. That field goes out
+  once the drive holds the command and control ports, with phase 3, and for a
+  completion the interrupt. Only steps move the drive to another state, apart
+  from a reset, so `Accept` returns the accept's state rather than setting it.
+  A step returns a `StateResult`: `kContinue` if it did something, so the
+  drive runs the step of its state again, or `kWait` if it can't go on until
+  the OS reads or writes a port, or a lock it needs is granted.
 - **A run** first charges any disk time the host started, and ends there if
   there was some. It then takes any control request, and runs the state's
-  step in a loop while each step moves to another state. Before each step, it
-  shows the control word, locking the control port if the word has changed,
-  so each step runs with its own phase shown. A loop ends when a step waits
-  for a lock, which tries again the next cycle; for the OS, which sleeps until
-  a port access wakes the drive; or does disk work, whose time is charged at
-  once. So work that takes no time, such as a `CLOSE` with nothing
+  step in a loop until it waits. Before each step, it shows the control word,
+  locking the control port if the word has changed, so each step runs with
+  its own phase shown. Every run takes at least a cycle: disk work's time is
+  charged as soon as its step returns, and a run that waits takes one cycle.
+  While a lock it asked for isn't granted, it keeps its locks and runs again
+  the next cycle; otherwise it releases them and sleeps until a port access
+  wakes it. So work that takes no time, such as a `CLOSE` with nothing
   to write, posts its completion in the same run.
 - **Reset** happens as the drive takes the request. `HasControlRequest`
   checks the control port's flag without its lock, and `TakeControlRequest`
   then locks the port and reads the request. A reset also locks the command
   and data ports, withdraws their words, and goes idle, before clearing the
-  request, so while it waits for a lock, `TSTP` still sees the request. The
-  first step's control word then restores the control port in the same run.
+  request, so while it waits for a lock, `TSTP` still sees the request.
+  Clearing a request shows the control word in its place at once, so the OS
+  never reads its own request back.
   The state is still in hand until the reset replaces it, so CL5's abort of a
   read or write can do what its state needs first. A request with no reset bit
   is cleared at once, and the state carries on, so there is never a state to

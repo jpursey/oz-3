@@ -282,13 +282,18 @@ class DiskDrive final : public Device {
     DiskStatus status = DiskStatus::kOk;
     std::vector<PortWords> results;
     int fields_sent = 0;
+
+    // Returns the phase the control port shows while sending the response.
+    // Phase 3 means a field from the drive is on the command port, so until the
+    // first is, the drive is still working on it.
+    DiskDrivePhase GetPhase() const {
+      return fields_sent > 0 ? DiskDrivePhase::kSending
+                             : DiskDrivePhase::kWorking;
+    }
   };
 
   // The drive's states. Each holds only what it works on, and returns the
-  // phase and the command word the control port shows for it. Phase 3 means a
-  // field from the drive is on the command port, so the accept is sent as the
-  // drive enters its state, and a completion shows phase 2 until its status,
-  // phase 3, and the interrupt go out together.
+  // phase and the command word the control port shows for it.
   struct IdleState {
     DiskDrivePhase GetPhase() const { return DiskDrivePhase::kIdle; }
     uint16_t GetCommandWord() const { return 0; }
@@ -299,7 +304,7 @@ class DiskDrive final : public Device {
     Command command;
   };
   struct SendingAcceptState {
-    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kSending; }
+    DiskDrivePhase GetPhase() const { return accept.GetPhase(); }
     uint16_t GetCommandWord() const { return command.word; }
     Command command;
     CommandResponse accept;
@@ -310,10 +315,7 @@ class DiskDrive final : public Device {
     Command command;
   };
   struct SendingCompletionState {
-    DiskDrivePhase GetPhase() const {
-      return completion.fields_sent > 0 ? DiskDrivePhase::kSending
-                                        : DiskDrivePhase::kWorking;
-    }
+    DiskDrivePhase GetPhase() const { return completion.GetPhase(); }
     uint16_t GetCommandWord() const { return command.word; }
     Command command;
     CommandResponse completion;
@@ -322,12 +324,15 @@ class DiskDrive final : public Device {
   using State = std::variant<IdleState, ArgumentsState, SendingAcceptState,
                              RunningWorkState, SendingCompletionState>;
 
-  // What a state's step did: moved to another state, whose step runs next;
-  // waited for the OS; or waited for a port's lock, which it keeps.
-  enum class StepResult {
-    kMoved,
-    kWaiting,
-    kBlocked,
+  // What a state's step did.
+  enum class StateResult {
+    // It did something, so the drive runs the step of its state, which may be
+    // a new one, again.
+    kContinue,
+
+    // It can't go on until the OS reads or writes a port, or a lock it needs
+    // is granted.
+    kWait,
   };
 
   //----------------------------------------------------------------------------
@@ -346,6 +351,9 @@ class DiskDrive final : public Device {
 
   // Returns `port`'s lock, which the drive must hold.
   const Lock& GetLock(int port) const;
+
+  // Returns whether the drive has asked for a lock it hasn't been granted.
+  bool IsWaitingForLock() const;
 
   // Releases every lock the drive holds or has requested.
   void ReleaseLocks();
@@ -371,9 +379,8 @@ class DiskDrive final : public Device {
   // pending.
   bool TakeControlRequest();
 
-  // Clears the request on the control port, which then shows the request's
-  // word until the control word is updated. The drive must hold the port's
-  // lock.
+  // Clears the request on the control port, and shows the control word in
+  // place of the request's word. The drive must hold the port's lock.
   void ClearControlRequest();
 
   // Writes the control word to the control port if it has changed. Returns
@@ -388,29 +395,29 @@ class DiskDrive final : public Device {
   // States
   //
   // Each runs its state's step, which locks the ports it uses once it has
-  // something to do. A step that moves on doesn't use its state afterward, as
-  // the new state replaces it.
+  // something to do. Steps are what move the drive from one state to the next,
+  // apart from a reset. A step that moves on doesn't use its state afterward,
+  // as the new state replaces it.
   //----------------------------------------------------------------------------
 
-  StepResult ExecuteState(IdleState& state);
-  StepResult ExecuteState(ArgumentsState& state);
-  StepResult ExecuteState(SendingAcceptState& state);
-  StepResult ExecuteState(RunningWorkState& state);
-  StepResult ExecuteState(SendingCompletionState& state);
+  StateResult ExecuteState(IdleState& state);
+  StateResult ExecuteState(ArgumentsState& state);
+  StateResult ExecuteState(SendingAcceptState& state);
+  StateResult ExecuteState(RunningWorkState& state);
+  StateResult ExecuteState(SendingCompletionState& state);
 
   //----------------------------------------------------------------------------
   // Protocol
   //----------------------------------------------------------------------------
 
   // Loads a field the OS wrote to the command port into `field`, clearing its
-  // status. Returns kWaiting if there is none yet, and kBlocked if the drive is
-  // waiting for the port's lock.
-  StepResult ReadCommandPort(PortWords& field);
+  // status, and returns kContinue. Returns kWait if there is none yet, or the
+  // drive is waiting for the port's lock.
+  StateResult ReadCommandPort(PortWords& field);
 
-  // Accepts `command`, which has all its arguments, puts the accept's status
-  // on the command port, and moves on to sending the rest. The drive must hold
-  // the command port's lock, as it does after taking the command's last word.
-  void Accept(Command command);
+  // Accepts `command`, which has all its arguments, and returns the state that
+  // sends its accept.
+  [[nodiscard]] SendingAcceptState Accept(Command command);
 
   // Validates that `response` has `result_count` results if its status is OK,
   // and none otherwise, as an error ends a command's fields.
@@ -421,12 +428,13 @@ class DiskDrive final : public Device {
   bool IsCommandResponseTaken(const CommandResponse& response);
 
   // Puts the next field of `response` on the command port, if it has one left
-  // and the OS has taken the last one sent. Returns kBlocked if the drive is
-  // waiting for the port's lock, and otherwise kWaiting, for the OS. The first
-  // field goes over any word the OS wrote while the drive wasn't taking words,
-  // which the drive never read; only a completion can meet one, as an accept's
-  // goes on as the drive takes the last word.
-  StepResult SendNextField(CommandResponse& response);
+  // and the OS has taken the last one sent, and returns kContinue. Otherwise,
+  // or if the drive is waiting for a port's lock, returns kWait.
+  //
+  // The first field goes out with phase 3 (see CommandResponse::GetPhase), so
+  // it also needs the control port's lock. It goes over any word the OS wrote
+  // while the drive wasn't taking words, which the drive never read.
+  StateResult SendNextField(CommandResponse& response);
 
   //----------------------------------------------------------------------------
   // Commands
@@ -456,8 +464,7 @@ class DiskDrive final : public Device {
 
   State state_;
 
-  // The control word last written to the control port, or the request word
-  // it shows once the drive has cleared a request.
+  // The control word last written to the control port.
   uint16_t control_word_shown_ = 0;
 };
 
