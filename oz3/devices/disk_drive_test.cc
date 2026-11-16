@@ -484,6 +484,17 @@ TEST_F(DiskDriveTest, ResetAbortsEveryPhase) {
   EXPECT_FALSE(IsSet(kCommandPort));
   EXPECT_FALSE(IsInterruptRaised());
 
+  // Sending the completion, which is in use, as the root is open: the
+  // completion is dropped, though its interrupt has been raised.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk)));
+  ASSERT_TRUE(RunUntil([this] { return GetPhase() == 3; }));
+  EXPECT_TRUE(IsSet(kCommandPort));
+  EXPECT_TRUE(IsInterruptRaised());
+  Request(DiskDrive::kResetRequest);
+  EXPECT_EQ(GetPhase(), 0);
+  EXPECT_FALSE(IsSet(kCommandPort));
+
   // The next commands work as usual, and the root is open in slot 0.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kMedia)),
               ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
@@ -726,6 +737,29 @@ TEST_F(DiskDriveTest, TheDriveDoesNothingWhileBusy) {
   Execute(1);
   EXPECT_FALSE(IsSet(kControlPort));
   EXPECT_EQ(GetPhase(), 3);
+}
+
+TEST_F(DiskDriveTest, AStepTakenAsTheHostAttachesStillEnds) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+
+  // The OS takes MEDIA's last field, and before the drive runs again, the
+  // host attaches an image. The OS writes its next command word as soon as the
+  // phase shows the drive has seen it.
+  Start(CommandWord(DiskDriveCommand::kMedia));
+  RunUntil([this] { return GetPhase() >= 2; });
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  EXPECT_EQ(ReceiveField(), PortWords(kSectors));
+  RunUntil([this] { return IsSet(kCommandPort); });
+  EXPECT_EQ(In(kCommandPort), PortWords(0));
+  drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath));
+  Execute(1);
+  EXPECT_EQ(GetPhase(), 0);
+  Start(CommandWord(DiskDriveCommand::kMedia));
+
+  // The drive takes it once the superblock is read.
+  EXPECT_THAT(ReceiveAccept(),
+              ElementsAre(Field(kOk), PortWords(kSectors), PortWords(0)));
 }
 
 TEST_F(DiskDriveTest, TheDriveSleepsWhileIdle) {

@@ -53,9 +53,9 @@ disk_design.md to match.
   until the drive gets to it. Accepting a command never touches the disk. A
   latent command's work runs once the OS has read its accept status, so the
   drive shows phase 2 while the disk is busy, then posts the completion. Disk
-  work the host starts, the superblock read at attach, is charged at the end of
-  the drive's next run, so a command that arrives meanwhile waits for it, as
-  disk_design.md first had it.
+  work the host starts, the superblock read at attach, is charged at the start
+  of the drive's next run, which does nothing else, so a command that arrives
+  meanwhile waits for it, as disk_design.md first had it.
 - **A write takes the first word of a sector before loading the sector.**
   disk_design.md had the drive load the sector at the write's position right
   after accept, and leave the first word in the port until the load was done.
@@ -405,7 +405,9 @@ class DiskDriveFactory final : public DeviceFactory {
   nothing can overflow. A run's own disk work is charged at its end. A host
   call's (the superblock read at attach) is charged at the start of the next
   run, which then does nothing else, so a command word or request that arrives
-  meanwhile waits for it. A run with nothing more to do then sleeps until it
+  meanwhile waits for it. The one thing that run still does is notice that the
+  OS has taken a step's last field, as the OS may write its next command word
+  straight after, which would hide that it took it. A run with nothing more to do then sleeps until it
   is woken. The drive can't run again until its cycles have passed, so a wake
   while it is busy only takes effect after.
 - **Transfers** move one word or dword at a time, with `Read` and `Write` of
@@ -512,8 +514,8 @@ Depends on: CL1, CL2.
   ports and their locks, the control port's state word and reset, the state
   machine, the command protocol (command words, arguments and results, accept
   and completion, and the interrupt), busy time, the host interface and
-  destructor, and the first commands, `MEDIA`, `OPEN ROOT`, and `CLOSE`, one of each kind but
-  transfers.
+  destructor, and the first commands, `MEDIA`, `OPEN ROOT`, and `CLOSE`, one
+  of each kind but transfers.
 - `CMakeLists.txt`: the new files, and `oz3_disk`, with `oz3_disk_testing` for
   the tests. CLAUDE.md's library list says `devices` links `core` and `disk`.
 - Wiki: `3.5-Disk-Drive.md`: wiring, settings, presets, the disk (images, the

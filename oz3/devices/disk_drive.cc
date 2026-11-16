@@ -93,8 +93,8 @@ std::unique_ptr<Device> DiskDriveFactory::CreateDevice() const {
 // the disk is busy with it. The drive can't run again until those cycles have
 // passed, so it does nothing in the meantime, and a core's wake only takes
 // effect after them. Disk work the host started, such as an attach's superblock
-// read, is charged at the start of the drive's next run, which then does
-// nothing else.
+// read, is charged at the start of the drive's next run, which then only
+// notices whether the OS took the last field of a step.
 //
 // Otherwise, the drive runs the cycle after a core reads or writes one of its
 // ports, which wakes it, and sleeps between them.
@@ -128,12 +128,22 @@ std::unique_ptr<DiskImage> DiskDrive::DetachImage() {
 }
 
 void DiskDrive::Execute() {
-  if (ChargeBusyTime()) {
-    return;
-  }
+  const bool was_waiting = std::exchange(waiting_, false);
 
-  waiting_ = false;
-  if (ExecuteControlPort()) {
+  // Disk work the host started is charged before the drive does anything else,
+  // apart from noticing that the OS took a step's last field, and showing it,
+  // waiting for the control port if it must. Once the OS has taken it, it may
+  // write its next command word, which would hide that it took it, and wait
+  // for the phase to show the drive took that.
+  busy_ += file_system_.CollectBusyTime();
+  if (busy_ > absl::ZeroDuration()) {
+    if (IsStepTaken()) {
+      FinishSending();
+      UpdateState();
+    } else if (was_waiting) {
+      UpdateState();
+    }
+  } else if (ExecuteControlPort()) {
     switch (state_) {
       case State::kIdle:
         ExecuteIdle();
@@ -152,16 +162,20 @@ void DiskDrive::Execute() {
     UpdateState();
   }
 
-  if (ChargeBusyTime()) {
-    return;
-  }
+  busy_ += file_system_.CollectBusyTime();
 
-  // Locks are kept while the drive waits for one, so it gathers them all.
+  // Locks are kept while the drive waits for one, so it gathers them all. Busy
+  // time waits too, as the drive can't run while the disk is busy.
   if (waiting_) {
     AdvanceCycles(1);
     return;
   }
   ReleaseLocks();
+  if (busy_ > absl::ZeroDuration()) {
+    AdvanceCycles(GetBusyCycles(std::exchange(busy_, absl::ZeroDuration()),
+                                GetClockHz()));
+    return;
+  }
 
   // A completion goes on the command port the run after its work, even work
   // that took no time.
@@ -192,16 +206,6 @@ void DiskDrive::ReleaseLocks() {
 
 DateTime DiskDrive::GetNow() {
   return clock_ != nullptr ? DateTime::FromCivil(clock_()) : DateTime();
-}
-
-bool DiskDrive::ChargeBusyTime() {
-  const absl::Duration busy = file_system_.CollectBusyTime();
-  if (busy <= absl::ZeroDuration()) {
-    return false;
-  }
-  ReleaseLocks();
-  AdvanceCycles(GetBusyCycles(busy, GetClockHz()));
-  return true;
 }
 
 //------------------------------------------------------------------------------
@@ -266,7 +270,7 @@ uint16_t DiskDrive::GetStateWord() const {
     state |= kDiskAttached;
   }
   if (state_ != State::kIdle) {
-    state |= command_word_ & 0xFF00;
+    state |= command_word_ & (0xFF << kCommandShift);
   }
   return state;
 }
@@ -296,8 +300,8 @@ void DiskDrive::ExecuteIdle() {
     return;
   }
   command_word_ = field->GetWord(0);
-  def_ = GetDiskCommandDef(
-      static_cast<uint8_t>(command_word_ >> DiskDrive::kCommandShift));
+  def_ =
+      GetDiskCommandDef(static_cast<uint8_t>(command_word_ >> kCommandShift));
   arguments_.clear();
 
   // An unknown code fails at once, after the command word alone.
@@ -326,7 +330,7 @@ void DiskDrive::ExecuteSending() {
   if (fields_sent_ > 0 && port.GetStatus() != 0) {
     return;
   }
-  if (fields_sent_ == static_cast<int>(fields_.size())) {
+  if (IsStepTaken()) {
     FinishSending();
     return;
   }
@@ -390,6 +394,13 @@ void DiskDrive::SetFields(DiskStatus status, std::vector<PortWords> results,
   results.insert(results.begin(), PortWords(static_cast<uint16_t>(status)));
   fields_ = std::move(results);
   fields_sent_ = 0;
+}
+
+bool DiskDrive::IsStepTaken() {
+  return (state_ == State::kSendingAccept ||
+          state_ == State::kSendingCompletion) &&
+         fields_sent_ == static_cast<int>(fields_.size()) &&
+         GetPort(kCommandPort).GetStatus() == 0;
 }
 
 void DiskDrive::FinishSending() {

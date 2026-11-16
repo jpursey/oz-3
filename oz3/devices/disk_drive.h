@@ -277,11 +277,6 @@ class DiskDrive final : public Device {
   // Returns the clock's date and time, or no date without a clock.
   DateTime GetNow();
 
-  // Collects the busy time of the file system's work since the last call, and
-  // if there was any, releases the drive's locks and advances its cycles past
-  // it. Returns whether it did.
-  bool ChargeBusyTime();
-
   //----------------------------------------------------------------------------
   // Control port
   //----------------------------------------------------------------------------
@@ -331,6 +326,10 @@ class DiskDrive final : public Device {
   void SetFields(DiskStatus status, std::vector<PortWords> results,
                  int result_count);
 
+  // Returns whether the drive is sending a step, and the OS has taken all its
+  // fields.
+  bool IsStepTaken();
+
   // Moves on from the step whose fields the OS has taken all of: to running a
   // latent command's work after an OK accept, or else to idle.
   void FinishSending();
@@ -368,6 +367,10 @@ class DiskDrive final : public Device {
   // needed isn't granted yet.
   std::array<std::unique_ptr<Lock>, kPorts> locks_;
   bool waiting_ = false;
+
+  // The disk's busy time not yet charged: what the host started since the last
+  // run, and what this run did.
+  absl::Duration busy_;
 
   State state_ = State::kIdle;
 

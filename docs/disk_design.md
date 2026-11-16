@@ -383,6 +383,7 @@ A command word never aborts. The drive reads the command port only while it is w
 A reset's abort has these outcomes:
 
 - **Unsent statuses and results** are discarded.
+- **An interrupt already raised** for a completion, whose status went on the command port before the reset, isn't withdrawn, so the OS's handler still sees it. Core has no way to lower one.
 - **`READ`:** streaming stops, any word waiting on the data port is withdrawn, and the handle's position is just past the words the OS actually took.
 - **`WRITE`:** the words the drive has taken are kept, as if the write had been for that many words, and the size is updated. A word still waiting untaken in the data port is discarded.
 - **Any other latent command** finishes its disk work, so a change is never left half done, and its completion is dropped.
