@@ -16,4 +16,5 @@ All documentation on the OZ-3 virtual CPU, associated tools, devices, and the Oz
   * **[Keyboard](3.2-Keyboard.md):** A port of key events, with an interrupt for each one.
   * **[Screen](3.3-Screen.md):** A page of character cells and control words, with a redefinable character set.
   * **[Timer](3.4-Timer.md):** A periodic interrupt, and a port that answers with the cycle count, the time since power on, and the host's date and time.
+  * **[Disk Drive](3.5-Disk-Drive.md):** A smart drive that owns the file system on a disk image, which a program opens, reads, writes, and lists files on by name, through three ports and an interrupt.
 * **[Ozzy Computer](4-Ozzy-Computer.md):** The Ozzy computer is a virtual machine you can run your OZ-3 programs in: its config file, its memory, the machine table that describes it to programs, and running it in the console with `ozzy`.

@@ -4,12 +4,13 @@ A **device** is hardware outside the OZ-3 itself, such as a screen or a keyboard
 
 The ready-made devices are general purpose. Any OZ-3 processor can have them, with whatever wiring and settings suit it. The [Ozzy Computer](4-Ozzy-Computer.md) is one machine built from them, with its own fixed wiring.
 
-| Device                   | Ports        | Interrupts | Pages | What                                                                         |
-| ------------------------ | ------------ | ---------- | ----- | ---------------------------------------------------------------------------- |
-| [Teletype](3.1-Teletype.md) | 1            | none       | none  | A port that writes text to the host                                          |
-| [Keyboard](3.2-Keyboard.md) | 1, 10, or 11 | 1 or none  | none  | A port of typed keys with an interrupt for each, ports of key state, or both |
-| [Screen](3.3-Screen.md)     | none         | 1          | 1     | A page of character cells and control words                                  |
-| [Timer](3.4-Timer.md)       | 2            | 1          | none  | A periodic interrupt, and a port of the cycle count, time, and date          |
+| Device                          | Ports        | Interrupts | Pages | What                                                                         |
+| ------------------------------- | ------------ | ---------- | ----- | ---------------------------------------------------------------------------- |
+| [Teletype](3.1-Teletype.md)     | 1            | none       | none  | A port that writes text to the host                                          |
+| [Keyboard](3.2-Keyboard.md)     | 1, 10, or 11 | 1 or none  | none  | A port of typed keys with an interrupt for each, ports of key state, or both |
+| [Screen](3.3-Screen.md)         | none         | 1          | 1     | A page of character cells and control words                                  |
+| [Timer](3.4-Timer.md)           | 2            | 1          | none  | A periodic interrupt, and a port of the cycle count, time, and date          |
+| [Disk Drive](3.5-Disk-Drive.md) | 3            | 1          | none  | A smart drive that a program asks for files by name, on disk images          |
 
 ### Wiring and settings
 
