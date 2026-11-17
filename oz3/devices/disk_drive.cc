@@ -28,6 +28,11 @@ namespace {
 // by a store.
 constexpr uint16_t kFieldMode = Port::S;
 
+// The argument fields that follow a command's first name or label.
+constexpr int kNewNameField = kDiskNameFields;            // RENAME
+constexpr int kAttributesField = kDiskNameFields;         // ATTRIB
+constexpr int kSectorsPerClusterField = kDiskNameFields;  // FORMAT
+
 // Returns the cycles `busy` takes at `clock_hz`: the busy time rounded up to
 // whole nanoseconds, and then to whole cycles.
 Cycles GetBusyCycles(absl::Duration busy, int64_t clock_hz) {
@@ -983,7 +988,7 @@ DiskDrive::CommandResponse DiskDrive::RunDelete(const Command& command) {
 DiskDrive::CommandResponse DiskDrive::AcceptRename(Command* command) {
   command->name = DiskFilename::FromWords(GetNameWords(*command));
   command->new_name =
-      DiskFilename::FromWords(GetNameWords(*command, kDiskNameFields));
+      DiskFilename::FromWords(GetNameWords(*command, kNewNameField));
   if (!command->name.has_value() || !command->new_name.has_value()) {
     return {.status = DiskStatus::kBadName};
   }
@@ -999,7 +1004,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptAttrib(Command* command) {
   if (!command->name.has_value()) {
     return {.status = DiskStatus::kBadName};
   }
-  const uint16_t attributes = command->arguments[kDiskNameFields].GetWord(0);
+  const uint16_t attributes = command->arguments[kAttributesField].GetWord(0);
   if ((attributes & ~kDiskAttribSettable) != 0) {
     return {.status = DiskStatus::kBadAttributes};
   }
@@ -1008,7 +1013,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptAttrib(Command* command) {
 
 DiskDrive::CommandResponse DiskDrive::RunAttrib(const Command& command) {
   return {.status = file_system_.SetAttributes(
-              *command.name, command.arguments[kDiskNameFields].GetWord(0))};
+              *command.name, command.arguments[kAttributesField].GetWord(0))};
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptMedia() {
@@ -1035,11 +1040,12 @@ DiskDrive::CommandResponse DiskDrive::RunVolume() {
   }
   CommandResponse response = {.status = DiskStatus::kOk};
   AppendWordFields(info.label.GetWords(), &response.results);
-  for (const int count :
-       {info.sectors_per_cluster, info.cluster_count, info.free_clusters}) {
-    response.results.push_back(
-        PortWords::FromWord(static_cast<uint16_t>(count)));
-  }
+  response.results.push_back(
+      PortWords::FromWord(static_cast<uint16_t>(info.sectors_per_cluster)));
+  response.results.push_back(
+      PortWords::FromWord(static_cast<uint16_t>(info.cluster_count)));
+  response.results.push_back(
+      PortWords::FromWord(static_cast<uint16_t>(info.free_clusters)));
   return response;
 }
 
@@ -1050,13 +1056,13 @@ DiskDrive::CommandResponse DiskDrive::AcceptFormat(Command* command) {
   }
 
   return {.status = file_system_.GetFormatStatus(
-              command->arguments[kDiskNameFields].GetWord(0))};
+              command->arguments[kSectorsPerClusterField].GetWord(0))};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunFormat(const Command& command) {
   return {.status = file_system_.Format(
-              *command.label, command.arguments[kDiskNameFields].GetWord(0),
-              GetNow())};
+              *command.label,
+              command.arguments[kSectorsPerClusterField].GetWord(0), GetNow())};
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptLabel(Command* command) {
