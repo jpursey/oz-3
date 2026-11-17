@@ -495,7 +495,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptOpen(Command* command) {
   if (!command->name.has_value()) {
     return {.status = DiskStatus::kBadName};
   }
-  return {.status = GetNewSlotStatus(file_system_.GetImageStatus())};
+  return {.status = GetNewSlotStatus(file_system_.GetVolumeStatus())};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunOpen(const Command& command) {
@@ -505,7 +505,7 @@ DiskDrive::CommandResponse DiskDrive::RunOpen(const Command& command) {
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptOpenRoot() {
-  return {.status = GetNewSlotStatus(file_system_.GetImageStatus())};
+  return {.status = GetNewSlotStatus(file_system_.GetVolumeStatus())};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunOpenRoot() {
@@ -519,13 +519,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptCreate(Command* command) {
   if (!command->name.has_value()) {
     return {.status = DiskStatus::kBadName};
   }
-
-  // An unformatted disk is found at completion.
-  DiskStatus disk_status = file_system_.GetWritableStatus();
-  if (disk_status == DiskStatus::kUnformatted) {
-    disk_status = DiskStatus::kOk;
-  }
-  return {.status = GetNewSlotStatus(disk_status)};
+  return {.status = GetNewSlotStatus(file_system_.GetWritableStatus())};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunCreate(const Command& command) {

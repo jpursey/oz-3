@@ -472,8 +472,8 @@ The drive keeps a count of free clusters in memory, never on the disk. The first
 
 #### Where errors land
 
-- **At accept:** anything knowable without the disk: bad command, bad handle, disk changed, bad name, bad pattern, bad label, bad attributes, too many open, past end, wrong handle type, read-only (for `WRITE` and `TRUNCATE`), write protected, in use (for `FORMAT`), no disk, I/O error once the disk has failed, and disk full for a `WRITE` where n would be 0.
-- **At completion:** anything that needs the disk: not found, exists, in use, read-only (for `DELETE`), disk full (a partial write, or a directory that can't grow), unformatted, corrupt, I/O error, and no disk if the image disappears mid-command. For `READ` and `WRITE`, a failure in the disk work, allocating included, is an early completion.
+- **At accept:** anything knowable without the disk: bad command, bad handle, disk changed, bad name, bad pattern, bad label, bad attributes, too many open, past end, wrong handle type, read-only (for `WRITE` and `TRUNCATE`), write protected, in use (for `FORMAT`), no disk, I/O error once the disk has failed, unformatted (known since the superblock was read when the image was attached), and disk full for a `WRITE` where n would be 0.
+- **At completion:** anything that needs the disk: not found, exists, in use, read-only (for `DELETE`), disk full (a partial write, or a directory that can't grow), corrupt, I/O error, and no disk if the image disappears mid-command. For `READ` and `WRITE`, a failure in the disk work, allocating included, is an early completion.
 
 ### Reading and writing
 

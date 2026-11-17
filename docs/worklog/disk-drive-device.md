@@ -99,11 +99,12 @@ disk_design.md to match.
      command word: bad handle, disk changed, I/O error, and wrong handle type
      for the handle, then bad name, bad pattern, bad label, bad attributes, bad
      argument, and past end.
-  2. The disk, for a command with no handle: no disk, then I/O error. A handle
-     only reaches the disk through its open slot, which the handle checks
-     already cover.
-  3. What the command needs: read-only, write protected, too many open, in use
-     for `FORMAT`, and disk full for a `WRITE`.
+  2. The disk, for a command with no handle: no disk, I/O error, write
+     protected for one that writes, then unformatted for one that needs a file
+     system (all but `MEDIA` and `FORMAT`). A handle only reaches the disk
+     through its open slot, which the handle checks already cover.
+  3. What the command needs: read-only and write protected for a handle, too
+     many open, in use for `FORMAT`, and disk full for a `WRITE`.
 - **`CLOSE` of every slot** (h = FFh) closes each open slot in order. It
   completes with the first failure, or OK. Free slots are skipped. A single
   `CLOSE` of a free slot is bad handle at accept.
@@ -244,10 +245,10 @@ struct DiskFileInfo {
 - `GetWritableWords` already gives everything `WRITE` and `TRUNCATE` need at
   accept: wrong handle type, read-only, and write protected, and how many words
   fit. `GetFileStatus` gives bad handle, disk changed, and I/O error for every
-  other handle, and `GetWritableStatus` gives the disk checks of the commands
-  with no handle that write (no disk, I/O error, write protected), with
-  unformatted left to completion. Both were private, and become public in
-  CL4.
+  other handle. `GetVolumeStatus` and `GetWritableStatus` give the disk checks
+  of the commands with no handle, for reading (no disk, I/O error,
+  unformatted) and for writing (write protected before unformatted). All
+  three are public from CL4.
 - The file system's own early checks stay, for tools, though the drive has
   already ruled them out at accept. The rules that are written twice are few
   (a pattern where a name goes, the settable attributes, and the layout), so
@@ -658,8 +659,8 @@ Depends on: CL4.
 - Standard checks.
 - Unit tests: each command's accept errors (bad pattern, bad label, bad
   attributes, a `FORMAT` sectors per cluster with no layout, in use for
-  `FORMAT`, write protected) and completion errors (not found, exists, in use,
-  read-only, unformatted, disk full for a root that can't grow); `FIND` through
+  `FORMAT`, write protected, unformatted) and completion errors (not found,
+  exists, in use, read-only, disk full for a root that can't grow); `FIND` through
   a listing and restarting with `SEEK`; `VOLUME`'s free count; and the image
   after each change. One assembled program that formats, lists with `FIND`,
   and reads the entries with `INR.ID`.

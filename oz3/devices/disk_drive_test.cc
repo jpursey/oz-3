@@ -978,14 +978,14 @@ TEST_F(DiskDriveTest, OpenRootChecksAtAccept) {
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
               ElementsAre(Field(DiskStatus::kTooManyOpen)));
 
-  // An unformatted disk is found at completion.
+  // An unformatted disk comes before too many open, with the slot stale.
   drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
-  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kClose, 0)),
-              ElementsAre(Field(kOk)));
-  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kClose, 0)),
               ElementsAre(Field(kOk)));
-  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kUnformatted)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
 }
 
 TEST_F(DiskDriveTest, CloseNeedsAnOpenSlot) {
@@ -1049,12 +1049,6 @@ TEST_F(DiskDriveTest, OpenOpensAFileByName) {
   EXPECT_THAT(
       Run(CommandWord(DiskDriveCommand::kOpen), NameFields("HELLO.TXT")),
       ElementsAre(Field(kOk), PortWords::FromWord(0)));
-
-  // An unformatted disk is found at completion.
-  drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
-  EXPECT_THAT(
-      Run(CommandWord(DiskDriveCommand::kOpen), NameFields("HELLO.TXT")),
-      ElementsAre(Field(DiskStatus::kUnformatted)));
 }
 
 TEST_F(DiskDriveTest, OpenChecksAtAccept) {
@@ -1089,7 +1083,10 @@ TEST_F(DiskDriveTest, OpenChecksAtAccept) {
   ASSERT_NE(drive_->DetachImage(), nullptr);
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(DiskStatus::kNoDisk)));
-  std::unique_ptr<DiskImage> image = MakeImage(/*formatted=*/true, kOtherPath);
+  drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
+  std::unique_ptr<DiskImage> image = MakeImage(/*formatted=*/true, kThirdPath);
   protocol_->SetLimits({.reads = 0});
   drive_->AttachImage(std::move(image));
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
@@ -1117,11 +1114,6 @@ TEST_F(DiskDriveTest, CreateMakesAnEmptyFileStampedWithTheClock) {
   EXPECT_EQ(entry->GetSize(), 0);
   EXPECT_EQ(entry->GetFirstCluster(), 0);
   EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kNow));
-
-  // An unformatted disk is found at completion.
-  drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
-  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kCreate), NameFields("NEW")),
-              ElementsAre(Field(DiskStatus::kUnformatted)));
 }
 
 TEST_F(DiskDriveTest, CreateChecksAtAccept) {
@@ -1155,6 +1147,18 @@ TEST_F(DiskDriveTest, CreateChecksAtAccept) {
   // OPEN only reads, so a protected disk doesn't stop it.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
               ElementsAre(Field(DiskStatus::kTooManyOpen)));
+
+  // An unformatted disk comes after write protected, and before too many open.
+  image = MakeImage(/*formatted=*/false, kOtherPath);
+  ASSERT_EQ(image->SetWriteProtected(true), kOk);
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kCreate), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kWriteProtected)));
+  image = drive_->DetachImage();
+  ASSERT_EQ(image->SetWriteProtected(false), kOk);
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kCreate), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
 }
 
 TEST_F(DiskDriveTest, CloseOfEverySlotClosesThemAll) {

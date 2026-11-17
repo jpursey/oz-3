@@ -152,10 +152,14 @@ class DiskFileSystem final {
   // disk, and kUnformatted with no file system.
   DiskStatus SetLabel(const DiskLabel& label);
 
+  // Returns kNoDisk with no image, kIoError for a failed one, kUnformatted
+  // with no file system, or else kOk, as every use of the file system checks
+  // first. It never reads the disk.
+  DiskStatus GetVolumeStatus() const;
+
   // Returns kNoDisk with no image, kIoError for a failed one, kWriteProtected
   // for a protected one, kUnformatted with no file system, or else kOk, as
-  // every change to the disk checks first. Protection comes before
-  // formatting, as the drive finds it at accept and formatting at completion.
+  // every change to the disk checks first. It never reads the disk.
   DiskStatus GetWritableStatus() const;
 
   // Sets `info` to the file system, counting the free clusters if this is
@@ -341,10 +345,6 @@ class DiskFileSystem final {
 
   // Forgets the attached disk's superblock, free count, and buffers.
   void ResetVolume();
-
-  // Returns kNoDisk with no image, kIoError for a failed one, kUnformatted
-  // with no file system, or else kOk.
-  DiskStatus GetVolumeStatus() const;
 
   // Returns a cluster's size, in words.
   int GetClusterSize() const;
