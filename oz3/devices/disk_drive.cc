@@ -353,8 +353,8 @@ DiskDrive::StateResult DiskDrive::ExecuteState(SendingCompletionState& state) {
 
 DiskDrive::StateResult DiskDrive::ExecuteState(ReadingState& state) {
   Transfer& transfer = state.transfer;
-  if (UpdateEarlyCompletion(transfer)) {
-    return StateResult::kContinue;
+  if (std::optional<StateResult> result = UpdateEarlyCompletion(transfer)) {
+    return *result;
   }
 
   // The flag stays set until the OS takes the handoff.
@@ -389,8 +389,8 @@ DiskDrive::StateResult DiskDrive::ExecuteState(ReadingState& state) {
 
 DiskDrive::StateResult DiskDrive::ExecuteState(WritingState& state) {
   Transfer& transfer = state.transfer;
-  if (UpdateEarlyCompletion(transfer)) {
-    return StateResult::kContinue;
+  if (std::optional<StateResult> result = UpdateEarlyCompletion(transfer)) {
+    return *result;
   }
 
   // A write of fewer handoffs than the OS asked for is all that fits.
@@ -511,16 +511,20 @@ void DiskDrive::FailTransfer(Transfer& transfer, DiskStatus status) {
   transfer.early_completion = CommandResponse{.status = status};
 }
 
-bool DiskDrive::UpdateEarlyCompletion(Transfer& transfer) {
+std::optional<DiskDrive::StateResult> DiskDrive::UpdateEarlyCompletion(
+    Transfer& transfer) {
   if (!transfer.early_completion.has_value()) {
-    return false;
+    return std::nullopt;
   }
   CommandResponse& completion = *transfer.early_completion;
+  if (completion.fields_sent == 0) {
+    return SendCompletionField(completion);
+  }
   if (IsCommandResponseTaken(completion)) {
     transfer.early_completion.reset();
-    return true;
+    return StateResult::kContinue;
   }
-  return SendCompletionField(completion) == StateResult::kContinue;
+  return std::nullopt;
 }
 
 DiskDrive::State DiskDrive::EndTransfer(Transfer transfer, DiskStatus status) {
@@ -575,7 +579,8 @@ void DiskDrive::WriteHandoff(Transfer& transfer, PortWords words) {
   const std::array<uint16_t, 2> data = {words.GetWord(0), words.GetWord(1)};
   const int handoff_words = transfer.command.def->packed ? 2 : 1;
 
-  // A write always fits in its sector, so it writes at least a word.
+  // The accept promised room for every handoff, so each write call writes at
+  // least a word.
   for (int written = 0; written < handoff_words;) {
     int count = 0;
     if (DiskStatus status = file_system_.Write(
@@ -586,6 +591,10 @@ void DiskDrive::WriteHandoff(Transfer& transfer, PortWords words) {
       // The early completion is the write's failure, whatever the flush's.
       file_system_.Flush(file, GetNow());
       FailTransfer(transfer, status);
+      return;
+    }
+    DCHECK_GT(count, 0);
+    if (count == 0) {
       return;
     }
     written += count;
@@ -602,7 +611,9 @@ void DiskDrive::AbortRead(const ReadingState& state, bool handoff_untaken) {
   const DiskFile file = state.transfer.command.GetHandle();
   DiskFileInfo info;
   if (file_system_.GetFileInfo(file, &info) == DiskStatus::kOk) {
-    file_system_.Seek(file, info.position - state.words_ahead);
+    const DiskStatus status =
+        file_system_.Seek(file, info.position - state.words_ahead);
+    DCHECK(status == DiskStatus::kOk);
   }
 }
 

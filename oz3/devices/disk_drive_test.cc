@@ -521,6 +521,15 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return stalls;
   }
 
+  // Expects a reset to have left the drive idle, with nothing on the data
+  // port, and handle 0, a 600-word file, at `position`.
+  void ExpectResetAt(int position) {
+    EXPECT_EQ(GetPhase(), 0);
+    EXPECT_FALSE(IsSet(kDataPort));
+    EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(position),
+                                     PortWords::FromDword(600)));
+  }
+
   // WRITEs `words` to `handle`, which they all fit in, and completes it.
   void WriteWords(int handle, absl::Span<const uint16_t> words) {
     const uint16_t count = static_cast<uint16_t>(words.size());
@@ -1917,6 +1926,30 @@ TEST_F(DiskDriveTest, ABrokenChainEndsAReadEarly) {
                                    PortWords::FromDword(600)));
 }
 
+TEST_F(DiskDriveTest, AnEarlyCompletionHoldsUpTheDataPhaseForItsLocks) {
+  using enum DiskDriveCommand;
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(BreakChain(MakeImageWithFile("A", 600), "A"));
+  OpenFile("A");
+  EXPECT_THAT(Transfer(kRead, 0, 600),
+              ElementsAre(Field(kOk), PortWords::FromWord(600)));
+  EXPECT_EQ(ReadData(255).handoffs, Handoffs(FileWords(0, 255)));
+
+  // The read past the cluster fails while the command port is held, so its
+  // status waits, and no zeros come before it. The zeros follow it at once.
+  std::unique_ptr<Lock> lock = LockPort(kCommandPort);
+  ASSERT_TRUE(lock->IsLocked());
+  EXPECT_EQ(ReadData(1).handoffs, Handoffs(FileWords(255, 1)));
+  Execute(10);
+  EXPECT_FALSE(IsSet(kDataPort));
+  EXPECT_EQ(GetPhase(), 4);
+  lock.reset();
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_EQ(GetPhase(), 3);
+  EXPECT_EQ(ReceiveField(), Field(DiskStatus::kCorrupt));
+  EXPECT_EQ(ReadData(344).handoffs, std::vector<PortWords>(344));
+}
+
 TEST_F(DiskDriveTest, AFailedImageEndsAReadEarly) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
@@ -2028,18 +2061,11 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   ASSERT_TRUE(InitDrive());
   drive_->AttachImage(MakeImageWithFile("A", 600));
   OpenFile("A");
-  auto expect_position = [this](int position) {
-    EXPECT_EQ(GetPhase(), 0);
-    EXPECT_FALSE(IsSet(kDataPort));
-    EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(position),
-                                     PortWords::FromDword(600)));
-  };
-
   // During the first sector's load, nothing has moved.
   EXPECT_THAT(Transfer(kRead, 0, 300),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
   Request(DiskDrive::kResetRequest);
-  expect_position(0);
+  ExpectResetAt(0);
 
   // A word in the port goes back to the file.
   EXPECT_THAT(Transfer(kRead, 0, 300),
@@ -2047,7 +2073,7 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   ReadData(10);
   ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
   Request(DiskDrive::kResetRequest);
-  expect_position(10);
+  ExpectResetAt(10);
 
   // A word the OS took, before the drive sees it go, is the OS's.
   EXPECT_THAT(Transfer(kRead, 0, 300),
@@ -2055,7 +2081,7 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
   EXPECT_EQ(In(kDataPort), PortWords::FromWord(FileWord(10)));
   Request(DiskDrive::kResetRequest);
-  expect_position(11);
+  ExpectResetAt(11);
 
   // A request waits out a sector's load, and the word it read goes back.
   EXPECT_THAT(Transfer(kRead, 0, 300),
@@ -2064,7 +2090,7 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   const Cycles start = GetCycles();
   Request(DiskDrive::kResetRequest);
   EXPECT_GE(GetCycles() - start, kReadCycles);
-  expect_position(256);
+  ExpectResetAt(256);
 
   // A packed read's dword goes back whole.
   EXPECT_THAT(Transfer(kReadPacked, 0, 100),
@@ -2072,7 +2098,7 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   ReadData(2);
   ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
   Request(DiskDrive::kResetRequest);
-  expect_position(260);
+  ExpectResetAt(260);
 }
 
 TEST_F(DiskDriveTest, AResetKeepsTheWordsAWriteTook) {

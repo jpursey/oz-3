@@ -625,7 +625,7 @@ Depends on: CL3.
   Nothing can write a file before CL5, so what a `CLOSE` or `FLUSH` of a
   written file does is tested there.
 
-### CL5 [~] devices: reading and writing
+### CL5 [x] devices: reading and writing
 
 Depends on: CL4.
 

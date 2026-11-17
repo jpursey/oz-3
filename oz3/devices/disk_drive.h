@@ -522,9 +522,10 @@ class DiskDrive final : public Device {
   static void FailTransfer(Transfer& transfer, DiskStatus status);
 
   // Sends `transfer`'s early completion, or sees the OS take it, and returns
-  // whether it did either. Otherwise the data phase goes on, as it does while
-  // the early completion waits for a port's lock.
-  bool UpdateEarlyCompletion(Transfer& transfer);
+  // the result of the step it took, or kWait while its status waits for a
+  // port's lock, which holds up the data phase. Returns nullopt if the data
+  // phase goes on: there is no early completion, or the OS hasn't taken it.
+  std::optional<StateResult> UpdateEarlyCompletion(Transfer& transfer);
 
   // Returns the state that ends `transfer`'s data phase: its completion with
   // `status`, the early completion if it failed, or idle once the OS has taken
