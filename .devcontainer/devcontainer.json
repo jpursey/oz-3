@@ -19,7 +19,13 @@
 
   "customizations": {
     "vscode": {
-      "extensions": ["ms-vscode.cpptools", "ms-vscode.cmake-tools"],
+      // C++ TestMate lists each GoogleTest case in the Testing view, to run or
+      // debug on its own. CMake Tools only knows each test binary as a whole.
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "matepek.vscode-catch2-test-adapter"
+      ],
       "settings": {
         "cmake.generator": "Ninja",
         "cmake.buildDirectory": "${workspaceFolder}/out/build/linux-clang-${buildType}",
