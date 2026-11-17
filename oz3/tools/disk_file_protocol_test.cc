@@ -16,10 +16,10 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/civil_time.h"
+#include "absl/types/span.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
-#include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/date_time.h"
@@ -140,7 +140,9 @@ TEST_F(DiskFileProtocolTest, Properties) {
           {gb::FileProtocolFlag::kInfo, gb::FileProtocolFlag::kList,
            gb::FileProtocolFlag::kFileCreate, gb::FileProtocolFlag::kFileRead,
            gb::FileProtocolFlag::kFileWrite, gb::FileProtocolFlag::kMove}));
-  EXPECT_EQ(file_system_.GetAttributeFlags("ozdisk"), gb::kAllFileAttributes);
+  EXPECT_EQ(file_system_.GetAttributeFlags("ozdisk"),
+            gb::FileAttributes(
+                {gb::FileAttribute::kReadOnly, gb::FileAttribute::kHidden}));
 }
 
 TEST_F(DiskFileProtocolTest, NothingMountedHasNoPaths) {
@@ -260,6 +262,24 @@ TEST_F(DiskFileProtocolTest, StaleFileNeverReachesTheNextImage) {
   EXPECT_EQ(file->WriteString("lost"), 0);
   file.reset();
   EXPECT_THAT(ReadWords("HELLO.TXT"), IsEmpty());
+}
+
+TEST_F(DiskFileProtocolTest, StaleFilesInEveryOtherSlotLeaveTheRootItsOwn) {
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "a"));
+  std::vector<std::unique_ptr<gb::File>> files;
+  for (int i = 1; i < kMaxOpenFiles; ++i) {
+    files.push_back(
+        file_system_.OpenFile(absl::StrCat("ozdisk:/F", i), gb::kNewFileFlags));
+    ASSERT_NE(files.back(), nullptr);
+  }
+  std::unique_ptr<DiskImage> image;
+  EXPECT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+  EXPECT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kOk);
+  EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/A"));
+  EXPECT_THAT(file_system_.List("ozdisk:/"),
+              UnorderedElementsAre("ozdisk:/A", "ozdisk:/F1", "ozdisk:/F2",
+                                   "ozdisk:/F3"));
 }
 
 //==============================================================================

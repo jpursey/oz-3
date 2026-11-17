@@ -32,7 +32,9 @@ namespace oz3 {
 // its paths look like "ozdisk:/HELLO.OZ3".
 //
 // Paths are "/", the root folder, and "/<name>" for each file in it, a dotted
-// name that DiskFilename::Parse accepts, matched without regard to case.
+// name that DiskFilename::Parse accepts, matched without regard to case. List
+// patterns are gb's (see gb::PathMatchesPattern), also without regard to
+// case, so "*.*" matches only names with an extension.
 // There are no other folders. With nothing mounted, every path is invalid,
 // and an unformatted disk's root is an empty folder.
 //
@@ -89,14 +91,17 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // Unmounts any image mounted, discarding the image, then mounts `image`,
   // which must not be null, opening its root. Returns kOk, kUnformatted (it is
   // mounted with no root, to format), or kIoError, or opening the root's
-  // failure (such as kCorrupt), which leaves it mounted with no root.
+  // failure (such as kCorrupt), which leaves it mounted with no root. Unmount
+  // frees the root's slot, so files left stale never keep the next root from
+  // opening.
   DiskStatus Mount(std::unique_ptr<DiskImage> image);
 
-  // Commits every open file and closes the root, then detaches the image,
-  // setting `image` to it if not null. Files still open are stale (see
+  // Commits the open files as DiskFileSystem::Flush does, stopping at the
+  // first that fails, and closes the root, then detaches the image, setting
+  // `image` to it if not null. Files still open are stale (see
   // DiskFileSystem): reading and writing them fails. Returns kNoDisk with
-  // nothing mounted, kIoError for a failed image, the first failure
-  // committing, or kOk. The image is detached whatever it returns.
+  // nothing mounted, kIoError for a failed image, the failure committing, or
+  // kOk. The image is detached whatever it returns.
   DiskStatus Unmount(std::unique_ptr<DiskImage>* image = nullptr);
 
   // Returns whether an image is mounted.

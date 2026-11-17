@@ -193,6 +193,14 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
   DiskFileSystem& file_system = protocol_->file_system_;
   const uint8_t* const bytes = static_cast<const uint8_t*>(buffer);
   std::array<uint16_t, kDiskSectorWords> words;
+  if (file_system.Seek(file_, static_cast<int>(position_ / 2)) !=
+      DiskStatus::kOk) {
+    return 0;
+  }
+
+  // Seeking once is enough, as a byte alone in its word leaves the file
+  // system's position after that word, and full words leave it after the last
+  // one written.
   int64_t done = 0;
   while (done < size) {
     const int index = static_cast<int>(position_ / 2);
@@ -221,9 +229,6 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
     for (int i = 0; i < word_count; ++i) {
       words[i] = static_cast<uint16_t>(bytes[done + i * 2] |
                                        (bytes[done + i * 2 + 1] << 8));
-    }
-    if (file_system.Seek(file_, index) != DiskStatus::kOk) {
-      return done;
     }
     int count = 0;
     const DiskStatus status = file_system.Write(
@@ -320,7 +325,7 @@ std::string DiskFileProtocol::GetCanonicalPath(std::string_view protocol_name,
 }
 
 gb::FileAttributes DiskFileProtocol::GetAttributeFlags() const {
-  return gb::kAllFileAttributes;
+  return {gb::FileAttribute::kReadOnly, gb::FileAttribute::kHidden};
 }
 
 gb::PathInfo DiskFileProtocol::DoGetPathInfo(std::string_view protocol_name,

@@ -185,10 +185,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // with nothing mounted, and kInUse with any file open.
   DiskStatus Format(const DiskLabel& label, int sectors_per_cluster);
 
-  // Returns the file system with an image mounted, or null. Calls on it
-  // bypass the protocol's locking, so a host using it from several threads
-  // locks around them. Its root is open in the protocol's slot (see
-  // GetRoot), and it is formatted with the protocol's Format.
+  // Returns the file system with an image mounted, or null. Its root is open
+  // in the protocol's slot (see GetRoot), and it is formatted with the
+  // protocol's Format.
   DiskFileSystem* GetFileSystem();
 
   // Returns the slot the root is open in, for Find on the file system, or -1
@@ -205,11 +204,11 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
  protected:
   gb::PathInfo DoGetPathInfo(...) override;
-  bool DoSetAttributes(...) override;
   std::vector<std::string> DoList(...) override;
-  bool DoDeleteFile(...) override;
-  bool DoMoveFile(...) override;
-  std::unique_ptr<gb::RawFile> DoOpenFile(...) override;
+  bool BasicSetAttributes(...) override;
+  bool BasicDeleteFile(...) override;
+  bool BasicMoveFile(...) override;
+  std::unique_ptr<gb::RawFile> BasicOpenFile(...) override;
 };
 ```
 
@@ -230,7 +229,10 @@ class DiskFileProtocol final : public gb::FileProtocol {
   `gb::PathMatchesPattern`, the pattern turned to upper case so case is
   ignored. The disk's own patterns aren't used, as gb's patterns are what every
   protocol's callers write. Recursive mode is the same, with no folders.
-- **`DoOpenFile`:** `Open`, or `Create` for a missing file with
+- **The `Basic*` hooks** are overridden, leaving `gb::FileProtocol`'s `Do*`
+  functions to check that a path exists, is a file, and has the root as its
+  folder before calling them.
+- **`BasicOpenFile`:** `Open`, or `Create` for a missing file with
   `FileFlag::kCreate`, then `Truncate` at 0 for `FileFlag::kReset`. A
   read-only file fails to open for writing, so it can't be replaced by a copy,
   which `gb::FileSystem::CopyFile` relies on.
@@ -242,10 +244,10 @@ class DiskFileProtocol final : public gb::FileProtocol {
   destroying it closes the slot, stamped the same. A failure returns -1 or
   false, as `RawFile` asks; the `DiskStatus` is lost there, as `RawFile` has
   no room for it.
-- **`DoDeleteFile`, `DoMoveFile`, and `DoSetAttributes`** are `Delete`,
-  `Rename`, and `SetAttributes`, each refused with the file open (`kInUse`),
-  as on the drive. A missing file deletes, as `DoDeleteFile` asks. A move onto
-  the same file in other case renames it, as `DoMoveFile` asks.
+- **`BasicDeleteFile`, `BasicMoveFile`, and `BasicSetAttributes`** are
+  `Delete`, `Rename`, and `SetAttributes`, each refused with the file open
+  (`kInUse`), as on the drive. Names are stored in upper case, so a move onto
+  the same file in other case is already done.
 - **Locking:** `Lock` and `Unlock` aren't overridden. The tools are
   single-threaded, and `gb::FileSystem` calls a protocol from one thread at a
   time unless the host shares it, in which case the host locks around it, as
@@ -408,7 +410,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md).
 - Unit tests: `GetDiskStatusText` of every status, each distinct.
 
-### CL2 [~] tools: DiskFileProtocol
+### CL2 [x] tools: DiskFileProtocol
 
 Depends on: CL1.
 
