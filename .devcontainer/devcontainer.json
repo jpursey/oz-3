@@ -1,0 +1,38 @@
+{
+  "name": "OZ-3",
+
+  // Ubuntu 24.04, as CI pins: its clang is 18. Newer clang (21) has warnings
+  // that fail Game Bits' build.
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  // A full build is ~430 steps (~3 min on 4 cores). 2 cores works, just slower.
+  "hostRequirements": { "cpus": 4 },
+
+  // Plain `cmake` calls pick clang without needing -DCMAKE_*_COMPILER.
+  "containerEnv": { "CC": "clang", "CXX": "clang++" },
+
+  // The reference clang-format (19.1.5, from PyPI) goes on PATH, after the
+  // system tools so its venv's python doesn't shadow the system one.
+  "remoteEnv": { "PATH": "${containerEnv:PATH}:/home/vscode/.venvs/clang-format/bin" },
+
+  // Runs once when the codespace is created (and again on a rebuild).
+  // Game Bits goes beside this repo as ../game-bits, where CMakeLists.txt finds
+  // it without GB_DIR. The wiki is cloned into wiki/, which .gitignore skips.
+  "onCreateCommand": "sudo apt-get update && sudo apt-get install -y clang cmake ninja-build gdb python3-venv && if [ ! -d ../game-bits/.git ]; then sudo mkdir -p ../game-bits && sudo chown $(id -u):$(id -g) ../game-bits && git clone https://github.com/jpursey/game-bits ../game-bits; fi && git -C ../game-bits submodule update --init --recursive --depth 1 && if [ ! -d wiki/.git ]; then git clone https://github.com/jpursey/oz-3.wiki.git wiki; fi && python3 -m venv ~/.venvs/clang-format && ~/.venvs/clang-format/bin/pip install clang-format==19.1.5",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-vscode.cpptools", "ms-vscode.cmake-tools"],
+      "settings": {
+        "cmake.generator": "Ninja",
+        "cmake.buildDirectory": "${workspaceFolder}/out/build/linux-clang-${buildType}",
+        "cmake.configureSettings": {
+          "CMAKE_C_COMPILER": "clang",
+          "CMAKE_CXX_COMPILER": "clang++"
+        },
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+        "C_Cpp.clang_format_path": "/home/vscode/.venvs/clang-format/bin/clang-format"
+      }
+    }
+  }
+}
