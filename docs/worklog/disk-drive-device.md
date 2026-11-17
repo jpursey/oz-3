@@ -77,9 +77,11 @@ disk_design.md to match.
   is the same length as before, and comes one word later. A reset never leaves
   a word the drive took unwritten.
 - **A read loads each sector when its first word is due,** as disk_design.md
-  describes. The drive reads one word (or dword) ahead into the data port. So
-  after a reset that withdraws a word from the port, the drive seeks the handle
-  back past that word, and the position is just past the words the OS took.
+  describes. The drive reads one word (or dword) ahead of the data port,
+  reading the next as soon as the last goes on the port, so a sector's load
+  overlaps the OS taking the word before it. So after a reset, the drive seeks
+  the handle back past the word read ahead and any still in the port, and the
+  position is just past the words the OS took.
 - **Detaching an image** has no special case. The host detaches between
   processor runs, so whatever the drive has done is done. A latent command
   whose work has run completes with the status that work had, and one whose
@@ -456,9 +458,8 @@ class DiskDriveFactory final : public DeviceFactory {
   or request that arrives meanwhile waits for it. The drive can't run again
   until its cycles have passed, so a wake while it is busy only takes effect
   after.
-- **Transfers** move one word or dword at a time, with `Read` and `Write` of
-  one or two words. A file system call stops at a sector boundary, so a dword
-  that crosses a sector is two calls. Calling once per word keeps each
+- **Transfers** move one word or dword at a time, with a `Read` or `Write`
+  of one word for each of its words. Calling once per word keeps each
   sector's disk work at the word that starts it, which is where the drive
   stalls (see Performance). Packed reads give a last dword with a zero high
   word at an odd end.
