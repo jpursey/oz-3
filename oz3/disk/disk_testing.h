@@ -40,6 +40,12 @@ struct FatChain {
 FatChain FollowFatChain(const DiskLayout& layout,
                         absl::Span<const uint16_t> fat, int first);
 
+// Returns the free list in `fat`, as FollowFatChain follows it from the head
+// that word 0 links to, broken and empty if word 0 links past the last
+// cluster.
+FatChain FollowFreeList(const DiskLayout& layout,
+                        absl::Span<const uint16_t> fat);
+
 }  // namespace oz3
 
 #endif  // OZ3_DISK_DISK_TESTING_H_

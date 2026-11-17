@@ -854,7 +854,7 @@ DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
   `CollectSectorWrites` turns the protocol's write offsets into sectors, and
   `FollowFatChain` follows a chain in a FAT's words whole, stopping at a link
   past the last cluster (`FatChain::broken`) or after as many clusters as the
-  disk has.
+  disk has, and `FollowFreeList` follows the free list from word 0's head.
 - `date_time_test.cc` (core): words from a civil time and back, no date, and
   ordering across each word. The timer's tests pass unchanged.
 - `disk_image_test.cc`: the header's exact bytes, every header error, sector

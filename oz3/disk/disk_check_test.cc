@@ -273,7 +273,7 @@ class DiskCheckTest : public ::testing::Test {
 
   // Returns the image's free list.
   std::vector<int> ReadFreeList() {
-    return ReadChain(kLayout.GetNextCluster(0, ReadFat()[0]).value_or(0));
+    return FollowFreeList(kLayout, ReadFat()).clusters;
   }
 
   // Expects no cluster on the image to be on two chains, or twice on one,

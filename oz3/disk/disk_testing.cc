@@ -50,4 +50,16 @@ FatChain FollowFatChain(const DiskLayout& layout,
   return chain;
 }
 
+FatChain FollowFreeList(const DiskLayout& layout,
+                        absl::Span<const uint16_t> fat) {
+  CHECK(!fat.empty());
+  const std::optional<int> head = layout.GetNextCluster(0, fat[0]);
+  if (!head.has_value()) {
+    FatChain chain;
+    chain.broken = true;
+    return chain;
+  }
+  return FollowFatChain(layout, fat, *head);
+}
+
 }  // namespace oz3

@@ -300,34 +300,32 @@ DiskContents ReadDiskContents(DiskImage& image,
   DiskContents contents;
   std::vector<std::string>& owners = contents.owners;
   owners.resize(layout.cluster_count + 1);
-  const auto take_chain = [&](const std::string& owner, int chain_first) {
-    const FatChain chain = FollowFatChain(layout, fat, chain_first);
+  const auto take_chain = [&](const std::string& owner, const FatChain& chain) {
+    if (chain.broken) {
+      ADD_FAILURE() << owner << "'s chain has a link past the last cluster";
+    }
     std::vector<int> taken;
     for (int cluster : chain.clusters) {
       if (owners[cluster] == owner) {
         ADD_FAILURE() << owner << "'s chain loops at cluster " << cluster;
-        return taken;
+        break;
       }
       if (!owners[cluster].empty()) {
         ADD_FAILURE() << owner << " and " << owners[cluster]
                       << " share cluster " << cluster;
-        return taken;
+        break;
       }
       owners[cluster] = owner;
       taken.push_back(cluster);
     }
-    if (chain.broken) {
-      ADD_FAILURE() << owner << "'s chain has a link past the last cluster";
-    }
     return taken;
   };
 
-  // Word 0 is the link of an imaginary cluster 0, to the free list's head, and
-  // one past the last cluster is a link out of range.
-  take_chain("the free list", layout.GetNextCluster(0, fat[0]).value_or(
-                                  layout.cluster_count + 1));
+  take_chain("the free list", FollowFreeList(layout, fat));
   std::vector<DiskDirEntry> entries;
-  for (int cluster : take_chain("the root", superblock.GetRootCluster())) {
+  for (int cluster :
+       take_chain("the root",
+                  FollowFatChain(layout, fat, superblock.GetRootCluster()))) {
     for (int i = 0; i < layout.sectors_per_cluster; ++i) {
       for (int index = 0; index < DiskDirEntry::kEntriesPerSector; ++index) {
         entries.push_back(
@@ -352,7 +350,8 @@ DiskContents ReadDiskContents(DiskImage& image,
       continue;
     }
     contents.files.push_back({.name = text, .size = *size});
-    const std::vector<int> chain = take_chain(text, entry.GetFirstCluster());
+    const std::vector<int> chain =
+        take_chain(text, FollowFatChain(layout, fat, entry.GetFirstCluster()));
     if (static_cast<int>(chain.size()) * cluster_words < *size) {
       continue;
     }
