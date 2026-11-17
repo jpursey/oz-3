@@ -6,7 +6,14 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
 
   // Plain `cmake` calls pick clang without needing -DCMAKE_*_COMPILER.
-  "containerEnv": { "CC": "clang", "CXX": "clang++" },
+  // -fstandalone-debug lets gdb and lldb show std::string, which clang
+  // otherwise leaves to libstdc++'s debug symbols, not installed here. CMake
+  // reads CXXFLAGS only when it configures a new build tree.
+  "containerEnv": {
+    "CC": "clang",
+    "CXX": "clang++",
+    "CXXFLAGS": "-fstandalone-debug"
+  },
 
   // The reference clang-format (19.1.5, from PyPI) goes on PATH, after the
   // system tools so its venv's python doesn't shadow the system one.
