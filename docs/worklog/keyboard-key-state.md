@@ -137,6 +137,13 @@ gives the keyboard's ports as 1, 10, or 11.
 - The console frontend reports every key's presses and releases to the key
   state, by where the key is (its scan code), and releases them all when the
   console loses focus, which sends no releases for keys held then.
+- A terminal (on platforms other than Windows) sends only what is typed, so
+  each typed key with a key code is tapped: the left Shift, Ctrl, and Alt its
+  modifiers say are pressed, its key is pressed and released, and they are
+  released, all at once. Its key is where the key is on a US keyboard ('!' is
+  1's key). So a program sees the key pressed but never held, and a held key
+  pressed again at the terminal's auto-repeat rate (see the backlog's *Kitty
+  keyboard protocol*).
 - Nothing in the Ozzy reads key state yet: the boot ROM reads only typed keys.
 - **Wiki:** `4-Ozzy-Computer.md`'s device table, machine table, its example,
   and the console frontend's keyboard.
@@ -159,7 +166,7 @@ gives the keyboard's ports as 1, 10, or 11.
 - **`KeyChange`** (`{key, held}`) and **`ConsoleKeys`** (`typed` and
   `changes`) in the console frontend, and **`ConsoleKeyState`**, the keys a
   Windows console reported held.
-- **`GetKeyEvent`**, renamed from `GetOzzyKey`, and **`GetKeyCode`**: they give
+- **`GetKeyEvent`**, renamed from `GetOzzyKey`, and **`GetTypedKeyCode`**: they give
   the keyboard device's typed key events and key codes, which aren't the
   Ozzy's own. They are in `win_console`, the only Windows host.
 
@@ -218,7 +225,7 @@ struct ConsoleKeys {
 virtual ConsoleKeys TakeKeys() = 0;  // Was std::vector<uint16_t>.
 
 // win_console.h: no Windows headers, so it can be tested.
-int GetKeyCode(uint16_t scan_code, bool extended);
+int GetTypedKeyCode(uint16_t scan_code, bool extended);
 class ConsoleKeyState {
  public:
   void AddKeyEvent(uint16_t scan_code, bool key_down, uint32_t control_keys,
@@ -227,7 +234,7 @@ class ConsoleKeyState {
 };
 ```
 
-- `GetKeyCode` is a fixed table of scan codes, which are by place: the main
+- `GetTypedKeyCode` is a fixed table of scan codes, which are by place: the main
   rows as strings of their characters from each row's first scan code, F1 to
   F10's range, and the other keys, with and without `ENHANCED_KEY`. The
   extended keys are the arrows and the six keys above them, Right Ctrl, Right
@@ -264,7 +271,8 @@ the old console host:
   keys are in key state. Its Ctrl and Alt latch, held until clicked again.
 - The Claude Code terminal panel gives each held key as a key down and key up
   pair at every repeat, so a held key is a stream of taps in key state there,
-  and Ctrl+Alt+Q doesn't reach the program. `ozzy` is for a Windows console.
+  and Ctrl+Alt+Q doesn't reach the program. On Windows, `ozzy` is for a
+  Windows console.
 
 Not confirmed: AltGr (no layout with it was at hand), the keypad's Enter (no
 keypad), and remapped keys.
@@ -282,7 +290,7 @@ keypad), and remapped keys.
 - `ozzy_settings_test.cc` and `ozzy_test.cc`: the keyboard's wiring, key state
   reaching ports 6 and 15 of a running Ozzy, and the machine table's keyboard
   entry.
-- `win_console_test.cc`: `GetKeyCode` for each row of the table, the extended
+- `win_console_test.cc`: `GetTypedKeyCode` for each row of the table, the extended
   keys against their keypad and left twins, and keys without a code; and
   `ConsoleKeyState` with records copied from both consoles: repeats, key ups
   of keys not held, Shift by its scan code, Ctrl and Alt by the control key

@@ -87,25 +87,27 @@ The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
-## Linux console
+## Kitty keyboard protocol
 
-- **Layers:** ozzy
-- **Size:** small
+- **Layers:** ozzy, wiki
+- **Size:** medium
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** `oz3/ozzy/console.h`, `win_console.cc`, and
-  `gen_console.cc`
+- **Background:** `oz3/ozzy/posix_console.cc`;
+  https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 
-The `ozzy` app builds on Linux, but can't run there: `Console` is only
-implemented for Windows, and `gen_console.cc` stands in for it elsewhere, so
-creating one fails. Implement it for Linux terminals with termios and the
-same virtual terminal sequences: raw input, so every key (Ctrl+C too) is a
-key press, the alternate screen for `kScreen`, the window size, and the
-terminal given back as it was. A terminal reports keys typed rather than
-pressed and released, so the key changes (by where each key is) are made up
-from what was typed, or left empty, which the console devices' worklog
-should settle. It needs a name prefix for Linux files alongside `win_` and
-`gen_`, as Game Bits' *Linux and Clang* left for later too.
+In a terminal, `ozzy` only sees what is typed, so the keyboard's key state is
+made up of taps: each typed key is pressed and released at once, a held key is
+pressed again at the terminal's auto-repeat rate, and Shift is never seen for
+a character. Terminals with the kitty keyboard protocol (kitty, foot, WezTerm,
+Ghostty, Alacritty, recent iTerm2) report every key's press, repeat, and
+release, with its key in the US PC-101 layout, which is how key codes are
+defined. Turn it on where the terminal answers its query (`CSI ? u`), with the
+flags for event types, alternate keys, and all keys as escape codes, and read
+its `CSI ... u` keys into both typed key events and real key state, falling
+back to taps elsewhere. Give it back when the console is destroyed (`CSI < u`).
+It adds no dependencies, only escape sequences, but needs trying in those
+terminals by hand.
 
 ## Graphical frontend
 

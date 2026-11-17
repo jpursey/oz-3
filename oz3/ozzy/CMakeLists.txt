@@ -3,8 +3,8 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-# The console's implementation for the platform. Only Windows has one, and
-# elsewhere creating a console fails.
+# The console's implementation for the platform: the Windows console, or
+# elsewhere a POSIX terminal.
 if (WIN32)
   set(oz3_ozzy_internal_SOURCE
     win_console.cc win_console.h
@@ -14,10 +14,10 @@ if (WIN32)
   )
 else()
   set(oz3_ozzy_internal_SOURCE
-    gen_console.cc
+    posix_console.cc posix_console.h
   )
   set(oz3_ozzy_internal_TEST_SOURCE
-    gen_console_test.cc
+    posix_console_test.cc
   )
 endif()
 
@@ -29,6 +29,7 @@ set(oz3_ozzy_SOURCE
   machine_table.h
   ozzy.cc ozzy.h
   ozzy_settings.cc ozzy_settings.h
+  terminal_keys.cc terminal_keys.h
   ${oz3_ozzy_internal_SOURCE}
 )
 set(oz3_ozzy_DEPS
@@ -57,6 +58,7 @@ set(oz3_ozzy_TEST_SOURCE
   console_text_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc
+  terminal_keys_test.cc
   ${oz3_ozzy_internal_TEST_SOURCE}
 )
 

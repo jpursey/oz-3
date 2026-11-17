@@ -5,7 +5,7 @@ config file: the processor, its banks and cores, and the console devices (see
 [console-devices.md](console-devices.md)). It writes the **machine table** and
 the **boot ROM** into page 0 of bank 0, and starts core 0, which clears the
 screen, prints a banner, and echoes keys. The `ozzy` app runs it in the
-Windows console in real time:
+Windows console, or a terminal elsewhere, in real time:
 
 ```
 ozzy                  // The default Ozzy: one core, a screen, and a keyboard
@@ -189,7 +189,8 @@ stack segment can't be (see the backlog's *Labels in address forms*).
 
 ### The `ozzy` app
 
-`ozzy [--max-speed] [--stats] [config]` runs an Ozzy in the Windows console.
+`ozzy [--max-speed] [--stats] [config]` runs an Ozzy in the Windows console,
+or a terminal on other platforms (see `posix_console.cc` below).
 - **Screen:** it draws the screen's picture as text, in the console's
   alternate screen buffer, with virtual terminal sequences: each cell's
   character as its nearest Unicode character, inverse, half intensity
@@ -213,7 +214,9 @@ stack segment can't be (see the backlog's *Labels in address forms*).
   dropped, as the console shows only one of them.
 - **Keyboard:** console key presses become Ozzy key events, with the codes and
   modifiers console-devices.md lists. Ctrl+C is a key like any other (03h).
-- **Quitting:** Ctrl+Alt+Q or Ctrl+Break, or closing the console window. It
+- **Quitting:** Ctrl+Alt+Q or Ctrl+Break (Windows only), or closing the
+  console window (SIGHUP in a terminal), or a signal to end (SIGINT,
+  SIGQUIT, or SIGTERM, which a terminal's keys don't send). It
   restores the console as it found it.
 - **Pacing:** each frame (60 a second), it runs the cycles for the real time
   that passed, at most 100 ms of them, so a host that falls behind slows the
@@ -495,9 +498,10 @@ bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
   `DrawConsoleText` read another field. The teletype's output is taken every
   update, even when it is dropped, so it never fills and stalls the program
   writing it.
-- **`win_console.cc`** is the only implementation, compiled only on Windows,
-  as Game Bits' `gb/thread` does, and includes `<windows.h>` last. Only
-  Windows builds, so there is no `gen_` one.
+- **`win_console.cc`** is the Windows implementation, compiled only on
+  Windows, as Game Bits' `gb/thread` does, and includes `<windows.h>` last.
+  Every other platform builds `posix_console.cc` (below), so there is no `gen_`
+  one.
   - Text is converted to UTF-16 and written with `WriteConsoleW`, so the
     console's code page is left alone.
   - Output has virtual terminal processing, and a line feed only moves down,
@@ -520,6 +524,33 @@ bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
     seconds if it doesn't).
   - Only one `Console` exists at a time, as the console and its control
     handler are the process's.
+- **`posix_console.cc`** is the implementation for a POSIX terminal, on the
+  standard input and output (`CreateTerminalConsole` takes any terminal, for
+  its tests on a pseudo terminal). Files for POSIX systems are named `posix_`.
+  - The terminal's mode is raw: no echo, no canonical lines, and no signal,
+    flow control, or extended keys (`ISIG`, `IXON`, `IEXTEN` off), so Ctrl+C,
+    Ctrl+Z, and Ctrl+S are keys. Reads return at once (`VMIN` and `VTIME` 0).
+    Output processing is off, so a line feed only moves down, as on Windows.
+  - `kScreen` is the alternate screen with autowrap off (`?1049h`, `?7l`),
+    and giving it back turns autowrap on again. `kLines` follows the text
+    written for where the cursor is, as a terminal can't be read back, and
+    writes a line break if the line is unended, as on Windows.
+  - The size is `TIOCGWINSZ`'s, read on each `GetSize`.
+  - Giving back drops keys not taken with `tcflush` (`TCSAFLUSH` leaves those
+    the terminal hasn't passed on yet), and restores the mode.
+  - SIGHUP (the terminal closing), SIGINT, SIGQUIT, and SIGTERM set the quit
+    flag, rather than ending the program, so it gives the terminal back.
+    Their actions before are restored.
+  - `TerminalKeyReader` (in `terminal_keys.h`, which is portable, so every
+    platform builds and tests it) reads the bytes as xterm's keys: ASCII
+    characters (without Shift, as the terminal sends the character), control
+    codes as Ctrl with a letter, DEL as Backspace and BS as Ctrl+Backspace,
+    CSI and SS3 sequences for the named keys with their modifier parameter,
+    and Escape before a key as Alt. A sequence a read ends partway through waits for the
+    next read, and with nothing more, is read as its bytes, so Escape alone is
+    the Escape key a frame late. Ctrl+Alt+Q is ESC with DC1.
+  - Key state is taps (`AddKeyTap`, also in `terminal_keys.h`; see
+    keyboard-key-state.md).
 - **`GetOzzyKey`** is all of the key translation: the named keys and F1 to F12
   come from the virtual key, whatever character they type; then printable
   ASCII characters; then Ctrl with a letter from the virtual key, as Windows
