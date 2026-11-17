@@ -19,6 +19,7 @@
 #include "absl/status/statusor.h"
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
 #include "oz3/core/device.h"
@@ -31,6 +32,7 @@
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_hardware.h"
 #include "oz3/disk/disk_image.h"
+#include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
 
 namespace oz3 {
@@ -276,8 +278,11 @@ class DiskDrive final : public Device {
     const DiskCommandDef* def = nullptr;
     std::vector<PortWords> arguments;
 
-    // A name argument, once the accept has found it valid.
+    // The arguments the accept decoded and found valid: a name, or FIND's
+    // pattern; RENAME's new name; and FORMAT's or LABEL's label.
     std::optional<DiskFilename> name;
+    std::optional<DiskFilename> new_name;
+    std::optional<DiskLabel> label;
   };
 
   // An accept or a completion: its status, its results, which a command has
@@ -586,9 +591,14 @@ class DiskDrive final : public Device {
   CommandResponse AcceptCommand(Command* command);
   CommandResponse RunCommand(const Command& command);
 
-  // Returns the name in `command`'s arguments, or nullopt if it breaks the
-  // name rules.
-  static std::optional<DiskFilename> GetNameArgument(const Command& command);
+  // Returns the words of the name, pattern, or label argument in `command`'s
+  // kDiskNameFields fields from `first_field`.
+  static DiskFilename::Words GetNameWords(const Command& command,
+                                          int first_field = 0);
+
+  // Appends `words`, an even number of them, to `fields` as fields of two.
+  static void AppendWordFields(absl::Span<const uint16_t> words,
+                               std::vector<PortWords>* fields);
 
   // Returns what a command that opens a file in a new slot fails with at
   // accept, given its disk's status: `disk_status` if it isn't kOk, and then
@@ -614,7 +624,21 @@ class DiskDrive final : public Device {
   CommandResponse AcceptWrite(const Command& command);
   CommandResponse AcceptTruncate(const Command& command);
   CommandResponse RunTruncate(const Command& command);
+  CommandResponse AcceptFind(Command* command);
+  CommandResponse RunFind(const Command& command);
+  CommandResponse AcceptDelete(Command* command);
+  CommandResponse RunDelete(const Command& command);
+  CommandResponse AcceptRename(Command* command);
+  CommandResponse RunRename(const Command& command);
+  CommandResponse AcceptAttrib(Command* command);
+  CommandResponse RunAttrib(const Command& command);
   CommandResponse AcceptMedia();
+  CommandResponse AcceptVolume();
+  CommandResponse RunVolume();
+  CommandResponse AcceptFormat(Command* command);
+  CommandResponse RunFormat(const Command& command);
+  CommandResponse AcceptLabel(Command* command);
+  CommandResponse RunLabel(const Command& command);
 
   //----------------------------------------------------------------------------
   // State

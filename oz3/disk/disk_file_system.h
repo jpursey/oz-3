@@ -143,10 +143,15 @@ class DiskFileSystem final {
   // cover it (see ChooseDiskLayout). Blanks the superblock, writes the zeroed
   // FAT and the root directory's zeroed cluster, then writes the superblock,
   // so a format that fails partway leaves the disk unformatted. Returns
-  // kWriteProtected on a protected disk, kInUse if any file is open (stale
-  // slots aside), and kBadArgument if `sectors_per_cluster` gives no layout.
+  // GetFormatStatus(sectors_per_cluster) if it isn't kOk.
   DiskStatus Format(const DiskLabel& label, int sectors_per_cluster,
                     DateTime now);
+
+  // Returns kNoDisk with no image, kIoError for a failed one, kWriteProtected
+  // for a protected one, kInUse if any file is open (stale slots aside),
+  // kBadArgument if `sectors_per_cluster` gives no layout, or else kOk, as
+  // Format checks first. An unformatted disk is fine. It never reads the disk.
+  DiskStatus GetFormatStatus(int sectors_per_cluster) const;
 
   // Rewrites the superblock's label. Returns kWriteProtected on a protected
   // disk, and kUnformatted with no file system.
@@ -174,10 +179,6 @@ class DiskFileSystem final {
   // Returns whether a slot is free, so Open, OpenRoot, and Create don't
   // return kTooManyOpen.
   bool HasFreeSlot() const { return FindFreeSlot() >= 0; }
-
-  // Returns whether any file is open, stale slots aside, so Format returns
-  // kInUse.
-  bool HasOpenFiles() const;
 
   // Opens the file `name` in the root directory, in the lowest free slot,
   // setting `file` to the slot. GetFileInfo gives its size. On a writable

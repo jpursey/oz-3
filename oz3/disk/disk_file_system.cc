@@ -64,19 +64,13 @@ absl::Duration DiskFileSystem::CollectBusyTime() {
 
 DiskStatus DiskFileSystem::Format(const DiskLabel& label,
                                   int sectors_per_cluster, DateTime now) {
-  // An unformatted disk is what formatting is for.
-  if (DiskStatus status = GetWritableStatus();
-      status != DiskStatus::kOk && status != DiskStatus::kUnformatted) {
+  if (DiskStatus status = GetFormatStatus(sectors_per_cluster);
+      status != DiskStatus::kOk) {
     return status;
-  }
-  if (HasOpenFiles()) {
-    return DiskStatus::kInUse;
   }
   const std::optional<DiskLayout> layout =
       ChooseDiskLayout(GetMedia()->GetSectorCount(), sectors_per_cluster);
-  if (!layout.has_value()) {
-    return DiskStatus::kBadArgument;
-  }
+  CHECK(layout.has_value());
   ResetVolume();
 
   // The superblock is blanked first and written last, so a format that fails
@@ -143,10 +137,22 @@ DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
   return DiskStatus::kOk;
 }
 
-bool DiskFileSystem::HasOpenFiles() const {
-  return std::any_of(slots_.begin(), slots_.end(), [](const Slot& slot) {
-    return slot.state == SlotState::kOpen;
-  });
+DiskStatus DiskFileSystem::GetFormatStatus(int sectors_per_cluster) const {
+  // An unformatted disk is what formatting is for.
+  if (DiskStatus status = GetWritableStatus();
+      status != DiskStatus::kOk && status != DiskStatus::kUnformatted) {
+    return status;
+  }
+  if (std::any_of(slots_.begin(), slots_.end(), [](const Slot& slot) {
+        return slot.state == SlotState::kOpen;
+      })) {
+    return DiskStatus::kInUse;
+  }
+  if (!ChooseDiskLayout(GetMedia()->GetSectorCount(), sectors_per_cluster)
+           .has_value()) {
+    return DiskStatus::kBadArgument;
+  }
+  return DiskStatus::kOk;
 }
 
 DiskStatus DiskFileSystem::Open(const DiskFilename& name, DiskFile* file) {

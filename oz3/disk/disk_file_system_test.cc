@@ -785,6 +785,8 @@ TEST_F(DiskFileSystemTest, FormatRefusesBadSectorsPerCluster) {
             DiskStatus::kBadArgument);
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), -1, GetNow()),
             DiskStatus::kBadArgument);
+  EXPECT_EQ(file_system_.GetFormatStatus(3), DiskStatus::kBadArgument);
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kOk);
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
 
@@ -974,6 +976,7 @@ TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")),
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kWriteProtected);
 }
 
 TEST_F(DiskFileSystemTest, AttachingFailsWhenTheHostReadFails) {
@@ -1291,14 +1294,14 @@ TEST_F(DiskFileSystemTest, AttachingOverAnImageMakesItsSlotsStale) {
 }
 
 TEST_F(DiskFileSystemTest, FormatIsInUseWhileAFileIsOpen) {
-  EXPECT_FALSE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kNoDisk);
   AttachFormatted(kSmallSectors);
   ASSERT_EQ(OpenRoot(), 0);
-  EXPECT_TRUE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kInUse);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kInUse);
   ASSERT_EQ(file_system_.Close(0, GetLatest()), DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kOk);
 
@@ -1307,14 +1310,14 @@ TEST_F(DiskFileSystemTest, FormatIsInUseWhileAFileIsOpen) {
   ASSERT_EQ(OpenRoot(), 0);
   ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
             DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
             DiskStatus::kOk);
   EXPECT_EQ(file_system_.Seek(0, 0), DiskStatus::kDiskChanged);
 
   // A file open on the new disk is, with the stale slot still taken.
   ASSERT_EQ(OpenRoot(), 1);
-  EXPECT_TRUE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kInUse);
 }
 
 TEST_F(DiskFileSystemTest, FindListsMatchesInOrder) {

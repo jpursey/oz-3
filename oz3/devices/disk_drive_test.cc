@@ -39,8 +39,10 @@
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
+#include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
 
 namespace oz3 {
@@ -97,13 +99,22 @@ constexpr uint16_t CommandWord(DiskDriveCommand command, int handle = 0) {
       static_cast<int>(command) << DiskDrive::kCommandShift | handle);
 }
 
-// Returns `words`, a name's or pattern's, as the 4 fields of a name argument.
-std::vector<PortWords> NameFields(const DiskFilename::Words& words) {
+// Returns `words`, an even number of them, as fields of two: a name's,
+// pattern's, or label's 8 words are the 4 fields of its argument.
+std::vector<PortWords> NameFields(absl::Span<const uint16_t> words) {
   std::vector<PortWords> fields;
-  for (int i = 0; i < DiskFilename::kWordCount; i += 2) {
+  for (int i = 0; i < static_cast<int>(words.size()); i += 2) {
     fields.push_back(PortWords::FromWords(words[i], words[i + 1]));
   }
   return fields;
+}
+
+// Returns the words of a name, pattern, or label that has a zero before a
+// character, which none may.
+DiskFilename::Words GapWords() {
+  DiskFilename::Words words = DiskFilename::Parse("ABC")->GetWords();
+  words[0] = 0;
+  return words;
 }
 
 // Returns the name in `text` as the fields of a name argument.
@@ -111,6 +122,51 @@ std::vector<PortWords> NameFields(std::string_view text) {
   std::optional<DiskFilename> name = DiskFilename::Parse(text);
   CHECK(name.has_value()) << text;
   return NameFields(name->GetWords());
+}
+
+// Returns the pattern in `text` as the fields of a pattern argument.
+std::vector<PortWords> PatternFields(std::string_view text) {
+  std::optional<DiskFilename> pattern = DiskFilename::ParsePattern(text);
+  CHECK(pattern.has_value()) << text;
+  return NameFields(pattern->GetWords());
+}
+
+// Returns the label in `text` as the fields of a label argument.
+std::vector<PortWords> LabelFields(std::string_view text) {
+  std::optional<DiskLabel> label = DiskLabel::Parse(text);
+  CHECK(label.has_value()) << text;
+  return NameFields(label->GetWords());
+}
+
+// Returns `fields`, then `word` as a field.
+std::vector<PortWords> AndWord(std::vector<PortWords> fields, uint16_t word) {
+  fields.push_back(PortWords::FromWord(word));
+  return fields;
+}
+
+// Returns `first`, then `second`.
+std::vector<PortWords> AndFields(std::vector<PortWords> first,
+                                 absl::Span<const PortWords> second) {
+  first.insert(first.end(), second.begin(), second.end());
+  return first;
+}
+
+// Returns FIND's completion for `entry`: an OK status, then its words as 8
+// fields.
+std::vector<PortWords> FoundFields(const DiskDirEntry& entry) {
+  return AndFields({Field(DiskStatus::kOk)}, NameFields(entry.GetWords()));
+}
+
+// Returns VOLUME's completion for `info`: an OK status, its label as 4 fields,
+// and its three counts.
+std::vector<PortWords> VolumeFields(const DiskVolumeInfo& info) {
+  std::vector<PortWords> fields =
+      AndFields({Field(DiskStatus::kOk)}, NameFields(info.label.GetWords()));
+  for (const int count :
+       {info.sectors_per_cluster, info.cluster_count, info.free_clusters}) {
+    fields.push_back(PortWords::FromWord(static_cast<uint16_t>(count)));
+  }
+  return fields;
 }
 
 // The host file system that images are made in. It is a base of
@@ -584,6 +640,9 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     EXPECT_THAT(Info(handle), ElementsAre(Field(status)));
     EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kTruncate, handle)),
                 ElementsAre(Field(status)));
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFind, handle),
+                        PatternFields("*")),
+                ElementsAre(Field(status)));
   }
 
   // Expects the commands that write to fail at accept with `status` for
@@ -599,6 +658,57 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     EXPECT_THAT(Transfer(DiskDriveCommand::kRead, handle, 0),
                 ElementsAre(Field(kOk), PortWords::FromWord(0)));
     EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(0)));
+  }
+
+  // Returns the completion of FIND for `handle` and the pattern `text`.
+  std::vector<PortWords> Find(int handle, std::string_view pattern) {
+    return Run(CommandWord(DiskDriveCommand::kFind, handle),
+               PatternFields(pattern));
+  }
+
+  // Returns the completion of VOLUME.
+  std::vector<PortWords> Volume() {
+    return Run(CommandWord(DiskDriveCommand::kVolume));
+  }
+
+  // Returns the volume a new formatted image has with `used` clusters taken
+  // beyond the root's, with `sectors_per_cluster`.
+  static DiskVolumeInfo GetVolume(std::string_view label,
+                                  int sectors_per_cluster, int used) {
+    const std::optional<DiskLayout> layout =
+        ChooseDiskLayout(kSectors, sectors_per_cluster);
+    CHECK(layout.has_value());
+    return {.label = *DiskLabel::Parse(label),
+            .sectors_per_cluster = layout->sectors_per_cluster,
+            .cluster_count = layout->cluster_count,
+            .free_clusters = layout->cluster_count - 1 - used};
+  }
+
+  // Detaches the drive's image, and returns its superblock.
+  DiskSuperblock DetachAndReadSuperblock() {
+    std::unique_ptr<DiskImage> image = drive_->DetachImage();
+    DiskSuperblock::Words words = {};
+    EXPECT_EQ(
+        image->ReadSector(DiskLayout::kSuperblockSector, absl::MakeSpan(words)),
+        kOk);
+    return DiskSuperblock::FromWords(words);
+  }
+
+  // Expects DELETE, RENAME, ATTRIB, and LABEL, each with valid arguments, to
+  // fail at accept with `status`.
+  void ExpectChangesFail(DiskStatus status) {
+    EXPECT_THAT(
+        Command(CommandWord(DiskDriveCommand::kDelete), NameFields("A")),
+        ElementsAre(Field(status)));
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kRename),
+                        AndFields(NameFields("A"), NameFields("B"))),
+                ElementsAre(Field(status)));
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kAttrib),
+                        AndWord(NameFields("A"), kDiskAttribReadOnly)),
+                ElementsAre(Field(status)));
+    EXPECT_THAT(
+        Command(CommandWord(DiskDriveCommand::kLabel), LabelFields("WORK")),
+        ElementsAre(Field(status)));
   }
 
   // Returns whether kInterrupt is raised on core 0.
@@ -969,7 +1079,8 @@ TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
   protocol_->SetLimits({.reads = 0});
   drive_->AttachImage(std::move(image));
   for (const DiskDriveCommand command :
-       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot}) {
+       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot,
+        DiskDriveCommand::kVolume}) {
     SCOPED_TRACE(static_cast<int>(command));
     EXPECT_THAT(Command(CommandWord(command)),
                 ElementsAre(Field(DiskStatus::kIoError)));
@@ -980,6 +1091,10 @@ TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
     EXPECT_THAT(Command(CommandWord(command), NameFields("HELLO")),
                 ElementsAre(Field(DiskStatus::kIoError)));
   }
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(LabelFields("A"), 0)),
+              ElementsAre(Field(DiskStatus::kIoError)));
+  ExpectChangesFail(DiskStatus::kIoError);
 }
 
 TEST_F(DiskDriveTest, AWordInAnArgumentPhaseIsAnArgument) {
@@ -1308,10 +1423,8 @@ TEST_F(DiskDriveTest, OpenChecksAtAccept) {
   Execute(1);
 
   // The name comes before the disk.
-  DiskFilename::Words gap = DiskFilename::Parse("AB")->GetWords();
-  gap[0] = 0;
   for (const DiskFilename::Words& words :
-       {DiskFilename::Words(), gap,
+       {DiskFilename::Words(), GapWords(),
         DiskFilename::ParsePattern("*.TXT")->GetWords()}) {
     EXPECT_THAT(
         Command(CommandWord(DiskDriveCommand::kOpen), NameFields(words)),
@@ -2209,6 +2322,338 @@ TEST_F(DiskDriveTest, AResetKeepsTheWordsAWriteTook) {
 }
 
 //==============================================================================
+// Directory and disk commands
+//==============================================================================
+
+TEST_F(DiskDriveTest, FindListsTheDirectory) {
+  ASSERT_TRUE(InitDrive());
+
+  // The entries, as the file system finds them, in the order they are in.
+  DiskFileSystem file_system({}, 1);
+  file_system.AttachImage(MakeImageWithFile("A", 10));
+  AddFile(file_system, "B.TXT", 300);
+  AddFile(file_system, "C.TXT", 0);
+  DiskFile root = 0;
+  ASSERT_EQ(file_system.OpenRoot(&root), kOk);
+  std::vector<DiskDirEntry> entries(3);
+  for (DiskDirEntry& entry : entries) {
+    ASSERT_EQ(
+        file_system.Find(root, *DiskFilename::ParsePattern("*.*"), &entry),
+        kOk);
+  }
+  ASSERT_EQ(file_system.Close(root, DateTime()), kOk);
+  drive_->AttachImage(file_system.DetachImage());
+
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk), PortWords::FromWord(0)));
+  EXPECT_EQ(Find(0, "*.txt"), FoundFields(entries[1]));
+  EXPECT_EQ(Find(0, "*.TXT"), FoundFields(entries[2]));
+  EXPECT_THAT(Find(0, "*.TXT"), ElementsAre(Field(DiskStatus::kNotFound)));
+
+  // The listing stays at its end until a SEEK restarts it, and each FIND
+  // leaves the position just past its entry.
+  EXPECT_THAT(Find(0, "*.*"), ElementsAre(Field(DiskStatus::kNotFound)));
+  EXPECT_THAT(Seek(0, 0), ElementsAre(Field(kOk)));
+  EXPECT_EQ(Find(0, "*.*"), FoundFields(entries[0]));
+  std::vector<PortWords> info = Info(0);
+  ASSERT_EQ(info.size(), 3);
+  EXPECT_EQ(info[1], PortWords::FromDword(DiskDirEntry::kWordCount));
+  EXPECT_EQ(Find(0, "*.*"), FoundFields(entries[1]));
+}
+
+TEST_F(DiskDriveTest, FindChecksAtAccept) {
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 1));
+  OpenFile("A", 0);
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk), PortWords::FromWord(1)));
+
+  // A file's handle is the wrong type, which comes before the pattern.
+  EXPECT_THAT(
+      Command(CommandWord(DiskDriveCommand::kFind, 0), PatternFields("*")),
+      ElementsAre(Field(DiskStatus::kWrongHandleType)));
+  EXPECT_THAT(
+      Command(CommandWord(DiskDriveCommand::kFind, 0), NameFields(GapWords())),
+      ElementsAre(Field(DiskStatus::kWrongHandleType)));
+  for (const DiskFilename::Words& words : {DiskFilename::Words(), GapWords()}) {
+    EXPECT_THAT(
+        Command(CommandWord(DiskDriveCommand::kFind, 1), NameFields(words)),
+        ElementsAre(Field(DiskStatus::kBadPattern)));
+  }
+
+  // A name is a pattern that matches only itself.
+  std::vector<PortWords> found =
+      Run(CommandWord(DiskDriveCommand::kFind, 1), NameFields("a"));
+  ASSERT_FALSE(found.empty());
+  EXPECT_EQ(found[0], Field(kOk));
+}
+
+TEST_F(DiskDriveTest, DeleteFreesTheFile) {
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 600));
+
+  // A's 600 words take three clusters, which DELETE frees.
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("WORK", 0, 3)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kDelete), NameFields("a")),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("WORK", 0, 0)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kDelete), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kNotFound)));
+  EXPECT_FALSE(DetachAndFindEntry("A").has_value());
+}
+
+TEST_F(DiskDriveTest, RenameKeepsTheRestOfTheEntry) {
+  ASSERT_TRUE(InitDrive());
+  drive_->SetClock([] { return kNow; });
+  DiskFileSystem file_system({}, 1);
+  file_system.AttachImage(MakeImageWithFile("A", 10));
+  AddFile(file_system, "B", 1);
+  drive_->AttachImage(file_system.DetachImage());
+
+  // A new name that is taken exists, even by the file itself.
+  for (const std::string_view new_name : {"B", "a"}) {
+    EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kRename),
+                    AndFields(NameFields("A"), NameFields(new_name))),
+                ElementsAre(Field(DiskStatus::kExists)));
+  }
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kRename),
+                  AndFields(NameFields("C"), NameFields("D"))),
+              ElementsAre(Field(DiskStatus::kNotFound)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kRename),
+                  AndFields(NameFields("a"), NameFields("c.txt"))),
+              ElementsAre(Field(kOk)));
+
+  std::optional<DiskDirEntry> entry = DetachAndFindEntry("C.TXT");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->GetSize(), 10);
+  EXPECT_EQ(entry->GetModified(), DateTime());
+  EXPECT_EQ(ReadFile(ReopenImage(), "C.TXT"), FileWords(0, 10));
+  EXPECT_FALSE(FindEntry(ReopenImage(), "A").has_value());
+}
+
+TEST_F(DiskDriveTest, AttribSetsReadOnlyAndHidden) {
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 1));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kAttrib),
+                  AndWord(NameFields("A"), kDiskAttribSettable)),
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(
+      Run(CommandWord(DiskDriveCommand::kAttrib), AndWord(NameFields("B"), 0)),
+      ElementsAre(Field(DiskStatus::kNotFound)));
+
+  // A read-only file opens, but can't be written or deleted.
+  OpenFile("A");
+  ExpectWritesFail(0, DiskStatus::kReadOnly);
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kClose, 0)),
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kDelete), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kReadOnly)));
+
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kAttrib),
+                  AndWord(NameFields("A"), kDiskAttribHidden)),
+              ElementsAre(Field(kOk)));
+  std::optional<DiskDirEntry> entry = DetachAndFindEntry("A");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->GetAttributes(), kDiskAttribHidden);
+}
+
+TEST_F(DiskDriveTest, AnOpenFileIsInUse) {
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 1));
+  OpenFile("A");
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kDelete), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kInUse)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kRename),
+                  AndFields(NameFields("A"), NameFields("B"))),
+              ElementsAre(Field(DiskStatus::kInUse)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kAttrib),
+                  AndWord(NameFields("A"), kDiskAttribReadOnly)),
+              ElementsAre(Field(DiskStatus::kInUse)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(LabelFields("WORK"), 0)),
+              ElementsAre(Field(DiskStatus::kInUse)));
+  EXPECT_TRUE(DetachAndFindEntry("A").has_value());
+}
+
+TEST_F(DiskDriveTest, ChangesCheckAtAccept) {
+  ASSERT_TRUE(InitDrive());
+  Execute(1);
+
+  // Names, labels, and attributes come before the disk, and a name before
+  // its attributes.
+  for (const std::vector<PortWords>& name :
+       {NameFields(DiskFilename::Words()), PatternFields("*")}) {
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kDelete), name),
+                ElementsAre(Field(DiskStatus::kBadName)));
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kRename),
+                        AndFields(name, NameFields("B"))),
+                ElementsAre(Field(DiskStatus::kBadName)));
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kRename),
+                        AndFields(NameFields("A"), name)),
+                ElementsAre(Field(DiskStatus::kBadName)));
+    EXPECT_THAT(
+        Command(CommandWord(DiskDriveCommand::kAttrib), AndWord(name, 0x8000)),
+        ElementsAre(Field(DiskStatus::kBadName)));
+  }
+  for (const uint16_t attributes : {kDiskAttribDirectory, uint16_t{0x8000}}) {
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kAttrib),
+                        AndWord(NameFields("A"), attributes)),
+                ElementsAre(Field(DiskStatus::kBadAttributes)));
+  }
+  for (const DiskLabel::Words& label :
+       {GapWords(), DiskFilename::ParsePattern("?")->GetWords()}) {
+    EXPECT_THAT(
+        Command(CommandWord(DiskDriveCommand::kLabel), NameFields(label)),
+        ElementsAre(Field(DiskStatus::kBadLabel)));
+  }
+  ExpectChangesFail(DiskStatus::kNoDisk);
+
+  // Write protected comes before unformatted.
+  std::unique_ptr<DiskImage> image = MakeImage(/*formatted=*/false);
+  ASSERT_EQ(image->SetWriteProtected(true), kOk);
+  drive_->AttachImage(std::move(image));
+  ExpectChangesFail(DiskStatus::kWriteProtected);
+  image = drive_->DetachImage();
+  ASSERT_EQ(image->SetWriteProtected(false), kOk);
+  drive_->AttachImage(std::move(image));
+  ExpectChangesFail(DiskStatus::kUnformatted);
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kVolume)),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
+
+  image = MakeImage(/*formatted=*/true, kOtherPath);
+  protocol_->SetLimits({.reads = 0});
+  drive_->AttachImage(std::move(image));
+  ExpectChangesFail(DiskStatus::kIoError);
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kVolume)),
+              ElementsAre(Field(DiskStatus::kIoError)));
+}
+
+TEST_F(DiskDriveTest, VolumeKeepsTheFreeCount) {
+  ASSERT_TRUE(InitDrive());
+  Execute(1);
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kVolume)),
+              ElementsAre(Field(DiskStatus::kNoDisk)));
+  AttachFormatted();
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("WORK", 0, 0)));
+
+  // 300 words take two clusters.
+  CreateFile("A");
+  WriteWords(0, FileWords(0, 300));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("WORK", 0, 2)));
+  EXPECT_THAT(Seek(0, 0), ElementsAre(Field(kOk)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kTruncate, 0)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("WORK", 0, 0)));
+}
+
+TEST_F(DiskDriveTest, FormatMakesAnEmptyFileSystem) {
+  ASSERT_TRUE(InitDrive());
+  drive_->SetClock([] { return kNow; });
+  drive_->AttachImage(MakeImage(/*formatted=*/false));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kFormat),
+                  AndWord(LabelFields("games"), 2)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("GAMES", 2, 0)));
+
+  // Formatting again leaves no files.
+  CreateFile("A");
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kClose, 0)),
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kFormat),
+                  AndWord(LabelFields("WORK"), 0)),
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpen), NameFields("A")),
+              ElementsAre(Field(DiskStatus::kNotFound)));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("WORK", 0, 0)));
+
+  // The superblock is stamped with the clock.
+  const DiskSuperblock superblock = DetachAndReadSuperblock();
+  const std::optional<DiskLayout> layout = ChooseDiskLayout(kSectors, 0);
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(superblock, DiskSuperblock(*layout, superblock.GetRootCluster(),
+                                       *DiskLabel::Parse("WORK"),
+                                       DateTime::FromCivil(kNow)));
+}
+
+TEST_F(DiskDriveTest, FormatChecksAtAccept) {
+  DiskDriveSettings settings = GetSettings();
+  settings.slots = 1;
+  ASSERT_TRUE(InitDrive(settings));
+  Execute(1);
+
+  // The label comes before the disk.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(NameFields(GapWords()), 0)),
+              ElementsAre(Field(DiskStatus::kBadLabel)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(LabelFields("A"), 0)),
+              ElementsAre(Field(DiskStatus::kNoDisk)));
+
+  // A protected disk can't be formatted, formatted or not.
+  std::unique_ptr<DiskImage> image = MakeImage(/*formatted=*/false);
+  ASSERT_EQ(image->SetWriteProtected(true), kOk);
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(LabelFields("A"), 0)),
+              ElementsAre(Field(DiskStatus::kWriteProtected)));
+
+  // An open slot comes before the sectors per cluster, which must be a power
+  // of two up to 64 that covers the image in 65,534 clusters.
+  drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk), PortWords::FromWord(0)));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(LabelFields("A"), 3)),
+              ElementsAre(Field(DiskStatus::kInUse)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kClose, 0)),
+              ElementsAre(Field(kOk)));
+  for (const uint16_t sectors_per_cluster :
+       {uint16_t{3}, uint16_t{128}, uint16_t{0x8000}}) {
+    EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                        AndWord(LabelFields("A"), sectors_per_cluster)),
+                ElementsAre(Field(DiskStatus::kBadArgument)));
+  }
+
+  // A stale slot isn't in use.
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kOpenRoot)),
+              ElementsAre(Field(kOk), PortWords::FromWord(0)));
+  drive_->AttachImage(MakeImage(/*formatted=*/false, kThirdPath));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kFormat),
+                  AndWord(LabelFields("A"), 64)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("A", 64, 0)));
+}
+
+TEST_F(DiskDriveTest, LabelRewritesTheLabel) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kLabel), LabelFields("games")),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(Volume(), VolumeFields(GetVolume("GAMES", 0, 0)));
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kLabel),
+                  NameFields(DiskLabel::Words())),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(DetachAndReadSuperblock().GetLabel(), DiskLabel());
+}
+
+TEST_F(DiskDriveTest, CreateFailsWhenTheRootCannotGrow) {
+  ASSERT_TRUE(InitDrive());
+
+  // The root's one cluster holds 16 entries, A, FILL, and 14 more, and FILL
+  // takes every free cluster.
+  DiskFileSystem file_system({}, 1);
+  file_system.AttachImage(MakeFullImage(0, 0));
+  for (int i = 2; i < DiskDirEntry::kEntriesPerSector; ++i) {
+    AddFile(file_system, absl::StrCat("E", i), 0);
+  }
+  drive_->AttachImage(file_system.DetachImage());
+
+  EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kCreate), NameFields("NEW")),
+              ElementsAre(Field(DiskStatus::kDiskFull)));
+  EXPECT_FALSE(DetachAndFindEntry("NEW").has_value());
+}
+
+//==============================================================================
 // Programs
 //==============================================================================
 
@@ -2299,6 +2744,162 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
   EXPECT_THAT(GetData("CLOSE_COMPLETION", 1), ElementsAre(ok));
   Execute(1);
   EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
+}
+
+// Returns the words of `fields`, as a program's data holds them, two for each.
+std::vector<uint16_t> FieldWords(absl::Span<const PortWords> fields) {
+  std::vector<uint16_t> words;
+  for (const PortWords& field : fields) {
+    words.push_back(field.GetWord(0));
+    words.push_back(field.GetWord(1));
+  }
+  return words;
+}
+
+// Returns the words a program sends for `command_word` and its `arguments`.
+std::vector<uint16_t> CommandData(uint16_t command_word,
+                                  absl::Span<const PortWords> arguments = {}) {
+  return FieldWords(AndFields({PortWords::FromWord(command_word)}, arguments));
+}
+
+TEST_F(DiskDriveTest, AProgramFormatsAndListsTheDisk) {
+  ASSERT_TRUE(InitDrive());
+  drive_->SetClock([] { return kNow; });
+  drive_->AttachImage(MakeImage(/*formatted=*/false));
+  ASSERT_TRUE(Load(R"---(
+    .STACK 16
+
+    .SEGMENT main CODE
+        MOV R1, format
+        MVQ R7, 6
+        MOV R2, format_response
+        MVQ R3, 0
+        CALL run
+        MOV R1, create_a
+        MVQ R7, 5
+        MOV R2, create_a_response
+        MVQ R3, 1
+        CALL run
+        MOV R1, create_b
+        MVQ R7, 5
+        MOV R2, create_b_response
+        MVQ R3, 1
+        CALL run
+        MOV R1, close_all
+        MVQ R7, 1
+        MOV R2, close_response
+        MVQ R3, 0
+        CALL run
+        MOV R1, open_root
+        MVQ R7, 1
+        MOV R2, open_response
+        MVQ R3, 1
+        CALL run
+        MOV R2, found           ; Each FIND's response, 20 words
+    list:
+        MOV R1, find
+        MVQ R7, 5
+        MVQ R3, 8
+        CALL run
+        CMP R0, 0               ; The completion's status
+        JC Z, list
+        HALT
+
+    run:                        ; Sends R7 fields from R1, then reads the accept,
+                                ; and the completion with R3 results, to R2,
+                                ; leaving R2 past them and R0 the status
+        OUTR.ID 16, [R1]
+        JC NS, run
+    wait_accept:
+        IN 18, R0
+        AND R0, 14              ; Phase 2 or higher
+        JC Z, wait_accept
+        MVQ R7, 1
+    read_accept:
+        INR.ID 16, [R2]
+        JC NS, read_accept
+        MOV R1, R2
+        MVQ R7, 1
+    read_status:
+        INR.ID 16, [R2]
+        JC NS, read_status
+        MOV R0, (R1)
+        CMP R0, 0
+        RETC NZ
+        CMP R3, 0
+        RETC Z
+        MOV R7, R3
+    read_results:
+        INR.ID 16, [R2]
+        JC NS, read_results
+        RET
+
+    .SEGMENT vars DATA
+    format:
+        .DS 12
+    create_a:
+        .DS 10
+    create_b:
+        .DS 10
+    close_all:
+        .DS 2
+    open_root:
+        .DS 2
+    find:
+        .DS 10
+    format_response:
+        .DS 4
+    create_a_response:
+        .DS 6
+    create_b_response:
+        .DS 6
+    close_response:
+        .DS 4
+    open_response:
+        .DS 6
+    found:
+        .DS 60
+
+    .SEGMENT stack STACK
+  )---"));
+  SetData("FORMAT", CommandData(CommandWord(DiskDriveCommand::kFormat),
+                                AndWord(LabelFields("WORK"), 0)));
+  SetData("CREATE_A", CommandData(CommandWord(DiskDriveCommand::kCreate),
+                                  NameFields("A.TXT")));
+  SetData("CREATE_B",
+          CommandData(CommandWord(DiskDriveCommand::kCreate), NameFields("B")));
+  SetData("CLOSE_ALL", CommandData(CommandWord(DiskDriveCommand::kClose,
+                                               DiskDrive::kAllSlots)));
+  SetData("OPEN_ROOT", CommandData(CommandWord(DiskDriveCommand::kOpenRoot)));
+  SetData("FIND", CommandData(CommandWord(DiskDriveCommand::kFind),
+                              PatternFields("*.*")));
+  ASSERT_TRUE(ExecuteUntilHalt());
+
+  const std::vector<uint16_t> ok_twice = FieldWords({Field(kOk), Field(kOk)});
+  EXPECT_EQ(GetData("FORMAT_RESPONSE", 4), ok_twice);
+  EXPECT_EQ(GetData("CREATE_A_RESPONSE", 6),
+            FieldWords({Field(kOk), Field(kOk), PortWords::FromWord(0)}));
+  EXPECT_EQ(GetData("CREATE_B_RESPONSE", 6),
+            FieldWords({Field(kOk), Field(kOk), PortWords::FromWord(1)}));
+  EXPECT_EQ(GetData("CLOSE_RESPONSE", 4), ok_twice);
+  EXPECT_EQ(GetData("OPEN_RESPONSE", 6),
+            FieldWords({Field(kOk), Field(kOk), PortWords::FromWord(0)}));
+
+  // FIND gives each entry as it is on the disk, then not found.
+  std::optional<DiskDirEntry> a = DetachAndFindEntry("A.TXT");
+  std::optional<DiskDirEntry> b = FindEntry(ReopenImage(), "B");
+  ASSERT_TRUE(a.has_value());
+  ASSERT_TRUE(b.has_value());
+  EXPECT_EQ(a->GetModified(), DateTime::FromCivil(kNow));
+  std::vector<PortWords> found = {Field(kOk)};
+  for (const DiskDirEntry& entry : {*a, *b}) {
+    found = AndFields(std::move(found), FoundFields(entry));
+    found.push_back(Field(kOk));
+  }
+  found.push_back(Field(DiskStatus::kNotFound));
+  const std::vector<uint16_t> found_words = FieldWords(found);
+  EXPECT_EQ(GetData("FOUND", static_cast<int>(found_words.size())),
+            found_words);
 }
 
 // What a transfer program runs: `command` with `count` on handle 0, moving
