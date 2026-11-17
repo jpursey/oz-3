@@ -224,7 +224,7 @@ table and a line to `Home.md`.
 ### disk: what accept needs
 
 Accept answers without touching the disk, so the drive asks the file system
-only what it already knows. Three of the things accept needs are missing:
+only what it already knows. Four of the things accept needs are missing:
 
 ```
 // DiskFileSystem additions.
@@ -235,14 +235,15 @@ DiskStatus GetImageStatus() const;
 // Returns whether a slot is free for Open, OpenRoot, or Create.
 bool HasFreeSlot() const;
 
-// Returns whether a file is open, stale slots aside, as Format refuses.
-bool HasOpenFiles() const;
+// Returns what Format would fail with before it touches the disk: no disk,
+// I/O error, write protected, in use while a file is open (stale slots
+// aside), or bad argument for sectors per cluster with no layout. An
+// unformatted disk is fine. (CL6, replacing CL1's HasOpenFiles.)
+DiskStatus GetFormatStatus(int sectors_per_cluster) const;
 
-struct DiskFileInfo {
-  int position = 0;
-  int size = 0;
-  bool directory = false;  // New: a directory's handle, for FIND.
-};
+// Returns GetFileStatus, then wrong handle type for a file's handle, as Find
+// refuses. (CL6, replacing CL1's DiskFileInfo::directory.)
+DiskStatus GetDirectoryFileStatus(DiskFile file) const;
 ```
 
 - `GetWritableWords` already gives everything `WRITE` and `TRUNCATE` need at
@@ -253,9 +254,10 @@ struct DiskFileInfo {
   unformatted) and for writing (write protected before unformatted). All
   three are public from CL4.
 - The file system's own early checks stay, for tools, though the drive has
-  already ruled them out at accept. The rules that are written twice are few
-  (a pattern where a name goes, the settable attributes, and the layout), so
-  shared `Check...` functions aren't worth it.
+  already ruled them out at accept. `Format` and `Find` check through the same
+  functions accept does. The rules that are still written twice are few (a
+  pattern where a name goes, and the settable attributes), so shared functions
+  for them aren't worth it.
 - `FaultyFileProtocol` moves from `oz3_disk_test` into a new test library,
   `oz3_disk_testing`, as `oz3_core_testing` holds `BaseCoreTest`, so the
   drive's tests can fail images too.
@@ -663,6 +665,9 @@ Depends on: CL4.
 
 - `disk_drive.cc`: `FIND`, `DELETE`, `RENAME`, `ATTRIB`, `VOLUME`, `FORMAT`,
   and `LABEL`.
+- `disk_file_system.h` and `.cc`: `GetFormatStatus` and
+  `GetDirectoryFileStatus`, which `Format` and `Find` check with, replacing
+  `HasOpenFiles` and `DiskFileInfo::directory`.
 
 **Verify**
 - Standard checks.
@@ -671,7 +676,8 @@ Depends on: CL4.
   `FORMAT`, write protected, unformatted) and completion errors (not found,
   exists, in use, read-only, disk full for a root that can't grow); `FIND` through
   a listing and restarting with `SEEK`; `VOLUME`'s free count; and the image
-  after each change. One assembled program that formats, lists with `FIND`,
+  after each change. The file system's tests of `Format` and `Find` check the
+  new status functions too. One assembled program that formats, lists with `FIND`,
   and reads the entries with `INR.ID`.
 
 ### CL7 [ ] wiki: the disk drive

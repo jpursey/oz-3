@@ -480,7 +480,7 @@ class DiskFileSystemTest : public ::testing::Test {
 
   // Returns `file`'s info, or -1 for its position and size if it fails.
   DiskFileInfo GetInfo(DiskFile file) {
-    DiskFileInfo info = {.position = -1, .size = -1, .directory = true};
+    DiskFileInfo info = {.position = -1, .size = -1};
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), DiskStatus::kOk);
     EXPECT_EQ(file_system_.GetFileStatus(file), DiskStatus::kOk);
     return info;
@@ -497,6 +497,7 @@ class DiskFileSystemTest : public ::testing::Test {
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), status);
     EXPECT_EQ(file_system_.GetFileStatus(file), status);
     EXPECT_EQ(file_system_.GetWritableFileStatus(file), status);
+    EXPECT_EQ(file_system_.GetDirectoryFileStatus(file), status);
     DiskDirEntry entry;
     EXPECT_EQ(file_system_.Find(file, GetPattern("*.*"), &entry), status);
     count = -1;
@@ -785,6 +786,8 @@ TEST_F(DiskFileSystemTest, FormatRefusesBadSectorsPerCluster) {
             DiskStatus::kBadArgument);
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), -1, GetNow()),
             DiskStatus::kBadArgument);
+  EXPECT_EQ(file_system_.GetFormatStatus(3), DiskStatus::kBadArgument);
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kOk);
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
 
@@ -974,6 +977,7 @@ TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")),
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kWriteProtected);
 }
 
 TEST_F(DiskFileSystemTest, AttachingFailsWhenTheHostReadFails) {
@@ -1233,12 +1237,14 @@ TEST_F(DiskFileSystemTest, SlotsRunOut) {
   EXPECT_EQ(OpenFile(names[kMaxOpenFiles]), 2);
 }
 
-TEST_F(DiskFileSystemTest, FileInfoSaysWhetherAHandleIsADirectory) {
+TEST_F(DiskFileSystemTest, OnlyADirectorysHandleIsADirectoryFile) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) { editor.AddFile(0, "HELLO.TXT", {2}, 10); });
-  EXPECT_FALSE(GetInfo(OpenFile("HELLO.TXT")).directory);
-  EXPECT_FALSE(GetInfo(CreateFile("NEW")).directory);
-  EXPECT_TRUE(GetInfo(OpenRoot()).directory);
+  EXPECT_EQ(file_system_.GetDirectoryFileStatus(OpenFile("HELLO.TXT")),
+            DiskStatus::kWrongHandleType);
+  EXPECT_EQ(file_system_.GetDirectoryFileStatus(CreateFile("NEW")),
+            DiskStatus::kWrongHandleType);
+  EXPECT_EQ(file_system_.GetDirectoryFileStatus(OpenRoot()), DiskStatus::kOk);
 }
 
 TEST_F(DiskFileSystemTest, BadHandles) {
@@ -1291,14 +1297,14 @@ TEST_F(DiskFileSystemTest, AttachingOverAnImageMakesItsSlotsStale) {
 }
 
 TEST_F(DiskFileSystemTest, FormatIsInUseWhileAFileIsOpen) {
-  EXPECT_FALSE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kNoDisk);
   AttachFormatted(kSmallSectors);
   ASSERT_EQ(OpenRoot(), 0);
-  EXPECT_TRUE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kInUse);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kInUse);
   ASSERT_EQ(file_system_.Close(0, GetLatest()), DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kOk);
 
@@ -1307,14 +1313,14 @@ TEST_F(DiskFileSystemTest, FormatIsInUseWhileAFileIsOpen) {
   ASSERT_EQ(OpenRoot(), 0);
   ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
             DiskStatus::kOk);
-  EXPECT_FALSE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Format(GetLabel("WORK"), 0, GetNow()),
             DiskStatus::kOk);
   EXPECT_EQ(file_system_.Seek(0, 0), DiskStatus::kDiskChanged);
 
   // A file open on the new disk is, with the stale slot still taken.
   ASSERT_EQ(OpenRoot(), 1);
-  EXPECT_TRUE(file_system_.HasOpenFiles());
+  EXPECT_EQ(file_system_.GetFormatStatus(0), DiskStatus::kInUse);
 }
 
 TEST_F(DiskFileSystemTest, FindListsMatchesInOrder) {

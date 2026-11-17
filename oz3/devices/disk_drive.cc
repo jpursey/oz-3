@@ -18,7 +18,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "oz3/disk/disk_dir_entry.h"
-#include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 
 namespace oz3 {
@@ -768,6 +767,14 @@ DiskFilename::Words DiskDrive::GetNameWords(const Command& command,
   return words;
 }
 
+void DiskDrive::AppendWordFields(absl::Span<const uint16_t> words,
+                                 std::vector<PortWords>* fields) {
+  DCHECK_EQ(words.size() % 2, 0);
+  for (int i = 0; i < static_cast<int>(words.size()); i += 2) {
+    fields->push_back(PortWords::FromWords(words[i], words[i + 1]));
+  }
+}
+
 DiskStatus DiskDrive::GetNewSlotStatus(DiskStatus disk_status) const {
   if (disk_status != DiskStatus::kOk) {
     return disk_status;
@@ -933,13 +940,10 @@ DiskDrive::CommandResponse DiskDrive::RunTruncate(const Command& command) {
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptFind(Command* command) {
-  DiskFileInfo info;
-  if (DiskStatus status = file_system_.GetFileInfo(command->GetHandle(), &info);
+  if (DiskStatus status =
+          file_system_.GetDirectoryFileStatus(command->GetHandle());
       status != DiskStatus::kOk) {
     return {.status = status};
-  }
-  if (!info.directory) {
-    return {.status = DiskStatus::kWrongHandleType};
   }
   command->name = DiskFilename::PatternFromWords(GetNameWords(*command));
   if (!command->name.has_value()) {
@@ -955,11 +959,8 @@ DiskDrive::CommandResponse DiskDrive::RunFind(const Command& command) {
       status != DiskStatus::kOk) {
     return {.status = status};
   }
-  const DiskDirEntry::Words& words = entry.GetWords();
   CommandResponse response = {.status = DiskStatus::kOk};
-  for (int i = 0; i < DiskDirEntry::kWordCount; i += 2) {
-    response.results.push_back(PortWords::FromWords(words[i], words[i + 1]));
-  }
+  AppendWordFields(entry.GetWords(), &response.results);
   return response;
 }
 
@@ -1028,11 +1029,8 @@ DiskDrive::CommandResponse DiskDrive::RunVolume() {
       status != DiskStatus::kOk) {
     return {.status = status};
   }
-  const DiskLabel::Words words = info.label.GetWords();
   CommandResponse response = {.status = DiskStatus::kOk};
-  for (int i = 0; i < DiskLabel::kWordCount; i += 2) {
-    response.results.push_back(PortWords::FromWords(words[i], words[i + 1]));
-  }
+  AppendWordFields(info.label.GetWords(), &response.results);
   for (const int count :
        {info.sectors_per_cluster, info.cluster_count, info.free_clusters}) {
     response.results.push_back(
@@ -1047,20 +1045,8 @@ DiskDrive::CommandResponse DiskDrive::AcceptFormat(Command* command) {
     return {.status = DiskStatus::kBadLabel};
   }
 
-  // An unformatted disk is what formatting is for.
-  if (DiskStatus status = file_system_.GetWritableStatus();
-      status != DiskStatus::kOk && status != DiskStatus::kUnformatted) {
-    return {.status = status};
-  }
-  if (file_system_.HasOpenFiles()) {
-    return {.status = DiskStatus::kInUse};
-  }
-  if (!ChooseDiskLayout(file_system_.GetMedia()->GetSectorCount(),
-                        command->arguments[kDiskNameFields].GetWord(0))
-           .has_value()) {
-    return {.status = DiskStatus::kBadArgument};
-  }
-  return {.status = DiskStatus::kOk};
+  return {.status = file_system_.GetFormatStatus(
+              command->arguments[kDiskNameFields].GetWord(0))};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunFormat(const Command& command) {

@@ -19,6 +19,7 @@
 #include "absl/status/statusor.h"
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
 #include "oz3/core/device.h"
@@ -594,6 +595,10 @@ class DiskDrive final : public Device {
   // kDiskNameFields fields from `first_field`.
   static DiskFilename::Words GetNameWords(const Command& command,
                                           int first_field = 0);
+
+  // Appends `words`, an even number of them, to `fields` as fields of two.
+  static void AppendWordFields(absl::Span<const uint16_t> words,
+                               std::vector<PortWords>* fields);
 
   // Returns what a command that opens a file in a new slot fails with at
   // accept, given its disk's status: `disk_status` if it isn't kOk, and then
