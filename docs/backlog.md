@@ -26,7 +26,7 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## File times in disk copies
+## Modified times in oz3dsk dir
 
 - **Layers:** tools, wiki
 - **Size:** small
@@ -35,15 +35,13 @@ Each item carries:
 - **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior);
   [disk_design.md](disk_design.md) (Tools)
 
-`oz3dsk put` should stamp a file with the host file's modified time, and `get`
-set the host file's time from the entry, but `gb::FileSystem` has no file
-times, so `put` stamps the time of the copy and `get` leaves the host's. Once
-Game Bits reports a file's modified time in `PathInfo`, sets it as it sets
-attributes, and keeps it in copies, `DiskFileProtocol` reports each entry's
-modified time and sets it, and `put` and `get` keep times with no code of their
-own. A file with no date on the disk gets whatever the host gives a new file.
-The text copies, which write the file themselves, set the time after, as they
-set attributes, and `oz3dsk dir` shows each file's modified time.
+`oz3dsk dir` should show each file's modified time, but it lists through
+`gb::FileSystem`, whose `PathInfo` has no file times, so it shows none. Once
+Game Bits reports a file's modified time in `PathInfo`, `DiskFileProtocol`
+reports each entry's (none for a file with no date on the disk), and `dir`
+shows it, or blank with no date. Copies still don't keep times: `put` stamps
+the file with the time of the copy, and `get` leaves the host file's time as
+the host sets it.
 
 ## Disk tool failure reasons
 
