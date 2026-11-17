@@ -480,7 +480,7 @@ class DiskFileSystemTest : public ::testing::Test {
 
   // Returns `file`'s info, or -1 for its position and size if it fails.
   DiskFileInfo GetInfo(DiskFile file) {
-    DiskFileInfo info = {.position = -1, .size = -1};
+    DiskFileInfo info = {.position = -1, .size = -1, .directory = true};
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), DiskStatus::kOk);
     EXPECT_EQ(file_system_.GetFileStatus(file), DiskStatus::kOk);
     return info;
@@ -497,7 +497,6 @@ class DiskFileSystemTest : public ::testing::Test {
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), status);
     EXPECT_EQ(file_system_.GetFileStatus(file), status);
     EXPECT_EQ(file_system_.GetWritableFileStatus(file), status);
-    EXPECT_EQ(file_system_.GetDirectoryFileStatus(file), status);
     DiskDirEntry entry;
     EXPECT_EQ(file_system_.Find(file, GetPattern("*.*"), &entry), status);
     count = -1;
@@ -1237,14 +1236,12 @@ TEST_F(DiskFileSystemTest, SlotsRunOut) {
   EXPECT_EQ(OpenFile(names[kMaxOpenFiles]), 2);
 }
 
-TEST_F(DiskFileSystemTest, OnlyADirectorysHandleIsADirectoryFile) {
+TEST_F(DiskFileSystemTest, FileInfoSaysWhetherAHandleIsADirectory) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) { editor.AddFile(0, "HELLO.TXT", {2}, 10); });
-  EXPECT_EQ(file_system_.GetDirectoryFileStatus(OpenFile("HELLO.TXT")),
-            DiskStatus::kWrongHandleType);
-  EXPECT_EQ(file_system_.GetDirectoryFileStatus(CreateFile("NEW")),
-            DiskStatus::kWrongHandleType);
-  EXPECT_EQ(file_system_.GetDirectoryFileStatus(OpenRoot()), DiskStatus::kOk);
+  EXPECT_FALSE(GetInfo(OpenFile("HELLO.TXT")).directory);
+  EXPECT_FALSE(GetInfo(CreateFile("NEW")).directory);
+  EXPECT_TRUE(GetInfo(OpenRoot()).directory);
 }
 
 TEST_F(DiskFileSystemTest, BadHandles) {

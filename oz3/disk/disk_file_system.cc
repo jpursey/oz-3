@@ -452,7 +452,9 @@ DiskStatus DiskFileSystem::GetFileInfo(DiskFile file, DiskFileInfo* info) {
   if (DiskStatus status = GetSlot(file, &slot); status != DiskStatus::kOk) {
     return status;
   }
-  *info = {.position = slot->position, .size = slot->size};
+  *info = {.position = slot->position,
+           .size = slot->size,
+           .directory = !slot->entry.has_value()};
   return DiskStatus::kOk;
 }
 
@@ -488,24 +490,18 @@ DiskStatus DiskFileSystem::GetWritableFileStatus(DiskFile file) const {
   return DiskStatus::kOk;
 }
 
-DiskStatus DiskFileSystem::GetDirectoryFileStatus(DiskFile file) const {
-  if (DiskStatus status = GetFileStatus(file); status != DiskStatus::kOk) {
-    return status;
-  }
-  if (slots_[file].entry.has_value()) {
-    return DiskStatus::kWrongHandleType;
-  }
-  return DiskStatus::kOk;
-}
-
 DiskStatus DiskFileSystem::Find(DiskFile directory, const DiskFilename& pattern,
                                 DiskDirEntry* entry) {
-  if (DiskStatus status = GetDirectoryFileStatus(directory);
+  Slot* slot = nullptr;
+  if (DiskStatus status = GetSlot(directory, &slot);
       status != DiskStatus::kOk) {
     return status;
   }
+  if (slot->entry.has_value()) {
+    return DiskStatus::kWrongHandleType;
+  }
   return FindNextEntry(
-      &slots_[directory],
+      slot,
       [&pattern](const DiskFilename& name) { return pattern.Matches(name); },
       entry, /*location=*/nullptr);
 }

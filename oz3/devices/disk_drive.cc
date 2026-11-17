@@ -941,10 +941,13 @@ DiskDrive::CommandResponse DiskDrive::RunTruncate(const Command& command) {
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptFind(Command* command) {
-  if (DiskStatus status =
-          file_system_.GetDirectoryFileStatus(command->GetHandle());
+  DiskFileInfo info;
+  if (DiskStatus status = file_system_.GetFileInfo(command->GetHandle(), &info);
       status != DiskStatus::kOk) {
     return {.status = status};
+  }
+  if (!info.directory) {
+    return {.status = DiskStatus::kWrongHandleType};
   }
   command->name = DiskFilename::PatternFromWords(GetNameWords(*command));
   if (!command->name.has_value()) {

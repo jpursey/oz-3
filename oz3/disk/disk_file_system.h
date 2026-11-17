@@ -44,12 +44,13 @@ struct DiskVolumeInfo {
 using DiskFile = int;
 
 // An open file: its position and size, as the drive's INFO command reports
-// them.
+// them, and whether it is a directory's handle.
 struct DiskFileInfo {
   bool operator==(const DiskFileInfo&) const = default;
 
   int position = 0;
   int size = 0;
+  bool directory = false;
 };
 
 // A drive's file system: the disk format in docs/disk_design.md, on whatever
@@ -267,10 +268,6 @@ class DiskFileSystem final {
   // first.
   DiskStatus GetWritableFileStatus(DiskFile file) const;
 
-  // Returns GetFileStatus(file) if it isn't kOk, then kWrongHandleType for a
-  // file's handle, or else kOk, as Find checks first.
-  DiskStatus GetDirectoryFileStatus(DiskFile file) const;
-
   //----------------------------------------------------------------------------
   // Directory
   //----------------------------------------------------------------------------
@@ -280,8 +277,7 @@ class DiskFileSystem final {
   // moving the position just past it. The entry is as it is on the disk, so
   // an open file's is as it was last committed. Free entries, and entries
   // whose names break the rules, never match. Returns kNotFound at the end,
-  // leaving the position there, and GetDirectoryFileStatus(directory) if it
-  // isn't kOk.
+  // leaving the position there, and kWrongHandleType for a file's handle.
   DiskStatus Find(DiskFile directory, const DiskFilename& pattern,
                   DiskDirEntry* entry);
 

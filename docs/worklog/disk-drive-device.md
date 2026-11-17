@@ -224,7 +224,7 @@ table and a line to `Home.md`.
 ### disk: what accept needs
 
 Accept answers without touching the disk, so the drive asks the file system
-only what it already knows. Four of the things accept needs are missing:
+only what it already knows. Three of the things accept needs are missing:
 
 ```
 // DiskFileSystem additions.
@@ -241,9 +241,11 @@ bool HasFreeSlot() const;
 // unformatted disk is fine. (CL6, replacing CL1's HasOpenFiles.)
 DiskStatus GetFormatStatus(int sectors_per_cluster) const;
 
-// Returns GetFileStatus, then wrong handle type for a file's handle, as Find
-// refuses. (CL6, replacing CL1's DiskFileInfo::directory.)
-DiskStatus GetDirectoryFileStatus(DiskFile file) const;
+struct DiskFileInfo {
+  int position = 0;
+  int size = 0;
+  bool directory = false;  // New: a directory's handle, for FIND.
+};
 ```
 
 - `GetWritableWords` already gives everything `WRITE` and `TRUNCATE` need at
@@ -665,9 +667,8 @@ Depends on: CL4.
 
 - `disk_drive.cc`: `FIND`, `DELETE`, `RENAME`, `ATTRIB`, `VOLUME`, `FORMAT`,
   and `LABEL`.
-- `disk_file_system.h` and `.cc`: `GetFormatStatus` and
-  `GetDirectoryFileStatus`, which `Format` and `Find` check with, replacing
-  `HasOpenFiles` and `DiskFileInfo::directory`.
+- `disk_file_system.h` and `.cc`: `GetFormatStatus`, which `Format` checks
+  with, replacing `HasOpenFiles`.
 
 **Verify**
 - Standard checks.
