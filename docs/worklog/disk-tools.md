@@ -371,10 +371,17 @@ left empty between them.
 - `oz3dsk.cc`: the program command with the required `image` argument, then
   a subcommand per row of disk_design.md's table, each with its arguments and
   flags, as `gb_cli`'s required positional arguments before subcommands allow.
-  Paths are the operating system's, as `oz3asm`'s are, normalized and on
-  `local`. The clock is the host's local time, as `ozzy`'s is.
-- `--set` and `--clear` take letters from `rh`, and `protect` takes `on` or
-  `off` as choices.
+  Paths are the operating system's, as `oz3asm`'s are, in
+  `gb::CreateCliFileSystem`'s file system, and are passed to `DiskTool` as
+  given, so messages name them as they were typed. The clock is the host's
+  local time, `DiskTool`'s default, as `ozzy`'s is.
+- Sizes, labels, and `--set` and `--clear`'s letters (from `rh`) are
+  validated as the command line is parsed, with `DiskTool`'s and
+  `DiskLabel`'s own parsing, so a bad one is a usage error, as is an
+  attribute both set and cleared. `--cluster` is from 1 to 64, and `protect`
+  takes `on` or `off` as choices.
+- Without a host file, `get` writes the file under its disk name as the disk
+  formats it (`hello.txt` is written as `HELLO.TXT`).
 
 ### Testing
 
@@ -475,7 +482,7 @@ Depends on: CL3.
   attributes; `Delete` of an empty pattern; `Put` of a missing host file and
   a host folder.
 
-### CL5 [ ] apps: oz3dsk
+### CL5 [x] apps: oz3dsk
 
 Depends on: CL4.
 

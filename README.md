@@ -11,7 +11,7 @@ This repository has everything to write, build, and run OZ-3 programs. The sourc
    - **instruction_sets:** This folder contains ready-made instruction sets for OZ-3 cores, including the default OZ-3 instruction set. Each is written in microcode assembly and assembled into C++ by the instruction set assembler.
    - **devices:** This folder contains independent virtual device libraries that can be attached to the OZ-3 via ports. In practice devices are very specific to application. These devices in particular are used by the Ozzy virtual computer.
    - **ozzy:** Ozzy is a virtual computer built out of the OZ-3 core and provided devices. A config file says what hardware it has, and its boot ROM starts it up.
-   - **apps:** The command line programs: `oz3ism` (the instruction set assembler), `oz3asm` (the program assembler), and `ozzy`, which runs an Ozzy in the console.
+   - **apps:** The command line programs: `oz3ism` (the instruction set assembler), `oz3asm` (the program assembler), `oz3dsk` (the disk image tool), and `ozzy`, which runs an Ozzy in the console.
 
 ## Building OZ-3 code
 

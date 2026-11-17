@@ -45,6 +45,23 @@ set(oz3asm_DEPS
 
 gb_add_executable(oz3asm)
 
+set(oz3dsk_SOURCE
+  oz3dsk.cc
+)
+
+set(oz3dsk_DEPS
+  absl::status
+  absl::statusor
+  absl::strings
+  gb_base
+  gb_cli
+  gb_file
+  oz3_disk
+  oz3_tools
+)
+
+gb_add_executable(oz3dsk)
+
 set(ozzy_SOURCE
   ozzy_main.cc
 )
