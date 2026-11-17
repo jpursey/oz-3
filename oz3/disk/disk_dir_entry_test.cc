@@ -5,12 +5,15 @@
 
 #include "oz3/disk/disk_dir_entry.h"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 
 #include "absl/time/civil_time.h"
+#include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/disk/disk_layout.h"
 
 namespace oz3 {
 namespace {
@@ -55,6 +58,44 @@ TEST(DiskDirEntryTest, FieldsRoundTrip) {
 TEST(DiskDirEntryTest, ASectorHoldsSixteenEntries) {
   EXPECT_EQ(DiskDirEntry::kWordCount, 16);
   EXPECT_EQ(DiskDirEntry::kEntriesPerSector, 16);
+}
+
+TEST(DiskDirEntryTest, FromSectorReadsEachEntry) {
+  std::array<uint16_t, kDiskSectorWords> sector;
+  for (int i = 0; i < kDiskSectorWords; ++i) {
+    sector[i] = static_cast<uint16_t>(0xA000 + i);
+  }
+  for (int index : {0, 1, DiskDirEntry::kEntriesPerSector - 1}) {
+    SCOPED_TRACE(index);
+    DiskDirEntry::Words words;
+    for (int i = 0; i < DiskDirEntry::kWordCount; ++i) {
+      words[i] =
+          static_cast<uint16_t>(0xA000 + index * DiskDirEntry::kWordCount + i);
+    }
+    EXPECT_EQ(DiskDirEntry::FromSector(sector, index).GetWords(), words);
+  }
+}
+
+TEST(DiskDirEntryTest, CopyToSectorChangesOnlyItsEntry) {
+  DiskDirEntry entry;
+  entry.SetName(*DiskFilename::Parse("HELLO.TXT"));
+  entry.SetFirstCluster(0x1234);
+  entry.SetSize(0x0005'6789);
+  for (int index : {0, 1, DiskDirEntry::kEntriesPerSector - 1}) {
+    SCOPED_TRACE(index);
+    std::array<uint16_t, kDiskSectorWords> sector;
+    sector.fill(0xEEEE);
+    entry.CopyToSector(index, absl::MakeSpan(sector));
+    for (int other = 0; other < DiskDirEntry::kEntriesPerSector; ++other) {
+      if (other == index) {
+        EXPECT_EQ(DiskDirEntry::FromSector(sector, other), entry);
+      } else {
+        EXPECT_THAT(DiskDirEntry::FromSector(sector, other).GetWords(),
+                    Each(0xEEEE))
+            << "Entry " << other;
+      }
+    }
+  }
 }
 
 TEST(DiskDirEntryTest, SettersChangeOnlyTheirWords) {

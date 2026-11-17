@@ -918,16 +918,12 @@ DiskStatus DiskFileSystem::VisitEntries(
     if (DiskStatus status = LoadSlotSector(slot); status != DiskStatus::kOk) {
       return status;
     }
-    const absl::Span<const uint16_t> words = slot->buffer.words;
-    for (int offset = slot->position % kDiskSectorWords;
-         offset < kDiskSectorWords; offset += DiskDirEntry::kWordCount) {
+    for (int index =
+             slot->position % kDiskSectorWords / DiskDirEntry::kWordCount;
+         index < DiskDirEntry::kEntriesPerSector; ++index) {
       slot->position += DiskDirEntry::kWordCount;
-      if (visit(DiskDirEntry::FromWords(
-                    words.subspan(offset, DiskDirEntry::kWordCount)),
-                {
-                    .sector = slot->buffer.sector,
-                    .index = offset / DiskDirEntry::kWordCount,
-                })) {
+      if (visit(DiskDirEntry::FromSector(slot->buffer.words, index),
+                {.sector = slot->buffer.sector, .index = index})) {
         return DiskStatus::kOk;
       }
     }
@@ -1000,10 +996,7 @@ DiskStatus DiskFileSystem::GetEntry(const EntryLocation& location,
       status != DiskStatus::kOk) {
     return status;
   }
-  *entry = DiskDirEntry::FromWords(
-      absl::MakeConstSpan(dir_.buffer.words)
-          .subspan(location.index * DiskDirEntry::kWordCount,
-                   DiskDirEntry::kWordCount));
+  *entry = DiskDirEntry::FromSector(dir_.buffer.words, location.index);
   return DiskStatus::kOk;
 }
 
@@ -1013,9 +1006,7 @@ DiskStatus DiskFileSystem::PutEntry(const EntryLocation& location,
       status != DiskStatus::kOk) {
     return status;
   }
-  std::copy(
-      entry.GetWords().begin(), entry.GetWords().end(),
-      dir_.buffer.words.begin() + location.index * DiskDirEntry::kWordCount);
+  entry.CopyToSector(location.index, absl::MakeSpan(dir_.buffer.words));
   dir_.buffer.dirty = true;
   return DiskStatus::kOk;
 }

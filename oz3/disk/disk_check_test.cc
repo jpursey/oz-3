@@ -28,6 +28,7 @@
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
+#include "oz3/disk/disk_testing.h"
 #include "oz3/disk/faulty_file_protocol.h"
 
 namespace oz3 {
@@ -41,10 +42,6 @@ using FileProblem = DiskCheckReport::FileProblem;
 using Sector = std::array<uint16_t, kDiskSectorWords>;
 
 constexpr char kPath[] = "mem:/disk.img";
-
-// Where an image's sectors are.
-constexpr int64_t kHeaderBytes = 16;
-constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
 
 // A disk of 300 clusters of two sectors, after 2 FAT sectors.
 constexpr DiskLayout kLayout = {
@@ -218,19 +215,6 @@ class DiskCheckTest : public ::testing::Test {
     return report;
   }
 
-  // Returns the sectors written since the last call, in order, or -1 for the
-  // header.
-  std::vector<int> CollectSectorWrites() {
-    std::vector<int> sectors;
-    for (int64_t offset : protocol_->CollectWriteOffsets()) {
-      sectors.push_back(
-          offset < kHeaderBytes
-              ? -1
-              : static_cast<int>((offset - kHeaderBytes) / kSectorBytes));
-    }
-    return sectors;
-  }
-
   // Writes the disk to a new image and repairs it, expecting kOk and the
   // report a check gives, and then a check finding only the same duplicate
   // names. Returns the report, and keeps the sectors written in
@@ -240,7 +224,7 @@ class DiskCheckTest : public ::testing::Test {
     DiskCheckReport report;
     EXPECT_EQ(RepairDisk(*image_, &report), DiskStatus::kOk);
     EXPECT_EQ(report, checked);
-    repair_writes_ = CollectSectorWrites();
+    repair_writes_ = CollectSectorWrites(protocol_);
     DiskCheckReport repaired;
     EXPECT_EQ(CheckImage(&repaired), DiskStatus::kOk);
     EXPECT_EQ(repaired,
@@ -278,29 +262,18 @@ class DiskCheckTest : public ::testing::Test {
     Sector words;
     EXPECT_EQ(image_->ReadSector(sector, absl::MakeSpan(words)),
               DiskStatus::kOk);
-    return DiskDirEntry::FromWords(absl::MakeConstSpan(words).subspan(
-        index % DiskDirEntry::kEntriesPerSector * DiskDirEntry::kWordCount,
-        DiskDirEntry::kWordCount));
+    return DiskDirEntry::FromSector(words,
+                                    index % DiskDirEntry::kEntriesPerSector);
   }
 
-  // Returns the image's chain from `first`, stopping at a link out of range,
-  // or after as many clusters as the disk has.
+  // Returns the image's chain from `first`, as FollowFatChain follows it.
   std::vector<int> ReadChain(int first) {
-    const Fat fat = ReadFat();
-    std::vector<int> chain;
-    for (std::optional<int> cluster = first;
-         cluster.has_value() && *cluster != 0 &&
-         *cluster <= kLayout.cluster_count &&
-         static_cast<int>(chain.size()) < kLayout.cluster_count;
-         cluster = kLayout.GetNextCluster(*cluster, fat[*cluster])) {
-      chain.push_back(*cluster);
-    }
-    return chain;
+    return FollowFatChain(kLayout, ReadFat(), first).clusters;
   }
 
   // Returns the image's free list.
   std::vector<int> ReadFreeList() {
-    return ReadChain(kLayout.GetNextCluster(0, ReadFat()[0]).value_or(0));
+    return FollowFreeList(kLayout, ReadFat()).clusters;
   }
 
   // Expects no cluster on the image to be on two chains, or twice on one,
@@ -858,10 +831,10 @@ TEST_F(DiskCheckTest, RepairingAProtectedImageWritesNothing) {
   FreeUnchained();
   MakeImage();
   ASSERT_EQ(image_->SetWriteProtected(true), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   DiskCheckReport report;
   EXPECT_EQ(RepairDisk(*image_, &report), DiskStatus::kWriteProtected);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(
       report,
       (DiskCheckReport{
@@ -873,9 +846,9 @@ TEST_F(DiskCheckTest, RepairingAProtectedImageWritesNothing) {
   ASSERT_EQ(image_->SetWriteProtected(false), DiskStatus::kOk);
   ASSERT_EQ(RepairDisk(*image_, &report), DiskStatus::kOk);
   ASSERT_EQ(image_->SetWriteProtected(true), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(RepairDisk(*image_, &report), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(report, DiskCheckReport());
 }
 
@@ -884,10 +857,10 @@ TEST_F(DiskCheckTest, RepairingAnUnformattedImageWritesNothing) {
       DiskImage::Create(&host_, kPath, kLayout.GetSectorCount());
   ASSERT_TRUE(image.ok()) << image.status();
   image_ = *std::move(image);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   DiskCheckReport report;
   EXPECT_EQ(RepairDisk(*image_, &report), DiskStatus::kUnformatted);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 }
 
 TEST_F(DiskCheckTest, ACrashWhileRepairingLeavesWhatACrashMay) {
@@ -903,7 +876,8 @@ TEST_F(DiskCheckTest, ACrashWhileRepairingLeavesWhatACrashMay) {
   MakeImage();
   DiskCheckReport report;
   ASSERT_EQ(RepairDisk(*image_, &report), DiskStatus::kOk);
-  const int write_count = static_cast<int>(CollectSectorWrites().size());
+  const int write_count =
+      static_cast<int>(CollectSectorWrites(protocol_).size());
   for (int writes = 0; writes <= write_count; ++writes) {
     SCOPED_TRACE(std::to_string(writes) + " of " + std::to_string(write_count) +
                  " writes");
@@ -912,7 +886,7 @@ TEST_F(DiskCheckTest, ACrashWhileRepairingLeavesWhatACrashMay) {
     EXPECT_EQ(RepairDisk(*image_, &report),
               writes < write_count ? DiskStatus::kIoError : DiskStatus::kOk);
     ReopenImage();
-    CollectSectorWrites();
+    CollectSectorWrites(protocol_);
     EXPECT_EQ(CheckImage(&report), DiskStatus::kOk);
     EXPECT_FALSE(report.broken_root);
     EXPECT_FALSE(report.broken_free_list);
@@ -925,7 +899,7 @@ TEST_F(DiskCheckTest, ACrashWhileRepairingLeavesWhatACrashMay) {
 
     // Repairing again finishes.
     EXPECT_EQ(RepairDisk(*image_, &report), DiskStatus::kOk);
-    CollectSectorWrites();
+    CollectSectorWrites(protocol_);
     EXPECT_EQ(CheckImage(&report), DiskStatus::kOk);
     EXPECT_EQ(report, DiskCheckReport());
     EXPECT_EQ(ReadRootEntry(0).GetFirstCluster(), 0);

@@ -33,6 +33,7 @@
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
+#include "oz3/disk/disk_testing.h"
 #include "oz3/disk/faulty_file_protocol.h"
 
 namespace oz3 {
@@ -47,10 +48,6 @@ using Sector = std::array<uint16_t, kDiskSectorWords>;
 constexpr char kPath[] = "mem:/disk.img";
 constexpr char kOtherPath[] = "mem:/other.img";
 constexpr int kMaxOpenFiles = 4;
-
-// Where an image's sectors are in its file, after the header.
-constexpr int64_t kHeaderBytes = 16;
-constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
 
 // A 360 KB floppy: 716 clusters of one sector, after 3 FAT sectors.
 constexpr int kFloppySectors = 720;
@@ -128,9 +125,7 @@ void WriteSector(DiskImage& image, int sector, const Sector& words) {
 
 // Returns entry `index` of directory sector `sector`.
 DiskDirEntry ReadEntry(DiskImage& image, int sector, int index) {
-  const Sector words = ReadSector(image, sector);
-  return DiskDirEntry::FromWords(absl::MakeConstSpan(words).subspan(
-      index * DiskDirEntry::kWordCount, DiskDirEntry::kWordCount));
+  return DiskDirEntry::FromSector(ReadSector(image, sector), index);
 }
 
 // Returns an image's superblock.
@@ -187,8 +182,7 @@ class DiskEditor {
   // Sets entry `index` of directory sector `sector` to `entry`.
   void SetEntry(int sector, int index, const DiskDirEntry& entry) {
     Sector words = ReadSector(image_, sector);
-    std::copy(entry.GetWords().begin(), entry.GetWords().end(),
-              words.begin() + index * DiskDirEntry::kWordCount);
+    entry.CopyToSector(index, absl::MakeSpan(words));
     WriteSector(image_, sector, words);
   }
 
@@ -303,23 +297,15 @@ DiskContents ReadDiskContents(DiskImage& image,
     fat.insert(fat.end(), words.begin(), words.end());
   }
 
-  // Returns the cluster after `cluster`, 0 at the end, or one past the last
-  // cluster for a link out of range.
-  const auto get_next = [&](int cluster) {
-    return layout.GetNextCluster(cluster, fat[cluster])
-        .value_or(layout.cluster_count + 1);
-  };
-
   DiskContents contents;
   std::vector<std::string>& owners = contents.owners;
   owners.resize(layout.cluster_count + 1);
-  const auto take_chain = [&](const std::string& owner, int chain_first) {
-    std::vector<int> chain;
-    for (int cluster = chain_first; cluster != 0; cluster = get_next(cluster)) {
-      if (cluster > layout.cluster_count) {
-        ADD_FAILURE() << owner << "'s chain has a link past the last cluster";
-        break;
-      }
+  const auto take_chain = [&](const std::string& owner, const FatChain& chain) {
+    if (chain.broken) {
+      ADD_FAILURE() << owner << "'s chain has a link past the last cluster";
+    }
+    std::vector<int> taken;
+    for (int cluster : chain.clusters) {
       if (owners[cluster] == owner) {
         ADD_FAILURE() << owner << "'s chain loops at cluster " << cluster;
         break;
@@ -330,15 +316,16 @@ DiskContents ReadDiskContents(DiskImage& image,
         break;
       }
       owners[cluster] = owner;
-      chain.push_back(cluster);
+      taken.push_back(cluster);
     }
-    return chain;
+    return taken;
   };
 
-  // Word 0 is the link of an imaginary cluster 0, to the free list's head.
-  take_chain("the free list", get_next(0));
+  take_chain("the free list", FollowFreeList(layout, fat));
   std::vector<DiskDirEntry> entries;
-  for (int cluster : take_chain("the root", superblock.GetRootCluster())) {
+  for (int cluster :
+       take_chain("the root",
+                  FollowFatChain(layout, fat, superblock.GetRootCluster()))) {
     for (int i = 0; i < layout.sectors_per_cluster; ++i) {
       for (int index = 0; index < DiskDirEntry::kEntriesPerSector; ++index) {
         entries.push_back(
@@ -363,7 +350,8 @@ DiskContents ReadDiskContents(DiskImage& image,
       continue;
     }
     contents.files.push_back({.name = text, .size = *size});
-    const std::vector<int> chain = take_chain(text, entry.GetFirstCluster());
+    const std::vector<int> chain =
+        take_chain(text, FollowFatChain(layout, fat, entry.GetFirstCluster()));
     if (static_cast<int>(chain.size()) * cluster_words < *size) {
       continue;
     }
@@ -490,19 +478,6 @@ class DiskFileSystemTest : public ::testing::Test {
     return file;
   }
 
-  // Returns the sectors written to images since the last call, in order, with
-  // -1 for a write to an image's header.
-  std::vector<int> CollectSectorWrites() {
-    std::vector<int> sectors;
-    for (int64_t offset : protocol_->CollectWriteOffsets()) {
-      sectors.push_back(
-          offset < kHeaderBytes
-              ? -1
-              : static_cast<int>((offset - kHeaderBytes) / kSectorBytes));
-    }
-    return sectors;
-  }
-
   // Returns `file`'s info, or -1 for its position and size if it fails.
   DiskFileInfo GetInfo(DiskFile file) {
     DiskFileInfo info = {.position = -1, .size = -1, .directory = true};
@@ -608,14 +583,15 @@ class DiskFileSystemTest : public ::testing::Test {
       file_system_.DetachImage().reset();
       AttachFormatted(sector_count);
       EditDisk(setup);
-      CollectSectorWrites();
+      CollectSectorWrites(protocol_);
       crash_status_ = DiskStatus::kOk;
     };
     start();
     const DiskContents before = read_contents();
     run();
     ASSERT_EQ(crash_status_, DiskStatus::kOk);
-    const int write_count = static_cast<int>(CollectSectorWrites().size());
+    const int write_count =
+        static_cast<int>(CollectSectorWrites(protocol_).size());
     const DiskContents after = read_contents();
     for (const CrashFile& file : files) {
       const FoundFile* found = after.FindFile(file.name);
@@ -756,13 +732,13 @@ TEST_F(DiskFileSystemTest, FormatWritesTheSuperblockFatAndRoot) {
   WriteSector(*image, 4, MakeFilledSector(0xEEEE));
   ASSERT_EQ(file_system_.AttachImage(std::move(image)),
             DiskStatus::kUnformatted);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   ASSERT_EQ(file_system_.Format(GetLabel("work"), 0, GetNow()),
             DiskStatus::kOk);
 
   // The blank superblock, the FAT (see DiskFatTest), the root's one sector,
   // and the superblock, and nothing else.
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(0, 1, 2, 3, 4, 0));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(0, 1, 2, 3, 4, 0));
   image = file_system_.DetachImage();
   constexpr DiskLayout kLayout = {
       .sectors_per_cluster = 1,
@@ -1655,7 +1631,7 @@ TEST_F(DiskFileSystemTest, CreateMakesAnEmptyOpenFile) {
     editor.AddFile(2, "BAR", {}, 0);
   });
   const int free_clusters = GetFreeClusters();
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   const DiskFile file = CreateFile("new.txt");
   EXPECT_EQ(file, 0);
@@ -1664,7 +1640,7 @@ TEST_F(DiskFileSystemTest, CreateMakesAnEmptyOpenFile) {
   EXPECT_EQ(file_system_.Open(GetName("NEW.TXT"), &other), DiskStatus::kInUse);
 
   // Only the root's sector is written, and no cluster is taken.
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2));
   EXPECT_EQ(GetFreeClusters(), free_clusters);
 
   ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
@@ -1687,13 +1663,13 @@ TEST_F(DiskFileSystemTest, CreateFillsTheLastEntryOfASector) {
       editor.AddFile(i, GetFillerName(i), {}, 0);
     }
   });
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   ASSERT_EQ(file_system_.Close(CreateFile("LAST"), GetLatest()),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2));
   ASSERT_EQ(file_system_.Close(CreateFile("NEXT"), GetLatest()),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3));
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
   EXPECT_EQ(ReadEntry(*image, 2, 15), MakeCreatedEntry("LAST"));
@@ -1711,12 +1687,12 @@ TEST_F(DiskFileSystemTest, CreateRefusals) {
 
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OLD", {}, 0); });
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
             DiskStatus::kWriteProtected);
   ASSERT_EQ(SetWriteProtected(false), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   EXPECT_EQ(file_system_.Create(GetPattern("A*"), GetLater(), &file),
             DiskStatus::kBadName);
@@ -1725,7 +1701,7 @@ TEST_F(DiskFileSystemTest, CreateRefusals) {
 
   // A name is taken whether its file is open or not.
   const DiskFile a = CreateFile("A");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Create(GetName("A"), GetLater(), &file),
             DiskStatus::kExists);
   ASSERT_EQ(file_system_.Close(a, GetLatest()), DiskStatus::kOk);
@@ -1735,11 +1711,11 @@ TEST_F(DiskFileSystemTest, CreateRefusals) {
   for (int i = 0; i < kMaxOpenFiles; ++i) {
     CreateFile(GetFillerName(i));
   }
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Create(GetName("B"), GetLater(), &file),
             DiskStatus::kTooManyOpen);
   EXPECT_EQ(file, -1);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 }
 
 TEST_F(DiskFileSystemTest, CreateNeedsTheFreeList) {
@@ -1759,14 +1735,14 @@ TEST_F(DiskFileSystemTest, CreateGrowsAFullRoot) {
   WriteSector(*image, 5, MakeFilledSector(0xEEEE));
   ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
   EXPECT_EQ(GetFreeClusters(), 715);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   ASSERT_EQ(file_system_.Close(CreateFile("NEW"), GetLatest()),
             DiskStatus::kOk);
 
   // The new cluster is written, zeroed but for the entry, then the FAT links
   // it.
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(5, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(5, 1));
   EXPECT_EQ(GetFreeClusters(), 714);
 
   image = file_system_.DetachImage();
@@ -1797,11 +1773,11 @@ TEST_F(DiskFileSystemTest, CreateGrowsARootOfFourSectorClusters) {
     WriteSector(*image, sector, MakeFilledSector(0xEEEE));
   }
   ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   ASSERT_EQ(file_system_.Close(CreateFile("NEW"), GetLatest()),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(6, 7, 8, 9, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(6, 7, 8, 9, 1));
   EXPECT_EQ(GetFreeClusters(), 177);
 
   image = file_system_.DetachImage();
@@ -1826,11 +1802,11 @@ TEST_F(DiskFileSystemTest, GrowingARootOfTwoClustersLinksFromItsLast) {
     editor.FillSector(303, 16);
   });
   EXPECT_EQ(GetFreeClusters(), 714);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   ASSERT_EQ(file_system_.Close(CreateFile("NEW"), GetLatest()),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(5, 1, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(5, 1, 2));
   EXPECT_EQ(GetInfo(OpenRoot()).size, 3 * kDiskSectorWords);
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
@@ -1875,13 +1851,13 @@ TEST_F(DiskFileSystemTest, AFullRootOnAFullDiskIsDiskFull) {
     editor.SetFatWord(0, DiskLayout::kFatEnd);
   });
   EXPECT_EQ(GetFreeClusters(), 0);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   DiskFile file = -1;
   EXPECT_EQ(file_system_.Create(GetName("NEW"), GetLater(), &file),
             DiskStatus::kDiskFull);
   EXPECT_EQ(file, -1);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(OpenRoot(), 0);
   EXPECT_EQ(GetInfo(0).size, kDiskSectorWords);
 }
@@ -1958,20 +1934,20 @@ TEST_F(DiskFileSystemTest, AnEmptyWriteChangesNothing) {
   AttachFormatted(kSmallSectors);
   const int free_clusters = GetFreeClusters();
   const DiskFile file = CreateFile("NEW");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   int count = -1;
   EXPECT_EQ(file_system_.Write(file, {}, &count), DiskStatus::kOk);
   EXPECT_EQ(count, 0);
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 0, .size = 0}));
   EXPECT_EQ(GetFreeClusters(), free_clusters);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 }
 
 TEST_F(DiskFileSystemTest, AFreshSectorIsntRead) {
   // Clusters 2 and 3 are sectors 3 and 4.
   AttachFormatted(kSmallSectors);
   const DiskFile file = CreateFile("NEW");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // The FAT's sector is already in its buffer.
   protocol_->SetLimits({.reads = 0});
@@ -1979,13 +1955,13 @@ TEST_F(DiskFileSystemTest, AFreshSectorIsntRead) {
   ASSERT_EQ(WriteWords(file, data), DiskStatus::kOk);
 
   // The first sector is written as the buffer moves on.
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3));
 
   // Overwriting a whole sector doesn't read it either.
   ASSERT_EQ(file_system_.Seek(file, 0), DiskStatus::kOk);
   const std::vector<uint16_t> overwrite = MakeCountingWords(5000, 256);
   ASSERT_EQ(WriteWords(file, overwrite), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4));
 
   protocol_->SetLimits({});
   std::vector<uint16_t> expected = overwrite;
@@ -2022,7 +1998,7 @@ TEST_F(DiskFileSystemTest, OverwritingInsideAFile) {
   });
   EXPECT_EQ(GetFreeClusters(), 6);
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // Both sectors are read, as the write covers only part of each.
   ASSERT_EQ(file_system_.Seek(file, 100), DiskStatus::kOk);
@@ -2030,7 +2006,7 @@ TEST_F(DiskFileSystemTest, OverwritingInsideAFile) {
   ASSERT_EQ(WriteWords(file, data), DiskStatus::kOk);
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 400, .size = 600}));
   EXPECT_EQ(GetFreeClusters(), 6);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3));
 
   std::vector<uint16_t> expected = MakeCountingWords(1000, 600);
   std::copy(data.begin(), data.end(), expected.begin() + 100);
@@ -2046,7 +2022,7 @@ TEST_F(DiskFileSystemTest, WritingPastTheEndGrowsTheFile) {
   });
   EXPECT_EQ(GetFreeClusters(), 7);
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // The write fills the last cluster, then takes the free list's head.
   ASSERT_EQ(file_system_.Seek(file, 300), DiskStatus::kOk);
@@ -2054,7 +2030,7 @@ TEST_F(DiskFileSystemTest, WritingPastTheEndGrowsTheFile) {
   ASSERT_EQ(WriteWords(file, data), DiskStatus::kOk);
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 600, .size = 600}));
   EXPECT_EQ(GetFreeClusters(), 6);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4));
 
   std::vector<uint16_t> expected = MakeCountingWords(1000, 300);
   expected.insert(expected.end(), data.begin(), data.end());
@@ -2070,13 +2046,13 @@ TEST_F(DiskFileSystemTest, GrowingFollowsTheChainPastTheSize) {
   });
   EXPECT_EQ(GetFreeClusters(), 6);
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   ASSERT_EQ(file_system_.Seek(file, 300), DiskStatus::kOk);
   const std::vector<uint16_t> data = MakeCountingWords(1, 300);
   ASSERT_EQ(WriteWords(file, data), DiskStatus::kOk);
   EXPECT_EQ(GetFreeClusters(), 6);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4));
 
   std::vector<uint16_t> expected = MakeCountingWords(1000, 300);
   expected.insert(expected.end(), data.begin(), data.end());
@@ -2099,7 +2075,7 @@ TEST_F(DiskFileSystemTest, FillingTheDisk) {
   ASSERT_EQ(file_system_.GetWritableWords(file, &writable), DiskStatus::kOk);
   EXPECT_EQ(writable, 0);
   EXPECT_EQ(GetFreeClusters(), 0);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   const std::vector<uint16_t> word = {7};
   int count = -1;
@@ -2107,7 +2083,7 @@ TEST_F(DiskFileSystemTest, FillingTheDisk) {
   EXPECT_EQ(count, 0);
   EXPECT_EQ(GetInfo(file),
             (DiskFileInfo{.position = kDiskWords, .size = kDiskWords}));
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Overwriting needs no cluster.
   ASSERT_EQ(file_system_.Seek(file, 0), DiskStatus::kOk);
@@ -2140,7 +2116,7 @@ TEST_F(DiskFileSystemTest, WriteRefusals) {
   });
   const DiskFile root = OpenRoot();
   const DiskFile locked = OpenFile("LOCKED");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   const auto expect_refused = [this](DiskFile file, DiskStatus status) {
     const std::vector<uint16_t> words = {1, 2, 3};
@@ -2152,7 +2128,7 @@ TEST_F(DiskFileSystemTest, WriteRefusals) {
   };
   expect_refused(root, DiskStatus::kWrongHandleType);
   expect_refused(locked, DiskStatus::kReadOnly);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(GetInfo(locked).size, 0);
 
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
@@ -2167,7 +2143,7 @@ TEST_F(DiskFileSystemTest, TwoFilesWrittenAtOnceShareTheWorkingFatSector) {
   EXPECT_EQ(GetFreeClusters(), 417);
   const DiskFile a = CreateFile("A");
   const DiskFile b = CreateFile("B");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // A takes 300 and 302, and B 301 and 303.
   const std::vector<uint16_t> a_data = MakeCountingWords(1000, 266);
@@ -2183,7 +2159,7 @@ TEST_F(DiskFileSystemTest, TwoFilesWrittenAtOnceShareTheWorkingFatSector) {
 
   // Each file's first sector is written as its buffer moves on, and the FAT
   // sectors stay in their buffers.
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(303, 304));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(303, 304));
   EXPECT_EQ(GetFreeClusters(), 413);
   EXPECT_EQ(ReadFile(a), a_data);
   EXPECT_EQ(ReadFile(b), b_data);
@@ -2195,9 +2171,9 @@ TEST_F(DiskFileSystemTest, CloseCommitsTheDataTheFatAndTheEntry) {
   const DiskFile file = CreateFile("NEW");
   const std::vector<uint16_t> data = MakeCountingWords(1, 300);
   ASSERT_EQ(WriteWords(file, data), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 1, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4, 1, 2));
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
   EXPECT_EQ(ReadEntry(*image, 2, 0), MakeEntry("NEW", 2, 300, 0, GetLatest()));
@@ -2214,26 +2190,26 @@ TEST_F(DiskFileSystemTest, FlushCommitsAndKeepsTheFileOpen) {
   const std::vector<uint16_t> data = MakeCountingWords(1, 300);
   ASSERT_EQ(WriteWords(file, absl::MakeConstSpan(data).first(200)),
             DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // Data, then sector 1 with the free list's head, then the working FAT
   // sector, then the entry.
   EXPECT_EQ(file_system_.Flush(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(303, 1, 2, 4));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(303, 1, 2, 4));
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 200, .size = 200}));
 
   // With nothing written since, there is nothing to commit.
   EXPECT_EQ(file_system_.Flush(file, GetNow()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre());
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre());
 
   // Writing on, the data sector moves to cluster 301, and the next commit
   // stamps the file again. Closing after it has nothing more to commit.
   ASSERT_EQ(WriteWords(file, absl::MakeConstSpan(data).subspan(200)),
             DiskStatus::kOk);
   EXPECT_EQ(file_system_.Flush(file, GetNow()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(303, 304, 1, 2, 4));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(303, 304, 1, 2, 4));
   EXPECT_EQ(file_system_.Close(file, GetLater()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre());
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre());
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
   EXPECT_EQ(ReadEntry(*image, 4, 0), MakeEntry("NEW", 300, 300));
@@ -2248,14 +2224,14 @@ TEST_F(DiskFileSystemTest, AnUnwrittenFileCommitsNothing) {
   const DiskFile old = OpenFile("OLD");
   ASSERT_EQ(ReadFile(old), MakeCountingWords(0, 10));
   const DiskFile root = OpenRoot();
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   EXPECT_EQ(file_system_.Flush(root, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Flush(old, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Close(root, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Close(old, GetLatest()), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Close(created, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre());
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre());
 
   // The created file keeps its creation stamp.
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
@@ -2288,9 +2264,9 @@ TEST_F(DiskFileSystemTest, FlushingEveryFile) {
   OpenRoot();
   ASSERT_EQ(WriteWords(a, MakeCountingWords(1, 10)), DiskStatus::kOk);
   ASSERT_EQ(WriteWords(b, MakeCountingWords(2, 20)), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Flush(GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3, 1, 2, 4, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3, 1, 2, 4, 2));
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
   EXPECT_EQ(ReadEntry(*image, 2, 0), MakeEntry("A", 2, 10, 0, GetLatest()));
@@ -2322,12 +2298,12 @@ TEST_F(DiskFileSystemTest, ClosingAStaleWrittenSlotReportsItsLostWrites) {
   ASSERT_EQ(WriteWords(file, MakeCountingWords(1, 10)), DiskStatus::kOk);
   ASSERT_EQ(file_system_.AttachImage(file_system_.DetachImage()),
             DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Flush(file, GetLatest()), DiskStatus::kDiskChanged);
   // The writes are lost, which Close reports, but the slot is freed.
   EXPECT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kDiskChanged);
   EXPECT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kBadHandle);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre());
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre());
   EXPECT_EQ(GetInfo(OpenFile("NEW")).size, 0);
 }
 
@@ -2338,19 +2314,19 @@ TEST_F(DiskFileSystemTest, TruncatingToEmptyFreesTheWholeChain) {
   const DiskFile file = CreateFile("NEW");
   ASSERT_EQ(WriteWords(file, MakeCountingWords(1, 300)), DiskStatus::kOk);
   EXPECT_EQ(GetFreeClusters(), kSmallClusters - 3);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // The file is flushed with the new size, as the data, then the FAT, then
   // the entry, and then the chain is freed onto the head in sector 1.
   ASSERT_EQ(file_system_.Seek(file, 0), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 1, 2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4, 1, 2, 1));
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 0, .size = 0}));
   EXPECT_EQ(GetFreeClusters(), kSmallClusters - 1);
 
   // The truncate stamped it, so Close has nothing to write.
   EXPECT_EQ(file_system_.Close(file, GetNow()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
   EXPECT_EQ(ReadEntry(*image, 2, 0), MakeEntry("NEW", 0, 0, 0, GetLatest()));
   const Sector fat = ReadSector(*image, 1);
@@ -2376,13 +2352,13 @@ TEST_F(DiskFileSystemTest, TruncatingMidClusterAndOnABoundary) {
   });
   const int free_clusters = GetFreeClusters();
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // Mid-cluster, only 302 is freed: the entry, then sector 2 with both 301's
   // new end and 302's link to 400, then sector 1 with the head.
   ASSERT_EQ(file_system_.Seek(file, 300), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4, 2, 1));
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 300, .size = 300}));
   EXPECT_EQ(GetFreeClusters(), free_clusters + 1);
   EXPECT_EQ(ReadFile(file), MakeCountingWords(1000, 300));
@@ -2390,7 +2366,7 @@ TEST_F(DiskFileSystemTest, TruncatingMidClusterAndOnABoundary) {
   // On a boundary, the cluster past it is freed too.
   ASSERT_EQ(file_system_.Seek(file, kDiskSectorWords), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(4, 2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(4, 2, 1));
   EXPECT_EQ(GetFreeClusters(), free_clusters + 2);
   EXPECT_EQ(ReadFile(file), MakeCountingWords(1000, kDiskSectorWords));
 
@@ -2426,23 +2402,23 @@ TEST_F(DiskFileSystemTest, TruncatingAtTheEndOnlyFlushes) {
   });
   const int free_clusters = GetFreeClusters();
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // With nothing written, it writes nothing.
   ASSERT_EQ(file_system_.Seek(file, 10), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // After a write, it flushes it, stamped.
   ASSERT_EQ(WriteWords(file, MakeCountingWords(1010, 5)), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3, 2));
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 15, .size = 15}));
   EXPECT_EQ(GetFreeClusters(), free_clusters);
 
   // Nothing is left for Close to write.
   EXPECT_EQ(file_system_.Close(file, GetNow()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
   EXPECT_EQ(ReadEntry(*image, 2, 0), MakeEntry("OLD", 2, 15, 0, GetLatest()));
   ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
@@ -2458,12 +2434,12 @@ TEST_F(DiskFileSystemTest, TruncatingFreesAChainLeftPastTheSize) {
   });
   EXPECT_EQ(GetFreeClusters(), 6);
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // The size is as it was, but freeing changes the file, so it is stamped.
   ASSERT_EQ(file_system_.Seek(file, 300), DiskStatus::kOk);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2, 1));
   EXPECT_EQ(GetFreeClusters(), 7);
 
   std::unique_ptr<DiskImage> image = file_system_.DetachImage();
@@ -2499,9 +2475,9 @@ TEST_F(DiskFileSystemTest, TruncatingABrokenChainChangesNothing) {
   });
   const int free_clusters = GetFreeClusters();
   const DiskFile file = OpenFile("OLD");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Truncate(file, GetLatest()), DiskStatus::kCorrupt);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(GetInfo(file), (DiskFileInfo{.position = 0, .size = 300}));
   EXPECT_EQ(GetFreeClusters(), free_clusters);
 }
@@ -2515,13 +2491,13 @@ TEST_F(DiskFileSystemTest, TruncateRefusals) {
   });
   const DiskFile root = OpenRoot();
   const DiskFile locked = OpenFile("LOCKED");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Truncate(root, GetLatest()),
             DiskStatus::kWrongHandleType);
   EXPECT_EQ(file_system_.Truncate(locked, GetLatest()), DiskStatus::kReadOnly);
   EXPECT_EQ(file_system_.Truncate(kMaxOpenFiles, GetLatest()),
             DiskStatus::kBadHandle);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(GetInfo(locked).size, 10);
 
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
@@ -2541,21 +2517,21 @@ TEST_F(DiskFileSystemTest, DeleteFreesTheEntryThenTheChain) {
     editor.AddFile(2, "EMPTY", {}, 0);
     editor.SetFatWord(0, 6);
   });
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
 
   // An empty file only frees its entry.
   EXPECT_EQ(file_system_.Delete(GetName("EMPTY")), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2));
 
   // The free entry is written, then the FAT with the chain on the free list's
   // head. Nothing has counted the free clusters, and deleting doesn't.
   EXPECT_EQ(file_system_.Delete(GetName("OLD")), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2, 1));
   EXPECT_EQ(GetFreeClusters(), kSmallClusters - 2);
 
   // Once counted, deleting keeps the count.
   EXPECT_EQ(file_system_.Delete(GetName("TWO")), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2, 1));
   EXPECT_EQ(GetFreeClusters(), kSmallClusters - 1);
   DiskFile file = -1;
   for (std::string_view name : {"OLD", "TWO", "EMPTY"}) {
@@ -2588,11 +2564,11 @@ TEST_F(DiskFileSystemTest, DeletingACorruptFileChangesNothing) {
     editor.SetRootEntry(2, MakeEntry("EMPTY", 4, 0));
     editor.SetFatWord(0, 4);
   });
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   for (std::string_view name : {"BROKEN", "OUT", "EMPTY"}) {
     EXPECT_EQ(file_system_.Delete(GetName(name)), DiskStatus::kCorrupt) << name;
   }
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(GetFreeClusters(), kSmallClusters - 3);
 }
 
@@ -2604,12 +2580,12 @@ TEST_F(DiskFileSystemTest, DeleteRefusals) {
     editor.SetFatWord(0, 4);
   });
   const DiskFile file = OpenFile("OPEN");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Delete(GetPattern("*")), DiskStatus::kBadName);
   EXPECT_EQ(file_system_.Delete(GetName("MISSING")), DiskStatus::kNotFound);
   EXPECT_EQ(file_system_.Delete(GetName("OPEN")), DiskStatus::kInUse);
   EXPECT_EQ(file_system_.Delete(GetName("LOCKED")), DiskStatus::kReadOnly);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Once closed, the file can be deleted.
   ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
@@ -2623,10 +2599,10 @@ TEST_F(DiskFileSystemTest, RenameChangesOnlyTheName) {
     editor.AddFile(1, "OLD", {2}, 10, 1000, kDiskAttribHidden);
     editor.SetFatWord(0, 3);
   });
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Rename(GetName("old"), GetName("new.txt")),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2));
   DiskFile file = -1;
   EXPECT_EQ(file_system_.Open(GetName("OLD"), &file), DiskStatus::kNotFound);
   EXPECT_EQ(ReadFile(OpenFile("NEW.TXT")), MakeCountingWords(1000, 10));
@@ -2658,7 +2634,7 @@ TEST_F(DiskFileSystemTest, RenameRefusals) {
     editor.AddFile(2, "OPEN", {}, 0);
   });
   const DiskFile file = OpenFile("OPEN");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.Rename(GetPattern("A*"), GetName("C")),
             DiskStatus::kBadName);
   EXPECT_EQ(file_system_.Rename(GetName("A"), GetPattern("C?")),
@@ -2680,7 +2656,7 @@ TEST_F(DiskFileSystemTest, RenameRefusals) {
             DiskStatus::kExists);
   EXPECT_EQ(file_system_.Rename(GetName("A"), GetName("a")),
             DiskStatus::kExists);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Once closed, the file can be renamed.
   ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
@@ -2695,15 +2671,15 @@ TEST_F(DiskFileSystemTest, SetAttributesKeepsTheOtherBits) {
     editor.AddFile(0, "OLD", {2}, 10, 1000, 0x8000 | kDiskAttribHidden);
     editor.SetFatWord(0, 3);
   });
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), kDiskAttribReadOnly),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2));
 
   // Setting them again writes nothing.
   EXPECT_EQ(file_system_.SetAttributes(GetName("OLD"), kDiskAttribReadOnly),
             DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Read-only, the file can be read, but not written or deleted.
   const DiskFile file = OpenFile("OLD");
@@ -2729,7 +2705,7 @@ TEST_F(DiskFileSystemTest, SetAttributesRefusals) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OPEN", {}, 0); });
   const DiskFile file = OpenFile("OPEN");
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   EXPECT_EQ(file_system_.SetAttributes(GetPattern("*"), kDiskAttribHidden),
             DiskStatus::kBadName);
   for (uint16_t attributes :
@@ -2742,7 +2718,7 @@ TEST_F(DiskFileSystemTest, SetAttributesRefusals) {
             DiskStatus::kNotFound);
   EXPECT_EQ(file_system_.SetAttributes(GetName("OPEN"), kDiskAttribHidden),
             DiskStatus::kInUse);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Once closed, the file's attributes can be set.
   ASSERT_EQ(file_system_.Close(file, GetLatest()), DiskStatus::kOk);
@@ -2765,9 +2741,9 @@ TEST_F(DiskFileSystemTest, DirectoryChangesNeedAWritableFileSystem) {
   AttachFormatted(kSmallSectors);
   EditDisk([](DiskEditor& editor) { editor.AddFile(0, "OLD", {2}, 10); });
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
-  CollectSectorWrites();
+  CollectSectorWrites(protocol_);
   expect_refused(DiskStatus::kWriteProtected);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(GetInfo(OpenFile("OLD")).size, 10);
 }
 

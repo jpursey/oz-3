@@ -86,16 +86,6 @@ std::optional<ChainProblem> GetChainProblem(const ChainWalk& walk, int needed) {
   return std::nullopt;
 }
 
-// Returns or sets the entry `index` of a root sector's `words`.
-DiskDirEntry GetEntry(const Sector& words, int index) {
-  return DiskDirEntry::FromWords(absl::MakeConstSpan(words).subspan(
-      index * DiskDirEntry::kWordCount, DiskDirEntry::kWordCount));
-}
-void SetEntry(const DiskDirEntry& entry, int index, Sector* words) {
-  std::copy(entry.GetWords().begin(), entry.GetWords().end(),
-            words->begin() + index * DiskDirEntry::kWordCount);
-}
-
 // Returns the FAT word of free `cluster` linking it to `next`, or ending the
 // free list if `next` is 0, as a zeroed FAT has it where it can: 0 when `next`
 // follows `cluster`, or ends the list at the last cluster. So a free list
@@ -201,9 +191,9 @@ DiskStatus DiskChecker::Repair() {
   // file reaching a cluster rebuilding frees.
   for (DirSectorRepair& repair : dir_repairs_) {
     for (int index : repair.bad_names) {
-      DiskDirEntry entry = GetEntry(repair.words, index);
+      DiskDirEntry entry = DiskDirEntry::FromSector(repair.words, index);
       entry.SetName(TakeFoundName());
-      SetEntry(entry, index, &repair.words);
+      entry.CopyToSector(index, absl::MakeSpan(repair.words));
     }
     if (DiskStatus status = image_->WriteSector(repair.sector, repair.words);
         status != DiskStatus::kOk) {
@@ -274,7 +264,8 @@ DiskStatus DiskChecker::CheckFiles(absl::Span<const int> root_clusters) {
       }
       bool repaired = false;
       for (int index = 0; index < DiskDirEntry::kEntriesPerSector; ++index) {
-        const DiskDirEntry entry = GetEntry(repair.words, index);
+        const DiskDirEntry entry =
+            DiskDirEntry::FromSector(repair.words, index);
         // Freeing an entry zeroes it all, so one with only its name zeroed is
         // a file with a bad name, which may still have a chain.
         if (entry == DiskDirEntry()) {
@@ -286,7 +277,7 @@ DiskStatus DiskChecker::CheckFiles(absl::Span<const int> root_clusters) {
         }
         if (const DiskDirEntry repaired_entry = CheckFile(entry);
             repaired_entry != entry) {
-          SetEntry(repaired_entry, index, &repair.words);
+          repaired_entry.CopyToSector(index, absl::MakeSpan(repair.words));
           repaired = true;
         }
       }
