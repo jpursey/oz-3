@@ -48,7 +48,7 @@
 .CONST TELETYPE = 3
 
 ;-------------------------------------------------------------------------------
-; The keyboard's wiring, which is the same in every Ozzy (see the wiki's Ozzy
+; The keyboard's wiring, which is the same in every Ozzy (see the manual's Ozzy
 ; Computer page)
 ;-------------------------------------------------------------------------------
 
@@ -56,7 +56,7 @@
 .CONST KEYBOARD_INTERRUPT = 1
 
 ;-------------------------------------------------------------------------------
-; Keys (see the wiki's Ozzy Devices page)
+; Keys (see the manual's Ozzy Computer page)
 ;-------------------------------------------------------------------------------
 
 .CONST KEY_BACKSPACE = 08h
@@ -65,7 +65,7 @@
 .CONST KEY_LAST_CHAR = 7Eh
 
 ;-------------------------------------------------------------------------------
-; The screen's control words (see the wiki's Ozzy Devices page)
+; The screen's control words (see the manual's Ozzy Computer page)
 ;-------------------------------------------------------------------------------
 
 .CONST SCREEN_SCROLL_ROW = 0FF4h

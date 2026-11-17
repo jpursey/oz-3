@@ -19,4 +19,4 @@ The OZ-3 project is built using [GameBits](https://github.com/jpursey/game-bits)
 
 ## Documentation
 
-All documentation for the OZ-3 is located over in the [OZ-3 Wiki](https://github.com/jpursey/oz-3/wiki).
+All documentation for the OZ-3 is in the [OZ-3 Manual](docs/manual/README.md).

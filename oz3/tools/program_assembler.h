@@ -47,7 +47,7 @@ class AsmProgram final {
 };
 
 // Assembles the program whose main source file is at `path`, for the
-// instruction set `syntax` describes, as the wiki's Program Source page
+// instruction set `syntax` describes, as the manual's Program Source page
 // describes. Returns null if the source has errors. If `errors` isn't null, it
 // is set to the errors, which are none if the program assembles.
 std::unique_ptr<AsmProgram> AssembleProgramFile(

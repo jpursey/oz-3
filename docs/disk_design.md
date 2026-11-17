@@ -649,7 +649,7 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 - **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores, no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
 - **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. The Ozzy gives each drive the host's clock, as it gives the timer, and each drive writes back everything dirty as the Ozzy is destroyed.
 - **The `ozzy` app** attaches the config's images at power on. Changing disks while it runs needs the console frontend's help (see Open questions).
-- **Wiki:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors.
+- **Manual:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors.
 
 ## Prerequisites
 
@@ -664,15 +664,15 @@ This design depends on changes made ahead of it, each a backlog item of its own:
 
 ## Getting there
 
-The backlog items that build this, in order, each updating the wiki as it goes. The first three are independent of each other.
+The backlog items that build this, in order, each updating the manual as it goes. The first three are independent of each other.
 
-1. *Packed strings low byte first* (tools, devices, ozzy, wiki).
-2. *Port status and byte-swapped compare instructions* (instruction_sets, wiki).
-3. *No date without a clock* (devices, wiki).
+1. *Packed strings low byte first* (tools, devices, ozzy, manual).
+2. *Port status and byte-swapped compare instructions* (instruction_sets, manual).
+3. *No date without a clock* (devices, manual).
 4. *Disk library* (disk): the image, the hardware's timing, the file system, names, and checks, with no device. Depends on 1, so names pack as the assembler does.
-5. *Disk drive device* (devices, wiki): the ports, the command protocol, and every command, on the disk library. Depends on 2 and 4.
-6. *Disk tools* (tools, apps, wiki): `DiskFileProtocol` and `oz3dsk`. Depends on 4.
-7. *Ozzy drives* (ozzy, apps, wiki): the wiring, config, and machine table above. Depends on 3 and 5, and on 6 to make disks to try by hand.
+5. *Disk drive device* (devices, manual): the ports, the command protocol, and every command, on the disk library. Depends on 2 and 4.
+6. *Disk tools* (tools, apps, manual): `DiskFileProtocol` and `oz3dsk`. Depends on 4.
+7. *Ozzy drives* (ozzy, apps, manual): the wiring, config, and machine table above. Depends on 3 and 5, and on 6 to make disks to try by hand.
 
 Then the *Ozzy OS*, which boots from `A:`.
 

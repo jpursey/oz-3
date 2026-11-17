@@ -6,13 +6,13 @@ for how items are written and picked up.
 
 The list is a rough stack rank: the order the items look worth doing, as a best
 guess rather than a commitment. Re-order it freely. The large items near the
-bottom are the rest of the roadmap in README.md and the wiki.
+bottom are the rest of the roadmap in README.md and the manual.
 
 Each item carries:
 
 - **Layers**: the OZ-3 libraries it touches (`core`, `tools`,
   `instruction_sets`, and `apps` for executables), in dependency order, and the
-  wiki if it changes the specification. More than one usually means more than
+  manual if it changes the specification. More than one usually means more than
   one CL.
 - **Size**: a guess. *Small* is a single CL. *Medium* is a few. *Large* is
   many, usually after a design.
@@ -28,7 +28,7 @@ Each item carries:
 
 ## Modified times in oz3dsk dir
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *Disk tools*, and Game Bits *File modified times*
@@ -62,7 +62,7 @@ worked out ahead of the call.
 
 ## Ozzy drives
 
-- **Layers:** ozzy, apps, wiki
+- **Layers:** ozzy, apps, manual
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** *Disk drive device*, and *Disk tools* to make disks to try
@@ -77,7 +77,7 @@ it runs.
 
 ## Ozzy OS
 
-- **Layers:** ozzy, wiki
+- **Layers:** ozzy, manual
 - **Size:** large
 - **Feature workflow:** yes
 - **Depends on:** *Ozzy drives*
@@ -126,11 +126,11 @@ somewhere to go in the window too.
 
 ## Labels in address forms
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** the wiki's `2.5-Program-Source.md` (Symbols, Segments) and
+- **Background:** the manual's `2.5-Program-Source.md` (Symbols, Segments) and
   `2.2-Default-Instruction-Set.md` (Address forms); `oz3/ozzy/boot_rom.oza`
   (its variables)
 
@@ -156,7 +156,7 @@ it by pushing its variables first, and addressing them as `S(-1)` down.
 - **Size:** large
 - **Feature workflow:** yes
 - **Depends on:** nothing
-- **Background:** the wiki's Home page, and the `T` (trap) flag in
+- **Background:** the manual's `README.md`, and the `T` (trap) flag in
   `2-Specifications.md`
 
 The debugger for OZ-3 programs, as a library and a tool: stepping (through the
@@ -170,7 +170,7 @@ it gains each segment's physical bank and start page.
 
 ## Program macros and conditional assembly
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** nothing
@@ -182,7 +182,7 @@ source for different hardware configurations.
 
 ## Low and high words
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -197,7 +197,7 @@ registers.
 
 ## Case-sensitive programs
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -209,11 +209,11 @@ turned to upper case as it is read.
 
 ## Data only programs
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** the wiki's Program Files and Program Source pages
+- **Background:** the manual's Program Files and Program Source pages
 
 A program with no instances is data only, which no core starts (see Program
 Files), but the assembler always gives a program at least one: `.INSTANCES` is
@@ -223,12 +223,12 @@ an operating system loads for programs to share.
 
 ## Instruction set identity in program files
 
-- **Layers:** tools, wiki
+- **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Background:** [assembler_design.md](assembler_design.md) (Program file);
-  the wiki's Program Files page; `oz3/tools/program_file.h`
+  the manual's Program Files page; `oz3/tools/program_file.h`
 
 A program file records which instruction set it was assembled for, such as a
 fingerprint of its code word layout, so loading it for a core with a different
@@ -316,7 +316,7 @@ handoff down change with it.
 
 ## Coprocessors
 
-- **Layers:** core, wiki
+- **Layers:** core, manual
 - **Size:** large
 - **Feature workflow:** yes
 - **Depends on:** nothing
@@ -354,7 +354,7 @@ they exist. Beyond what devices do:
 
 ## Shared interrupts from programs
 
-- **Layers:** core, instruction_sets, wiki
+- **Layers:** core, instruction_sets, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -372,11 +372,11 @@ worker. It adds microcode, so it waits until a program needs it.
 
 ## Shared I/O page
 
-- **Layers:** core, wiki
+- **Layers:** core, manual
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** nothing
-- **Background:** Main memory in the wiki's `2-Specifications.md`; the wiki's
+- **Background:** Main memory in the manual's `2-Specifications.md`, and its
   `3-Devices.md` (Wiring and settings)
 
 A mapped page belongs wholly to its device, so a device with only a few words
@@ -394,7 +394,7 @@ waits until a device needs it.
 
 ## Typed keys from key state
 
-- **Layers:** devices, wiki
+- **Layers:** devices, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing

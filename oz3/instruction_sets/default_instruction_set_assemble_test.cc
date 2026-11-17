@@ -59,7 +59,7 @@ std::unique_ptr<AsmProgram> AssembleOrFail(const InstructionSetSyntax& syntax,
 //==============================================================================
 // Forms
 //
-// Every form of the default instruction set, written as the wiki's Default
+// Every form of the default instruction set, written as the manual's Default
 // Instruction Set page writes it, assembles to the code word Encode() gives it,
 // followed by the words of its values.
 //==============================================================================
@@ -667,7 +667,7 @@ class AssembledProgramTest : public InstructionTest {
 };
 
 TEST_F(AssembledProgramTest, WritesMessageToPort) {
-  // The example on the wiki's Program Source page.
+  // The example on the manual's Program Source page.
   ASSERT_TRUE(Load(R"---(
     .CONST CONSOLE = 1
     .STACK 64

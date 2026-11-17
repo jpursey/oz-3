@@ -6,10 +6,6 @@
 			"path": "oz3",
 		},
 		{
-			"name": "oz3-wiki",
-			"path": "wiki",
-		},
-		{
 			"name": "docs",
 			"path": "docs",
 		},

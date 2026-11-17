@@ -23,7 +23,7 @@ namespace oz3 {
 //
 // A program file holds one Program as a sequence of words, so a program can be
 // assembled once and loaded many times. It is the OZ-3's executable format,
-// which the wiki specifies (Program Files), so a loader written in OZ-3 code
+// which the manual specifies (Program Files), so a loader written in OZ-3 code
 // can read it as well as ProgramLoader can.
 //
 // A program file only ever holds a valid program (see ValidateProgram), so

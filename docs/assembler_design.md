@@ -6,7 +6,7 @@ instruction set defines. This doc defines the assembler as a whole: its
 principles, the model of a program it builds, how a statement is matched
 against an instruction set, and what it writes. It ties together the backlog
 items that build it (see [Getting there](#getting-there)), and it seeds the
-wiki's assembler page, which becomes the public reference as those items land.
+manual's assembler page, which becomes the public reference as those items land.
 
 The concepts and rules here are what this doc decides. Spellings of directives
 and options are a sketch, to make the model concrete, and each is settled in
@@ -376,7 +376,7 @@ too, so they never change either.
 - **Sizes match the microcode.** The assembler sizes an instruction from its
   pattern, so assembling an instruction set checks that each form's size in its
   pattern is the size the compiled instruction decodes to (see Arguments in the
-  wiki's Instruction Set Source page). `CompileInstructionSet` doesn't, as it
+  manual's Instruction Set Source page). `CompileInstructionSet` doesn't, as it
   only checks what cores need to run an instruction set.
 
 ## Data
@@ -436,7 +436,7 @@ as for `ProgramLoader`:
   copy the data straight from the device to where it goes.
 - It needs no relocation, so a loader only allocates pages, copies words, and
   sets base registers.
-- Its format is specified in the wiki (Program Files), as part of the machine,
+- Its format is specified in the manual (Program Files), as part of the machine,
   since programs that load programs depend on it. On a host, each word is two
   bytes, low byte first.
 
@@ -609,29 +609,29 @@ in lower case (`mov r1, message`), it assembles the same.
 | Named values     | `values`, `enum`, `names` (`ValueSetDef`)     | `$v`/`$V` placeholders, which are values in words                            | `values`, with `ValueSetDef` in `InstructionSetDef`  |
 | Executables      | `apps`, `cli`, `cmd`                          | `bin/` (where executables are built), `tools` (libraries)                    | `apps`, as the debugger may not be command line only |
 
-"Form" is already the wiki's word for one code of a macro ("each form is a
+"Form" is already the manual's word for one code of a macro ("each form is a
 `code` block"), so an instruction form is the instruction with one of them.
 
 ## Getting there
 
-The backlog items build this in order, each updating the wiki as it goes, the
+The backlog items build this in order, each updating the manual as it goes, the
 first of them creating the assembler's page:
-1. *Instruction set syntax for programs* (core, tools, instruction_sets, wiki):
-   named values, relative instructions, and the pattern rules, with the default
-   instruction set using them and its code words unchanged.
+1. *Instruction set syntax for programs* (core, tools, instruction_sets,
+   manual): named values, relative instructions, and the pattern rules, with
+   the default instruction set using them and its code words unchanged.
 2. *Check instruction sizes against microcode* (tools): the instruction
    assembler checks each form's pattern size against its compiled microcode.
    Independent, and can be done any time before the assembler relies on
    pattern sizes.
-3. *Program files* (tools, wiki): the word format, and its specification.
+3. *Program files* (tools, manual): the word format, and its specification.
    Independent, and can be done first.
 4. *Instruction forms* (tools): `InstructionSetSyntax`, its forms, encoding
    them, and turning code words back into text.
-5. *Program assembler* (tools, wiki): statements, matching them to forms,
+5. *Program assembler* (tools, manual): statements, matching them to forms,
    symbols, expressions, segments, instances, data, and the two passes,
    producing a `Program`.
 6. *Program maps* (tools): the map, written by the assembler, and read back.
-7. *oz3asm* (apps, wiki): the command line tool, with the listing, and the new
+7. *oz3asm* (apps, manual): the command line tool, with the listing, and the new
    `apps` directory.
 8. *Assemble the default instruction set* (instruction_sets): every form of
    the default instruction set, checked against its reference code words, and
