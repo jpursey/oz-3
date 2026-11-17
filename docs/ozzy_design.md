@@ -8,7 +8,7 @@ to write fun programs for, rather than a processor in a test.
 This doc defines Ozzy as a whole: its hardware, its devices, the instructions
 the default instruction set gains for it, its operating system, and the host
 application that runs it. It ties together the backlog items that build it
-(see [Getting there](#getting-there)). Ozzy's own wiki page, the reference for
+(see [Getting there](#getting-there)). Ozzy's own manual page, the reference for
 programmers (its devices, ports, and calls), is written by those items as they
 land.
 
@@ -439,22 +439,22 @@ assembled system code is checked in.
 
 ## Getting there
 
-The backlog items build this in order, each updating the wiki as it goes:
-1. *Byte swap instruction* (instruction_sets, wiki): `SWPB`. Small, and
+The backlog items build this in order, each updating the manual as it goes:
+1. *Byte swap instruction* (instruction_sets, manual): `SWPB`. Small, and
    independent.
-2. *Core signal instructions* (instruction_sets, wiki): `INTC` and `WAKE`.
+2. *Core signal instructions* (instruction_sets, manual): `INTC` and `WAKE`.
    Independent of the devices.
-3. *Devices in core* (core, wiki): devices run by the `Processor`, their ports,
-   and interrupt lines connected to cores, which report duplicates.
+3. *Devices in core* (core, manual): devices run by the `Processor`, their
+   ports, and interrupt lines connected to cores, which report duplicates.
 4. *Console devices* (devices): the screen, keyboard, and teletype, and the new
    `devices` library.
-5. *Ozzy machine* (ozzy, apps, wiki): the config, the machine table, the
+5. *Ozzy machine* (ozzy, apps, manual): the config, the machine table, the
    console frontend and pacing, and a boot ROM that prints a banner and echoes
-   keys. This is the first Ozzy anyone can run, and creates Ozzy's wiki page.
+   keys. This is the first Ozzy anyone can run, and creates Ozzy's manual page.
 6. *Timer device* (devices, ozzy).
 7. The disk drive, in the items [disk_design.md](disk_design.md) lists: disk
    images, the drive, its tools, and drives in the Ozzy.
-8. *Ozzy OS* (ozzy, wiki): booting from disk, the calls, the loader, running
+8. *Ozzy OS* (ozzy, manual): booting from disk, the calls, the loader, running
    programs in the foreground and in parallel, and the shell.
 
 Then *Debugger (oz3dbg)*, which Ozzy integrates once there is a machine worth

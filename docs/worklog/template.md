@@ -9,7 +9,7 @@ change in behavior."*
 *What code using the library sees: new or changed APIs, what they do, and edge
 cases. Say if a public API changes in a way that breaks existing callers. For
 changes an OZ-3 program can see (instructions, microcode, flags, cycle counts),
-say what it sees, and which wiki pages change. Leave this section out if nothing
+say what it sees, and which manual pages change. Leave this section out if nothing
 changes.*
 
 ## Design
@@ -58,7 +58,7 @@ Depends on: nothing.
 **Verify**
 - Standard checks (see CLAUDE.md).
 - *Unit tests: what they cover.*
-- *Wiki pages updated, for changes to specified behavior.*
+- *Manual pages updated, for changes to specified behavior.*
 - *Performance: what was measured, and the result.*
 
 ### CL2 [ ] *library*: *what it does*

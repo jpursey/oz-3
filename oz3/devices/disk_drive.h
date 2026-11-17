@@ -167,7 +167,7 @@ class DiskDriveFactory final : public DeviceFactory {
 
 // A smart disk drive: it owns the file system on the disk image the host
 // attaches, and a program (normally the OS) asks it for files by name through
-// its three ports, as the wiki's Disk Drive page describes.
+// its three ports, as the manual's Disk Drive page describes.
 //
 // The OS writes a command word, with the command's code in its high byte and
 // any handle in its low byte, and the command's arguments, to the command port,

@@ -36,8 +36,8 @@ oz3dsk work.ozd dir *.OZ3
 ```
 
 The disk library gains status text for their messages. Nothing an OZ-3
-program can see changes. The wiki gains `oz3dsk` and a paragraph on the
-protocol (see Wiki).
+program can see changes. The manual gains `oz3dsk` and a paragraph on the
+protocol (see Manual).
 
 ## Behavior
 
@@ -116,15 +116,15 @@ them. It settles the points below, and updates disk_design.md to match.
   corrupt disk fails with the status `Mount` returns, before it does
   anything, rather than as a failure of each file.
 
-### Wiki
+### Manual
 
 `oz3dsk` and the image format belong with the drive, so the tool gets a
 section of its own on `3.5-Disk-Drive.md`, after the disk itself, as
 `oz3asm` has one on Program Source. The section is the command table, sizes,
 disk names, binary and text, and attributes, with the examples above, and a
-paragraph on `DiskFileProtocol` for host applications. `Home.md`'s tools gain
-`oz3dsk`. The drive's page is written by *Disk drive device*'s CL7, so this
-plan's wiki CL comes after it.
+paragraph on `DiskFileProtocol` for host applications. The tools in the
+manual's `README.md` gain `oz3dsk`. The drive's page is written by *Disk drive
+device*'s CL7, so this plan's manual CL comes after it.
 
 ## Design
 
@@ -500,16 +500,14 @@ Depends on: CL4.
   `.oz3` from `oz3asm` and of a CRLF text file, and each usage error. On
   Windows, left for the user, in the PR's comment.
 
-### CL6 [ ] wiki: oz3dsk
+### CL6 [ ] manual: oz3dsk
 
 Depends on: CL5, and *Disk drive device*'s CL7, which writes
 `3.5-Disk-Drive.md`.
 
-- Wiki: `3.5-Disk-Drive.md`'s `oz3dsk` section and its paragraph on
-  `DiskFileProtocol`, and `oz3dsk` in `Home.md`'s tools.
-- In the repository, this CL only marks itself done. The wiki patch is in a
-  comment on its PR.
+- Manual: `3.5-Disk-Drive.md`'s `oz3dsk` section and its paragraph on
+  `DiskFileProtocol`, and `oz3dsk` in `README.md`'s tools.
 
 **Verify**
 - The section against `oz3dsk --help` and this plan's Behavior.
-- Its links resolve, by page name in lower case.
+- Its links resolve, by file name.

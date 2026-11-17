@@ -27,8 +27,7 @@ inline constexpr int kMaxInstructionSetMicrocodes =
     kMaxInstructionMicrocodes * 256;
 
 // The following lists all the microcode operations that can be executed by the
-// OZ-3 CpuCore. For details see the OZ-3 Wiki:
-// https://github.com/jpursey/oz-3/wiki/2.1-Microcode
+// OZ-3 CpuCore. For details see docs/manual/2.1-Microcode.md.
 enum MicroOp : uint8_t {
   kMicro_MSC,   // MSC(s);
   kMicro_MSS,   // MSS(s);

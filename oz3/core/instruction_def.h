@@ -166,7 +166,7 @@ struct MacroCodeDef {
   int8_t ret = 0;
 
   // The microcode source for the macro.
-  // See https://github.com/jpursey/oz-3/wiki/2.1-Microcode for valid syntax.
+  // See docs/manual/2.1-Microcode.md for valid syntax.
   std::string_view code;
 };
 

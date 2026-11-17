@@ -4,7 +4,7 @@ The OZ-3 is a 16-bit virtual CPU, made to be embedded in games as a programmable
 
 This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds and passes its tests on Linux with clang (see Linux below), where the `ozzy` app builds but can't run yet. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Local sessions), or in cloud sessions (see Cloud sessions).
 
-See README.md for an overview, and the wiki (see Wiki) for the specification.
+See README.md for an overview, and the manual (see Manual) for the specification.
 
 ## Workflow
 
@@ -18,13 +18,11 @@ This is a CMake project, starting at the root. The directory structure is as fol
 ```
   oz3/          -- All source code in this project, separated into libraries
                    (see below)
-  docs/         -- Feature plans (worklog/) and the backlog
+  docs/         -- Design docs, feature plans (worklog/), and the backlog
+  docs/manual/  -- The manual, which holds the specification (see Manual)
   configs/      -- Ozzy configs (.ozzy) for common machines, to run with ozzy.
                    oz3_ozzy_test embeds and reads each one, so a new config
                    gets a test there too.
-  wiki/         -- A clone of the GitHub wiki, which holds the specification
-                   (see Wiki). It is its own git repository, and is ignored by
-                   this one.
   bin/          -- Compiled binary files used by compilation or execution
   out/          -- Generated output from building locally. This is transient
                    and can get deleted at any time.
@@ -41,7 +39,7 @@ Libraries depend strictly in the order `core` → `disk` → `tools` → `instru
 
 ### Default instruction set
 
-The default instruction set's source is `oz3/instruction_sets/default_instruction_set.izm`, written in the microcode assembly the wiki describes. `oz3ism` assembles it into C++, `default_instruction_set.inc`, which is checked in and compiled into `oz3_instruction_sets`. After changing the `.izm`, build, then regenerate the `.inc` from the repository root and check it in with the change:
+The default instruction set's source is `oz3/instruction_sets/default_instruction_set.izm`, written in the microcode assembly the manual describes. `oz3ism` assembles it into C++, `default_instruction_set.inc`, which is checked in and compiled into `oz3_instruction_sets`. After changing the `.izm`, build, then regenerate the `.inc` from the repository root and check it in with the change:
 
 ```
 bin/oz3ism.exe oz3/instruction_sets/default_instruction_set.izm oz3/instruction_sets/default_instruction_set.inc
@@ -155,16 +153,14 @@ Every change is checked as follows:
 - Touched files pass the clang-format check (see Format above).
 - New and changed behavior has unit tests.
 - A change to the default instruction set's `.izm` regenerates the `.inc` (see Default instruction set), and `git diff` of the `.inc` shows only what the change meant to change, with no existing opcode or code word changed.
-- A change to behavior the wiki specifies updates the wiki to match (see Wiki).
+- A change to behavior the manual specifies updates the manual to match (see Manual).
 
-## Wiki
+## Manual
 
-The specification lives in the GitHub wiki (https://github.com/jpursey/oz-3/wiki), cloned in the main checkout as `wiki/`: its history, the hardware specification (`2-Specifications.md`), and the microcode reference (`2.1-Microcode.md`). Read it before changing behavior the spec covers. Where the code and the wiki disagree, say so rather than silently picking one.
-- A change to specified behavior (the hardware model, microcode, the default instruction set, or tools the wiki documents) updates the wiki pages in the same piece of work, and the user reviews both together.
-- A local session makes wiki edits in the main checkout's `wiki/` (`E:/Projects/oz-3/wiki`), even from a worktree, since `wiki/` is not part of this repository. Once the user approves, commit them there, adding only the pages you changed, as other sessions may have edits of their own in progress.
-- A local session doesn't push the wiki, just as with this repository. The user pushes.
-- A cloud session clones the wiki into its clone's `wiki/` (`git clone https://github.com/jpursey/oz-3.wiki.git wiki`), which it can read but not push, and GitHub wikis take no pull requests. It makes its wiki edits there, and puts them in a comment on the PR as a patch (`git -C wiki diff`), for the user to review with the PR and apply to their own `wiki/` once it is merged.
-- Wiki pages link to each other by page name in lower case without the extension (`[History](1-history)`), which is how GitHub wikis resolve links.
+The specification lives in the manual, `docs/manual/`, whose `README.md` lists its pages: the history, the hardware specification (`2-Specifications.md`), the microcode reference (`2.1-Microcode.md`), the file formats, the devices, and the Ozzy computer. Read it before changing behavior it covers. Where the code and the manual disagree, say so rather than silently picking one.
+- A change to specified behavior (the hardware model, microcode, the default instruction set, or tools the manual documents) updates the manual's pages in the same change, so the user reviews both together.
+- Pages are numbered by section (`3-Devices.md`, `3.1-Teletype.md`), so they sort in order. Each starts with a `#` title, and a new page is added to the contents in `README.md`, and to its section's own list if it has one.
+- Pages link to each other by file name (`[History](1-History.md)`, `[CMPT](2.2-Default-Instruction-Set.md#cmpt)`), and to the rest of the repository by relative path.
 
 ## Build system
 
@@ -196,7 +192,6 @@ These add to Local sessions in the workflow. A cloud session follows Cloud sessi
 These add to Parallel sessions in the workflow. Nothing builds against OZ-3's checkout, and there is nothing that only the main checkout can test, so work isn't tied to it:
 - A session may work in the main checkout, or in its own git worktree. Use a worktree whenever another session may be working at the same time.
 - Each session lands its own commits. Once the user approves a change and it is committed on the worktree's branch, land it on `main` from the main checkout: `git merge --ff-only <branch>`, or a cherry-pick if `main` has moved. Then tell the session named in the prompt, if there is one, as the workflow describes.
-- Wiki edits always happen in the main checkout's `wiki/` (see Wiki).
 
 #### Worktrees
 
@@ -206,7 +201,7 @@ Create the worktree from the local `main`, not `origin/main`, which is behind wh
 git worktree add -b <branch> .claude/worktrees/<branch> main
 ```
 
-EnterWorktree looks for the worktree in the repository that holds the session's working directory, and a `cd` in the shell moves that directory. Game Bits and `wiki/` are separate repositories, so run git in them with `git -C <dir>` instead of `cd`. If the shell has left the main checkout, `cd` back before calling EnterWorktree.
+EnterWorktree looks for the worktree in the repository that holds the session's working directory, and a `cd` in the shell moves that directory. Game Bits is a separate repository, so run git in it with `git -C <dir>` instead of `cd`. If the shell has left the main checkout, `cd` back before calling EnterWorktree.
 
 The worktree builds against Game Bits through `GB_DIR` like the main checkout, so it needs no other setup. It has its own `out/` and `bin/`, so its first build in each configuration is a full build.
 

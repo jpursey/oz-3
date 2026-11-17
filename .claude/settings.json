@@ -1,8 +1,7 @@
 {
   "permissions": {
     "additionalDirectories": [
-      "E:/Projects/game-bits",
-      "E:/Projects/oz-3/wiki"
+      "E:/Projects/game-bits"
     ]
   }
 }
