@@ -313,7 +313,7 @@ class DiskTool final {
 
   // Parses a size in words, with K and M suffixes, into sectors. Fails if it
   // isn't a whole number of sectors from 1 to kMaxSectorCount.
-  static absl::StatusOr<int> ParseSize(std::string_view text);
+  static absl::StatusOr<int> ParseSectorCount(std::string_view text);
 };
 ```
 
@@ -414,21 +414,22 @@ Depends on: CL1.
 - Standard checks.
 - Unit tests: as Testing above.
 
-### CL3 [ ] tools: DiskTool on images
+### CL3 [x] tools: DiskTool on images
 
 Depends on: CL2.
 
-- `disk_tool.h` and `.cc`: `DiskTool` with `Create`, `ParseSize`, `New`,
-  `Format`, `Info`, `Label`, `Protect`, and `Check`.
+- `disk_tool.h` and `.cc`: `DiskTool` with `Create`, `ParseSectorCount`,
+  `New`, `Format`, `Info`, `Label`, `Protect`, and `Check`.
 
 **Verify**
 - Standard checks.
 - Unit tests: sizes (`K`, `M`, plain words, not whole sectors, 0, too big,
   junk); `New` over an existing file; `Format` with and without a cluster size
   and label, and a cluster size with no layout; `Info` of unformatted,
-  formatted, and protected images; `Label`; `Protect` both ways and on a
-  read-only host file; `Check` of a sound and a broken image, with and without
-  fixing, and its output.
+  formatted, protected, and corrupt images; `Label`; `Protect` both ways and
+  on a read-only host file; `Check` of a sound and a broken image, and of
+  duplicate names, with and without fixing, and its output; the host failing
+  to read or write the image.
 
 ### CL4 [ ] tools: DiskTool on files
 
