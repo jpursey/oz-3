@@ -313,7 +313,7 @@ class DiskTool final {
 
   // Parses a size in words, with K and M suffixes, into sectors. Fails if it
   // isn't a whole number of sectors from 1 to kMaxSectorCount.
-  static absl::StatusOr<int> ParseSize(std::string_view text);
+  static absl::StatusOr<int> ParseSectorCount(std::string_view text);
 };
 ```
 
@@ -418,8 +418,8 @@ Depends on: CL1.
 
 Depends on: CL2.
 
-- `disk_tool.h` and `.cc`: `DiskTool` with `Create`, `ParseSize`, `New`,
-  `Format`, `Info`, `Label`, `Protect`, and `Check`.
+- `disk_tool.h` and `.cc`: `DiskTool` with `Create`, `ParseSectorCount`,
+  `New`, `Format`, `Info`, `Label`, `Protect`, and `Check`.
 
 **Verify**
 - Standard checks.

@@ -150,28 +150,28 @@ TEST_F(DiskToolTest, ProtocolNameMustBeFree) {
 //==============================================================================
 
 TEST(DiskToolSizeTest, SizesInWords) {
-  EXPECT_EQ(DiskTool::ParseSize("256").value_or(-1), 1);
-  EXPECT_EQ(DiskTool::ParseSize("512").value_or(-1), 2);
-  EXPECT_EQ(DiskTool::ParseSize("720K").value_or(-1), 2880);
-  EXPECT_EQ(DiskTool::ParseSize("720k").value_or(-1), 2880);
-  EXPECT_EQ(DiskTool::ParseSize("1M").value_or(-1), 4096);
-  EXPECT_EQ(DiskTool::ParseSize("1m").value_or(-1), 4096);
-  EXPECT_EQ(DiskTool::ParseSize("0001K").value_or(-1), 4);
+  EXPECT_EQ(DiskTool::ParseSectorCount("256").value_or(-1), 1);
+  EXPECT_EQ(DiskTool::ParseSectorCount("512").value_or(-1), 2);
+  EXPECT_EQ(DiskTool::ParseSectorCount("720K").value_or(-1), 2880);
+  EXPECT_EQ(DiskTool::ParseSectorCount("720k").value_or(-1), 2880);
+  EXPECT_EQ(DiskTool::ParseSectorCount("1M").value_or(-1), 4096);
+  EXPECT_EQ(DiskTool::ParseSectorCount("1m").value_or(-1), 4096);
+  EXPECT_EQ(DiskTool::ParseSectorCount("0001K").value_or(-1), 4);
 }
 
 TEST(DiskToolSizeTest, LargestSize) {
   const std::string largest =
       absl::StrCat(int64_t{DiskMedia::kMaxSectorCount} * kDiskSectorWords);
-  EXPECT_EQ(DiskTool::ParseSize(largest).value_or(-1),
+  EXPECT_EQ(DiskTool::ParseSectorCount(largest).value_or(-1),
             DiskMedia::kMaxSectorCount);
-  EXPECT_EQ(DiskTool::ParseSize("1024M").value_or(-1), 4194304);
+  EXPECT_EQ(DiskTool::ParseSectorCount("1024M").value_or(-1), 4194304);
 }
 
 TEST(DiskToolSizeTest, SizesThatArentNumbers) {
   for (std::string_view text :
        {"", "K", "M", "-256", "+256", " 256", "256 ", "256KK", "256X", "2.5K",
         "0x100", "99999999999999999999K"}) {
-    absl::StatusOr<int> size = DiskTool::ParseSize(text);
+    absl::StatusOr<int> size = DiskTool::ParseSectorCount(text);
     ASSERT_FALSE(size.ok()) << text;
     EXPECT_EQ(size.status().message(),
               absl::StrCat("Size \"", text,
@@ -182,7 +182,7 @@ TEST(DiskToolSizeTest, SizesThatArentNumbers) {
 
 TEST(DiskToolSizeTest, SizesOutOfRange) {
   for (std::string_view text : {"0", "0K", "0M", "1025M", "4194434K"}) {
-    absl::StatusOr<int> size = DiskTool::ParseSize(text);
+    absl::StatusOr<int> size = DiskTool::ParseSectorCount(text);
     ASSERT_FALSE(size.ok()) << text;
     EXPECT_EQ(size.status().message(),
               absl::StrCat("Size ", text,
@@ -193,7 +193,7 @@ TEST(DiskToolSizeTest, SizesOutOfRange) {
 
 TEST(DiskToolSizeTest, SizesThatArentWholeSectors) {
   for (std::string_view text : {"1", "255", "257", "1000"}) {
-    absl::StatusOr<int> size = DiskTool::ParseSize(text);
+    absl::StatusOr<int> size = DiskTool::ParseSectorCount(text);
     ASSERT_FALSE(size.ok()) << text;
     EXPECT_EQ(size.status().message(),
               absl::StrCat("Size ", text,

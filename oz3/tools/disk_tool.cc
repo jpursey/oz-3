@@ -76,7 +76,8 @@ absl::Status ToStatus(DiskStatus status) {
   return absl::UnknownError(text);
 }
 
-// Returns `status` with `name` before its message.
+// Returns `status` with `name` before its message. DiskImage's own errors
+// name the image already, so they are returned as they are.
 absl::Status Named(std::string_view name, const absl::Status& status) {
   if (status.ok()) {
     return status;
@@ -188,7 +189,7 @@ absl::StatusOr<std::unique_ptr<DiskTool>> DiskTool::Create(
 // Arguments
 //==============================================================================
 
-absl::StatusOr<int> DiskTool::ParseSize(std::string_view text) {
+absl::StatusOr<int> DiskTool::ParseSectorCount(std::string_view text) {
   std::string_view digits = text;
   int64_t multiplier = 1;
   if (!digits.empty()) {
@@ -201,9 +202,9 @@ absl::StatusOr<int> DiskTool::ParseSize(std::string_view text) {
       digits.remove_suffix(1);
     }
   }
-  int64_t count = 0;
+  int64_t size = 0;
   if (!absl::c_all_of(digits, absl::ascii_isdigit) ||
-      !absl::SimpleAtoi(digits, &count)) {
+      !absl::SimpleAtoi(digits, &size)) {
     return absl::InvalidArgumentError(
         absl::StrCat("Size \"", text,
                      "\" isn't a number of words, with an optional K or M"));
@@ -211,13 +212,13 @@ absl::StatusOr<int> DiskTool::ParseSize(std::string_view text) {
 
   constexpr int64_t kMaxWords =
       int64_t{DiskMedia::kMaxSectorCount} * kDiskSectorWords;
-  if (count == 0 || count > kMaxWords / multiplier) {
+  if (size == 0 || size > kMaxWords / multiplier) {
     return absl::InvalidArgumentError(
         absl::StrCat("Size ", text, " is out of range: an image has 1 to ",
                      DiskMedia::kMaxSectorCount, " sectors of ",
                      kDiskSectorWords, " words"));
   }
-  const int64_t words = count * multiplier;
+  const int64_t words = size * multiplier;
   if (words % kDiskSectorWords != 0) {
     return absl::InvalidArgumentError(
         absl::StrCat("Size ", text, " isn't a whole number of sectors of ",

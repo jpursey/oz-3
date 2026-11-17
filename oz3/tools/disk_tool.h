@@ -60,7 +60,7 @@ class DiskTool final {
   // Returns the sectors in `text`, a size in words with an optional K (1,024
   // words) or M (1,048,576 words) suffix, such as "720K". Fails if it isn't a
   // size, or isn't a whole number of sectors from 1 to the most an image has.
-  static absl::StatusOr<int> ParseSize(std::string_view text);
+  static absl::StatusOr<int> ParseSectorCount(std::string_view text);
 
   //----------------------------------------------------------------------------
   // Image commands
