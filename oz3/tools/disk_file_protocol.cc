@@ -37,6 +37,10 @@ namespace oz3 {
 
 namespace {
 
+// The sectors cached, so the root, which each path is looked up in, isn't read
+// from the image again for every lookup.
+constexpr int kReadCacheSectors = 64;
+
 // Returns the gb attributes of a directory entry's attribute word.
 gb::FileAttributes AttributesFromDisk(uint16_t disk_attributes) {
   gb::FileAttributes attributes;
@@ -86,10 +90,10 @@ class DiskFileProtocol::DiskRawFile final : public gb::RawFile {
   int64_t Read(void* buffer, int64_t size) override;
 
  private:
-  // Sets `size` to the file's size, in words.
-  DiskStatus GetSize(int* size);
+  // Returns the file's size in bytes, or -1 if it fails.
+  int64_t GetByteSize();
 
-  // Reads the word at `index`, which must be in the file, into `word`.
+  // Reads the word at `index` into `word`, or 0 at the file's end.
   DiskStatus ReadWord(int index, uint16_t* word);
 
   // Writes `word` at `index`, which may be the file's end.
@@ -100,11 +104,12 @@ class DiskFileProtocol::DiskRawFile final : public gb::RawFile {
   int64_t position_ = 0;
 };
 
-DiskStatus DiskFileProtocol::DiskRawFile::GetSize(int* size) {
+int64_t DiskFileProtocol::DiskRawFile::GetByteSize() {
   DiskFileInfo info;
-  const DiskStatus status = protocol_->file_system_.GetFileInfo(file_, &info);
-  *size = info.size;
-  return status;
+  if (protocol_->file_system_.GetFileInfo(file_, &info) != DiskStatus::kOk) {
+    return -1;
+  }
+  return int64_t{info.size} * 2;
 }
 
 DiskStatus DiskFileProtocol::DiskRawFile::ReadWord(int index, uint16_t* word) {
@@ -113,13 +118,9 @@ DiskStatus DiskFileProtocol::DiskRawFile::ReadWord(int index, uint16_t* word) {
       status != DiskStatus::kOk) {
     return status;
   }
+  *word = 0;
   int count = 0;
-  if (DiskStatus status =
-          file_system.Read(file_, absl::MakeSpan(word, 1), &count);
-      status != DiskStatus::kOk) {
-    return status;
-  }
-  return count == 1 ? DiskStatus::kOk : DiskStatus::kCorrupt;
+  return file_system.Read(file_, absl::MakeSpan(word, 1), &count);
 }
 
 DiskStatus DiskFileProtocol::DiskRawFile::WriteWord(int index, uint16_t word) {
@@ -133,20 +134,20 @@ DiskStatus DiskFileProtocol::DiskRawFile::WriteWord(int index, uint16_t word) {
 }
 
 int64_t DiskFileProtocol::DiskRawFile::SeekEnd() {
-  int size = 0;
-  if (GetSize(&size) != DiskStatus::kOk) {
+  const int64_t size = GetByteSize();
+  if (size < 0) {
     return -1;
   }
-  position_ = int64_t{size} * 2;
+  position_ = size;
   return position_;
 }
 
 int64_t DiskFileProtocol::DiskRawFile::SeekTo(int64_t position) {
-  int size = 0;
-  if (position < 0 || GetSize(&size) != DiskStatus::kOk) {
+  const int64_t size = position < 0 ? -1 : GetByteSize();
+  if (size < 0) {
     return -1;
   }
-  position_ = std::min(position, int64_t{size} * 2);
+  position_ = std::min(position, size);
   return position_;
 }
 
@@ -154,12 +155,16 @@ int64_t DiskFileProtocol::DiskRawFile::Read(void* buffer, int64_t size) {
   DiskFileSystem& file_system = protocol_->file_system_;
   uint8_t* const bytes = static_cast<uint8_t*>(buffer);
   std::array<uint16_t, kDiskSectorWords> words;
+  if (file_system.Seek(file_, static_cast<int>(position_ / 2)) !=
+      DiskStatus::kOk) {
+    return -1;
+  }
+
+  // Seeking once is enough, as each pass but the last takes every byte of the
+  // words it reads.
   int64_t done = 0;
   while (done < size) {
     const int64_t index = position_ / 2;
-    if (file_system.Seek(file_, static_cast<int>(index)) != DiskStatus::kOk) {
-      return -1;
-    }
 
     // The words that hold the rest of the bytes asked for, including the
     // word an odd position starts in.
@@ -174,12 +179,11 @@ int64_t DiskFileProtocol::DiskRawFile::Read(void* buffer, int64_t size) {
     if (count == 0) {
       break;
     }
-    for (int i = 0; i < count && done < size; ++i) {
-      for (int byte = static_cast<int>(position_ % 2); byte < 2 && done < size;
-           ++byte) {
-        bytes[done++] = static_cast<uint8_t>(words[i] >> (byte * 8));
-        ++position_;
-      }
+    const int64_t end = (index + count) * 2;
+    while (done < size && position_ < end) {
+      bytes[done++] = static_cast<uint8_t>(words[position_ / 2 - index] >>
+                                           (position_ % 2 * 8));
+      ++position_;
     }
   }
   return done;
@@ -197,19 +201,13 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
     // A byte alone in its word changes only that byte, keeping the other as
     // it is in the file, or zero past its end.
     if (position_ % 2 != 0 || left == 1) {
-      int file_size = 0;
-      if (GetSize(&file_size) != DiskStatus::kOk) {
-        return done;
-      }
       uint16_t word = 0;
-      if (index < file_size && ReadWord(index, &word) != DiskStatus::kOk) {
+      if (ReadWord(index, &word) != DiskStatus::kOk) {
         return done;
       }
-      if (position_ % 2 != 0) {
-        word = static_cast<uint16_t>((word & 0x00FF) | (bytes[done] << 8));
-      } else {
-        word = static_cast<uint16_t>((word & 0xFF00) | bytes[done]);
-      }
+      const int shift = static_cast<int>(position_ % 2) * 8;
+      word = static_cast<uint16_t>((word & ~(0xFF << shift)) |
+                                   (bytes[done] << shift));
       if (WriteWord(index, word) != DiskStatus::kOk) {
         return done;
       }
@@ -250,7 +248,9 @@ bool DiskFileProtocol::DiskRawFile::Flush() {
 
 DiskFileProtocol::DiskFileProtocol(Clock clock, int max_open_files)
     : clock_(std::move(clock)),
-      file_system_(DiskHardwareSettings{}, max_open_files) {
+      file_system_(
+          DiskHardwareSettings{.read_cache_sectors = kReadCacheSectors},
+          max_open_files) {
   CHECK_GE(max_open_files, 2);
 }
 
@@ -408,18 +408,21 @@ std::unique_ptr<gb::RawFile> DiskFileProtocol::BasicOpenFile(
     return nullptr;
   }
 
+  // The file exists unless kCreate is set (see DoOpenFile).
   DiskFile file = -1;
-  DiskDirEntry entry;
-  if (FindEntry(*name, &entry)) {
-    if (write && (entry.GetAttributes() & kDiskAttribReadOnly) != 0) {
+  if (flags.IsSet(gb::FileFlag::kCreate)) {
+    if (file_system_.Create(*name, GetNow(), &file) != DiskStatus::kOk) {
+      return nullptr;
+    }
+  } else {
+    DiskDirEntry entry;
+    if (write && (!FindEntry(*name, &entry) ||
+                  (entry.GetAttributes() & kDiskAttribReadOnly) != 0)) {
       return nullptr;
     }
     if (file_system_.Open(*name, &file) != DiskStatus::kOk) {
       return nullptr;
     }
-  } else if (!flags.IsSet(gb::FileFlag::kCreate) ||
-             file_system_.Create(*name, GetNow(), &file) != DiskStatus::kOk) {
-    return nullptr;
   }
 
   // The file closes with the RawFile, even if it fails to truncate.

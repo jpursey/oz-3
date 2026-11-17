@@ -115,11 +115,6 @@ class DiskFileProtocolTest : public ::testing::Test {
     return words;
   }
 
-  // Writes `bytes` as the file at `path`, returning whether it succeeded.
-  bool WriteBytes(std::string_view path, const std::vector<uint8_t>& bytes) {
-    return file_system_.WriteFile(path, bytes);
-  }
-
   // Returns the bytes of the file at `path`.
   std::vector<uint8_t> ReadBytes(std::string_view path) {
     std::vector<uint8_t> bytes;
@@ -343,7 +338,8 @@ TEST_F(DiskFileProtocolTest, RootGrowsWhileOpen) {
 
 TEST_F(DiskFileProtocolTest, WordsAreTwoBytesLowFirst) {
   MountFormatted();
-  ASSERT_TRUE(WriteBytes("ozdisk:/A", {0x01, 0x02, 0x03, 0x04}));
+  ASSERT_TRUE(file_system_.WriteFile(
+      "ozdisk:/A", std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04}));
   EXPECT_THAT(ReadWords("A"), ElementsAre(0x0201, 0x0403));
   EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/A").size, 4);
   EXPECT_THAT(ReadBytes("ozdisk:/A"), ElementsAre(0x01, 0x02, 0x03, 0x04));
@@ -351,7 +347,8 @@ TEST_F(DiskFileProtocolTest, WordsAreTwoBytesLowFirst) {
 
 TEST_F(DiskFileProtocolTest, OddSizePadsTheLastWord) {
   MountFormatted();
-  ASSERT_TRUE(WriteBytes("ozdisk:/A", {0x01, 0x02, 0x03}));
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A",
+                                     std::vector<uint8_t>{0x01, 0x02, 0x03}));
   EXPECT_THAT(ReadWords("A"), ElementsAre(0x0201, 0x0003));
   EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/A").size, 4);
   EXPECT_THAT(ReadBytes("ozdisk:/A"), ElementsAre(0x01, 0x02, 0x03, 0x00));
@@ -371,7 +368,8 @@ TEST_F(DiskFileProtocolTest, BytesOneAtATimeWriteTheSameWords) {
 
 TEST_F(DiskFileProtocolTest, OddOffsetsChangeOnlyTheirByte) {
   MountFormatted();
-  ASSERT_TRUE(WriteBytes("ozdisk:/A", {0x01, 0x02, 0x03, 0x04, 0x05, 0x06}));
+  ASSERT_TRUE(file_system_.WriteFile(
+      "ozdisk:/A", std::vector<uint8_t>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}));
   std::unique_ptr<gb::File> file =
       file_system_.OpenFile("ozdisk:/A", gb::kReadWriteFileFlags);
   ASSERT_NE(file, nullptr);
@@ -392,7 +390,8 @@ TEST_F(DiskFileProtocolTest, OddOffsetsChangeOnlyTheirByte) {
 
 TEST_F(DiskFileProtocolTest, SeekStopsAtTheEnd) {
   MountFormatted();
-  ASSERT_TRUE(WriteBytes("ozdisk:/A", {0x01, 0x02, 0x03}));
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A",
+                                     std::vector<uint8_t>{0x01, 0x02, 0x03}));
   std::unique_ptr<gb::File> file =
       file_system_.OpenFile("ozdisk:/A", gb::kReadFileFlags);
   ASSERT_NE(file, nullptr);
@@ -408,7 +407,7 @@ TEST_F(DiskFileProtocolTest, ReadsAndWritesAcrossSectorsAndClusters) {
   for (int i = 0; i < static_cast<int>(bytes.size()); ++i) {
     bytes[i] = static_cast<uint8_t>(i * 7);
   }
-  ASSERT_TRUE(WriteBytes("ozdisk:/BIG", bytes));
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/BIG", bytes));
   EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/BIG").size, 3002);
   bytes.push_back(0);
   EXPECT_EQ(ReadBytes("ozdisk:/BIG"), bytes);
@@ -417,8 +416,10 @@ TEST_F(DiskFileProtocolTest, ReadsAndWritesAcrossSectorsAndClusters) {
 
 TEST_F(DiskFileProtocolTest, ResetTruncates) {
   MountFormatted();
-  ASSERT_TRUE(WriteBytes("ozdisk:/A", std::vector<uint8_t>(2000, 0x55)));
-  ASSERT_TRUE(WriteBytes("ozdisk:/A", {0x01, 0x02}));
+  ASSERT_TRUE(
+      file_system_.WriteFile("ozdisk:/A", std::vector<uint8_t>(2000, 0x55)));
+  ASSERT_TRUE(
+      file_system_.WriteFile("ozdisk:/A", std::vector<uint8_t>{0x01, 0x02}));
   EXPECT_THAT(ReadWords("A"), ElementsAre(0x0201));
   EXPECT_EQ(UnmountAndCheck(), DiskCheckReport());
 }
