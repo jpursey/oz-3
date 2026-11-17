@@ -46,8 +46,8 @@ std::atomic<bool> g_quit_requested = false;
 bool g_console_exists = false;
 
 // The signals that ask to quit: the terminal closing (SIGHUP), and the program
-// asked to end (SIGTERM).
-constexpr int kQuitSignals[] = {SIGHUP, SIGTERM};
+// asked to end from outside, as the terminal sends no signals for its keys.
+constexpr int kQuitSignals[] = {SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 
 // Handles the signals that ask to quit, rather than ending the program at
 // once, so it gives the terminal back.

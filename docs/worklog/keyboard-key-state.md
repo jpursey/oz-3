@@ -166,7 +166,7 @@ gives the keyboard's ports as 1, 10, or 11.
 - **`KeyChange`** (`{key, held}`) and **`ConsoleKeys`** (`typed` and
   `changes`) in the console frontend, and **`ConsoleKeyState`**, the keys a
   Windows console reported held.
-- **`GetKeyEvent`**, renamed from `GetOzzyKey`, and **`GetKeyCode`**: they give
+- **`GetKeyEvent`**, renamed from `GetOzzyKey`, and **`GetTypedKeyCode`**: they give
   the keyboard device's typed key events and key codes, which aren't the
   Ozzy's own. They are in `win_console`, the only Windows host.
 
@@ -225,7 +225,7 @@ struct ConsoleKeys {
 virtual ConsoleKeys TakeKeys() = 0;  // Was std::vector<uint16_t>.
 
 // win_console.h: no Windows headers, so it can be tested.
-int GetKeyCode(uint16_t scan_code, bool extended);
+int GetTypedKeyCode(uint16_t scan_code, bool extended);
 class ConsoleKeyState {
  public:
   void AddKeyEvent(uint16_t scan_code, bool key_down, uint32_t control_keys,
@@ -234,7 +234,7 @@ class ConsoleKeyState {
 };
 ```
 
-- `GetKeyCode` is a fixed table of scan codes, which are by place: the main
+- `GetTypedKeyCode` is a fixed table of scan codes, which are by place: the main
   rows as strings of their characters from each row's first scan code, F1 to
   F10's range, and the other keys, with and without `ENHANCED_KEY`. The
   extended keys are the arrows and the six keys above them, Right Ctrl, Right
@@ -290,7 +290,7 @@ keypad), and remapped keys.
 - `ozzy_settings_test.cc` and `ozzy_test.cc`: the keyboard's wiring, key state
   reaching ports 6 and 15 of a running Ozzy, and the machine table's keyboard
   entry.
-- `win_console_test.cc`: `GetKeyCode` for each row of the table, the extended
+- `win_console_test.cc`: `GetTypedKeyCode` for each row of the table, the extended
   keys against their keypad and left twins, and keys without a code; and
   `ConsoleKeyState` with records copied from both consoles: repeats, key ups
   of keys not held, Shift by its scan code, Ctrl and Alt by the control key

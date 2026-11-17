@@ -15,7 +15,8 @@ namespace oz3 {
 
 // Takes over the terminal that `input` and `output` (file descriptors) are, as
 // Console::Create does for the standard input and output, which it calls this
-// with. Both must stay open until the Console is destroyed.
+// with. They must be the same terminal, as its mode is set through `input`,
+// and stay open until the Console is destroyed.
 absl::StatusOr<std::unique_ptr<Console>> CreateTerminalConsole(
     int input, int output, ConsoleMode mode);
 

@@ -90,6 +90,9 @@ TEST(TerminalKeysTest, ModifiersOfSequences) {
               ElementsAre(kKeyDelete | kKeyCtrl, kKeyF1 | kKeyShift,
                           kKeyF5 | kKeyShift | kKeyCtrl));
 
+  // A modifier parameter of 0 is none, as 1 is.
+  EXPECT_THAT(ReadAllKeys("\x1B[1;0A"), ElementsAre(kKeyUp));
+
   // Shift+Tab is a sequence of its own.
   EXPECT_THAT(ReadAllKeys("\x1B[Z"), ElementsAre(kKeyTab | kKeyShift));
 }
@@ -154,51 +157,51 @@ TEST(TerminalKeysTest, CtrlAltQQuits) {
 }
 
 TEST(TerminalKeysTest, KeyCodesOfCharacters) {
-  EXPECT_EQ(GetKeyCode('a'), 'a');
-  EXPECT_EQ(GetKeyCode('A'), 'a');
-  EXPECT_EQ(GetKeyCode('z' | kKeyAlt), 'z');
-  EXPECT_EQ(GetKeyCode(' '), ' ');
-  EXPECT_EQ(GetKeyCode('7'), '7');
-  EXPECT_EQ(GetKeyCode('/'), '/');
-  EXPECT_EQ(GetKeyCode('`'), '`');
+  EXPECT_EQ(GetTypedKeyCode('a'), 'a');
+  EXPECT_EQ(GetTypedKeyCode('A'), 'a');
+  EXPECT_EQ(GetTypedKeyCode('z' | kKeyAlt), 'z');
+  EXPECT_EQ(GetTypedKeyCode(' '), ' ');
+  EXPECT_EQ(GetTypedKeyCode('7'), '7');
+  EXPECT_EQ(GetTypedKeyCode('/'), '/');
+  EXPECT_EQ(GetTypedKeyCode('`'), '`');
 }
 
 TEST(TerminalKeysTest, KeyCodesOfShiftedCharacters) {
-  EXPECT_EQ(GetKeyCode('!'), '1');
-  EXPECT_EQ(GetKeyCode(')'), '0');
-  EXPECT_EQ(GetKeyCode('_'), '-');
-  EXPECT_EQ(GetKeyCode('+'), '=');
-  EXPECT_EQ(GetKeyCode('{'), '[');
-  EXPECT_EQ(GetKeyCode('|'), '\\');
-  EXPECT_EQ(GetKeyCode(':'), ';');
-  EXPECT_EQ(GetKeyCode('"'), '\'');
-  EXPECT_EQ(GetKeyCode('?'), '/');
-  EXPECT_EQ(GetKeyCode('~'), '`');
+  EXPECT_EQ(GetTypedKeyCode('!'), '1');
+  EXPECT_EQ(GetTypedKeyCode(')'), '0');
+  EXPECT_EQ(GetTypedKeyCode('_'), '-');
+  EXPECT_EQ(GetTypedKeyCode('+'), '=');
+  EXPECT_EQ(GetTypedKeyCode('{'), '[');
+  EXPECT_EQ(GetTypedKeyCode('|'), '\\');
+  EXPECT_EQ(GetTypedKeyCode(':'), ';');
+  EXPECT_EQ(GetTypedKeyCode('"'), '\'');
+  EXPECT_EQ(GetTypedKeyCode('?'), '/');
+  EXPECT_EQ(GetTypedKeyCode('~'), '`');
 }
 
 TEST(TerminalKeysTest, KeyCodesOfControlCodes) {
-  EXPECT_EQ(GetKeyCode(0x01 | kKeyCtrl), 'a');
-  EXPECT_EQ(GetKeyCode(0x1A | kKeyCtrl), 'z');
-  EXPECT_EQ(GetKeyCode(0x0A | kKeyCtrl), 'j');
-  EXPECT_EQ(GetKeyCode(kKeyBackspace | kKeyCtrl), kKeyBackspace);
-  EXPECT_EQ(GetKeyCode(kKeyTab | kKeyShift), kKeyTab);
-  EXPECT_EQ(GetKeyCode(kKeyEnter), kKeyEnter);
-  EXPECT_EQ(GetKeyCode(kKeyEscape), kKeyEscape);
+  EXPECT_EQ(GetTypedKeyCode(0x01 | kKeyCtrl), 'a');
+  EXPECT_EQ(GetTypedKeyCode(0x1A | kKeyCtrl), 'z');
+  EXPECT_EQ(GetTypedKeyCode(0x0A | kKeyCtrl), 'j');
+  EXPECT_EQ(GetTypedKeyCode(kKeyBackspace | kKeyCtrl), kKeyBackspace);
+  EXPECT_EQ(GetTypedKeyCode(kKeyTab | kKeyShift), kKeyTab);
+  EXPECT_EQ(GetTypedKeyCode(kKeyEnter), kKeyEnter);
+  EXPECT_EQ(GetTypedKeyCode(kKeyEscape), kKeyEscape);
 }
 
 TEST(TerminalKeysTest, KeyCodesOfNamedKeys) {
-  EXPECT_EQ(GetKeyCode(kKeyDelete), kKeyDelete);
-  EXPECT_EQ(GetKeyCode(kKeyUp | kKeyCtrl), kKeyUp);
-  EXPECT_EQ(GetKeyCode(kKeyInsert), kKeyInsert);
-  EXPECT_EQ(GetKeyCode(kKeyF1), kKeyF1);
-  EXPECT_EQ(GetKeyCode(kKeyF12), kKeyF12);
+  EXPECT_EQ(GetTypedKeyCode(kKeyDelete), kKeyDelete);
+  EXPECT_EQ(GetTypedKeyCode(kKeyUp | kKeyCtrl), kKeyUp);
+  EXPECT_EQ(GetTypedKeyCode(kKeyInsert), kKeyInsert);
+  EXPECT_EQ(GetTypedKeyCode(kKeyF1), kKeyF1);
+  EXPECT_EQ(GetTypedKeyCode(kKeyF12), kKeyF12);
 }
 
 TEST(TerminalKeysTest, KeysWithoutCodes) {
-  EXPECT_EQ(GetKeyCode(0), 0);
-  EXPECT_EQ(GetKeyCode(0x89), 0);
-  EXPECT_EQ(GetKeyCode(0x8F), 0);
-  EXPECT_EQ(GetKeyCode(0x9C), 0);
+  EXPECT_EQ(GetTypedKeyCode(0), 0);
+  EXPECT_EQ(GetTypedKeyCode(0x89), 0);
+  EXPECT_EQ(GetTypedKeyCode(0x8F), 0);
+  EXPECT_EQ(GetTypedKeyCode(0x9C), 0);
 }
 
 TEST(TerminalKeysTest, TapsPressAndReleaseTheKey) {

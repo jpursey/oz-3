@@ -103,9 +103,10 @@ class Console {
 
   // Returns whether the user asked to quit, with Ctrl+Alt+Q (see IsQuitKey),
   // Ctrl+Break in a Windows console, or by closing the console's window, or
-  // the program was asked to end (SIGTERM). The keys that quit aren't typed
-  // key events, but are pressed and released as other keys are. Once the
-  // window is closing, the program should finish and exit promptly.
+  // the program was asked to end by a signal (such as SIGTERM). The keys that
+  // quit aren't typed key events, but are pressed and released as other keys
+  // are. Once the window is closing, the program should finish and exit
+  // promptly.
   virtual bool IsQuitRequested() const = 0;
 
  protected:

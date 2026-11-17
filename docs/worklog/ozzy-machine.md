@@ -215,7 +215,8 @@ or a terminal on other platforms (see `posix_console.cc` below).
 - **Keyboard:** console key presses become Ozzy key events, with the codes and
   modifiers console-devices.md lists. Ctrl+C is a key like any other (03h).
 - **Quitting:** Ctrl+Alt+Q or Ctrl+Break (Windows only), or closing the
-  console window (SIGHUP in a terminal), or SIGTERM. It
+  console window (SIGHUP in a terminal), or a signal to end (SIGINT,
+  SIGQUIT, or SIGTERM, which a terminal's keys don't send). It
   restores the console as it found it.
 - **Pacing:** each frame (60 a second), it runs the cycles for the real time
   that passed, at most 100 ms of them, so a host that falls behind slows the
@@ -537,15 +538,15 @@ bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
   - The size is `TIOCGWINSZ`'s, read on each `GetSize`.
   - Giving back drops keys not taken with `tcflush` (`TCSAFLUSH` leaves those
     the terminal hasn't passed on yet), and restores the mode.
-  - SIGHUP (the terminal closing) and SIGTERM set the quit flag, rather than
-    ending the program, so it gives the terminal back. Their actions before
-    are restored.
+  - SIGHUP (the terminal closing), SIGINT, SIGQUIT, and SIGTERM set the quit
+    flag, rather than ending the program, so it gives the terminal back.
+    Their actions before are restored.
   - `TerminalKeyReader` (in `terminal_keys.h`, which is portable, so every
-    platform builds and tests it) reads the bytes as xterm's keys: ASCII characters
-    (without Shift, as the terminal sends the character), control codes as
-    Ctrl with a letter, DEL as Backspace and BS as Ctrl+Backspace, CSI and SS3
-    sequences for the named keys with their modifier parameter, and Escape
-    before a key as Alt. A sequence a read ends partway through waits for the
+    platform builds and tests it) reads the bytes as xterm's keys: ASCII
+    characters (without Shift, as the terminal sends the character), control
+    codes as Ctrl with a letter, DEL as Backspace and BS as Ctrl+Backspace,
+    CSI and SS3 sequences for the named keys with their modifier parameter,
+    and Escape before a key as Alt. A sequence a read ends partway through waits for the
     next read, and with nothing more, is read as its bytes, so Escape alone is
     the Escape key a frame late. Ctrl+Alt+Q is ESC with DC1.
   - Key state is taps (`AddKeyTap`, also in `terminal_keys.h`; see

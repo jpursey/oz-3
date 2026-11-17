@@ -5,6 +5,7 @@
 
 #include "oz3/ozzy/terminal_keys.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -124,9 +125,10 @@ int GetParameter(absl::Span<const std::string_view> parameters, int index) {
 }
 
 // Returns the modifier bits of the control sequence parameter `parameter`,
-// which is 1 plus a mask of Shift (1), Alt (2), and Ctrl (4).
+// which is 1 plus a mask of Shift (1), Alt (2), and Ctrl (4). Less than 1 is
+// none.
 uint16_t GetModifiers(int parameter) {
-  const int mask = parameter - 1;
+  const int mask = std::max(parameter - 1, 0);
   uint16_t modifiers = 0;
   if ((mask & 1) != 0) {
     modifiers |= kKeyShift;
@@ -239,7 +241,7 @@ int ReadKey(std::string_view input, bool more, uint16_t& key) {
 // Keys
 //==============================================================================
 
-int GetKeyCode(uint16_t key) {
+int GetTypedKeyCode(uint16_t key) {
   const int code = key & 0xFF;
   if ((key & kKeyCtrl) != 0 && code >= 1 && code <= 'Z' - 'A' + 1 &&
       code != kKeyBackspace && code != kKeyTab && code != kKeyEnter) {
@@ -269,7 +271,7 @@ int GetKeyCode(uint16_t key) {
 }
 
 void AddKeyTap(uint16_t key, std::vector<KeyChange>& changes) {
-  const int code = GetKeyCode(key);
+  const int code = GetTypedKeyCode(key);
   if (code == 0) {
     return;
   }

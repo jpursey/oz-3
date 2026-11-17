@@ -232,7 +232,7 @@ TEST_F(PosixTerminalTest, CtrlAltQQuits) {
 }
 
 TEST_F(PosixTerminalTest, QuitSignals) {
-  for (const int signal : {SIGHUP, SIGTERM}) {
+  for (const int signal : {SIGHUP, SIGINT, SIGQUIT, SIGTERM}) {
     std::unique_ptr<Console> console = CreateConsole(ConsoleMode::kLines);
     ASSERT_NE(console, nullptr);
     EXPECT_FALSE(console->IsQuitRequested());

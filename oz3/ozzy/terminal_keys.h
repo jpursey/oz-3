@@ -20,13 +20,13 @@ namespace oz3 {
 // are their keys whether Shift typed them or not: 'A' is A's key, and '!' is
 // 1's. Ctrl with A to Z is its letter's key, but for the control codes that
 // are keys of their own, Backspace, Tab, and Enter.
-int GetKeyCode(uint16_t key);
+int GetTypedKeyCode(uint16_t key);
 
 // Adds a tap of the key that types the typed key event `key` to `changes`, as
 // a terminal doesn't say when keys are pressed and released: the left Shift,
 // Ctrl, and Alt for the modifiers `key` holds are pressed, then its key (see
-// GetKeyCode) is pressed and released, and then the modifiers are released.
-// Adds nothing for a key without a key code.
+// GetTypedKeyCode) is pressed and released, and then the modifiers are
+// released. Adds nothing for a key without a key code.
 void AddKeyTap(uint16_t key, std::vector<KeyChange>& changes);
 
 // Reads typed key events (see keyboard.h) from the bytes a terminal sends for
