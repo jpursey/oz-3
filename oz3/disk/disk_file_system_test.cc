@@ -496,6 +496,7 @@ class DiskFileSystemTest : public ::testing::Test {
     DiskFileInfo info;
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), status);
     EXPECT_EQ(file_system_.GetFileStatus(file), status);
+    EXPECT_EQ(file_system_.GetWritableFileStatus(file), status);
     DiskDirEntry entry;
     EXPECT_EQ(file_system_.Find(file, GetPattern("*.*"), &entry), status);
     count = -1;
@@ -2125,11 +2126,14 @@ TEST_F(DiskFileSystemTest, WriteRefusals) {
     EXPECT_EQ(count, 0);
     int writable = -1;
     EXPECT_EQ(file_system_.GetWritableWords(file, &writable), status) << file;
+    EXPECT_EQ(file_system_.GetWritableFileStatus(file), status) << file;
   };
   expect_refused(root, DiskStatus::kWrongHandleType);
   expect_refused(locked, DiskStatus::kReadOnly);
   EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(GetInfo(locked).size, 0);
+  EXPECT_EQ(file_system_.GetWritableFileStatus(OpenFile("OPEN")),
+            DiskStatus::kOk);
 
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
   expect_refused(OpenFile("OPEN"), DiskStatus::kWriteProtected);

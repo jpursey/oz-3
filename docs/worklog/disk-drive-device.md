@@ -84,7 +84,8 @@ disk_design.md to match.
   processor runs, so whatever the drive has done is done. A latent command
   whose work has run completes with the status that work had, and one whose
   work hasn't started finds no disk when it does. A transfer's next word fails
-  in the file system, which is an early completion with **no disk** (CL5).
+  in the file system, as its slot is stale, which is an early completion with
+  **disk changed** (CL5).
   Detaching discards whatever the file system hadn't committed, so the OS can't
   rely on the outcome, as with a floppy pulled mid-command. disk_design.md had
   a command in progress complete with no disk, which needed the drive to
@@ -496,19 +497,26 @@ are in a `gb::MemoryFileProtocol`, or `FaultyFileProtocol` to fail.
 A transfer costs, per word, one drive run with a port lock, a file system
 `Read` or `Write` of one word, and collecting the busy time. An OS's streaming
 loop moves about 100 Kiw/s at 1 MHz (see disk_design.md's Timing presets), so
-this should cost well under a microsecond of host time per simulated word. CL5
-measures a 64 Kiw `READ`. If that is ever a problem, the drive can move a
-sector's words at a time, keeping the stall where it is.
+this should cost well under a microsecond of host time per simulated word. If
+that is ever a problem, the drive can move a sector's words at a time, keeping
+the stall where it is.
+
+Measured in CL5 (`AProgramReads64KiWords`): a 65,535-word `READ` by a program's
+`INR.IW` loop, about 850,000 cycles, takes about 22 ms of host time in
+RelWithDebInfo, clang on Linux (4 cores), core included. That is about
+0.33 µs a word, so at 1 MHz the machine runs nearly 40 times faster than real
+time while streaming.
 
 ### To confirm
 
-- That a one-word `Read` or `Write` costs the whole sector's time at the word
-  that loads, blanks, or allocates, and nothing for the words after it, so
-  per-word calls charge exactly what per-sector calls would (CL5).
-- That the drive, taking a word the cycle after an `INR` or `OUTR` releases the
-  data port, keeps up with the 8 cycles a word of the loop, so a loop over a
-  loaded sector never stalls (CL5: disk_design.md's 300-word `READ` example, in
-  exact cycles).
+- Confirmed in CL5: a one-word `Read` or `Write` costs the whole sector's time
+  at the word that loads, blanks, or allocates, and nothing for the words after
+  it, so per-word calls charge exactly what per-sector calls would
+  (`ReadStreamsTheFile` and `WriteTakesEachWord`).
+- Confirmed in CL5: the drive, taking a word the cycle after an `INR` or `OUTR`
+  releases the data port, keeps up with the loop, so a loop over a loaded
+  sector never stalls (`AnInrLoopReads` and the other program tests log every
+  stop).
 - That the drive gets the command port's lock in the cycle after an `INS` takes
   its last word, before the next instruction's `PLK`. Otherwise the OS's next
   command word, written straight after, would be taken for the drive's own
@@ -617,7 +625,7 @@ Depends on: CL3.
   Nothing can write a file before CL5, so what a `CLOSE` or `FLUSH` of a
   written file does is tested there.
 
-### CL5 [ ] devices: reading and writing
+### CL5 [~] devices: reading and writing
 
 Depends on: CL4.
 

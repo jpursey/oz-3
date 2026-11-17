@@ -209,6 +209,13 @@ class BaseCoreTest : public testing::Test {
   bool InitAndReset() { return InitAndReset(InitConfig()); }
   bool InitAndReset(InitConfig config);
 
+  // Destroys the processor, and its devices, so a test can check what they
+  // leave behind. Nothing that uses the processor may be called after.
+  void DestroyProcessor() {
+    states_.clear();
+    processor_.reset();
+  }
+
   // Returns the processor, such as to load a program into it. Init() must have
   // been called.
   Processor& GetProcessor() {

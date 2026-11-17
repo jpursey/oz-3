@@ -261,6 +261,12 @@ class DiskFileSystem final {
   // operation on `file` checks first.
   DiskStatus GetFileStatus(DiskFile file) const;
 
+  // Returns GetFileStatus(file) if it isn't kOk, then kWrongHandleType for a
+  // directory's handle, kReadOnly for a read-only file, kWriteProtected on a
+  // protected disk, or else kOk, as Write, Truncate, and GetWritableWords check
+  // first.
+  DiskStatus GetWritableFileStatus(DiskFile file) const;
+
   //----------------------------------------------------------------------------
   // Directory
   //----------------------------------------------------------------------------
@@ -360,9 +366,8 @@ class DiskFileSystem final {
   // GetFileStatus(file).
   DiskStatus GetSlot(DiskFile file, Slot** slot);
 
-  // Sets `slot` to `file`'s slot if it can be written, as GetSlot does.
-  // Returns kWrongHandleType for a directory's slot, kReadOnly for a read-only
-  // file, and kWriteProtected on a protected disk.
+  // Sets `slot` to `file`'s slot if it can be written, and returns
+  // GetWritableFileStatus(file).
   DiskStatus GetWritableSlot(DiskFile file, Slot** slot);
 
   // Returns the lowest free slot, or -1 if every slot is taken.
