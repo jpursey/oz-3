@@ -681,7 +681,7 @@ Depends on: CL4.
   new status functions too. One assembled program that formats, lists with `FIND`,
   and reads the entries with `INR.ID`.
 
-### CL7 [ ] wiki: the disk drive
+### CL7 [x] wiki: the disk drive
 
 Depends on: CL3 to CL6.
 
