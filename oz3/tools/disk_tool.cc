@@ -5,7 +5,6 @@
 
 #include "oz3/tools/disk_tool.h"
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -23,7 +22,6 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
-#include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "gb/file/path.h"
@@ -374,17 +372,12 @@ absl::Status DiskTool::Put(std::string_view image_path,
     return Named(name, ToStatus(DiskStatus::kBadName));
   }
 
-  std::vector<std::byte> bytes;
-  bool read = false;
-  if (text) {
-    std::string host_text;
-    read = file_system_->ReadFile(host_path, &host_text);
-    bytes = BytesFromWords(WordsFromText(host_text));
-  } else {
-    read = file_system_->ReadFile(host_path, &bytes);
-  }
-  if (!read) {
+  std::string bytes;
+  if (!file_system_->ReadFile(host_path, &bytes)) {
     return UnknownFailure(host_path, "can't be read");
+  }
+  if (text) {
+    bytes = DiskTextFromHost(bytes);
   }
 
   return RunMounted(image_path, Access::kFiles, [&] {
@@ -395,7 +388,7 @@ absl::Status DiskTool::Put(std::string_view image_path,
 
 absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
                            std::string_view host_path, bool text) {
-  std::vector<std::byte> bytes;
+  std::string bytes;
   gb::FileAttributes attributes;
   if (absl::Status status =
           RunMounted(image_path, Access::kFiles,
@@ -404,11 +397,10 @@ absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
     return status;
   }
 
-  const bool written =
-      text ? file_system_->WriteFile(host_path,
-                                     TextFromWords(WordsFromBytes(bytes)))
-           : file_system_->WriteFile(host_path, bytes);
-  if (!written) {
+  if (text) {
+    bytes = HostTextFromDisk(bytes);
+  }
+  if (!file_system_->WriteFile(host_path, bytes)) {
     return UnknownFailure(host_path, "can't be written");
   }
   const gb::FileAttributes mask = GetCopiedAttributes(host_path);
@@ -542,14 +534,12 @@ absl::Status DiskTool::DoDir(std::string_view pattern, bool all,
   return absl::OkStatus();
 }
 
-absl::Status DiskTool::DoPut(std::string_view name,
-                             absl::Span<const std::byte> bytes,
+absl::Status DiskTool::DoPut(std::string_view name, std::string_view bytes,
                              gb::FileAttributes attributes,
                              gb::FileAttributes mask) {
   const std::string path = GetDiskPath(name);
   const bool written =
-      file_system_->WriteFile(path, bytes.data(),
-                              static_cast<int64_t>(bytes.size())) &&
+      file_system_->WriteFile(path, bytes) &&
       (mask.IsEmpty() || file_system_->SetAttributes(path, attributes, mask));
   if (!written) {
     // A file that couldn't be replaced, such as a read-only one, refuses the
@@ -560,8 +550,7 @@ absl::Status DiskTool::DoPut(std::string_view name,
   return absl::OkStatus();
 }
 
-absl::Status DiskTool::DoGet(std::string_view name,
-                             std::vector<std::byte>* bytes,
+absl::Status DiskTool::DoGet(std::string_view name, std::string* bytes,
                              gb::FileAttributes* attributes) {
   const std::string path = GetDiskPath(name);
   const gb::PathInfo info = file_system_->GetPathInfo(path);

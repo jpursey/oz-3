@@ -6,38 +6,27 @@
 #ifndef OZ3_TOOLS_DISK_TRANSFER_H_
 #define OZ3_TOOLS_DISK_TRANSFER_H_
 
-#include <cstddef>
-#include <cstdint>
 #include <string>
 #include <string_view>
-#include <vector>
-
-#include "absl/types/span.h"
 
 namespace oz3 {
 
 //==============================================================================
-// Host transfer
+// Host text transfer
 //
-// Host bytes and text to and from the words of an OZ-3 file. A word is two
-// bytes, low byte first, as in .oz3 files and as strings are packed, so text
-// never needs reordering.
+// Text as a host file holds it, to and from the bytes of an OZ-3 file. An OZ-3
+// file's bytes are its words, low byte first, as strings are packed, so text
+// never needs reordering: only line endings and padding differ.
 //==============================================================================
 
-// Returns `bytes` as words, two bytes each, low byte first, with an odd last
-// byte padded with a zero high byte.
-std::vector<uint16_t> WordsFromBytes(absl::Span<const std::byte> bytes);
+// Returns host text as it is written to a disk: each CRLF and lone CR becomes
+// LF. Writing an odd number of bytes pads the file's last word with a zero.
+std::string DiskTextFromHost(std::string_view host_text);
 
-// Returns `words` as bytes, two each, low byte first.
-std::vector<std::byte> BytesFromWords(absl::Span<const uint16_t> words);
-
-// Returns host text as words, as WordsFromBytes does, after turning each CRLF
-// and lone CR into LF.
-std::vector<uint16_t> WordsFromText(std::string_view text);
-
-// Returns `words` as host text, as BytesFromWords does, dropping every zero
-// byte, such as the padding at the end of an odd length. Line endings stay LF.
-std::string TextFromWords(absl::Span<const uint16_t> words);
+// Returns text read from a disk as a host file holds it: every zero byte is
+// dropped, such as the padding at the end of an odd length. Line endings stay
+// LF.
+std::string HostTextFromDisk(std::string_view disk_text);
 
 }  // namespace oz3
 

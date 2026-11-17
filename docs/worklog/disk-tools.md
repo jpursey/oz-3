@@ -10,8 +10,8 @@ three things in `tools`, and one app:
   code reaches the files on a disk as it reaches local or in-memory files:
   `gb::FileSystem::CopyFile("local:/hello.oz3", "ozdisk:/HELLO.OZ3")`, and the
   program loader and assembler read and write disks unchanged.
-- **Host transfer helpers** (`disk_transfer.h`): host bytes and text to and
-  from words, as the design's binary and text conventions have them.
+- **Host text transfer** (`disk_transfer.h`): host text to and from the
+  bytes of an OZ-3 file, as the design's text convention has it.
 - **`DiskTool`:** each of `oz3dsk`'s commands as a call on a `gb::FileSystem`,
   so they are tested with images in memory, as Ozzy's console frontend is in
   its library rather than its app.
@@ -145,9 +145,11 @@ plan's wiki CL comes after it.
 - **`GetDiskStatusText`**, in `disk_status.h`: a status as the words a person
   reads, from disk_design.md's status table in lower case (`"read-only"`,
   `"disk full"`). "Name" would suggest the enumerator's spelling (`kReadOnly`).
-- **Host transfer helpers:** `WordsFromBytes`, `BytesFromWords`,
-  `WordsFromText`, and `TextFromWords`, in `disk_transfer.h`, as the backlog
-  named them.
+- **Host text transfer:** `DiskTextFromHost` and `HostTextFromDisk`, in
+  `disk_transfer.h`. The backlog named word conversions (`WordsFromBytes`,
+  `WordsFromText`, and back), but the protocol's files are bytes, low byte
+  first, so the only caller needs text to bytes and back, and nothing needs
+  words.
 
 ### disk: status text
 
@@ -266,25 +268,23 @@ can open the root or format under it. A `RawFile` kept past `Unmount` is safe (s
 protocol's destruction is a use after free, as for any protocol, since
 `gb::File` documents that its protocol must outlive it.
 
-### tools: host transfer helpers
+### tools: host text transfer
 
 ```
-// Two bytes a word, low byte first, an odd last byte padded with a zero.
-std::vector<uint16_t> WordsFromBytes(absl::Span<const std::byte> bytes);
-std::vector<std::byte> BytesFromWords(absl::Span<const uint16_t> words);
+// Each CRLF and lone CR becomes LF. Writing an odd number of bytes pads the
+// file's last word with a zero.
+std::string DiskTextFromHost(std::string_view host_text);
 
-// As WordsFromBytes, after turning CRLF and CR into LF.
-std::vector<uint16_t> WordsFromText(std::string_view text);
-
-// As BytesFromWords, dropping every zero byte, such as an odd length's
-// padding.
-std::string TextFromWords(absl::Span<const uint16_t> words);
+// Every zero byte is dropped, such as an odd length's padding.
+std::string HostTextFromDisk(std::string_view disk_text);
 ```
 
 - In `tools`, beside the protocol, as they know nothing of the disk format.
-  `put --text` turns the host file's text into words, and writes their bytes
-  through the protocol. `get --text` reads the bytes, then words, then text.
-  So text conversion is in one place, and any frontend can share it.
+  A file's bytes through the protocol are its words, low byte first, as
+  strings are packed, so text never needs reordering. `put --text` converts
+  the host file's text and writes it through the protocol, which pads an odd
+  length. `get --text` reads the bytes and converts them. So text conversion
+  is in one place, and any frontend can share it.
 
 ### tools: DiskTool
 
@@ -343,10 +343,10 @@ class DiskTool final {
   any path in the file system is, and a bad one is the command's failure.
 - **Text output is returned,** for the app to write, so tests check it
   exactly: `Info`'s medium and volume, `Dir`'s lines (name, size in words,
-  and `r` and `h`), `Attrib`'s
-  letters, and `Check`'s report, one line per problem.
+  and `r` and `h`), `Attrib`'s letters, and `Check`'s report, one line per
+  problem.
 - **What each command uses,** as disk_design.md has it: `put` and `get` read
-  the whole file, convert text with the helpers, write it, then
+  the whole file, convert text (see host text transfer), write it, then
   `SetAttributes` with the attributes both protocols support. They don't use
   `CopyFile`, so a failure says which side it was on, and a `put` that fails
   deletes what it wrote, so it leaves no partial file (a read-only file it
@@ -460,14 +460,14 @@ Depends on: CL2.
 
 Depends on: CL3.
 
-- `disk_transfer.h` and `.cc`: the host transfer helpers.
+- `disk_transfer.h` and `.cc`: host text transfer.
 - `disk_tool.h` and `.cc`: `Dir`, `Put`, `Get`, `Delete`, `Rename`, and
   `Attrib`, and `ParseAttributes`.
 
 **Verify**
 - Standard checks.
-- Unit tests: the helpers with odd and even byte counts each way, CRLF, CR,
-  and LF going in, and zero bytes dropped coming out. `Put` and `Get` binary
+- Unit tests: host text transfer with CRLF, CR, and LF going in, and zero
+  bytes dropped coming out. `Put` and `Get` binary
   and text, with and without names, a host name that doesn't fit, replacing a
   file, keeping a read-only one, a full disk leaving no file, a write
   protected disk, and keeping attributes both ways; `Dir` with patterns, in

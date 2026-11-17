@@ -6,16 +6,13 @@
 #ifndef OZ3_TOOLS_DISK_TOOL_H_
 #define OZ3_TOOLS_DISK_TOOL_H_
 
-#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
 
 #include "absl/functional/function_ref.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "oz3/disk/disk_label.h"
@@ -119,7 +116,7 @@ class DiskTool final {
 
   // Copies the host file at `host_path` onto the disk as `name`, or the host
   // file's own name if `name` is empty, replacing any file of that name. As
-  // `text`, each CRLF and lone CR becomes LF (see WordsFromText). The copy
+  // `text`, each CRLF and lone CR becomes LF (see DiskTextFromHost). The copy
   // keeps the attributes both the host and the disk support. Fails if the name
   // isn't a disk name, such as one too long, and a copy that fails leaves no
   // file of that name, unless one was there and couldn't be replaced, such as
@@ -129,7 +126,7 @@ class DiskTool final {
 
   // Copies the file `name` from the disk to the host file at `host_path`,
   // replacing any file there that can be replaced, which a read-only one
-  // can't. As `text`, zero bytes are dropped (see TextFromWords). The copy
+  // can't. As `text`, zero bytes are dropped (see HostTextFromDisk). The copy
   // keeps attributes as Put's does, and a copy whose attributes can't be set
   // leaves no file there.
   absl::Status Get(std::string_view image_path, std::string_view name,
@@ -191,12 +188,12 @@ class DiskTool final {
 
   // Writes `bytes` to the file `name` on the mounted disk, replacing it, and
   // sets its attributes in `mask` to `attributes`, for Put.
-  absl::Status DoPut(std::string_view name, absl::Span<const std::byte> bytes,
+  absl::Status DoPut(std::string_view name, std::string_view bytes,
                      gb::FileAttributes attributes, gb::FileAttributes mask);
 
   // Reads the file `name` on the mounted disk into `bytes`, and its attributes
   // into `attributes`, for Get.
-  absl::Status DoGet(std::string_view name, std::vector<std::byte>* bytes,
+  absl::Status DoGet(std::string_view name, std::string* bytes,
                      gb::FileAttributes* attributes);
 
   // Deletes the files `pattern` matches on the mounted disk, for Delete.
