@@ -657,7 +657,7 @@ Depends on: CL4.
 - Performance: a 64 Kiw `READ` in a program, its host time measured in
   Release, and the result recorded here.
 
-### CL6 [ ] devices: directory and disk commands
+### CL6 [~] devices: directory and disk commands
 
 Depends on: CL4.
 
