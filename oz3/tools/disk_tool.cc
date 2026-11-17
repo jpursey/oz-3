@@ -256,9 +256,8 @@ absl::StatusOr<std::string> DiskTool::Info(std::string_view image_path) {
 
 absl::Status DiskTool::Label(std::string_view image_path,
                              const DiskLabel& label) {
-  return RunMounted(image_path, [&] {
-    return ToStatus(protocol_->GetFileSystem()->SetLabel(label));
-  });
+  return RunMounted(image_path,
+                    [&] { return ToStatus(protocol_->SetLabel(label)); });
 }
 
 absl::Status DiskTool::Protect(std::string_view image_path,
@@ -319,8 +318,7 @@ absl::Status DiskTool::RunMounted(std::string_view image_path,
 
 absl::Status DiskTool::DoFormat(const DiskLabel& label,
                                 int sectors_per_cluster) {
-  const int sector_count =
-      protocol_->GetFileSystem()->GetMedia()->GetSectorCount();
+  const int sector_count = protocol_->GetMedia()->GetSectorCount();
   if (!ChooseDiskLayout(sector_count, sectors_per_cluster).has_value()) {
     return absl::InvalidArgumentError(
         absl::StrCat("a disk of ", Count(sector_count, "sector", "sectors"),
@@ -331,8 +329,7 @@ absl::Status DiskTool::DoFormat(const DiskLabel& label,
 }
 
 absl::Status DiskTool::DoInfo(std::string* text) {
-  DiskFileSystem* const file_system = protocol_->GetFileSystem();
-  const DiskMedia* const media = file_system->GetMedia();
+  const DiskMedia* const media = protocol_->GetMedia();
   const int sector_count = media->GetSectorCount();
   *text = absl::StrCat(
       "Size:     ", FormatWords(int64_t{sector_count} * kDiskSectorWords), " (",
@@ -340,7 +337,7 @@ absl::Status DiskTool::DoInfo(std::string* text) {
       "Protect:  ", media->IsWriteProtected() ? "on" : "off", "\n");
 
   DiskVolumeInfo info;
-  const DiskStatus status = file_system->GetVolumeInfo(&info);
+  const DiskStatus status = protocol_->GetVolumeInfo(&info);
   if (status == DiskStatus::kUnformatted) {
     absl::StrAppend(text, "Volume:   unformatted\n");
     return absl::OkStatus();
