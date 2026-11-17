@@ -1092,5 +1092,32 @@ TEST_F(DiskToolTest, PutFailsWhenTheImageCantBeWritten) {
   EXPECT_EQ(status.message(), "mem:/work.ozd: IN.TXT: can't be written");
 }
 
+TEST_F(DiskToolTest, PutFailsWhenItsAttributesCantBeSetKeepingTheFile) {
+  WriteHost("mem:/in.txt", "hi");
+  ASSERT_TRUE(
+      file_system_.SetAttributes("mem:/in.txt", gb::FileAttribute::kHidden));
+
+  // Each try allows the image one more write, on a new image, until the file
+  // is written but its attributes aren't.
+  for (int writes = 0; writes < 100; ++writes) {
+    const std::string image_path = absl::StrCat("mem:/try", writes, ".ozd");
+    ASSERT_TRUE(tool_->New(image_path, kSectorCount).ok());
+    ASSERT_TRUE(tool_->Format(image_path, DiskLabel(), 0).ok());
+    host_->SetLimits({.writes = writes});
+    absl::Status status =
+        tool_->Put(image_path, "mem:/in.txt", "IN.TXT", false);
+    host_->SetLimits({});
+    ASSERT_FALSE(status.ok()) << "the attributes were never what failed";
+    if (status.message() ==
+        absl::StrCat(image_path, ": IN.TXT: its attributes can't be set")) {
+      EXPECT_EQ(status.code(), absl::StatusCode::kUnknown);
+      EXPECT_EQ(Text(tool_->Dir(image_path, "", true)),
+                "IN.TXT                   1  --\n");
+      return;
+    }
+  }
+  FAIL() << "the attributes were never what failed";
+}
+
 }  // namespace
 }  // namespace oz3

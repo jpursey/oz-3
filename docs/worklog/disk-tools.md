@@ -350,7 +350,7 @@ class DiskTool final {
   `SetAttributes` with the attributes both protocols support. They don't use
   `CopyFile`, so a failure says which side it was on. A copy that fails
   leaves whatever was written, such as part of a file on a full disk, and a
-  `get` whose attributes can't be set fails, leaving the host file it wrote.
+  copy whose attributes can't be set fails, leaving the file it wrote.
   `ren` is `MoveFile`, and `attrib` is `SetAttributes` and `GetPathInfo`. `dir` and
   `del` take the matching names from `ListFiles` (`del` deletes each, hidden
   ones included). `format` is the protocol's `Format`, and `info`

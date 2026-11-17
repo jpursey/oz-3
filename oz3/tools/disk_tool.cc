@@ -530,11 +530,11 @@ absl::Status DiskTool::DoPut(std::string_view name, std::string_view bytes,
                              gb::FileAttributes attributes,
                              gb::FileAttributes mask) {
   const std::string path = GetDiskPath(name);
-  const bool written =
-      file_system_->WriteFile(path, bytes) &&
-      (mask.IsEmpty() || file_system_->SetAttributes(path, attributes, mask));
-  if (!written) {
+  if (!file_system_->WriteFile(path, bytes)) {
     return Named(name, absl::UnknownError("can't be written"));
+  }
+  if (!mask.IsEmpty() && !file_system_->SetAttributes(path, attributes, mask)) {
+    return Named(name, absl::UnknownError("its attributes can't be set"));
   }
   return absl::OkStatus();
 }
