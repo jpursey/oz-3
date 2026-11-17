@@ -5,9 +5,6 @@
   // that fail Game Bits' build.
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
 
-  // A full build is ~430 steps (~3 min on 4 cores). 2 cores works, just slower.
-  "hostRequirements": { "cpus": 4 },
-
   // Plain `cmake` calls pick clang without needing -DCMAKE_*_COMPILER.
   "containerEnv": { "CC": "clang", "CXX": "clang++" },
 
