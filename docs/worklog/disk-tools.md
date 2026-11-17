@@ -70,8 +70,9 @@ them. It settles the points below, and updates disk_design.md to match.
   root in a slot of its own, kept until unmount, and the protocol finds names
   and lists through it, so `GetPathInfo` and `List` never need a free slot.
   The root's slot counts against the protocol's open files, so the default of
-  16 leaves 15 for files. A host that wants the root uses the protocol's
-  (`GetRoot`), as `OpenRoot` fails with `kInUse` while it is open.
+  16 leaves 15 for files. The file system itself isn't exposed, so nothing
+  else can open the root or format under the protocol: the protocol passes
+  on what the tool needs (`GetMedia`, `GetVolumeInfo`, and `SetLabel`).
 - **Formatting is the protocol's.** The file system won't format with a file
   open, the root included, so the protocol has its own `Format`, which closes
   the root, formats, stamped by the clock, and opens the root again.
@@ -130,9 +131,6 @@ plan's wiki CL comes after it.
 - **`GetDiskStatusText`**, in `disk_status.h`: a status as the words a person
   reads, from disk_design.md's status table in lower case (`"read-only"`,
   `"disk full"`). "Name" would suggest the enumerator's spelling (`kReadOnly`).
-- **`DiskFileProtocol::GetRoot`**: the protocol's root handle, a `DiskFile`.
-  `GetRootFile` would read as a file named root, and `OpenRoot` is the file
-  system's, which opens one.
 - **Host transfer helpers:** `WordsFromBytes`, `BytesFromWords`,
   `WordsFromText`, and `TextFromWords`, in `disk_transfer.h`, as the backlog
   named them.
@@ -145,7 +143,7 @@ std::string_view GetDiskStatusText(DiskStatus status);
 ```
 
 - The only change the disk library needs: the protocol finds names through
-  its own root handle (see below), with the file system's `Seek` and `Find`.
+  its own root handle, with the file system's `Seek` and `Find`.
 
 ### tools: DiskFileProtocol
 
@@ -158,9 +156,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
   static constexpr std::string_view kDefaultName = "ozdisk";
   static constexpr int kDefaultMaxOpenFiles = 16;
 
-  // Files are stamped from `clock` as they are committed, or with no date
-  // without one. Up to `max_open_files` files may be open at once, through
-  // the protocol and GetFileSystem() together.
+  // Files are stamped from `clock` as they are committed, or the host's local
+  // time without one. Up to `max_open_files` files may be open at once, the
+  // root's slot included.
   explicit DiskFileProtocol(Clock clock = nullptr,
                             int max_open_files = kDefaultMaxOpenFiles);
 
@@ -185,16 +183,11 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // with nothing mounted, and kInUse with any file open.
   DiskStatus Format(const DiskLabel& label, int sectors_per_cluster);
 
-  // Returns the file system with an image mounted, or null. Calls on it
-  // bypass the protocol's locking, so a host using it from several threads
-  // locks around them. Its root is open in the protocol's slot (see
-  // GetRoot), and it is formatted with the protocol's Format.
-  DiskFileSystem* GetFileSystem();
-
-  // Returns the slot the root is open in, for Find on the file system, or -1
-  // with no root open (nothing mounted, or not formatted). Its position is
-  // wherever the last Find left it, so a caller seeks it to 0 first.
-  DiskFile GetRoot() const;
+  // The mounted image, or null, and the file system's GetVolumeInfo and
+  // SetLabel, returning kNoDisk with nothing mounted.
+  const DiskMedia* GetMedia() const;
+  DiskStatus GetVolumeInfo(DiskVolumeInfo* info);
+  DiskStatus SetLabel(const DiskLabel& label);
 
   // gb::FileProtocol.
   gb::FileProtocolFlags GetFlags() const override;
@@ -205,11 +198,11 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
  protected:
   gb::PathInfo DoGetPathInfo(...) override;
-  bool DoSetAttributes(...) override;
   std::vector<std::string> DoList(...) override;
-  bool DoDeleteFile(...) override;
-  bool DoMoveFile(...) override;
-  std::unique_ptr<gb::RawFile> DoOpenFile(...) override;
+  bool BasicSetAttributes(...) override;
+  bool BasicDeleteFile(...) override;
+  bool BasicMoveFile(...) override;
+  std::unique_ptr<gb::RawFile> BasicOpenFile(...) override;
 };
 ```
 
@@ -230,7 +223,10 @@ class DiskFileProtocol final : public gb::FileProtocol {
   `gb::PathMatchesPattern`, the pattern turned to upper case so case is
   ignored. The disk's own patterns aren't used, as gb's patterns are what every
   protocol's callers write. Recursive mode is the same, with no folders.
-- **`DoOpenFile`:** `Open`, or `Create` for a missing file with
+- **The `Basic*` hooks** are overridden, leaving `gb::FileProtocol`'s `Do*`
+  functions to check that a path exists, is a file, and has the root as its
+  folder before calling them.
+- **`BasicOpenFile`:** `Open`, or `Create` for a missing file with
   `FileFlag::kCreate`, then `Truncate` at 0 for `FileFlag::kReset`. A
   read-only file fails to open for writing, so it can't be replaced by a copy,
   which `gb::FileSystem::CopyFile` relies on.
@@ -242,21 +238,17 @@ class DiskFileProtocol final : public gb::FileProtocol {
   destroying it closes the slot, stamped the same. A failure returns -1 or
   false, as `RawFile` asks; the `DiskStatus` is lost there, as `RawFile` has
   no room for it.
-- **`DoDeleteFile`, `DoMoveFile`, and `DoSetAttributes`** are `Delete`,
-  `Rename`, and `SetAttributes`, each refused with the file open (`kInUse`),
-  as on the drive. A missing file deletes, as `DoDeleteFile` asks. A move onto
-  the same file in other case renames it, as `DoMoveFile` asks.
+- **`BasicDeleteFile`, `BasicMoveFile`, and `BasicSetAttributes`** are
+  `Delete`, `Rename`, and `SetAttributes`, each refused with the file open
+  (`kInUse`), as on the drive. Names are stored in upper case, so a move onto
+  the same file in other case is already done.
 - **Locking:** `Lock` and `Unlock` aren't overridden. The tools are
   single-threaded, and `gb::FileSystem` calls a protocol from one thread at a
-  time unless the host shares it, in which case the host locks around it, as
-  it must for `GetFileSystem()` anyway.
+  time unless the host shares it, in which case the host locks around it.
 
-**Brittleness:** the root is open in the protocol's slot, so a host using
-`GetFileSystem()` must use `GetRoot()` rather than `OpenRoot`, which fails with
-`kInUse`, and the protocol's `Format` rather than the file system's, which fails
-the same way. Both fail loudly, so neither is a silent mistake, and both are on
-`GetFileSystem()`'s comment. The root's position is shared too, so every use
-seeks it first. A `RawFile` kept past `Unmount` is safe (stale), and past the
+**Brittleness:** the root's position is shared by every lookup, so each one
+seeks it first. The file system is private, so nothing outside the protocol
+can open the root or format under it. A `RawFile` kept past `Unmount` is safe (stale), and past the
 protocol's destruction is a use after free, as for any protocol, since
 `gb::File` documents that its protocol must outlive it.
 
@@ -337,9 +329,10 @@ class DiskTool final {
   through the protocol (`CopyFile` for binary, which keeps attributes, and for
   text a read, the helpers, a write, then `SetAttributes` with the attributes
   both protocols support), `ren` is `MoveFile`, and `attrib` is
-  `SetAttributes` and `GetPathInfo`. `dir` and `del` use `Find` on the protocol's
-  root (`del` collects the names, then deletes each). `format` is the
-  protocol's `Format`, and `info` and `label` use `GetFileSystem()`. `new`, `protect`, and `check`
+  `SetAttributes` and `GetPathInfo`. `dir` and `del` take the matching entries
+  from the protocol, which finds them through its root (`del` collects the
+  names, then deletes each). `format` is the protocol's `Format`, and `info`
+  and `label` use its `GetMedia`, `GetVolumeInfo`, and `SetLabel`. `new`, `protect`, and `check`
   use the image alone: `DiskImage::Create`, `SetWriteProtected` on the image
   with nothing attached, and `CheckDisk` or `RepairDisk`.
 - **The image** is mounted by the command that needs it and unmounted at its
@@ -408,7 +401,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md).
 - Unit tests: `GetDiskStatusText` of every status, each distinct.
 
-### CL2 [ ] tools: DiskFileProtocol
+### CL2 [x] tools: DiskFileProtocol
 
 Depends on: CL1.
 
@@ -442,6 +435,8 @@ Depends on: CL2.
 Depends on: CL3.
 
 - `disk_transfer.h` and `.cc`: the host transfer helpers.
+- `disk_file_protocol.h` and `.cc`: `FindEntries`, the entries matching a
+  pattern, for `Dir` and `Delete`.
 - `disk_tool.h` and `.cc`: `Dir`, `Put`, `Get`, `Delete`, `Rename`, and
   `Attrib`.
 
