@@ -137,6 +137,13 @@ gives the keyboard's ports as 1, 10, or 11.
 - The console frontend reports every key's presses and releases to the key
   state, by where the key is (its scan code), and releases them all when the
   console loses focus, which sends no releases for keys held then.
+- A terminal (on platforms other than Windows) sends only what is typed, so
+  each typed key with a key code is tapped: the left Shift, Ctrl, and Alt its
+  modifiers say are pressed, its key is pressed and released, and they are
+  released, all at once. Its key is where the key is on a US keyboard ('!' is
+  1's key). So a program sees the key pressed but never held, and a held key
+  pressed again at the terminal's auto-repeat rate (see the backlog's *Kitty
+  keyboard protocol*).
 - Nothing in the Ozzy reads key state yet: the boot ROM reads only typed keys.
 - **Wiki:** `4-Ozzy-Computer.md`'s device table, machine table, its example,
   and the console frontend's keyboard.
@@ -264,7 +271,8 @@ the old console host:
   keys are in key state. Its Ctrl and Alt latch, held until clicked again.
 - The Claude Code terminal panel gives each held key as a key down and key up
   pair at every repeat, so a held key is a stream of taps in key state there,
-  and Ctrl+Alt+Q doesn't reach the program. `ozzy` is for a Windows console.
+  and Ctrl+Alt+Q doesn't reach the program. On Windows, `ozzy` is for a
+  Windows console.
 
 Not confirmed: AltGr (no layout with it was at hand), the keypad's Enter (no
 keypad), and remapped keys.

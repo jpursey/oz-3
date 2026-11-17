@@ -2,7 +2,7 @@
 
 The OZ-3 is a 16-bit virtual CPU, made to be embedded in games as a programmable execution engine that "feels" like an old school CPU, where the CPU architecture is itself part of the gameplay. It is not a scripting language or an engine for one. The runtime simulates cores, memory banks, ports, and interrupts, with cycle counts derived from each instruction's microcode. Instruction sets are not fixed: they are written in microcode assembly, and each core can run its own.
 
-This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds and passes its tests on Linux with clang (see Linux below), where the `ozzy` app builds but can't run yet. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Local sessions), or in cloud sessions (see Cloud sessions).
+This project depends only on the Game Bits shared C++ library (location defined by the GB_DIR environment variable), which must be present on the machine. It is developed on Windows, built with Visual Studio 2022 Community and CMake, and also builds and passes its tests on Linux with clang (see Linux below), where the `ozzy` app runs in a terminal. Nothing else builds against OZ-3, so it is developed freely in parallel git worktrees (see Local sessions), or in cloud sessions (see Cloud sessions).
 
 See README.md for an overview, and the wiki (see Wiki) for the specification.
 
@@ -129,7 +129,7 @@ ctest --test-dir out/build/linux-clang-Debug --output-on-failure
 out/build/linux-clang-Debug/oz3/instruction_sets/oz3_instruction_sets_test --gtest_filter=InstructionTest.*
 ```
 
-Game Bits is found through `GB_DIR` as on Windows, or, when it isn't set, beside this checkout as `../game-bits` (see the root `CMakeLists.txt`), with its submodules checked out. A full build is about 430 steps, Game Bits' libraries included, and takes about 3 minutes on 4 cores. Executables and test binaries have no `.exe`. Every file is portable apart from the console: `win_console.cc` is only built on Windows, and `gen_console.cc` stands in for it elsewhere, so `ozzy` reports that there is no console and exits.
+Game Bits is found through `GB_DIR` as on Windows, or, when it isn't set, beside this checkout as `../game-bits` (see the root `CMakeLists.txt`), with its submodules checked out. A full build is about 430 steps, Game Bits' libraries included, and takes about 3 minutes on 4 cores. Executables and test binaries have no `.exe`. Every file is portable apart from the console: `win_console.cc` is only built on Windows, and `posix_console.cc`, a terminal with termios, everywhere else.
 
 Clang rejects some things MSVC accepts, such as narrowing a non-constant in a braced initializer, braces around a scalar, and a `switch` over an enum that doesn't name every value, so a change made on Windows can still fail here (and in CI).
 

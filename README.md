@@ -15,7 +15,7 @@ This repository has everything to write, build, and run OZ-3 programs. The sourc
 
 ## Building OZ-3 code
 
-The OZ-3 project is built using [GameBits](https://github.com/jpursey/game-bits), with CMake and Ninja. It builds on Windows with Visual Studio 2022, and on Linux with clang, where everything builds and passes its tests, but the `ozzy` app can't run yet, as it only has a console implementation for Windows. In order to build any OZ-3 code, you must have GameBits downloaded, either beside this repository as `game-bits`, or anywhere with the `GB_DIR` environment variable set to its root directory. CLAUDE.md has the build and test commands for each platform.
+The OZ-3 project is built using [GameBits](https://github.com/jpursey/game-bits), with CMake and Ninja. It builds on Windows with Visual Studio 2022, and on Linux with clang, where everything builds and passes its tests, and `ozzy` runs in a terminal. In order to build any OZ-3 code, you must have GameBits downloaded, either beside this repository as `game-bits`, or anywhere with the `GB_DIR` environment variable set to its root directory. CLAUDE.md has the build and test commands for each platform.
 
 ## Documentation
 

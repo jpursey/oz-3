@@ -26,12 +26,6 @@ namespace oz3 {
 uint16_t GetKeyEvent(uint16_t virtual_key, char32_t character,
                      uint32_t control_keys);
 
-// Returns whether the typed key event `key` (from GetKeyEvent) is Ctrl+Alt+Q,
-// which quits rather than going to the Ozzy, as many keyboards have no Break
-// key for Ctrl+Break. Shift may be held too. AltGr with Q types a character on
-// some layouts (such as @), which is that character rather than Ctrl+Alt+Q.
-bool IsQuitKey(uint16_t key);
-
 // Returns the key code (see keyboard.h) of a Windows console key, or 0 for a
 // key without one, such as the keypad's. `scan_code` is the key event record's
 // virtual scan code, and `extended` whether its control key state has

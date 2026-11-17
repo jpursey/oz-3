@@ -394,11 +394,6 @@ uint16_t GetKeyEvent(uint16_t virtual_key, char32_t character,
   return key;
 }
 
-bool IsQuitKey(uint16_t key) {
-  constexpr uint16_t kCtrlQ = 'Q' - 'A' + 1;
-  return (key & ~kKeyShift) == (kCtrlQ | kKeyCtrl | kKeyAlt);
-}
-
 int GetKeyCode(uint16_t scan_code, bool extended) {
   if (extended) {
     return FindScanCode(kExtendedScanCodes, scan_code);
