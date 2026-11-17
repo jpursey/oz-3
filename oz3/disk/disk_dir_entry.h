@@ -124,6 +124,10 @@ class DiskDirEntry final {
   // Returns the words.
   const Words& GetWords() const { return words_; }
 
+  //----------------------------------------------------------------------------
+  // Operations
+  //----------------------------------------------------------------------------
+
   // Copies the words to entry `index` of a directory sector's `words`, leaving
   // its other entries as they are. `words` must be kDiskSectorWords long, and
   // `index` 0 to kEntriesPerSector - 1.
