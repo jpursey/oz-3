@@ -138,16 +138,19 @@ std::string FormatReport(const DiskCheckReport& report, bool repaired) {
         Count(static_cast<int>(report.bad_names.size()), "entry", "entries"),
         " with a bad name\n");
   }
-
-  // Repairing leaves duplicate names, as only renaming or deleting one of
-  // them fixes it.
-  const bool repairs = !text.empty();
   for (const DiskFilename& name : report.duplicate_names) {
     absl::StrAppend(&text, name.ToString(), ": more than one entry\n");
   }
   if (text.empty()) {
     return "no problems\n";
   }
+
+  // RepairDisk fixes everything but duplicate names, as only renaming or
+  // deleting one of them fixes it.
+  const bool repairs = report.broken_root || report.broken_free_list ||
+                       report.orphaned_clusters > 0 ||
+                       !report.file_problems.empty() ||
+                       !report.bad_names.empty();
   if (repaired && repairs) {
     absl::StrAppend(&text, "repaired\n");
   }

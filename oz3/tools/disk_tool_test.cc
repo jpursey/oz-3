@@ -12,6 +12,7 @@
 #include <string_view>
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -22,6 +23,8 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/disk/disk_check.h"
+#include "oz3/disk/disk_dir_entry.h"
+#include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_layout.h"
@@ -85,6 +88,21 @@ class DiskToolTest : public ::testing::Test {
               DiskStatus::kOk);
     words[0] = DiskLayout::kFatEnd;
     ASSERT_EQ((*image)->WriteSector(sector, words), DiskStatus::kOk);
+  }
+
+  // Writes two empty files named `name` as the first entries of the root, which
+  // a disk formatted by the tool has in cluster 1.
+  void AddDuplicateFiles(std::string_view name) {
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(&file_system_, kImagePath);
+    ASSERT_TRUE(image.ok()) << image.status();
+    DiskDirEntry entry;
+    entry.SetName(*DiskFilename::Parse(name));
+    std::array<uint16_t, kDiskSectorWords> words = {};
+    absl::c_copy(entry.GetWords(), words.begin());
+    absl::c_copy(entry.GetWords(), words.begin() + DiskDirEntry::kWordCount);
+    ASSERT_EQ((*image)->WriteSector(kLayout.GetClusterSector(1), words),
+              DiskStatus::kOk);
   }
 
   // Returns the text `result` holds, failing the test if it holds none.
@@ -386,6 +404,24 @@ TEST_F(DiskToolTest, CheckABrokenDiskAndFix) {
                          " clusters on no chain\nrepaired\n"));
   EXPECT_EQ(Text(tool_->Check(kImagePath, false)), "no problems\n");
   EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, CheckLeavesDuplicateNames) {
+  NewFormatted();
+  AddDuplicateFiles("A");
+  EXPECT_EQ(Text(tool_->Check(kImagePath, false)), "A: more than one entry\n");
+  EXPECT_EQ(Text(tool_->Check(kImagePath, true)), "A: more than one entry\n");
+}
+
+TEST_F(DiskToolTest, CheckAndFixWithDuplicateNames) {
+  NewFormatted();
+  AddDuplicateFiles("A");
+  BreakFreeList();
+  EXPECT_EQ(Text(tool_->Check(kImagePath, true)),
+            absl::StrCat(kLayout.cluster_count - 1,
+                         " clusters on no chain\nA: more than one entry\n"
+                         "repaired\n"));
+  EXPECT_EQ(Text(tool_->Check(kImagePath, false)), "A: more than one entry\n");
 }
 
 TEST_F(DiskToolTest, CheckCantFixAProtectedDisk) {
