@@ -26,6 +26,23 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Modified times in oz3dsk dir
+
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Disk tools*, and Game Bits *File modified times*
+- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior);
+  [disk_design.md](disk_design.md) (Tools)
+
+`oz3dsk dir` should show each file's modified time, but it lists through
+`gb::FileSystem`, whose `PathInfo` has no file times, so it shows none. Once
+Game Bits reports a file's modified time in `PathInfo`, `DiskFileProtocol`
+reports each entry's (none for a file with no date on the disk), and `dir`
+shows it, or blank with no date. Copies still don't keep times: `put` stamps
+the file with the time of the copy, and `get` leaves the host file's time as
+the host sets it.
+
 ## Disk tool failure reasons
 
 - **Layers:** tools

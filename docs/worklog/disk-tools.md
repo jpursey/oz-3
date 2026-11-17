@@ -87,7 +87,8 @@ them. It settles the points below, and updates disk_design.md to match.
   committed, as the drive's `FIND` gives it.
 - **`dir` lists through the protocol,** as disk_design.md has it: the names
   from `ListFiles`, and each one's size and attributes from `PathInfo`. It
-  shows no times, as `PathInfo` has none.
+  shows no times until `PathInfo` has them (Game Bits *File modified times*,
+  then OZ-3 *Modified times in oz3dsk dir*).
 - **`new` won't replace a file.** `DiskImage::Create` replaces any file at its
   path, but `oz3dsk new` fails if the image already exists, so a typo never
   blanks a disk. To remake one, delete it first.
