@@ -23,8 +23,9 @@ namespace oz3 {
 // the tool's file system. A command opens the image, and closes it before it
 // returns, so the tool holds nothing between commands.
 //
-// A failure's message names what failed, and then what went wrong, such as
-// "work.ozd: write protected", with a DiskStatus as its GetDiskStatusText.
+// A failure's message names the image, or the argument, that failed, and what
+// went wrong, such as "work.ozd: write protected", with a DiskStatus as its
+// GetDiskStatusText.
 //
 // It is called from one thread at a time.
 class DiskTool final {
@@ -76,8 +77,8 @@ class DiskTool final {
                       int sectors_per_cluster);
 
   // Returns lines showing the medium (its size and write protection), and the
-  // file system on it, if any (its label, cluster size, clusters, and free
-  // clusters).
+  // file system on it (its label, cluster size, clusters, and free clusters),
+  // or that it is unformatted, or corrupt.
   absl::StatusOr<std::string> Info(std::string_view image_path);
 
   // Sets the disk's volume label.

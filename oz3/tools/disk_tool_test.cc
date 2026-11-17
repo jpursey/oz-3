@@ -47,16 +47,14 @@ const DiskLayout kLayout = *ChooseDiskLayout(kSectorCount, 0);
 
 class DiskToolTest : public ::testing::Test {
  protected:
-  DiskToolTest() {
+  void SetUp() override {
     auto host = std::make_unique<FaultyFileProtocol>();
     host_ = host.get();
     file_system_.Register(std::move(host), "mem");
     absl::StatusOr<std::unique_ptr<DiskTool>> tool =
         DiskTool::Create(&file_system_, [] { return kNow; });
-    EXPECT_TRUE(tool.ok()) << tool.status();
-    if (tool.ok()) {
-      tool_ = *std::move(tool);
-    }
+    ASSERT_TRUE(tool.ok()) << tool.status();
+    tool_ = *std::move(tool);
   }
 
   // Makes a new image at kImagePath, formatted as WORK.
@@ -77,8 +75,9 @@ class DiskToolTest : public ::testing::Test {
     return report;
   }
 
-  // Empties the image's free list, so every free cluster is on no chain.
-  void BreakFreeList() {
+  // Sets FAT word `index` of the image, which must be in the FAT's first
+  // sector.
+  void SetFatWord(int index, uint16_t word) {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Open(&file_system_, kImagePath);
     ASSERT_TRUE(image.ok()) << image.status();
@@ -86,8 +85,17 @@ class DiskToolTest : public ::testing::Test {
     const int sector = DiskLayout::GetFatSector(0);
     ASSERT_EQ((*image)->ReadSector(sector, absl::MakeSpan(words)),
               DiskStatus::kOk);
-    words[0] = DiskLayout::kFatEnd;
+    words[index] = word;
     ASSERT_EQ((*image)->WriteSector(sector, words), DiskStatus::kOk);
+  }
+
+  // Empties the image's free list, so every free cluster is on no chain.
+  void BreakFreeList() { SetFatWord(0, DiskLayout::kFatEnd); }
+
+  // Makes the image's free list loop, so the file system is corrupt.
+  void LoopFreeList() {
+    SetFatWord(0, 2);
+    SetFatWord(2, 2);
   }
 
   // Writes two empty files named `name` as the first entries of the root, which
@@ -447,6 +455,15 @@ TEST_F(DiskToolTest, InfoOfAnEmptiedFreeList) {
   BreakFreeList();
   EXPECT_THAT(Text(tool_->Info(kImagePath)),
               HasSubstr("Free:     0 (0 words)\n"));
+}
+
+TEST_F(DiskToolTest, InfoOfACorruptDisk) {
+  NewFormatted();
+  LoopFreeList();
+  EXPECT_EQ(Text(tool_->Info(kImagePath)),
+            "Size:     180K words (720 sectors)\n"
+            "Protect:  off\n"
+            "Volume:   corrupt\n");
 }
 
 //==============================================================================

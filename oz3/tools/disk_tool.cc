@@ -59,11 +59,21 @@ absl::Status ToStatus(DiskStatus status) {
       return absl::NotFoundError(text);
     case DiskStatus::kExists:
       return absl::AlreadyExistsError(text);
+    case DiskStatus::kTooManyOpen:
+    case DiskStatus::kDiskFull:
+      return absl::ResourceExhaustedError(text);
+    case DiskStatus::kInUse:
+    case DiskStatus::kReadOnly:
+    case DiskStatus::kDiskChanged:
+    case DiskStatus::kNoDisk:
+    case DiskStatus::kWriteProtected:
+    case DiskStatus::kUnformatted:
+      return absl::FailedPreconditionError(text);
+    case DiskStatus::kCorrupt:
     case DiskStatus::kIoError:
       return absl::DataLossError(text);
-    default:
-      return absl::FailedPreconditionError(text);
   }
+  return absl::UnknownError(text);
 }
 
 // Returns `status` with `name` before its message.
@@ -333,6 +343,10 @@ absl::Status DiskTool::DoInfo(std::string* text) {
   const DiskStatus status = file_system->GetVolumeInfo(&info);
   if (status == DiskStatus::kUnformatted) {
     absl::StrAppend(text, "Volume:   unformatted\n");
+    return absl::OkStatus();
+  }
+  if (status == DiskStatus::kCorrupt) {
+    absl::StrAppend(text, "Volume:   corrupt\n");
     return absl::OkStatus();
   }
   if (status != DiskStatus::kOk) {
