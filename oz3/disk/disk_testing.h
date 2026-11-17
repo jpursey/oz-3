@@ -36,7 +36,8 @@ struct FatChain {
 // none if `first` is 0, and otherwise each cluster to the chain's end, so a
 // long chain's tail is part of it. It stops at a link past the last cluster,
 // or a `first` past it, and after as many clusters as the disk has, so a loop
-// repeats clusters. `fat` must have a word for every cluster.
+// repeats clusters. `fat` must have a word for every cluster, and `first`
+// must not be negative.
 FatChain FollowFatChain(const DiskLayout& layout,
                         absl::Span<const uint16_t> fat, int first);
 

@@ -35,6 +35,7 @@ std::vector<int> CollectSectorWrites(FaultyFileProtocol* protocol) {
 FatChain FollowFatChain(const DiskLayout& layout,
                         absl::Span<const uint16_t> fat, int first) {
   CHECK_GT(static_cast<int>(fat.size()), layout.cluster_count);
+  CHECK_GE(first, 0);
   FatChain chain;
   for (std::optional<int> cluster = first; cluster != 0;
        cluster = layout.GetNextCluster(*cluster, fat[*cluster])) {
