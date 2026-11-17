@@ -312,9 +312,9 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 
 The command and data ports use the OZ-3's port handshake. A write (`OUTS`, `OUTR`) succeeds only when the port's flag is clear, and sets it; the drive takes the word and clears the flag. A read (`INS`, `INR`) succeeds only when the flag is set, and clears it; the drive then puts the next word there. Each port is a single mailbox, so a word waiting in it can't be skipped or overwritten.
 
-On the data port, ordinary transfers use word 0 of the port, one word per handoff. Packed transfers use both words, the low word in word 0.
+On the data port, `READ` and `WRITE` use word 0 of the port, one word per transfer. `READ PACKED` and `WRITE PACKED` use both words, a dword per transfer, the low word in word 0.
 
-On the command port, each field moves in its natural width. A word field (a command word, a status, a count) is one handoff in word 0. A dword field (a position or a size) is one dword handoff, the low word in word 0. The 8-word fields (names, patterns, and labels) are 4 dword handoffs, and `FIND`'s 16-word directory entry is 8, with the lower-numbered word of each pair in word 0. Dword and multi-word fields are only ever moved whole, so word handoffs would gain nothing.
+On the command port, each field moves in its natural width. A word field (a command word, a status, a count) moves as one word, in word 0. A dword field (a position or a size) moves as one dword, the low word in word 0. The 8-word fields (names, patterns, and labels) move as 4 dwords, and `FIND`'s 16-word directory entry as 8, with the lower-numbered word of each pair in word 0. Dword and multi-word fields are only ever moved whole, so moving them a word at a time would gain nothing.
 
 The drive always moves both of a port's words, as a dword instruction does, whatever a field's width: word 1 of a word field it sends is 0, and it ignores word 1 of a word field it takes. So an OS may move a word field with either width.
 
@@ -358,7 +358,7 @@ Don't `IN` the control port while a request is pending: `IN` clears the port's f
 
 ### Command protocol
 
-A command word holds the command code in its high byte and a handle in its low byte, or 0 for commands without one. A **handle** is a slot index, 0 to slots − 1; FFh means every slot, for `CLOSE` only. Each command takes a fixed number of argument words, and returns a fixed number of result words after an OK status, so the OS and the drive never disagree about where a sequence ends. A status other than OK ends the command's words on the command port: no results, n, or completion follow it. The only words that can come after one are on the data port, when a transfer fails partway and its data phase runs out its n handoffs (see Early completion).
+A command word holds the command code in its high byte and a handle in its low byte, or 0 for commands without one. A **handle** is a slot index, 0 to slots − 1; FFh means every slot, for `CLOSE` only. Each command takes a fixed number of argument words, and returns a fixed number of result words after an OK status, so the OS and the drive never disagree about where a sequence ends. A status other than OK ends the command's words on the command port: no results, n, or completion follow it. The only words that can come after one are on the data port, when a `READ` or `WRITE` fails partway and its data phase runs out its n transfers (see Early completion).
 
 A command runs in up to three phases:
 
@@ -513,12 +513,12 @@ The OS can also notice the failure early, without extra cost on the fast path. I
 
 1. Set R7 to n, and point R4 or R5 at the buffer, which puts it in the EXTRA bank, so the buffer can be the calling program's memory.
 2. `INR` from the data port (or `OUTR` to it, for `WRITE`).
-3. If **S** is set, all n handoffs are done, and the completion is on the command port. If the transfer failed, it may have been waiting there for a while.
+3. If **S** is set, all n transfers are done, and the completion is on the command port. If the transfer failed, it may have been waiting there for a while.
 4. Otherwise, `IN` the control port. Phase 4 (or 5 for `WRITE`) means the drive is moving a sector, so go back to step 2. Phase 3 means a completion is already waiting, so the transfer failed: read it, then either finish the loop or reset.
 
 #### Packed transfers
 
-`READ PACKED` and `WRITE PACKED` work exactly as `READ` and `WRITE`, but in dwords. Each handoff on the data port carries two words, the low word in word 0, for the dword forms of `INR` and `OUTR`, and the count, n, and the completion's count are all in dwords, so they match the OS's loop count directly. Positions and sizes stay in words.
+`READ PACKED` and `WRITE PACKED` work exactly as `READ` and `WRITE`, but in dwords. Each transfer on the data port carries two words, the low word in word 0, for the dword forms of `INR` and `OUTR`, and the count, n, and the completion's count are all in dwords, so they match the OS's loop count directly. Positions and sizes stay in words.
 
 - **Reads:** n is the lesser of the count and the dwords needed for the rest of the file, rounded up. If an odd number of words remain, the last dword's high word is 0, and the position stops at the file's size rather than one past it.
 - **Writes:** always write whole dwords, so a file of odd length ends with a plain `WRITE` of its last word.

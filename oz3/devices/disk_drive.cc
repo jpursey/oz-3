@@ -357,30 +357,24 @@ DiskDrive::StateResult DiskDrive::ExecuteState(ReadingState& state) {
     return *result;
   }
 
-  // The flag stays set until the OS takes the handoff.
+  // The flag stays set until the OS takes the drive's last transfer.
   Port& port = GetPort(kDataPort);
-  if (state.in_port) {
-    if (port.GetStatus() != 0) {
-      return StateResult::kWait;
-    }
-    state.in_port = false;
-    state.words_ahead = 0;
-    ++transfer.taken;
-    return StateResult::kContinue;
+  if (port.GetStatus() != 0) {
+    return StateResult::kWait;
   }
 
-  // A handoff read with disk work goes on the port once that work is done.
+  // A transfer read with disk work goes on the port once that work is done.
   if (state.next.has_value()) {
     if (!LockPorts(kDataLock)) {
       return StateResult::kWait;
     }
     state.next->Store(port, GetLock(kDataPort), kFieldMode);
     state.next.reset();
-    state.in_port = true;
+    ++transfer.moved;
     return StateResult::kContinue;
   }
-  if (transfer.taken < transfer.n) {
-    ReadNextHandoff(state);
+  if (transfer.moved < transfer.accepted) {
+    ReadNextTransfer(state);
     return StateResult::kContinue;
   }
   state_ = EndTransfer(std::move(transfer), DiskStatus::kOk);
@@ -393,26 +387,26 @@ DiskDrive::StateResult DiskDrive::ExecuteState(WritingState& state) {
     return *result;
   }
 
-  // A write of fewer handoffs than the OS asked for is all that fits.
-  if (transfer.taken == transfer.n) {
+  // A write of fewer transfers than the OS asked for is all that fits.
+  if (transfer.moved == transfer.accepted) {
     const int count = transfer.command.arguments[0].GetWord(0);
     const DiskStatus status =
-        transfer.n < count ? DiskStatus::kDiskFull : DiskStatus::kOk;
+        transfer.accepted < count ? DiskStatus::kDiskFull : DiskStatus::kOk;
     state_ = EndTransfer(std::move(transfer), status);
     return StateResult::kContinue;
   }
 
-  // Each handoff is taken as it arrives, and its disk work, if any, stalls the
-  // next.
+  // Each transfer is taken as it arrives, and its disk work, if any, stalls
+  // the next.
   Port& port = GetPort(kDataPort);
   if (port.GetStatus() == 0 || !LockPorts(kDataLock)) {
     return StateResult::kWait;
   }
   PortWords words;
   words.Load(port, GetLock(kDataPort), kFieldMode);
-  ++transfer.taken;
+  ++transfer.moved;
   if (!transfer.failed) {
-    WriteHandoff(transfer, words);
+    WriteTransfer(transfer, words);
   }
   return StateResult::kContinue;
 }
@@ -427,8 +421,15 @@ DiskDrive::State DiskDrive::GetStateAfterAccept(Command command,
       return IdleState();
     case DiskCommandKind::kLatent:
       return RunningWorkState{.command = std::move(command)};
-    case DiskCommandKind::kRead:
-      return ReadingState{.transfer = MakeTransfer(std::move(command), accept)};
+    case DiskCommandKind::kRead: {
+      // The accept has checked the handle.
+      DiskFileInfo info;
+      const DiskStatus status =
+          file_system_.GetFileInfo(command.GetHandle(), &info);
+      DCHECK(status == DiskStatus::kOk);
+      return ReadingState{.transfer = MakeTransfer(std::move(command), accept),
+                          .start_position = info.position};
+    }
     case DiskCommandKind::kWrite:
       return WritingState{.transfer = MakeTransfer(std::move(command), accept)};
   }
@@ -503,7 +504,8 @@ DiskDrive::StateResult DiskDrive::SendCompletionField(
 
 DiskDrive::Transfer DiskDrive::MakeTransfer(Command command,
                                             const CommandResponse& accept) {
-  return {.command = std::move(command), .n = accept.results[0].GetWord(0)};
+  return {.command = std::move(command),
+          .accepted = accept.results[0].GetWord(0)};
 }
 
 void DiskDrive::FailTransfer(Transfer& transfer, DiskStatus status) {
@@ -539,26 +541,26 @@ DiskDrive::State DiskDrive::EndTransfer(Transfer transfer, DiskStatus status) {
   CommandResponse completion = {.status = status};
   if (status == DiskStatus::kOk) {
     completion.results = {
-        PortWords::FromWord(static_cast<uint16_t>(transfer.n))};
+        PortWords::FromWord(static_cast<uint16_t>(transfer.accepted))};
   }
   ValidateResponse(completion, transfer.command.def->completion_results);
   return SendingCompletionState{.command = std::move(transfer.command),
                                 .completion = std::move(completion)};
 }
 
-void DiskDrive::ReadNextHandoff(ReadingState& state) {
-  // A packed read past an odd end, and every handoff after a failure, is
+void DiskDrive::ReadNextTransfer(ReadingState& state) {
+  // A packed read past an odd end, and every transfer after a failure, is
   // padded with zeros.
   Transfer& transfer = state.transfer;
   std::array<uint16_t, 2> words = {0, 0};
   if (!transfer.failed) {
-    const int handoff_words = transfer.command.def->packed ? 2 : 1;
+    const int transfer_words = transfer.command.def->packed ? 2 : 1;
     int read = 0;
-    while (read < handoff_words) {
+    while (read < transfer_words) {
       int count = 0;
       if (DiskStatus status = file_system_.Read(
               transfer.command.GetHandle(),
-              absl::MakeSpan(words).subspan(read, handoff_words - read),
+              absl::MakeSpan(words).subspan(read, transfer_words - read),
               &count);
           status != DiskStatus::kOk) {
         FailTransfer(transfer, status);
@@ -569,24 +571,24 @@ void DiskDrive::ReadNextHandoff(ReadingState& state) {
       }
       read += count;
     }
-    state.words_ahead = read;
   }
   state.next = PortWords::FromWords(words[0], words[1]);
 }
 
-void DiskDrive::WriteHandoff(Transfer& transfer, PortWords words) {
+void DiskDrive::WriteTransfer(Transfer& transfer, PortWords words) {
   const DiskFile file = transfer.command.GetHandle();
   const std::array<uint16_t, 2> data = {words.GetWord(0), words.GetWord(1)};
-  const int handoff_words = transfer.command.def->packed ? 2 : 1;
+  const int transfer_words = transfer.command.def->packed ? 2 : 1;
 
-  // The accept promised room for every handoff, so each write call writes at
+  // The accept promised room for every transfer, so each write call writes at
   // least a word.
-  for (int written = 0; written < handoff_words;) {
+  for (int written = 0; written < transfer_words;) {
     int count = 0;
-    if (DiskStatus status = file_system_.Write(
-            file,
-            absl::MakeConstSpan(data).subspan(written, handoff_words - written),
-            &count);
+    if (DiskStatus status =
+            file_system_.Write(file,
+                               absl::MakeConstSpan(data).subspan(
+                                   written, transfer_words - written),
+                               &count);
         status != DiskStatus::kOk) {
       // The early completion is the write's failure, whatever the flush's.
       file_system_.Flush(file, GetNow());
@@ -601,18 +603,27 @@ void DiskDrive::WriteHandoff(Transfer& transfer, PortWords words) {
   }
 }
 
-void DiskDrive::AbortRead(const ReadingState& state, bool handoff_untaken) {
-  // A handoff the OS has taken, which the drive hasn't seen yet, isn't ahead.
-  if (state.words_ahead == 0 || (state.in_port && !handoff_untaken)) {
-    return;
-  }
-
+void DiskDrive::AbortRead(const ReadingState& state, bool data_untaken) {
   // A slot that has failed or gone stale has no position worth restoring.
   const DiskFile file = state.transfer.command.GetHandle();
   DiskFileInfo info;
-  if (file_system_.GetFileInfo(file, &info) == DiskStatus::kOk) {
-    const DiskStatus status =
-        file_system_.Seek(file, info.position - state.words_ahead);
+  if (file_system_.GetFileInfo(file, &info) != DiskStatus::kOk) {
+    return;
+  }
+
+  // The transfer on the port is the OS's once its flag is clear, even if the
+  // drive hasn't seen it go. The position never moves forward: the last
+  // transfer of a packed read of an odd file, and every one after a failure,
+  // hold words the file doesn't have.
+  const Transfer& transfer = state.transfer;
+  const bool in_port =
+      transfer.moved > 0 && !state.next.has_value() && data_untaken;
+  const int taken = transfer.moved - (in_port ? 1 : 0);
+  const int transfer_words = transfer.command.def->packed ? 2 : 1;
+  const int position =
+      std::min(state.start_position + taken * transfer_words, info.position);
+  if (position != info.position) {
+    const DiskStatus status = file_system_.Seek(file, position);
     DCHECK(status == DiskStatus::kOk);
   }
 }

@@ -190,8 +190,8 @@ table and a line to `Home.md`.
   word and dword accessors, and `Load` and `Store` that move both under a lock.
   The timer's tests already had a struct of that name, and the timer stores
   dwords too. `PortValue` would read as one word, as `Port::GetValue` gives
-  one; `PortPair` doesn't say what it holds. The plan says "a field" or "a
-  port's words" where disk_design.md says "handoff".
+  one; `PortPair` doesn't say what it holds. A word or dword moved through
+  the data port is a transfer, as in disk_design.md.
 - **Kinds:** `kSynchronous`, `kLatent`, `kRead`, and `kWrite`, using
   disk_design.md's words.
 - **`DiskDrivePreset`** and **`GetDiskDrivePreset`**: the timing presets.

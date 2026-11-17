@@ -472,17 +472,17 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
                    {PortWords::FromWord(static_cast<uint16_t>(count))});
   }
 
-  // The handoffs that waited for the drive, as {index, cycles waited}.
+  // The transfers that waited for the drive, as {index, cycles waited}.
   using Stalls = std::vector<std::pair<int, Cycles>>;
 
-  // What a read moved through the data port: the handoffs, and its stalls.
+  // What a read moved through the data port: the transfers, and its stalls.
   struct DataPhase {
-    std::vector<PortWords> handoffs;
+    std::vector<PortWords> transfers;
     Stalls stalls;
   };
 
-  // Reads `count` handoffs from the data port, as INR does, each as soon as
-  // the drive puts it there. A handoff waits for the disk work that reads it.
+  // Reads `count` transfers from the data port, as INR does, each as soon as
+  // the drive puts it there. A transfer waits for the disk work that reads it.
   DataPhase ReadData(int count) {
     DataPhase data;
     for (int i = 0; i < count; ++i) {
@@ -495,19 +495,19 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
       }
       std::optional<PortWords> words = In(kDataPort);
       EXPECT_TRUE(words.has_value());
-      data.handoffs.push_back(words.value_or(PortWords()));
+      data.transfers.push_back(words.value_or(PortWords()));
       Execute(1);
     }
     return data;
   }
 
-  // Writes `handoffs` to the data port, as OUTR does, each as soon as the port
-  // is clear. The drive takes a handoff the cycle after it arrives, and does
+  // Writes `transfers` to the data port, as OUTR does, each as soon as the port
+  // is clear. The drive takes a transfer the cycle after it arrives, and does
   // its disk work then, so the port holds the next while that work goes on, and
   // the one after waits. Returns the stalls.
-  Stalls WriteData(absl::Span<const PortWords> handoffs) {
+  Stalls WriteData(absl::Span<const PortWords> transfers) {
     Stalls stalls;
-    for (int i = 0; i < static_cast<int>(handoffs.size()); ++i) {
+    for (int i = 0; i < static_cast<int>(transfers.size()); ++i) {
       const Cycles start = GetCycles();
       if (!RunUntil([this] { return !IsSet(kDataPort); })) {
         break;
@@ -515,7 +515,7 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
       if (GetCycles() > start) {
         stalls.emplace_back(i, GetCycles() - start);
       }
-      EXPECT_TRUE(Out(kDataPort, handoffs[i]));
+      EXPECT_TRUE(Out(kDataPort, transfers[i]));
       Execute(1);
     }
     return stalls;
@@ -535,24 +535,24 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     const uint16_t count = static_cast<uint16_t>(words.size());
     EXPECT_THAT(Transfer(DiskDriveCommand::kWrite, handle, count),
                 ElementsAre(Field(kOk), PortWords::FromWord(count)));
-    WriteData(Handoffs(words));
+    WriteData(DataWords(words));
     EXPECT_THAT(Complete(),
                 ElementsAre(Field(kOk), PortWords::FromWord(count)));
   }
 
-  // Returns `words` as handoffs: one word each, or two for `packed`, with a
-  // zero high word if they run out.
-  static std::vector<PortWords> Handoffs(absl::Span<const uint16_t> words,
-                                         bool packed = false) {
-    std::vector<PortWords> handoffs;
+  // Returns `words` as transfers on the data port: one word each, or two for
+  // `packed`, with a zero high word if they run out.
+  static std::vector<PortWords> DataWords(absl::Span<const uint16_t> words,
+                                          bool packed = false) {
+    std::vector<PortWords> transfers;
     const int step = packed ? 2 : 1;
     for (int i = 0; i < static_cast<int>(words.size()); i += step) {
-      handoffs.push_back(PortWords::FromWords(
+      transfers.push_back(PortWords::FromWords(
           words[i], packed && i + 1 < static_cast<int>(words.size())
                         ? words[i + 1]
                         : uint16_t{0}));
     }
-    return handoffs;
+    return transfers;
   }
 
   // Opens the root's file `name`, expecting it in slot `handle`.
@@ -1576,7 +1576,7 @@ TEST_F(DiskDriveTest, ReadStreamsTheFile) {
   EXPECT_THAT(Transfer(kRead, 0, 500),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
   const DataPhase data = ReadData(300);
-  EXPECT_EQ(data.handoffs, Handoffs(FileWords(0, 300)));
+  EXPECT_EQ(data.transfers, DataWords(FileWords(0, 300)));
   EXPECT_THAT(data.stalls, ElementsAre(Pair(0, kReadCycles),
                                        Pair(kDiskSectorWords, kReadCycles)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(300)));
@@ -1589,7 +1589,7 @@ TEST_F(DiskDriveTest, ReadStreamsTheFile) {
   EXPECT_THAT(Transfer(kRead, 0, 5),
               ElementsAre(Field(kOk), PortWords::FromWord(5)));
   const DataPhase again = ReadData(5);
-  EXPECT_EQ(again.handoffs, Handoffs(FileWords(10, 5)));
+  EXPECT_EQ(again.transfers, DataWords(FileWords(10, 5)));
   EXPECT_THAT(again.stalls, ElementsAre(Pair(0, kLatencyCycles + kReadCycles)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(5)));
 }
@@ -1646,7 +1646,7 @@ TEST_F(DiskDriveTest, ReadAcceptsWhatIsLeft) {
               ElementsAre(Field(kOk), PortWords::FromWord(1)));
   EXPECT_THAT(Transfer(kReadPacked, 1, 4),
               ElementsAre(Field(kOk), PortWords::FromWord(4)));
-  EXPECT_EQ(ReadData(4).handoffs, NameFields("A"));
+  EXPECT_EQ(ReadData(4).transfers, NameFields("A"));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(4)));
 }
 
@@ -1690,7 +1690,7 @@ TEST_F(DiskDriveTest, WriteTakesEachWord) {
   drive_->SetClock([] { return kNow; });
 
   // disk_design.md's example: 100 words written at the end of a 500-word
-  // file. The OS writes a handoff while the drive works on the one before, so
+  // file. The OS writes a transfer while the drive works on the one before, so
   // it waits at the one after: for word 0, which loads its sector, seeking
   // from the root's (less the cycle the drive takes the word in), and word 12,
   // which writes it back, seeking from reading, and starts a new cluster.
@@ -1699,7 +1699,7 @@ TEST_F(DiskDriveTest, WriteTakesEachWord) {
   EXPECT_THAT(Seek(0, 500), ElementsAre(Field(kOk)));
   EXPECT_THAT(Transfer(kWrite, 0, 100),
               ElementsAre(Field(kOk), PortWords::FromWord(100)));
-  EXPECT_THAT(WriteData(Handoffs(FileWords(500, 100))),
+  EXPECT_THAT(WriteData(DataWords(FileWords(500, 100))),
               ElementsAre(Pair(2, kLatencyCycles + kReadCycles - 1),
                           Pair(14, kLatencyCycles + kWriteCycles - 1)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(100)));
@@ -1756,7 +1756,7 @@ TEST_F(DiskDriveTest, WriteAcceptsWhatFits) {
   EXPECT_THAT(Seek(0, 1), ElementsAre(Field(kOk)));
   EXPECT_THAT(Transfer(kWrite, 0, 600),
               ElementsAre(Field(kOk), PortWords::FromWord(511)));
-  WriteData(Handoffs(FileWords(1, 511)));
+  WriteData(DataWords(FileWords(1, 511)));
   EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kDiskFull)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(512),
                                    PortWords::FromDword(512)));
@@ -1775,7 +1775,7 @@ TEST_F(DiskDriveTest, WriteAcceptsWhatFits) {
               ElementsAre(Field(DiskStatus::kDiskFull)));
   EXPECT_THAT(Transfer(kWrite, 0, 1),
               ElementsAre(Field(kOk), PortWords::FromWord(1)));
-  WriteData(Handoffs(FileWords(511, 1)));
+  WriteData(DataWords(FileWords(511, 1)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(1)));
   EXPECT_THAT(Run(CommandWord(kClose, 0)), ElementsAre(Field(kOk)));
   EXPECT_EQ(DetachAndReadFile("A"), FileWords(0, 512));
@@ -1788,7 +1788,7 @@ TEST_F(DiskDriveTest, PackedReadEndsAnOddFileWithZero) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kReadPacked, 0, 10),
               ElementsAre(Field(kOk), PortWords::FromWord(3)));
-  EXPECT_EQ(ReadData(3).handoffs, Handoffs(FileWords(0, 5), /*packed=*/true));
+  EXPECT_EQ(ReadData(3).transfers, DataWords(FileWords(0, 5), /*packed=*/true));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(3)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(5),
                                    PortWords::FromDword(5)));
@@ -1804,7 +1804,7 @@ TEST_F(DiskDriveTest, PackedTransfersCrossSectors) {
   EXPECT_THAT(Seek(0, 255), ElementsAre(Field(kOk)));
   EXPECT_THAT(Transfer(kWritePacked, 0, 2),
               ElementsAre(Field(kOk), PortWords::FromWord(2)));
-  WriteData(Handoffs(FileWords(255, 4), /*packed=*/true));
+  WriteData(DataWords(FileWords(255, 4), /*packed=*/true));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(2)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(259),
                                    PortWords::FromDword(259)));
@@ -1817,7 +1817,7 @@ TEST_F(DiskDriveTest, PackedTransfersCrossSectors) {
   EXPECT_THAT(Transfer(kReadPacked, 0, 2),
               ElementsAre(Field(kOk), PortWords::FromWord(2)));
   const DataPhase data = ReadData(2);
-  EXPECT_EQ(data.handoffs, Handoffs(FileWords(255, 4), /*packed=*/true));
+  EXPECT_EQ(data.transfers, DataWords(FileWords(255, 4), /*packed=*/true));
   EXPECT_THAT(data.stalls,
               ElementsAre(Pair(0, kLatencyCycles + 2 * kReadCycles)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(2)));
@@ -1906,7 +1906,7 @@ TEST_F(DiskDriveTest, ABrokenChainEndsAReadEarly) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kRead, 0, 600),
               ElementsAre(Field(kOk), PortWords::FromWord(600)));
-  EXPECT_EQ(ReadData(256).handoffs, Handoffs(FileWords(0, 256)));
+  EXPECT_EQ(ReadData(256).transfers, DataWords(FileWords(0, 256)));
 
   // The completion comes at once, alone, and the OS reads it partway.
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
@@ -1916,7 +1916,7 @@ TEST_F(DiskDriveTest, ABrokenChainEndsAReadEarly) {
 
   // The rest of the read is zeros, at port speed, and ends the command.
   const DataPhase data = ReadData(344);
-  EXPECT_EQ(data.handoffs, std::vector<PortWords>(344));
+  EXPECT_EQ(data.transfers, std::vector<PortWords>(344));
   EXPECT_THAT(data.stalls, IsEmpty());
   EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
   Execute(10);
@@ -1933,13 +1933,13 @@ TEST_F(DiskDriveTest, AnEarlyCompletionHoldsUpTheDataPhaseForItsLocks) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kRead, 0, 600),
               ElementsAre(Field(kOk), PortWords::FromWord(600)));
-  EXPECT_EQ(ReadData(255).handoffs, Handoffs(FileWords(0, 255)));
+  EXPECT_EQ(ReadData(255).transfers, DataWords(FileWords(0, 255)));
 
   // The read past the cluster fails while the command port is held, so its
   // status waits, and no zeros come before it. The zeros follow it at once.
   std::unique_ptr<Lock> lock = LockPort(kCommandPort);
   ASSERT_TRUE(lock->IsLocked());
-  EXPECT_EQ(ReadData(1).handoffs, Handoffs(FileWords(255, 1)));
+  EXPECT_EQ(ReadData(1).transfers, DataWords(FileWords(255, 1)));
   Execute(10);
   EXPECT_FALSE(IsSet(kDataPort));
   EXPECT_EQ(GetPhase(), 4);
@@ -1947,7 +1947,7 @@ TEST_F(DiskDriveTest, AnEarlyCompletionHoldsUpTheDataPhaseForItsLocks) {
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(GetPhase(), 3);
   EXPECT_EQ(ReceiveField(), Field(DiskStatus::kCorrupt));
-  EXPECT_EQ(ReadData(344).handoffs, std::vector<PortWords>(344));
+  EXPECT_EQ(ReadData(344).transfers, std::vector<PortWords>(344));
 }
 
 TEST_F(DiskDriveTest, AFailedImageEndsAReadEarly) {
@@ -1961,7 +1961,7 @@ TEST_F(DiskDriveTest, AFailedImageEndsAReadEarly) {
 
   // The OS runs its loop out, with the completion waiting, and reads it last.
   const DataPhase data = ReadData(300);
-  EXPECT_EQ(data.handoffs, std::vector<PortWords>(300));
+  EXPECT_EQ(data.transfers, std::vector<PortWords>(300));
   EXPECT_EQ(GetPhase(), 3);
   EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kIoError)));
   EXPECT_EQ(GetPhase(), 0);
@@ -1975,11 +1975,11 @@ TEST_F(DiskDriveTest, RemovingTheDiskEndsAReadEarly) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kRead, 0, 300),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
-  EXPECT_EQ(ReadData(100).handoffs, Handoffs(FileWords(0, 100)));
+  EXPECT_EQ(ReadData(100).transfers, DataWords(FileWords(0, 100)));
 
   // The word in the port was read before, but the slot is stale for the next.
   ASSERT_NE(drive_->DetachImage(), nullptr);
-  EXPECT_EQ(ReadData(1).handoffs, Handoffs(FileWords(100, 1)));
+  EXPECT_EQ(ReadData(1).transfers, DataWords(FileWords(100, 1)));
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(ReceiveField(), Field(DiskStatus::kDiskChanged));
 
@@ -2001,14 +2001,14 @@ TEST_F(DiskDriveTest, AFailedImageEndsAWriteEarly) {
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
 
   // Word 256 writes back the first sector, which fails.
-  EXPECT_THAT(WriteData(Handoffs(FileWords(0, 257))), IsEmpty());
+  EXPECT_THAT(WriteData(DataWords(FileWords(0, 257))), IsEmpty());
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(GetPhase(), 3);
   EXPECT_EQ(ReceiveField(), Field(DiskStatus::kIoError));
   EXPECT_EQ(GetPhase(), 5);
 
   // The rest is taken and thrown away, at port speed.
-  EXPECT_THAT(WriteData(Handoffs(FileWords(257, 43))), IsEmpty());
+  EXPECT_THAT(WriteData(DataWords(FileWords(257, 43))), IsEmpty());
   Execute(10);
   EXPECT_EQ(GetPhase(), 0);
   EXPECT_FALSE(IsSet(kCommandPort));
@@ -2022,7 +2022,7 @@ TEST_F(DiskDriveTest, ABrokenChainEndsAWriteEarlyAfterAFlush) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kWrite, 0, 300),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
-  WriteData(Handoffs(FileWords(1000, 257)));
+  WriteData(DataWords(FileWords(1000, 257)));
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(ReceiveField(), Field(DiskStatus::kCorrupt));
 
@@ -2045,9 +2045,9 @@ TEST_F(DiskDriveTest, RemovingTheDiskEndsAWriteEarly) {
   CreateFile("A");
   EXPECT_THAT(Transfer(kWrite, 0, 20),
               ElementsAre(Field(kOk), PortWords::FromWord(20)));
-  WriteData(Handoffs(FileWords(0, 10)));
+  WriteData(DataWords(FileWords(0, 10)));
   ASSERT_NE(drive_->DetachImage(), nullptr);
-  WriteData(Handoffs(FileWords(10, 10)));
+  WriteData(DataWords(FileWords(10, 10)));
   EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kDiskChanged)));
   EXPECT_EQ(GetPhase(), 0);
 }
@@ -2101,6 +2101,32 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   ExpectResetAt(260);
 }
 
+TEST_F(DiskDriveTest, AResetLeavesAPackedReadOfAnOddFileInsideIt) {
+  using enum DiskDriveCommand;
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 5));
+  OpenFile("A");
+
+  // The last dword holds the file's last word, which goes back if the OS
+  // hasn't taken it.
+  EXPECT_THAT(Transfer(kReadPacked, 0, 3),
+              ElementsAre(Field(kOk), PortWords::FromWord(3)));
+  ReadData(2);
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(4),
+                                   PortWords::FromDword(5)));
+
+  // Once the OS has taken it, the position stays at the end.
+  EXPECT_THAT(Transfer(kReadPacked, 0, 1),
+              ElementsAre(Field(kOk), PortWords::FromWord(1)));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  EXPECT_EQ(In(kDataPort), PortWords::FromWord(FileWord(4)));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(5),
+                                   PortWords::FromDword(5)));
+}
+
 TEST_F(DiskDriveTest, AResetKeepsTheWordsAWriteTook) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
@@ -2108,7 +2134,7 @@ TEST_F(DiskDriveTest, AResetKeepsTheWordsAWriteTook) {
   CreateFile("A");
   EXPECT_THAT(Transfer(kWrite, 0, 300),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
-  WriteData(Handoffs(FileWords(0, 100)));
+  WriteData(DataWords(FileWords(0, 100)));
 
   // The word the drive hasn't taken is thrown away.
   ASSERT_TRUE(RunUntil([this] { return !IsSet(kDataPort); }));
@@ -2216,7 +2242,7 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
 }
 
 // What a transfer program runs: `command` with `count` on handle 0, moving
-// its handoffs with `instruction` (such as "INR.IW 17, (R1)").
+// its transfers with `instruction` (such as "INR.IW 17, (R1)").
 struct TransferProgram {
   DiskDriveCommand command;
   int count;
@@ -2230,11 +2256,11 @@ struct TransferProgram {
 
 // Returns a program that runs `program`'s transfer, as disk_design.md's OS
 // does: it writes the command, reads the accept (ACCEPT, then the
-// interrupts handled so far in ACCEPT_INTERRUPTS), moves the handoffs between
+// interrupts handled so far in ACCEPT_INTERRUPTS), moves the transfers between
 // BUFFER and the data port, and reads the completion (COMPLETION) once its
 // interrupt is handled, then halts. R6 counts the interrupts handled, where
 // one is already raised for the command before. Each time the loop stops with
-// handoffs left and the control port shows the data phase, it logs R7 in
+// transfers left and the control port shows the data phase, it logs R7 in
 // STALLS, once for each R7.
 // Returns the phase the drive shows during `program`'s data phase.
 DiskDrivePhase GetTransferPhase(const TransferProgram& program) {
@@ -2378,7 +2404,7 @@ TEST_F(DiskDriveProgramTest, AnInrDwordLoopReadsPacked) {
 }
 
 TEST_F(DiskDriveProgramTest, AnOutrLoopWrites) {
-  // As in WriteTakesEachWord, the loop stops two handoffs after the drive's
+  // As in WriteTakesEachWord, the loop stops two transfers after the drive's
   // sector load and its new cluster.
   ASSERT_TRUE(InitDrive());
   drive_->AttachImage(MakeImageWithFile("A", 500));

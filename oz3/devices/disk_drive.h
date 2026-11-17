@@ -310,30 +310,34 @@ class DiskDrive final : public Device {
   struct ArgumentsState {
     DiskDrivePhase GetPhase() const { return DiskDrivePhase::kArguments; }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
   };
   struct SendingAcceptState {
     DiskDrivePhase GetPhase() const { return accept.GetPhase(); }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
     CommandResponse accept;
   };
   struct RunningWorkState {
     DiskDrivePhase GetPhase() const { return DiskDrivePhase::kWorking; }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
   };
   struct SendingCompletionState {
     DiskDrivePhase GetPhase() const { return completion.GetPhase(); }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
     CommandResponse completion;
   };
 
-  // A READ's or WRITE's data phase, of n handoffs (words, or dwords for the
-  // packed forms): what both directions keep. Once a disk call fails, the
-  // drive sends its early completion, and the rest of the handoffs move no
-  // data.
+  // A READ's or WRITE's data phase, of the transfers its accept promised
+  // (words, or dwords for the packed forms): what both directions keep. Once a
+  // disk call fails, the drive sends its early completion, and the rest of the
+  // transfers move no data.
   struct Transfer {
     // Returns the phase the control port shows: phase 3 while the early
     // completion's status waits on the command port, and otherwise
@@ -345,10 +349,13 @@ class DiskDrive final : public Device {
     }
 
     Command command;
-    int n = 0;      // The handoffs the accept promised.
-    int taken = 0;  // The handoffs the OS has taken (or written).
+    int accepted = 0;  // The transfers the accept promised.
 
-    // Whether a disk call has failed, after which handoffs move no data.
+    // The transfers moved through the data port: put on it for a READ, though
+    // the OS may not have taken the last yet, and taken from it for a WRITE.
+    int moved = 0;
+
+    // Whether a disk call has failed, after which transfers move no data.
     bool failed = false;
 
     // The failure's completion, until the OS has taken it.
@@ -359,22 +366,22 @@ class DiskDrive final : public Device {
       return transfer.GetPhase(DiskDrivePhase::kReading);
     }
     uint16_t GetCommandWord() const { return transfer.command.word; }
+
     Transfer transfer;
 
-    // The next handoff, once read from the file, until it is on the data port.
+    // The file's position when the read began.
+    int start_position = 0;
+
+    // The next transfer, once read from the file, until it is on the data
+    // port.
     std::optional<PortWords> next;
-
-    // Whether the handoff on the data port is the drive's, not yet taken.
-    bool in_port = false;
-
-    // The words read from the file for the handoff in `next` or the port.
-    int words_ahead = 0;
   };
   struct WritingState {
     DiskDrivePhase GetPhase() const {
       return transfer.GetPhase(DiskDrivePhase::kWriting);
     }
     uint16_t GetCommandWord() const { return transfer.command.word; }
+
     Transfer transfer;
   };
 
@@ -470,8 +477,8 @@ class DiskDrive final : public Device {
 
   // Returns the state that follows `command`'s accept, once the OS has taken
   // it: its work, its data phase, or idle.
-  [[nodiscard]] static State GetStateAfterAccept(Command command,
-                                                 const CommandResponse& accept);
+  [[nodiscard]] State GetStateAfterAccept(Command command,
+                                          const CommandResponse& accept);
 
   //----------------------------------------------------------------------------
   // Protocol
@@ -510,9 +517,8 @@ class DiskDrive final : public Device {
   //----------------------------------------------------------------------------
   // Transfers
   //
-  // A transfer's data phase moves a handoff at a time, with a disk call of a
-  // word or two for each, so a sector's disk work comes at the handoff that
-  // starts it.
+  // A data phase moves a transfer at a time, with a disk call of a word or two
+  // for each, so a sector's disk work comes at the transfer that starts it.
   //----------------------------------------------------------------------------
 
   // Returns the transfer of `command`, given its accept.
@@ -532,19 +538,19 @@ class DiskDrive final : public Device {
   // that.
   [[nodiscard]] static State EndTransfer(Transfer transfer, DiskStatus status);
 
-  // Reads `state`'s next handoff from the file into `next`, or zeros once it
+  // Reads `state`'s next transfer from the file into `next`, or zeros once it
   // has failed or past the end.
-  void ReadNextHandoff(ReadingState& state);
+  void ReadNextTransfer(ReadingState& state);
 
-  // Writes `words`, a handoff the OS wrote, to the file, flushing what it has
+  // Writes `words`, a transfer the OS wrote, to the file, flushing what it has
   // taken if it fails.
-  void WriteHandoff(Transfer& transfer, PortWords words);
+  void WriteTransfer(Transfer& transfer, PortWords words);
 
   // Seeks a READ's handle back past the words read ahead of the OS, as a reset
-  // ends it with the position just past the words the OS took.
-  // `handoff_untaken` is whether the data port's flag was still set when the
-  // reset withdrew its word.
-  void AbortRead(const ReadingState& state, bool handoff_untaken);
+  // ends it with the position just past the words the OS took. `data_untaken`
+  // is whether the data port's flag was still set when the reset withdrew its
+  // word.
+  void AbortRead(const ReadingState& state, bool data_untaken);
 
   //----------------------------------------------------------------------------
   // Commands
