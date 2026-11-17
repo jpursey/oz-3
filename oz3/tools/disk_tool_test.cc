@@ -8,14 +8,17 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
 #include "absl/time/civil_time.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
@@ -37,6 +40,7 @@ namespace oz3 {
 namespace {
 
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 
 constexpr char kImagePath[] = "mem:/work.ozd";
 constexpr int kSectorCount = 720;
@@ -98,25 +102,98 @@ class DiskToolTest : public ::testing::Test {
     SetFatWord(2, 2);
   }
 
-  // Writes two empty files named `name` as the first entries of the root, which
-  // a disk formatted by the tool has in cluster 1.
-  void AddDuplicateFiles(std::string_view name) {
+  // Writes `entries` as the only entries in the root's first sector, which a
+  // disk formatted by the tool has in cluster 1.
+  void SetRootEntries(absl::Span<const DiskDirEntry> entries) {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Open(&file_system_, kImagePath);
     ASSERT_TRUE(image.ok()) << image.status();
-    DiskDirEntry entry;
-    entry.SetName(*DiskFilename::Parse(name));
     std::array<uint16_t, kDiskSectorWords> words = {};
-    absl::c_copy(entry.GetWords(), words.begin());
-    absl::c_copy(entry.GetWords(), words.begin() + DiskDirEntry::kWordCount);
+    for (int i = 0; i < static_cast<int>(entries.size()); ++i) {
+      absl::c_copy(entries[i].GetWords(),
+                   words.begin() + i * DiskDirEntry::kWordCount);
+    }
     ASSERT_EQ((*image)->WriteSector(kLayout.GetClusterSector(1), words),
               DiskStatus::kOk);
+  }
+
+  // Writes two empty files named `name` as the only entries of the root.
+  void AddDuplicateFiles(std::string_view name) {
+    DiskDirEntry entry;
+    entry.SetName(*DiskFilename::Parse(name));
+    SetRootEntries({entry, entry});
+  }
+
+  // Writes a file named `name` with a size but no clusters as the only entry of
+  // the root, so the file system finds it corrupt.
+  void AddCorruptFile(std::string_view name) {
+    DiskDirEntry entry;
+    entry.SetName(*DiskFilename::Parse(name));
+    entry.SetSize(10);
+    SetRootEntries({entry});
   }
 
   // Returns the text `result` holds, failing the test if it holds none.
   static std::string Text(const absl::StatusOr<std::string>& result) {
     EXPECT_TRUE(result.ok()) << result.status();
     return result.ok() ? *result : "";
+  }
+
+  // Returns the bytes of the host file at `path`.
+  std::string ReadHost(std::string_view path) {
+    std::string bytes;
+    EXPECT_TRUE(file_system_.ReadFile(path, &bytes)) << path;
+    return bytes;
+  }
+
+  // Writes `bytes` to the host file at `path`.
+  void WriteHost(std::string_view path, std::string_view bytes) {
+    ASSERT_TRUE(file_system_.WriteFile(path, bytes)) << path;
+  }
+
+  // Puts the host file at `path`, holding `bytes`, onto the disk as `name`.
+  void PutFile(std::string_view name, std::string_view bytes) {
+    WriteHost("mem:/put.bin", bytes);
+    ASSERT_TRUE(
+        tool_->Put(kImagePath, "mem:/put.bin", DiskFilename::Parse(name), false)
+            .ok());
+  }
+
+  // Returns the bytes of the file `name` on the disk, or nullopt if it can't
+  // be read.
+  std::optional<std::string> GetFile(std::string_view name) {
+    file_system_.DeleteFile("mem:/get.bin");
+    if (!tool_
+             ->Get(kImagePath, *DiskFilename::Parse(name), "mem:/get.bin",
+                   false)
+             .ok()) {
+      return std::nullopt;
+    }
+    return ReadHost("mem:/get.bin");
+  }
+
+  // Sets the attribute `attribute` of the file `name` on the disk.
+  void SetDiskAttributes(std::string_view name, gb::FileAttribute attribute) {
+    ASSERT_TRUE(
+        tool_->Attrib(kImagePath, *DiskFilename::Parse(name), attribute, {})
+            .ok());
+  }
+
+  // Returns the names of the files on the disk, hidden ones included.
+  std::string AllNames() {
+    absl::StatusOr<std::string> text =
+        tool_->Dir(kImagePath, *DiskFilename::ParsePattern("*.*"), true);
+    EXPECT_TRUE(text.ok()) << text.status();
+    if (!text.ok() || *text == "no files\n") {
+      return "";
+    }
+    std::string names;
+    for (std::string_view line :
+         absl::StrSplit(*text, '\n', absl::SkipEmpty())) {
+      absl::StrAppend(&names, names.empty() ? "" : " ",
+                      line.substr(0, line.find(' ')));
+    }
+    return names;
   }
 
   // Sets the image's write protection, as DiskTool::Protect does.
@@ -467,6 +544,507 @@ TEST_F(DiskToolTest, InfoOfACorruptDisk) {
 }
 
 //==============================================================================
+// Attribute letters
+//==============================================================================
+
+TEST(DiskToolAttributesTest, Letters) {
+  using gb::FileAttribute;
+  const gb::FileAttributes both = {FileAttribute::kReadOnly,
+                                   FileAttribute::kHidden};
+  EXPECT_EQ(DiskTool::ParseAttributes("").value_or(both), gb::FileAttributes());
+  EXPECT_EQ(DiskTool::ParseAttributes("r").value_or(both),
+            gb::FileAttributes(FileAttribute::kReadOnly));
+  EXPECT_EQ(DiskTool::ParseAttributes("H").value_or(both),
+            gb::FileAttributes(FileAttribute::kHidden));
+  EXPECT_EQ(DiskTool::ParseAttributes("rh").value_or(gb::FileAttributes()),
+            both);
+  EXPECT_EQ(DiskTool::ParseAttributes("hRr").value_or(gb::FileAttributes()),
+            both);
+}
+
+TEST(DiskToolAttributesTest, OtherLettersFail) {
+  for (std::string_view letters : {"x", "rx", " r", "-", "a"}) {
+    absl::StatusOr<gb::FileAttributes> attributes =
+        DiskTool::ParseAttributes(letters);
+    ASSERT_FALSE(attributes.ok()) << letters;
+    EXPECT_EQ(attributes.status().message(),
+              absl::StrCat("Attributes \"", letters,
+                           "\" can only hold r (read-only) and h (hidden)"));
+  }
+}
+
+//==============================================================================
+// Dir
+//==============================================================================
+
+TEST_F(DiskToolTest, DirListsMatches) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "hello");
+  PutFile("PROGRAM.OZ3", std::string(1000, 'x'));
+  PutFile("README", "");
+  PutFile("ABCDEFGHIJKL.TEXT", "1234");
+  SetDiskAttributes("HELLO.TXT", gb::FileAttribute::kReadOnly);
+
+  EXPECT_EQ(
+      Text(tool_->Dir(kImagePath, *DiskFilename::ParsePattern("*.*"), false)),
+      "HELLO.TXT                3  r-  2026-11-17 10:30:15\n"
+      "PROGRAM.OZ3            500  --  2026-11-17 10:30:15\n"
+      "README                   0  --  2026-11-17 10:30:15\n"
+      "ABCDEFGHIJKL.TEXT        2  --  2026-11-17 10:30:15\n");
+  EXPECT_EQ(
+      Text(tool_->Dir(kImagePath, *DiskFilename::ParsePattern("*.TXT"), false)),
+      "HELLO.TXT                3  r-  2026-11-17 10:30:15\n");
+  EXPECT_EQ(
+      Text(tool_->Dir(kImagePath, *DiskFilename::ParsePattern("*.BIN"), false)),
+      "no files\n");
+}
+
+TEST_F(DiskToolTest, DirShowsHiddenFilesOnlyWithAll) {
+  NewFormatted();
+  PutFile("SHOWN", "a");
+  PutFile("HIDDEN", "b");
+  SetDiskAttributes("HIDDEN", gb::FileAttribute::kHidden);
+  const DiskFilename all = *DiskFilename::ParsePattern("*.*");
+  EXPECT_EQ(Text(tool_->Dir(kImagePath, all, false)),
+            "SHOWN                    1  --  2026-11-17 10:30:15\n");
+  EXPECT_EQ(Text(tool_->Dir(kImagePath, all, true)),
+            "SHOWN                    1  --  2026-11-17 10:30:15\n"
+            "HIDDEN                   1  -h  2026-11-17 10:30:15\n");
+  EXPECT_EQ(Text(tool_->Dir(kImagePath, *DiskFilename::Parse("HIDDEN"), false)),
+            "no files\n");
+}
+
+TEST_F(DiskToolTest, DirLeavesTheTimeBlankWithNoDate) {
+  ASSERT_TRUE(tool_->New(kImagePath, kSectorCount).ok());
+  ASSERT_TRUE(tool_->Format(kImagePath, DiskLabel(), 0).ok());
+  AddDuplicateFiles("EMPTY");
+  EXPECT_EQ(Text(tool_->Dir(kImagePath, *DiskFilename::Parse("EMPTY"), false)),
+            "EMPTY                    0  --\n"
+            "EMPTY                    0  --\n");
+}
+
+TEST_F(DiskToolTest, DirOfAnEmptyDisk) {
+  NewFormatted();
+  EXPECT_EQ(
+      Text(tool_->Dir(kImagePath, *DiskFilename::ParsePattern("*.*"), true)),
+      "no files\n");
+}
+
+TEST_F(DiskToolTest, FileCommandsNeedAFileSystem) {
+  ASSERT_TRUE(tool_->New(kImagePath, kSectorCount).ok());
+  const DiskFilename name = *DiskFilename::Parse("HELLO.TXT");
+  WriteHost("mem:/hello.txt", "hi");
+  const std::string unformatted = "mem:/work.ozd: unformatted";
+  EXPECT_EQ(tool_->Dir(kImagePath, name, true).status().message(), unformatted);
+  EXPECT_EQ(tool_->Put(kImagePath, "mem:/hello.txt", name, false).message(),
+            unformatted);
+  EXPECT_EQ(tool_->Get(kImagePath, name, "mem:/out.txt", false).message(),
+            unformatted);
+  EXPECT_EQ(tool_->Delete(kImagePath, name).message(), unformatted);
+  EXPECT_EQ(tool_->Rename(kImagePath, name, name).message(), unformatted);
+  EXPECT_EQ(tool_->Attrib(kImagePath, name, {}, {}).status().message(),
+            unformatted);
+
+  // A root whose chain loops can't be opened.
+  ASSERT_TRUE(tool_->Format(kImagePath, DiskLabel(), 0).ok());
+  SetFatWord(1, 1);
+  const std::string corrupt = "mem:/work.ozd: corrupt";
+  EXPECT_EQ(tool_->Dir(kImagePath, name, true).status().message(), corrupt);
+  EXPECT_EQ(tool_->Put(kImagePath, "mem:/hello.txt", name, false).message(),
+            corrupt);
+  EXPECT_EQ(tool_->Get(kImagePath, name, "mem:/out.txt", false).message(),
+            corrupt);
+  EXPECT_EQ(tool_->Delete(kImagePath, name).message(), corrupt);
+  EXPECT_EQ(tool_->Rename(kImagePath, name, name).message(), corrupt);
+  EXPECT_EQ(tool_->Attrib(kImagePath, name, {}, {}).status().message(),
+            corrupt);
+}
+
+TEST_F(DiskToolTest, FileCommandsOnACorruptFileSayItIsCorrupt) {
+  NewFormatted();
+  AddCorruptFile("BAD");
+  const DiskFilename name = *DiskFilename::Parse("BAD");
+  WriteHost("mem:/in.txt", "hi");
+  const std::string corrupt = "mem:/work.ozd: BAD: corrupt";
+  EXPECT_EQ(tool_->Put(kImagePath, "mem:/in.txt", name, false).message(),
+            corrupt);
+  EXPECT_EQ(tool_->Get(kImagePath, name, "mem:/out.txt", false).message(),
+            corrupt);
+  EXPECT_EQ(tool_->Delete(kImagePath, name).message(), corrupt);
+  EXPECT_EQ(AllNames(), "BAD");
+}
+
+//==============================================================================
+// Put and Get
+//==============================================================================
+
+TEST_F(DiskToolTest, PutAndGetBinary) {
+  NewFormatted();
+  const std::string bytes("\x34\x12\0\xFF\x7F", 5);
+  WriteHost("mem:/data.bin", bytes);
+  ASSERT_TRUE(tool_
+                  ->Put(kImagePath, "mem:/data.bin",
+                        DiskFilename::Parse("DATA.BIN"), false)
+                  .ok());
+  EXPECT_THAT(
+      Text(tool_->Dir(kImagePath, *DiskFilename::Parse("DATA.BIN"), false)),
+      HasSubstr("DATA.BIN                 3  --"));
+
+  // The odd last byte is padded with a zero.
+  ASSERT_TRUE(tool_
+                  ->Get(kImagePath, *DiskFilename::Parse("data.bin"),
+                        "mem:/out.bin", false)
+                  .ok());
+  EXPECT_EQ(ReadHost("mem:/out.bin"), bytes + std::string(1, '\0'));
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, PutAndGetText) {
+  NewFormatted();
+  WriteHost("mem:/in.txt", "one\r\ntwo\rsix!\n");
+  ASSERT_TRUE(tool_
+                  ->Put(kImagePath, "mem:/in.txt",
+                        DiskFilename::Parse("TEXT.TXT"), true)
+                  .ok());
+
+  // Binary shows the words: LF line endings, and the zero padding.
+  EXPECT_EQ(GetFile("TEXT.TXT"), std::string("one\ntwo\nsix!\n\0", 14));
+  ASSERT_TRUE(tool_
+                  ->Get(kImagePath, *DiskFilename::Parse("TEXT.TXT"),
+                        "mem:/out.txt", true)
+                  .ok());
+  EXPECT_EQ(ReadHost("mem:/out.txt"), "one\ntwo\nsix!\n");
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, PutAnEmptyFile) {
+  NewFormatted();
+  PutFile("EMPTY", "");
+  EXPECT_EQ(GetFile("EMPTY"), "");
+}
+
+TEST_F(DiskToolTest, PutWithoutANameUsesTheHostFilesName) {
+  NewFormatted();
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/src"));
+  WriteHost("mem:/src/hello.txt", "hi");
+  ASSERT_TRUE(
+      tool_->Put(kImagePath, "mem:/src/hello.txt", std::nullopt, false).ok());
+  EXPECT_EQ(GetFile("HELLO.TXT"), "hi");
+
+  // As Windows writes paths.
+  WriteHost("mem:/src/other.txt", "ho");
+  ASSERT_TRUE(
+      tool_->Put(kImagePath, "mem:\\src\\other.txt", std::nullopt, false).ok());
+  EXPECT_EQ(GetFile("OTHER.TXT"), "ho");
+}
+
+TEST_F(DiskToolTest, OneFileCommandsRefusePatterns) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  const DiskFilename name = *DiskFilename::Parse("A.TXT");
+  const DiskFilename pattern = *DiskFilename::ParsePattern("*.TXT");
+  const std::string bad_name = "*.TXT: bad name";
+  EXPECT_EQ(tool_->Put(kImagePath, "mem:/put.bin", pattern, false).message(),
+            bad_name);
+  EXPECT_EQ(tool_->Get(kImagePath, pattern, "mem:/out.txt", false).message(),
+            bad_name);
+  EXPECT_EQ(tool_->Rename(kImagePath, pattern, name).message(), bad_name);
+  EXPECT_EQ(tool_->Rename(kImagePath, name, pattern).message(), bad_name);
+  EXPECT_EQ(tool_->Attrib(kImagePath, pattern, {}, {}).status().message(),
+            bad_name);
+  EXPECT_EQ(AllNames(), "A.TXT");
+}
+
+TEST_F(DiskToolTest, PutFailsForAHostNameThatIsntADiskName) {
+  NewFormatted();
+  for (std::string_view name :
+       {"a_very_long_name.txt", "hello.text1", "a.b.c", "bad name"}) {
+    const std::string path = absl::StrCat("mem:/", name);
+    WriteHost(path, "hi");
+    absl::Status status = tool_->Put(kImagePath, path, std::nullopt, false);
+    EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument) << name;
+    EXPECT_EQ(status.message(),
+              absl::StrCat(path, ": \"", name,
+                           "\" isn't a disk name, so it needs one given"));
+  }
+  EXPECT_EQ(AllNames(), "");
+}
+
+TEST_F(DiskToolTest, PutFailsWithNoHostFile) {
+  NewFormatted();
+  absl::Status status =
+      tool_->Put(kImagePath, "mem:/missing.txt", std::nullopt, false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.message(), "mem:/missing.txt: not a file");
+}
+
+TEST_F(DiskToolTest, PutReplacesAFile) {
+  NewFormatted();
+  PutFile("HELLO.TXT", std::string(2000, 'a'));
+  PutFile("HELLO.TXT", "short");
+  EXPECT_EQ(GetFile("HELLO.TXT"), std::string("short\0", 6));
+  EXPECT_EQ(AllNames(), "HELLO.TXT");
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, PutRefusesAReadOnlyFile) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "old");
+  SetDiskAttributes("HELLO.TXT", gb::FileAttribute::kReadOnly);
+  WriteHost("mem:/new.txt", "new");
+  absl::Status status = tool_->Put(kImagePath, "mem:/new.txt",
+                                   DiskFilename::Parse("HELLO.TXT"), false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: HELLO.TXT: read-only");
+  EXPECT_EQ(GetFile("HELLO.TXT"), std::string("old\0", 4));
+}
+
+TEST_F(DiskToolTest, PutFailsOnAWriteProtectedDisk) {
+  NewFormatted();
+  SetProtected(true);
+  WriteHost("mem:/new.txt", "new");
+  absl::Status status = tool_->Put(kImagePath, "mem:/new.txt",
+                                   DiskFilename::Parse("NEW.TXT"), false);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: write protected");
+  SetProtected(false);
+  EXPECT_EQ(AllNames(), "");
+}
+
+TEST_F(DiskToolTest, PutFailsOnAFullDiskLeavingNoFile) {
+  constexpr char kSmallPath[] = "mem:/small.ozd";
+  ASSERT_TRUE(tool_->New(kSmallPath, 16).ok());
+  ASSERT_TRUE(tool_->Format(kSmallPath, DiskLabel(), 1).ok());
+  WriteHost("mem:/big.bin", std::string(16 * kDiskSectorWords * 2, 'x'));
+  absl::Status status =
+      tool_->Put(kSmallPath, "mem:/big.bin", DiskFilename::Parse("BIG"), false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kResourceExhausted);
+  EXPECT_EQ(status.message(), "mem:/small.ozd: BIG: disk full");
+  EXPECT_EQ(
+      Text(tool_->Dir(kSmallPath, *DiskFilename::ParsePattern("*.*"), true)),
+      "no files\n");
+}
+
+TEST_F(DiskToolTest, PutAndGetKeepAttributes) {
+  NewFormatted();
+  WriteHost("mem:/in.txt", "hi");
+  ASSERT_TRUE(file_system_.SetAttributes(
+      "mem:/in.txt",
+      {gb::FileAttribute::kReadOnly, gb::FileAttribute::kHidden}));
+  ASSERT_TRUE(
+      tool_->Put(kImagePath, "mem:/in.txt", DiskFilename::Parse("IN.TXT"), true)
+          .ok());
+  EXPECT_EQ(
+      Text(tool_->Attrib(kImagePath, *DiskFilename::Parse("IN.TXT"), {}, {})),
+      "IN.TXT rh\n");
+
+  for (bool text : {false, true}) {
+    const std::string path = absl::StrCat("mem:/out", text, ".txt");
+    ASSERT_TRUE(
+        tool_->Get(kImagePath, *DiskFilename::Parse("IN.TXT"), path, text)
+            .ok());
+    EXPECT_EQ(file_system_.GetPathInfo(path).attributes,
+              gb::FileAttributes(
+                  {gb::FileAttribute::kReadOnly, gb::FileAttribute::kHidden}))
+        << path;
+  }
+}
+
+TEST_F(DiskToolTest, GetFailsWithNoFile) {
+  NewFormatted();
+  absl::Status status = tool_->Get(kImagePath, *DiskFilename::Parse("NOPE"),
+                                   "mem:/out.bin", false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: NOPE: not found");
+  EXPECT_FALSE(file_system_.IsValidPath("mem:/out.bin"));
+}
+
+TEST_F(DiskToolTest, GetReplacesAHostFile) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "new");
+  WriteHost("mem:/out.txt", "an older and longer file");
+  ASSERT_TRUE(tool_
+                  ->Get(kImagePath, *DiskFilename::Parse("HELLO.TXT"),
+                        "mem:/out.txt", true)
+                  .ok());
+  EXPECT_EQ(ReadHost("mem:/out.txt"), "new");
+}
+
+TEST_F(DiskToolTest, GetRefusesAReadOnlyHostFile) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "new");
+  WriteHost("mem:/out.txt", "old");
+  ASSERT_TRUE(
+      file_system_.SetAttributes("mem:/out.txt", gb::FileAttribute::kReadOnly));
+  absl::Status status = tool_->Get(
+      kImagePath, *DiskFilename::Parse("HELLO.TXT"), "mem:/out.txt", false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(status.message(), "mem:/out.txt: read-only");
+  EXPECT_EQ(ReadHost("mem:/out.txt"), "old");
+}
+
+TEST_F(DiskToolTest, GetRefusesAHostFolder) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "new");
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  absl::Status status = tool_->Get(
+      kImagePath, *DiskFilename::Parse("HELLO.TXT"), "mem:/out", false);
+  EXPECT_EQ(status.message(), "mem:/out: is a folder");
+}
+
+//==============================================================================
+// Delete
+//==============================================================================
+
+TEST_F(DiskToolTest, DeleteDeletesEveryMatchHiddenOnesIncluded) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  PutFile("B.TXT", "b");
+  PutFile("C.OZ3", "c");
+  SetDiskAttributes("B.TXT", gb::FileAttribute::kHidden);
+  ASSERT_TRUE(
+      tool_->Delete(kImagePath, *DiskFilename::ParsePattern("*.TXT")).ok());
+  EXPECT_EQ(AllNames(), "C.OZ3");
+  ASSERT_TRUE(tool_->Delete(kImagePath, *DiskFilename::Parse("C.OZ3")).ok());
+  EXPECT_EQ(AllNames(), "");
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, DeleteReportsReadOnlyMatchesAndDeletesTheRest) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  PutFile("B.TXT", "b");
+  PutFile("C.TXT", "c");
+  PutFile("D.TXT", "d");
+  for (std::string_view name : {"B.TXT", "D.TXT"}) {
+    SetDiskAttributes(name, gb::FileAttribute::kReadOnly);
+  }
+  absl::Status status =
+      tool_->Delete(kImagePath, *DiskFilename::ParsePattern("*.TXT"));
+  EXPECT_EQ(status.code(), absl::StatusCode::kFailedPrecondition);
+  EXPECT_EQ(status.message(),
+            "mem:/work.ozd: B.TXT: read-only; D.TXT: read-only");
+  EXPECT_EQ(AllNames(), "B.TXT D.TXT");
+}
+
+TEST_F(DiskToolTest, DeleteFailsWithNoMatch) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  absl::Status status =
+      tool_->Delete(kImagePath, *DiskFilename::ParsePattern("*.OZ3"));
+  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: *.OZ3: not found");
+  EXPECT_EQ(AllNames(), "A.TXT");
+}
+
+TEST_F(DiskToolTest, DeleteFailsOnAWriteProtectedDisk) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  SetProtected(true);
+  EXPECT_EQ(tool_->Delete(kImagePath, *DiskFilename::Parse("A.TXT")).message(),
+            "mem:/work.ozd: write protected");
+  EXPECT_EQ(AllNames(), "A.TXT");
+}
+
+//==============================================================================
+// Rename
+//==============================================================================
+
+TEST_F(DiskToolTest, RenameRenames) {
+  NewFormatted();
+  PutFile("OLD.TXT", "hi");
+  ASSERT_TRUE(tool_
+                  ->Rename(kImagePath, *DiskFilename::Parse("OLD.TXT"),
+                           *DiskFilename::Parse("NEW.TXT"))
+                  .ok());
+  EXPECT_EQ(AllNames(), "NEW.TXT");
+  EXPECT_EQ(GetFile("NEW.TXT"), "hi");
+
+  // Renaming a file to its own name leaves it.
+  ASSERT_TRUE(tool_
+                  ->Rename(kImagePath, *DiskFilename::Parse("NEW.TXT"),
+                           *DiskFilename::Parse("NEW.TXT"))
+                  .ok());
+  EXPECT_EQ(AllNames(), "NEW.TXT");
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, RenameOntoATakenNameFails) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  PutFile("B.TXT", "b");
+  absl::Status status = tool_->Rename(kImagePath, *DiskFilename::Parse("A.TXT"),
+                                      *DiskFilename::Parse("B.TXT"));
+  EXPECT_EQ(status.code(), absl::StatusCode::kAlreadyExists);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: B.TXT: exists");
+  EXPECT_EQ(GetFile("A.TXT"), std::string("a\0", 2));
+  EXPECT_EQ(GetFile("B.TXT"), std::string("b\0", 2));
+}
+
+TEST_F(DiskToolTest, RenameOfNoFileFails) {
+  NewFormatted();
+  absl::Status status = tool_->Rename(kImagePath, *DiskFilename::Parse("A.TXT"),
+                                      *DiskFilename::Parse("B.TXT"));
+  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: A.TXT: not found");
+}
+
+//==============================================================================
+// Attrib
+//==============================================================================
+
+TEST_F(DiskToolTest, AttribSetsClearsAndShows) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  const DiskFilename name = *DiskFilename::Parse("A.TXT");
+  EXPECT_EQ(Text(tool_->Attrib(kImagePath, name, {}, {})), "A.TXT --\n");
+  EXPECT_EQ(
+      Text(tool_->Attrib(
+          kImagePath, name,
+          {gb::FileAttribute::kReadOnly, gb::FileAttribute::kHidden}, {})),
+      "A.TXT rh\n");
+  EXPECT_EQ(
+      Text(tool_->Attrib(kImagePath, name, {}, gb::FileAttribute::kReadOnly)),
+      "A.TXT -h\n");
+  EXPECT_EQ(Text(tool_->Attrib(kImagePath, name, gb::FileAttribute::kReadOnly,
+                               gb::FileAttribute::kHidden)),
+            "A.TXT r-\n");
+  EXPECT_EQ(Text(tool_->Attrib(kImagePath, name, {}, {})), "A.TXT r-\n");
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
+}
+
+TEST_F(DiskToolTest, AttribCantSetAndClearOneAttribute) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  absl::StatusOr<std::string> text = tool_->Attrib(
+      kImagePath, *DiskFilename::Parse("A.TXT"), gb::FileAttribute::kHidden,
+      {gb::FileAttribute::kReadOnly, gb::FileAttribute::kHidden});
+  ASSERT_FALSE(text.ok());
+  EXPECT_EQ(text.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(text.status().message(),
+            "An attribute can't be both set and cleared");
+}
+
+TEST_F(DiskToolTest, AttribOfNoFileFails) {
+  NewFormatted();
+  absl::StatusOr<std::string> text =
+      tool_->Attrib(kImagePath, *DiskFilename::Parse("A.TXT"), {}, {});
+  ASSERT_FALSE(text.ok());
+  EXPECT_EQ(text.status().message(), "mem:/work.ozd: A.TXT: not found");
+}
+
+TEST_F(DiskToolTest, AttribShowsButCantChangeOnAWriteProtectedDisk) {
+  NewFormatted();
+  PutFile("A.TXT", "a");
+  SetProtected(true);
+  const DiskFilename name = *DiskFilename::Parse("A.TXT");
+  EXPECT_EQ(Text(tool_->Attrib(kImagePath, name, {}, {})), "A.TXT --\n");
+  EXPECT_EQ(tool_->Attrib(kImagePath, name, gb::FileAttribute::kHidden, {})
+                .status()
+                .message(),
+            "mem:/work.ozd: write protected");
+}
+
+//==============================================================================
 // Host failures
 //==============================================================================
 
@@ -486,6 +1064,26 @@ TEST_F(DiskToolTest, HostFailureWritingTheImage) {
   EXPECT_EQ(status.message(), "mem:/work.ozd: I/O error");
   host_->SetLimits({});
   EXPECT_THAT(Text(tool_->Info(kImagePath)), HasSubstr("Volume:   WORK\n"));
+}
+
+TEST_F(DiskToolTest, GetFailsWhenTheHostFileCantBeWritten) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "hi");
+  host_->SetLimits({.writes = 0});
+  absl::Status status = tool_->Get(
+      kImagePath, *DiskFilename::Parse("HELLO.TXT"), "mem:/out.txt", false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kDataLoss);
+  EXPECT_EQ(status.message(), "mem:/out.txt: can't be written");
+}
+
+TEST_F(DiskToolTest, PutFailsWhenTheImageCantBeWritten) {
+  NewFormatted();
+  WriteHost("mem:/in.txt", "hi");
+  host_->SetLimits({.writes = 0});
+  absl::Status status = tool_->Put(kImagePath, "mem:/in.txt",
+                                   DiskFilename::Parse("IN.TXT"), false);
+  EXPECT_EQ(status.code(), absl::StatusCode::kDataLoss);
+  EXPECT_EQ(status.message(), "mem:/work.ozd: IN.TXT: I/O error");
 }
 
 }  // namespace

@@ -68,6 +68,9 @@ class DiskFileProtocolTest : public ::testing::Test {
     EXPECT_TRUE(file_system_.Register(std::move(protocol)));
   }
 
+  // Unmounts while the host protocol the image is on is still there.
+  ~DiskFileProtocolTest() override { protocol_->Unmount(); }
+
   // Returns a new blank image of kSectorCount sectors.
   std::unique_ptr<DiskImage> MakeImage() {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
@@ -340,6 +343,55 @@ TEST_F(DiskFileProtocolTest, ListMatchesPatternsIgnoringCase) {
               ElementsAre("ozdisk:/README"));
 }
 
+// Returns the names of `entries`, dotted.
+std::vector<std::string> EntryNames(const std::vector<DiskDirEntry>& entries) {
+  std::vector<std::string> names;
+  for (const DiskDirEntry& entry : entries) {
+    names.push_back(entry.GetName()->ToString());
+  }
+  return names;
+}
+
+TEST_F(DiskFileProtocolTest, FindEntriesMatchesDiskPatterns) {
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A.TXT", "a"));
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/B.TXT", "bb"));
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/C.OZ3", "c"));
+  ASSERT_TRUE(
+      file_system_.SetAttributes("ozdisk:/B.TXT", gb::FileAttribute::kHidden));
+
+  std::vector<DiskDirEntry> entries;
+  EXPECT_EQ(
+      protocol_->FindEntries(*DiskFilename::ParsePattern("*.TXT"), &entries),
+      DiskStatus::kOk);
+  EXPECT_THAT(EntryNames(entries), ElementsAre("A.TXT", "B.TXT"));
+  ASSERT_EQ(static_cast<int>(entries.size()), 2);
+  EXPECT_EQ(entries[1].GetSize(), 1);
+  EXPECT_EQ(entries[1].GetAttributes(), kDiskAttribHidden);
+  EXPECT_EQ(entries[1].GetModified(), DateTime::FromCivil(kNow));
+
+  EXPECT_EQ(
+      protocol_->FindEntries(*DiskFilename::ParsePattern("*.*"), &entries),
+      DiskStatus::kOk);
+  EXPECT_THAT(EntryNames(entries), ElementsAre("A.TXT", "B.TXT", "C.OZ3"));
+  EXPECT_EQ(protocol_->FindEntries(*DiskFilename::Parse("C.OZ3"), &entries),
+            DiskStatus::kOk);
+  EXPECT_THAT(EntryNames(entries), ElementsAre("C.OZ3"));
+  EXPECT_EQ(
+      protocol_->FindEntries(*DiskFilename::ParsePattern("*.BIN"), &entries),
+      DiskStatus::kOk);
+  EXPECT_THAT(entries, IsEmpty());
+}
+
+TEST_F(DiskFileProtocolTest, FindEntriesNeedsAFileSystem) {
+  const DiskFilename all = *DiskFilename::ParsePattern("*.*");
+  std::vector<DiskDirEntry> entries(1);
+  EXPECT_EQ(protocol_->FindEntries(all, &entries), DiskStatus::kNoDisk);
+  EXPECT_THAT(entries, IsEmpty());
+  EXPECT_EQ(protocol_->Mount(MakeImage()), DiskStatus::kUnformatted);
+  EXPECT_EQ(protocol_->FindEntries(all, &entries), DiskStatus::kUnformatted);
+}
+
 TEST_F(DiskFileProtocolTest, InfoAndListNeedNoFreeSlot) {
   MountFormatted();
   ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A.TXT", "a"));
@@ -596,10 +648,14 @@ TEST_F(DiskFileProtocolTest, ReadOnlyFilesRefuseWritesReplacesAndDeletes) {
       file_system_.SetAttributes("ozdisk:/A", gb::FileAttribute::kReadOnly));
   EXPECT_EQ(file_system_.OpenFile("ozdisk:/A", gb::kReadWriteFileFlags),
             nullptr);
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kReadOnly);
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/A", "cd"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kReadOnly);
   ASSERT_TRUE(file_system_.WriteFile("host:/b.txt", "cd"));
   EXPECT_FALSE(file_system_.CopyFile("host:/b.txt", "ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kReadOnly);
   EXPECT_FALSE(file_system_.DeleteFile("ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kReadOnly);
   EXPECT_THAT(ReadBytes("ozdisk:/A"), ElementsAre('a', 'b'));
 }
 
@@ -610,10 +666,14 @@ TEST_F(DiskFileProtocolTest, OpenFilesRefuseDeletesRenamesAndAttributes) {
       file_system_.OpenFile("ozdisk:/A", gb::kReadFileFlags);
   ASSERT_NE(file, nullptr);
   EXPECT_FALSE(file_system_.DeleteFile("ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kInUse);
   EXPECT_FALSE(file_system_.MoveFile("ozdisk:/A", "ozdisk:/B"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kInUse);
   EXPECT_FALSE(
       file_system_.SetAttributes("ozdisk:/A", gb::FileAttribute::kHidden));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kInUse);
   EXPECT_EQ(file_system_.OpenFile("ozdisk:/A", gb::kReadFileFlags), nullptr);
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kInUse);
   file.reset();
   EXPECT_TRUE(file_system_.DeleteFile("ozdisk:/A"));
   EXPECT_FALSE(file_system_.IsValidPath("ozdisk:/A"));
@@ -646,6 +706,9 @@ TEST_F(DiskFileProtocolTest, MovesRename) {
   ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "ab"));
   ASSERT_TRUE(file_system_.WriteFile("ozdisk:/B", "cd"));
   EXPECT_FALSE(file_system_.MoveFile("ozdisk:/A", "ozdisk:/B"));
+
+  // gb refuses that before it reaches the disk.
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kOk);
   EXPECT_TRUE(file_system_.MoveFile("ozdisk:/A", "ozdisk:/C.TXT"));
   EXPECT_THAT(file_system_.List("ozdisk:/"),
               UnorderedElementsAre("ozdisk:/B", "ozdisk:/C.TXT"));
@@ -671,14 +734,21 @@ TEST_F(DiskFileProtocolTest, WriteProtectedDiskOnlyReads) {
   ASSERT_EQ(image->SetWriteProtected(true), DiskStatus::kOk);
   ASSERT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kOk);
 
+  EXPECT_EQ(protocol_->GetVolumeStatus(), DiskStatus::kOk);
+  EXPECT_EQ(protocol_->GetWritableStatus(), DiskStatus::kWriteProtected);
   EXPECT_THAT(ReadBytes("ozdisk:/A"), ElementsAre('a', 'b'));
   EXPECT_EQ(file_system_.OpenFile("ozdisk:/A", gb::kReadWriteFileFlags),
             nullptr);
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kWriteProtected);
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/B", "cd"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kWriteProtected);
   EXPECT_FALSE(file_system_.DeleteFile("ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kWriteProtected);
   EXPECT_FALSE(file_system_.MoveFile("ozdisk:/A", "ozdisk:/B"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kWriteProtected);
   EXPECT_FALSE(
       file_system_.SetAttributes("ozdisk:/A", gb::FileAttribute::kHidden));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kWriteProtected);
 }
 
 TEST_F(DiskFileProtocolTest, HostFailureFailsTheWrite) {
@@ -688,9 +758,46 @@ TEST_F(DiskFileProtocolTest, HostFailureFailsTheWrite) {
   ASSERT_NE(file, nullptr);
   host_->SetLimits({.writes = 0});
   EXPECT_LT(file->Write(std::vector<uint8_t>(2000, 1)), 2000);
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kIoError);
   EXPECT_FALSE(file->Flush());
   file.reset();
   EXPECT_EQ(protocol_->Unmount(), DiskStatus::kIoError);
+}
+
+TEST_F(DiskFileProtocolTest, LastFailureIsTakenOnceAndClearedByMount) {
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kOk);
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "ab"));
+  ASSERT_TRUE(
+      file_system_.SetAttributes("ozdisk:/A", gb::FileAttribute::kReadOnly));
+  EXPECT_FALSE(file_system_.DeleteFile("ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kReadOnly);
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kOk);
+
+  EXPECT_FALSE(file_system_.DeleteFile("ozdisk:/A"));
+  std::unique_ptr<DiskImage> image;
+  ASSERT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+  ASSERT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kOk);
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kOk);
+}
+
+TEST_F(DiskFileProtocolTest, FilesFailAsTheVolumeDoes) {
+  EXPECT_EQ(protocol_->GetVolumeStatus(), DiskStatus::kNoDisk);
+  EXPECT_EQ(protocol_->GetWritableStatus(), DiskStatus::kNoDisk);
+  ASSERT_EQ(protocol_->Mount(MakeImage()), DiskStatus::kUnformatted);
+  EXPECT_EQ(protocol_->GetVolumeStatus(), DiskStatus::kUnformatted);
+  EXPECT_EQ(protocol_->GetWritableStatus(), DiskStatus::kUnformatted);
+  EXPECT_FALSE(file_system_.IsValidPath("ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kUnformatted);
+  EXPECT_FALSE(file_system_.WriteFile("ozdisk:/A", "ab"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kUnformatted);
+  ASSERT_EQ(protocol_->Format(DiskLabel(), 0), DiskStatus::kOk);
+  EXPECT_EQ(protocol_->GetVolumeStatus(), DiskStatus::kOk);
+  EXPECT_EQ(protocol_->GetWritableStatus(), DiskStatus::kOk);
+
+  // A missing file isn't a failure.
+  EXPECT_FALSE(file_system_.IsValidPath("ozdisk:/A"));
+  EXPECT_EQ(protocol_->TakeLastFailure(), DiskStatus::kOk);
 }
 
 }  // namespace

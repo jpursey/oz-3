@@ -5,12 +5,14 @@
 
 #include "oz3/tools/disk_tool.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/functional/function_ref.h"
@@ -19,8 +21,15 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
+#include "absl/strings/str_join.h"
+#include "absl/strings/strip.h"
+#include "absl/time/civil_time.h"
+#include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
+#include "gb/file/path.h"
+#include "oz3/core/date_time.h"
 #include "oz3/disk/disk_check.h"
 #include "oz3/disk/disk_dir_entry.h"
 #include "oz3/disk/disk_file_system.h"
@@ -31,6 +40,7 @@
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/tools/disk_file_protocol.h"
+#include "oz3/tools/disk_transfer.h"
 
 namespace oz3 {
 
@@ -86,6 +96,17 @@ absl::Status Named(std::string_view name, const absl::Status& status) {
                       absl::StrCat(name, ": ", status.message()));
 }
 
+// Returns `status` as an absl::Status with the file `name` before its text.
+absl::Status Named(const DiskFilename& name, DiskStatus status) {
+  return Named(name.ToString(), ToStatus(status));
+}
+
+// Returns a failure if `name` is a pattern, which names no one file.
+absl::Status ValidateName(const DiskFilename& name) {
+  return name.IsPattern() ? Named(name, DiskStatus::kBadName)
+                          : absl::OkStatus();
+}
+
 // Returns `words` with a K or M suffix if it is a whole number of them.
 std::string FormatWords(int64_t words) {
   if (words != 0 && words % kMegaWords == 0) {
@@ -101,6 +122,25 @@ std::string FormatWords(int64_t words) {
 std::string Count(int count, std::string_view singular,
                   std::string_view plural) {
   return absl::StrCat(count, " ", count == 1 ? singular : plural);
+}
+
+// Returns the attribute letters Dir and Attrib show: r and h, or - for each not
+// set.
+std::string FormatAttributes(gb::FileAttributes attributes) {
+  return absl::StrCat(
+      attributes.IsSet(gb::FileAttribute::kReadOnly) ? "r" : "-",
+      attributes.IsSet(gb::FileAttribute::kHidden) ? "h" : "-");
+}
+
+// Returns `time` as "2026-11-17 10:30:15", or nothing with no date.
+std::string FormatTime(const DateTime& time) {
+  const std::optional<absl::CivilSecond> civil = time.ToCivil();
+  if (!civil.has_value()) {
+    return "";
+  }
+  return absl::StrFormat("%04d-%02d-%02d %02d:%02d:%02d", civil->year(),
+                         civil->month(), civil->day(), civil->hour(),
+                         civil->minute(), civil->second());
 }
 
 // Returns the name of `entry` as a person reads it.
@@ -182,7 +222,8 @@ absl::StatusOr<std::unique_ptr<DiskTool>> DiskTool::Create(
     return absl::InvalidArgumentError(absl::StrCat(
         "The disk protocol can't be registered as \"", protocol_name, "\""));
   }
-  return std::unique_ptr<DiskTool>(new DiskTool(file_system, protocol_ptr));
+  return std::unique_ptr<DiskTool>(
+      new DiskTool(file_system, protocol_ptr, protocol_name));
 }
 
 //==============================================================================
@@ -227,6 +268,26 @@ absl::StatusOr<int> DiskTool::ParseSectorCount(std::string_view text) {
   return static_cast<int>(words / kDiskSectorWords);
 }
 
+absl::StatusOr<gb::FileAttributes> DiskTool::ParseAttributes(
+    std::string_view letters) {
+  gb::FileAttributes attributes;
+  for (const char letter : letters) {
+    switch (absl::ascii_tolower(letter)) {
+      case 'r':
+        attributes += gb::FileAttribute::kReadOnly;
+        break;
+      case 'h':
+        attributes += gb::FileAttribute::kHidden;
+        break;
+      default:
+        return absl::InvalidArgumentError(
+            absl::StrCat("Attributes \"", letters,
+                         "\" can only hold r (read-only) and h (hidden)"));
+    }
+  }
+  return attributes;
+}
+
 //==============================================================================
 // Image commands
 //==============================================================================
@@ -241,14 +302,14 @@ absl::Status DiskTool::New(std::string_view image_path, int sector_count) {
 
 absl::Status DiskTool::Format(std::string_view image_path,
                               const DiskLabel& label, int sectors_per_cluster) {
-  return RunMounted(image_path,
+  return RunMounted(image_path, Access::kImage,
                     [&] { return DoFormat(label, sectors_per_cluster); });
 }
 
 absl::StatusOr<std::string> DiskTool::Info(std::string_view image_path) {
   std::string text;
   if (absl::Status status =
-          RunMounted(image_path, [&] { return DoInfo(&text); });
+          RunMounted(image_path, Access::kImage, [&] { return DoInfo(&text); });
       !status.ok()) {
     return status;
   }
@@ -257,7 +318,7 @@ absl::StatusOr<std::string> DiskTool::Info(std::string_view image_path) {
 
 absl::Status DiskTool::Label(std::string_view image_path,
                              const DiskLabel& label) {
-  return RunMounted(image_path,
+  return RunMounted(image_path, Access::kImage,
                     [&] { return ToStatus(protocol_->SetLabel(label)); });
 }
 
@@ -294,10 +355,150 @@ absl::StatusOr<std::string> DiskTool::Check(std::string_view image_path,
 }
 
 //==============================================================================
+// File commands
+//==============================================================================
+
+absl::StatusOr<std::string> DiskTool::Dir(std::string_view image_path,
+                                          const DiskFilename& pattern,
+                                          bool all) {
+  std::string text;
+  if (absl::Status status =
+          RunMounted(image_path, Access::kRead,
+                     [&] { return DoDir(pattern, all, &text); });
+      !status.ok()) {
+    return status;
+  }
+  return text;
+}
+
+absl::Status DiskTool::Put(std::string_view image_path,
+                           std::string_view host_path,
+                           std::optional<DiskFilename> name, bool text) {
+  if (!name.has_value()) {
+    const std::string normalized_path = gb::NormalizePath(host_path);
+    const std::string filename = gb::RemoveFolder(normalized_path);
+    name = DiskFilename::Parse(filename);
+    if (!name.has_value()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(host_path, ": \"", filename,
+                       "\" isn't a disk name, so it needs one given"));
+    }
+  }
+  if (absl::Status status = ValidateName(*name); !status.ok()) {
+    return status;
+  }
+  const gb::PathInfo host_info = file_system_->GetPathInfo(host_path);
+  if (host_info.type != gb::PathType::kFile) {
+    return absl::NotFoundError(absl::StrCat(host_path, ": not a file"));
+  }
+
+  std::vector<std::byte> bytes;
+  bool read = false;
+  if (text) {
+    std::string host_text;
+    read = file_system_->ReadFile(host_path, &host_text);
+    bytes = BytesFromWords(WordsFromText(host_text));
+  } else {
+    read = file_system_->ReadFile(host_path, &bytes);
+  }
+  if (!read) {
+    return absl::DataLossError(absl::StrCat(host_path, ": can't be read"));
+  }
+
+  return RunMounted(image_path, Access::kWrite, [&] {
+    return DoPut(*name, bytes, host_info.attributes,
+                 GetCopiedAttributes(host_path));
+  });
+}
+
+absl::Status DiskTool::Get(std::string_view image_path,
+                           const DiskFilename& name, std::string_view host_path,
+                           bool text) {
+  if (absl::Status status = ValidateName(name); !status.ok()) {
+    return status;
+  }
+  const gb::PathInfo host_info = file_system_->GetPathInfo(host_path);
+  if (host_info.type == gb::PathType::kFolder) {
+    return absl::FailedPreconditionError(
+        absl::StrCat(host_path, ": is a folder"));
+  }
+  if (host_info.type == gb::PathType::kFile &&
+      host_info.attributes.IsSet(gb::FileAttribute::kReadOnly)) {
+    return absl::FailedPreconditionError(
+        absl::StrCat(host_path, ": read-only"));
+  }
+
+  std::vector<std::byte> bytes;
+  gb::FileAttributes attributes;
+  if (absl::Status status =
+          RunMounted(image_path, Access::kRead,
+                     [&] { return DoGet(name, &bytes, &attributes); });
+      !status.ok()) {
+    return status;
+  }
+
+  const bool written =
+      text ? file_system_->WriteFile(host_path,
+                                     TextFromWords(WordsFromBytes(bytes)))
+           : file_system_->WriteFile(host_path, bytes);
+  if (!written) {
+    return absl::DataLossError(absl::StrCat(host_path, ": can't be written"));
+  }
+  const gb::FileAttributes mask = GetCopiedAttributes(host_path);
+  if (!mask.IsEmpty() &&
+      !file_system_->SetAttributes(host_path, attributes, mask)) {
+    return absl::DataLossError(
+        absl::StrCat(host_path, ": its attributes can't be set"));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status DiskTool::Delete(std::string_view image_path,
+                              const DiskFilename& pattern) {
+  return RunMounted(image_path, Access::kWrite,
+                    [&] { return DoDelete(pattern); });
+}
+
+absl::Status DiskTool::Rename(std::string_view image_path,
+                              const DiskFilename& from,
+                              const DiskFilename& to) {
+  for (const DiskFilename* name : {&from, &to}) {
+    if (absl::Status status = ValidateName(*name); !status.ok()) {
+      return status;
+    }
+  }
+  return RunMounted(image_path, Access::kWrite,
+                    [&] { return DoRename(from, to); });
+}
+
+absl::StatusOr<std::string> DiskTool::Attrib(std::string_view image_path,
+                                             const DiskFilename& name,
+                                             gb::FileAttributes set,
+                                             gb::FileAttributes clear) {
+  if (absl::Status status = ValidateName(name); !status.ok()) {
+    return status;
+  }
+  if (set.Intersects(clear)) {
+    return absl::InvalidArgumentError(
+        "An attribute can't be both set and cleared");
+  }
+  const Access access =
+      set.IsEmpty() && clear.IsEmpty() ? Access::kRead : Access::kWrite;
+  std::string text;
+  if (absl::Status status =
+          RunMounted(image_path, access,
+                     [&] { return DoAttrib(name, set, clear, &text); });
+      !status.ok()) {
+    return status;
+  }
+  return text;
+}
+
+//==============================================================================
 // Implementation
 //==============================================================================
 
-absl::Status DiskTool::RunMounted(std::string_view image_path,
+absl::Status DiskTool::RunMounted(std::string_view image_path, Access access,
                                   absl::FunctionRef<absl::Status()> command) {
   absl::StatusOr<std::unique_ptr<DiskImage>> image =
       DiskImage::Open(file_system_, image_path);
@@ -307,12 +508,22 @@ absl::Status DiskTool::RunMounted(std::string_view image_path,
 
   // An unformatted or corrupt disk is still mounted, for the command to
   // format, or to report on.
-  absl::Status status;
-  if (protocol_->Mount(*std::move(image)) == DiskStatus::kIoError) {
-    status = ToStatus(DiskStatus::kIoError);
-  } else {
-    status = command();
+  DiskStatus disk_status = protocol_->Mount(*std::move(image));
+  if (disk_status != DiskStatus::kIoError) {
+    switch (access) {
+      case Access::kImage:
+        disk_status = DiskStatus::kOk;
+        break;
+      case Access::kRead:
+        disk_status = protocol_->GetVolumeStatus();
+        break;
+      case Access::kWrite:
+        disk_status = protocol_->GetWritableStatus();
+        break;
+    }
   }
+  const absl::Status status =
+      disk_status == DiskStatus::kOk ? command() : ToStatus(disk_status);
   const absl::Status unmount_status = ToStatus(protocol_->Unmount());
   return Named(image_path, status.ok() ? unmount_status : status);
 }
@@ -360,6 +571,150 @@ absl::Status DiskTool::DoInfo(std::string* text) {
                   "Free:     ", info.free_clusters, " (",
                   FormatWords(info.free_clusters * cluster_words), ")\n");
   return absl::OkStatus();
+}
+
+absl::Status DiskTool::DoDir(const DiskFilename& pattern, bool all,
+                             std::string* text) {
+  std::vector<DiskDirEntry> entries;
+  if (DiskStatus status = protocol_->FindEntries(pattern, &entries);
+      status != DiskStatus::kOk) {
+    return ToStatus(status);
+  }
+  for (const DiskDirEntry& entry : entries) {
+    const gb::FileAttributes attributes =
+        AttributesFromDisk(entry.GetAttributes());
+    if (attributes.IsSet(gb::FileAttribute::kHidden) && !all) {
+      continue;
+    }
+    const std::string line = absl::StrFormat(
+        "%-17s %8d  %s  %s", EntryName(entry), entry.GetSize().value_or(0),
+        FormatAttributes(attributes), FormatTime(entry.GetModified()));
+    absl::StrAppend(text, absl::StripTrailingAsciiWhitespace(line), "\n");
+  }
+  if (text->empty()) {
+    *text = "no files\n";
+  }
+  return absl::OkStatus();
+}
+
+absl::Status DiskTool::DoPut(const DiskFilename& name,
+                             absl::Span<const std::byte> bytes,
+                             gb::FileAttributes attributes,
+                             gb::FileAttributes mask) {
+  const std::string path = GetDiskPath(name);
+  const bool written =
+      file_system_->WriteFile(path, bytes.data(),
+                              static_cast<int64_t>(bytes.size())) &&
+      (mask.IsEmpty() || file_system_->SetAttributes(path, attributes, mask));
+  if (!written) {
+    // A read-only file refuses the delete as it refused the write, so it is
+    // kept.
+    const DiskStatus status = TakeFailure(DiskStatus::kIoError);
+    file_system_->DeleteFile(path);
+    return Named(name, status);
+  }
+  return absl::OkStatus();
+}
+
+absl::Status DiskTool::DoGet(const DiskFilename& name,
+                             std::vector<std::byte>* bytes,
+                             gb::FileAttributes* attributes) {
+  const std::string path = GetDiskPath(name);
+  const gb::PathInfo info = file_system_->GetPathInfo(path);
+  if (info.type != gb::PathType::kFile) {
+    return Named(name, TakeFailure(DiskStatus::kNotFound));
+  }
+  if (!file_system_->ReadFile(path, bytes)) {
+    return Named(name, TakeFailure(DiskStatus::kIoError));
+  }
+  *attributes = info.attributes;
+  return absl::OkStatus();
+}
+
+absl::Status DiskTool::DoDelete(const DiskFilename& pattern) {
+  std::vector<DiskDirEntry> entries;
+  if (DiskStatus status = protocol_->FindEntries(pattern, &entries);
+      status != DiskStatus::kOk) {
+    return ToStatus(status);
+  }
+  if (entries.empty()) {
+    return Named(pattern, DiskStatus::kNotFound);
+  }
+
+  // Each failure is named, and the rest are still deleted. The first failure
+  // gives the code.
+  std::vector<std::string> failures;
+  absl::StatusCode code = absl::StatusCode::kOk;
+  for (const DiskDirEntry& entry : entries) {
+    const DiskFilename name = *entry.GetName();
+    if (file_system_->DeleteFile(GetDiskPath(name))) {
+      continue;
+    }
+    const DiskStatus status = TakeFailure(DiskStatus::kIoError);
+    if (failures.empty()) {
+      code = ToStatus(status).code();
+    }
+    failures.push_back(
+        absl::StrCat(name.ToString(), ": ", GetDiskStatusText(status)));
+  }
+  return absl::Status(code, absl::StrJoin(failures, "; "));
+}
+
+absl::Status DiskTool::DoRename(const DiskFilename& from,
+                                const DiskFilename& to) {
+  const std::string from_path = GetDiskPath(from);
+  const std::string to_path = GetDiskPath(to);
+  if (!file_system_->IsValidFile(from_path)) {
+    return Named(from, TakeFailure(DiskStatus::kNotFound));
+  }
+
+  // gb refuses a move onto a file that exists before it reaches the disk, so
+  // the protocol has no failure to give.
+  if (from != to && file_system_->IsValidPath(to_path)) {
+    return Named(to, DiskStatus::kExists);
+  }
+  if (!file_system_->MoveFile(from_path, to_path)) {
+    return Named(from, TakeFailure(DiskStatus::kIoError));
+  }
+  return absl::OkStatus();
+}
+
+absl::Status DiskTool::DoAttrib(const DiskFilename& name,
+                                gb::FileAttributes set,
+                                gb::FileAttributes clear, std::string* text) {
+  const gb::FileAttributes mask = gb::Union(set, clear);
+  const std::string path = GetDiskPath(name);
+  if (!file_system_->IsValidFile(path)) {
+    return Named(name, TakeFailure(DiskStatus::kNotFound));
+  }
+  if (!mask.IsEmpty() && !file_system_->SetAttributes(path, set, mask)) {
+    return Named(name, TakeFailure(DiskStatus::kIoError));
+  }
+  *text = absl::StrCat(
+      name.ToString(), " ",
+      FormatAttributes(file_system_->GetPathInfo(path).attributes), "\n");
+  return absl::OkStatus();
+}
+
+DiskStatus DiskTool::TakeFailure(DiskStatus otherwise) {
+  const DiskStatus status = protocol_->TakeLastFailure();
+  return status != DiskStatus::kOk ? status : otherwise;
+}
+
+std::string DiskTool::GetDiskPath(const DiskFilename& name) const {
+  return absl::StrCat(protocol_name_, ":/", name.ToString());
+}
+
+gb::FileAttributes DiskTool::GetCopiedAttributes(
+    std::string_view host_path) const {
+  const std::string normalized_path = gb::NormalizePath(host_path);
+  std::string_view protocol_name;
+  gb::RemoveProtocol(normalized_path, &protocol_name);
+  if (protocol_name.empty()) {
+    protocol_name = file_system_->GetDefaultProtocolName();
+  }
+  return gb::Intersect(file_system_->GetAttributeFlags(protocol_name),
+                       protocol_->GetAttributeFlags());
 }
 
 }  // namespace oz3

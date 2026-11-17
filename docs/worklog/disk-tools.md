@@ -72,7 +72,8 @@ them. It settles the points below, and updates disk_design.md to match.
   The root's slot counts against the protocol's open files, so the default of
   16 leaves 15 for files. The file system itself isn't exposed, so nothing
   else can open the root or format under the protocol: the protocol passes
-  on what the tool needs (`GetMedia`, `GetVolumeInfo`, and `SetLabel`).
+  on what the tool needs (`GetMedia`, `GetVolumeInfo`, `SetLabel`, and the
+  calls below).
 - **Formatting is the protocol's.** The file system won't format with a file
   open, the root included, so the protocol has its own `Format`, which closes
   the root, formats, stamped by the clock, and opens the root again.
@@ -91,8 +92,9 @@ them. It settles the points below, and updates disk_design.md to match.
   committed, as the drive's `FIND` gives it.
 - **`dir` reads entries itself.** disk_design.md had `dir` read attributes from
   the protocol's `PathInfo`. `dir` shows modified times too, which `PathInfo`
-  has no room for, so it lists through the file system's `Find`, which gives
-  each whole entry, in directory order, as the drive's `FIND` does.
+  has no room for, so it lists through the protocol's `FindEntries`, the file
+  system's `Find` on its root, which gives each whole entry, in directory
+  order, as the drive's `FIND` does.
 - **`new` won't replace a file.** `DiskImage::Create` replaces any file at its
   path, but `oz3dsk new` fails if the image already exists, so a typo never
   blanks a disk. To remake one, delete it first.
@@ -189,6 +191,20 @@ class DiskFileProtocol final : public gb::FileProtocol {
   DiskStatus GetVolumeInfo(DiskVolumeInfo* info);
   DiskStatus SetLabel(const DiskLabel& label);
 
+  // Whether files can be reached, or changed (adding write protection):
+  // the file system's status, or kCorrupt if the root couldn't be opened.
+  DiskStatus GetVolumeStatus() const;
+  DiskStatus GetWritableStatus() const;
+
+  // The entries of the files `pattern` matches, in directory order, hidden
+  // ones included, through the root, for dir and del.
+  DiskStatus FindEntries(const DiskFilename& pattern,
+                         std::vector<DiskDirEntry>* entries);
+
+  // The status of the last disk operation that failed, cleared by taking it
+  // and by mounting, or kOk if none has, or gb refused the call itself.
+  DiskStatus TakeLastFailure();
+
   // gb::FileProtocol.
   gb::FileProtocolFlags GetFlags() const override;
   std::vector<std::string> GetDefaultNames() const override;
@@ -216,10 +232,17 @@ class DiskFileProtocol final : public gb::FileProtocol {
   invalid. `GetCanonicalPath` gives a name parsed and formatted again, so it
   is in upper case and `hello.txt` and `HELLO.TXT` are one file. Any other path
   is its own canonical path.
+- **Failures keep their status.** `gb::FileSystem` calls and `RawFile`s fail
+  with only a bool or a short count, but each of the protocol's calls on the
+  file system gets an exact status. The protocol keeps the last that failed
+  (other than a name not found), for `TakeLastFailure`, so the tool reports
+  `HELLO.TXT: corrupt` or `disk full` rather than guessing from what it can
+  check first. A failure the protocol never saw, where gb refused the call
+  itself (a move onto a file that exists), takes as `kOk`.
 - **`DoGetPathInfo`** seeks the root to 0 and `Find`s the name, giving its
   entry's size × 2, and its attributes.
-- **`DoList`** walks the root with `Find` from 0, matching each formatted name
-  against the pattern with
+- **`DoList`** takes every entry from `FindEntries`, matching each formatted
+  name against the pattern with
   `gb::PathMatchesPattern`, the pattern turned to upper case so case is
   ignored. The disk's own patterns aren't used, as gb's patterns are what every
   protocol's callers write. Recursive mode is the same, with no folders.
@@ -306,7 +329,8 @@ class DiskTool final {
                       const DiskFilename& to);
   absl::StatusOr<std::string> Attrib(std::string_view image_path,
                                      const DiskFilename& name,
-                                     uint16_t set, uint16_t clear);
+                                     gb::FileAttributes set,
+                                     gb::FileAttributes clear);
   absl::Status Label(std::string_view image_path, const DiskLabel& label);
   absl::Status Protect(std::string_view image_path, bool write_protected);
   absl::StatusOr<std::string> Check(std::string_view image_path, bool fix);
@@ -314,6 +338,10 @@ class DiskTool final {
   // Parses a size in words, with K and M suffixes, into sectors. Fails if it
   // isn't a whole number of sectors from 1 to kMaxSectorCount.
   static absl::StatusOr<int> ParseSectorCount(std::string_view text);
+
+  // Parses attribute letters, r and h, for attrib's --set and --clear.
+  static absl::StatusOr<gb::FileAttributes> ParseAttributes(
+      std::string_view letters);
 };
 ```
 
@@ -326,15 +354,29 @@ class DiskTool final {
   `r` and `h`, and the modified time, or blank with no date), `Attrib`'s
   letters, and `Check`'s report, one line per problem.
 - **What each command uses,** as disk_design.md has it: `put` and `get` copy
-  through the protocol (`CopyFile` for binary, which keeps attributes, and for
-  text a read, the helpers, a write, then `SetAttributes` with the attributes
-  both protocols support), `ren` is `MoveFile`, and `attrib` is
-  `SetAttributes` and `GetPathInfo`. `dir` and `del` take the matching entries
-  from the protocol, which finds them through its root (`del` collects the
-  names, then deletes each). `format` is the protocol's `Format`, and `info`
-  and `label` use its `GetMedia`, `GetVolumeInfo`, and `SetLabel`. `new`, `protect`, and `check`
+  through the protocol, binary or text alike: a read of the whole file, the
+  helpers for text, a write, then `SetAttributes` with the attributes both
+  protocols support, as `CopyFile` keeps them. Not `CopyFile` itself, so the
+  host side is read or written outside the mounted image, and a failure names
+  the side that failed (`hello.txt: read-only`, or `work.ozd: HELLO.TXT: disk
+  full`), as the protocol's `TakeLastFailure` gives it. A failed `put` deletes
+  what it wrote, so it leaves no file, but a read-only file refuses both. `ren` is
+  `MoveFile`, and `attrib` is `SetAttributes` and `GetPathInfo`. `dir` and
+  `del` take the matching entries from the protocol's `FindEntries`, which
+  finds them through its root (`del` collects the names, then deletes each).
+  `format` is the protocol's `Format`, and `info` and `label` use its
+  `GetMedia`, `GetVolumeInfo`, and `SetLabel`. `new`, `protect`, and `check`
   use the image alone: `DiskImage::Create`, `SetWriteProtected` on the image
   with nothing attached, and `CheckDisk` or `RepairDisk`.
+- **Every file command needs a file system:** `RunMounted` checks the
+  protocol's `GetVolumeStatus` before a command that reads files, and
+  `GetWritableStatus` before one that changes them, so an unformatted disk, a
+  root that can't be opened, or (for changes) write protection fails it before
+  it starts, and no command has to remember to check.
+- **`get`'s default host file** is the app's to choose (the dotted name in the
+  current folder), as only the app knows the current folder, so `Get` always
+  takes a host path. `put`'s default disk name is the tool's, from the host
+  file's name.
 - **The image** is mounted by the command that needs it and unmounted at its
   end, so the tool holds nothing between commands, and an unmount's failure
   to commit is the command's failure.
@@ -431,13 +473,14 @@ Depends on: CL2.
   duplicate names, with and without fixing, and its output; the host failing
   to read or write the image.
 
-### CL4 [ ] tools: DiskTool on files
+### CL4 [x] tools: DiskTool on files
 
 Depends on: CL3.
 
 - `disk_transfer.h` and `.cc`: the host transfer helpers.
 - `disk_file_protocol.h` and `.cc`: `FindEntries`, the entries matching a
-  pattern, for `Dir` and `Delete`.
+  pattern, for `Dir` and `Delete`; `GetVolumeStatus` and `GetWritableStatus`;
+  `TakeLastFailure`; and `AttributesFromDisk`, now public for `Dir`.
 - `disk_tool.h` and `.cc`: `Dir`, `Put`, `Get`, `Delete`, `Rename`, and
   `Attrib`.
 
@@ -448,7 +491,10 @@ Depends on: CL3.
   and text, with and without names, a host name that doesn't fit, replacing a
   file, refusing a read-only one, and keeping attributes both ways; `Dir` with
   patterns and `--all`; `Delete` of a pattern with a read-only match and with
-  none; `Rename` onto a taken name; `Attrib` setting, clearing, and showing.
+  none; `Rename` onto a taken name; `Attrib` setting, clearing, and showing;
+  each file command on an unformatted disk, a broken root, and a corrupt
+  file, and refusing a pattern for one file. The protocol's last failure for each refusal, and its volume status
+  with nothing mounted, unformatted, formatted, and protected.
 
 ### CL5 [ ] apps: oz3dsk
 
