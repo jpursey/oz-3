@@ -16,7 +16,7 @@ set(oz3_disk_SOURCE
   disk_media.cc disk_media.h
   disk_packed_text.cc disk_packed_text.h
   disk_sector_buffer.h
-  disk_status.h
+  disk_status.cc disk_status.h
   disk_superblock.cc disk_superblock.h
 )
 set(oz3_disk_DEPS
@@ -45,9 +45,11 @@ set(oz3_disk_TEST_SOURCE
   disk_image_test.cc
   disk_label_test.cc
   disk_layout_test.cc
+  disk_status_test.cc
   disk_superblock_test.cc
 )
 set(oz3_disk_TEST_DEPS
+  absl::flat_hash_set
   oz3_disk_testing
 )
 

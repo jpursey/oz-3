@@ -397,7 +397,7 @@ Checked against Game Bits' `main` while planning, so nothing is left open:
 
 ## CLs
 
-### CL1 [ ] disk: status text
+### CL1 [x] disk: status text
 
 Depends on: nothing.
 

@@ -7,6 +7,7 @@
 #define OZ3_DISK_DISK_STATUS_H_
 
 #include <cstdint>
+#include <string_view>
 
 namespace oz3 {
 
@@ -43,6 +44,11 @@ enum class DiskStatus : uint16_t {
   kCorrupt = 0x24,         // The file system is inconsistent.
   kIoError = 0x25,         // The host failed to read or write the image.
 };
+
+// Returns `status` as a person reads it, in lower case for messages, such as
+// "read-only" or "disk full". A value that isn't a status, as a program may
+// write, is "unknown status".
+std::string_view GetDiskStatusText(DiskStatus status);
 
 }  // namespace oz3
 
