@@ -54,12 +54,19 @@ set(oz3_disk_TEST_DEPS
 gb_add_library(oz3_disk)
 
 # Test support: a memory file protocol whose files fail once told to, as a
-# failing host's would, for tests of disks on a failing host.
+# failing host's would, for tests of disks on a failing host, and what tests
+# of disks check images with.
 set(oz3_disk_testing_SOURCE
+  disk_testing.cc disk_testing.h
   faulty_file_protocol.cc faulty_file_protocol.h
 )
 set(oz3_disk_testing_DEPS
+  absl::span
   gb_file
+  oz3_disk
+)
+set(oz3_disk_testing_LIBS
+  absl::check
 )
 
 gb_add_library(oz3_disk_testing)

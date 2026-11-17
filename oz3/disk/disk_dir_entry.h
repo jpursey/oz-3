@@ -73,6 +73,11 @@ class DiskDirEntry final {
   // Returns `words` exactly as given. `words` must be kWordCount long.
   static DiskDirEntry FromWords(absl::Span<const uint16_t> words);
 
+  // Returns entry `index` of a directory sector's `words`, exactly as they
+  // hold it. `words` must be kDiskSectorWords long, and `index` 0 to
+  // kEntriesPerSector - 1.
+  static DiskDirEntry FromSector(absl::Span<const uint16_t> words, int index);
+
   //----------------------------------------------------------------------------
   // Operators
   //----------------------------------------------------------------------------
@@ -118,6 +123,11 @@ class DiskDirEntry final {
 
   // Returns the words.
   const Words& GetWords() const { return words_; }
+
+  // Copies the words to entry `index` of a directory sector's `words`, leaving
+  // its other entries as they are. `words` must be kDiskSectorWords long, and
+  // `index` 0 to kEntriesPerSector - 1.
+  void CopyToSector(int index, absl::Span<uint16_t> words) const;
 
  private:
   //----------------------------------------------------------------------------

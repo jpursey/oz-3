@@ -45,25 +45,6 @@ byte counts each way, CRLF, CR, and LF going in, and zero bytes dropped
 coming out. They were planned for *Disk library*, but nothing in the disk
 format needs them.
 
-## Shared disk entry and write helpers
-
-- **Layers:** disk
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [disk-library.md](worklog/disk-library.md)
-
-Two things the disk library writes by hand more than once:
-- **A directory entry in a sector:** reading entry `index` out of a sector's
-  words with `DiskDirEntry::FromWords` on a subspan, and copying one back, is
-  written out in `disk_check.cc`, `disk_file_system.cc`, and the tests of
-  both. `DiskDirEntry` could read and write an entry in a sector itself.
-- **Test helpers:** `CollectSectorWrites`, which turns `FaultyFileProtocol`'s
-  write offsets into sector numbers, is copied in `disk_fat_test.cc`,
-  `disk_file_system_test.cc`, and `disk_check_test.cc`, and the crash tests'
-  walk of whole chains has a near twin in `disk_check_test.cc`. A test-only
-  header beside `faulty_file_protocol.h` would hold them once.
-
 ## Ozzy drives
 
 - **Layers:** ozzy, apps, wiki

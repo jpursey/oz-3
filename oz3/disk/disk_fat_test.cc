@@ -22,6 +22,7 @@
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_testing.h"
 #include "oz3/disk/faulty_file_protocol.h"
 
 namespace oz3 {
@@ -41,10 +42,6 @@ constexpr char kPath[] = "mem:/disk.img";
 // seek 100 milliseconds.
 constexpr absl::Duration kRead = absl::Seconds(1);
 constexpr absl::Duration kLatency = absl::Milliseconds(100);
-
-// Where an image's sectors are in its file, after the header.
-constexpr int64_t kHeaderBytes = 16;
-constexpr int64_t kSectorBytes = kDiskSectorWords * 2;
 
 // A 360 KB floppy: 716 clusters of one sector, after 3 FAT sectors, so
 // cluster 256 starts sector 2's words, and 512 sector 3's.
@@ -90,7 +87,7 @@ class DiskFatTest : public ::testing::Test {
     }
     hardware_->AttachImage(*std::move(image));
     RemakeFat(layout);
-    CollectSectorWrites();
+    CollectSectorWrites(protocol_);
   }
 
   // Makes fat_ again for the disk of `layout`, forgetting its buffers, to see
@@ -121,7 +118,7 @@ class DiskFatTest : public ::testing::Test {
     words[index % kDiskSectorWords] = value;
     EXPECT_EQ(hardware_->WriteSector(sector, words, WriteCaching::kSkip),
               DiskStatus::kOk);
-    CollectSectorWrites();
+    CollectSectorWrites(protocol_);
   }
 
   // Links `clusters` into a chain on the disk, in order, ending after the
@@ -160,16 +157,6 @@ class DiskFatTest : public ::testing::Test {
     return cluster;
   }
 
-  // Returns the sectors written to the image since the last call, in order.
-  std::vector<int> CollectSectorWrites() {
-    std::vector<int> sectors;
-    for (int64_t offset : protocol_->CollectWriteOffsets()) {
-      sectors.push_back(
-          static_cast<int>((offset - kHeaderBytes) / kSectorBytes));
-    }
-    return sectors;
-  }
-
   gb::FileSystem host_;
   FaultyFileProtocol* protocol_ = nullptr;  // Owned by host_.
   std::unique_ptr<DiskHardware> hardware_;
@@ -188,7 +175,7 @@ TEST_F(DiskFatTest, FormatTakesTheFirstClusterForTheRoot) {
   EXPECT_THAT(fat_->GetFreeCount(), Optional(715));
 
   // Sector 1 first, then the others, zeroed.
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1, 2, 3));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1, 2, 3));
   Sector head = {};
   head[0] = 2;
   head[1] = DiskLayout::kFatEnd;
@@ -225,7 +212,7 @@ TEST_F(DiskFatTest, FormatFailsWhenTheHostWriteFails) {
   protocol_->SetLimits({.writes = 1});
   int root_cluster = 0;
   EXPECT_EQ(fat_->Format(&root_cluster), DiskStatus::kIoError);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1));
 }
 
 //------------------------------------------------------------------------------
@@ -389,10 +376,10 @@ TEST_F(DiskFatTest, AllocatingTakesTheHead) {
   EXPECT_EQ(head, 4);
 
   // The changes stay in sector 1's buffer until written.
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_EQ(ReadFatWord(0), 0);
   ASSERT_EQ(fat_->Write(), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1));
   EXPECT_EQ(ReadFatWord(0), 4);
   EXPECT_EQ(ReadFatWord(1), 2);
   EXPECT_EQ(ReadFatWord(2), DiskLayout::kFatEnd);
@@ -400,7 +387,7 @@ TEST_F(DiskFatTest, AllocatingTakesTheHead) {
 
   // Nothing is left to write.
   ASSERT_EQ(fat_->Write(), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 }
 
 TEST_F(DiskFatTest, AllocatingTheLastFreeCluster) {
@@ -425,12 +412,12 @@ TEST_F(DiskFatTest, AllocatingWritesTheEndBeforeALinkInALaterSector) {
   SetFatWord(0, 2);
   ASSERT_EQ(CountFree(), 715);
   EXPECT_EQ(Allocate(300), 2);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1));
   EXPECT_EQ(ReadFatWord(0), 3);
   EXPECT_EQ(ReadFatWord(2), DiskLayout::kFatEnd);
 
   ASSERT_EQ(fat_->Write(), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(2));
   EXPECT_EQ(ReadFatWord(300), 2);
 }
 
@@ -441,12 +428,12 @@ TEST_F(DiskFatTest, AllocatingWritesANewEndInALaterSectorBeforeTheLink) {
   SetFatWord(0, 400);
   ASSERT_EQ(CountFree(), 317);
   EXPECT_EQ(Allocate(1), 400);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1, 2));
   EXPECT_EQ(ReadFatWord(0), 401);
   EXPECT_EQ(ReadFatWord(400), DiskLayout::kFatEnd);
 
   ASSERT_EQ(fat_->Write(), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1));
   EXPECT_EQ(ReadFatWord(1), 400);
 }
 
@@ -459,11 +446,11 @@ TEST_F(DiskFatTest, ChainsInTheWorkingSectorWriteNothingUntilWritten) {
   EXPECT_EQ(Allocate(0), 301);
   EXPECT_EQ(Allocate(300), 302);
   EXPECT_EQ(Allocate(301), 303);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Sector 1 first.
   ASSERT_EQ(fat_->Write(), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1, 2));
   RemakeFat(kFloppyLayout);
   EXPECT_THAT(GetChain(300), ElementsAre(300, 302));
   EXPECT_THAT(GetChain(301), ElementsAre(301, 303));
@@ -475,12 +462,12 @@ TEST_F(DiskFatTest, MovingTheWorkingBufferWritesItAfterSectorOne) {
   SetFatWord(0, 300);
   ASSERT_EQ(CountFree(), 417);
   EXPECT_EQ(Allocate(0), 300);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
 
   // Reading sector 3 into the working buffer.
   int next = -1;
   ASSERT_EQ(fat_->GetNextCluster(600, &next), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1, 2));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1, 2));
   EXPECT_EQ(ReadFatWord(0), 301);
   EXPECT_EQ(ReadFatWord(300), DiskLayout::kFatEnd);
 }
@@ -500,7 +487,7 @@ TEST_F(DiskFatTest, FreeingAWholeChainOntoTheHead) {
 
   // Nothing has counted the free clusters, and freeing doesn't.
   ASSERT_EQ(fat_->FreeChain(/*unlink_from=*/0, 2, 4, 3), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1));
   EXPECT_EQ(fat_->GetFreeCount(), std::nullopt);
   EXPECT_EQ(ReadFatWord(0), 2);
   EXPECT_EQ(ReadFatWord(4), 6);
@@ -519,7 +506,7 @@ TEST_F(DiskFatTest, FreeingOntoAnEmptyFreeList) {
   SetChain({4, 2});
   ASSERT_EQ(CountFree(), 0);
   ASSERT_EQ(fat_->FreeChain(/*unlink_from=*/0, 4, 2, 2), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1));
   EXPECT_THAT(fat_->GetFreeCount(), Optional(2));
   RemakeFat(kSmallLayout);
   EXPECT_EQ(CountFree(), 2);
@@ -536,20 +523,20 @@ TEST_F(DiskFatTest, FreeingWritesEachChangeInOrderAcrossSectors) {
   // Unlinking 300 from 250: the new end in sector 1, the link to the old head
   // in sector 2, then the head.
   ASSERT_EQ(fat_->FreeChain(250, 300, 300, 1), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(1, 2, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(1, 2, 1));
   EXPECT_EQ(ReadFatWord(250), DiskLayout::kFatEnd);
   EXPECT_EQ(ReadFatWord(300), 700);
   EXPECT_EQ(ReadFatWord(0), 300);
 
   // A whole chain, whose last link is in sector 3.
   ASSERT_EQ(fat_->FreeChain(/*unlink_from=*/0, 100, 520, 2), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3, 1));
   EXPECT_EQ(ReadFatWord(520), 300);
   EXPECT_EQ(ReadFatWord(0), 100);
 
   // The new end and the link next to each other in sector 3, in one write.
   ASSERT_EQ(fat_->FreeChain(600, 601, 602, 2), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), ElementsAre(3, 1));
+  EXPECT_THAT(CollectSectorWrites(protocol_), ElementsAre(3, 1));
   EXPECT_EQ(ReadFatWord(600), DiskLayout::kFatEnd);
   EXPECT_EQ(ReadFatWord(602), 100);
   EXPECT_EQ(ReadFatWord(0), 601);
@@ -559,7 +546,7 @@ TEST_F(DiskFatTest, FreeingNothingWritesNothing) {
   MakeFat(kSmallLayout);
   ASSERT_EQ(CountFree(), 10);
   ASSERT_EQ(fat_->FreeChain(/*unlink_from=*/0, 0, 0, 0), DiskStatus::kOk);
-  EXPECT_THAT(CollectSectorWrites(), IsEmpty());
+  EXPECT_THAT(CollectSectorWrites(protocol_), IsEmpty());
   EXPECT_THAT(fat_->GetFreeCount(), Optional(10));
 }
 

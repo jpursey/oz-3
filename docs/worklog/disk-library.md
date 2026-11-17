@@ -408,7 +408,8 @@ class DiskFilename final {
   exactly as read, and `IsFree` is its first word being 0. The attribute bits
   are `kDiskAttribReadOnly`, `kDiskAttribHidden`, and `kDiskAttribDirectory`
   (always 0 until there are subdirectories), and `kDiskAttribSettable` is the
-  two `ATTRIB` sets. `kEntriesPerSector` is 16.
+  two `ATTRIB` sets. `kEntriesPerSector` is 16, and `FromSector` and
+  `CopyToSector` read and write entry `index` of a directory sector's words.
 - Dotted text with a trailing dot and no extension (`HELLO.`) is the name
   with no extension, as DOS reads it. A second dot is refused.
 
@@ -848,6 +849,12 @@ DiskStatus RepairDisk(DiskImage& image, DiskCheckReport* report);
   extends it, and a `Read` at the end returns short rather than failing.
   Read-only image files are made with `gb::FileSystem::SetAttributes`, which
   the memory protocol supports.
+- **`disk_testing.h`** (test only, beside `FaultyFileProtocol` in
+  `oz3_disk_testing`) works out what tests check without the library:
+  `CollectSectorWrites` turns the protocol's write offsets into sectors, and
+  `FollowFatChain` follows a chain in a FAT's words whole, stopping at a link
+  past the last cluster (`FatChain::broken`) or after as many clusters as the
+  disk has.
 - `date_time_test.cc` (core): words from a civil time and back, no date, and
   ordering across each word. The timer's tests pass unchanged.
 - `disk_image_test.cc`: the header's exact bytes, every header error, sector

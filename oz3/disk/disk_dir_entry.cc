@@ -18,6 +18,21 @@ DiskDirEntry DiskDirEntry::FromWords(absl::Span<const uint16_t> words) {
   return DiskDirEntry(entry_words);
 }
 
+DiskDirEntry DiskDirEntry::FromSector(absl::Span<const uint16_t> words,
+                                      int index) {
+  CHECK_EQ(static_cast<int>(words.size()), kDiskSectorWords);
+  CHECK_GE(index, 0);
+  CHECK_LT(index, kEntriesPerSector);
+  return FromWords(words.subspan(index * kWordCount, kWordCount));
+}
+
+void DiskDirEntry::CopyToSector(int index, absl::Span<uint16_t> words) const {
+  CHECK_EQ(static_cast<int>(words.size()), kDiskSectorWords);
+  CHECK_GE(index, 0);
+  CHECK_LT(index, kEntriesPerSector);
+  std::copy(words_.begin(), words_.end(), words.begin() + index * kWordCount);
+}
+
 std::optional<DiskFilename> DiskDirEntry::GetName() const {
   return DiskFilename::FromWords(
       absl::MakeConstSpan(words_).subspan(kNameWord, DiskFilename::kWordCount));
