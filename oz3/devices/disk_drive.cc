@@ -471,17 +471,6 @@ std::optional<DiskFilename> DiskDrive::GetNameArgument(const Command& command) {
   return DiskFilename::FromWords(words);
 }
 
-DiskStatus DiskDrive::GetWritableDiskStatus() const {
-  if (DiskStatus status = file_system_.GetImageStatus();
-      status != DiskStatus::kOk) {
-    return status;
-  }
-  if (file_system_.GetMedia()->IsWriteProtected()) {
-    return DiskStatus::kWriteProtected;
-  }
-  return DiskStatus::kOk;
-}
-
 DiskStatus DiskDrive::GetNewSlotStatus(DiskStatus disk_status) const {
   if (disk_status != DiskStatus::kOk) {
     return disk_status;
@@ -490,11 +479,6 @@ DiskStatus DiskDrive::GetNewSlotStatus(DiskStatus disk_status) const {
     return DiskStatus::kTooManyOpen;
   }
   return DiskStatus::kOk;
-}
-
-DiskStatus DiskDrive::GetHandleStatus(DiskFile file) {
-  DiskFileInfo info;
-  return file_system_.GetFileInfo(file, &info);
 }
 
 DiskDrive::CommandResponse DiskDrive::MakeOpenResponse(DiskStatus status,
@@ -535,7 +519,13 @@ DiskDrive::CommandResponse DiskDrive::AcceptCreate(Command* command) {
   if (!command->name.has_value()) {
     return {.status = DiskStatus::kBadName};
   }
-  return {.status = GetNewSlotStatus(GetWritableDiskStatus())};
+
+  // An unformatted disk is found at completion.
+  DiskStatus disk_status = file_system_.GetWritableStatus();
+  if (disk_status == DiskStatus::kUnformatted) {
+    disk_status = DiskStatus::kOk;
+  }
+  return {.status = GetNewSlotStatus(disk_status)};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunCreate(const Command& command) {
@@ -551,7 +541,8 @@ DiskDrive::CommandResponse DiskDrive::AcceptClose(const Command& command) {
 
   // A stale slot, or one on a failed image, still closes, and its completion
   // says what became of its writes.
-  if (GetHandleStatus(command.GetHandle()) == DiskStatus::kBadHandle) {
+  if (file_system_.GetFileStatus(command.GetHandle()) ==
+      DiskStatus::kBadHandle) {
     return {.status = DiskStatus::kBadHandle};
   }
   return {.status = DiskStatus::kOk};
@@ -577,7 +568,7 @@ DiskDrive::CommandResponse DiskDrive::RunClose(const Command& command) {
 
 DiskDrive::CommandResponse DiskDrive::AcceptFlush(const Command& command) {
   // A directory's handle flushes too, writing nothing.
-  return {.status = GetHandleStatus(command.GetHandle())};
+  return {.status = file_system_.GetFileStatus(command.GetHandle())};
 }
 
 DiskDrive::CommandResponse DiskDrive::RunFlush(const Command& command) {

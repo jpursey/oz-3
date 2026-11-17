@@ -152,6 +152,12 @@ class DiskFileSystem final {
   // disk, and kUnformatted with no file system.
   DiskStatus SetLabel(const DiskLabel& label);
 
+  // Returns kNoDisk with no image, kIoError for a failed one, kWriteProtected
+  // for a protected one, kUnformatted with no file system, or else kOk, as
+  // every change to the disk checks first. Protection comes before
+  // formatting, as the drive finds it at accept and formatting at completion.
+  DiskStatus GetWritableStatus() const;
+
   // Sets `info` to the file system, counting the free clusters if this is
   // the first operation since attaching to need them. Returns kUnformatted
   // with no file system, and kCorrupt for a broken free list.
@@ -246,6 +252,11 @@ class DiskFileSystem final {
   // Sets `info` to `file`'s position and size.
   DiskStatus GetFileInfo(DiskFile file, DiskFileInfo* info);
 
+  // Returns kBadHandle if `file` is out of range or free, kDiskChanged if it
+  // is stale, kIoError if the image has failed, or else kOk, as every
+  // operation on `file` checks first.
+  DiskStatus GetFileStatus(DiskFile file) const;
+
   //----------------------------------------------------------------------------
   // Directory
   //----------------------------------------------------------------------------
@@ -335,12 +346,6 @@ class DiskFileSystem final {
   // with no file system, or else kOk.
   DiskStatus GetVolumeStatus() const;
 
-  // Returns kNoDisk with no image, kIoError for a failed one, kWriteProtected
-  // for a protected one, kUnformatted with no file system, or else kOk, as
-  // every change to the disk checks first. Protection comes before
-  // formatting, as the drive finds it at accept and formatting at completion.
-  DiskStatus GetWritableStatus() const;
-
   // Returns a cluster's size, in words.
   int GetClusterSize() const;
 
@@ -351,9 +356,8 @@ class DiskFileSystem final {
   // Makes every open slot stale, as its image is detached.
   void InvalidateOpenFiles();
 
-  // Sets `slot` to `file`'s slot if it is taken. Returns kBadHandle if it is
-  // out of range or free, and with `slot` set, kDiskChanged if it is stale,
-  // and kIoError if the image has failed.
+  // Sets `slot` to `file`'s slot if it is taken, stale or not, and returns
+  // GetFileStatus(file).
   DiskStatus GetSlot(DiskFile file, Slot** slot);
 
   // Sets `slot` to `file`'s slot if it can be written, as GetSlot does.

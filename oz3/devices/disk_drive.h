@@ -461,19 +461,10 @@ class DiskDrive final : public Device {
   // name rules.
   static std::optional<DiskFilename> GetNameArgument(const Command& command);
 
-  // Returns what a command that writes to the disk fails with at accept, for
-  // the disk: no disk, I/O error, or write protected, in that order. Returns
-  // kOk if it can write.
-  DiskStatus GetWritableDiskStatus() const;
-
   // Returns what a command that opens a file in a new slot fails with at
   // accept, given its disk's status: `disk_status` if it isn't kOk, and then
   // too many open.
   DiskStatus GetNewSlotStatus(DiskStatus disk_status) const;
-
-  // Returns what a command on handle `file` fails with at accept: bad handle,
-  // disk changed, or I/O error, in that order. Returns kOk if it is open.
-  DiskStatus GetHandleStatus(DiskFile file);
 
   // Returns the response to a command that opens `file`, with `status`.
   static CommandResponse MakeOpenResponse(DiskStatus status, DiskFile file);

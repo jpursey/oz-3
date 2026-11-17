@@ -243,8 +243,11 @@ struct DiskFileInfo {
 
 - `GetWritableWords` already gives everything `WRITE` and `TRUNCATE` need at
   accept: wrong handle type, read-only, and write protected, and how many words
-  fit. `GetFileInfo` gives bad handle, disk changed, and I/O error for every
-  other handle.
+  fit. `GetFileStatus` gives bad handle, disk changed, and I/O error for every
+  other handle, and `GetWritableStatus` gives the disk checks of the commands
+  with no handle that write (no disk, I/O error, write protected), with
+  unformatted left to completion. Both were private, and become public in
+  CL4.
 - The file system's own early checks stay, for tools, though the drive has
   already ruled them out at accept. The rules that are written twice are few
   (a pattern where a name goes, the settable attributes, and the layout), so

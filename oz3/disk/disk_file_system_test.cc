@@ -507,6 +507,7 @@ class DiskFileSystemTest : public ::testing::Test {
   DiskFileInfo GetInfo(DiskFile file) {
     DiskFileInfo info = {.position = -1, .size = -1, .directory = true};
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), DiskStatus::kOk);
+    EXPECT_EQ(file_system_.GetFileStatus(file), DiskStatus::kOk);
     return info;
   }
 
@@ -519,6 +520,7 @@ class DiskFileSystemTest : public ::testing::Test {
     EXPECT_EQ(file_system_.Seek(file, 0), status);
     DiskFileInfo info;
     EXPECT_EQ(file_system_.GetFileInfo(file, &info), status);
+    EXPECT_EQ(file_system_.GetFileStatus(file), status);
     DiskDirEntry entry;
     EXPECT_EQ(file_system_.Find(file, GetPattern("*.*"), &entry), status);
     count = -1;
@@ -723,6 +725,7 @@ TEST_F(DiskFileSystemTest, EmptyDriveIsNoDisk) {
   EXPECT_EQ(file_system_.SetLabel(GetLabel("WORK")), DiskStatus::kNoDisk);
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kNoDisk);
+  EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kNoDisk);
 }
 
 TEST_F(DiskFileSystemTest, BlankImageIsUnformatted) {
@@ -732,6 +735,7 @@ TEST_F(DiskFileSystemTest, BlankImageIsUnformatted) {
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("WORK")), DiskStatus::kUnformatted);
+  EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kUnformatted);
 }
 
 TEST_F(DiskFileSystemTest, MediaIsTheImageFormattedOrNot) {
@@ -970,7 +974,9 @@ TEST_F(DiskFileSystemTest, SetLabelRewritesOnlyTheLabel) {
 
 TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
   AttachFormatted(kFloppySectors);
+  EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kOk);
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
+  EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 3, GetNow()),
@@ -990,6 +996,7 @@ TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")),
             DiskStatus::kWriteProtected);
+  EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kWriteProtected);
 }
 
 TEST_F(DiskFileSystemTest, AttachingFailsWhenTheHostReadFails) {
@@ -997,6 +1004,7 @@ TEST_F(DiskFileSystemTest, AttachingFailsWhenTheHostReadFails) {
   protocol_->SetLimits({.reads = 0});
   EXPECT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kIoError);
   EXPECT_TRUE(file_system_.HasImage());
+  EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kIoError);
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kIoError);
   EXPECT_EQ(ReopenImage(), DiskStatus::kUnformatted);
