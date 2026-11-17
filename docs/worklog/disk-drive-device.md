@@ -161,22 +161,22 @@ class DiskDrive final : public Device {
   destroyed. A host that wants to eject cleanly can be given one when it
   needs it.
 
-### Wiki
+### Manual
 
-A new `3.5-Disk-Drive.md` page, as a program sees the drive. It has the
-wiring, settings, and presets; the disk itself (images, the file system, and
-names and patterns, which disk-library.md left for this page); and the ports,
-the protocol, the commands, and the statuses. It is written in one piece at
-the end of the feature, in CL7, once the drive's behavior has settled, rather
-than piece by piece with CL3 to CL6. CL7 also adds a row to `3-Devices.md`'s
-table and a line to `Home.md`.
+A new `3.5-Disk-Drive.md` page in the manual, as a program sees the drive. It
+has the wiring, settings, and presets; the disk itself (images, the file
+system, and names and patterns, which disk-library.md left for this page); and
+the ports, the protocol, the commands, and the statuses. It is written in one
+piece at the end of the feature, in CL7, once the drive's behavior has
+settled, rather than piece by piece with CL3 to CL6. CL7 also adds a row to
+`3-Devices.md`'s table and a line to the manual's `README.md`.
 
 ## Design
 
 ### Names
 
 - **`DiskDrive`**, `DiskDriveFactory`, and `DiskDriveSettings`, in
-  `disk_drive.h`, after the wiki page's "Disk Drive". "Drive" alone would
+  `disk_drive.h`, after the manual page's "Disk Drive". "Drive" alone would
   collide with the Ozzy's drive letters and with host drives. `DiskDevice`
   would describe every device. Recommended: `DiskDrive`.
 - **`DiskDriveCommand`**: an enum of the command codes (`kOpen` = 10h to
@@ -374,7 +374,7 @@ class DiskDriveFactory final : public DeviceFactory {
 ```
 
 - **The presets' names** (`floppy-1440k` and so on) belong to the Ozzy's
-  config, so *Ozzy drives* maps them to `DiskDrivePreset`. The wiki's drive
+  config, so *Ozzy drives* maps them to `DiskDrivePreset`. The manual's drive
   page lists the presets with what each approximates and its numbers.
 - **One class.** The drive owns its `DiskFileSystem` and runs each command
   itself. The protocol has to know each command's kind and fields to manage
@@ -681,21 +681,18 @@ Depends on: CL4.
   new status functions too. One assembled program that formats, lists with `FIND`,
   and reads the entries with `INR.ID`.
 
-### CL7 [ ] wiki: the disk drive
+### CL7 [x] manual: the disk drive
 
 Depends on: CL3 to CL6.
 
-- Wiki: `3.5-Disk-Drive.md`, the whole page, for the finished drive: wiring,
+- Manual: `3.5-Disk-Drive.md`, the whole page, for the finished drive: wiring,
   settings, and presets; the disk (images, the file system, and names and
   patterns); the ports, the protocol, aborts, timing, and disks coming and
   going; every command, reading and writing, early completion, packed
   transfers, the free count, and the OS examples' listing; and the statuses.
-  A row in `3-Devices.md`, and a line in `Home.md`. A draft of the page as of
+  A row in `3-Devices.md`, and a line in `README.md`. A draft of the page as of
   CL3 is in a comment on CL3's PR (#4), to start from.
-- In the repository, this CL only marks itself done. The wiki patch is in a
-  comment on its PR.
 
 **Verify**
 - The page against the code and docs/disk_design.md, section by section.
-- Its links resolve, by page name in lower case.
-- Wiki: the pages above, as a patch on the PR.
+- Its links and anchors resolve, by file name.
