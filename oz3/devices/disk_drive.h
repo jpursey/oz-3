@@ -335,36 +335,17 @@ class DiskDrive final : public Device {
   };
 
   // A READ's or WRITE's data phase, of the transfers its accept promised
-  // (words, or dwords for the packed forms): what both directions keep. Once a
-  // disk call fails, the drive sends its early completion, and the rest of the
-  // transfers move no data.
+  // (words, or dwords for the packed forms): what both directions keep.
   struct Transfer {
-    // Returns the phase the control port shows: phase 3 while the early
-    // completion's status waits on the command port, and otherwise
-    // `data_phase`.
-    DiskDrivePhase GetPhase(DiskDrivePhase data_phase) const {
-      return early_completion.has_value() && early_completion->fields_sent > 0
-                 ? DiskDrivePhase::kSending
-                 : data_phase;
-    }
-
     Command command;
     int accepted = 0;  // The transfers the accept promised.
 
     // The transfers moved through the data port: put on it for a READ, though
     // the OS may not have taken the last yet, and taken from it for a WRITE.
     int moved = 0;
-
-    // Whether a disk call has failed, after which transfers move no data.
-    bool failed = false;
-
-    // The failure's completion, until the OS has taken it.
-    std::optional<CommandResponse> early_completion;
   };
   struct ReadingState {
-    DiskDrivePhase GetPhase() const {
-      return transfer.GetPhase(DiskDrivePhase::kReading);
-    }
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kReading; }
     uint16_t GetCommandWord() const { return transfer.command.word; }
 
     Transfer transfer;
@@ -377,17 +358,58 @@ class DiskDrive final : public Device {
     std::optional<PortWords> next;
   };
   struct WritingState {
-    DiskDrivePhase GetPhase() const {
-      return transfer.GetPhase(DiskDrivePhase::kWriting);
-    }
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kWriting; }
     uint16_t GetCommandWord() const { return transfer.command.word; }
 
     Transfer transfer;
   };
 
-  using State = std::variant<IdleState, ArgumentsState, SendingAcceptState,
-                             RunningWorkState, SendingCompletionState,
-                             ReadingState, WritingState>;
+  // A data phase after a disk call failed. Its early completion's status goes
+  // out first, and nothing moves on the data port until it has. The rest of
+  // the transfers then move no data, at port speed.
+  struct FailedTransfer {
+    // Returns the phase the control port shows: phase 3 while the early
+    // completion's status waits on the command port, and otherwise
+    // `data_phase`.
+    DiskDrivePhase GetPhase(DiskDrivePhase data_phase) const {
+      return completion.has_value() && completion->fields_sent > 0
+                 ? DiskDrivePhase::kSending
+                 : data_phase;
+    }
+
+    Transfer transfer;
+
+    // The early completion, until the OS has taken it.
+    std::optional<CommandResponse> completion;
+  };
+  struct FailedReadingState {
+    DiskDrivePhase GetPhase() const {
+      return failure.GetPhase(DiskDrivePhase::kReading);
+    }
+    uint16_t GetCommandWord() const { return failure.transfer.command.word; }
+
+    FailedTransfer failure;
+
+    // The file's position when the read began.
+    int start_position = 0;
+
+    // The next transfer to put on the data port: the words read before the
+    // failure, padded with zeros, and then only zeros.
+    PortWords next;
+  };
+  struct FailedWritingState {
+    DiskDrivePhase GetPhase() const {
+      return failure.GetPhase(DiskDrivePhase::kWriting);
+    }
+    uint16_t GetCommandWord() const { return failure.transfer.command.word; }
+
+    FailedTransfer failure;
+  };
+
+  using State =
+      std::variant<IdleState, ArgumentsState, SendingAcceptState,
+                   RunningWorkState, SendingCompletionState, ReadingState,
+                   WritingState, FailedReadingState, FailedWritingState>;
 
   // Whether a run can go on, after a state's step or the work a run does
   // before one.
@@ -474,6 +496,8 @@ class DiskDrive final : public Device {
   StateResult ExecuteState(SendingCompletionState& state);
   StateResult ExecuteState(ReadingState& state);
   StateResult ExecuteState(WritingState& state);
+  StateResult ExecuteState(FailedReadingState& state);
+  StateResult ExecuteState(FailedWritingState& state);
 
   // Returns the state that follows `command`'s accept, once the OS has taken
   // it: its work, its data phase, or idle.
@@ -524,33 +548,32 @@ class DiskDrive final : public Device {
   // Returns the transfer of `command`, given its accept.
   static Transfer MakeTransfer(Command command, const CommandResponse& accept);
 
-  // Records `status`, a disk call's failure, as `transfer`'s early completion.
-  static void FailTransfer(Transfer& transfer, DiskStatus status);
+  // Returns the failure of `transfer`, with `status` as its early completion.
+  static FailedTransfer FailTransfer(Transfer transfer, DiskStatus status);
 
-  // Sends `transfer`'s early completion, or sees the OS take it, and returns
-  // the result of the step it took, or kWait while its status waits for a
-  // port's lock, which holds up the data phase. Returns nullopt if the data
-  // phase goes on: there is no early completion, or the OS hasn't taken it.
-  std::optional<StateResult> UpdateEarlyCompletion(Transfer& transfer);
-
-  // Returns the state that ends `transfer`'s data phase: its completion with
-  // `status`, the early completion if it failed, or idle once the OS has taken
-  // that.
+  // Returns the state that ends `transfer`'s data phase, with its completion of
+  // `status`.
   [[nodiscard]] static State EndTransfer(Transfer transfer, DiskStatus status);
 
-  // Reads `state`'s next transfer from the file into `next`, or zeros once it
-  // has failed or past the end.
-  void ReadNextTransfer(ReadingState& state);
+  // Returns the state that ends `failure`'s data phase: idle once the OS has
+  // taken its early completion, and until then, waiting for the OS to.
+  [[nodiscard]] static State EndFailedTransfer(FailedTransfer failure);
 
-  // Writes `words`, a transfer the OS wrote, to the file, flushing what it has
-  // taken if it fails.
-  void WriteTransfer(Transfer& transfer, PortWords words);
+  // Reads `transfer`'s next transfer from the file into `words`, padded with
+  // zeros past the end of the file, and returns the read's status. If it
+  // fails, `words` holds what was read before the failure.
+  DiskStatus ReadNextTransfer(const Transfer& transfer, PortWords& words);
+
+  // Writes `words`, a transfer the OS wrote, to the file, and returns the
+  // write's status. If it fails, it flushes what the drive has taken first.
+  DiskStatus WriteTransfer(const Transfer& transfer, PortWords words);
 
   // Seeks a READ's handle back past the words read ahead of the OS, as a reset
-  // ends it with the position just past the words the OS took. `data_untaken`
-  // is whether the data port's flag was still set when the reset withdrew its
-  // word.
-  void AbortRead(const ReadingState& state, bool data_untaken);
+  // ends it with the position just past the words the OS took. The read began
+  // at `start_position`, and `data_untaken` is whether the data port's flag
+  // was still set when the reset withdrew its word.
+  void AbortRead(const Transfer& transfer, int start_position,
+                 bool data_untaken);
 
   //----------------------------------------------------------------------------
   // Commands

@@ -2127,6 +2127,40 @@ TEST_F(DiskDriveTest, AResetLeavesAPackedReadOfAnOddFileInsideIt) {
                                    PortWords::FromDword(5)));
 }
 
+TEST_F(DiskDriveTest, APackedReadThatFailsInsideADwordSendsTheWordItRead) {
+  using enum DiskDriveCommand;
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(BreakChain(MakeImageWithFile("A", 600), "A"));
+  OpenFile("A");
+
+  // The first dword's high word is past the broken link, so the read fails
+  // after its low word. A reset before the OS takes that word puts it back.
+  EXPECT_THAT(Seek(0, 255), ElementsAre(Field(kOk)));
+  EXPECT_THAT(Transfer(kReadPacked, 0, 10),
+              ElementsAre(Field(kOk), PortWords::FromWord(10)));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_EQ(ReceiveField(), Field(DiskStatus::kCorrupt));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(255),
+                                   PortWords::FromDword(600)));
+
+  // The word comes through padded with a zero, and zeros follow it. The
+  // position stays where the failure left it.
+  EXPECT_THAT(Transfer(kReadPacked, 0, 10),
+              ElementsAre(Field(kOk), PortWords::FromWord(10)));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_EQ(ReceiveField(), Field(DiskStatus::kCorrupt));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  EXPECT_EQ(In(kDataPort), PortWords::FromWords(FileWord(255), 0));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  EXPECT_EQ(In(kDataPort), PortWords::FromWords(0, 0));
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(256),
+                                   PortWords::FromDword(600)));
+}
+
 TEST_F(DiskDriveTest, AResetKeepsTheWordsAWriteTook) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
