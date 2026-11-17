@@ -566,7 +566,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 - **Timestamps:** the protocol stamps written files using a clock given when it's created, or zeros without one. It doesn't report or set them through `gb::FileSystem` yet, which has no file times (see *File times in disk copies* in the backlog).
 - **Odd bytes** are exact within a file: reading from an odd offset starts with the high byte of its word, and writing there changes only that byte. Only the end rounds up to a whole word, so a file written a byte at a time holds the same words as one written at once.
 - **Sizes** in `PathInfo` are as the file's entry was last committed, as `FIND` gives them.
-- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host transfer helpers beside the protocol in `tools`. They convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
+- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host text transfer functions beside the protocol in `tools`. A file's bytes through the protocol are its words, two bytes per word, low byte first, which is also how strings are packed, so text needs no reordering. Text conversion only changes line endings (host endings to LF going in) and drops the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
 
 #### Ownership
 

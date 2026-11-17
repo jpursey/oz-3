@@ -10,8 +10,8 @@ three things in `tools`, and one app:
   code reaches the files on a disk as it reaches local or in-memory files:
   `gb::FileSystem::CopyFile("local:/hello.oz3", "ozdisk:/HELLO.OZ3")`, and the
   program loader and assembler read and write disks unchanged.
-- **Host transfer helpers** (`disk_transfer.h`): host bytes and text to and
-  from words, as the design's binary and text conventions have them.
+- **Host text transfer** (`disk_transfer.h`): host text to and from the
+  bytes of an OZ-3 file, as the design's text convention has it.
 - **`DiskTool`:** each of `oz3dsk`'s commands as a call on a `gb::FileSystem`,
   so they are tested with images in memory, as Ozzy's console frontend is in
   its library rather than its app.
@@ -89,10 +89,10 @@ them. It settles the points below, and updates disk_design.md to match.
 - **Sizes are as committed.** `PathInfo`'s size, and `dir`'s, come from the
   file's directory entry, which for a file open for writing is as it was last
   committed, as the drive's `FIND` gives it.
-- **`dir` reads entries itself.** disk_design.md had `dir` read attributes from
-  the protocol's `PathInfo`. `dir` shows modified times too, which `PathInfo`
-  has no room for, so it lists through the file system's `Find`, which gives
-  each whole entry, in directory order, as the drive's `FIND` does.
+- **`dir` lists through the protocol,** as disk_design.md has it: the names
+  from `ListFiles`, and each one's size and attributes from `PathInfo`. It
+  shows no times until `PathInfo` has them (Game Bits *File modified times*,
+  then OZ-3 *File times in disk copies*).
 - **`new` won't replace a file.** `DiskImage::Create` replaces any file at its
   path, but `oz3dsk new` fails if the image already exists, so a typo never
   blanks a disk. To remake one, delete it first.
@@ -101,10 +101,24 @@ them. It settles the points below, and updates disk_design.md to match.
   (`HELLO.TXT`).
 - **`del` deletes every match** it can, hidden files included, as the drive's
   `DELETE` of each name would, and reports each it couldn't (such as a
-  read-only file). It fails if any failed, or if nothing matched.
+  read-only file). It fails if any failed, or if nothing matched. An empty
+  pattern fails, rather than matching every file as `dir`'s does, so a
+  missing argument never empties a disk.
 - **Messages.** Every failure names what failed: the image's path, the disk
-  name, or the host file, then what went wrong, with a `DiskStatus` as its
-  text (see `GetDiskStatusText`), such as `work.ozd: HELLO.TXT: read-only`.
+  name, or the host file, then what went wrong. A failure of the image itself
+  has a `DiskStatus` as its text (see `GetDiskStatusText`), such as
+  `work.ozd: write protected`. A file command goes through `gb::FileSystem`,
+  whose calls say only whether they failed, so a failure there says what
+  couldn't be done to the file, such as `work.ozd: HELLO.TXT: can't be
+  written`, whether the file is read-only, the disk write protected or full,
+  or the disk broken. Only what the file system can be asked is told apart:
+  a name that isn't there, one that is taken, or one that isn't a disk name.
+  Failures give their reason once `gb::FileSystem` returns `absl::Status`
+  (Game Bits *File system errors as absl::Status*, then OZ-3 *Disk tool
+  failure reasons*).
+- **File commands need a file system.** A file command on an unformatted or
+  corrupt disk fails with the status `Mount` returns, before it does
+  anything, rather than as a failure of each file.
 
 ### Wiki
 
@@ -131,9 +145,11 @@ plan's wiki CL comes after it.
 - **`GetDiskStatusText`**, in `disk_status.h`: a status as the words a person
   reads, from disk_design.md's status table in lower case (`"read-only"`,
   `"disk full"`). "Name" would suggest the enumerator's spelling (`kReadOnly`).
-- **Host transfer helpers:** `WordsFromBytes`, `BytesFromWords`,
-  `WordsFromText`, and `TextFromWords`, in `disk_transfer.h`, as the backlog
-  named them.
+- **Host text transfer:** `DiskTextFromHost` and `HostTextFromDisk`, in
+  `disk_transfer.h`. The backlog named word conversions (`WordsFromBytes`,
+  `WordsFromText`, and back), but the protocol's files are bytes, low byte
+  first, so the only caller needs text to bytes and back, and nothing needs
+  words.
 
 ### disk: status text
 
@@ -252,25 +268,23 @@ can open the root or format under it. A `RawFile` kept past `Unmount` is safe (s
 protocol's destruction is a use after free, as for any protocol, since
 `gb::File` documents that its protocol must outlive it.
 
-### tools: host transfer helpers
+### tools: host text transfer
 
 ```
-// Two bytes a word, low byte first, an odd last byte padded with a zero.
-std::vector<uint16_t> WordsFromBytes(absl::Span<const std::byte> bytes);
-std::vector<std::byte> BytesFromWords(absl::Span<const uint16_t> words);
+// Each CRLF and lone CR becomes LF. Writing an odd number of bytes pads the
+// file's last word with a zero.
+std::string DiskTextFromHost(std::string_view host_text);
 
-// As WordsFromBytes, after turning CRLF and CR into LF.
-std::vector<uint16_t> WordsFromText(std::string_view text);
-
-// As BytesFromWords, dropping every zero byte, such as an odd length's
-// padding.
-std::string TextFromWords(absl::Span<const uint16_t> words);
+// Every zero byte is dropped, such as an odd length's padding.
+std::string HostTextFromDisk(std::string_view disk_text);
 ```
 
 - In `tools`, beside the protocol, as they know nothing of the disk format.
-  `put --text` turns the host file's text into words, and writes their bytes
-  through the protocol. `get --text` reads the bytes, then words, then text.
-  So text conversion is in one place, and any frontend can share it.
+  A file's bytes through the protocol are its words, low byte first, as
+  strings are packed, so text never needs reordering. `put --text` converts
+  the host file's text and writes it through the protocol, which pads an odd
+  length. `get --text` reads the bytes and converts them. So text conversion
+  is in one place, and any frontend can share it.
 
 ### tools: DiskTool
 
@@ -295,18 +309,18 @@ class DiskTool final {
                       int sectors_per_cluster);
   absl::StatusOr<std::string> Info(std::string_view image_path);
   absl::StatusOr<std::string> Dir(std::string_view image_path,
-                                  const DiskFilename& pattern, bool all);
+                                  std::string_view pattern, bool all);
   absl::Status Put(std::string_view image_path, std::string_view host_path,
-                   std::optional<DiskFilename> name, bool text);
-  absl::Status Get(std::string_view image_path, const DiskFilename& name,
+                   std::string_view name, bool text);
+  absl::Status Get(std::string_view image_path, std::string_view name,
                    std::string_view host_path, bool text);
-  absl::Status Delete(std::string_view image_path,
-                      const DiskFilename& pattern);
-  absl::Status Rename(std::string_view image_path, const DiskFilename& from,
-                      const DiskFilename& to);
+  absl::Status Delete(std::string_view image_path, std::string_view pattern);
+  absl::Status Rename(std::string_view image_path, std::string_view from,
+                      std::string_view to);
   absl::StatusOr<std::string> Attrib(std::string_view image_path,
-                                     const DiskFilename& name,
-                                     uint16_t set, uint16_t clear);
+                                     std::string_view name,
+                                     gb::FileAttributes set,
+                                     gb::FileAttributes clear);
   absl::Status Label(std::string_view image_path, const DiskLabel& label);
   absl::Status Protect(std::string_view image_path, bool write_protected);
   absl::StatusOr<std::string> Check(std::string_view image_path, bool fix);
@@ -314,24 +328,32 @@ class DiskTool final {
   // Parses a size in words, with K and M suffixes, into sectors. Fails if it
   // isn't a whole number of sectors from 1 to kMaxSectorCount.
   static absl::StatusOr<int> ParseSectorCount(std::string_view text);
+
+  // Returns the attributes in `letters`: r for read-only and h for hidden, in
+  // either case. Fails for any other character.
+  static absl::StatusOr<gb::FileAttributes> ParseAttributes(
+      std::string_view letters);
 };
 ```
 
 - **In `tools`, not `apps`,** so every command is unit tested over images in
   a `gb::MemoryFileProtocol`, and apps stay untested wiring. The app parses
-  its arguments into these types (`DiskFilename`, `DiskLabel`, sizes), so a
-  bad name is a usage error before any image is touched.
+  its labels, sizes, and attributes into these types, so a bad one is a usage
+  error before any image is touched. Disk names and patterns stay text, as
+  any path in the file system is, and a bad one is the command's failure.
 - **Text output is returned,** for the app to write, so tests check it
   exactly: `Info`'s medium and volume, `Dir`'s lines (name, size in words,
-  `r` and `h`, and the modified time, or blank with no date), `Attrib`'s
-  letters, and `Check`'s report, one line per problem.
-- **What each command uses,** as disk_design.md has it: `put` and `get` copy
-  through the protocol (`CopyFile` for binary, which keeps attributes, and for
-  text a read, the helpers, a write, then `SetAttributes` with the attributes
-  both protocols support), `ren` is `MoveFile`, and `attrib` is
-  `SetAttributes` and `GetPathInfo`. `dir` and `del` take the matching entries
-  from the protocol, which finds them through its root (`del` collects the
-  names, then deletes each). `format` is the protocol's `Format`, and `info`
+  and `r` and `h`), `Attrib`'s letters, and `Check`'s report, one line per
+  problem.
+- **What each command uses,** as disk_design.md has it: `put` and `get` read
+  the whole file, convert text (see host text transfer), write it, then
+  `SetAttributes` with the attributes both protocols support. They don't use
+  `CopyFile`, so a failure says which side it was on. A copy that fails
+  leaves whatever was written, such as part of a file on a full disk, and a
+  copy whose attributes can't be set fails, leaving the file it wrote.
+  `ren` is `MoveFile`, and `attrib` is `SetAttributes` and `GetPathInfo`. `dir` and
+  `del` take the matching names from `ListFiles` (`del` deletes each, hidden
+  ones included). `format` is the protocol's `Format`, and `info`
   and `label` use its `GetMedia`, `GetVolumeInfo`, and `SetLabel`. `new`, `protect`, and `check`
   use the image alone: `DiskImage::Create`, `SetWriteProtected` on the image
   with nothing attached, and `CheckDisk` or `RepairDisk`.
@@ -431,24 +453,27 @@ Depends on: CL2.
   duplicate names, with and without fixing, and its output; the host failing
   to read or write the image.
 
-### CL4 [ ] tools: DiskTool on files
+### CL4 [x] tools: DiskTool on files
 
 Depends on: CL3.
 
-- `disk_transfer.h` and `.cc`: the host transfer helpers.
-- `disk_file_protocol.h` and `.cc`: `FindEntries`, the entries matching a
-  pattern, for `Dir` and `Delete`.
+- `disk_transfer.h` and `.cc`: host text transfer.
 - `disk_tool.h` and `.cc`: `Dir`, `Put`, `Get`, `Delete`, `Rename`, and
-  `Attrib`.
+  `Attrib`, and `ParseAttributes`.
 
 **Verify**
 - Standard checks.
-- Unit tests: the helpers with odd and even byte counts each way, CRLF, CR,
-  and LF going in, and zero bytes dropped coming out. `Put` and `Get` binary
+- Unit tests: host text transfer with CRLF, CR, and LF going in, and zero
+  bytes dropped coming out. `Put` and `Get` binary
   and text, with and without names, a host name that doesn't fit, replacing a
-  file, refusing a read-only one, and keeping attributes both ways; `Dir` with
-  patterns and `--all`; `Delete` of a pattern with a read-only match and with
-  none; `Rename` onto a taken name; `Attrib` setting, clearing, and showing.
+  file, keeping a read-only one, a full disk leaving no file, a write
+  protected disk, and keeping attributes both ways; `Dir` with patterns, in
+  any case, and `--all`; `Delete` of a pattern with a read-only match and
+  with none; `Rename` onto a taken name and to a bad one; `Attrib` setting,
+  clearing, and showing; every file command on an unformatted and a corrupt
+  disk, and on a broken file; the host failing to read or write, or to set
+  attributes; `Delete` of an empty pattern; `Put` of a missing host file and
+  a host folder.
 
 ### CL5 [ ] apps: oz3dsk
 
