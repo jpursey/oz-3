@@ -414,7 +414,7 @@ Depends on: CL1.
 - Standard checks.
 - Unit tests: as Testing above.
 
-### CL3 [ ] tools: DiskTool on images
+### CL3 [~] tools: DiskTool on images
 
 Depends on: CL2.
 
