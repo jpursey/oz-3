@@ -35,7 +35,7 @@ oz3dsk work.ozd put hello.oz3
 oz3dsk work.ozd dir *.OZ3
 ```
 
-The disk library gains a lookup and status text for them. Nothing an OZ-3
+The disk library gains status text for their messages. Nothing an OZ-3
 program can see changes. The wiki gains `oz3dsk` and a paragraph on the
 protocol (see Wiki).
 
@@ -66,10 +66,19 @@ them. It settles the points below, and updates disk_design.md to match.
   detaches the image, returning it, so an image unmounted holds everything
   written through the protocol, and a caller can't forget to flush first.
   Mounting with an image mounted unmounts it first, and drops it.
+- **The root stays open while mounted.** Mounting a formatted image opens the
+  root in a slot of its own, kept until unmount, and the protocol finds names
+  and lists through it, so `GetPathInfo` and `List` never need a free slot.
+  The root's slot counts against the protocol's open files, so the default of
+  16 leaves 15 for files. A host that wants the root uses the protocol's
+  (`GetRoot`), as `OpenRoot` fails with `kInUse` while it is open.
+- **Formatting is the protocol's.** The file system won't format with a file
+  open, the root included, so the protocol has its own `Format`, which closes
+  the root, formats, stamped by the clock, and opens the root again.
 - **An unformatted image mounts.** `Mount` returns the file system's status:
-  `kOk`, `kUnformatted`, or `kIoError`. An unformatted image stays mounted, so
-  `GetFileSystem()->Format` can format it. Until it is formatted, the root is
-  an empty folder, and creating a file fails.
+  `kOk`, `kUnformatted`, or `kIoError`. An unformatted image stays mounted,
+  with no root open, so `Format` can format it. Until it is formatted, the
+  root is an empty folder, and creating a file fails.
 - **Odd bytes are byte-exact within a file.** Reading from an odd byte offset
   starts with the high byte of the word it is in, and writing there changes
   only that byte, reading the word first. Only the end rounds up: writing an
@@ -121,33 +130,22 @@ plan's wiki CL comes after it.
 - **`GetDiskStatusText`**, in `disk_status.h`: a status as the words a person
   reads, from disk_design.md's status table in lower case (`"read-only"`,
   `"disk full"`). "Name" would suggest the enumerator's spelling (`kReadOnly`).
-- **`DiskFileSystem::FindFile`**: a file's entry by name, without a handle.
-  `GetEntry` is already the private lookup by location, and `Find` is the
-  drive's `FIND` on a directory handle.
+- **`DiskFileProtocol::GetRoot`**: the protocol's root handle, a `DiskFile`.
+  `GetRootFile` would read as a file named root, and `OpenRoot` is the file
+  system's, which opens one.
 - **Host transfer helpers:** `WordsFromBytes`, `BytesFromWords`,
   `WordsFromText`, and `TextFromWords`, in `disk_transfer.h`, as the backlog
   named them.
 
-### disk: what the tools need
+### disk: status text
 
 ```
 // Returns `status` as a person reads it, such as "read-only", for messages.
 std::string_view GetDiskStatusText(DiskStatus status);
-
-class DiskFileSystem final {
- public:
-  // Sets `entry` to the entry of the file `name` in the root directory, as
-  // it is on the disk, open or not, without taking a slot. Returns
-  // kUnformatted with no file system, kBadName for a pattern, kNotFound, and
-  // kCorrupt for a broken root chain.
-  DiskStatus FindFile(const DiskFilename& name, DiskDirEntry* entry);
-};
 ```
 
-- `FindFile` searches with the file system's own directory buffer, as
-  `Delete` and `Rename` do, so the protocol can answer `GetPathInfo` with no
-  free slot and with the root open elsewhere, where `OpenRoot` would fail with
-  `kInUse`.
+- The only change the disk library needs: the protocol finds names through
+  its own root handle (see below), with the file system's `Seek` and `Find`.
 
 ### tools: DiskFileProtocol
 
@@ -169,20 +167,34 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // Unmounts as Unmount does.
   ~DiskFileProtocol() override;
 
-  // Unmounts any image mounted, then mounts `image`, which must not be null.
-  // Returns kOk, kUnformatted (it is still mounted, to format), or kIoError.
+  // Unmounts any image mounted, then mounts `image`, which must not be null,
+  // opening its root. Returns kOk, kUnformatted (it is still mounted, with no
+  // root, to format), kIoError, or opening the root's failure (kCorrupt),
+  // which leaves it mounted with no root.
   DiskStatus Mount(std::unique_ptr<DiskImage> image);
 
-  // Commits every open file, then detaches the image, setting `image` to it
-  // if not null. Files still open are stale (see DiskFileSystem). Returns the
-  // first failure committing, kNoDisk with nothing mounted, and otherwise
-  // kOk. The image is detached whatever it returns.
+  // Commits every open file and closes the root, then detaches the image,
+  // setting `image` to it if not null. Files still open are stale (see
+  // DiskFileSystem). Returns the first failure committing, kNoDisk with
+  // nothing mounted, and otherwise kOk. The image is detached whatever it
+  // returns.
   DiskStatus Unmount(std::unique_ptr<DiskImage>* image = nullptr);
+
+  // Formats the mounted disk as DiskFileSystem::Format does, stamped by the
+  // clock, closing the root first and opening it again after. Returns kNoDisk
+  // with nothing mounted, and kInUse with any file open.
+  DiskStatus Format(const DiskLabel& label, int sectors_per_cluster);
 
   // Returns the file system with an image mounted, or null. Calls on it
   // bypass the protocol's locking, so a host using it from several threads
-  // locks around them.
+  // locks around them. Its root is open in the protocol's slot (see
+  // GetRoot), and it is formatted with the protocol's Format.
   DiskFileSystem* GetFileSystem();
+
+  // Returns the slot the root is open in, for Find on the file system, or -1
+  // with no root open (nothing mounted, or not formatted). Its position is
+  // wherever the last Find left it, so a caller seeks it to 0 first.
+  DiskFile GetRoot() const;
 
   // gb::FileProtocol.
   gb::FileProtocolFlags GetFlags() const override;
@@ -211,9 +223,10 @@ class DiskFileProtocol final : public gb::FileProtocol {
   invalid. `GetCanonicalPath` gives a name parsed and formatted again, so it
   is in upper case and `hello.txt` and `HELLO.TXT` are one file. Any other path
   is its own canonical path.
-- **`DoGetPathInfo`** is `FindFile`'s entry: its size × 2, and its attributes.
-- **`DoList`** walks the root through an `OpenRoot` handle, closed before it
-  returns, matching each formatted name against the pattern with
+- **`DoGetPathInfo`** seeks the root to 0 and `Find`s the name, giving its
+  entry's size × 2, and its attributes.
+- **`DoList`** walks the root with `Find` from 0, matching each formatted name
+  against the pattern with
   `gb::PathMatchesPattern`, the pattern turned to upper case so case is
   ignored. The disk's own patterns aren't used, as gb's patterns are what every
   protocol's callers write. Recursive mode is the same, with no folders.
@@ -238,12 +251,14 @@ class DiskFileProtocol final : public gb::FileProtocol {
   time unless the host shares it, in which case the host locks around it, as
   it must for `GetFileSystem()` anyway.
 
-**Brittleness:** the open-file table is shared, so a host holding the root open
-through `GetFileSystem()` makes `DoList` fail. `FindFile` keeps `GetPathInfo`
-working then, and `DoList` is only used by `dir` and hosts that list, so it is
-left, and documented on `GetFileSystem()`. A `RawFile` kept past `Unmount` is
-safe (stale), and past the protocol's destruction is a use after free, as for
-any protocol, since `gb::File` documents that its protocol must outlive it.
+**Brittleness:** the root is open in the protocol's slot, so a host using
+`GetFileSystem()` must use `GetRoot()` rather than `OpenRoot`, which fails with
+`kInUse`, and the protocol's `Format` rather than the file system's, which fails
+the same way. Both fail loudly, so neither is a silent mistake, and both are on
+`GetFileSystem()`'s comment. The root's position is shared too, so every use
+seeks it first. A `RawFile` kept past `Unmount` is safe (stale), and past the
+protocol's destruction is a use after free, as for any protocol, since
+`gb::File` documents that its protocol must outlive it.
 
 ### tools: host transfer helpers
 
@@ -322,9 +337,9 @@ class DiskTool final {
   through the protocol (`CopyFile` for binary, which keeps attributes, and for
   text a read, the helpers, a write, then `SetAttributes` with the attributes
   both protocols support), `ren` is `MoveFile`, and `attrib` is
-  `SetAttributes` and `GetPathInfo`. `dir` and `del` use `OpenRoot` and `Find`
-  (`del` collects the names, closes the root, then deletes each). `format`,
-  `info`, and `label` use `GetFileSystem()`. `new`, `protect`, and `check`
+  `SetAttributes` and `GetPathInfo`. `dir` and `del` use `Find` on the protocol's
+  root (`del` collects the names, then deletes each). `format` is the
+  protocol's `Format`, and `info` and `label` use `GetFileSystem()`. `new`, `protect`, and `check`
   use the image alone: `DiskImage::Create`, `SetWriteProtected` on the image
   with nothing attached, and `CheckDisk` or `RepairDisk`.
 - **The image** is mounted by the command that needs it and unmounted at its
@@ -355,6 +370,9 @@ left empty between them.
   attributes, `MoveFile` and case, read-only files refusing writes, replaces,
   and deletes, open files refusing deletes and renames, mounting unformatted
   and failed images (`FaultyFileProtocol`), and a `RawFile` across an unmount.
+  The root: `GetPathInfo` and `List` with every other slot taken, a root that
+  grows while open, `Format` formatting and reopening it, and `Format` with a
+  file open.
   Game Bits' `CommonProtocolTest` isn't used: it is in `gb_file`'s tests, not
   a library, and it makes folders and names a disk can't hold.
 - A `.oz3` written by `WriteProgramFile` into `ozdisk:` and read back with
@@ -379,20 +397,16 @@ Checked against Game Bits' `main` while planning, so nothing is left open:
 
 ## CLs
 
-### CL1 [ ] disk: what the tools need
+### CL1 [ ] disk: status text
 
 Depends on: nothing.
 
 - `disk_status.h` and a new `disk_status.cc`: `GetDiskStatusText`.
-- `disk_file_system.h` and `.cc`: `FindFile`.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks (see CLAUDE.md).
 - Unit tests: `GetDiskStatusText` of every status, each distinct.
-  `FindFile` finding a file, not finding one, with no image, unformatted, a
-  pattern, every slot taken, the root open, and a file open for writing
-  (giving its committed size).
 
 ### CL2 [ ] tools: DiskFileProtocol
 
