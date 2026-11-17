@@ -769,8 +769,9 @@ DiskFilename::Words DiskDrive::GetNameWords(const Command& command,
 
 void DiskDrive::AppendWordFields(absl::Span<const uint16_t> words,
                                  std::vector<PortWords>* fields) {
-  DCHECK_EQ(words.size() % 2, 0);
-  for (int i = 0; i < static_cast<int>(words.size()); i += 2) {
+  const int count = static_cast<int>(words.size());
+  DCHECK_EQ(count % 2, 0);
+  for (int i = 0; i < count; i += 2) {
     fields->push_back(PortWords::FromWords(words[i], words[i + 1]));
   }
 }

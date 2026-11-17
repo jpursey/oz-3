@@ -1079,7 +1079,8 @@ TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
   protocol_->SetLimits({.reads = 0});
   drive_->AttachImage(std::move(image));
   for (const DiskDriveCommand command :
-       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot}) {
+       {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot,
+        DiskDriveCommand::kVolume}) {
     SCOPED_TRACE(static_cast<int>(command));
     EXPECT_THAT(Command(CommandWord(command)),
                 ElementsAre(Field(DiskStatus::kIoError)));
@@ -1090,6 +1091,10 @@ TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
     EXPECT_THAT(Command(CommandWord(command), NameFields("HELLO")),
                 ElementsAre(Field(DiskStatus::kIoError)));
   }
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kFormat),
+                      AndWord(LabelFields("A"), 0)),
+              ElementsAre(Field(DiskStatus::kIoError)));
+  ExpectChangesFail(DiskStatus::kIoError);
 }
 
 TEST_F(DiskDriveTest, AWordInAnArgumentPhaseIsAnArgument) {

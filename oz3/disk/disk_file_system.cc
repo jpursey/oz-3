@@ -70,7 +70,7 @@ DiskStatus DiskFileSystem::Format(const DiskLabel& label,
   }
   const std::optional<DiskLayout> layout =
       ChooseDiskLayout(GetMedia()->GetSectorCount(), sectors_per_cluster);
-  DCHECK(layout.has_value());
+  CHECK(layout.has_value());
   ResetVolume();
 
   // The superblock is blanked first and written last, so a format that fails
