@@ -6,7 +6,6 @@
 #ifndef OZ3_TOOLS_DISK_FILE_PROTOCOL_H_
 #define OZ3_TOOLS_DISK_FILE_PROTOCOL_H_
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -128,29 +127,6 @@ class DiskFileProtocol final : public gb::FileProtocol {
     return file_system_.SetLabel(label);
   }
 
-  // Returns whether the mounted disk's files can be reached: kNoDisk with
-  // nothing mounted, kIoError for a failed image, kUnformatted with no file
-  // system, kCorrupt if the root couldn't be opened, or kOk. It never reads
-  // the disk.
-  DiskStatus GetVolumeStatus() const;
-
-  // Returns whether the mounted disk's files can be changed: GetVolumeStatus's
-  // failure, kWriteProtected for a protected disk, or kOk.
-  DiskStatus GetWritableStatus() const;
-
-  // Sets `entries` to the entries of the files `pattern` matches, in directory
-  // order, as DiskFileSystem::Find gives them, hidden files included. Returns
-  // GetVolumeStatus's failure, the failure reading the root, or kOk.
-  DiskStatus FindEntries(const DiskFilename& pattern,
-                         std::vector<DiskDirEntry>* entries);
-
-  // Returns the status of the last disk operation that failed since mounting,
-  // or since the last call, clearing it, or kOk if none has. A gb::FileSystem
-  // call fails with only a bool, so this says why: call it right after the
-  // call that failed. If it returns kOk, gb refused the call before it reached
-  // the disk, as it refuses to move a file onto one that exists.
-  DiskStatus TakeLastFailure();
-
   //----------------------------------------------------------------------------
   // gb::FileProtocol
   //----------------------------------------------------------------------------
@@ -198,11 +174,8 @@ class DiskFileProtocol final : public gb::FileProtocol {
   void CloseRoot();
 
   // Sets `entry` to the entry of the file `name`, returning whether it is
-  // found. A failure other than kNotFound is the last failure.
+  // found.
   bool FindEntry(const DiskFilename& name, DiskDirEntry* entry);
-
-  // Returns whether `status` is kOk, making it the last failure if not.
-  bool Succeeds(DiskStatus status);
 
   // Returns the name in a file's path ("/HELLO.TXT"), or nullopt if `path`
   // isn't one.
@@ -211,12 +184,7 @@ class DiskFileProtocol final : public gb::FileProtocol {
   Clock clock_;
   DiskFileSystem file_system_;
   DiskFile root_ = -1;
-  DiskStatus last_failure_ = DiskStatus::kOk;
 };
-
-// Returns the gb attributes of a directory entry's attribute word: read-only
-// and hidden.
-gb::FileAttributes AttributesFromDisk(uint16_t disk_attributes);
 
 }  // namespace oz3
 

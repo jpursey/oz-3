@@ -8,7 +8,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,7 +18,6 @@
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
-#include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/tools/disk_file_protocol.h"
 
@@ -30,9 +28,10 @@ namespace oz3 {
 // closes it before it returns, so the tool holds nothing between commands.
 //
 // A failure's message names the image, or the argument, that failed, and what
-// went wrong, such as "work.ozd: write protected" or "work.ozd: HELLO.TXT:
-// read-only", with a DiskStatus as its GetDiskStatusText. A command on one
-// file fails with "bad name" if given a pattern.
+// went wrong, such as "work.ozd: write protected", with a DiskStatus as its
+// GetDiskStatusText. A file command goes through the file system, which says
+// only whether a call failed, so a failure there says what couldn't be done to
+// the file, as in "work.ozd: HELLO.TXT: can't be written", and is kUnknown.
 //
 // It is called from one thread at a time.
 class DiskTool final {
@@ -110,42 +109,48 @@ class DiskTool final {
   //----------------------------------------------------------------------------
 
   // Returns a line for each file `pattern` matches, in directory order: its
-  // name, its size in words, its attributes (r and h, or - for each not set),
-  // and its modified time, blank with no date. Hidden files are left out
-  // unless `all` is true. With no file to list, it returns "no files".
+  // name, its size in words, and its attributes (r and h, or - for each not
+  // set). Hidden files are left out unless `all` is true. The pattern is
+  // matched as gb::FileSystem::List matches one, ignoring case: * matches any
+  // characters, and an empty pattern matches every file. With no file to list,
+  // it returns "no files". Fails if the disk has no file system to read.
   absl::StatusOr<std::string> Dir(std::string_view image_path,
-                                  const DiskFilename& pattern, bool all);
+                                  std::string_view pattern, bool all);
 
   // Copies the host file at `host_path` onto the disk as `name`, or the host
-  // file's own name without one, replacing any file of that name. As `text`,
-  // each CRLF and lone CR becomes LF (see WordsFromText). The copy keeps the
-  // attributes both the host and the disk support, and fails onto a read-only
-  // file. Fails if the host file's name isn't a disk name, such as one too
-  // long, and a copy that fails leaves no file of that name.
+  // file's own name if `name` is empty, replacing any file of that name. As
+  // `text`, each CRLF and lone CR becomes LF (see WordsFromText). The copy
+  // keeps the attributes both the host and the disk support. Fails if the name
+  // isn't a disk name, such as one too long, and a copy that fails leaves no
+  // file of that name, unless one was there and couldn't be replaced, such as
+  // a read-only file.
   absl::Status Put(std::string_view image_path, std::string_view host_path,
-                   std::optional<DiskFilename> name, bool text);
+                   std::string_view name, bool text);
 
   // Copies the file `name` from the disk to the host file at `host_path`,
-  // replacing any file there. As `text`, zero bytes are dropped (see
-  // TextFromWords). The copy keeps attributes as Put's does, and fails onto a
-  // read-only host file.
-  absl::Status Get(std::string_view image_path, const DiskFilename& name,
+  // replacing any file there that can be replaced, which a read-only one
+  // can't. As `text`, zero bytes are dropped (see TextFromWords). The copy
+  // keeps attributes as Put's does, and a copy whose attributes can't be set
+  // leaves no file there.
+  absl::Status Get(std::string_view image_path, std::string_view name,
                    std::string_view host_path, bool text);
 
-  // Deletes every file `pattern` matches, hidden ones included. Fails if none
-  // matches, or if any can't be deleted, such as a read-only file, naming each
-  // that failed, after deleting the rest.
-  absl::Status Delete(std::string_view image_path, const DiskFilename& pattern);
+  // Deletes every file `pattern` matches, as Dir matches it, hidden ones
+  // included. Fails for an empty pattern, rather than deleting every file, as
+  // * does. Fails if none matches, or if any can't be deleted, such as a
+  // read-only file, naming each that failed, after deleting the rest.
+  absl::Status Delete(std::string_view image_path, std::string_view pattern);
 
-  // Renames the file `from` to `to`. Fails if another file is named `to`.
-  absl::Status Rename(std::string_view image_path, const DiskFilename& from,
-                      const DiskFilename& to);
+  // Renames the file `from` to `to`. Fails if `to` isn't a disk name, or
+  // another file has it.
+  absl::Status Rename(std::string_view image_path, std::string_view from,
+                      std::string_view to);
 
   // Sets the attributes in `set` and clears those in `clear` on the file
   // `name`, then returns a line with its name and attributes, as Dir shows
   // them. With neither, it only shows them. Fails if an attribute is in both.
   absl::StatusOr<std::string> Attrib(std::string_view image_path,
-                                     const DiskFilename& name,
+                                     std::string_view name,
                                      gb::FileAttributes set,
                                      gb::FileAttributes clear);
 
@@ -164,15 +169,14 @@ class DiskTool final {
   // What a command needs of the mounted disk.
   enum class Access {
     kImage,  // Only the image, to format or report on.
-    kRead,   // Its files, to read.
-    kWrite,  // Its files, to change.
+    kFiles,  // Its file system, to read or change files.
   };
 
-  // Mounts the image at `image_path`, runs `command` on it if the disk allows
-  // `access`, and unmounts it, committing what `command` wrote. Returns the
-  // failure to open or mount the image, the disk's failure to allow `access`
-  // or `command`'s failure, named for the image, or the failure to commit, in
-  // that order.
+  // Mounts the image at `image_path`, runs `command` on it, and unmounts it,
+  // committing what `command` wrote. For kFiles, a disk with no file system to
+  // reach, unformatted or corrupt, fails before `command` runs. Returns the
+  // failure to open or mount the image or `command`'s failure, named for the
+  // image, or the failure to commit, in that order.
   absl::Status RunMounted(std::string_view image_path, Access access,
                           absl::FunctionRef<absl::Status()> command);
 
@@ -183,36 +187,30 @@ class DiskTool final {
   absl::Status DoInfo(std::string* text);
 
   // Sets `text` to the lines Dir returns, from the mounted disk.
-  absl::Status DoDir(const DiskFilename& pattern, bool all, std::string* text);
+  absl::Status DoDir(std::string_view pattern, bool all, std::string* text);
 
   // Writes `bytes` to the file `name` on the mounted disk, replacing it, and
   // sets its attributes in `mask` to `attributes`, for Put.
-  absl::Status DoPut(const DiskFilename& name,
-                     absl::Span<const std::byte> bytes,
+  absl::Status DoPut(std::string_view name, absl::Span<const std::byte> bytes,
                      gb::FileAttributes attributes, gb::FileAttributes mask);
 
   // Reads the file `name` on the mounted disk into `bytes`, and its attributes
   // into `attributes`, for Get.
-  absl::Status DoGet(const DiskFilename& name, std::vector<std::byte>* bytes,
+  absl::Status DoGet(std::string_view name, std::vector<std::byte>* bytes,
                      gb::FileAttributes* attributes);
 
   // Deletes the files `pattern` matches on the mounted disk, for Delete.
-  absl::Status DoDelete(const DiskFilename& pattern);
+  absl::Status DoDelete(std::string_view pattern);
 
   // Renames a file on the mounted disk, for Rename.
-  absl::Status DoRename(const DiskFilename& from, const DiskFilename& to);
+  absl::Status DoRename(std::string_view from, std::string_view to);
 
   // Changes and shows a file's attributes on the mounted disk, for Attrib.
-  absl::Status DoAttrib(const DiskFilename& name, gb::FileAttributes set,
+  absl::Status DoAttrib(std::string_view name, gb::FileAttributes set,
                         gb::FileAttributes clear, std::string* text);
 
-  // Returns the protocol's last failure, for a call on it that just failed, or
-  // `otherwise` if no disk operation failed, as when gb refused the call
-  // itself (see DiskFileProtocol::TakeLastFailure).
-  DiskStatus TakeFailure(DiskStatus otherwise);
-
   // Returns the path of the file `name` in the protocol.
-  std::string GetDiskPath(const DiskFilename& name) const;
+  std::string GetDiskPath(std::string_view name) const;
 
   // Returns the attributes that copies between `host_path` and the disk keep:
   // those both protocols support.

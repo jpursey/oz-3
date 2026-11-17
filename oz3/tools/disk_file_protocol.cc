@@ -49,6 +49,18 @@ absl::CivilSecond GetLocalTime() {
   return absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone());
 }
 
+// Returns the gb attributes of a directory entry's attribute word.
+gb::FileAttributes AttributesFromDisk(uint16_t disk_attributes) {
+  gb::FileAttributes attributes;
+  if ((disk_attributes & kDiskAttribReadOnly) != 0) {
+    attributes += gb::FileAttribute::kReadOnly;
+  }
+  if ((disk_attributes & kDiskAttribHidden) != 0) {
+    attributes += gb::FileAttribute::kHidden;
+  }
+  return attributes;
+}
+
 // Returns the attribute word of `attributes`.
 uint16_t AttributesToDisk(gb::FileAttributes attributes) {
   uint16_t disk_attributes = 0;
@@ -62,17 +74,6 @@ uint16_t AttributesToDisk(gb::FileAttributes attributes) {
 }
 
 }  // namespace
-
-gb::FileAttributes AttributesFromDisk(uint16_t disk_attributes) {
-  gb::FileAttributes attributes;
-  if ((disk_attributes & kDiskAttribReadOnly) != 0) {
-    attributes += gb::FileAttribute::kReadOnly;
-  }
-  if ((disk_attributes & kDiskAttribHidden) != 0) {
-    attributes += gb::FileAttribute::kHidden;
-  }
-  return attributes;
-}
 
 //==============================================================================
 // DiskRawFile
@@ -114,7 +115,7 @@ class DiskFileProtocol::DiskRawFile final : public gb::RawFile {
 
 int64_t DiskFileProtocol::DiskRawFile::GetByteSize() {
   DiskFileInfo info;
-  if (!protocol_->Succeeds(protocol_->file_system_.GetFileInfo(file_, &info))) {
+  if (protocol_->file_system_.GetFileInfo(file_, &info) != DiskStatus::kOk) {
     return -1;
   }
   return int64_t{info.size} * 2;
@@ -163,8 +164,8 @@ int64_t DiskFileProtocol::DiskRawFile::Read(void* buffer, int64_t size) {
   DiskFileSystem& file_system = protocol_->file_system_;
   uint8_t* const bytes = static_cast<uint8_t*>(buffer);
   std::array<uint16_t, kDiskSectorWords> words;
-  if (!protocol_->Succeeds(
-          file_system.Seek(file_, static_cast<int>(position_ / 2)))) {
+  if (file_system.Seek(file_, static_cast<int>(position_ / 2)) !=
+      DiskStatus::kOk) {
     return -1;
   }
 
@@ -179,9 +180,9 @@ int64_t DiskFileProtocol::DiskRawFile::Read(void* buffer, int64_t size) {
     const int64_t word_count = std::min<int64_t>(
         kDiskSectorWords, (position_ + (size - done) + 1) / 2 - index);
     int count = 0;
-    if (!protocol_->Succeeds(file_system.Read(
+    if (file_system.Read(
             file_, absl::MakeSpan(words).first(static_cast<int>(word_count)),
-            &count))) {
+            &count) != DiskStatus::kOk) {
       return -1;
     }
     if (count == 0) {
@@ -201,8 +202,8 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
   DiskFileSystem& file_system = protocol_->file_system_;
   const uint8_t* const bytes = static_cast<const uint8_t*>(buffer);
   std::array<uint16_t, kDiskSectorWords> words;
-  if (!protocol_->Succeeds(
-          file_system.Seek(file_, static_cast<int>(position_ / 2)))) {
+  if (file_system.Seek(file_, static_cast<int>(position_ / 2)) !=
+      DiskStatus::kOk) {
     return 0;
   }
 
@@ -218,13 +219,13 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
     // it is in the file, or zero past its end.
     if (position_ % 2 != 0 || left == 1) {
       uint16_t word = 0;
-      if (!protocol_->Succeeds(ReadWord(index, &word))) {
+      if (ReadWord(index, &word) != DiskStatus::kOk) {
         return done;
       }
       const int shift = static_cast<int>(position_ % 2) * 8;
       word = static_cast<uint16_t>((word & ~(0xFF << shift)) |
                                    (bytes[done] << shift));
-      if (!protocol_->Succeeds(WriteWord(index, word))) {
+      if (WriteWord(index, word) != DiskStatus::kOk) {
         return done;
       }
       ++done;
@@ -243,7 +244,7 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
         file_, absl::MakeConstSpan(words).first(word_count), &count);
     done += int64_t{count} * 2;
     position_ += int64_t{count} * 2;
-    if (!protocol_->Succeeds(status) || count == 0) {
+    if (status != DiskStatus::kOk || count == 0) {
       return done;
     }
   }
@@ -251,8 +252,8 @@ int64_t DiskFileProtocol::DiskRawFile::Write(const void* buffer, int64_t size) {
 }
 
 bool DiskFileProtocol::DiskRawFile::Flush() {
-  return protocol_->Succeeds(
-      protocol_->file_system_.Flush(file_, protocol_->GetNow()));
+  return protocol_->file_system_.Flush(file_, protocol_->GetNow()) ==
+         DiskStatus::kOk;
 }
 
 //==============================================================================
@@ -272,7 +273,6 @@ DiskFileProtocol::~DiskFileProtocol() { Unmount(); }
 DiskStatus DiskFileProtocol::Mount(std::unique_ptr<DiskImage> image) {
   CHECK(image != nullptr);
   Unmount();
-  last_failure_ = DiskStatus::kOk;
   if (DiskStatus status = file_system_.AttachImage(std::move(image));
       status != DiskStatus::kOk) {
     return status;
@@ -355,16 +355,16 @@ std::vector<std::string> DiskFileProtocol::DoList(
     std::string_view protocol_name, std::string_view path,
     std::string_view pattern, gb::FolderMode mode, gb::PathTypes types) {
   std::vector<std::string> paths;
-  std::vector<DiskDirEntry> entries;
-  if (path != "/" || !types.IsSet(gb::PathType::kFile) ||
-      FindEntries(*DiskFilename::ParsePattern("*.*"), &entries) !=
-          DiskStatus::kOk) {
+  if (path != "/" || root_ < 0 || !types.IsSet(gb::PathType::kFile) ||
+      file_system_.Seek(root_, 0) != DiskStatus::kOk) {
     return paths;
   }
 
   // Names are upper case, and matched without regard to case.
   const std::string upper_pattern = absl::AsciiStrToUpper(pattern);
-  for (const DiskDirEntry& entry : entries) {
+  const std::optional<DiskFilename> all = DiskFilename::ParsePattern("*.*");
+  DiskDirEntry entry;
+  while (file_system_.Find(root_, *all, &entry) == DiskStatus::kOk) {
     const std::string name = entry.GetName()->ToString();
     if (upper_pattern.empty() || gb::PathMatchesPattern(name, upper_pattern)) {
       paths.push_back(absl::StrCat(protocol_name, ":/", name));
@@ -377,14 +377,15 @@ bool DiskFileProtocol::BasicSetAttributes(std::string_view protocol_name,
                                           std::string_view path,
                                           gb::FileAttributes attributes) {
   const std::optional<DiskFilename> name = GetName(path);
-  return name.has_value() && Succeeds(file_system_.SetAttributes(
-                                 *name, AttributesToDisk(attributes)));
+  return name.has_value() &&
+         file_system_.SetAttributes(*name, AttributesToDisk(attributes)) ==
+             DiskStatus::kOk;
 }
 
 bool DiskFileProtocol::BasicDeleteFile(std::string_view protocol_name,
                                        std::string_view path) {
   const std::optional<DiskFilename> name = GetName(path);
-  return name.has_value() && Succeeds(file_system_.Delete(*name));
+  return name.has_value() && file_system_.Delete(*name) == DiskStatus::kOk;
 }
 
 bool DiskFileProtocol::BasicMoveFile(std::string_view from_protocol_name,
@@ -402,7 +403,7 @@ bool DiskFileProtocol::BasicMoveFile(std::string_view from_protocol_name,
   if (*from_name == *to_name) {
     return true;
   }
-  return Succeeds(file_system_.Rename(*from_name, *to_name));
+  return file_system_.Rename(*from_name, *to_name) == DiskStatus::kOk;
 }
 
 std::unique_ptr<gb::RawFile> DiskFileProtocol::BasicOpenFile(
@@ -413,26 +414,23 @@ std::unique_ptr<gb::RawFile> DiskFileProtocol::BasicOpenFile(
     return nullptr;
   }
   const bool write = flags.IsSet(gb::FileFlag::kWrite);
-  if (write && !Succeeds(GetWritableStatus())) {
+  if (write && file_system_.GetWritableStatus() != DiskStatus::kOk) {
     return nullptr;
   }
 
   // The file exists unless kCreate is set (see DoOpenFile).
   DiskFile file = -1;
   if (flags.IsSet(gb::FileFlag::kCreate)) {
-    if (!Succeeds(file_system_.Create(*name, GetNow(), &file))) {
+    if (file_system_.Create(*name, GetNow(), &file) != DiskStatus::kOk) {
       return nullptr;
     }
   } else {
     DiskDirEntry entry;
-    if (write && !FindEntry(*name, &entry)) {
+    if (write && (!FindEntry(*name, &entry) ||
+                  (entry.GetAttributes() & kDiskAttribReadOnly) != 0)) {
       return nullptr;
     }
-    if (write && (entry.GetAttributes() & kDiskAttribReadOnly) != 0) {
-      last_failure_ = DiskStatus::kReadOnly;
-      return nullptr;
-    }
-    if (!Succeeds(file_system_.Open(*name, &file))) {
+    if (file_system_.Open(*name, &file) != DiskStatus::kOk) {
       return nullptr;
     }
   }
@@ -440,48 +438,10 @@ std::unique_ptr<gb::RawFile> DiskFileProtocol::BasicOpenFile(
   // The file closes with the RawFile, even if it fails to truncate.
   auto raw_file = std::make_unique<DiskRawFile>(this, file);
   if (flags.IsSet(gb::FileFlag::kReset) &&
-      !Succeeds(file_system_.Truncate(file, GetNow()))) {
+      file_system_.Truncate(file, GetNow()) != DiskStatus::kOk) {
     return nullptr;
   }
   return raw_file;
-}
-
-DiskStatus DiskFileProtocol::GetVolumeStatus() const {
-  const DiskStatus status = file_system_.GetVolumeStatus();
-  if (status == DiskStatus::kOk && root_ < 0) {
-    return DiskStatus::kCorrupt;
-  }
-  return status;
-}
-
-DiskStatus DiskFileProtocol::GetWritableStatus() const {
-  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
-    return status;
-  }
-  return file_system_.GetWritableStatus();
-}
-
-DiskStatus DiskFileProtocol::FindEntries(const DiskFilename& pattern,
-                                         std::vector<DiskDirEntry>* entries) {
-  entries->clear();
-  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
-    return status;
-  }
-  if (DiskStatus status = file_system_.Seek(root_, 0);
-      status != DiskStatus::kOk) {
-    return status;
-  }
-  DiskDirEntry entry;
-  DiskStatus status;
-  while ((status = file_system_.Find(root_, pattern, &entry)) ==
-         DiskStatus::kOk) {
-    entries->push_back(entry);
-  }
-  return status == DiskStatus::kNotFound ? DiskStatus::kOk : status;
-}
-
-DiskStatus DiskFileProtocol::TakeLastFailure() {
-  return std::exchange(last_failure_, DiskStatus::kOk);
 }
 
 DateTime DiskFileProtocol::GetNow() { return DateTime::FromCivil(clock_()); }
@@ -503,25 +463,8 @@ void DiskFileProtocol::CloseRoot() {
 
 bool DiskFileProtocol::FindEntry(const DiskFilename& name,
                                  DiskDirEntry* entry) {
-  DiskStatus status = GetVolumeStatus();
-  if (status == DiskStatus::kOk) {
-    status = file_system_.Seek(root_, 0);
-  }
-  if (status == DiskStatus::kOk) {
-    status = file_system_.Find(root_, name, entry);
-  }
-  if (status == DiskStatus::kNotFound) {
-    return false;
-  }
-  return Succeeds(status);
-}
-
-bool DiskFileProtocol::Succeeds(DiskStatus status) {
-  if (status == DiskStatus::kOk) {
-    return true;
-  }
-  last_failure_ = status;
-  return false;
+  return root_ >= 0 && file_system_.Seek(root_, 0) == DiskStatus::kOk &&
+         file_system_.Find(root_, name, entry) == DiskStatus::kOk;
 }
 
 std::optional<DiskFilename> DiskFileProtocol::GetName(std::string_view path) {

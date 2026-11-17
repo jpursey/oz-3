@@ -17,7 +17,7 @@
 namespace oz3 {
 
 //==============================================================================
-// Host transfer helpers
+// Host transfer
 //
 // Host bytes and text to and from the words of an OZ-3 file. A word is two
 // bytes, low byte first, as in .oz3 files and as strings are packed, so text
