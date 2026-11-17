@@ -329,6 +329,9 @@ class DiskTool final {
   // either case. Fails for any other character.
   static absl::StatusOr<gb::FileAttributes> ParseAttributes(
       std::string_view letters);
+
+  // Returns the volume label in `text`. Fails if it breaks the label rules.
+  static absl::StatusOr<DiskLabel> ParseLabel(std::string_view text);
 };
 ```
 
@@ -367,10 +370,18 @@ left empty between them.
 - `oz3dsk.cc`: the program command with the required `image` argument, then
   a subcommand per row of disk_design.md's table, each with its arguments and
   flags, as `gb_cli`'s required positional arguments before subcommands allow.
-  Paths are the operating system's, as `oz3asm`'s are, normalized and on
-  `local`. The clock is the host's local time, as `ozzy`'s is.
-- `--set` and `--clear` take letters from `rh`, and `protect` takes `on` or
-  `off` as choices.
+  Paths are the operating system's, as `oz3asm`'s are, in
+  `gb::CreateCliFileSystem`'s file system, and are passed to `DiskTool` as
+  given, so messages name them as they were typed. The clock is the host's
+  local time, `DiskTool`'s default, as `ozzy`'s is.
+- Sizes, labels, and `--set` and `--clear`'s letters (from `rh`) are
+  validated as the command line is parsed, with `DiskTool`'s own parsing, so
+  a bad one is a usage error. `--cluster` is a power of two from 1 to 64, `protect` takes
+  `on` or `off` as choices, `put`'s host file must exist, and `get`'s must be
+  writable. An attribute both set and cleared is `Attrib`'s own failure.
+- Without a host path, `Get` writes the file in the current folder under its
+  name as the disk has it (`hello.txt` is written as `HELLO.TXT`), so `get`
+  passes its host file only when one is given.
 
 ### Testing
 
@@ -462,7 +473,7 @@ Depends on: CL3.
 - Unit tests: host text transfer with CRLF, CR, and LF going in, and zero
   bytes dropped coming out. `Put` and `Get` binary
   and text, with and without names, a host name that doesn't fit, replacing a
-  file, keeping a read-only one, a full disk leaving no file, a write
+  file, keeping a read-only one, a full disk leaving part of the file, a write
   protected disk, and keeping attributes both ways; `Dir` with patterns, in
   any case, and `--all`; `Delete` of a pattern with a read-only match and
   with none; `Rename` onto a taken name and to a bad one; `Attrib` setting,
@@ -471,14 +482,20 @@ Depends on: CL3.
   attributes; `Delete` of an empty pattern; `Put` of a missing host file and
   a host folder.
 
-### CL5 [ ] apps: oz3dsk
+### CL5 [x] apps: oz3dsk
 
 Depends on: CL4.
 
 - `oz3dsk.cc` and `apps/CMakeLists.txt`.
+- `disk_tool.h` and `.cc`: `ParseLabel`, for the app's label validator, and
+  `Get` without a host path. `Get` finds no file for a name that isn't a disk
+  name (such as `./HELLO.TXT`), like `Rename` and `Attrib`.
 
 **Verify**
 - Standard checks.
+- Unit tests: `ParseLabel` of good and bad labels, and its message; `Get`
+  without a host path, in a protocol with a current folder, and of paths that
+  aren't disk names, with and without one.
 - By hand on Linux: every command on a fresh image, `put` and `get` of a
   `.oz3` from `oz3asm` and of a CRLF text file, and each usage error. On
   Windows, left for the user, in the PR's comment.

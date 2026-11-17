@@ -57,6 +57,19 @@ class FixedAttributesProtocol final : public gb::MemoryFileProtocol {
   }
 };
 
+// Memory files whose current folder is always /here.
+class CurrentFolderProtocol final : public gb::MemoryFileProtocol {
+ public:
+  CurrentFolderProtocol()
+      : MemoryFileProtocol(
+            {kDefaultFlags, gb::FileProtocolFlag::kCurrentPath}) {}
+
+ protected:
+  std::string DoGetCurrentPath(std::string_view protocol_name) override {
+    return "/here";
+  }
+};
+
 class DiskToolTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -574,6 +587,30 @@ TEST(DiskToolAttributesTest, OtherLettersFail) {
 }
 
 //==============================================================================
+// Labels
+//==============================================================================
+
+TEST(DiskToolLabelTest, Labels) {
+  EXPECT_EQ(DiskTool::ParseLabel("work").value_or(DiskLabel()).ToString(),
+            "WORK");
+  EXPECT_EQ(DiskTool::ParseLabel("").value_or(*DiskLabel::Parse("X")),
+            DiskLabel());
+}
+
+TEST(DiskToolLabelTest, BadLabelsFail) {
+  for (std::string_view text : {"has space", "A.B", "SEVENTEEN_LETTERS"}) {
+    absl::StatusOr<DiskLabel> label = DiskTool::ParseLabel(text);
+    ASSERT_FALSE(label.ok()) << text;
+    EXPECT_EQ(label.status().code(), absl::StatusCode::kInvalidArgument);
+    EXPECT_EQ(
+        label.status().message(),
+        absl::StrCat("Label \"", text, "\" isn't up to ", DiskLabel::kMaxLength,
+                     " letters, digits, and ! # $ % & ' ( ) - @ ^ _ ` "
+                     "{ } ~"));
+  }
+}
+
+//==============================================================================
 // Dir
 //==============================================================================
 
@@ -824,13 +861,28 @@ TEST_F(DiskToolTest, PutAndGetKeepAttributes) {
 TEST_F(DiskToolTest, GetFailsWithNoFile) {
   NewFormatted();
   PutFile("A.TXT", "a");
-  for (std::string_view name : {"NOPE", "*.TXT", "bad name"}) {
-    absl::Status status = tool_->Get(kImagePath, name, "mem:/out.bin", false);
-    EXPECT_EQ(status.code(), absl::StatusCode::kNotFound) << name;
-    EXPECT_EQ(status.message(),
-              absl::StrCat("mem:/work.ozd: ", name, ": not found"));
+  for (std::string_view name :
+       {"NOPE", "*.TXT", "bad name", "./A.TXT", "/A.TXT", "X/../A.TXT"}) {
+    for (std::string_view host_path : {"mem:/out.bin", ""}) {
+      absl::Status status = tool_->Get(kImagePath, name, host_path, false);
+      EXPECT_EQ(status.code(), absl::StatusCode::kNotFound) << name;
+      EXPECT_EQ(status.message(),
+                absl::StrCat("mem:/work.ozd: ", name, ": not found"));
+    }
   }
   EXPECT_FALSE(file_system_.IsValidPath("mem:/out.bin"));
+}
+
+TEST_F(DiskToolTest, GetWithoutAHostPathUsesTheDisksName) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "hi");
+  ASSERT_TRUE(
+      file_system_.Register(std::make_unique<CurrentFolderProtocol>(), "cur"));
+  ASSERT_TRUE(file_system_.SetDefaultProtocol("cur"));
+  ASSERT_TRUE(file_system_.CreateFolder("cur:/here"));
+  absl::Status status = tool_->Get(kImagePath, "hello.txt", "", false);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_EQ(ReadHost("cur:/here/HELLO.TXT"), "hi");
 }
 
 TEST_F(DiskToolTest, GetReplacesAHostFile) {

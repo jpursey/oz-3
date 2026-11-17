@@ -70,6 +70,10 @@ class DiskTool final {
   static absl::StatusOr<gb::FileAttributes> ParseAttributes(
       std::string_view letters);
 
+  // Returns the volume label in `text`, as DiskLabel::Parse parses one. Fails
+  // if it breaks the label rules, such as one too long.
+  static absl::StatusOr<DiskLabel> ParseLabel(std::string_view text);
+
   //----------------------------------------------------------------------------
   // Image commands
   //----------------------------------------------------------------------------
@@ -124,11 +128,12 @@ class DiskTool final {
   absl::Status Put(std::string_view image_path, std::string_view host_path,
                    std::string_view name, bool text);
 
-  // Copies the file `name` from the disk to the host file at `host_path`,
-  // replacing any file there that can be replaced, which a read-only one
-  // can't. As `text`, zero bytes are dropped (see HostTextFromDisk). The copy
-  // keeps attributes as Put's does, and fails if they can't be set, leaving
-  // the file it wrote.
+  // Copies the file `name` from the disk to the host file at `host_path`, or
+  // to the file's name as the disk has it (HELLO.TXT) in the file system's
+  // current folder if `host_path` is empty, replacing any file there that can
+  // be replaced, which a read-only one can't. As `text`, zero bytes are dropped
+  // (see HostTextFromDisk). The copy keeps attributes as Put's does, and fails
+  // if they can't be set, leaving the file it wrote.
   absl::Status Get(std::string_view image_path, std::string_view name,
                    std::string_view host_path, bool text);
 
