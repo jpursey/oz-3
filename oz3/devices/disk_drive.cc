@@ -235,12 +235,13 @@ DiskDrive::StateResult DiskDrive::HandleAnyControlRequest() {
 
     // A reset discards what the state held, but for a READ's words read ahead
     // of the OS, which go back to the file. A WRITE keeps the words it took.
-    if (const ReadingState* reading = std::get_if<ReadingState>(&state_)) {
-      AbortRead(*reading);
-    }
     uint16_t word = 0;
     GetPort(kCommandPort).LoadWord(GetLock(kCommandPort), Port::S, word);
-    GetPort(kDataPort).LoadWord(GetLock(kDataPort), Port::S, word);
+    const bool data_untaken =
+        GetPort(kDataPort).LoadWord(GetLock(kDataPort), Port::S, word) != 0;
+    if (const ReadingState* reading = std::get_if<ReadingState>(&state_)) {
+      AbortRead(*reading, data_untaken);
+    }
     state_ = IdleState();
   }
   ClearControlRequest();
@@ -352,7 +353,7 @@ DiskDrive::StateResult DiskDrive::ExecuteState(SendingCompletionState& state) {
 
 DiskDrive::StateResult DiskDrive::ExecuteState(ReadingState& state) {
   Transfer& transfer = state.transfer;
-  if (UpdateEarlyCompletion(transfer) == StateResult::kContinue) {
+  if (UpdateEarlyCompletion(transfer)) {
     return StateResult::kContinue;
   }
 
@@ -382,30 +383,22 @@ DiskDrive::StateResult DiskDrive::ExecuteState(ReadingState& state) {
     ReadNextHandoff(state);
     return StateResult::kContinue;
   }
-  const int n = transfer.n;
-  state_ =
-      EndTransfer(std::move(transfer),
-                  {.status = DiskStatus::kOk,
-                   .results = {PortWords::FromWord(static_cast<uint16_t>(n))}});
+  state_ = EndTransfer(std::move(transfer), DiskStatus::kOk);
   return StateResult::kContinue;
 }
 
 DiskDrive::StateResult DiskDrive::ExecuteState(WritingState& state) {
   Transfer& transfer = state.transfer;
-  if (UpdateEarlyCompletion(transfer) == StateResult::kContinue) {
+  if (UpdateEarlyCompletion(transfer)) {
     return StateResult::kContinue;
   }
 
   // A write of fewer handoffs than the OS asked for is all that fits.
   if (transfer.taken == transfer.n) {
-    const int n = transfer.n;
-    CommandResponse completion =
-        n < transfer.count
-            ? CommandResponse{.status = DiskStatus::kDiskFull}
-            : CommandResponse{
-                  .status = DiskStatus::kOk,
-                  .results = {PortWords::FromWord(static_cast<uint16_t>(n))}};
-    state_ = EndTransfer(std::move(transfer), std::move(completion));
+    const int count = transfer.command.arguments[0].GetWord(0);
+    const DiskStatus status =
+        transfer.n < count ? DiskStatus::kDiskFull : DiskStatus::kOk;
+    state_ = EndTransfer(std::move(transfer), status);
     return StateResult::kContinue;
   }
 
@@ -418,7 +411,7 @@ DiskDrive::StateResult DiskDrive::ExecuteState(WritingState& state) {
   PortWords words;
   words.Load(port, GetLock(kDataPort), kFieldMode);
   ++transfer.taken;
-  if (transfer.failure == DiskStatus::kOk) {
+  if (!transfer.failed) {
     WriteHandoff(transfer, words);
   }
   return StateResult::kContinue;
@@ -510,41 +503,39 @@ DiskDrive::StateResult DiskDrive::SendCompletionField(
 
 DiskDrive::Transfer DiskDrive::MakeTransfer(Command command,
                                             const CommandResponse& accept) {
-  const int count = command.arguments[0].GetWord(0);
-  return {.command = std::move(command),
-          .count = count,
-          .n = accept.results[0].GetWord(0)};
+  return {.command = std::move(command), .n = accept.results[0].GetWord(0)};
 }
 
 void DiskDrive::FailTransfer(Transfer& transfer, DiskStatus status) {
-  transfer.failure = status;
+  transfer.failed = true;
   transfer.early_completion = CommandResponse{.status = status};
 }
 
-DiskDrive::StateResult DiskDrive::UpdateEarlyCompletion(Transfer& transfer) {
+bool DiskDrive::UpdateEarlyCompletion(Transfer& transfer) {
   if (!transfer.early_completion.has_value()) {
-    return StateResult::kWait;
+    return false;
   }
   CommandResponse& completion = *transfer.early_completion;
-  if (completion.fields_sent == 0) {
-    return SendCompletionField(completion);
+  if (IsCommandResponseTaken(completion)) {
+    transfer.early_completion.reset();
+    return true;
   }
-  if (!IsCommandResponseTaken(completion)) {
-    return StateResult::kWait;
-  }
-  transfer.early_completion.reset();
-  return StateResult::kContinue;
+  return SendCompletionField(completion) == StateResult::kContinue;
 }
 
-DiskDrive::State DiskDrive::EndTransfer(Transfer transfer,
-                                        CommandResponse completion) {
+DiskDrive::State DiskDrive::EndTransfer(Transfer transfer, DiskStatus status) {
   if (transfer.early_completion.has_value()) {
     return SendingCompletionState{
         .command = std::move(transfer.command),
         .completion = *std::move(transfer.early_completion)};
   }
-  if (transfer.failure != DiskStatus::kOk) {
+  if (transfer.failed) {
     return IdleState();
+  }
+  CommandResponse completion = {.status = status};
+  if (status == DiskStatus::kOk) {
+    completion.results = {
+        PortWords::FromWord(static_cast<uint16_t>(transfer.n))};
   }
   ValidateResponse(completion, transfer.command.def->completion_results);
   return SendingCompletionState{.command = std::move(transfer.command),
@@ -556,7 +547,7 @@ void DiskDrive::ReadNextHandoff(ReadingState& state) {
   // padded with zeros.
   Transfer& transfer = state.transfer;
   std::array<uint16_t, 2> words = {0, 0};
-  if (transfer.failure == DiskStatus::kOk) {
+  if (!transfer.failed) {
     const int handoff_words = transfer.command.def->packed ? 2 : 1;
     int read = 0;
     while (read < handoff_words) {
@@ -601,10 +592,9 @@ void DiskDrive::WriteHandoff(Transfer& transfer, PortWords words) {
   }
 }
 
-void DiskDrive::AbortRead(const ReadingState& state) {
+void DiskDrive::AbortRead(const ReadingState& state, bool handoff_untaken) {
   // A handoff the OS has taken, which the drive hasn't seen yet, isn't ahead.
-  if (state.words_ahead == 0 ||
-      (state.in_port && GetPort(kDataPort).GetStatus() == 0)) {
+  if (state.words_ahead == 0 || (state.in_port && !handoff_untaken)) {
     return;
   }
 

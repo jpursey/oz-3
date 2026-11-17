@@ -266,9 +266,8 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   }
 
   // Detaches the drive's image, and returns ReadFile of it.
-  std::vector<uint16_t> DetachAndReadFile(std::string_view name,
-                                          int count = DiskDirEntry::kMaxSize) {
-    return ReadFile(drive_->DetachImage(), name, count);
+  std::vector<uint16_t> DetachAndReadFile(std::string_view name) {
+    return ReadFile(drive_->DetachImage(), name);
   }
 
   // Opens the image at kPath again, as the host would, to see what the drive
@@ -296,6 +295,18 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // Detaches the drive's image, and returns FindEntry of it.
   std::optional<DiskDirEntry> DetachAndFindEntry(std::string_view name) {
     return FindEntry(drive_->DetachImage(), name);
+  }
+
+  // Expects the image at kPath, which nothing else may have open, to hold
+  // `name` committed with `words`, modified at `modified`.
+  void ExpectCommitted(std::string_view name, absl::Span<const uint16_t> words,
+                       absl::CivilSecond modified) {
+    std::optional<DiskDirEntry> entry = FindEntry(ReopenImage(), name);
+    ASSERT_TRUE(entry.has_value());
+    EXPECT_EQ(entry->GetSize(), static_cast<int>(words.size()));
+    EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(modified));
+    EXPECT_EQ(ReadFile(ReopenImage(), name),
+              std::vector<uint16_t>(words.begin(), words.end()));
   }
 
   // Returns the root directory's entry for `name` on `image`, or nullopt if
@@ -461,11 +472,13 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
                    {PortWords::FromWord(static_cast<uint16_t>(count))});
   }
 
-  // What moved through the data port: the handoffs, and the handoffs that
-  // waited for the drive, as {index, cycles waited}.
+  // The handoffs that waited for the drive, as {index, cycles waited}.
+  using Stalls = std::vector<std::pair<int, Cycles>>;
+
+  // What a read moved through the data port: the handoffs, and its stalls.
   struct DataPhase {
     std::vector<PortWords> handoffs;
-    std::vector<std::pair<int, Cycles>> stalls;
+    Stalls stalls;
   };
 
   // Reads `count` handoffs from the data port, as INR does, each as soon as
@@ -491,22 +504,31 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // Writes `handoffs` to the data port, as OUTR does, each as soon as the port
   // is clear. The drive takes a handoff the cycle after it arrives, and does
   // its disk work then, so the port holds the next while that work goes on, and
-  // the one after waits.
-  DataPhase WriteData(absl::Span<const PortWords> handoffs) {
-    DataPhase data;
+  // the one after waits. Returns the stalls.
+  Stalls WriteData(absl::Span<const PortWords> handoffs) {
+    Stalls stalls;
     for (int i = 0; i < static_cast<int>(handoffs.size()); ++i) {
       const Cycles start = GetCycles();
       if (!RunUntil([this] { return !IsSet(kDataPort); })) {
         break;
       }
       if (GetCycles() > start) {
-        data.stalls.emplace_back(i, GetCycles() - start);
+        stalls.emplace_back(i, GetCycles() - start);
       }
       EXPECT_TRUE(Out(kDataPort, handoffs[i]));
-      data.handoffs.push_back(handoffs[i]);
       Execute(1);
     }
-    return data;
+    return stalls;
+  }
+
+  // WRITEs `words` to `handle`, which they all fit in, and completes it.
+  void WriteWords(int handle, absl::Span<const uint16_t> words) {
+    const uint16_t count = static_cast<uint16_t>(words.size());
+    EXPECT_THAT(Transfer(DiskDriveCommand::kWrite, handle, count),
+                ElementsAre(Field(kOk), PortWords::FromWord(count)));
+    WriteData(Handoffs(words));
+    EXPECT_THAT(Complete(),
+                ElementsAre(Field(kOk), PortWords::FromWord(count)));
   }
 
   // Returns `words` as handoffs: one word each, or two for `packed`, with a
@@ -1668,8 +1690,7 @@ TEST_F(DiskDriveTest, WriteTakesEachWord) {
   EXPECT_THAT(Seek(0, 500), ElementsAre(Field(kOk)));
   EXPECT_THAT(Transfer(kWrite, 0, 100),
               ElementsAre(Field(kOk), PortWords::FromWord(100)));
-  const DataPhase data = WriteData(Handoffs(FileWords(500, 100)));
-  EXPECT_THAT(data.stalls,
+  EXPECT_THAT(WriteData(Handoffs(FileWords(500, 100))),
               ElementsAre(Pair(2, kLatencyCycles + kReadCycles - 1),
                           Pair(14, kLatencyCycles + kWriteCycles - 1)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(100)));
@@ -1687,11 +1708,8 @@ TEST_F(DiskDriveTest, WriteTakesEachWord) {
   // CLOSE commits the file, stamped with the clock.
   drive_->SetClock([] { return kLater; });
   EXPECT_THAT(Run(CommandWord(kClose, 0)), ElementsAre(Field(kOk)));
-  EXPECT_EQ(DetachAndReadFile("A"), FileWords(0, 600));
-  std::optional<DiskDirEntry> entry = FindEntry(ReopenImage(), "A");
-  ASSERT_TRUE(entry.has_value());
-  EXPECT_EQ(entry->GetSize(), 600);
-  EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kLater));
+  drive_->DetachImage();
+  ExpectCommitted("A", FileWords(0, 600), kLater);
 }
 
 TEST_F(DiskDriveTest, WriteAcceptsWhatFits) {
@@ -1729,7 +1747,7 @@ TEST_F(DiskDriveTest, WriteAcceptsWhatFits) {
   EXPECT_THAT(Seek(0, 1), ElementsAre(Field(kOk)));
   EXPECT_THAT(Transfer(kWrite, 0, 600),
               ElementsAre(Field(kOk), PortWords::FromWord(511)));
-  EXPECT_EQ(WriteData(Handoffs(FileWords(1, 511))).handoffs.size(), 511);
+  WriteData(Handoffs(FileWords(1, 511)));
   EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kDiskFull)));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(512),
                                    PortWords::FromDword(512)));
@@ -1812,11 +1830,8 @@ TEST_F(DiskDriveTest, TruncateShrinksTheFile) {
   EXPECT_THAT(protocol_->CollectWriteOffsets(), Not(IsEmpty()));
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(300),
                                    PortWords::FromDword(300)));
-  std::optional<DiskDirEntry> entry = DetachAndFindEntry("A");
-  ASSERT_TRUE(entry.has_value());
-  EXPECT_EQ(entry->GetSize(), 300);
-  EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kNow));
-  EXPECT_EQ(ReadFile(ReopenImage(), "A"), FileWords(0, 300));
+  drive_->DetachImage();
+  ExpectCommitted("A", FileWords(0, 300), kNow);
 }
 
 TEST_F(DiskDriveTest, FlushCommitsAWrittenFile) {
@@ -1826,19 +1841,13 @@ TEST_F(DiskDriveTest, FlushCommitsAWrittenFile) {
   AttachFormatted();
   CreateFile("A");
   drive_->SetClock([] { return kLater; });
-  EXPECT_THAT(Transfer(kWrite, 0, 300),
-              ElementsAre(Field(kOk), PortWords::FromWord(300)));
-  WriteData(Handoffs(FileWords(0, 300)));
-  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(300)));
+  WriteWords(0, FileWords(0, 300));
 
   protocol_->CollectWriteOffsets();
   EXPECT_THAT(Run(CommandWord(kFlush, 0)), ElementsAre(Field(kOk)));
   EXPECT_THAT(protocol_->CollectWriteOffsets(), Not(IsEmpty()));
-  std::optional<DiskDirEntry> entry = DetachAndFindEntry("A");
-  ASSERT_TRUE(entry.has_value());
-  EXPECT_EQ(entry->GetSize(), 300);
-  EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kLater));
-  EXPECT_EQ(ReadFile(ReopenImage(), "A"), FileWords(0, 300));
+  drive_->DetachImage();
+  ExpectCommitted("A", FileWords(0, 300), kLater);
 }
 
 TEST_F(DiskDriveTest, TheDriveCommitsWhenDestroyed) {
@@ -1848,18 +1857,10 @@ TEST_F(DiskDriveTest, TheDriveCommitsWhenDestroyed) {
   AttachFormatted();
   CreateFile("A");
   drive_->SetClock([] { return kLater; });
-  EXPECT_THAT(Transfer(kWrite, 0, 300),
-              ElementsAre(Field(kOk), PortWords::FromWord(300)));
-  WriteData(Handoffs(FileWords(0, 300)));
-  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(300)));
+  WriteWords(0, FileWords(0, 300));
   drive_ = nullptr;
   DestroyProcessor();
-
-  std::optional<DiskDirEntry> entry = FindEntry(ReopenImage(), "A");
-  ASSERT_TRUE(entry.has_value());
-  EXPECT_EQ(entry->GetSize(), 300);
-  EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kLater));
-  EXPECT_EQ(ReadFile(ReopenImage(), "A"), FileWords(0, 300));
+  ExpectCommitted("A", FileWords(0, 300), kLater);
 }
 
 TEST_F(DiskDriveTest, CloseOfEverySlotClosesTheRestAfterAFailure) {
@@ -1869,18 +1870,12 @@ TEST_F(DiskDriveTest, CloseOfEverySlotClosesTheRestAfterAFailure) {
   // Slot 0 is stale, with a write not committed, which is lost.
   AttachFormatted();
   CreateFile("A", 0);
-  EXPECT_THAT(Transfer(kWrite, 0, 10),
-              ElementsAre(Field(kOk), PortWords::FromWord(10)));
-  WriteData(Handoffs(FileWords(0, 10)));
-  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(10)));
+  WriteWords(0, FileWords(0, 10));
   drive_->AttachImage(MakeImage(/*formatted=*/true, kOtherPath));
   EXPECT_THAT(Run(CommandWord(kOpenRoot)),
               ElementsAre(Field(kOk), PortWords::FromWord(1)));
   CreateFile("B", 2);
-  EXPECT_THAT(Transfer(kWrite, 2, 10),
-              ElementsAre(Field(kOk), PortWords::FromWord(10)));
-  WriteData(Handoffs(FileWords(0, 10)));
-  EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(10)));
+  WriteWords(2, FileWords(0, 10));
 
   EXPECT_THAT(Run(CommandWord(kClose, DiskDrive::kAllSlots)),
               ElementsAre(Field(DiskStatus::kDiskChanged)));
@@ -1973,14 +1968,14 @@ TEST_F(DiskDriveTest, AFailedImageEndsAWriteEarly) {
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
 
   // Word 256 writes back the first sector, which fails.
-  EXPECT_THAT(WriteData(Handoffs(FileWords(0, 257))).stalls, IsEmpty());
+  EXPECT_THAT(WriteData(Handoffs(FileWords(0, 257))), IsEmpty());
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(GetPhase(), 3);
   EXPECT_EQ(ReceiveField(), Field(DiskStatus::kIoError));
   EXPECT_EQ(GetPhase(), 5);
 
   // The rest is taken and thrown away, at port speed.
-  EXPECT_THAT(WriteData(Handoffs(FileWords(257, 43))).stalls, IsEmpty());
+  EXPECT_THAT(WriteData(Handoffs(FileWords(257, 43))), IsEmpty());
   Execute(10);
   EXPECT_EQ(GetPhase(), 0);
   EXPECT_FALSE(IsSet(kCommandPort));
@@ -2184,31 +2179,22 @@ TEST_F(DiskDriveTest, AProgramOpensAndClosesTheRoot) {
     .SEGMENT stack STACK
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
-  const CoreState& state = GetState();
-  EXPECT_EQ(state.r6, 2);
-  MemAccessor data = GetState().data;
-  const uint16_t base = state.bd;
-  EXPECT_EQ(data.SetAddress(base + GetLabel("OPEN_ACCEPT")).GetValue(),
-            static_cast<uint16_t>(kOk));
-  EXPECT_EQ(data.SetAddress(base + GetLabel("OPEN_COMPLETION")).GetValue(),
-            static_cast<uint16_t>(kOk));
-  EXPECT_EQ(data.GetValue(), 0);
-  EXPECT_EQ(data.SetAddress(base + GetLabel("CLOSE_ACCEPT")).GetValue(),
-            static_cast<uint16_t>(kOk));
-  EXPECT_EQ(data.SetAddress(base + GetLabel("CLOSE_COMPLETION")).GetValue(),
-            static_cast<uint16_t>(kOk));
+  EXPECT_EQ(GetState().r6, 2);
+  const uint16_t ok = static_cast<uint16_t>(kOk);
+  EXPECT_THAT(GetData("OPEN_ACCEPT", 1), ElementsAre(ok));
+  EXPECT_THAT(GetData("OPEN_COMPLETION", 2), ElementsAre(ok, 0));
+  EXPECT_THAT(GetData("CLOSE_ACCEPT", 1), ElementsAre(ok));
+  EXPECT_THAT(GetData("CLOSE_COMPLETION", 1), ElementsAre(ok));
   Execute(1);
   EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
 }
 
 // What a transfer program runs: `command` with `count` on handle 0, moving
-// its handoffs with `instruction` (such as "INR.IW 17, (R1)") while the drive
-// shows `phase`.
+// its handoffs with `instruction` (such as "INR.IW 17, (R1)").
 struct TransferProgram {
   DiskDriveCommand command;
   int count;
   std::string_view instruction;
-  int phase;
 
   // Whether the loop starts the buffer again after each stop, rather than
   // logging stalls, so a transfer of any size fits in it. An INR or OUTR moves
@@ -2224,6 +2210,14 @@ struct TransferProgram {
 // one is already raised for the command before. Each time the loop stops with
 // handoffs left and the control port shows the data phase, it logs R7 in
 // STALLS, once for each R7.
+// Returns the phase the drive shows during `program`'s data phase.
+DiskDrivePhase GetTransferPhase(const TransferProgram& program) {
+  const DiskCommandDef* def =
+      GetDiskCommandDef(static_cast<uint8_t>(program.command));
+  return def->kind == DiskCommandKind::kRead ? DiskDrivePhase::kReading
+                                             : DiskDrivePhase::kWriting;
+}
+
 std::string MakeTransferProgram(const TransferProgram& program) {
   return absl::StrReplaceAll(
       R"---(
@@ -2306,7 +2300,7 @@ std::string MakeTransferProgram(const TransferProgram& program) {
     .SEGMENT stack STACK
   )---",
       {{"$INSTRUCTION", program.instruction},
-       {"$PHASE", absl::StrCat(program.phase)},
+       {"$PHASE", absl::StrCat(static_cast<int>(GetTransferPhase(program)))},
        {"$AFTER_STOP",
         program.reuse_buffer ? "MOV R1, buffer\n        JP data" : ""},
        {"$COMMAND", absl::StrCat(CommandWord(program.command))},
@@ -2315,26 +2309,6 @@ std::string MakeTransferProgram(const TransferProgram& program) {
 
 class DiskDriveProgramTest : public DiskDriveTest {
  protected:
-  // Returns `count` words from `label` on, in the loaded program's data.
-  std::vector<uint16_t> GetData(std::string_view label, int count) {
-    MemAccessor data = GetState().data;
-    data.SetAddress(GetState().bd + GetLabel(label));
-    std::vector<uint16_t> words;
-    for (int i = 0; i < count; ++i) {
-      words.push_back(data.GetValue());
-    }
-    return words;
-  }
-
-  // Sets the words from `label` on, in the loaded program's data.
-  void SetData(std::string_view label, absl::Span<const uint16_t> words) {
-    MemAccessor data = GetState().data;
-    data.SetAddress(GetState().bd + GetLabel(label));
-    for (const uint16_t word : words) {
-      data.AddValue(word);
-    }
-  }
-
   // Expects the program's accept and completion to be OK with `n`, with no
   // interrupt for the accept and one for the completion, and `stalls` logged.
   void ExpectTransfer(int n, absl::Span<const uint16_t> stalls) {
@@ -2356,8 +2330,7 @@ TEST_F(DiskDriveProgramTest, AnInrLoopReads) {
   OpenFile("A");
   ASSERT_TRUE(Load(MakeTransferProgram({.command = DiskDriveCommand::kRead,
                                         .count = 500,
-                                        .instruction = "INR.IW 17, (R1)",
-                                        .phase = 4})));
+                                        .instruction = "INR.IW 17, (R1)"})));
   ASSERT_TRUE(ExecuteUntilHalt());
   ExpectTransfer(300, {300, 300 - kDiskSectorWords});
   EXPECT_EQ(GetData("BUFFER", 300), FileWords(0, 300));
@@ -2370,8 +2343,7 @@ TEST_F(DiskDriveProgramTest, AnInrDwordLoopReadsPacked) {
   ASSERT_TRUE(
       Load(MakeTransferProgram({.command = DiskDriveCommand::kReadPacked,
                                 .count = 500,
-                                .instruction = "INR.ID 17, [R1]",
-                                .phase = 4})));
+                                .instruction = "INR.ID 17, [R1]"})));
   ASSERT_TRUE(ExecuteUntilHalt());
   ExpectTransfer(150, {150, 150 - kDiskSectorWords / 2});
   std::vector<uint16_t> expected = FileWords(0, 299);
@@ -2388,8 +2360,7 @@ TEST_F(DiskDriveProgramTest, AnOutrLoopWrites) {
   EXPECT_THAT(Seek(0, 500), ElementsAre(Field(kOk)));
   ASSERT_TRUE(Load(MakeTransferProgram({.command = DiskDriveCommand::kWrite,
                                         .count = 100,
-                                        .instruction = "OUTR.IW 17, (R1)",
-                                        .phase = 5})));
+                                        .instruction = "OUTR.IW 17, (R1)"})));
   SetData("BUFFER", FileWords(500, 100));
   ASSERT_TRUE(ExecuteUntilHalt());
   ExpectTransfer(100, {100 - 2, 100 - 14});
@@ -2407,8 +2378,7 @@ TEST_F(DiskDriveProgramTest, AnOutrDwordLoopWritesPacked) {
   ASSERT_TRUE(
       Load(MakeTransferProgram({.command = DiskDriveCommand::kWritePacked,
                                 .count = 50,
-                                .instruction = "OUTR.ID 17, [R1]",
-                                .phase = 5})));
+                                .instruction = "OUTR.ID 17, [R1]"})));
   SetData("BUFFER", FileWords(500, 100));
   ASSERT_TRUE(ExecuteUntilHalt());
   ExpectTransfer(50, {50 - 2, 50 - 8});
@@ -2428,7 +2398,6 @@ TEST_F(DiskDriveProgramTest, AProgramReads64KiWords) {
   ASSERT_TRUE(Load(MakeTransferProgram({.command = DiskDriveCommand::kRead,
                                         .count = kWords,
                                         .instruction = "INR.IW 17, (R1)",
-                                        .phase = 4,
                                         .reuse_buffer = true})));
   const Cycles start = GetCycles();
   for (int chunk = 0;

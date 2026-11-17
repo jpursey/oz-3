@@ -345,12 +345,11 @@ class DiskDrive final : public Device {
     }
 
     Command command;
-    int count = 0;  // The handoffs the OS asked for.
     int n = 0;      // The handoffs the accept promised.
     int taken = 0;  // The handoffs the OS has taken (or written).
 
-    // The first failure of a disk call, after which handoffs move no data.
-    DiskStatus failure = DiskStatus::kOk;
+    // Whether a disk call has failed, after which handoffs move no data.
+    bool failed = false;
 
     // The failure's completion, until the OS has taken it.
     std::optional<CommandResponse> early_completion;
@@ -523,14 +522,14 @@ class DiskDrive final : public Device {
   static void FailTransfer(Transfer& transfer, DiskStatus status);
 
   // Sends `transfer`'s early completion, or sees the OS take it, and returns
-  // kContinue if it did either. Otherwise returns kWait, as it does while the
-  // drive is waiting for a port's lock.
-  StateResult UpdateEarlyCompletion(Transfer& transfer);
+  // whether it did either. Otherwise the data phase goes on, as it does while
+  // the early completion waits for a port's lock.
+  bool UpdateEarlyCompletion(Transfer& transfer);
 
-  // Returns the state that ends `transfer`'s data phase: its completion, or
-  // idle once the OS has taken its early completion.
-  [[nodiscard]] static State EndTransfer(Transfer transfer,
-                                         CommandResponse completion);
+  // Returns the state that ends `transfer`'s data phase: its completion with
+  // `status`, the early completion if it failed, or idle once the OS has taken
+  // that.
+  [[nodiscard]] static State EndTransfer(Transfer transfer, DiskStatus status);
 
   // Reads `state`'s next handoff from the file into `next`, or zeros once it
   // has failed or past the end.
@@ -541,9 +540,10 @@ class DiskDrive final : public Device {
   void WriteHandoff(Transfer& transfer, PortWords words);
 
   // Seeks a READ's handle back past the words read ahead of the OS, as a reset
-  // ends it with the position just past the words the OS took. The data port
-  // must still hold any handoff the OS hasn't taken.
-  void AbortRead(const ReadingState& state);
+  // ends it with the position just past the words the OS took.
+  // `handoff_untaken` is whether the data port's flag was still set when the
+  // reset withdrew its word.
+  void AbortRead(const ReadingState& state, bool handoff_untaken);
 
   //----------------------------------------------------------------------------
   // Commands
