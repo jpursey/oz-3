@@ -26,24 +26,24 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Disk tools
+## File times in disk copies
 
-- **Layers:** tools, apps, wiki
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [disk_design.md](disk_design.md) (Tools), and
-  [disk-library.md](worklog/disk-library.md) for the library
+- **Layers:** tools, wiki
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Disk tools*, and Game Bits *File modified times*
+- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior);
+  [disk_design.md](disk_design.md) (Tools)
 
-`DiskFileProtocol`, a `gb::FileProtocol` over a mounted image, in `tools`, and
-the `oz3dsk` command line tool for making, formatting, and filling images.
-Both convert host files with host transfer helpers in `tools`
-(`disk_transfer.h`): `WordsFromBytes` (padding an odd last byte with zero)
-and `BytesFromWords`, in `std::byte`, and `WordsFromText` (host line endings
-to LF) and `TextFromWords` (dropping zero bytes), tested with odd and even
-byte counts each way, CRLF, CR, and LF going in, and zero bytes dropped
-coming out. They were planned for *Disk library*, but nothing in the disk
-format needs them.
+`oz3dsk put` should stamp a file with the host file's modified time, and `get`
+set the host file's time from the entry, but `gb::FileSystem` has no file
+times, so `put` stamps the time of the copy and `get` leaves the host's. Once
+Game Bits reports a file's modified time in `PathInfo`, sets it as it sets
+attributes, and keeps it in copies, `DiskFileProtocol` reports each entry's
+modified time and sets it, and `put` and `get` keep times with no code of their
+own. A file with no date on the disk gets whatever the host gives a new file.
+The text copies, which write the file themselves, set the time after, as they
+set attributes.
 
 ## Ozzy drives
 

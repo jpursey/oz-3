@@ -563,12 +563,14 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 - **The byte view is the binary convention:** each word is two bytes, low byte first, and a file's size is its words × 2. Reading at an odd byte offset reads the containing word, and writing an odd number of bytes pads the last word with a zero high byte. A `.oz3` stored on a disk is the same words as on the host, so the program loader, the assembler, and anything else on `gb::FileSystem` can read from and write into images unchanged.
 - **Attributes:** it supports `gb::FileAttribute::kReadOnly` and `kHidden`, the disk's read-only and hidden bits. `PathInfo` reports them from the file's entry, and `gb::FileSystem::SetAttributes` sets them as `ATTRIB` does, failing with the file open. A read-only file can't be opened for writing or deleted, as on the drive, and a hidden one is still listed. Copies and moves keep them, as for any protocol, so a read-only host file copied in stays read-only, and back out again.
 - **Moves** within the protocol are renames, through `gb::FileSystem::MoveFile`.
-- **Timestamps:** the protocol stamps written files using a clock given when it's created, or zeros without one.
+- **Timestamps:** the protocol stamps written files using a clock given when it's created, or zeros without one. It doesn't report or set them through `gb::FileSystem` yet, which has no file times (see *File times in disk copies* in the backlog).
+- **Odd bytes** are exact within a file: reading from an odd offset starts with the high byte of its word, and writing there changes only that byte. Only the end rounds up to a whole word, so a file written a byte at a time holds the same words as one written at once.
+- **Sizes** in `PathInfo` are as the file's entry was last committed, as `FIND` gives them.
 - **Text conversion** stays outside, since a `RawFile` has no notion of text, in host transfer helpers beside the protocol in `tools`. They convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
 
 #### Ownership
 
-The protocol owns its `DiskFileSystem`. It mounts one, unmounts it, and can swap one image for another. With nothing mounted, every path is invalid.
+The protocol owns one `DiskFileSystem` for its whole life, and mounting attaches an image to it. Unmounting commits every open file, then detaches the image and hands it back, so an unmounted image holds everything written through the protocol. A file still open across an unmount is stale, as the drive's slots are, so it can never write into the next image mounted. Mounting with an image mounted unmounts it first. An unformatted image mounts, so it can be formatted, with an empty root until it is. With nothing mounted, every path is invalid.
 
 Everything beyond the protocol (the label and write protection) goes through `GetFileSystem()`, which returns the mounted `DiskFileSystem`, or null. Checks are not among them: `CheckDisk` takes an image, so a host unmounts one to check it. No separate interface is needed, and since the protocol and direct calls share one file system, they share one open-file table and one set of buffers: deleting a file the protocol has open still fails with **in use**, and every view stays consistent.
 
@@ -589,13 +591,13 @@ oz3dsk work.ozd dir *.OZ3
 
 | Command | Arguments and flags | Does |
 | --- | --- | --- |
-| `new` | size | Creates a blank image of that size |
+| `new` | size | Creates a blank image of that size, failing if the image exists |
 | `format` | `--cluster n`, `--label L` | Formats the image as the drive's `FORMAT` does; with no `--cluster`, the drive's choice |
 | `info` |  | Shows the medium (size, write protection) and the file system (label, clusters, free) |
 | `dir` | pattern, `--all` | Lists name, size in words, attributes, and modified time; `--all` includes hidden files |
 | `put` | host file, disk name, `--text` | Copies a host file in, replacing any file of that name |
-| `get` | disk name, host file, `--text` | Copies a file out |
-| `del` | pattern | Deletes matching files |
+| `get` | disk name, host file, `--text` | Copies a file out; with no host file, to its dotted name in the current folder |
+| `del` | pattern | Deletes every matching file it can, hidden ones included, reporting each it can't; fails if any failed or none matched |
 | `ren` | old name, new name | Renames a file |
 | `attrib` | name, `--set letters`, `--clear letters` | Sets or clears `r` (read-only) and `h` (hidden); with neither flag, shows them |
 | `label` | label | Sets the volume label |
@@ -607,11 +609,13 @@ oz3dsk work.ozd dir *.OZ3
 - **Disk names** are dotted text, converted to the 12.4 fields. `put` with no disk name uses the host file's name, failing if it doesn't fit.
 - **Binary (the default):** two host bytes per word, low byte first, as in `.oz3` files. An odd last byte is padded with a zero, and `get` writes two bytes per word.
 - **Text (`--text`):** the same byte order as binary, since strings are packed low byte first, so text never needs reordering. Going in, host line endings become LF (0Ah). Coming out, `get --text` drops zero bytes, such as the padding in an odd-length file's last word. Files mixing binary fields and text copy correctly as plain binary.
-- **Timestamps:** `put` stamps the file with the host file's modified time, and `get` sets the host file's time from the entry.
+- **Timestamps:** `put` stamps the file with the time of the copy, and `get` leaves the host file's time as the host sets it, until `gb::FileSystem` has file times (see *File times in disk copies* in the backlog). Then `put` stamps the host file's modified time, and `get` sets the host file's time from the entry.
 - **Attributes:** `put` and `get` keep read-only and hidden, as any copy does, with or without `--text`, so neither replaces a read-only file. They keep only the attributes both protocols support, as `gb::FileSystem::GetAttributeFlags` reports them, so a host without a hidden attribute keeps only read-only.
 - **`protect off`** fails on a read-only image file, which is always protected (see Image file).
 
-`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile` and `attrib` uses `gb::FileSystem::SetAttributes` through the protocol, and `dir` reads attributes from its `PathInfo`. The rest use the library directly through the protocol's `GetFileSystem()`.
+`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile` and `attrib` uses `gb::FileSystem::SetAttributes` and `PathInfo` through the protocol. `dir` and `del` find entries with the library's `FIND`, since `dir` shows modified times, which `PathInfo` has no room for. The rest use the library directly through the protocol's `GetFileSystem()`, or the image alone (`new`, `protect`, and `check`).
+
+Each command is a call on `DiskTool` in `tools`, so they are unit tested over images in memory, and the app is only command line wiring.
 
 ### Game Bits dependencies
 
