@@ -261,6 +261,16 @@ absl::StatusOr<gb::FileAttributes> DiskTool::ParseAttributes(
   return attributes;
 }
 
+absl::StatusOr<DiskLabel> DiskTool::ParseLabel(std::string_view text) {
+  std::optional<DiskLabel> label = DiskLabel::Parse(text);
+  if (!label.has_value()) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Label \"", text, "\" isn't up to ", DiskLabel::kMaxLength,
+                     " letters, digits, and ! # $ % & ' ( ) - @ ^ _ ` { } ~"));
+  }
+  return *label;
+}
+
 //==============================================================================
 // Image commands
 //==============================================================================
@@ -382,6 +392,17 @@ absl::Status DiskTool::Put(std::string_view image_path,
 
 absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
                            std::string_view host_path, bool text) {
+  // A name that doesn't parse fails to be found before anything is written,
+  // so it needs no host path.
+  std::string default_path;
+  if (host_path.empty()) {
+    if (const std::optional<DiskFilename> filename = DiskFilename::Parse(name);
+        filename.has_value()) {
+      default_path = filename->ToString();
+    }
+    host_path = default_path;
+  }
+
   std::string bytes;
   gb::FileAttributes attributes;
   if (absl::Status status =
@@ -541,9 +562,12 @@ absl::Status DiskTool::DoPut(std::string_view name, std::string_view bytes,
 
 absl::Status DiskTool::DoGet(std::string_view name, std::string* bytes,
                              gb::FileAttributes* attributes) {
+  // No file has a name that isn't a disk name, though the file system would
+  // find one for a path such as ./HELLO.TXT.
   const std::string path = GetDiskPath(name);
   const gb::PathInfo info = file_system_->GetPathInfo(path);
-  if (info.type != gb::PathType::kFile) {
+  if (!DiskFilename::Parse(name).has_value() ||
+      info.type != gb::PathType::kFile) {
     return Named(name, ToStatus(DiskStatus::kNotFound));
   }
   if (!file_system_->ReadFile(path, bytes)) {

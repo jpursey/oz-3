@@ -333,6 +333,9 @@ class DiskTool final {
   // either case. Fails for any other character.
   static absl::StatusOr<gb::FileAttributes> ParseAttributes(
       std::string_view letters);
+
+  // Returns the volume label in `text`. Fails if it breaks the label rules.
+  static absl::StatusOr<DiskLabel> ParseLabel(std::string_view text);
 };
 ```
 
@@ -376,12 +379,13 @@ left empty between them.
   given, so messages name them as they were typed. The clock is the host's
   local time, `DiskTool`'s default, as `ozzy`'s is.
 - Sizes, labels, and `--set` and `--clear`'s letters (from `rh`) are
-  validated as the command line is parsed, with `DiskTool`'s and
-  `DiskLabel`'s own parsing, so a bad one is a usage error, as is an
-  attribute both set and cleared. `--cluster` is from 1 to 64, and `protect`
-  takes `on` or `off` as choices.
-- Without a host file, `get` writes the file under its disk name as the disk
-  formats it (`hello.txt` is written as `HELLO.TXT`).
+  validated as the command line is parsed, with `DiskTool`'s own parsing, so
+  a bad one is a usage error. `--cluster` is a power of two from 1 to 64, `protect` takes
+  `on` or `off` as choices, `put`'s host file must exist, and `get`'s must be
+  writable. An attribute both set and cleared is `Attrib`'s own failure.
+- Without a host path, `Get` writes the file in the current folder under its
+  name as the disk has it (`hello.txt` is written as `HELLO.TXT`), so `get`
+  passes its host file only when one is given.
 
 ### Testing
 
@@ -473,7 +477,7 @@ Depends on: CL3.
 - Unit tests: host text transfer with CRLF, CR, and LF going in, and zero
   bytes dropped coming out. `Put` and `Get` binary
   and text, with and without names, a host name that doesn't fit, replacing a
-  file, keeping a read-only one, a full disk leaving no file, a write
+  file, keeping a read-only one, a full disk leaving part of the file, a write
   protected disk, and keeping attributes both ways; `Dir` with patterns, in
   any case, and `--all`; `Delete` of a pattern with a read-only match and
   with none; `Rename` onto a taken name and to a bad one; `Attrib` setting,
@@ -487,9 +491,15 @@ Depends on: CL3.
 Depends on: CL4.
 
 - `oz3dsk.cc` and `apps/CMakeLists.txt`.
+- `disk_tool.h` and `.cc`: `ParseLabel`, for the app's label validator, and
+  `Get` without a host path. `Get` finds no file for a name that isn't a disk
+  name (such as `./HELLO.TXT`), like `Rename` and `Attrib`.
 
 **Verify**
 - Standard checks.
+- Unit tests: `ParseLabel` of good and bad labels, and its message; `Get`
+  without a host path, in a protocol with a current folder, and of paths that
+  aren't disk names, with and without one.
 - By hand on Linux: every command on a fresh image, `put` and `get` of a
   `.oz3` from `oz3asm` and of a CRLF text file, and each usage error. On
   Windows, left for the user, in the PR's comment.
