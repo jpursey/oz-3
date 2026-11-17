@@ -572,9 +572,9 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 
 The protocol owns one `DiskFileSystem` for its whole life, and mounting attaches an image to it. Unmounting commits every open file, then detaches the image and hands it back, so an unmounted image holds everything written through the protocol. A file still open across an unmount is stale, as the drive's slots are, so it can never write into the next image mounted. Mounting with an image mounted unmounts it first. While a formatted image is mounted, the protocol keeps its root open in a slot of its own, and finds and lists names through it, so it never needs a free slot for them. Since the file system won't format with any file open, the root included, the protocol formats with a `Format` of its own, which closes the root and opens it again. An unformatted image mounts, with no root open, so it can be formatted, and shows an empty root until it is. With nothing mounted, every path is invalid.
 
-Everything beyond the protocol (the label and write protection) goes through `GetFileSystem()`, which returns the mounted `DiskFileSystem`, or null, and `GetRoot()`, the protocol's root handle, for finding entries. Checks are not among them: `CheckDisk` takes an image, so a host unmounts one to check it. No separate interface is needed, and since the protocol and direct calls share one file system, they share one open-file table and one set of buffers: deleting a file the protocol has open still fails with **in use**, and every view stays consistent.
+The file system itself isn't exposed, so nothing else can open the root or format under the protocol. What a host needs beyond files is on the protocol: `Format`, `GetMedia`, `GetVolumeInfo` (the label, clusters, and free count), and `SetLabel`. Write protection and checks are not among them: they belong to the image (`DiskImage::SetWriteProtected`, and `CheckDisk`, which takes an image), so a host unmounts one to change or check it.
 
-The host keeps a pointer to the protocol before passing it to `gb::FileSystem::Register`, which owns it from then on. Protocols live as long as their file system, so the pointer stays valid. Direct calls bypass the protocol's `Lock` and `Unlock`, so a multithreaded host needs its own locking around them; the OZ-3 tools are single-threaded.
+The host keeps a pointer to the protocol before passing it to `gb::FileSystem::Register`, which owns it from then on. Protocols live as long as their file system, so the pointer stays valid. The protocol's own calls, such as `Format`, bypass `gb::FileSystem`'s locking, so a multithreaded host needs its own around them; the OZ-3 tools are single-threaded.
 
 An image has one owner at a time: attaching it to a drive fails while a protocol has it mounted, and the reverse.
 
@@ -594,7 +594,7 @@ oz3dsk work.ozd dir *.OZ3
 | `new` | size | Creates a blank image of that size, failing if the image exists |
 | `format` | `--cluster n`, `--label L` | Formats the image as the drive's `FORMAT` does; with no `--cluster`, the drive's choice |
 | `info` |  | Shows the medium (size, write protection) and the file system (label, clusters, free) |
-| `dir` | pattern, `--all` | Lists name, size in words, attributes, and modified time; `--all` includes hidden files |
+| `dir` | pattern, `--all` | Lists name, size in words, and attributes; `--all` includes hidden files. Modified times wait on `gb::FileSystem` having file times (see *Modified times in oz3dsk dir* in the backlog) |
 | `put` | host file, disk name, `--text` | Copies a host file in, replacing any file of that name |
 | `get` | disk name, host file, `--text` | Copies a file out; with no host file, to its dotted name in the current folder |
 | `del` | pattern | Deletes every matching file it can, hidden ones included, reporting each it can't; fails if any failed or none matched |
@@ -613,7 +613,7 @@ oz3dsk work.ozd dir *.OZ3
 - **Attributes:** `put` and `get` keep read-only and hidden, as any copy does, with or without `--text`, so neither replaces a read-only file. They keep only the attributes both protocols support, as `gb::FileSystem::GetAttributeFlags` reports them, so a host without a hidden attribute keeps only read-only.
 - **`protect off`** fails on a read-only image file, which is always protected (see Image file).
 
-`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile`, `attrib` uses `gb::FileSystem::SetAttributes` and `PathInfo`, and `dir` and `del` find entries with `gb::FileSystem::ListFiles`, all through the protocol. The rest use the library directly through the protocol's `GetFileSystem()`, or the image alone (`new`, `protect`, and `check`).
+`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile`, `attrib` uses `gb::FileSystem::SetAttributes` and `PathInfo`, and `dir` and `del` find entries with `gb::FileSystem::ListFiles`, all through the protocol. The rest use the protocol's own calls (`format`, `info`, and `label`), or the image alone (`new`, `protect`, and `check`).
 
 Each command is a call on `DiskTool` in `tools`, so they are unit tested over images in memory, and the app is only command line wiring.
 

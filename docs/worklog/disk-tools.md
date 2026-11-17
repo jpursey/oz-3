@@ -500,13 +500,15 @@ Depends on: CL4.
   `.oz3` from `oz3asm` and of a CRLF text file, and each usage error. On
   Windows, left for the user, in the PR's comment.
 
-### CL6 [ ] manual: oz3dsk
+### CL6 [x] manual: oz3dsk
 
 Depends on: CL5, and *Disk drive device*'s CL7, which writes
 `3.5-Disk-Drive.md`.
 
 - Manual: `3.5-Disk-Drive.md`'s `oz3dsk` section and its paragraph on
   `DiskFileProtocol`, and `oz3dsk` in `README.md`'s tools.
+- `disk_design.md`: the protocol's own calls in place of `GetFileSystem()`
+  and `GetRoot()`, and `dir` without modified times, as built.
 
 **Verify**
 - The section against `oz3dsk --help` and this plan's Behavior.
