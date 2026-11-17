@@ -189,7 +189,7 @@ absl::StatusOr<int> DiskTool::ParseSize(std::string_view text) {
     }
   }
   int64_t count = 0;
-  if (digits.empty() || !absl::c_all_of(digits, absl::ascii_isdigit) ||
+  if (!absl::c_all_of(digits, absl::ascii_isdigit) ||
       !absl::SimpleAtoi(digits, &count)) {
     return absl::InvalidArgumentError(
         absl::StrCat("Size \"", text,
