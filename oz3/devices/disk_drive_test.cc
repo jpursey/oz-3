@@ -49,6 +49,7 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using ::testing::Le;
 using ::testing::Not;
 using ::testing::Pair;
 
@@ -1575,10 +1576,13 @@ TEST_F(DiskDriveTest, ReadStreamsTheFile) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kRead, 0, 500),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
+  // The second sector loads from when the OS takes the word two before it,
+  // which here is a cycle before it takes the next.
   const DataPhase data = ReadData(300);
   EXPECT_EQ(data.transfers, DataWords(FileWords(0, 300)));
-  EXPECT_THAT(data.stalls, ElementsAre(Pair(0, kReadCycles),
-                                       Pair(kDiskSectorWords, kReadCycles)));
+  EXPECT_THAT(data.stalls,
+              ElementsAre(Pair(0, kReadCycles),
+                          Pair(kDiskSectorWords, kReadCycles - 1)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(300)));
   EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(300),
@@ -1592,6 +1596,25 @@ TEST_F(DiskDriveTest, ReadStreamsTheFile) {
   EXPECT_EQ(again.transfers, DataWords(FileWords(10, 5)));
   EXPECT_THAT(again.stalls, ElementsAre(Pair(0, kLatencyCycles + kReadCycles)));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk), PortWords::FromWord(5)));
+}
+
+TEST_F(DiskDriveTest, ReadLoadsTheNextTransferWhileTheOsTakesTheLast) {
+  using enum DiskDriveCommand;
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 300));
+  OpenFile("A");
+  EXPECT_THAT(Transfer(kRead, 0, 300),
+              ElementsAre(Field(kOk), PortWords::FromWord(300)));
+
+  // Taking the sector's second last word starts the next sector's load, so
+  // the OS's time spent before taking the last is time it doesn't wait.
+  constexpr Cycles kOsCycles = 400;
+  EXPECT_EQ(ReadData(kDiskSectorWords - 1).transfers,
+            DataWords(FileWords(0, kDiskSectorWords - 1)));
+  Execute(kOsCycles);
+  const DataPhase data = ReadData(2);
+  EXPECT_EQ(data.transfers, DataWords(FileWords(kDiskSectorWords - 1, 2)));
+  EXPECT_THAT(data.stalls, ElementsAre(Pair(1, Le(kReadCycles - kOsCycles))));
 }
 
 TEST_F(DiskDriveTest, ReadAcceptsWhatIsLeft) {
@@ -1933,20 +1956,22 @@ TEST_F(DiskDriveTest, AnEarlyCompletionHoldsUpTheDataPhaseForItsLocks) {
   OpenFile("A");
   EXPECT_THAT(Transfer(kRead, 0, 600),
               ElementsAre(Field(kOk), PortWords::FromWord(600)));
-  EXPECT_EQ(ReadData(255).transfers, DataWords(FileWords(0, 255)));
+  EXPECT_EQ(ReadData(254).transfers, DataWords(FileWords(0, 254)));
 
-  // The read past the cluster fails while the command port is held, so its
-  // status waits, and no zeros come before it. The zeros follow it at once.
+  // The read past the cluster, ahead of the OS, fails while the command port
+  // is held, so its status waits, and the data with it. The word on the port
+  // and then the zeros follow the status.
   std::unique_ptr<Lock> lock = LockPort(kCommandPort);
   ASSERT_TRUE(lock->IsLocked());
-  EXPECT_EQ(ReadData(1).transfers, DataWords(FileWords(255, 1)));
+  EXPECT_EQ(ReadData(1).transfers, DataWords(FileWords(254, 1)));
   Execute(10);
-  EXPECT_FALSE(IsSet(kDataPort));
+  EXPECT_FALSE(IsSet(kCommandPort));
   EXPECT_EQ(GetPhase(), 4);
   lock.reset();
   ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
   EXPECT_EQ(GetPhase(), 3);
   EXPECT_EQ(ReceiveField(), Field(DiskStatus::kCorrupt));
+  EXPECT_EQ(ReadData(1).transfers, DataWords(FileWords(255, 1)));
   EXPECT_EQ(ReadData(344).transfers, std::vector<PortWords>(344));
 }
 
@@ -2083,13 +2108,14 @@ TEST_F(DiskDriveTest, AResetLeavesAReadPastTheWordsTaken) {
   Request(DiskDrive::kResetRequest);
   ExpectResetAt(11);
 
-  // A request waits out a sector's load, and the word it read goes back.
+  // A request waits out a sector's load, which began a cycle before the OS
+  // took the last word, and the word it read goes back.
   EXPECT_THAT(Transfer(kRead, 0, 300),
               ElementsAre(Field(kOk), PortWords::FromWord(300)));
   ReadData(256 - 11);
   const Cycles start = GetCycles();
   Request(DiskDrive::kResetRequest);
-  EXPECT_GE(GetCycles() - start, kReadCycles);
+  EXPECT_GE(GetCycles() - start, kReadCycles - 1);
   ExpectResetAt(256);
 
   // A packed read's dword goes back whole.

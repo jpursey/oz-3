@@ -353,8 +353,8 @@ class DiskDrive final : public Device {
     // The file's position when the read began.
     int start_position = 0;
 
-    // The next transfer, once read from the file, until it is on the data
-    // port.
+    // The next transfer, read from the file while the OS takes the one on the
+    // data port, until it goes on the port.
     std::optional<PortWords> next;
   };
   struct WritingState {
