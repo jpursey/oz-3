@@ -68,6 +68,9 @@ class DiskFileProtocolTest : public ::testing::Test {
     EXPECT_TRUE(file_system_.Register(std::move(protocol)));
   }
 
+  // Unmounts while the host protocol the image is on is still there.
+  ~DiskFileProtocolTest() override { protocol_->Unmount(); }
+
   // Returns a new blank image of kSectorCount sectors.
   std::unique_ptr<DiskImage> MakeImage() {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =

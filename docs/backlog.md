@@ -26,6 +26,23 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
+## Disk tool failure reasons
+
+- **Layers:** tools
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Disk tools*, and Game Bits *File system errors as
+  absl::Status*
+- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior)
+
+`DiskTool`'s file commands go through `gb::FileSystem`, whose calls say only
+whether they failed, so a failure says what couldn't be done to the file
+("HELLO.TXT: can't be written") but not why: a read-only file, a write
+protected or full disk, or a broken one. Once Game Bits returns `absl::Status`,
+`DiskFileProtocol` returns its `DiskStatus` as each call's error, and the file
+commands pass it on, as in "work.ozd: HELLO.TXT: read-only", with nothing
+worked out ahead of the call.
+
 ## Ozzy drives
 
 - **Layers:** ozzy, apps, wiki

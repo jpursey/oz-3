@@ -6,6 +6,7 @@
 set(oz3_tools_SOURCE
   disk_file_protocol.cc disk_file_protocol.h
   disk_tool.cc disk_tool.h
+  disk_transfer.cc disk_transfer.h
   expression.cc expression.h
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
@@ -48,6 +49,7 @@ set(oz3_tools_LIBS
 set(oz3_tools_TEST_SOURCE
   disk_file_protocol_test.cc
   disk_tool_test.cc
+  disk_transfer_test.cc
   expression_test.cc
   instruction_assembler_test.cc
   instruction_def_exporter_test.cc

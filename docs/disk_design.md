@@ -566,7 +566,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 - **Timestamps:** the protocol stamps written files using a clock given when it's created, or zeros without one. It doesn't report or set them through `gb::FileSystem`, which has no file times.
 - **Odd bytes** are exact within a file: reading from an odd offset starts with the high byte of its word, and writing there changes only that byte. Only the end rounds up to a whole word, so a file written a byte at a time holds the same words as one written at once.
 - **Sizes** in `PathInfo` are as the file's entry was last committed, as `FIND` gives them.
-- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host transfer helpers beside the protocol in `tools`. They convert between host bytes and words, two bytes per word, low byte first, which is also how strings are packed. Text conversion only adds line endings (host endings to LF going in) and dropping the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
+- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host text transfer functions beside the protocol in `tools`. A file's bytes through the protocol are its words, two bytes per word, low byte first, which is also how strings are packed, so text needs no reordering. Text conversion only changes line endings (host endings to LF going in) and drops the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
 
 #### Ownership
 
@@ -594,7 +594,7 @@ oz3dsk work.ozd dir *.OZ3
 | `new` | size | Creates a blank image of that size, failing if the image exists |
 | `format` | `--cluster n`, `--label L` | Formats the image as the drive's `FORMAT` does; with no `--cluster`, the drive's choice |
 | `info` |  | Shows the medium (size, write protection) and the file system (label, clusters, free) |
-| `dir` | pattern, `--all` | Lists name, size in words, attributes, and modified time; `--all` includes hidden files |
+| `dir` | pattern, `--all` | Lists name, size in words, and attributes; `--all` includes hidden files |
 | `put` | host file, disk name, `--text` | Copies a host file in, replacing any file of that name |
 | `get` | disk name, host file, `--text` | Copies a file out; with no host file, to its dotted name in the current folder |
 | `del` | pattern | Deletes every matching file it can, hidden ones included, reporting each it can't; fails if any failed or none matched |
@@ -613,7 +613,7 @@ oz3dsk work.ozd dir *.OZ3
 - **Attributes:** `put` and `get` keep read-only and hidden, as any copy does, with or without `--text`, so neither replaces a read-only file. They keep only the attributes both protocols support, as `gb::FileSystem::GetAttributeFlags` reports them, so a host without a hidden attribute keeps only read-only.
 - **`protect off`** fails on a read-only image file, which is always protected (see Image file).
 
-`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile` and `attrib` uses `gb::FileSystem::SetAttributes` and `PathInfo` through the protocol. `dir` and `del` find entries with the library's `FIND`, since `dir` shows modified times, which `PathInfo` has no room for. The rest use the library directly through the protocol's `GetFileSystem()`, or the image alone (`new`, `protect`, and `check`).
+`put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile`, `attrib` uses `gb::FileSystem::SetAttributes` and `PathInfo`, and `dir` and `del` find entries with `gb::FileSystem::ListFiles`, all through the protocol. The rest use the library directly through the protocol's `GetFileSystem()`, or the image alone (`new`, `protect`, and `check`).
 
 Each command is a call on `DiskTool` in `tools`, so they are unit tested over images in memory, and the app is only command line wiring.
 
