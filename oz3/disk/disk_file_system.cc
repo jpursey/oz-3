@@ -465,6 +465,25 @@ DiskStatus DiskFileSystem::GetFileStatus(DiskFile file) const {
   return hardware_.GetImageStatus();
 }
 
+DiskStatus DiskFileSystem::GetWritableFileStatus(DiskFile file) const {
+  if (DiskStatus status = GetFileStatus(file); status != DiskStatus::kOk) {
+    return status;
+  }
+  const Slot& slot = slots_[file];
+  if (!slot.entry.has_value()) {
+    return DiskStatus::kWrongHandleType;
+  }
+  if (slot.read_only) {
+    return DiskStatus::kReadOnly;
+  }
+
+  // GetFileStatus has checked the image, which the open slot's file is on.
+  if (GetMedia()->IsWriteProtected()) {
+    return DiskStatus::kWriteProtected;
+  }
+  return DiskStatus::kOk;
+}
+
 DiskStatus DiskFileSystem::Find(DiskFile directory, const DiskFilename& pattern,
                                 DiskDirEntry* entry) {
   Slot* slot = nullptr;
@@ -673,20 +692,11 @@ DiskStatus DiskFileSystem::GetSlot(DiskFile file, Slot** slot) {
 }
 
 DiskStatus DiskFileSystem::GetWritableSlot(DiskFile file, Slot** slot) {
-  if (DiskStatus status = GetSlot(file, slot); status != DiskStatus::kOk) {
-    return status;
+  const DiskStatus status = GetWritableFileStatus(file);
+  if (status == DiskStatus::kOk) {
+    *slot = &slots_[file];
   }
-  if (!(*slot)->entry.has_value()) {
-    return DiskStatus::kWrongHandleType;
-  }
-  if ((*slot)->read_only) {
-    return DiskStatus::kReadOnly;
-  }
-  // GetSlot has checked the image, which the open slot's file is on.
-  if (GetMedia()->IsWriteProtected()) {
-    return DiskStatus::kWriteProtected;
-  }
-  return DiskStatus::kOk;
+  return status;
 }
 
 DiskFile DiskFileSystem::FindFreeSlot() const {

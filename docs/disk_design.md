@@ -296,7 +296,7 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 #### Images and disk changes
 
 - **Attaching:** the drive reads the image's container header right away, for `MEDIA` and write protection, then reads and checks the superblock, charging its time as usual. The drive is busy meanwhile, so a command that arrives waits until the read is done, as everything the drive does waits for its disk work (see Timing). FAT sectors are read only when an operation first needs them, typically when clusters are allocated or freed.
-- **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale. Nothing else changes for a command in progress: a latent command whose disk work is done completes with the status that work had, and one whose work hasn't started finds no disk when it does. A transfer's next word fails, which is an early completion with **no disk**.
+- **Detaching:** the drive discards its caches and buffers, including unwritten data, as pulling a real floppy would. Every open slot becomes stale. Nothing else changes for a command in progress: a latent command whose disk work is done completes with the status that work had, and one whose work hasn't started finds no disk when it does. A transfer's next word fails, as its slot is now stale, which is an early completion with **disk changed**.
 - **Stale slots:** every command on a stale slot fails with **disk changed**, except `CLOSE`, which frees the slot. It succeeds unless the file was written since its last commit, when it fails with **disk changed**, as those writes are lost. A program can't keep writing into a different disk by accident.
 - **Failing:** once the host fails to read or write the image, the disk has failed: every command fails with **I/O error**, even one the drive's buffers could answer, except `CLOSE`, which still frees the slot. Ejecting the disk discards the buffers, leaving it as a crash at the failure would, and inserting it again, with its image reopened, is the retry. Retrying on the same insertion would need every command to undo its changes to the buffers.
 - **Shutting down:** when the drive is destroyed, as when the Ozzy app shuts down cleanly, it writes back everything dirty, so the image stays consistent.
@@ -312,9 +312,9 @@ Time is charged by the hardware layer, for sector transfers and reads from its c
 
 The command and data ports use the OZ-3's port handshake. A write (`OUTS`, `OUTR`) succeeds only when the port's flag is clear, and sets it; the drive takes the word and clears the flag. A read (`INS`, `INR`) succeeds only when the flag is set, and clears it; the drive then puts the next word there. Each port is a single mailbox, so a word waiting in it can't be skipped or overwritten.
 
-On the data port, ordinary transfers use word 0 of the port, one word per handoff. Packed transfers use both words, the low word in word 0.
+On the data port, `READ` and `WRITE` use word 0 of the port, one word per transfer. `READ PACKED` and `WRITE PACKED` use both words, a dword per transfer, the low word in word 0.
 
-On the command port, each field moves in its natural width. A word field (a command word, a status, a count) is one handoff in word 0. A dword field (a position or a size) is one dword handoff, the low word in word 0. The 8-word fields (names, patterns, and labels) are 4 dword handoffs, and `FIND`'s 16-word directory entry is 8, with the lower-numbered word of each pair in word 0. Dword and multi-word fields are only ever moved whole, so word handoffs would gain nothing.
+On the command port, each field moves in its natural width. A word field (a command word, a status, a count) moves as one word, in word 0. A dword field (a position or a size) moves as one dword, the low word in word 0. The 8-word fields (names, patterns, and labels) move as 4 dwords, and `FIND`'s 16-word directory entry as 8, with the lower-numbered word of each pair in word 0. Dword and multi-word fields are only ever moved whole, so moving them a word at a time would gain nothing.
 
 The drive always moves both of a port's words, as a dword instruction does, whatever a field's width: word 1 of a word field it sends is 0, and it ignores word 1 of a word field it takes. So an OS may move a word field with either width.
 
@@ -358,7 +358,7 @@ Don't `IN` the control port while a request is pending: `IN` clears the port's f
 
 ### Command protocol
 
-A command word holds the command code in its high byte and a handle in its low byte, or 0 for commands without one. A **handle** is a slot index, 0 to slots − 1; FFh means every slot, for `CLOSE` only. Each command takes a fixed number of argument words, and returns a fixed number of result words after an OK status, so the OS and the drive never disagree about where a sequence ends. A status other than OK ends the command's words on the command port: no results, n, or completion follow it. The only words that can come after one are on the data port, when a transfer fails partway and its data phase runs out its n handoffs (see Early completion).
+A command word holds the command code in its high byte and a handle in its low byte, or 0 for commands without one. A **handle** is a slot index, 0 to slots − 1; FFh means every slot, for `CLOSE` only. Each command takes a fixed number of argument words, and returns a fixed number of result words after an OK status, so the OS and the drive never disagree about where a sequence ends. A status other than OK ends the command's words on the command port: no results, n, or completion follow it. The only words that can come after one are on the data port, when a `READ` or `WRITE` fails partway and its data phase runs out its n transfers (see Early completion).
 
 A command runs in up to three phases:
 
@@ -473,7 +473,7 @@ The drive keeps a count of free clusters in memory, never on the disk. The first
 #### Where errors land
 
 - **At accept:** anything knowable without the disk: bad command, bad handle, disk changed, bad name, bad pattern, bad label, bad attributes, too many open, past end, wrong handle type, read-only (for `WRITE` and `TRUNCATE`), write protected, in use (for `FORMAT`), no disk, I/O error once the disk has failed, unformatted (known since the superblock was read when the image was attached), and disk full for a `WRITE` where n would be 0.
-- **At completion:** anything that needs the disk: not found, exists, in use, read-only (for `DELETE`), disk full (a partial write, or a directory that can't grow), corrupt, I/O error, and no disk if the image disappears mid-command. For `READ` and `WRITE`, a failure in the disk work, allocating included, is an early completion.
+- **At completion:** anything that needs the disk: not found, exists, in use, read-only (for `DELETE`), disk full (a partial write, or a directory that can't grow), corrupt, I/O error, and no disk if the image disappears mid-command. For `READ` and `WRITE`, a failure in the disk work, allocating included, is an early completion, and an image that disappears is **disk changed**, as the handle is then stale.
 
 ### Reading and writing
 
@@ -513,12 +513,12 @@ The OS can also notice the failure early, without extra cost on the fast path. I
 
 1. Set R7 to n, and point R4 or R5 at the buffer, which puts it in the EXTRA bank, so the buffer can be the calling program's memory.
 2. `INR` from the data port (or `OUTR` to it, for `WRITE`).
-3. If **S** is set, all n handoffs are done, and the completion is on the command port. If the transfer failed, it may have been waiting there for a while.
+3. If **S** is set, all n transfers are done, and the completion is on the command port. If the transfer failed, it may have been waiting there for a while.
 4. Otherwise, `IN` the control port. Phase 4 (or 5 for `WRITE`) means the drive is moving a sector, so go back to step 2. Phase 3 means a completion is already waiting, so the transfer failed: read it, then either finish the loop or reset.
 
 #### Packed transfers
 
-`READ PACKED` and `WRITE PACKED` work exactly as `READ` and `WRITE`, but in dwords. Each handoff on the data port carries two words, the low word in word 0, for the dword forms of `INR` and `OUTR`, and the count, n, and the completion's count are all in dwords, so they match the OS's loop count directly. Positions and sizes stay in words.
+`READ PACKED` and `WRITE PACKED` work exactly as `READ` and `WRITE`, but in dwords. Each transfer on the data port carries two words, the low word in word 0, for the dword forms of `INR` and `OUTR`, and the count, n, and the completion's count are all in dwords, so they match the OS's loop count directly. Positions and sizes stay in words.
 
 - **Reads:** n is the lesser of the count and the dwords needed for the rest of the file, rounded up. If an odd number of words remain, the last dword's high word is 0, and the position stops at the file's size rather than one past it.
 - **Writes:** always write whole dwords, so a file of odd length ends with a plain `WRITE` of its last word.

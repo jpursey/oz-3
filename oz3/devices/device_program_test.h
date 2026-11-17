@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/types/span.h"
 #include "gb/parse/parse_error.h"
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
@@ -71,6 +72,28 @@ class DeviceProgramTest : public BaseCoreTest {
     }
     ADD_FAILURE() << "No label " << name;
     return 0;
+  }
+
+  // Returns `count` words from the label `label` on, in the loaded program's
+  // data segment.
+  std::vector<uint16_t> GetData(std::string_view label, int count) {
+    MemAccessor data = GetState().data;
+    data.SetAddress(GetState().bd + GetLabel(label));
+    std::vector<uint16_t> words;
+    for (int i = 0; i < count; ++i) {
+      words.push_back(data.GetValue());
+    }
+    return words;
+  }
+
+  // Sets the words from the label `label` on, in the loaded program's data
+  // segment.
+  void SetData(std::string_view label, absl::Span<const uint16_t> words) {
+    MemAccessor data = GetState().data;
+    data.SetAddress(GetState().bd + GetLabel(label));
+    for (const uint16_t word : words) {
+      data.AddValue(word);
+    }
   }
 
  private:

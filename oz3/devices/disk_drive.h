@@ -310,28 +310,106 @@ class DiskDrive final : public Device {
   struct ArgumentsState {
     DiskDrivePhase GetPhase() const { return DiskDrivePhase::kArguments; }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
   };
   struct SendingAcceptState {
     DiskDrivePhase GetPhase() const { return accept.GetPhase(); }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
     CommandResponse accept;
   };
   struct RunningWorkState {
     DiskDrivePhase GetPhase() const { return DiskDrivePhase::kWorking; }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
   };
   struct SendingCompletionState {
     DiskDrivePhase GetPhase() const { return completion.GetPhase(); }
     uint16_t GetCommandWord() const { return command.word; }
+
     Command command;
     CommandResponse completion;
   };
 
-  using State = std::variant<IdleState, ArgumentsState, SendingAcceptState,
-                             RunningWorkState, SendingCompletionState>;
+  // A READ's or WRITE's data phase, of the transfers its accept promised
+  // (words, or dwords for the packed forms): what both directions keep.
+  struct Transfer {
+    Command command;
+    int accepted = 0;  // The transfers the accept promised.
+
+    // The transfers moved through the data port: put on it for a READ, though
+    // the OS may not have taken the last yet, and taken from it for a WRITE.
+    int moved = 0;
+  };
+  struct ReadingState {
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kReading; }
+    uint16_t GetCommandWord() const { return transfer.command.word; }
+
+    Transfer transfer;
+
+    // The file's position when the read began.
+    int start_position = 0;
+
+    // The next transfer, read from the file while the OS takes the one on the
+    // data port, until it goes on the port.
+    std::optional<PortWords> next;
+  };
+  struct WritingState {
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kWriting; }
+    uint16_t GetCommandWord() const { return transfer.command.word; }
+
+    Transfer transfer;
+  };
+
+  // A data phase after a disk call failed. Its early completion's status goes
+  // out first, and nothing moves on the data port until it has. The rest of
+  // the transfers then move no data, at port speed.
+  struct FailedTransfer {
+    // Returns the phase the control port shows: phase 3 while the early
+    // completion's status waits on the command port, and otherwise
+    // `data_phase`.
+    DiskDrivePhase GetPhase(DiskDrivePhase data_phase) const {
+      return completion.has_value() && completion->fields_sent > 0
+                 ? DiskDrivePhase::kSending
+                 : data_phase;
+    }
+
+    Transfer transfer;
+
+    // The early completion, until the OS has taken it.
+    std::optional<CommandResponse> completion;
+  };
+  struct FailedReadingState {
+    DiskDrivePhase GetPhase() const {
+      return failure.GetPhase(DiskDrivePhase::kReading);
+    }
+    uint16_t GetCommandWord() const { return failure.transfer.command.word; }
+
+    FailedTransfer failure;
+
+    // The file's position when the read began.
+    int start_position = 0;
+
+    // The next transfer to put on the data port: the words read before the
+    // failure, padded with zeros, and then only zeros.
+    PortWords next;
+  };
+  struct FailedWritingState {
+    DiskDrivePhase GetPhase() const {
+      return failure.GetPhase(DiskDrivePhase::kWriting);
+    }
+    uint16_t GetCommandWord() const { return failure.transfer.command.word; }
+
+    FailedTransfer failure;
+  };
+
+  using State =
+      std::variant<IdleState, ArgumentsState, SendingAcceptState,
+                   RunningWorkState, SendingCompletionState, ReadingState,
+                   WritingState, FailedReadingState, FailedWritingState>;
 
   // Whether a run can go on, after a state's step or the work a run does
   // before one.
@@ -384,7 +462,8 @@ class DiskDrive final : public Device {
   bool HasControlRequest();
 
   // Takes any request on the control port, and clears it. A reset first
-  // withdraws the words on the command and data ports, and goes idle. Returns
+  // withdraws the words on the command and data ports, leaves a READ's
+  // position just past the words the OS took, and goes idle. Returns
   // kWait if the drive is waiting for a port's lock, which leaves the request
   // pending.
   StateResult HandleAnyControlRequest();
@@ -415,6 +494,15 @@ class DiskDrive final : public Device {
   StateResult ExecuteState(SendingAcceptState& state);
   StateResult ExecuteState(RunningWorkState& state);
   StateResult ExecuteState(SendingCompletionState& state);
+  StateResult ExecuteState(ReadingState& state);
+  StateResult ExecuteState(WritingState& state);
+  StateResult ExecuteState(FailedReadingState& state);
+  StateResult ExecuteState(FailedWritingState& state);
+
+  // Returns the state that follows `command`'s accept, once the OS has taken
+  // it: its work, its data phase, or idle.
+  [[nodiscard]] State GetStateAfterAccept(Command command,
+                                          const CommandResponse& accept);
 
   //----------------------------------------------------------------------------
   // Protocol
@@ -445,6 +533,47 @@ class DiskDrive final : public Device {
   // it also needs the control port's lock. It goes over any word the OS wrote
   // while the drive wasn't taking words, which the drive never read.
   StateResult SendNextField(CommandResponse& response);
+
+  // Sends the next field of `completion` as SendNextField does, raising the
+  // interrupt with its status.
+  StateResult SendCompletionField(CommandResponse& completion);
+
+  //----------------------------------------------------------------------------
+  // Transfers
+  //
+  // A data phase moves a transfer at a time, with a disk call of a word or two
+  // for each, so a sector's disk work comes at the transfer that starts it.
+  //----------------------------------------------------------------------------
+
+  // Returns the transfer of `command`, given its accept.
+  static Transfer MakeTransfer(Command command, const CommandResponse& accept);
+
+  // Returns the failure of `transfer`, with `status` as its early completion.
+  static FailedTransfer FailTransfer(Transfer transfer, DiskStatus status);
+
+  // Returns the state that ends `transfer`'s data phase, with its completion of
+  // `status`.
+  [[nodiscard]] static State EndTransfer(Transfer transfer, DiskStatus status);
+
+  // Returns the state that ends `failure`'s data phase: idle once the OS has
+  // taken its early completion, and until then, waiting for the OS to.
+  [[nodiscard]] static State EndFailedTransfer(FailedTransfer failure);
+
+  // Reads `transfer`'s next transfer from the file into `words`, padded with
+  // zeros past the end of the file, and returns the read's status. If it
+  // fails, `words` holds what was read before the failure.
+  DiskStatus ReadNextTransfer(const Transfer& transfer, PortWords& words);
+
+  // Writes `words`, a transfer the OS wrote, to the file, and returns the
+  // write's status. If it fails, it flushes what the drive has taken first.
+  DiskStatus WriteTransfer(const Transfer& transfer, PortWords words);
+
+  // Seeks a READ's handle back past the words read ahead of the OS, as a reset
+  // ends it with the position just past the words the OS took. The read began
+  // at `start_position`, and `data_untaken` is whether the data port's flag
+  // was still set when the reset withdrew its word.
+  void AbortRead(const Transfer& transfer, int start_position,
+                 bool data_untaken);
 
   //----------------------------------------------------------------------------
   // Commands
@@ -481,6 +610,10 @@ class DiskDrive final : public Device {
   CommandResponse RunFlush(const Command& command);
   CommandResponse AcceptSeek(const Command& command);
   CommandResponse AcceptInfo(const Command& command);
+  CommandResponse AcceptRead(const Command& command);
+  CommandResponse AcceptWrite(const Command& command);
+  CommandResponse AcceptTruncate(const Command& command);
+  CommandResponse RunTruncate(const Command& command);
   CommandResponse AcceptMedia();
 
   //----------------------------------------------------------------------------
