@@ -348,13 +348,10 @@ class DiskTool final {
 - **What each command uses,** as disk_design.md has it: `put` and `get` read
   the whole file, convert text (see host text transfer), write it, then
   `SetAttributes` with the attributes both protocols support. They don't use
-  `CopyFile`, so a failure says which side it was on, and a `put` that fails
-  deletes what it wrote, so it leaves no partial file (a read-only file it
-  couldn't replace refuses the delete too, so it is kept). A `get` whose
-  attributes can't be set deletes the host file it wrote, but one that fails
-  to write leaves the host file alone, as a host may delete a read-only file
-  it can't write. `ren` is
-  `MoveFile`, and `attrib` is `SetAttributes` and `GetPathInfo`. `dir` and
+  `CopyFile`, so a failure says which side it was on. A copy that fails
+  leaves whatever was written, such as part of a file on a full disk, and a
+  `get` whose attributes can't be set fails, leaving the host file it wrote.
+  `ren` is `MoveFile`, and `attrib` is `SetAttributes` and `GetPathInfo`. `dir` and
   `del` take the matching names from `ListFiles` (`del` deletes each, hidden
   ones included). `format` is the protocol's `Format`, and `info`
   and `label` use its `GetMedia`, `GetVolumeInfo`, and `SetLabel`. `new`, `protect`, and `check`

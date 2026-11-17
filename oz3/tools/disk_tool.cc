@@ -91,12 +91,6 @@ absl::Status Named(std::string_view name, const absl::Status& status) {
                       absl::StrCat(name, ": ", status.message()));
 }
 
-// Returns a failure the file system gave no reason for, with `name` before
-// `what`, which says what couldn't be done ("can't be written").
-absl::Status UnknownFailure(std::string_view name, std::string_view what) {
-  return absl::UnknownError(absl::StrCat(name, ": ", what));
-}
-
 // Returns `words` with a K or M suffix if it is a whole number of them.
 std::string FormatWords(int64_t words) {
   if (words != 0 && words % kMegaWords == 0) {
@@ -365,7 +359,7 @@ absl::Status DiskTool::Put(std::string_view image_path,
     if (!DiskFilename::Parse(default_name).has_value()) {
       return absl::InvalidArgumentError(
           absl::StrCat(host_path, ": \"", default_name,
-                       "\" isn't a disk name, so it needs one given"));
+                       "\" isn't a valid disk name, so it needs one given"));
     }
     name = default_name;
   } else if (!DiskFilename::Parse(name).has_value()) {
@@ -374,7 +368,7 @@ absl::Status DiskTool::Put(std::string_view image_path,
 
   std::string bytes;
   if (!file_system_->ReadFile(host_path, &bytes)) {
-    return UnknownFailure(host_path, "can't be read");
+    return Named(host_path, absl::UnknownError("can't be read"));
   }
   if (text) {
     bytes = DiskTextFromHost(bytes);
@@ -401,14 +395,12 @@ absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
     bytes = HostTextFromDisk(bytes);
   }
   if (!file_system_->WriteFile(host_path, bytes)) {
-    return UnknownFailure(host_path, "can't be written");
+    return Named(host_path, absl::UnknownError("can't be written"));
   }
   const gb::FileAttributes mask = GetCopiedAttributes(host_path);
   if (!mask.IsEmpty() &&
       !file_system_->SetAttributes(host_path, attributes, mask)) {
-    // The file is the one just written, so a failed copy leaves none.
-    file_system_->DeleteFile(host_path);
-    return UnknownFailure(host_path, "its attributes can't be set");
+    return Named(host_path, absl::UnknownError("its attributes can't be set"));
   }
   return absl::OkStatus();
 }
@@ -542,10 +534,7 @@ absl::Status DiskTool::DoPut(std::string_view name, std::string_view bytes,
       file_system_->WriteFile(path, bytes) &&
       (mask.IsEmpty() || file_system_->SetAttributes(path, attributes, mask));
   if (!written) {
-    // A file that couldn't be replaced, such as a read-only one, refuses the
-    // delete too, so it is kept.
-    file_system_->DeleteFile(path);
-    return UnknownFailure(name, "can't be written");
+    return Named(name, absl::UnknownError("can't be written"));
   }
   return absl::OkStatus();
 }
@@ -558,7 +547,7 @@ absl::Status DiskTool::DoGet(std::string_view name, std::string* bytes,
     return Named(name, ToStatus(DiskStatus::kNotFound));
   }
   if (!file_system_->ReadFile(path, bytes)) {
-    return UnknownFailure(name, "can't be read");
+    return Named(name, absl::UnknownError("can't be read"));
   }
   *attributes = info.attributes;
   return absl::OkStatus();
@@ -604,7 +593,7 @@ absl::Status DiskTool::DoRename(std::string_view from, std::string_view to) {
     return Named(to, ToStatus(DiskStatus::kExists));
   }
   if (!file_system_->MoveFile(from_path, to_path)) {
-    return UnknownFailure(from, "can't be renamed");
+    return Named(from, absl::UnknownError("can't be renamed"));
   }
   return absl::OkStatus();
 }
@@ -619,7 +608,7 @@ absl::Status DiskTool::DoAttrib(std::string_view name, gb::FileAttributes set,
   }
   const gb::FileAttributes mask = gb::Union(set, clear);
   if (!mask.IsEmpty() && !file_system_->SetAttributes(path, set, mask)) {
-    return UnknownFailure(name, "its attributes can't be set");
+    return Named(name, absl::UnknownError("its attributes can't be set"));
   }
   *text = absl::StrCat(
       disk_name->ToString(), " ",

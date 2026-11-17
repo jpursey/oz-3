@@ -118,17 +118,16 @@ class DiskTool final {
   // file's own name if `name` is empty, replacing any file of that name. As
   // `text`, each CRLF and lone CR becomes LF (see DiskTextFromHost). The copy
   // keeps the attributes both the host and the disk support. Fails if the name
-  // isn't a disk name, such as one too long, and a copy that fails leaves no
-  // file of that name, unless one was there and couldn't be replaced, such as
-  // a read-only file.
+  // isn't a valid disk name, such as one too long. A copy that fails can leave
+  // part of the file, such as on a full disk.
   absl::Status Put(std::string_view image_path, std::string_view host_path,
                    std::string_view name, bool text);
 
   // Copies the file `name` from the disk to the host file at `host_path`,
   // replacing any file there that can be replaced, which a read-only one
   // can't. As `text`, zero bytes are dropped (see HostTextFromDisk). The copy
-  // keeps attributes as Put's does, and a copy whose attributes can't be set
-  // leaves no file there.
+  // keeps attributes as Put's does, and fails if they can't be set, leaving
+  // the file it wrote.
   absl::Status Get(std::string_view image_path, std::string_view name,
                    std::string_view host_path, bool text);
 

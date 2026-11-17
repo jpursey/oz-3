@@ -722,9 +722,10 @@ TEST_F(DiskToolTest, PutFailsForAHostNameThatIsntADiskName) {
     WriteHost(path, "hi");
     absl::Status status = tool_->Put(kImagePath, path, "", false);
     EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument) << name;
-    EXPECT_EQ(status.message(),
-              absl::StrCat(path, ": \"", name,
-                           "\" isn't a disk name, so it needs one given"));
+    EXPECT_EQ(
+        status.message(),
+        absl::StrCat(path, ": \"", name,
+                     "\" isn't a valid disk name, so it needs one given"));
   }
   EXPECT_EQ(AllNames(), "");
 }
@@ -789,7 +790,7 @@ TEST_F(DiskToolTest, PutFailsOnAWriteProtectedDisk) {
   EXPECT_EQ(AllNames(), "");
 }
 
-TEST_F(DiskToolTest, PutFailsOnAFullDiskLeavingNoFile) {
+TEST_F(DiskToolTest, PutFailsOnAFullDiskLeavingPartOfTheFile) {
   constexpr char kSmallPath[] = "mem:/small.ozd";
   ASSERT_TRUE(tool_->New(kSmallPath, 16).ok());
   ASSERT_TRUE(tool_->Format(kSmallPath, DiskLabel(), 1).ok());
@@ -797,7 +798,8 @@ TEST_F(DiskToolTest, PutFailsOnAFullDiskLeavingNoFile) {
   absl::Status status = tool_->Put(kSmallPath, "mem:/big.bin", "BIG", false);
   EXPECT_EQ(status.code(), absl::StatusCode::kUnknown);
   EXPECT_EQ(status.message(), "mem:/small.ozd: BIG: can't be written");
-  EXPECT_EQ(Text(tool_->Dir(kSmallPath, "", true)), "no files\n");
+  EXPECT_EQ(Text(tool_->Dir(kSmallPath, "", true)),
+            "BIG                   3328  --\n");
 }
 
 TEST_F(DiskToolTest, PutAndGetKeepAttributes) {
@@ -852,7 +854,7 @@ TEST_F(DiskToolTest, GetFailsOntoAReadOnlyHostFile) {
   EXPECT_EQ(ReadHost("mem:/out.txt"), "old");
 }
 
-TEST_F(DiskToolTest, GetLeavesNoFileWhenItsAttributesCantBeSet) {
+TEST_F(DiskToolTest, GetFailsWhenItsAttributesCantBeSet) {
   NewFormatted();
   PutFile("HELLO.TXT", "hi");
   SetDiskAttributes("HELLO.TXT", gb::FileAttribute::kHidden);
@@ -862,7 +864,7 @@ TEST_F(DiskToolTest, GetLeavesNoFileWhenItsAttributesCantBeSet) {
       tool_->Get(kImagePath, "HELLO.TXT", "fixed:/out.txt", false);
   EXPECT_EQ(status.code(), absl::StatusCode::kUnknown);
   EXPECT_EQ(status.message(), "fixed:/out.txt: its attributes can't be set");
-  EXPECT_FALSE(file_system_.IsValidPath("fixed:/out.txt"));
+  EXPECT_EQ(ReadHost("fixed:/out.txt"), "hi");
 }
 
 TEST_F(DiskToolTest, GetFailsOntoAHostFolder) {
