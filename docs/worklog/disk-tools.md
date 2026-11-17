@@ -46,17 +46,13 @@ paths, flags, the byte view, attributes, moves, ownership, every command, sizes,
 disk names, binary and text, and attributes in copies. This plan doesn't repeat
 them. It settles the points below, and updates disk_design.md to match.
 
-- **No host file times yet.** disk_design.md has `put` stamp a file with the
-  host file's modified time, and `get` set the host file's time from the
-  entry. `gb::FileSystem` has no file times at all (`PathInfo` is only a
+- **Copies don't keep file times.** disk_design.md had `put` stamp a file
+  with the host file's modified time, and `get` set the host file's time from
+  the entry. `gb::FileSystem` has no file times at all (`PathInfo` is only a
   type, a size, and attributes), so neither can be done through it. A file
   written through the protocol is stamped from the protocol's clock as it is
   committed, so `put` stamps the time of the copy, and `get` leaves the host
-  file's time as the host sets it. Two backlog items finish it: Game Bits
-  *File modified times* (times in `PathInfo`, set as attributes are, and kept
-  by copies, as attributes are), and OZ-3 *File times in disk copies*, which
-  depends on it. Then the protocol reports and sets times as any protocol
-  does, and `put` and `get` keep them with no code of their own.
+  file's time as the host sets it, which is all a disk copy needs.
 - **One file system for the protocol's life.** The protocol owns one
   `DiskFileSystem`, made when the protocol is, and mounting attaches an image
   to it. So a `RawFile` open across an unmount holds a stale slot, as the

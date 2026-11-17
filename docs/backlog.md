@@ -26,25 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## File times in disk copies
-
-- **Layers:** tools, wiki
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** *Disk tools*, and Game Bits *File modified times*
-- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior);
-  [disk_design.md](disk_design.md) (Tools)
-
-`oz3dsk put` should stamp a file with the host file's modified time, and `get`
-set the host file's time from the entry, but `gb::FileSystem` has no file
-times, so `put` stamps the time of the copy and `get` leaves the host's. Once
-Game Bits reports a file's modified time in `PathInfo`, sets it as it sets
-attributes, and keeps it in copies, `DiskFileProtocol` reports each entry's
-modified time and sets it, and `put` and `get` keep times with no code of their
-own. A file with no date on the disk gets whatever the host gives a new file.
-The text copies, which write the file themselves, set the time after, as they
-set attributes.
-
 ## Ozzy drives
 
 - **Layers:** ozzy, apps, wiki
