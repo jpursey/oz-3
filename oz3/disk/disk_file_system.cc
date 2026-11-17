@@ -452,6 +452,19 @@ DiskStatus DiskFileSystem::GetFileInfo(DiskFile file, DiskFileInfo* info) {
   return DiskStatus::kOk;
 }
 
+DiskStatus DiskFileSystem::GetFileStatus(DiskFile file) const {
+  if (file < 0 || file >= GetMaxOpenFiles() ||
+      slots_[file].state == SlotState::kFree) {
+    return DiskStatus::kBadHandle;
+  }
+  if (slots_[file].state == SlotState::kStale) {
+    return DiskStatus::kDiskChanged;
+  }
+
+  // An open slot has an image, so this is only a failure.
+  return hardware_.GetImageStatus();
+}
+
 DiskStatus DiskFileSystem::Find(DiskFile directory, const DiskFilename& pattern,
                                 DiskDirEntry* entry) {
   Slot* slot = nullptr;
@@ -652,16 +665,11 @@ void DiskFileSystem::InvalidateOpenFiles() {
 }
 
 DiskStatus DiskFileSystem::GetSlot(DiskFile file, Slot** slot) {
-  if (file < 0 || file >= GetMaxOpenFiles() ||
-      slots_[file].state == SlotState::kFree) {
-    return DiskStatus::kBadHandle;
+  const DiskStatus status = GetFileStatus(file);
+  if (status != DiskStatus::kBadHandle) {
+    *slot = &slots_[file];
   }
-  *slot = &slots_[file];
-  if ((*slot)->state == SlotState::kStale) {
-    return DiskStatus::kDiskChanged;
-  }
-  // An open slot has an image, so this is only a failure.
-  return hardware_.GetImageStatus();
+  return status;
 }
 
 DiskStatus DiskFileSystem::GetWritableSlot(DiskFile file, Slot** slot) {

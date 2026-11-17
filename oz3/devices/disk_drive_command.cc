@@ -10,12 +10,11 @@ namespace oz3 {
 namespace {
 
 // The fields commands move, each named for what it holds. A name, pattern, or
-// label is 8 words, so 4 fields, and a directory entry is 8 fields.
-constexpr int kName = 4;
+// label is kDiskNameFields, and a directory entry is 8 fields.
 constexpr int kEntry = 8;
-constexpr int kInfoResults = 2;            // Position and size.
-constexpr int kMediaResults = 2;           // Sectors and flags.
-constexpr int kVolumeResults = kName + 3;  // Label, and three counts.
+constexpr int kInfoResults = 2;                      // Position and size.
+constexpr int kMediaResults = 2;                     // Sectors and flags.
+constexpr int kVolumeResults = kDiskNameFields + 3;  // Label, and three counts.
 
 constexpr DiskCommandKind kLatent = DiskCommandKind::kLatent;
 constexpr DiskCommandKind kRead = DiskCommandKind::kRead;
@@ -25,14 +24,14 @@ constexpr DiskCommandKind kWrite = DiskCommandKind::kWrite;
 const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kOpen,
      .kind = kLatent,
-     .arguments = kName,
+     .arguments = kDiskNameFields,
      .completion_results = 1},
     {.command = DiskDriveCommand::kOpenRoot,
      .kind = kLatent,
      .completion_results = 1},
     {.command = DiskDriveCommand::kCreate,
      .kind = kLatent,
-     .arguments = kName,
+     .arguments = kDiskNameFields,
      .completion_results = 1},
     {.command = DiskDriveCommand::kClose,
      .takes_handle = true,
@@ -76,23 +75,27 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kFind,
      .takes_handle = true,
      .kind = kLatent,
-     .arguments = kName,
+     .arguments = kDiskNameFields,
      .completion_results = kEntry},
-    {.command = DiskDriveCommand::kDelete, .kind = kLatent, .arguments = kName},
+    {.command = DiskDriveCommand::kDelete,
+     .kind = kLatent,
+     .arguments = kDiskNameFields},
     {.command = DiskDriveCommand::kRename,
      .kind = kLatent,
-     .arguments = 2 * kName},
+     .arguments = 2 * kDiskNameFields},
     {.command = DiskDriveCommand::kAttrib,
      .kind = kLatent,
-     .arguments = kName + 1},
+     .arguments = kDiskNameFields + 1},
     {.command = DiskDriveCommand::kMedia, .accept_results = kMediaResults},
     {.command = DiskDriveCommand::kVolume,
      .kind = kLatent,
      .completion_results = kVolumeResults},
     {.command = DiskDriveCommand::kFormat,
      .kind = kLatent,
-     .arguments = kName + 1},
-    {.command = DiskDriveCommand::kLabel, .kind = kLatent, .arguments = kName},
+     .arguments = kDiskNameFields + 1},
+    {.command = DiskDriveCommand::kLabel,
+     .kind = kLatent,
+     .arguments = kDiskNameFields},
 };
 
 }  // namespace
