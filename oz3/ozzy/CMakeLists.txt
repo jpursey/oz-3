@@ -29,6 +29,7 @@ set(oz3_ozzy_SOURCE
   machine_table.h
   ozzy.cc ozzy.h
   ozzy_settings.cc ozzy_settings.h
+  terminal_keys.cc terminal_keys.h
   ${oz3_ozzy_internal_SOURCE}
 )
 set(oz3_ozzy_DEPS
@@ -57,6 +58,7 @@ set(oz3_ozzy_TEST_SOURCE
   console_text_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc
+  terminal_keys_test.cc
   ${oz3_ozzy_internal_TEST_SOURCE}
 )
 

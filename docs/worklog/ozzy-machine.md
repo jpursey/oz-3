@@ -540,14 +540,16 @@ bool IsQuitKey(uint16_t key);  // Ctrl+Alt+Q.
   - SIGHUP (the terminal closing) and SIGTERM set the quit flag, rather than
     ending the program, so it gives the terminal back. Their actions before
     are restored.
-  - `TerminalKeyReader` reads the bytes as xterm's keys: ASCII characters
+  - `TerminalKeyReader` (in `terminal_keys.h`, which is portable, so every
+    platform builds and tests it) reads the bytes as xterm's keys: ASCII characters
     (without Shift, as the terminal sends the character), control codes as
     Ctrl with a letter, DEL as Backspace and BS as Ctrl+Backspace, CSI and SS3
     sequences for the named keys with their modifier parameter, and Escape
     before a key as Alt. A sequence a read ends partway through waits for the
     next read, and with nothing more, is read as its bytes, so Escape alone is
     the Escape key a frame late. Ctrl+Alt+Q is ESC with DC1.
-  - Key state is taps (see keyboard-key-state.md).
+  - Key state is taps (`AddKeyTap`, also in `terminal_keys.h`; see
+    keyboard-key-state.md).
 - **`GetOzzyKey`** is all of the key translation: the named keys and F1 to F12
   come from the virtual key, whatever character they type; then printable
   ASCII characters; then Ctrl with a letter from the virtual key, as Windows
