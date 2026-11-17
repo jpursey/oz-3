@@ -16,6 +16,8 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/civil_time.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
@@ -27,6 +29,7 @@
 #include "oz3/disk/disk_dir_entry.h"
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_filename.h"
+#include "oz3/disk/disk_hardware.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
@@ -46,6 +49,12 @@ constexpr char kImagePath[] = "host:/disk.ozd";
 constexpr int kSectorCount = 720;
 constexpr int kMaxOpenFiles = 4;
 const absl::CivilSecond kNow(2026, 11, 17, 10, 30, 15);
+
+// Returns the host's local time, as a protocol with no clock stamps it.
+DateTime GetLocalTime() {
+  return DateTime::FromCivil(
+      absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone()));
+}
 
 class DiskFileProtocolTest : public ::testing::Test {
  protected:
@@ -85,34 +94,45 @@ class DiskFileProtocolTest : public ::testing::Test {
   // Returns the entry of the file `name` on the mounted disk, as it is on the
   // disk.
   std::optional<DiskDirEntry> GetEntry(std::string_view name) {
-    DiskFileSystem* disk = protocol_->GetFileSystem();
-    if (disk == nullptr ||
-        disk->Seek(protocol_->GetRoot(), 0) != DiskStatus::kOk) {
-      return std::nullopt;
-    }
-    DiskDirEntry entry;
-    if (disk->Find(protocol_->GetRoot(), *DiskFilename::Parse(name), &entry) !=
-        DiskStatus::kOk) {
-      return std::nullopt;
-    }
+    std::unique_ptr<DiskImage> image;
+    EXPECT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+    std::optional<DiskDirEntry> entry = FindEntry(&image, name);
+    EXPECT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kOk);
     return entry;
   }
 
   // Returns the words of the file `name` on the mounted disk.
   std::vector<uint16_t> ReadWords(std::string_view name) {
-    DiskFileSystem* disk = protocol_->GetFileSystem();
+    std::unique_ptr<DiskImage> image;
+    EXPECT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+    DiskFileSystem disk(DiskHardwareSettings{}, 2);
+    EXPECT_EQ(disk.AttachImage(std::move(image)), DiskStatus::kOk);
     DiskFile file = -1;
     std::vector<uint16_t> words;
-    EXPECT_EQ(disk->Open(*DiskFilename::Parse(name), &file), DiskStatus::kOk);
+    EXPECT_EQ(disk.Open(*DiskFilename::Parse(name), &file), DiskStatus::kOk);
     uint16_t buffer[64];
     int count = 0;
-    while (disk->Read(file, absl::MakeSpan(buffer), &count) ==
-               DiskStatus::kOk &&
+    while (disk.Read(file, absl::MakeSpan(buffer), &count) == DiskStatus::kOk &&
            count > 0) {
       words.insert(words.end(), buffer, buffer + count);
     }
-    EXPECT_EQ(disk->Close(file, DateTime()), DiskStatus::kOk);
+    EXPECT_EQ(protocol_->Mount(disk.DetachImage()), DiskStatus::kOk);
     return words;
+  }
+
+  // Returns the entry of the file `name` on `image`, through a file system of
+  // the test's own, leaving `image` as it is.
+  static std::optional<DiskDirEntry> FindEntry(
+      std::unique_ptr<DiskImage>* image, std::string_view name) {
+    DiskFileSystem disk(DiskHardwareSettings{}, 2);
+    EXPECT_EQ(disk.AttachImage(std::move(*image)), DiskStatus::kOk);
+    DiskFile root = -1;
+    DiskDirEntry entry;
+    const bool found =
+        disk.OpenRoot(&root) == DiskStatus::kOk &&
+        disk.Find(root, *DiskFilename::Parse(name), &entry) == DiskStatus::kOk;
+    *image = disk.DetachImage();
+    return found ? std::optional<DiskDirEntry>(entry) : std::nullopt;
   }
 
   // Returns the bytes of the file at `path`.
@@ -147,8 +167,10 @@ TEST_F(DiskFileProtocolTest, Properties) {
 
 TEST_F(DiskFileProtocolTest, NothingMountedHasNoPaths) {
   EXPECT_FALSE(protocol_->IsMounted());
-  EXPECT_EQ(protocol_->GetFileSystem(), nullptr);
-  EXPECT_EQ(protocol_->GetRoot(), -1);
+  EXPECT_EQ(protocol_->GetMedia(), nullptr);
+  DiskVolumeInfo info;
+  EXPECT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kNoDisk);
+  EXPECT_EQ(protocol_->SetLabel(DiskLabel()), DiskStatus::kNoDisk);
   EXPECT_FALSE(file_system_.IsValidPath("ozdisk:/"));
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
   EXPECT_EQ(protocol_->Unmount(), DiskStatus::kNoDisk);
@@ -158,8 +180,10 @@ TEST_F(DiskFileProtocolTest, NothingMountedHasNoPaths) {
 TEST_F(DiskFileProtocolTest, UnformattedHasAnEmptyRoot) {
   EXPECT_EQ(protocol_->Mount(MakeImage()), DiskStatus::kUnformatted);
   EXPECT_TRUE(protocol_->IsMounted());
-  EXPECT_NE(protocol_->GetFileSystem(), nullptr);
-  EXPECT_EQ(protocol_->GetRoot(), -1);
+  ASSERT_NE(protocol_->GetMedia(), nullptr);
+  EXPECT_EQ(protocol_->GetMedia()->GetSectorCount(), kSectorCount);
+  DiskVolumeInfo info;
+  EXPECT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kUnformatted);
   EXPECT_TRUE(file_system_.IsValidFolder("ozdisk:/"));
   EXPECT_THAT(file_system_.List("ozdisk:/"), IsEmpty());
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
@@ -168,21 +192,17 @@ TEST_F(DiskFileProtocolTest, UnformattedHasAnEmptyRoot) {
 
 TEST_F(DiskFileProtocolTest, FormatOpensTheRoot) {
   MountFormatted();
-  EXPECT_GE(protocol_->GetRoot(), 0);
   DiskVolumeInfo info;
-  EXPECT_EQ(protocol_->GetFileSystem()->GetVolumeInfo(&info), DiskStatus::kOk);
+  EXPECT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kOk);
   EXPECT_EQ(info.label, *DiskLabel::Parse("WORK"));
-
-  // The root is the protocol's, so the file system's own OpenRoot and Format
-  // fail, but the protocol's Format formats again.
-  DiskFile root = -1;
-  EXPECT_EQ(protocol_->GetFileSystem()->OpenRoot(&root), DiskStatus::kInUse);
-  EXPECT_EQ(protocol_->GetFileSystem()->Format(DiskLabel(), 0, DateTime()),
-            DiskStatus::kInUse);
   ASSERT_TRUE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
+  EXPECT_THAT(file_system_.List("ozdisk:/"), ElementsAre("ozdisk:/HELLO.TXT"));
+
+  // Formatting again empties the root, and opens it again.
   EXPECT_EQ(protocol_->Format(*DiskLabel::Parse("NEW"), 0), DiskStatus::kOk);
-  EXPECT_GE(protocol_->GetRoot(), 0);
   EXPECT_THAT(file_system_.List("ozdisk:/"), IsEmpty());
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
+  EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/HELLO.TXT"));
 }
 
 TEST_F(DiskFileProtocolTest, FormatFailsWithAFileOpen) {
@@ -191,7 +211,6 @@ TEST_F(DiskFileProtocolTest, FormatFailsWithAFileOpen) {
       file_system_.OpenFile("ozdisk:/HELLO.TXT", gb::kNewFileFlags);
   ASSERT_NE(file, nullptr);
   EXPECT_EQ(protocol_->Format(DiskLabel(), 0), DiskStatus::kInUse);
-  EXPECT_GE(protocol_->GetRoot(), 0);
   file.reset();
   EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/HELLO.TXT"));
 }
@@ -205,7 +224,6 @@ TEST_F(DiskFileProtocolTest, MountedImageOpensItsRoot) {
   EXPECT_FALSE(protocol_->IsMounted());
 
   EXPECT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kOk);
-  EXPECT_GE(protocol_->GetRoot(), 0);
   EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/HELLO.TXT"));
 }
 
@@ -224,7 +242,6 @@ TEST_F(DiskFileProtocolTest, FailedImageMountsAsAnIoError) {
   host_->SetLimits({.reads = 0});
   EXPECT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kIoError);
   EXPECT_TRUE(protocol_->IsMounted());
-  EXPECT_EQ(protocol_->GetRoot(), -1);
   EXPECT_THAT(file_system_.List("ozdisk:/"), IsEmpty());
 }
 
@@ -331,7 +348,6 @@ TEST_F(DiskFileProtocolTest, InfoAndListNeedNoFreeSlot) {
     files.push_back(file_system_.OpenFile(path, gb::kNewFileFlags));
     ASSERT_NE(files.back(), nullptr);
   }
-  EXPECT_FALSE(protocol_->GetFileSystem()->HasFreeSlot());
   EXPECT_EQ(file_system_.OpenFile("ozdisk:/E", gb::kNewFileFlags), nullptr);
   EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/A.TXT"));
   EXPECT_EQ(static_cast<int>(file_system_.List("ozdisk:/").size()), 4);
@@ -421,6 +437,44 @@ TEST_F(DiskFileProtocolTest, SeekStopsAtTheEnd) {
   EXPECT_EQ(file->Read(&byte, 1), 0);
 }
 
+TEST_F(DiskFileProtocolTest, SeekBeforeTheStartStopsAtTheStart) {
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A",
+                                     std::vector<uint8_t>{0x01, 0x02, 0x03}));
+  std::unique_ptr<gb::File> file =
+      file_system_.OpenFile("ozdisk:/A", gb::kReadFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file->SeekEnd(), 4);
+  EXPECT_EQ(file->SeekBy(-10), 0);
+  uint8_t byte = 0;
+  EXPECT_EQ(file->Read(&byte, 1), 1);
+  EXPECT_EQ(byte, 0x01);
+}
+
+TEST_F(DiskFileProtocolTest, AnOpenFilesSizeIncludesWhatItWrote) {
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "ab"));
+  std::unique_ptr<gb::File> file =
+      file_system_.OpenFile("ozdisk:/A", gb::kReadWriteFileFlags);
+  ASSERT_NE(file, nullptr);
+  EXPECT_EQ(file->SeekEnd(), 2);
+  ASSERT_EQ(file->WriteString("cdef"), 4);
+
+  // Seeking sees the bytes written before they are committed.
+  EXPECT_EQ(file->SeekTo(0), 0);
+  EXPECT_EQ(file->SeekEnd(), 6);
+  EXPECT_EQ(file->SeekTo(100), 6);
+  EXPECT_EQ(file->SeekBy(-2), 4);
+  std::string text;
+  file->ReadRemainingString(&text);
+  EXPECT_EQ(text, "ef");
+
+  // Its entry has the size committed.
+  EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/A").size, 2);
+  ASSERT_TRUE(file->Flush());
+  EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/A").size, 6);
+}
+
 TEST_F(DiskFileProtocolTest, ReadsAndWritesAcrossSectorsAndClusters) {
   MountFormatted();
   std::vector<uint8_t> bytes(3001);
@@ -486,7 +540,7 @@ TEST_F(DiskFileProtocolTest, FilesAreStampedWhenCommitted) {
   EXPECT_EQ(GetEntry("A")->GetModified(), DateTime::FromCivil(now_));
 }
 
-TEST_F(DiskFileProtocolTest, NoClockStampsNoDate) {
+TEST_F(DiskFileProtocolTest, NoClockStampsTheLocalTime) {
   gb::FileSystem file_system;
   ASSERT_TRUE(
       file_system.Register(std::make_unique<gb::MemoryFileProtocol>(), "host"));
@@ -498,13 +552,16 @@ TEST_F(DiskFileProtocolTest, NoClockStampsNoDate) {
   ASSERT_TRUE(image.ok());
   EXPECT_EQ(protocol->Mount(*std::move(image)), DiskStatus::kUnformatted);
   EXPECT_EQ(protocol->Format(DiskLabel(), 0), DiskStatus::kOk);
+
+  const DateTime before = GetLocalTime();
   ASSERT_TRUE(file_system.WriteFile("ozdisk:/A", "ab"));
-  DiskFileSystem* disk = protocol->GetFileSystem();
-  ASSERT_EQ(disk->Seek(protocol->GetRoot(), 0), DiskStatus::kOk);
-  DiskDirEntry entry;
-  ASSERT_EQ(disk->Find(protocol->GetRoot(), *DiskFilename::Parse("A"), &entry),
-            DiskStatus::kOk);
-  EXPECT_EQ(entry.GetModified(), DateTime());
+  const DateTime after = GetLocalTime();
+  std::unique_ptr<DiskImage> unmounted;
+  ASSERT_EQ(protocol->Unmount(&unmounted), DiskStatus::kOk);
+  const std::optional<DiskDirEntry> entry = FindEntry(&unmounted, "A");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_GE(entry->GetModified(), before);
+  EXPECT_LE(entry->GetModified(), after);
 }
 
 //==============================================================================

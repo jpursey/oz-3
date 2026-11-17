@@ -23,6 +23,7 @@
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
+#include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 
 namespace oz3 {
@@ -42,7 +43,8 @@ namespace oz3 {
 // its words times 2. Reading from an odd byte reads the high byte of its word
 // first, and writing there changes only that byte. Writing an odd number of
 // bytes at the end pads the last word with a zero high byte. A file's size, as
-// GetPathInfo gives it, is as its directory entry was last committed.
+// GetPathInfo gives it, is as its directory entry was last committed, while
+// an open file's size, which SeekEnd moves to, includes what it has written.
 //
 // Files have the disk's read-only and hidden attributes. A read-only file
 // can't be opened for writing or deleted, and an open file can't be
@@ -50,12 +52,11 @@ namespace oz3 {
 // from the clock as they are committed: flushed, or closed as the RawFile is
 // destroyed.
 //
-// While a formatted disk is mounted, its root is open in a slot of its own
-// (see GetRoot), which the protocol finds and lists files through, so those
-// never need a free slot. The root's slot counts against the files open.
+// While a formatted disk is mounted, its root is open in a slot of its own,
+// which the protocol finds and lists files through, so those never need a
+// free slot. The root's slot counts against the files open.
 //
-// It is called from one thread at a time, as are the calls on its file
-// system.
+// It is called from one thread at a time.
 class DiskFileProtocol final : public gb::FileProtocol {
  public:
   //----------------------------------------------------------------------------
@@ -72,10 +73,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Makes a protocol with nothing mounted, stamping files from `clock`, or with
-  // no date without one. Up to `max_open_files` files may be open at once,
-  // which must be at least 2, the root's slot included, and those open through
-  // GetFileSystem().
+  // Makes a protocol with nothing mounted, stamping files from `clock`, or the
+  // host's local time without one. Up to `max_open_files` files may be open at
+  // once, which must be at least 2, the root's slot included.
   explicit DiskFileProtocol(Clock clock = nullptr,
                             int max_open_files = kDefaultMaxOpenFiles);
   DiskFileProtocol(const DiskFileProtocol&) = delete;
@@ -112,15 +112,20 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // with nothing mounted, and kInUse with any file open.
   DiskStatus Format(const DiskLabel& label, int sectors_per_cluster);
 
-  // Returns the file system with an image mounted, or null. The root is open
-  // in the protocol's own slot (see GetRoot), so OpenRoot on it fails with
-  // kInUse, and so does its Format: format through the protocol instead.
-  DiskFileSystem* GetFileSystem();
+  // Returns the mounted image, or null with nothing mounted.
+  const DiskMedia* GetMedia() const { return file_system_.GetMedia(); }
 
-  // Returns the slot the root is open in, for DiskFileSystem::Find, or -1 with
-  // no root open (nothing mounted, or not formatted). Its position is wherever
-  // the last Find left it, so seek it to 0 first.
-  DiskFile GetRoot() const { return root_; }
+  // Sets `info` to the mounted disk's file system, as
+  // DiskFileSystem::GetVolumeInfo does. Returns kNoDisk with nothing mounted.
+  DiskStatus GetVolumeInfo(DiskVolumeInfo* info) {
+    return file_system_.GetVolumeInfo(info);
+  }
+
+  // Sets the mounted disk's volume label, as DiskFileSystem::SetLabel does.
+  // Returns kNoDisk with nothing mounted.
+  DiskStatus SetLabel(const DiskLabel& label) {
+    return file_system_.SetLabel(label);
+  }
 
   //----------------------------------------------------------------------------
   // gb::FileProtocol
@@ -158,7 +163,7 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
   class DiskRawFile;
 
-  // Returns the clock's date and time, or no date without a clock.
+  // Returns the clock's date and time.
   DateTime GetNow();
 
   // Opens the root in root_ if the disk is formatted, returning the failure

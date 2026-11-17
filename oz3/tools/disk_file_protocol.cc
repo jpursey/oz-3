@@ -18,6 +18,9 @@
 #include "absl/log/check.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/civil_time.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/file/file_protocol.h"
 #include "gb/file/file_types.h"
@@ -40,6 +43,11 @@ namespace {
 // The sectors cached, so the root, which each path is looked up in, isn't read
 // from the image again for every lookup.
 constexpr int kReadCacheSectors = 64;
+
+// Returns the host's local time, the clock without one given.
+absl::CivilSecond GetLocalTime() {
+  return absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone());
+}
 
 // Returns the gb attributes of a directory entry's attribute word.
 gb::FileAttributes AttributesFromDisk(uint16_t disk_attributes) {
@@ -90,7 +98,8 @@ class DiskFileProtocol::DiskRawFile final : public gb::RawFile {
   int64_t Read(void* buffer, int64_t size) override;
 
  private:
-  // Returns the file's size in bytes, or -1 if it fails.
+  // Returns the file's size in bytes, including what it has written, or -1 if
+  // it fails.
   int64_t GetByteSize();
 
   // Reads the word at `index` into `word`, or 0 at the file's end.
@@ -143,11 +152,11 @@ int64_t DiskFileProtocol::DiskRawFile::SeekEnd() {
 }
 
 int64_t DiskFileProtocol::DiskRawFile::SeekTo(int64_t position) {
-  const int64_t size = position < 0 ? -1 : GetByteSize();
+  const int64_t size = GetByteSize();
   if (size < 0) {
     return -1;
   }
-  position_ = std::min(position, size);
+  position_ = std::clamp<int64_t>(position, 0, size);
   return position_;
 }
 
@@ -252,7 +261,7 @@ bool DiskFileProtocol::DiskRawFile::Flush() {
 //==============================================================================
 
 DiskFileProtocol::DiskFileProtocol(Clock clock, int max_open_files)
-    : clock_(std::move(clock)),
+    : clock_(clock != nullptr ? std::move(clock) : Clock(GetLocalTime)),
       file_system_(
           DiskHardwareSettings{.read_cache_sectors = kReadCacheSectors},
           max_open_files) {
@@ -299,10 +308,6 @@ DiskStatus DiskFileProtocol::Format(const DiskLabel& label,
       file_system_.Format(label, sectors_per_cluster, GetNow());
   const DiskStatus root_status = OpenRoot();
   return status != DiskStatus::kOk ? status : root_status;
-}
-
-DiskFileSystem* DiskFileProtocol::GetFileSystem() {
-  return file_system_.HasImage() ? &file_system_ : nullptr;
 }
 
 gb::FileProtocolFlags DiskFileProtocol::GetFlags() const {
@@ -439,9 +444,7 @@ std::unique_ptr<gb::RawFile> DiskFileProtocol::BasicOpenFile(
   return raw_file;
 }
 
-DateTime DiskFileProtocol::GetNow() {
-  return clock_ ? DateTime::FromCivil(clock_()) : DateTime();
-}
+DateTime DiskFileProtocol::GetNow() { return DateTime::FromCivil(clock_()); }
 
 DiskStatus DiskFileProtocol::OpenRoot() {
   if (file_system_.GetVolumeStatus() != DiskStatus::kOk) {
