@@ -408,7 +408,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md).
 - Unit tests: `GetDiskStatusText` of every status, each distinct.
 
-### CL2 [ ] tools: DiskFileProtocol
+### CL2 [~] tools: DiskFileProtocol
 
 Depends on: CL1.
 

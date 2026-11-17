@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_tools_SOURCE
+  disk_file_protocol.cc disk_file_protocol.h
   expression.cc expression.h
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
@@ -22,16 +23,19 @@ set(oz3_tools_SOURCE
 )
 set(oz3_tools_DEPS
   absl::algorithm_container
+  absl::any_invocable
   absl::flat_hash_map
   absl::flat_hash_set
   absl::status
   absl::statusor
   absl::str_format
   absl::strings
+  absl::time
   gb_base
   gb_file
   gb_parse
   oz3_core
+  oz3_disk
 )
 
 set(oz3_tools_LIBS
@@ -40,6 +44,7 @@ set(oz3_tools_LIBS
 )
 
 set(oz3_tools_TEST_SOURCE
+  disk_file_protocol_test.cc
   expression_test.cc
   instruction_assembler_test.cc
   instruction_def_exporter_test.cc
@@ -58,6 +63,7 @@ set(oz3_tools_TEST_SOURCE
 set(oz3_tools_TEST_DEPS
   absl::flat_hash_map
   oz3_core_testing
+  oz3_disk_testing
 )
 
 gb_add_library(oz3_tools)
