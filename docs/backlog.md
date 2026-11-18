@@ -43,20 +43,6 @@ protected or full disk, or a broken one. Once Game Bits returns `absl::Status`,
 commands pass it on, as in "work.ozd: HELLO.TXT: read-only", with nothing
 worked out ahead of the call.
 
-## Ozzy's timer in local time on Windows
-
-- **Layers:** apps
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `oz3/apps/ozzy_main.cc` (the timer's clock)
-
-`ozzy` gives its timer the date and time in `absl::LocalTimeZone()`, which is
-UTC on Windows, where Abseil has no zoneinfo database to load the zone from.
-So on Windows, programs see UTC as the local time. It should use Game Bits'
-`gb::GetLocalTimeZone()`, as `DiskFileProtocol` does, which also keeps the
-timer's dates and a disk's stamps in the same zone once the drive gets a clock.
-
 ## Ozzy drives
 
 - **Layers:** ozzy, apps, manual

@@ -532,6 +532,8 @@ Depends on: CL6, and Game Bits *File modified times*. This is OZ-3's
   time to the minute in the protocol's zone, or nothing with no date.
 - Manual and `disk_design.md`: `dir`'s times, and the protocol reporting
   them.
+- `ozzy_main.cc`: the timer's clock in `gb::GetLocalTimeZone()` too, as
+  `absl::LocalTimeZone()` is UTC on Windows.
 
 **Verify**
 - Standard checks.
