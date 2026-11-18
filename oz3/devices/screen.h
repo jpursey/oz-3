@@ -15,6 +15,7 @@
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_config.h"
@@ -305,7 +306,7 @@ class ScreenFactory final : public DeviceFactory {
   //----------------------------------------------------------------------------
 
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice() const override;
+  std::unique_ptr<Device> CreateDevice(gb::Context* context) const override;
 
  private:
   //----------------------------------------------------------------------------

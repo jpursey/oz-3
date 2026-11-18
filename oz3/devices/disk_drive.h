@@ -11,15 +11,14 @@
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <utility>
 #include <variant>
 #include <vector>
 
-#include "absl/functional/any_invocable.h"
 #include "absl/status/statusor.h"
-#include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
 #include "oz3/core/device.h"
@@ -148,7 +147,7 @@ class DiskDriveFactory final : public DeviceFactory {
   //----------------------------------------------------------------------------
 
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice() const override;
+  std::unique_ptr<Device> CreateDevice(gb::Context* context) const override;
 
  private:
   //----------------------------------------------------------------------------
@@ -185,9 +184,10 @@ class DiskDrive final : public Device {
   // Types
   //----------------------------------------------------------------------------
 
-  // Returns the host's date and time, as the timer's clock does, which the
-  // drive stamps files with.
-  using Clock = absl::AnyInvocable<absl::CivilSecond()>;
+  // What the drive takes from the processor's context: the host's clock, if
+  // it has one, which the drive stamps files with. Without one, it stamps no
+  // date.
+  using Contract = gb::ContextContract<kConstraintHostClock>;
 
   //----------------------------------------------------------------------------
   // Constants
@@ -215,7 +215,7 @@ class DiskDrive final : public Device {
 
   // Writes back everything the file system hasn't committed, stamped with the
   // clock, as at a clean shutdown. A failure leaves the disk as a crash there
-  // would. So whatever the clock uses must outlive the drive.
+  // would. So whatever the clock uses must outlive the processor.
   ~DiskDrive() override;
 
   //----------------------------------------------------------------------------
@@ -223,10 +223,6 @@ class DiskDrive final : public Device {
   //
   // Called between Processor::Execute calls.
   //----------------------------------------------------------------------------
-
-  // Sets the clock the drive stamps files with, replacing any it had, or none
-  // for the drive to stamp no date.
-  void SetClock(Clock clock) { clock_ = std::move(clock); }
 
   // Attaches `image`, which must not be null, first detaching any image
   // attached, as DetachImage does. The file system `image` is on must outlive
@@ -435,7 +431,8 @@ class DiskDrive final : public Device {
   // The factory constructs the drive with its validated settings.
   friend class DiskDriveFactory;
 
-  DiskDrive(DeviceConfig config, const DiskDriveSettings& settings);
+  DiskDrive(DeviceConfig config, const DiskDriveSettings& settings,
+            Contract contract);
 
   // Requests the locks of the ports in `ports`, a mask, that the drive doesn't
   // hold or hasn't requested. Returns whether it holds them all, which it keeps
@@ -645,7 +642,7 @@ class DiskDrive final : public Device {
   //----------------------------------------------------------------------------
 
   DiskFileSystem file_system_;
-  Clock clock_;
+  gb::ValidatedContext context_;
 
   // Each port's lock, while it is requested.
   std::array<std::unique_ptr<Lock>, kPorts> locks_;

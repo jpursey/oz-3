@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "gb/base/context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/device_config.h"
 
@@ -24,6 +25,11 @@ namespace oz3 {
 // A factory is immutable once constructed, so a ProcessorConfig holds it as a
 // shared pointer, and any number of configs can share it. A Processor finds
 // the device it created by the device's name (see Processor::GetDevice).
+//
+// A device that needs something from the host, such as its clock (see
+// kConstraintHostClock), declares it in a gb::ContextContract, and takes it
+// from the context the Processor gives CreateDevice. Its documentation names
+// what it needs.
 class DeviceFactory {
  public:
   //----------------------------------------------------------------------------
@@ -46,9 +52,11 @@ class DeviceFactory {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Creates a device for one Processor, wired as GetConfig(). The device holds
-  // its own copy of what it needs, so it doesn't depend on this factory.
-  virtual std::unique_ptr<Device> CreateDevice() const = 0;
+  // Creates a device for one Processor, wired as GetConfig(), or returns null if
+  // `context` doesn't meet the device's contract. The device holds its own copy
+  // of what it needs, so it doesn't depend on this factory. `context` is the
+  // Processor's, which outlives the device.
+  virtual std::unique_ptr<Device> CreateDevice(gb::Context* context) const = 0;
 
  protected:
   DeviceFactory() = default;

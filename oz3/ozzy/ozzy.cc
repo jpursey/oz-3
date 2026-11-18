@@ -20,6 +20,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/device_config.h"
@@ -253,7 +254,8 @@ absl::StatusOr<DriveImages> OpenDriveImages(const OzzySettings& settings,
 //==============================================================================
 
 absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
-    const OzzySettings& settings, gb::FileSystem* file_system) {
+    const OzzySettings& settings, gb::FileSystem* file_system,
+    HostClock clock) {
   absl::Status status = ValidateOzzySettings(settings);
   if (!status.ok()) {
     return status;
@@ -270,7 +272,11 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
   if (!images.ok()) {
     return images.status();
   }
-  auto processor = std::make_unique<Processor>(*config);
+
+  // The processor's context holds what the devices need from the host.
+  gb::Context context;
+  context.SetValue<HostClock>(std::move(clock));
+  auto processor = std::make_unique<Processor>(*config, std::move(context));
 
   // The loader writes the boot ROM into its page, as a ROM programmer would,
   // and places its stack in RAM, which the settings always have.
@@ -323,27 +329,6 @@ DiskDrive* Ozzy::GetDrive(char letter) {
     return nullptr;
   }
   return drives_[drive];
-}
-
-void Ozzy::SetClock(Clock clock) {
-  clock_ = std::move(clock);
-  if (timer_ != nullptr) {
-    timer_->SetClock(GetDeviceClock());
-  }
-  for (DiskDrive* drive : drives_) {
-    if (drive != nullptr) {
-      drive->SetClock(GetDeviceClock());
-    }
-  }
-}
-
-Ozzy::Clock Ozzy::GetDeviceClock() {
-  // A device is given a clock only when there is one, as a device with none
-  // gives no date.
-  if (!clock_) {
-    return nullptr;
-  }
-  return [this] { return clock_(); };
 }
 
 Cycles Ozzy::Run(absl::Duration time) {

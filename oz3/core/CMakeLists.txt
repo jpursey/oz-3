@@ -26,11 +26,13 @@ set(oz3_core_SOURCE
   processor_config.cc processor_config.h
 )
 set(oz3_core_DEPS
+  absl::any_invocable
   absl::civil_time
   absl::memory
   absl::span
   absl::status
   absl::strings
+  gb_base
   gb_container
 )
 set(oz3_core_LIBS

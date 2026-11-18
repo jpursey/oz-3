@@ -11,9 +11,28 @@
 #include <cstdint>
 #include <optional>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/time/civil_time.h"
+#include "gb/base/validated_context.h"
 
 namespace oz3 {
+
+//==============================================================================
+// HostClock
+//==============================================================================
+
+// Returns the host's date and time, in the time zone the host wants programs to
+// see.
+using HostClock = absl::AnyInvocable<absl::CivilSecond()>;
+
+// The host's clock, which a host gives the devices that need the date and time
+// in the context it creates its Processor with (see DeviceFactory). It is
+// optional: a device without a clock sees no date.
+GB_CONTEXT_CONSTRAINT(kConstraintHostClock, kInOptional, HostClock);
+
+//==============================================================================
+// DateTime
+//==============================================================================
 
 // A date and time as the machine sees it, in four words: the year, the month
 // (high byte) and day (low byte), the hour, and the minute (high byte) and
@@ -45,6 +64,10 @@ class DateTime {
   // Returns `words` exactly as given, even if they aren't a valid date and
   // time, as words a program wrote may not be.
   static DateTime FromWords(const Words& words);
+
+  // Returns the date and time from the host clock in `context`, or no date if
+  // it has none. The context must allow reading kConstraintHostClock.
+  static DateTime FromHostClock(const gb::ValidatedContext& context);
 
   //----------------------------------------------------------------------------
   // Operators

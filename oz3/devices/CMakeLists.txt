@@ -22,6 +22,7 @@ set(oz3_devices_DEPS
   absl::statusor
   absl::strings
   absl::time
+  gb_base
   gb_container
   oz3_core
   oz3_disk

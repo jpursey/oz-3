@@ -156,7 +156,7 @@ TEST(ExecutionComponentTest, WakeNeverMovesCyclesBackward) {
 }
 
 TEST(ExecutionComponentTest, WakeWithoutProcessorDoesNothing) {
-  FakeDevice device(DeviceConfig{.name = "Fake"});
+  FakeDevice device(DeviceConfig{.name = "Fake"}, /*context=*/nullptr);
   device.Wake();
   EXPECT_EQ(device.GetCycles(), 0);
   EXPECT_EQ(device.GetDueCycle(), 0);

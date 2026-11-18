@@ -44,16 +44,24 @@ TimerFactory::TimerFactory(std::string_view name, const TimerSettings& settings)
                .interrupts = {settings.interrupt}}),
       settings_(settings) {}
 
-std::unique_ptr<Device> TimerFactory::CreateDevice() const {
-  return absl::WrapUnique(new Timer(config_, settings_));
+std::unique_ptr<Device> TimerFactory::CreateDevice(
+    gb::Context* context) const {
+  Timer::Contract contract(context);
+  if (!contract.IsValid()) {
+    return nullptr;
+  }
+  return absl::WrapUnique(new Timer(config_, settings_, std::move(contract)));
 }
 
 //==============================================================================
 // Timer
 //==============================================================================
 
-Timer::Timer(DeviceConfig config, const TimerSettings& settings)
-    : Device(std::move(config)), tick_hz_(settings.tick_hz) {}
+Timer::Timer(DeviceConfig config, const TimerSettings& settings,
+             Contract contract)
+    : Device(std::move(config)),
+      tick_hz_(settings.tick_hz),
+      context_(std::move(contract)) {}
 
 Cycles Timer::GetTickCycle() const {
   return (tick_count_ + 1) * GetClockHz() / tick_hz_;
@@ -143,7 +151,7 @@ void Timer::AnswerClock(const Lock& lock, uint16_t index) {
 }
 
 void Timer::LatchDateTime() {
-  latched_ = clock_ != nullptr ? DateTime::FromCivil(clock_()) : DateTime();
+  latched_ = DateTime::FromHostClock(context_);
 }
 
 }  // namespace oz3

@@ -12,9 +12,11 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/time/civil_time.h"
+#include "gb/base/context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/device_config.h"
 #include "oz3/core/lockable.h"
 #include "oz3/core/port.h"
@@ -43,7 +45,8 @@ class TimerTest : public DeviceProgramTest {
   static constexpr Cycles kMaxTickCycles = 1'000'000;
 
   // Initializes a processor with a timer named "Timer" with `settings`, and
-  // sets timer_ to it. Returns whether it did.
+  // sets timer_ to it. The processor's context has a clock that returns now_,
+  // unless with_clock_ is false. Returns whether it did.
   bool InitTimer(
       const TimerSettings& settings = {.port = kTickPort,
                                        .interrupt = {.interrupt = kInterrupt}},
@@ -51,9 +54,14 @@ class TimerTest : public DeviceProgramTest {
     absl::StatusOr<std::unique_ptr<TimerFactory>> factory =
         TimerFactory::Create("Timer", settings);
     EXPECT_TRUE(factory.ok()) << factory.status();
+    gb::Context context;
+    if (with_clock_) {
+      context.SetValue<HostClock>([this] { return GetNow(); });
+    }
     if (!factory.ok() || !Init({.num_ports = settings.port + Timer::kPorts,
                                 .clock_hz = clock_hz,
-                                .devices = {*std::move(factory)}})) {
+                                .devices = {*std::move(factory)},
+                                .context = std::move(context)})) {
       return false;
     }
     timer_ = static_cast<Timer*>(GetProcessor().GetDevice("Timer"));
@@ -102,11 +110,8 @@ class TimerTest : public DeviceProgramTest {
     return (GetState().core.GetInterrupts() & (1u << kInterrupt)) != 0;
   }
 
-  // Gives the timer a clock that returns `now`.
-  void SetNow(absl::CivilSecond now) {
-    now_ = now;
-    timer_->SetClock([this] { return GetNow(); });
-  }
+  // Sets what the timer's clock returns from now on.
+  void SetNow(absl::CivilSecond now) { now_ = now; }
 
   // The timer's clock, which counts its calls.
   absl::CivilSecond GetNow() {
@@ -114,6 +119,7 @@ class TimerTest : public DeviceProgramTest {
     return now_;
   }
 
+  bool with_clock_ = true;
   Timer* timer_ = nullptr;
   absl::CivilSecond now_;
   int clock_calls_ = 0;
@@ -360,18 +366,19 @@ TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
 }
 
 TEST_F(TimerTest, DateAndTimeAreZerosWithoutAClock) {
+  with_clock_ = false;
   ASSERT_TRUE(InitTimer());
   Execute(1);
   EXPECT_EQ(AskClock(kTimerTime), 0);
   EXPECT_EQ(AskClock(kTimerDate), 0);
+}
 
-  // Taking the clock away goes back to zeros.
+TEST_F(TimerTest, DateAndTimeAreFromTheClock) {
+  ASSERT_TRUE(InitTimer());
+  Execute(1);
   SetNow(absl::CivilSecond(2026, 11, 7, 13, 45, 30));
   EXPECT_EQ(AskClock(kTimerTime), 0x2D1E'000D);
   EXPECT_EQ(AskClock(kTimerDate), 0x0B07'07EA);
-  timer_->SetClock(nullptr);
-  EXPECT_EQ(AskClock(kTimerTime), 0);
-  EXPECT_EQ(AskClock(kTimerDate), 0);
 }
 
 TEST_F(TimerTest, DateIsZerosBeforeTheFirstTime) {

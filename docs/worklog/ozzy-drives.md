@@ -21,9 +21,9 @@ change disks between runs:
 
 ```
 absl::StatusOr<OzzySettings> settings = ReadOzzySettings(text, config_path);
+// Opens and attaches the images, and gives the timer and drives the clock.
 absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-    Ozzy::Create(*settings, &file_system);  // Opens and attaches the images.
-(*ozzy)->SetClock([] { return HostNow(); });  // The timer's and the drives'.
+    Ozzy::Create(*settings, &file_system, [] { return HostNow(); });
 (*ozzy)->Run(absl::Milliseconds(16));
 DiskDrive* b = (*ozzy)->GetDrive('B');
 b->AttachImage(*DiskImage::Open(&file_system, "disks/other.ozd"));
@@ -80,9 +80,10 @@ covers how it is built, and the decisions behind it.
   the timer, in letter order, with its command port, its interrupt on core 0
   (0001h), no pages, and its letter (41h to 44h) and slots. What disk is in it
   is the drive's to say, as it changes while the Ozzy runs.
-- **The host's time:** `Ozzy::SetClock` gives one clock to the timer and every
-  drive, or none, so a host can't give the timer one and forget the drives.
-  The `ozzy` app gives the host's local time this way.
+- **The host's time:** `Ozzy::Create` takes one clock, or none, and puts it in
+  its processor's context, where the timer and every drive find it, so a host
+  can't give the timer one and forget the drives. The `ozzy` app gives the
+  host's local time this way.
 - **Shutting down:** destroying the Ozzy destroys its drives, each writing back
   what it hadn't committed, stamped with the clock. The `ozzy` app's quit keys
   and signals end its loop, so the drives write back. Closing the Windows
@@ -107,7 +108,6 @@ covers how it is built, and the decisions behind it.
 - **`GetDrive(letter)`** takes the letter, as a host thinks of a drive by it,
   while `OzzySettings::drives` is indexed by the drive's number, 0 for `A:`,
   as the config's list is. `GetOzzyDriveLetter` turns one into the other.
-- **`Ozzy::SetClock`**, beside the devices' own `SetClock`.
 - **The preset names** are the Ozzy's, as disk_design.md has them: the devices
   library names its presets only in C++ (`DiskDrivePreset`).
 
@@ -142,10 +142,10 @@ covers how it is built, and the decisions behind it.
   order, a drive's entry found by its name in `kDriveNames`. A device it
   doesn't know is a `CHECK`, as indexing the drives past their end would be
   worse.
-- **The clock:** the Ozzy keeps the host's clock, declared before the
-  processor so it outlives the drives, which call it as they are destroyed.
-  `GetDeviceClock` gives each device a clock that calls it, or none when the
-  Ozzy has none, so "no clock" stays the devices' own "no date".
+- **The clock** is in the processor's context (`kConstraintHostClock`), which
+  the processor keeps until after its devices are destroyed, as the drives
+  call it then. An Ozzy without one gives its processor an empty clock, which
+  the devices treat as none, so "no clock" stays their own "no date".
 
 **Brittleness:**
 - `file_system` must outlive the Ozzy, which its comment says.
@@ -153,15 +153,12 @@ covers how it is built, and the decisions behind it.
   two drives; only the settings are checked.
 - Paths are compared as text, so two spellings of one file get past the check
   (see the backlog's *Same-file check through the file system*).
-- A host can still set the timer's or a drive's own clock, which a later
-  `Ozzy::SetClock` replaces (see the backlog's *Device context*).
 
 ### apps: ozzy
 
-`Run` passes its command line file system to `Ozzy::Create`, so a config's
-paths are the operating system's, and gives the host's local time with
-`Ozzy::SetClock`. Its help says the drives write back their disks when it
-quits.
+`Run` passes its command line file system to `Ozzy::Create`, so a config's paths
+are the operating system's, and the host's local time as its clock. Its help
+says the drives write back their disks when it quits.
 
 ### Testing
 

@@ -14,7 +14,8 @@
 
 namespace oz3 {
 
-FakeDevice::FakeDevice(DeviceConfig config) : Device(config) {
+FakeDevice::FakeDevice(DeviceConfig config, gb::Context* context)
+    : Device(config), context_(context) {
   if (config.memory.pages.page_count > 0) {
     memory_map_ =
         std::make_unique<FakeMemoryMap>(config.memory.pages.page_count);
@@ -37,8 +38,9 @@ void FakeDevice::Execute() {
 FakeDeviceFactory::FakeDeviceFactory(DeviceConfig config)
     : config_(std::move(config)) {}
 
-std::unique_ptr<Device> FakeDeviceFactory::CreateDevice() const {
-  return std::make_unique<FakeDevice>(GetConfig());
+std::unique_ptr<Device> FakeDeviceFactory::CreateDevice(
+    gb::Context* context) const {
+  return std::make_unique<FakeDevice>(GetConfig(), context);
 }
 
 FakeDevice* GetFakeDevice(Processor& processor, std::string_view name) {

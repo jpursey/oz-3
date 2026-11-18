@@ -10,12 +10,11 @@
 #include <memory>
 #include <string_view>
 
-#include "absl/functional/any_invocable.h"
 #include "absl/status/statusor.h"
-#include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "gb/file/file_system.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
@@ -37,14 +36,6 @@ namespace oz3 {
 // Its other pages read 0 and ignore writes, but for a device's.
 class Ozzy final {
  public:
-  //----------------------------------------------------------------------------
-  // Types
-  //----------------------------------------------------------------------------
-
-  // Returns the host's date and time, as the timer's and the drives' clocks
-  // do.
-  using Clock = absl::AnyInvocable<absl::CivilSecond()>;
-
   //----------------------------------------------------------------------------
   // Constants
   //----------------------------------------------------------------------------
@@ -70,8 +61,18 @@ class Ozzy final {
   //
   // `file_system` may be null if no drive has an image. Otherwise it must
   // outlive the Ozzy, as the drives write to their images as it is destroyed.
+  //
+  // `clock` is the host's date and time, which the timer answers programs with
+  // and the drives stamp files with, or none for the timer to read zeros and
+  // the drives to stamp no date. The Ozzy has no clock of its own, so a host
+  // gives it one. The clock's date and time move with the host's time, while
+  // the timer's ticks and milliseconds move with the time given to Run, so the
+  // two only keep pace while the host runs the Ozzy in real time. The drives
+  // call it as the Ozzy is destroyed, so whatever it uses must outlive the
+  // Ozzy.
   static absl::StatusOr<std::unique_ptr<Ozzy>> Create(
-      const OzzySettings& settings, gb::FileSystem* file_system = nullptr);
+      const OzzySettings& settings, gb::FileSystem* file_system = nullptr,
+      HostClock clock = nullptr);
 
   Ozzy(const Ozzy&) = delete;
   Ozzy& operator=(const Ozzy&) = delete;
@@ -99,19 +100,6 @@ class Ozzy final {
   DiskDrive* GetDrive(char letter);
 
   //----------------------------------------------------------------------------
-  // Host interface
-  //----------------------------------------------------------------------------
-
-  // Sets the host's date and time for the timer and every drive, replacing
-  // any clock it had, or none for the timer to read zeros and the drives to
-  // stamp no date. The Ozzy has no clock of its own, so a host gives it one.
-  // The clock's date and time move with the host's time, while the timer's
-  // ticks and milliseconds move with the time given to Run, so the two only
-  // keep pace while the host runs the Ozzy in real time. The drives call it as
-  // the Ozzy is destroyed.
-  void SetClock(Clock clock);
-
-  //----------------------------------------------------------------------------
   // Operations
   //----------------------------------------------------------------------------
 
@@ -128,13 +116,6 @@ class Ozzy final {
   //----------------------------------------------------------------------------
 
   explicit Ozzy(std::unique_ptr<Processor> processor);
-
-  // Returns a clock for a device that calls clock_, or none if there is none.
-  Clock GetDeviceClock();
-
-  // The host's clock, which the timer and the drives call. It is before the
-  // processor, so it outlives the drives, which call it as they are destroyed.
-  Clock clock_;
 
   const std::unique_ptr<Processor> processor_;
   Screen* const screen_;

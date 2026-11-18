@@ -60,37 +60,6 @@ rest of the frontend is. Ejecting is a floppy pulled, as `DiskDrive` has it:
 what the file system hadn't committed is lost, and the OS commits with `CLOSE`
 and `FLUSH`.
 
-## Device context
-
-- **Layers:** core, devices, ozzy, manual
-- **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `Ozzy::SetClock` in `oz3/ozzy/ozzy.cc`, `SetClock` in
-  `oz3/devices/timer.h` and `oz3/devices/disk_drive.h`, and Game Bits'
-  `gb/base/validated_context.h`
-
-The timer and the disk drive each take the host's date and time as a `Clock`
-of their own (the same `absl::AnyInvocable<absl::CivilSecond()>`), set after
-the processor is made, and `Ozzy::SetClock` hands one clock to each of them.
-So every device that needs something from the host adds its own setter, and
-every host that builds one has to remember to call it.
-
-Give devices what they need from the host through a `gb::Context` instead, as
-`gb::Context` is meant for: each piece in a chain declares what it needs,
-without the pieces between it and the host taking part.
-- The `Processor` takes a context and hands it to each `DeviceFactory` as it
-  creates the factory's device, knowing nothing of what is in it.
-- Each device declares a `gb::ContextContract` of what it needs, which is
-  validated as the device is created, and keeps the `gb::ValidatedContext`,
-  which gives it only what it declared.
-- Shared needs are one constraint every device uses, such as the clock,
-  declared once in `core` beside `DateTime`. An optional clock keeps "no clock
-  is no date".
-- `Ozzy` sets in the context it gives its processor everything the devices it
-  adds need, so `Ozzy::SetClock` and the devices' own `SetClock` go, and a
-  host gives an Ozzy its clock when it creates it.
-
 ## Kitty keyboard protocol
 
 - **Layers:** ozzy, wiki

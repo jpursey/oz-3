@@ -40,7 +40,8 @@ TeletypeFactory::TeletypeFactory(std::string_view name,
     : config_({.name = std::string(name), .ports = {settings.port}}),
       settings_(settings) {}
 
-std::unique_ptr<Device> TeletypeFactory::CreateDevice() const {
+std::unique_ptr<Device> TeletypeFactory::CreateDevice(
+    gb::Context* /*context*/) const {
   return absl::WrapUnique(new Teletype(config_, settings_));
 }
 

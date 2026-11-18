@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "gb/base/context.h"
 #include "gb/container/array.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/port.h"
@@ -31,7 +32,12 @@ class Processor final {
 
   // Creates a new Processor with the specified configuration, which must be
   // valid (see ProcessorConfig::Validate).
-  explicit Processor(const ProcessorConfig& config);
+  //
+  // The Processor keeps `context`, and gives it to each device's factory as it
+  // creates the device, knowing nothing of what is in it. It must meet every
+  // device's contract (see DeviceFactory::CreateDevice), such as by holding the
+  // host's clock for the devices that need it.
+  explicit Processor(const ProcessorConfig& config, gb::Context context = {});
 
   Processor(const Processor&) = delete;
   Processor& operator=(const Processor&) = delete;
@@ -121,7 +127,11 @@ class Processor final {
 
   uint8_t DoRaiseInterrupt(int interrupt, uint8_t cores, bool shared);
 
-  // The devices are declared first, so they are destroyed after everything
+  // The context is declared first, so it outlives the devices, which use it as
+  // they are destroyed.
+  gb::Context context_;
+
+  // The devices are declared next, so they are destroyed after everything else
   // they use.
   std::vector<std::unique_ptr<Device>> devices_;
 

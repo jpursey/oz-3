@@ -227,7 +227,8 @@ ScreenFactory::ScreenFactory(std::string_view name,
                       .masks = MemoryPageMasks::ReadWrite(0b1)}}),
       settings_(settings) {}
 
-std::unique_ptr<Device> ScreenFactory::CreateDevice() const {
+std::unique_ptr<Device> ScreenFactory::CreateDevice(
+    gb::Context* /*context*/) const {
   return absl::WrapUnique(new Screen(config_, settings_));
 }
 

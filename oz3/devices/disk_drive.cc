@@ -78,8 +78,14 @@ DiskDriveFactory::DiskDriveFactory(std::string_view name,
                .interrupts = {settings.interrupt}}),
       settings_(settings) {}
 
-std::unique_ptr<Device> DiskDriveFactory::CreateDevice() const {
-  return absl::WrapUnique(new DiskDrive(config_, settings_));
+std::unique_ptr<Device> DiskDriveFactory::CreateDevice(
+    gb::Context* context) const {
+  DiskDrive::Contract contract(context);
+  if (!contract.IsValid()) {
+    return nullptr;
+  }
+  return absl::WrapUnique(
+      new DiskDrive(config_, settings_, std::move(contract)));
 }
 
 //==============================================================================
@@ -108,9 +114,11 @@ std::unique_ptr<Device> DiskDriveFactory::CreateDevice() const {
 // ports, which wakes it, and sleeps between them.
 //==============================================================================
 
-DiskDrive::DiskDrive(DeviceConfig config, const DiskDriveSettings& settings)
+DiskDrive::DiskDrive(DeviceConfig config, const DiskDriveSettings& settings,
+                     Contract contract)
     : Device(std::move(config)),
-      file_system_(settings.hardware, settings.slots) {}
+      file_system_(settings.hardware, settings.slots),
+      context_(std::move(contract)) {}
 
 DiskDrive::~DiskDrive() {
   // There is nothing to tell of a failure, which leaves the disk as a crash
@@ -212,9 +220,7 @@ bool DiskDrive::ChargeBusyTime() {
   return true;
 }
 
-DateTime DiskDrive::GetNow() {
-  return clock_ != nullptr ? DateTime::FromCivil(clock_()) : DateTime();
-}
+DateTime DiskDrive::GetNow() { return DateTime::FromHostClock(context_); }
 
 //------------------------------------------------------------------------------
 // Control port

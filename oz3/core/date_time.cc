@@ -26,6 +26,14 @@ DateTime DateTime::FromCivil(absl::CivilSecond time) {
 
 DateTime DateTime::FromWords(const Words& words) { return DateTime(words); }
 
+DateTime DateTime::FromHostClock(const gb::ValidatedContext& context) {
+  HostClock* const clock = context.GetPtr<HostClock>();
+  if (clock == nullptr || *clock == nullptr) {
+    return DateTime();
+  }
+  return FromCivil((*clock)());
+}
+
 std::optional<absl::CivilSecond> DateTime::ToCivil() const {
   if (!IsSet()) {
     return std::nullopt;

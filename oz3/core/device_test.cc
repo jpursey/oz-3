@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "absl/types/span.h"
+#include "gb/base/context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
@@ -68,6 +69,41 @@ TEST(DeviceTest, ProcessorFindsDevicesByName) {
   ASSERT_NE(processor.GetDevice("B"), nullptr);
   EXPECT_EQ(processor.GetDevice("A")->GetName(), "A");
   EXPECT_EQ(processor.GetDevice("B")->GetName(), "B");
+}
+
+TEST(DeviceTest, FactoryGetsTheProcessorsContext) {
+  const ProcessorConfig config =
+      ProcessorConfig()
+          .AddDevice(
+              std::make_shared<FakeDeviceFactory>(DeviceConfig{.name = "A"}))
+          .AddDevice(
+              std::make_shared<FakeDeviceFactory>(DeviceConfig{.name = "B"}));
+  gb::Context context_a;
+  context_a.SetValue<int>(1);
+  Processor processor_a(config, std::move(context_a));
+  gb::Context context_b;
+  context_b.SetValue<int>(2);
+  Processor processor_b(config, std::move(context_b));
+
+  FakeDevice* device_a = GetFakeDevice(processor_a, "A");
+  ASSERT_NE(device_a, nullptr);
+  ASSERT_NE(device_a->GetContext(), nullptr);
+  EXPECT_EQ(device_a->GetContext()->GetValue<int>(), 1);
+  EXPECT_EQ(GetFakeDevice(processor_a, "B")->GetContext(),
+            device_a->GetContext());
+  FakeDevice* device_b = GetFakeDevice(processor_b, "A");
+  ASSERT_NE(device_b, nullptr);
+  ASSERT_NE(device_b->GetContext(), nullptr);
+  EXPECT_EQ(device_b->GetContext()->GetValue<int>(), 2);
+}
+
+TEST(DeviceTest, ContextIsEmptyByDefault) {
+  Processor processor(ProcessorConfig().AddDevice(
+      std::make_shared<FakeDeviceFactory>(DeviceConfig{.name = "Fake"})));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  ASSERT_NE(device, nullptr);
+  ASSERT_NE(device->GetContext(), nullptr);
+  EXPECT_TRUE(device->GetContext()->Empty());
 }
 
 TEST(DeviceTest, GetsProcessorClockRate) {

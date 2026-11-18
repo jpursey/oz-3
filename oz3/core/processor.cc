@@ -22,15 +22,18 @@
 
 namespace oz3 {
 
-Processor::Processor(const ProcessorConfig& config)
-    : ports_(config.GetPortCount()), clock_hz_(config.GetClockHz()) {
+Processor::Processor(const ProcessorConfig& config, gb::Context context)
+    : context_(std::move(context)),
+      ports_(config.GetPortCount()),
+      clock_hz_(config.GetClockHz()) {
   DCHECK_OK(config.Validate());
   std::array<std::vector<MemoryMapPages>, kMaxMemoryBanks> bank_maps;
   for (const std::shared_ptr<const DeviceFactory>& factory :
        config.GetDevices()) {
     const DeviceConfig& device_config = factory->GetConfig();
-    std::unique_ptr<Device> device = factory->CreateDevice();
-    DCHECK(device != nullptr) << device_config.name;
+    std::unique_ptr<Device> device = factory->CreateDevice(&context_);
+    CHECK(device != nullptr)
+        << device_config.name << " doesn't accept the processor's context";
     MemoryMap* const map = device->GetMemoryMap();
     const DeviceMemory& memory = device_config.memory;
     if (memory.pages.page_count > 0) {
