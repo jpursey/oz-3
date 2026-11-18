@@ -42,6 +42,10 @@ class DeviceProgramTest : public BaseCoreTest {
       : BaseCoreTest(GetDefaultInstructionSetDef(),
                      GetDefaultInstructionSet()) {}
 
+  // Destroys the processor while the clock's members are still alive, as a
+  // drive calls the clock as it is destroyed.
+  ~DeviceProgramTest() override { DestroyProcessor(); }
+
   // Assembles `text`, adding a test failure for each error, loads it, and
   // resets core 0 to run it. Init() must have been called. Returns whether it
   // did.

@@ -172,7 +172,8 @@ says the drives write back their disks when it quits.
   machine table's drive entries with two drives on a 4-core Ozzy and with
   every device; images in their drives at power on, with empty drives
   between; a config's images opened from its folder; each `Create` error;
-  `SetClock` reaching the timer's clock port, and none giving zeros. Images
+  the clock given to `Create` reaching the timer's clock port, and none giving
+  zeros. Images
   are in a `gb::MemoryFileProtocol`, formatted with `DiskFileSystem`.
 - **End to end:** an assembled program on core 0 creates a file on `A:` through
   ports 16 to 18 and interrupt 2, and writes 4 words without closing it.
