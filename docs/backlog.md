@@ -26,37 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## Disk tool failure reasons
-
-- **Layers:** tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** *Disk tools*, and Game Bits *File system errors as
-  absl::Status*
-- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior)
-
-`DiskTool`'s file commands go through `gb::FileSystem`, whose calls say only
-whether they failed, so a failure says what couldn't be done to the file
-("HELLO.TXT: can't be written") but not why: a read-only file, a write
-protected or full disk, or a broken one. Once Game Bits returns `absl::Status`,
-`DiskFileProtocol` returns its `DiskStatus` as each call's error, and the file
-commands pass it on, as in "work.ozd: HELLO.TXT: read-only", with nothing
-worked out ahead of the call.
-
-## oz3dsk check's exit code
-
-- **Layers:** apps, manual
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** the manual's [oz3dsk](manual/3.5-Disk-Drive.md#oz3dsk)
-
-`oz3dsk check` exits with 0 whatever it finds, so a script can't tell a sound
-disk from a broken one without reading the report. It should exit with 1 when
-the disk has problems: any at all without `--fix`, and with it, any the repair
-couldn't fix. A command line it can't run still exits with 2. The manual's
-paragraph on exit codes changes to match.
-
 ## oz3dsk get destinations
 
 - **Layers:** tools, manual
@@ -73,23 +42,6 @@ and on Windows a name such as `CON.TXT`, `NUL`, or `COM1.OZ3` is a device, not
 a file, so `get` writes to the device instead. Those names should fail, asking
 for a host file, before anything is read. `DiskTool::Get` does both, and the
 manual's `get` row says so.
-
-## Label error messages
-
-- **Layers:** disk, tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [disk-tools.md](worklog/disk-tools.md)
-
-`DiskTool::ParseLabel` has one message for every way a label can be wrong,
-listing every rule (up to 16 letters, digits, and the punctuation allowed), so
-a label that is only too long, or has one bad character, isn't told which. It
-should say what is wrong: too long, or the first character a label can't have.
-The message also writes out the punctuation a name or label may hold, a copy of
-the disk library's own list (`kPunctuation` in `disk_packed_text.cc`), so the
-two can drift. The disk library should give the list, or say why text isn't a
-label, for the message to use.
 
 ## Ozzy OS
 
@@ -450,3 +402,20 @@ applied, and Caps Lock (which needs a key code and a lock state). It would
 repeat a held key itself, after a delay and at a rate in real time turned into
 cycles, so it repeats the same on every run. The cost is the layout: on any
 other, keys type the US characters, so AZERTY's `A` types `q`.
+
+## Disk tool failure reasons
+
+- **Layers:** tools
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Disk tools*, and Game Bits *File system errors as
+  absl::Status*
+- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior)
+
+`DiskTool`'s file commands go through `gb::FileSystem`, whose calls say only
+whether they failed, so a failure says what couldn't be done to the file
+("HELLO.TXT: can't be written") but not why: a read-only file, a write
+protected or full disk, or a broken one. Once Game Bits returns `absl::Status`,
+`DiskFileProtocol` returns its `DiskStatus` as each call's error, and the file
+commands pass it on, as in "work.ozd: HELLO.TXT: read-only", with nothing
+worked out ahead of the call.
