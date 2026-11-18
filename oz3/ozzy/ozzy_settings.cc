@@ -325,10 +325,12 @@ void OzzySettingsReader::ReadDrive(const gb::ConfigReader& reader,
   reader.Get("read_words_per_sec").ReadInt(&hardware.read_words_per_sec);
   reader.Get("write_words_per_sec").ReadInt(&hardware.write_words_per_sec);
   reader.Get("cache_words_per_sec").ReadInt(&hardware.cache_words_per_sec);
-  int latency_ms =
-      static_cast<int>(absl::ToInt64Milliseconds(hardware.latency));
-  reader.Get("latency_ms").ReadInt(&latency_ms);
-  hardware.latency = absl::Milliseconds(latency_ms);
+  if (const gb::ConfigReader latency = reader.Get("latency_ms");
+      !latency.IsMissing()) {
+    int latency_ms = 0;
+    latency.ReadInt(&latency_ms);
+    hardware.latency = absl::Milliseconds(latency_ms);
+  }
   reader.Get("slots").ReadInt(&drive->slots);
   ReadImage(reader.Get("image"), &drive->image);
 }
@@ -345,11 +347,15 @@ void OzzySettingsReader::ReadImage(const gb::ConfigReader& image,
     return;
   }
   *path = gb::NormalizePath(text);
-  if (!path->empty() && !gb::IsPathAbsolute(*path)) {
-    *path = gb::NormalizePath(gb::JoinPath(folder_, *path));
-  }
   if (path->empty()) {
-    image.Reject(absl::StrCat("isn't a path in the config's folder: ", text));
+    image.Reject(absl::StrCat("isn't a valid path: ", text));
+    return;
+  }
+  if (!gb::IsPathAbsolute(*path)) {
+    *path = gb::NormalizePath(gb::JoinPath(folder_, *path));
+    if (path->empty()) {
+      image.Reject(absl::StrCat("isn't a path in the config's folder: ", text));
+    }
   }
 }
 

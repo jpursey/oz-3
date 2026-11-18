@@ -562,6 +562,8 @@ TEST(OzzySettingsTest, DriveErrors) {
               EndsWith("drives[0].letter: unknown key"));
   EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', image: '' }]"),
               EndsWith("drives[0].image: must be a path"));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', image: ':a.ozd' }]"),
+              EndsWith("drives[0].image: isn't a valid path: :a.ozd"));
   EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', image: 5 }]"),
               EndsWith("drives[0].image: must be a string"));
   EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', latency_ms: 'a' }]"),
