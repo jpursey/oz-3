@@ -465,7 +465,7 @@ TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
   EXPECT_EQ(ozzy.status().message(),
-            "Drive C: no file system to open its image mem:/c.ozd");
+            "Drive C: has image mem:/c.ozd, but no file system to open it");
 }
 
 TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {

@@ -279,8 +279,8 @@ class Ozzy final {
 
 ### apps: ozzy
 
-`Run` passes the command line file system to `Ozzy::Create`, and gives the host
-time with `Ozzy::SetClock` in place of the timer's. `kProgram`'s help says the
+`Run` passes the command line file system to `Ozzy::Create` (in CL2), and gives
+the host time with `Ozzy::SetClock` in place of the timer's (in CL1). `kProgram`'s help says the
 drives write back their disks when it quits.
 
 ### Testing
@@ -300,11 +300,10 @@ drives write back their disks when it quits.
   ports, interrupt, and cores as the processor has them), after the timer and
   in letter order, on core 0 however many cores, with two and with all four;
   an image attached at power on (the control port shows the disk once the
-  drive has run); errors for a
-  missing image, an image with no file system, and a drive setting the
-  factory rejects, each naming the drive; `SetClock` reaching the timer's
-  clock port, and none giving zeros. Images are in a `gb::MemoryFileProtocol`,
-  formatted with `DiskFileSystem`.
+  drive has run); errors for a missing image, an image with no file system,
+  and a drive setting the factory rejects, each naming the drive; `SetClock`
+  reaching the timer's clock port, and none giving zeros. Images are in a
+  `gb::MemoryFileProtocol`, formatted with `DiskFileSystem`.
 - **A program on drive `A:`:** an assembled program on core 0 creates a file
   on `A:` and writes words to it through ports 16 to 18, without closing it.
   Destroying the Ozzy commits it: the file on the image has the words, stamped
@@ -330,7 +329,7 @@ Nothing is measured.
 
 ## CLs
 
-### CL1 [~] ozzy: drives in the Ozzy
+### CL1 [x] ozzy: drives in the Ozzy
 
 Depends on: nothing.
 
@@ -342,8 +341,8 @@ Depends on: nothing.
   and the drives' machine table entries.
 - `CMakeLists.txt`: `oz3_disk` and `gb_file` in `oz3_ozzy`'s deps.
 - `configs/*.ozzy`: `ports: 48`, and the comment's range.
-- The app keeps working unchanged: it has no drives, and still sets the
-  timer's clock.
+- `ozzy_main.cc`: the host's time with `Ozzy::SetClock`, in place of the
+  timer's, so the app never gives the timer a clock and not the drives.
 - Manual: the wiring, `ports`, and the machine table.
 
 **Verify**
@@ -356,7 +355,7 @@ Depends on: CL1.
 
 - `ozzy_settings.cc`: reading the `drives` list, with presets by name and
   image paths from the config's folder.
-- `ozzy_main.cc`: the file system to `Create`, and `Ozzy::SetClock`.
+- `ozzy_main.cc`: the file system to `Create`.
 - Manual: the drive's keys and presets, the errors, running `ozzy` with
   disks, and `latency_ms` in the Disk Drive page.
 

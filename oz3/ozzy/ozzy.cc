@@ -232,8 +232,8 @@ absl::StatusOr<DriveImages> OpenDriveImages(const OzzySettings& settings,
     }
     if (file_system == nullptr) {
       return absl::InvalidArgumentError(
-          absl::StrCat("Drive ", Ozzy::kDriveNames[i],
-                       " no file system to open its image ", drive->image));
+          absl::StrCat("Drive ", Ozzy::kDriveNames[i], " has image ",
+                       drive->image, ", but no file system to open it"));
     }
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Open(file_system, drive->image);

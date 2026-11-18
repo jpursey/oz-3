@@ -312,8 +312,9 @@ relative and an absolute path, a drive and its `file:` form
 (`file:/c/src/a.oza` is `C:\src\a.oza`), a difference in case where the file
 system ignores it, or a link. The Ozzy's check that no two drives have one
 image compares its paths the same way, so one image can get into two drives.
-Ask the file system whether two paths are the same file instead, once Game Bits' canonical paths resolve case and links, and
-`gb::FileSystem` lets a caller ask for one.
+Ask the file system whether two paths are the same file instead, once Game
+Bits' canonical paths resolve case and links, and `gb::FileSystem` lets a
+caller ask for one.
 
 ## Sleeping cores
 

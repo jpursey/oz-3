@@ -61,7 +61,7 @@ Each device is wired the same way in every Ozzy, so a config file doesn't say ho
 
 The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on ports 6 to 15. Each drive has 3 ports, its command, data, and control ports (see [Ports](3.5-Disk-Drive.md#ports)), from port 16 for `A:`, leaving ports 0, 5, and 28 to 31 for devices to come.
 
-The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh, the timer's tick, and a drive's completion are news for every core, so they are not shared, and every core with a handler for them is told. A completion is for whichever core issued the command, normally the operating system's.
+The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh, the timer's tick, and a drive's completion are news for every core, so they are not shared, and every core with a handler for them is told. A drive's completion is only read once, so only the core that issues the drive's commands, normally the operating system's, sets a handler for it (see [The command protocol](3.5-Disk-Drive.md#the-command-protocol)).
 
 So with a screen, page 15 of bank 0 must not be RAM.
 
