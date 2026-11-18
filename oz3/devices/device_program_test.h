@@ -13,10 +13,13 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/time/civil_time.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
 #include "gb/parse/parse_error.h"
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/tools/instruction_set_syntax.h"
@@ -31,7 +34,8 @@ namespace oz3 {
 //==============================================================================
 
 // A test fixture for devices, which runs OZ-3 programs against them on core 0,
-// written in the default instruction set as programs are.
+// written in the default instruction set as programs are, with a fake of the
+// host's clock for the devices that need one.
 class DeviceProgramTest : public BaseCoreTest {
  protected:
   DeviceProgramTest()
@@ -86,6 +90,23 @@ class DeviceProgramTest : public BaseCoreTest {
     return words;
   }
 
+  // Returns a context for the processor (see InitConfig::context) with a
+  // clock that returns now_ and counts its calls in clock_calls_, or none if
+  // with_clock_ is false.
+  gb::Context GetHostContext() {
+    gb::Context context;
+    if (with_clock_) {
+      context.SetValue<HostClock>([this] {
+        ++clock_calls_;
+        return now_;
+      });
+    }
+    return context;
+  }
+
+  // Sets what the clock returns from now on.
+  void SetNow(absl::CivilSecond now) { now_ = now; }
+
   // Sets the words from the label `label` on, in the loaded program's data
   // segment.
   void SetData(std::string_view label, absl::Span<const uint16_t> words) {
@@ -95,6 +116,11 @@ class DeviceProgramTest : public BaseCoreTest {
       data.AddValue(word);
     }
   }
+
+  // The host's clock that GetHostContext gives.
+  bool with_clock_ = true;
+  absl::CivilSecond now_;
+  int clock_calls_ = 0;
 
  private:
   static std::unique_ptr<InstructionSetSyntax> CreateSyntax() {

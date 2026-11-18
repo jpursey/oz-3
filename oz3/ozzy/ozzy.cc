@@ -275,7 +275,9 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
 
   // The processor's context holds what the devices need from the host.
   gb::Context context;
-  context.SetValue<HostClock>(std::move(clock));
+  if (clock != nullptr) {
+    context.SetValue<HostClock>(std::move(clock));
+  }
   auto processor = std::make_unique<Processor>(*config, std::move(context));
 
   // The loader writes the boot ROM into its page, as a ROM programmer would,

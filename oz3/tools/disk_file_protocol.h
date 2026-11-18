@@ -12,7 +12,6 @@
 #include <string_view>
 #include <vector>
 
-#include "absl/functional/any_invocable.h"
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "gb/base/local_time.h"
@@ -69,7 +68,7 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
   // Returns the date and time in the protocol's time zone, as the drive's
   // clock does.
-  using Clock = absl::AnyInvocable<absl::CivilSecond()>;
+  using Clock = HostClock;
 
   static constexpr std::string_view kDefaultName = "ozdisk";
   static constexpr int kDefaultMaxOpenFiles = 16;

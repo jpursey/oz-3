@@ -144,8 +144,8 @@ covers how it is built, and the decisions behind it.
   worse.
 - **The clock** is in the processor's context (`kConstraintHostClock`), which
   the processor keeps until after its devices are destroyed, as the drives
-  call it then. An Ozzy without one gives its processor an empty clock, which
-  the devices treat as none, so "no clock" stays their own "no date".
+  call it then. An Ozzy without one leaves it out, so "no clock" stays the
+  devices' own "no date".
 
 **Brittleness:**
 - `file_system` must outlive the Ozzy, which its comment says.

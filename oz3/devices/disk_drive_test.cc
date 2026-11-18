@@ -24,7 +24,6 @@
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
-#include "gb/base/context.h"
 #include "gb/file/file_system.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -192,20 +191,16 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   static constexpr Cycles kMaxRunCycles = 100'000;
 
   // Initializes a processor with a drive named "Drive" with `settings`, and
-  // sets drive_ to it. The processor's context has a clock that returns now_,
-  // unless with_clock_ is false. Returns whether it did.
+  // sets drive_ to it, with the host's clock from GetHostContext(). Returns
+  // whether it did.
   bool InitDrive(DiskDriveSettings settings = GetSettings()) {
     absl::StatusOr<std::unique_ptr<DiskDriveFactory>> factory =
         DiskDriveFactory::Create("Drive", settings);
     EXPECT_TRUE(factory.ok()) << factory.status();
-    gb::Context context;
-    if (with_clock_) {
-      context.SetValue<HostClock>([this] { return now_; });
-    }
     if (!factory.ok() || !Init({.num_ports = settings.port + DiskDrive::kPorts,
                                 .clock_hz = kClockHz,
                                 .devices = {*std::move(factory)},
-                                .context = std::move(context)})) {
+                                .context = GetHostContext()})) {
       return false;
     }
     drive_ = static_cast<DiskDrive*>(GetProcessor().GetDevice("Drive"));
@@ -723,11 +718,6 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return (GetState().core.GetInterrupts() & (1u << kInterrupt)) != 0;
   }
 
-  // Sets what the drive's clock returns from now on.
-  void SetNow(absl::CivilSecond now) { now_ = now; }
-
-  bool with_clock_ = true;
-  absl::CivilSecond now_;
   DiskDrive* drive_ = nullptr;
   const DiskCommandDef* def_ = nullptr;
 };
