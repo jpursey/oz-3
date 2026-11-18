@@ -436,16 +436,3 @@ protected or full disk, or a broken one. Once Game Bits returns `absl::Status`,
 `DiskFileProtocol` returns its `DiskStatus` as each call's error, and the file
 commands pass it on, as in "work.ozd: HELLO.TXT: read-only", with nothing
 worked out ahead of the call.
-
-## oz3dsk get on Game Bits' folder or file
-
-- **Layers:** tools
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** Game Bits *Command line folder or file*
-- **Background:** none
-
-oz3dsk's `get` host file has its own validator that accepts a folder or a
-writable file (`ValidateGetHostFile` in `oz3dsk.cc`), repeating the
-constraints of the two Game Bits validators it calls. Once Game Bits has one
-that does this, use it and drop the copy.
