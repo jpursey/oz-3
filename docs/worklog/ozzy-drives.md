@@ -108,9 +108,9 @@ Errors, as the other devices' are:
 Each drive is a device entry of type 5 (`MachineDeviceType::kDrive`), after
 the timer, in letter order: its first port (the command port), its interrupt
 and its cores (0001h, not shared), no bank or page, and as its two words of its
-own, its letter (41h to 44h) and its slots. What disk is in it, if any, is the drive's to say
-(`MEDIA` and `VOLUME`), as it changes while the Ozzy runs. An Ozzy has at most
-8 devices, well within the table's 16.
+own, its letter (41h to 44h) and its slots. What disk is in it, if any, is the
+drive's to say (`MEDIA` and `VOLUME`), as it changes while the Ozzy runs. An
+Ozzy has at most 8 devices, well within the table's 16.
 
 ### `Ozzy`
 
@@ -280,8 +280,8 @@ class Ozzy final {
 ### apps: ozzy
 
 `Run` passes the command line file system to `Ozzy::Create` (in CL2), and gives
-the host time with `Ozzy::SetClock` in place of the timer's (in CL1). `kProgram`'s help says the
-drives write back their disks when it quits.
+the host time with `Ozzy::SetClock` in place of the timer's (in CL1).
+`kProgram`'s help says the drives write back their disks when it quits.
 
 ### Testing
 
