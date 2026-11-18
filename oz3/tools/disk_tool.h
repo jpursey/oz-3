@@ -110,11 +110,13 @@ class DiskTool final {
   //----------------------------------------------------------------------------
 
   // Returns a line for each file `pattern` matches, in directory order: its
-  // name, its size in words, and its attributes (r and h, or - for each not
-  // set). Hidden files are left out unless `all` is true. The pattern is
-  // matched as gb::FileSystem::List matches one, ignoring case: * matches any
-  // characters, and an empty pattern matches every file. With no file to list,
-  // it returns "no files". Fails if the disk has no file system to read.
+  // name, its size in words, its attributes (r and h, or - for each not set),
+  // and its modified time to the minute in the host's local time, such as
+  // 2026-11-17 10:30, if it has one. Hidden files are left out unless `all` is
+  // true. The pattern is matched as gb::FileSystem::List matches one, ignoring
+  // case: * matches any characters, and an empty pattern matches every file.
+  // With no file to list, it returns "no files". Fails if the disk has no file
+  // system to read.
   absl::StatusOr<std::string> Dir(std::string_view image_path,
                                   std::string_view pattern, bool all);
 

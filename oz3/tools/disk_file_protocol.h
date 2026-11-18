@@ -50,7 +50,9 @@ namespace oz3 {
 // can't be opened for writing or deleted, and an open file can't be
 // deleted, renamed, or have its attributes changed. Files written are stamped
 // from the clock as they are committed: flushed, or closed as the RawFile is
-// destroyed.
+// destroyed. GetPathInfo gives a file's stamp as its modified time, reading
+// the disk's dates as the host's local time, as the clock gives them. A file
+// with no date has no time, and neither does the root.
 //
 // While a formatted disk is mounted, its root is open in a slot of its own,
 // which the protocol finds and lists files through, so those never need a

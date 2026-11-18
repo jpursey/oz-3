@@ -48,8 +48,8 @@ them. It settles the points below, and updates disk_design.md to match.
 
 - **Copies don't keep file times.** disk_design.md had `put` stamp a file
   with the host file's modified time, and `get` set the host file's time from
-  the entry. `gb::FileSystem` has no file times at all (`PathInfo` is only a
-  type, a size, and attributes), so neither can be done through it. A file
+  the entry. `gb::FileSystem` only reads file times (`PathInfo`'s modified
+  time), with no call to set one, so neither can be done through it. A file
   written through the protocol is stamped from the protocol's clock as it is
   committed, so `put` stamps the time of the copy, and `get` leaves the host
   file's time as the host sets it, which is all a disk copy needs.
@@ -86,9 +86,11 @@ them. It settles the points below, and updates disk_design.md to match.
   file's directory entry, which for a file open for writing is as it was last
   committed, as the drive's `FIND` gives it.
 - **`dir` lists through the protocol,** as disk_design.md has it: the names
-  from `ListFiles`, and each one's size and attributes from `PathInfo`. It
-  shows no times until `PathInfo` has them (Game Bits *File modified times*,
-  then OZ-3 *Modified times in oz3dsk dir*).
+  from `ListFiles`, and each one's size, attributes, and modified time from
+  `PathInfo`. The protocol reads the disk's dates as the host's local time,
+  as its clock gives them, and `dir` shows them in it, to the minute. A file
+  with no date (all zeros, as a program may leave one) has no time, and `dir`
+  shows none.
 - **`new` won't replace a file.** `DiskImage::Create` replaces any file at its
   path, but `oz3dsk new` fails if the image already exists, so a typo never
   blanks a disk. To remake one, delete it first.
@@ -342,7 +344,7 @@ class DiskTool final {
   any path in the file system is, and a bad one is the command's failure.
 - **Text output is returned,** for the app to write, so tests check it
   exactly: `Info`'s medium and volume, `Dir`'s lines (name, size in words,
-  and `r` and `h`), `Attrib`'s letters, and `Check`'s report, one line per
+  `r` and `h`, and modified time), `Attrib`'s letters, and `Check`'s report, one line per
   problem.
 - **What each command uses,** as disk_design.md has it: `put` and `get` read
   the whole file, convert text (see host text transfer), write it, then
@@ -513,3 +515,23 @@ Depends on: CL5, and *Disk drive device*'s CL7, which writes
 **Verify**
 - The section against `oz3dsk --help` and this plan's Behavior.
 - Its links resolve, by file name.
+
+### CL7 [x] tools: modified times in dir
+
+Depends on: CL6, and Game Bits *File modified times*. This is OZ-3's
+*Modified times in oz3dsk dir*, taken out of the backlog.
+
+- `disk_file_protocol.h` and `.cc`: `GetPathInfo` gives each file's stamp as
+  its `modified_time`, reading the disk's dates as the host's local time, and
+  none for a file with no date or for the root.
+- `disk_tool.h` and `.cc`: `Dir` ends each line with the file's modified
+  time to the minute in the host's local time, or nothing with no date.
+- Manual and `disk_design.md`: `dir`'s times, and the protocol reporting
+  them.
+
+**Verify**
+- Standard checks.
+- Unit tests: the protocol's time for a file as stamped and as stamped
+  again, none for the root, and none for a file made with no date; `Dir`'s
+  lines with times, and without one for a file with no date.
+- By hand on Linux: `oz3dsk dir` shows a file's time as it was put.

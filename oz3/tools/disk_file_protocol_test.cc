@@ -543,6 +543,32 @@ TEST_F(DiskFileProtocolTest, FilesAreStampedWhenCommitted) {
   EXPECT_EQ(GetEntry("A")->GetModified(), DateTime::FromCivil(now_));
 }
 
+TEST_F(DiskFileProtocolTest, ModifiedTimesAreTheStamps) {
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "ab"));
+  EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/A").modified_time,
+            absl::FromCivil(kNow, absl::LocalTimeZone()));
+  now_ = absl::CivilSecond(2026, 11, 18, 9, 0, 0);
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "cd"));
+  EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/A").modified_time,
+            absl::FromCivil(now_, absl::LocalTimeZone()));
+  EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/").modified_time, std::nullopt);
+
+  // A file made with no date, as a program can, has no time.
+  std::unique_ptr<DiskImage> image;
+  ASSERT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+  DiskFileSystem disk(DiskHardwareSettings{}, 2);
+  ASSERT_EQ(disk.AttachImage(std::move(image)), DiskStatus::kOk);
+  DiskFile file = -1;
+  ASSERT_EQ(disk.Create(*DiskFilename::Parse("NODATE"), DateTime(), &file),
+            DiskStatus::kOk);
+  ASSERT_EQ(disk.Close(file, DateTime()), DiskStatus::kOk);
+  ASSERT_EQ(protocol_->Mount(disk.DetachImage()), DiskStatus::kOk);
+  const gb::PathInfo info = file_system_.GetPathInfo("ozdisk:/NODATE");
+  EXPECT_EQ(info.type, gb::PathType::kFile);
+  EXPECT_EQ(info.modified_time, std::nullopt);
+}
+
 TEST_F(DiskFileProtocolTest, NoClockStampsTheLocalTime) {
   gb::FileSystem file_system;
   ASSERT_TRUE(

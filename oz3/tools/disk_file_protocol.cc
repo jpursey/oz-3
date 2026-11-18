@@ -49,6 +49,16 @@ absl::CivilSecond GetLocalTime() {
   return absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone());
 }
 
+// Returns `date_time`, which is in the host's local time as the clock gives it,
+// as a time, or nullopt with no date.
+std::optional<absl::Time> TimeFromDisk(const DateTime& date_time) {
+  const std::optional<absl::CivilSecond> civil = date_time.ToCivil();
+  if (!civil.has_value()) {
+    return std::nullopt;
+  }
+  return absl::FromCivil(*civil, absl::LocalTimeZone());
+}
+
 // Returns the gb attributes of a directory entry's attribute word.
 gb::FileAttributes AttributesFromDisk(uint16_t disk_attributes) {
   gb::FileAttributes attributes;
@@ -339,16 +349,17 @@ gb::PathInfo DiskFileProtocol::DoGetPathInfo(std::string_view protocol_name,
     return {};
   }
   if (path == "/") {
-    return gb::PathInfo(gb::PathType::kFolder);
+    return {.type = gb::PathType::kFolder};
   }
   const std::optional<DiskFilename> name = GetName(path);
   DiskDirEntry entry;
   if (!name.has_value() || !FindEntry(*name, &entry)) {
     return {};
   }
-  return gb::PathInfo(gb::PathType::kFile,
-                      int64_t{entry.GetSize().value_or(0)} * 2,
-                      AttributesFromDisk(entry.GetAttributes()));
+  return {.type = gb::PathType::kFile,
+          .size = int64_t{entry.GetSize().value_or(0)} * 2,
+          .attributes = AttributesFromDisk(entry.GetAttributes()),
+          .modified_time = TimeFromDisk(entry.GetModified())};
 }
 
 std::vector<std::string> DiskFileProtocol::DoList(
