@@ -1481,7 +1481,7 @@ TEST_F(DiskDriveTest, CreateMakesAnEmptyFileStampedWithTheClock) {
   EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kNow));
 }
 
-TEST_F(DiskDriveTest, WithoutAClockFilesAreStampedNoDate) {
+TEST_F(DiskDriveTest, WithAnEmptyClockFilesAreStampedNoDate) {
   with_clock_ = false;
   ASSERT_TRUE(InitDrive());
   AttachFormatted();

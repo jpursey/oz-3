@@ -77,11 +77,11 @@ class Ozzy final {
   // The Ozzy keeps the context, and gives it to its processor, so it is also
   // where the devices find the host's clock (kConstraintHostClock): the date
   // and time the timer answers programs with and the drives stamp files with.
-  // Without one, the timer reads zeros and the drives stamp no date. The Ozzy
-  // has no clock of its own, so a host gives it one. The clock's date and time
-  // move with the host's time, while the timer's ticks and milliseconds move
-  // with the time given to Run, so the two only keep pace while the host runs
-  // the Ozzy in real time. The drives call it as the Ozzy is destroyed, so
+  // Without one, it is the host's local time, and with an empty one, the timer
+  // reads zeros and the drives stamp no date. The clock's date and time move
+  // with the host's time, while the timer's ticks and milliseconds move with
+  // the time given to Run, so the two only keep pace while the host runs the
+  // Ozzy in real time. The drives call it as the Ozzy is destroyed, so
   // whatever it uses, and the context itself unless the contract owns it, must
   // outlive the Ozzy.
   static absl::StatusOr<std::unique_ptr<Ozzy>> Create(

@@ -13,6 +13,7 @@
 #include "absl/functional/function_ref.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "gb/base/validated_context.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "oz3/disk/disk_label.h"
@@ -34,24 +35,36 @@ namespace oz3 {
 class DiskTool final {
  public:
   //----------------------------------------------------------------------------
-  // Types
+  // Contract
   //----------------------------------------------------------------------------
 
-  using Clock = DiskFileProtocol::Clock;
+  // The file system the tool works on, which must outlive it. The tool's
+  // protocol stays registered there after it, with nothing mounted.
+  static GB_CONTEXT_CONSTRAINT(kConstraintFileSystem, kInRequired,
+                               gb::FileSystem);
+
+  // The name the tool registers its DiskFileProtocol as.
+  static constexpr const char* kKeyProtocolName = "disk_protocol_name";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(
+      kConstraintProtocolName, kInOptional, std::string, kKeyProtocolName,
+      std::string(DiskFileProtocol::kDefaultName));
+
+  // What the tool takes from its context: its own needs, and its protocol's
+  // (see DiskFileProtocol::Contract), such as the clock it stamps the files it
+  // writes from.
+  using Contract = gb::DerivedContextContract<DiskFileProtocol::Contract,
+                                              kConstraintFileSystem,
+                                              kConstraintProtocolName>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Makes a tool on `file_system`, registering a DiskFileProtocol there as
-  // `protocol_name`, which stamps files written from `clock`, or the host's
-  // local time without one. The disk's dates are in the host's local time zone
-  // (see gb::GetLocalTimeZone). Fails if the name can't be registered, as when
-  // it is taken. `file_system` must outlive the tool, and the protocol stays
-  // registered after it, with nothing mounted.
-  static absl::StatusOr<std::unique_ptr<DiskTool>> Create(
-      gb::FileSystem* file_system, Clock clock = nullptr,
-      std::string_view protocol_name = DiskFileProtocol::kDefaultName);
+  // Makes a tool on the context's file system, registering a DiskFileProtocol
+  // there, made from the same context. Fails if the context doesn't meet the
+  // contract, or if the protocol's name can't be registered, as when it is
+  // taken.
+  static absl::StatusOr<std::unique_ptr<DiskTool>> Create(Contract contract);
 
   DiskTool(const DiskTool&) = delete;
   DiskTool& operator=(const DiskTool&) = delete;

@@ -347,7 +347,7 @@ TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
   EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
-TEST_F(TimerTest, DateAndTimeAreZerosWithoutAClock) {
+TEST_F(TimerTest, DateAndTimeAreZerosWithAnEmptyClock) {
   with_clock_ = false;
   ASSERT_TRUE(InitTimer());
   Execute(1);

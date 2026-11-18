@@ -95,8 +95,8 @@ class DeviceProgramTest : public BaseCoreTest {
   }
 
   // Returns a context for the processor (see InitConfig::context) with a
-  // clock that returns now_ and counts its calls in clock_calls_, or none if
-  // with_clock_ is false.
+  // clock that returns now_ and counts its calls in clock_calls_, or an empty
+  // clock, for no date, if with_clock_ is false.
   gb::Context GetHostContext() {
     gb::Context context;
     if (with_clock_) {
@@ -104,6 +104,8 @@ class DeviceProgramTest : public BaseCoreTest {
         ++clock_calls_;
         return now_;
       });
+    } else {
+      context.SetValue<HostClock>(HostClock());
     }
     return context;
   }

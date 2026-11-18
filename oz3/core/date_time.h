@@ -9,9 +9,9 @@
 #include <array>
 #include <compare>
 #include <cstdint>
+#include <functional>
 #include <optional>
 
-#include "absl/functional/any_invocable.h"
 #include "absl/time/civil_time.h"
 #include "gb/base/validated_context.h"
 
@@ -22,13 +22,19 @@ namespace oz3 {
 //==============================================================================
 
 // Returns the host's date and time, in the time zone the host wants programs to
-// see.
-using HostClock = absl::AnyInvocable<absl::CivilSecond()>;
+// see. An empty clock is no clock, which gives no date.
+using HostClock = std::function<absl::CivilSecond()>;
 
-// The host's clock, which a host gives the devices that need the date and time
-// in the context it creates its Processor with (see DeviceFactory). It is
-// optional: a device without a clock sees no date.
-GB_CONTEXT_CONSTRAINT(kConstraintHostClock, kInOptional, HostClock);
+// Returns the host's date and time now, in its local time zone (see
+// gb::GetLocalTimeZone), which is the host clock's default.
+absl::CivilSecond GetLocalHostTime();
+
+// The host's clock, which code that needs the date and time (such as the
+// timer and the disk drive) takes from its context. A context without one gets
+// GetLocalHostTime as it is validated, so a host only sets a clock to give
+// another time, or an empty one for no date.
+GB_CONTEXT_CONSTRAINT_DEFAULT(kConstraintHostClock, kInOptional, HostClock,
+                              HostClock(&GetLocalHostTime));
 
 //==============================================================================
 // DateTime
@@ -65,8 +71,11 @@ class DateTime {
   // time, as words a program wrote may not be.
   static DateTime FromWords(const Words& words);
 
+  // Returns the date and time from `clock`, or no date if it is empty.
+  static DateTime FromHostClock(const HostClock& clock);
+
   // Returns the date and time from the host clock in `context`, or no date if
-  // it has none. The context must allow reading kConstraintHostClock.
+  // it is empty. The context must be validated with kConstraintHostClock.
   static DateTime FromHostClock(const gb::ValidatedContext& context);
 
   //----------------------------------------------------------------------------

@@ -277,8 +277,7 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
   if (!images.ok()) {
     return images.status();
   }
-  auto processor =
-      std::make_unique<Processor>(*config, Processor::Contract(context));
+  auto processor = std::make_unique<Processor>(*config, context);
 
   // The loader writes the boot ROM into its page, as a ROM programmer would,
   // and places its stack in RAM, which the settings always have.

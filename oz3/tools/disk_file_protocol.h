@@ -14,7 +14,8 @@
 
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
-#include "gb/base/local_time.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "gb/file/file_protocol.h"
 #include "gb/file/file_types.h"
 #include "gb/file/raw_file.h"
@@ -66,25 +67,41 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // Types and Constants
   //----------------------------------------------------------------------------
 
-  // Returns the date and time in the protocol's time zone, as the drive's
-  // clock does.
-  using Clock = HostClock;
-
   static constexpr std::string_view kDefaultName = "ozdisk";
   static constexpr int kDefaultMaxOpenFiles = 16;
+
+  //----------------------------------------------------------------------------
+  // Contract
+  //----------------------------------------------------------------------------
+
+  // The time zone the disk's dates are in, by default the host's as it is when
+  // the protocol is made (see gb::GetLocalTimeZone). A host that gives one
+  // gives a clock in it too (kConstraintHostClock), as the clock's default is
+  // in the host's.
+  static GB_CONTEXT_CONSTRAINT(kConstraintTimeZone, kInOptional,
+                               absl::TimeZone);
+
+  // The most files that may be open at once, which must be at least 2, the
+  // root's slot included.
+  static constexpr const char* kKeyMaxOpenFiles = "disk_max_open_files";
+  static GB_CONTEXT_CONSTRAINT_NAMED_DEFAULT(kConstraintMaxOpenFiles,
+                                             kInOptional, int, kKeyMaxOpenFiles,
+                                             kDefaultMaxOpenFiles);
+
+  // What the protocol takes from its context as it is made, keeping its own
+  // copies: the host's clock it stamps the files it writes from (an empty one
+  // stamps no date), the time zone, and the most files open.
+  using Contract =
+      gb::ContextContract<kConstraintHostClock, kConstraintTimeZone,
+                          kConstraintMaxOpenFiles>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Makes a protocol with nothing mounted, stamping files from `clock`, or the
-  // time now in `time_zone` without one. The disk's dates are in `time_zone`,
-  // by default the host's as it is when the protocol is made (see
-  // gb::GetLocalTimeZone). Up to `max_open_files` files may be open at once,
-  // which must be at least 2, the root's slot included.
-  explicit DiskFileProtocol(Clock clock = nullptr,
-                            absl::TimeZone time_zone = gb::GetLocalTimeZone(),
-                            int max_open_files = kDefaultMaxOpenFiles);
+  // Makes a protocol with nothing mounted, as the context of `contract` says,
+  // which must be valid.
+  explicit DiskFileProtocol(Contract contract = gb::Context());
   DiskFileProtocol(const DiskFileProtocol&) = delete;
   DiskFileProtocol& operator=(const DiskFileProtocol&) = delete;
 
@@ -173,6 +190,18 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
   class DiskRawFile;
 
+  // What the protocol takes from its context.
+  struct Options {
+    absl::TimeZone time_zone;
+    HostClock clock;
+    int max_open_files = 0;
+  };
+
+  // Returns the options in `contract`'s context, which must be valid.
+  static Options GetOptions(Contract contract);
+
+  explicit DiskFileProtocol(Options options);
+
   // Returns the clock's date and time.
   DateTime GetNow();
 
@@ -192,7 +221,7 @@ class DiskFileProtocol final : public gb::FileProtocol {
   static std::optional<DiskFilename> GetName(std::string_view path);
 
   const absl::TimeZone time_zone_;
-  Clock clock_;
+  const HostClock clock_;
   DiskFileSystem file_system_;
   DiskFile root_ = -1;
 };

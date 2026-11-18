@@ -19,6 +19,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/context_builder.h"
 #include "gb/base/local_time.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
@@ -68,7 +69,11 @@ class DiskFileProtocolTest : public ::testing::Test {
     host_ = host.get();
     file_system_.Register(std::move(host), "host");
     auto protocol = std::make_unique<DiskFileProtocol>(
-        [this] { return now_; }, kTimeZone, kMaxOpenFiles);
+        gb::ContextBuilder()
+            .SetValue<HostClock>([this] { return now_; })
+            .SetValue<absl::TimeZone>(kTimeZone)
+            .SetValue<int>(DiskFileProtocol::kKeyMaxOpenFiles, kMaxOpenFiles)
+            .Build());
     protocol_ = protocol.get();
     EXPECT_TRUE(file_system_.Register(std::move(protocol)));
   }
@@ -578,7 +583,11 @@ TEST_F(DiskFileProtocolTest, ModifiedTimesAreTheStamps) {
 
 TEST(DiskFileProtocolTimeZoneTest, TheHostsByDefault) {
   EXPECT_EQ(DiskFileProtocol().GetTimeZone(), gb::GetLocalTimeZone());
-  EXPECT_EQ(DiskFileProtocol(nullptr, kTimeZone).GetTimeZone(), kTimeZone);
+  EXPECT_EQ(
+      DiskFileProtocol(
+          gb::ContextBuilder().SetValue<absl::TimeZone>(kTimeZone).Build())
+          .GetTimeZone(),
+      kTimeZone);
 }
 
 TEST_F(DiskFileProtocolTest, NoClockStampsTheLocalTime) {
@@ -603,6 +612,27 @@ TEST_F(DiskFileProtocolTest, NoClockStampsTheLocalTime) {
   ASSERT_TRUE(entry.has_value());
   EXPECT_GE(entry->GetModified(), before);
   EXPECT_LE(entry->GetModified(), after);
+}
+
+TEST_F(DiskFileProtocolTest, AnEmptyClockStampsNoDate) {
+  gb::FileSystem file_system;
+  ASSERT_TRUE(
+      file_system.Register(std::make_unique<gb::MemoryFileProtocol>(), "host"));
+  auto owned = std::make_unique<DiskFileProtocol>(
+      gb::ContextBuilder().SetValue<HostClock>(HostClock()).Build());
+  DiskFileProtocol* protocol = owned.get();
+  ASSERT_TRUE(file_system.Register(std::move(owned)));
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Create(&file_system, kImagePath, kSectorCount);
+  ASSERT_TRUE(image.ok());
+  EXPECT_EQ(protocol->Mount(*std::move(image)), DiskStatus::kUnformatted);
+  EXPECT_EQ(protocol->Format(DiskLabel(), 0), DiskStatus::kOk);
+  ASSERT_TRUE(file_system.WriteFile("ozdisk:/A", "ab"));
+  std::unique_ptr<DiskImage> unmounted;
+  ASSERT_EQ(protocol->Unmount(&unmounted), DiskStatus::kOk);
+  const std::optional<DiskDirEntry> entry = FindEntry(&unmounted, "A");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->GetModified(), DateTime());
 }
 
 //==============================================================================

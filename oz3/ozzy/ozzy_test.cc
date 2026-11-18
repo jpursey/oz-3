@@ -60,7 +60,7 @@ using ::testing::HasSubstr;
 // Returns an Ozzy for `settings`, with any images in `file_system`, failing
 // the test if it can't be created.
 // Returns a host's context for an Ozzy, with `file_system` and `clock` if they
-// aren't null.
+// aren't null, so its clock is the host's local time by default.
 gb::Context HostContext(gb::FileSystem* file_system,
                         HostClock clock = nullptr) {
   gb::Context context;
@@ -149,10 +149,13 @@ TEST(OzzyTest, TheTimerHasTheClock) {
   EXPECT_THAT(AskTime(*ozzy), ElementsAre(9, 0x1E0F));
 }
 
-TEST(OzzyTest, TheTimerReadsZerosWithoutAClock) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
-  ASSERT_NE(ozzy, nullptr);
-  EXPECT_THAT(AskTime(*ozzy), ElementsAre(0, 0));
+TEST(OzzyTest, TheTimerReadsZerosWithAnEmptyClock) {
+  gb::Context context;
+  context.SetValue<HostClock>(HostClock());
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), std::move(context));
+  ASSERT_TRUE(ozzy.ok()) << ozzy.status();
+  EXPECT_THAT(AskTime(**ozzy), ElementsAre(0, 0));
 }
 
 TEST(OzzyTest, KeyboardKeyState) {

@@ -92,8 +92,9 @@ program's side.
 ### Host interface
 
 - **The host's clock**, which the drive stamps files with, is in the
-  processor's context (`DiskDrive::Contract`), as the timer's is. With none,
-  files get no date.
+  processor's context (`DiskDrive::Contract`), as the timer's is: the host's
+  local time unless the host gives another. With an empty one, files get no
+  date.
 - **`AttachImage`** takes ownership of the image, first detaching any attached.
   It returns nothing: a program finds out what the disk holds from its
   commands, and a host that wants to know first opens the image with

@@ -82,8 +82,8 @@ covers how it is built, and the decisions behind it.
   the timer, in letter order, with its command port, its interrupt on core 0
   (0001h), no pages, and its letter (41h to 44h) and slots. What disk is in it
   is the drive's to say, as it changes while the Ozzy runs.
-- **The host's time:** the host puts one clock, or none, in the context it
-  gives `Ozzy::Create`, which is also its processor's, where the timer and
+- **The host's time:** the host puts one clock, or none for its local time, in
+  the context it gives `Ozzy::Create`, which is also its processor's, where the timer and
   every drive find it, so a host can't give the timer one and forget the
   drives. The `ozzy` app gives the
   host's local time this way.
@@ -162,8 +162,8 @@ covers how it is built, and the decisions behind it.
 
 `Run` passes its command line context to `Ozzy::Create`, which holds the
 operating system's file system, so a config's paths are the operating system's,
-and the host's local time as its clock, which `main` puts there. Its help says
-the drives write back their disks when it quits.
+and no clock, so programs see the host's local time. Its help says the drives
+write back their disks when it quits.
 
 ### Testing
 

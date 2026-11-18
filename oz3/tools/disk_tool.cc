@@ -188,9 +188,16 @@ std::string FormatReport(const DiskCheckReport& report, bool repaired) {
 // Construction / Destruction
 //==============================================================================
 
-absl::StatusOr<std::unique_ptr<DiskTool>> DiskTool::Create(
-    gb::FileSystem* file_system, Clock clock, std::string_view protocol_name) {
-  auto protocol = std::make_unique<DiskFileProtocol>(std::move(clock));
+absl::StatusOr<std::unique_ptr<DiskTool>> DiskTool::Create(Contract contract) {
+  gb::ValidatedContext context(std::move(contract));
+  if (!context.IsValid()) {
+    return absl::InvalidArgumentError(
+        "The context doesn't meet the disk tool's contract");
+  }
+  gb::FileSystem* const file_system = context.GetPtr<gb::FileSystem>();
+  const std::string protocol_name =
+      context.GetValue<std::string>(kKeyProtocolName);
+  auto protocol = std::make_unique<DiskFileProtocol>(context);
   DiskFileProtocol* const protocol_ptr = protocol.get();
   if (!file_system->Register(std::move(protocol), std::string(protocol_name))) {
     return absl::InvalidArgumentError(absl::StrCat(

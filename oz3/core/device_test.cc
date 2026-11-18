@@ -18,6 +18,7 @@
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/cpu_core.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/fake_device.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
@@ -126,6 +127,18 @@ TEST(DeviceTest, FactoryRejectsAContextWithoutWhatTheDeviceRequires) {
   EXPECT_EQ(factory.CreateDevice(validated), nullptr);
   context.SetValue<int>(1);
   EXPECT_NE(factory.CreateDevice(validated), nullptr);
+}
+
+TEST(DeviceTest, ContextHasTheLocalHostClockByDefault) {
+  Processor processor(
+      ProcessorConfig().AddDevice(std::make_shared<FakeDeviceFactory>(
+          DeviceConfig{.name = "Fake"},
+          std::vector<gb::ContextConstraint>{kConstraintHostClock})));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  ASSERT_NE(device, nullptr);
+  HostClock* clock = device->GetContext().GetPtr<HostClock>();
+  ASSERT_NE(clock, nullptr);
+  EXPECT_TRUE(*clock);
 }
 
 TEST(DeviceTest, ContextIsEmptyByDefault) {

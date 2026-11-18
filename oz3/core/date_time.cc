@@ -5,7 +5,16 @@
 
 #include "oz3/core/date_time.h"
 
+#include "absl/log/check.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include "gb/base/local_time.h"
+
 namespace oz3 {
+
+absl::CivilSecond GetLocalHostTime() {
+  return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone());
+}
 
 namespace {
 
@@ -26,12 +35,15 @@ DateTime DateTime::FromCivil(absl::CivilSecond time) {
 
 DateTime DateTime::FromWords(const Words& words) { return DateTime(words); }
 
+DateTime DateTime::FromHostClock(const HostClock& clock) {
+  return clock ? FromCivil(clock()) : DateTime();
+}
+
 DateTime DateTime::FromHostClock(const gb::ValidatedContext& context) {
-  HostClock* const clock = context.GetPtr<HostClock>();
-  if (clock == nullptr || *clock == nullptr) {
-    return DateTime();
-  }
-  return FromCivil((*clock)());
+  // Validation gives the context the default clock if it had none.
+  const HostClock* const clock = context.GetPtr<HostClock>();
+  DCHECK(clock != nullptr);
+  return FromHostClock(*clock);
 }
 
 std::optional<absl::CivilSecond> DateTime::ToCivil() const {

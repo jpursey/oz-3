@@ -107,14 +107,22 @@ TEST(DateTimeTest, FromHostClockCallsTheClock) {
   EXPECT_EQ(calls, 2);
 }
 
-TEST(DateTimeTest, FromHostClockWithoutAClockIsNoDate) {
+TEST(DateTimeTest, FromHostClockIsTheLocalTimeByDefault) {
   gb::Context context;
   const gb::ValidatedContext validated(&context, {kConstraintHostClock});
   ASSERT_TRUE(validated.IsValid());
-  EXPECT_EQ(DateTime::FromHostClock(validated), DateTime());
+  const DateTime before = DateTime::FromCivil(GetLocalHostTime());
+  const DateTime now = DateTime::FromHostClock(validated);
+  const DateTime after = DateTime::FromCivil(GetLocalHostTime());
+  EXPECT_LE(before, now);
+  EXPECT_LE(now, after);
+}
 
-  // A clock that is set, but empty, is none too.
+TEST(DateTimeTest, FromHostClockWithAnEmptyClockIsNoDate) {
+  gb::Context context;
   context.SetValue<HostClock>(HostClock());
+  const gb::ValidatedContext validated(&context, {kConstraintHostClock});
+  ASSERT_TRUE(validated.IsValid());
   EXPECT_EQ(DateTime::FromHostClock(validated), DateTime());
 }
 
