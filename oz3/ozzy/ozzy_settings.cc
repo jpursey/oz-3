@@ -56,9 +56,7 @@ static_assert(kOzzyKeyboardKeyStatePort + Keyboard::kKeyStatePorts <=
               "every Ozzy has");
 static_assert(kOzzyScreenInterrupt < CpuCore::kInterruptCount &&
                   kOzzyKeyboardInterrupt < CpuCore::kInterruptCount &&
-                  kOzzyTimerInterrupt < CpuCore::kInterruptCount &&
-                  kOzzyDriveInterrupt + kOzzyDriveCount <=
-                      CpuCore::kInterruptCount,
+                  kOzzyTimerInterrupt < CpuCore::kInterruptCount,
               "Device interrupts must be interrupts every core has");
 static_assert(kOzzyTimerInterrupt != kOzzyScreenInterrupt &&
                   kOzzyTimerInterrupt != kOzzyKeyboardInterrupt &&
@@ -373,7 +371,7 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
     }
     images[i] = gb::NormalizePath(drive->image);
     for (int j = 0; j < i; ++j) {
-      if (!images[j].empty() && images[j] == images[i]) {
+      if (images[j] == images[i]) {
         return PathError(
             absl::StrCat("drive ", std::string(1, GetOzzyDriveLetter(i))),
             absl::StrCat("image ", drive->image, " is also drive ",

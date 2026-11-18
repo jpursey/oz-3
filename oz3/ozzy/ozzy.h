@@ -129,6 +129,9 @@ class Ozzy final {
 
   explicit Ozzy(std::unique_ptr<Processor> processor);
 
+  // Returns a clock for a device that calls clock_, or none if there is none.
+  Clock GetDeviceClock();
+
   // The host's clock, which the timer and the drives call. It is before the
   // processor, so it outlives the drives, which call it as they are destroyed.
   Clock clock_;

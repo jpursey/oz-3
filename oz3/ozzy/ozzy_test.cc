@@ -55,9 +55,12 @@ using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 
-// Returns an Ozzy for `settings`, failing the test if it can't be created.
-std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings) {
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+// Returns an Ozzy for `settings`, with any images in `file_system`, failing
+// the test if it can't be created.
+std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
+                                 gb::FileSystem* file_system = nullptr) {
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, file_system);
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
@@ -303,7 +306,7 @@ TEST(OzzyTest, NoDevicesMachineTable) {
 // The sectors of the images the tests make: a 360K floppy's.
 constexpr int kSectors = 720;
 
-// Returns `count` words of `ozzy`'s machine table device entry `device`.
+// Returns the words of `ozzy`'s machine table device entry `device`.
 std::vector<uint16_t> GetDeviceEntry(Ozzy& ozzy, int device) {
   return GetTableWords(ozzy, kMachineTableDevices + device * kMachineDeviceSize,
                        kMachineDeviceSize);
@@ -326,17 +329,6 @@ class OzzyDriveTest : public ::testing::Test {
     file_system.AttachImage(*std::move(image));
     EXPECT_EQ(file_system.Format(*DiskLabel::Parse("WORK"), 0, DateTime()),
               DiskStatus::kOk);
-  }
-
-  // Returns an Ozzy for `settings` with its images in host_, failing the test
-  // if it can't be created.
-  std::unique_ptr<Ozzy> CreateDriveOzzy(const OzzySettings& settings) {
-    absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
-    EXPECT_TRUE(ozzy.ok()) << ozzy.status();
-    if (!ozzy.ok()) {
-      return nullptr;
-    }
-    return std::move(*ozzy);
   }
 
   // Returns the root's entry for `name` on the image at `path`, and its
@@ -439,7 +431,7 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
   settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
   settings.drives[1] = OzzyDriveSettings();
   settings.drives[3] = OzzyDriveSettings{.image = "mem:/d.ozd"};
-  std::unique_ptr<Ozzy> ozzy = CreateDriveOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, &host_);
   ASSERT_NE(ozzy, nullptr);
 
   // Each control port shows whether its drive has a disk once it has read the
@@ -648,36 +640,51 @@ constexpr std::string_view kWriteLogProgram = R"---(
     .SEGMENT stack STACK
 )---";
 
+// Assembles `text` in the default instruction set, adding a test failure for
+// each error, loads it into `ozzy`, and resets core 0 to run it. Returns
+// whether it did.
+bool LoadOnCore0(Ozzy& ozzy, std::string_view text) {
+  InstructionError error;
+  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
+      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
+  if (syntax == nullptr) {
+    ADD_FAILURE() << error.message;
+    return false;
+  }
+  std::vector<gb::ParseError> errors;
+  std::unique_ptr<AsmProgram> program =
+      AssembleProgram(*syntax, std::string(text), &errors);
+  for (const gb::ParseError& parse_error : errors) {
+    ADD_FAILURE() << parse_error.FormatMessage();
+  }
+  if (program == nullptr) {
+    return false;
+  }
+  ProgramLoader loader(ozzy.GetProcessor());
+  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
+  if (handle == ProgramLoader::kInvalidHandle) {
+    ADD_FAILURE() << "The program doesn't load";
+    return false;
+  }
+  CpuCore* core = ozzy.GetProcessor()->GetCore(0);
+  std::unique_ptr<Lock> lock = core->RequestLock();
+  EXPECT_TRUE(lock->IsLocked());
+  core->Reset(*lock, loader.GetResetParams(handle));
+  return true;
+}
+
 TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
-  std::unique_ptr<Ozzy> ozzy = CreateDriveOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, &host_);
   ASSERT_NE(ozzy, nullptr);
   const absl::CivilSecond now(2026, 11, 18, 9, 30, 15);
   ozzy->SetClock([now] { return now; });
 
   // The program runs on core 0 in place of the boot ROM.
-  InstructionError error;
-  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
-      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
-  ASSERT_NE(syntax, nullptr) << error.message;
-  std::vector<gb::ParseError> errors;
-  std::unique_ptr<AsmProgram> program =
-      AssembleProgram(*syntax, std::string(kWriteLogProgram), &errors);
-  for (const gb::ParseError& parse_error : errors) {
-    ADD_FAILURE() << parse_error.FormatMessage();
-  }
-  ASSERT_NE(program, nullptr);
-  ProgramLoader loader(ozzy->GetProcessor());
-  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
-  ASSERT_NE(handle, ProgramLoader::kInvalidHandle);
+  ASSERT_TRUE(LoadOnCore0(*ozzy, kWriteLogProgram));
   CpuCore* core = ozzy->GetProcessor()->GetCore(0);
-  {
-    std::unique_ptr<Lock> lock = core->RequestLock();
-    ASSERT_TRUE(lock->IsLocked());
-    core->Reset(*lock, loader.GetResetParams(handle));
-  }
   for (int step = 0; step < 10'000 && core->GetState() != CpuCore::State::kIdle;
        ++step) {
     ozzy->Run(absl::Milliseconds(1));

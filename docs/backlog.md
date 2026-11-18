@@ -125,6 +125,25 @@ rest of the frontend is. Ejecting is a floppy pulled, as `DiskDrive` has it:
 what the file system hadn't committed is lost, and the OS commits with `CLOSE`
 and `FLUSH`.
 
+## Host clock in the processor
+
+- **Layers:** core, devices, ozzy
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `Ozzy::SetClock` in `oz3/ozzy/ozzy.cc`, and `SetClock` in
+  `oz3/devices/timer.h` and `oz3/devices/disk_drive.h`
+
+The timer and the disk drive each take the host's date and time as their own
+`Clock` (the same `absl::AnyInvocable<absl::CivilSecond()>`), and each turns
+it into a `DateTime` the same way, giving zeros without one. `Ozzy::SetClock`
+gives one clock to all of them, but a host can still set a device's own, and
+every new device that needs a date is another case there. The date and time
+are the machine's: a `Processor::SetClock`, with the `Clock` type in
+`core/date_time.h`, and a protected `Device::GetDateTime()` beside
+`GetClockHz()`, would let the devices drop their own clocks, and
+`Ozzy::SetClock` become one call or go.
+
 ## Kitty keyboard protocol
 
 - **Layers:** ozzy, wiki

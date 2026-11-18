@@ -123,10 +123,12 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
       entries[kMachineDeviceData] =
           static_cast<uint16_t>(settings.timer->tick_hz);
     } else {
+      // Every device but the drives was named above.
       const int drive =
           static_cast<int>(absl::c_find(Ozzy::kDriveNames, device_config.name) -
                            Ozzy::kDriveNames.begin());
-      DCHECK_LT(drive, kOzzyDriveCount);
+      CHECK_LT(drive, kOzzyDriveCount)
+          << "No machine table entry for " << device_config.name;
       WriteDeviceEntry(MachineDeviceType::kDrive, device_config, settings.cores,
                        entries);
       entries[kMachineDeviceData] =
@@ -326,20 +328,23 @@ DiskDrive* Ozzy::GetDrive(char letter) {
 
 void Ozzy::SetClock(Clock clock) {
   clock_ = std::move(clock);
-
-  // Each device is given a clock only when there is one, as a device with
-  // none gives no date.
-  const bool has_clock = static_cast<bool>(clock_);
   if (timer_ != nullptr) {
-    timer_->SetClock(has_clock ? Timer::Clock([this] { return clock_(); })
-                               : nullptr);
+    timer_->SetClock(GetDeviceClock());
   }
   for (DiskDrive* drive : drives_) {
     if (drive != nullptr) {
-      drive->SetClock(has_clock ? DiskDrive::Clock([this] { return clock_(); })
-                                : nullptr);
+      drive->SetClock(GetDeviceClock());
     }
   }
+}
+
+Ozzy::Clock Ozzy::GetDeviceClock() {
+  // A device is given a clock only when there is one, as a device with none
+  // gives no date.
+  if (!clock_) {
+    return nullptr;
+  }
+  return [this] { return clock_(); };
 }
 
 Cycles Ozzy::Run(absl::Duration time) {
