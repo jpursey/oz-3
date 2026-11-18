@@ -8,11 +8,13 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/configs/console_config.h"
@@ -435,6 +437,163 @@ TEST(OzzySettingsTest, ScreenPage) {
                       "'keyboard' }, { type: 'teletype' }]"),
             "ok");
   EXPECT_EQ(ReadError("banks: [{ ram: 0x7FFE }, { ram: 0xFFFF }]"), "ok");
+}
+
+//==============================================================================
+// Drives
+//==============================================================================
+
+TEST(OzzySettingsTest, NoDrives) {
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings("drives: []");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  EXPECT_THAT(settings->drives, IsEmpty());
+}
+
+TEST(OzzySettingsTest, ReadsDrives) {
+  // Drives are lettered in order, so the first is A:.
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(R"(
+    drives: [
+      { preset: "floppy-720k" },
+      {
+        preset: "hd-20m",
+        read_cache_sectors: 8,
+        read_words_per_sec: 1000,
+        write_words_per_sec: 2000,
+        cache_words_per_sec: 3000,
+        latency_ms: 30,
+        slots: 16,
+        image: "disks/work.ozd"
+      }
+    ]
+  )");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  ASSERT_EQ(settings->drives.size(), 2);
+  EXPECT_EQ(settings->drives[0],
+            (OzzyDriveSettings{
+                .hardware = GetDiskDrivePreset(DiskDrivePreset::kFloppy720k)}));
+  EXPECT_EQ(settings->drives[1],
+            (OzzyDriveSettings{.slots = 16,
+                               .hardware = {.read_cache_sectors = 8,
+                                            .read_words_per_sec = 1000,
+                                            .write_words_per_sec = 2000,
+                                            .cache_words_per_sec = 3000,
+                                            .latency = absl::Milliseconds(30)},
+                               .image = "disks/work.ozd"}));
+}
+
+TEST(OzzySettingsTest, DrivePresets) {
+  const std::pair<std::string_view, DiskDrivePreset> kPresets[] = {
+      {"floppy-360k", DiskDrivePreset::kFloppy360k},
+      {"floppy-720k", DiskDrivePreset::kFloppy720k},
+      {"floppy-1440k", DiskDrivePreset::kFloppy1440k},
+      {"hd-10m", DiskDrivePreset::kHardDisk10m},
+      {"hd-20m", DiskDrivePreset::kHardDisk20m},
+      {"hd-40m", DiskDrivePreset::kHardDisk40m},
+  };
+  for (const auto& [name, preset] : kPresets) {
+    absl::StatusOr<OzzySettings> settings =
+        ReadOzzySettings(absl::StrCat("drives: [{ preset: '", name, "' }]"));
+    ASSERT_TRUE(settings.ok()) << settings.status();
+    ASSERT_EQ(settings->drives.size(), 1);
+    EXPECT_EQ(settings->drives[0].hardware, GetDiskDrivePreset(preset)) << name;
+  }
+}
+
+TEST(OzzySettingsTest, DriveSettingsChangeThePresetInAnyOrder) {
+  // A map has no order, so a setting before the preset still changes it.
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(
+      "drives: [{ latency_ms: 30, preset: 'hd-20m', read_cache_sectors: 0 }]");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  ASSERT_EQ(settings->drives.size(), 1);
+  DiskHardwareSettings expected =
+      GetDiskDrivePreset(DiskDrivePreset::kHardDisk20m);
+  expected.latency = absl::Milliseconds(30);
+  expected.read_cache_sectors = 0;
+  EXPECT_EQ(settings->drives[0].hardware, expected);
+}
+
+TEST(OzzySettingsTest, ImagesAreFromTheConfigsFolder) {
+  constexpr std::string_view kText = R"(
+    drives: [
+      { preset: "floppy-1440k", image: "disks/a.ozd" },
+      { preset: "floppy-1440k", image: "/abs/b.ozd" },
+      { preset: "floppy-1440k", image: "../other\\c.ozd" },
+      { preset: "floppy-1440k", image: "c:/d.ozd" },
+    ]
+  )";
+  absl::StatusOr<OzzySettings> settings =
+      ReadOzzySettings(std::string(kText), "configs/work.ozzy");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  ASSERT_EQ(settings->drives.size(), 4);
+  EXPECT_EQ(settings->drives[0].image, "configs/disks/a.ozd");
+  EXPECT_EQ(settings->drives[1].image, "/abs/b.ozd");
+  EXPECT_EQ(settings->drives[2].image, "other/c.ozd");
+  EXPECT_EQ(settings->drives[3].image, "c:/d.ozd");
+
+  // In an absolute folder, with a protocol (as a Windows drive is).
+  settings = ReadOzzySettings(std::string(kText), "C:\\ozzy\\work.ozzy");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  EXPECT_EQ(settings->drives[0].image, "c:/ozzy/disks/a.ozd");
+  EXPECT_EQ(settings->drives[1].image, "/abs/b.ozd");
+  EXPECT_EQ(settings->drives[2].image, "c:/other/c.ozd");
+  EXPECT_EQ(settings->drives[3].image, "c:/d.ozd");
+}
+
+TEST(OzzySettingsTest, ImagesWithNoFolderStayRelative) {
+  constexpr std::string_view kText =
+      "drives: [{ preset: 'floppy-1440k', image: 'disks/./a.ozd' }]";
+  for (std::string_view path : {"", "work.ozzy"}) {
+    absl::StatusOr<OzzySettings> settings =
+        ReadOzzySettings(std::string(kText), path);
+    ASSERT_TRUE(settings.ok()) << settings.status();
+    ASSERT_EQ(settings->drives.size(), 1);
+    EXPECT_EQ(settings->drives[0].image, "disks/a.ozd") << path;
+  }
+}
+
+TEST(OzzySettingsTest, DriveErrors) {
+  EXPECT_THAT(ReadError("drives: [{ preset: 'floppy-1440k' }, {}]"),
+              EndsWith("drives[1]: missing preset"));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'floppy-1.44m' }]"),
+              EndsWith("drives[0].preset: must be \"floppy-360k\", "
+                       "\"floppy-720k\", \"floppy-1440k\", \"hd-10m\", "
+                       "\"hd-20m\", or \"hd-40m\""));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', letter: 'A' }]"),
+              EndsWith("drives[0].letter: unknown key"));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', image: '' }]"),
+              EndsWith("drives[0].image: must be a path"));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', image: 5 }]"),
+              EndsWith("drives[0].image: must be a string"));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', latency_ms: 'a' }]"),
+              EndsWith("drives[0].latency_ms: must be an int"));
+  EXPECT_THAT(ReadError("drives: [{ preset: 'hd-10m', slots: 1.5 }]"),
+              EndsWith("drives[0].slots: must be an int"));
+  EXPECT_THAT(ReadError("drives: ['floppy-1440k']"),
+              EndsWith("drives[0]: must be a map"));
+  EXPECT_THAT(ReadError("drives: { preset: 'hd-10m' }"),
+              EndsWith("drives: must be an array"));
+}
+
+TEST(OzzySettingsTest, AtMostFourDrives) {
+  constexpr std::string_view kDrive = "{ preset: 'floppy-1440k' },";
+  EXPECT_EQ(
+      ReadError(absl::StrCat("drives: [", kDrive, kDrive, kDrive, kDrive, "]")),
+      "ok");
+  EXPECT_THAT(ReadError(absl::StrCat("drives: [", kDrive, kDrive, kDrive,
+                                     kDrive, kDrive, "]")),
+              EndsWith("drives: must have 0 to 4 values"));
+}
+
+TEST(OzzySettingsTest, ReadDrivesAreValidated) {
+  // One image in two drives is the Ozzy's own rule, so it has no line.
+  EXPECT_EQ(ReadError(R"(drives: [
+                           { preset: 'hd-10m', image: 'a.ozd' },
+                           { preset: 'hd-10m', image: './a.ozd' }
+                         ])"),
+            "drive B: image a.ozd is also drive A's");
+
+  // The drive checks its own settings' ranges, as the Ozzy is created.
+  EXPECT_EQ(ReadError("drives: [{ preset: 'hd-10m', slots: 0 }]"), "ok");
 }
 
 //==============================================================================

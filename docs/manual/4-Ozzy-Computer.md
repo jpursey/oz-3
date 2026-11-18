@@ -21,6 +21,10 @@ devices: [
   { type: "screen", columns: 80, rows: 24 },
   { type: "keyboard" },
   { type: "timer", tick_hz: 60 }
+],
+drives: [
+  { preset: "floppy-1440k", image: "disks/system.ozd" },  // A:
+  { preset: "hd-20m", image: "disks/work.ozd" }           // B:
 ]
 ```
 
@@ -33,6 +37,7 @@ The format is like JSON, without the braces around the whole file: keys needn't 
 | `ports`    | 48        | The ports: 32 to 256. Ports 0 to 31 are for devices.       |
 | `banks`    | one bank  | The memory banks, 1 to 16 of them (see below)              |
 | `devices`  | see below | The devices, each a map with a `type` and its own settings |
+| `drives`   | none      | The disk drives, `A:` first, up to 4 (see below)           |
 
 #### Banks
 
@@ -67,6 +72,36 @@ So with a screen, page 15 of bank 0 must not be RAM.
 
 A device's other keys are its settings, with the names, defaults, and ranges its own page gives: see [Screen](3.3-Screen.md#wiring-and-settings), [Teletype](3.1-Teletype.md#wiring-and-settings), and [Timer](3.4-Timer.md#wiring-and-settings). The keyboard has no settings, so it is only `{ type: "keyboard" }`. A timer's `tick_hz` is at most 65535, as the machine table holds it in a word, and at most `clock_hz`, as the timer ticks at most once a cycle. So an Ozzy slower than 60 Hz needs a slower timer than the default, or none.
 
+#### Drives
+
+`drives` is a list of the Ozzy's disk drives, lettered in order: the first is `A:`, the next `B:`, and so on, up to `D:`. They are a list of their own, as they are the one device an Ozzy has several of, and their order names them. A drive with no disk keeps its place, so an Ozzy whose only disk is in `B:` has an empty `A:` before it. There are no drives by default.
+
+Each drive is a map of its settings, which are the [Disk Drive](3.5-Disk-Drive.md#wiring-and-settings)'s:
+
+| Key                   | Default | What                                                                                |
+| --------------------- | ------- | ----------------------------------------------------------------------------------- |
+| `preset`              | none    | The drive's timing preset (below), which every drive names                         |
+| `read_cache_sectors`  | Preset  | Sectors in the drive's read cache, or 0 for none                                    |
+| `read_words_per_sec`  | Preset  | Words a second read from the disk                                                   |
+| `write_words_per_sec` | Preset  | Words a second written to the disk                                                  |
+| `cache_words_per_sec` | Preset  | Words a second copied out of the read cache                                         |
+| `latency_ms`          | Preset  | Milliseconds for a seek, at most 60,000                                             |
+| `slots`               | 4       | How many files can be open at once: 1 to 255                                        |
+| `image`               | none    | The disk image in the drive at power on, or none for an empty drive                 |
+
+The preset is the drive's kind, and the keys after it change what it gives, in any order, so `{ preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek. The presets are the Disk Drive's [timing presets](3.5-Disk-Drive.md#timing-presets):
+
+| Preset         | Approximates                            |
+| -------------- | --------------------------------------- |
+| `floppy-360k`  | 5¼″ 360 KB double-density floppy (1981) |
+| `floppy-720k`  | 3½″ 720 KB double-density floppy (1986) |
+| `floppy-1440k` | 3½″ 1.44 MB high-density floppy (1987)  |
+| `hd-10m`       | 10 MB hard disk, PC/XT class (1983)     |
+| `hd-20m`       | 20 MB hard disk (1984)                  |
+| `hd-40m`       | 40 MB hard disk, AT class (1986)        |
+
+An image is a host file, made with [`oz3dsk`](3.5-Disk-Drive.md#oz3dsk), whose path is written the host's way. A relative path is from the config file's folder, so a config and its disks move together. Two drives can't have the same image, and while an Ozzy runs, nothing else may change its images (see [Disks coming and going](3.5-Disk-Drive.md#disks-coming-and-going)). A read-only image is a write-protected disk.
+
 #### Errors
 
 A config file with an error doesn't make an Ozzy. An unknown key, a value of the wrong type, and a value out of range are all errors, so a typo never goes unnoticed. Each error names the file, the line and column of the value it is about, and its setting, by its keys and list indexes:
@@ -74,6 +109,7 @@ A config file with an error doesn't make an Ozzy. An unknown key, a value of the
 ```
 hello.ozzy(12:5): devices[1].port: unknown key
 hello.ozzy(2:8): cores: must be an int
+hello.ozzy(15:3): drives[1]: missing preset
 ```
 
 The Ozzy's own rules are checked once the whole file is read, so their errors name the file and the setting, but not a line:
@@ -82,9 +118,10 @@ The Ozzy's own rules are checked once the whole file is read, so their errors na
 hello.ozzy: banks[0]: RAM can't be on the boot ROM's page
 hello.ozzy: screen: page 15 of bank 0 is RAM
 hello.ozzy: timer: tick_hz must be at most 65535
+hello.ozzy: drive B: image disks/a.ozd is also drive A's
 ```
 
-A device's settings that don't fit together (such as a screen of more than 4080 cells) are errors naming the device: `Screen`, `Teletype`, or `Timer`.
+A device's settings that don't fit together (such as a screen of more than 4080 cells) are errors naming the device: `Screen`, `Teletype`, `Timer`, or a drive's letter, as in `Disk drive A: has 0 slots, but it must have 1 to 255`. So is an image that doesn't open: `Drive A: Disk image disks/system.ozd doesn't exist`.
 
 ### Memory
 
@@ -217,5 +254,6 @@ It runs at the Ozzy's clock rate, or with `--max-speed`, as fast as the host can
 * **The screen** is drawn as text, in place of what the console showed, which is back once `ozzy` quits. Each character is drawn as the Unicode character closest to its glyph, with the inverse, half intensity, blink, and top and bottom line attributes, and the cursor in its place, shape, and blinking. Text can't show the left and right lines, redefined glyphs, the alternate character set, or compact rows, so those are left out. The console needs to be at least as large as the screen: while it is smaller, it says how large it needs to be in place of the screen. A font with Unicode's sextants (such as Cascadia Mono) draws them.
 * **The teletype**, in an Ozzy without a screen, prints in the console as it comes, and its lines stay once `ozzy` quits, which ends the last line if the teletype left it unfinished. Control characters other than bell, backspace, tab, line feed, and carriage return are dropped. In an Ozzy with a screen, the teletype's output isn't shown.
 * **The keyboard** takes the console's keys, as typed keys, with the key events [Keyboard](3.2-Keyboard.md#key-events) lists, and as key state, each key held from its press to its release, by where it is on the keyboard (see [Key codes](3.2-Keyboard.md#key-codes)). Every key is typed, Ctrl+C too, but for the keys that quit, which are still in the key state. When the console loses focus, every key held is released, as the console doesn't see keys released elsewhere. A terminal sends only the characters typed, so there a character holds no Shift, and the key state is made up from each typed key: its key is where it is on a US keyboard (`!` is the 1 key), pressed and released at once, with the left Shift, Ctrl, and Alt its modifiers say. So a program sees each key pressed but never held, and a key held down pressed again as the terminal repeats it.
-* **The timer's date and time** are the host's, in its local time zone. They keep the host's time even when the Ozzy doesn't keep up with its clock rate, or runs with `--max-speed`, so then they drift from the timer's ticks and milliseconds.
+* **The drives** have the disks the config gives them from power on, and keep them until `ozzy` quits, when each drive writes back to its image what it hadn't yet, however `ozzy` quits short of a crash. Disks can't be changed while it runs. Meanwhile, nothing else may change their images, not even `oz3dsk`.
+* **The timer's date and time**, and the drives' file stamps, are the host's, in its local time zone. They keep the host's time even when the Ozzy doesn't keep up with its clock rate, or runs with `--max-speed`, so then they drift from the timer's ticks and milliseconds.
 * **Quitting** is Ctrl+Alt+Q, Ctrl+Break in the Windows console, or closing the console's window. AltGr is Ctrl+Alt, so where AltGr with Q types a character (such as @), it types it rather than quitting.

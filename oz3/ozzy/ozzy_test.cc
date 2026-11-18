@@ -19,6 +19,7 @@
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
+#include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
@@ -440,6 +441,19 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
   EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
   EXPECT_EQ(ozzy->GetDrive('B')->DetachImage(), nullptr);
   EXPECT_NE(ozzy->GetDrive('D')->DetachImage(), nullptr);
+}
+
+TEST_F(OzzyDriveTest, AConfigsImagesAreFromItsFolder) {
+  ASSERT_TRUE(
+      host_.CreateFolder("mem:/configs/disks", gb::FolderMode::kRecursive));
+  MakeImage("mem:/configs/disks/a.ozd");
+  absl::StatusOr<OzzySettings> settings = ReadOzzySettings(
+      "drives: [{ preset: 'floppy-1440k', image: 'disks/a.ozd' }]",
+      "mem:/configs/work.ozzy");
+  ASSERT_TRUE(settings.ok()) << settings.status();
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(*settings, &host_);
+  ASSERT_NE(ozzy, nullptr);
+  EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
 }
 
 TEST_F(OzzyDriveTest, MissingImage) {

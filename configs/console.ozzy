@@ -13,3 +13,10 @@ devices: [
   { type: "keyboard" }
   { type: "timer", tick_hz: 60 }  // Ticks a second
 ]
+
+// Drives A: to D:, in order, each with its timing preset and the disk image in
+// it at power on (relative to this file's folder), or none for an empty drive.
+// Make one with oz3dsk: `oz3dsk disks/system.ozd new 720K`, then `format`.
+// drives: [
+//   { preset: "floppy-1440k", image: "disks/system.ozd" }  // A:
+// ]
