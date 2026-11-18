@@ -199,7 +199,7 @@ The boot ROM's source is `oz3/ozzy/boot_rom.oza`, written for the [default instr
 
 ### Running Ozzy
 
-`ozzy` runs an Ozzy in the console, from its config file, or the default Ozzy without one:
+`ozzy` runs an Ozzy in the console (the Windows console, or a terminal on Linux and other POSIX systems), from its config file, or the default Ozzy without one:
 
 ```
 ozzy [--max-speed] [--stats] [config file]
@@ -211,6 +211,6 @@ It runs at the Ozzy's clock rate, or with `--max-speed`, as fast as the host can
 
 * **The screen** is drawn as text, in place of what the console showed, which is back once `ozzy` quits. Each character is drawn as the Unicode character closest to its glyph, with the inverse, half intensity, blink, and top and bottom line attributes, and the cursor in its place, shape, and blinking. Text can't show the left and right lines, redefined glyphs, the alternate character set, or compact rows, so those are left out. The console needs to be at least as large as the screen: while it is smaller, it says how large it needs to be in place of the screen. A font with Unicode's sextants (such as Cascadia Mono) draws them.
 * **The teletype**, in an Ozzy without a screen, prints in the console as it comes, and its lines stay once `ozzy` quits, which ends the last line if the teletype left it unfinished. Control characters other than bell, backspace, tab, line feed, and carriage return are dropped. In an Ozzy with a screen, the teletype's output isn't shown.
-* **The keyboard** takes the console's keys, as typed keys, with the key events [Keyboard](3.2-Keyboard.md#key-events) lists, and as key state, each key held from its press to its release, by where it is on the keyboard (see [Key codes](3.2-Keyboard.md#key-codes)). Every key is typed, Ctrl+C too, but for the keys that quit, which are still in the key state. When the console loses focus, every key held is released, as the console doesn't see keys released elsewhere.
+* **The keyboard** takes the console's keys, as typed keys, with the key events [Keyboard](3.2-Keyboard.md#key-events) lists, and as key state, each key held from its press to its release, by where it is on the keyboard (see [Key codes](3.2-Keyboard.md#key-codes)). Every key is typed, Ctrl+C too, but for the keys that quit, which are still in the key state. When the console loses focus, every key held is released, as the console doesn't see keys released elsewhere. A terminal sends only the characters typed, so there a character holds no Shift, and the key state is made up from each typed key: its key is where it is on a US keyboard (`!` is the 1 key), pressed and released at once, with the left Shift, Ctrl, and Alt its modifiers say. So a program sees each key pressed but never held, and a key held down pressed again as the terminal repeats it.
 * **The timer's date and time** are the host's, in its local time zone. They keep the host's time even when the Ozzy doesn't keep up with its clock rate, or runs with `--max-speed`, so then they drift from the timer's ticks and milliseconds.
-* **Quitting** is Ctrl+Alt+Q, Ctrl+Break, or closing the console's window. AltGr is Ctrl+Alt, so where AltGr with Q types a character (such as @), it types it rather than quitting.
+* **Quitting** is Ctrl+Alt+Q, Ctrl+Break in the Windows console, or closing the console's window. AltGr is Ctrl+Alt, so where AltGr with Q types a character (such as @), it types it rather than quitting.
