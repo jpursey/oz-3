@@ -870,9 +870,10 @@ TEST_F(DiskToolTest, PutAndGetKeepAttributes) {
 TEST_F(DiskToolTest, GetFailsWithNoFile) {
   NewFormatted();
   PutFile("A.TXT", "a");
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
   for (std::string_view name :
        {"NOPE", "*.TXT", "bad name", "./A.TXT", "/A.TXT", "X/../A.TXT"}) {
-    for (std::string_view host_path : {"mem:/out.bin", ""}) {
+    for (std::string_view host_path : {"mem:/out.bin", "", "mem:/out"}) {
       absl::Status status = tool_->Get(kImagePath, name, host_path, false);
       EXPECT_EQ(status.code(), absl::StatusCode::kNotFound) << name;
       EXPECT_EQ(status.message(),
@@ -928,12 +929,40 @@ TEST_F(DiskToolTest, GetFailsWhenItsAttributesCantBeSet) {
   EXPECT_EQ(ReadHost("fixed:/out.txt"), "hi");
 }
 
-TEST_F(DiskToolTest, GetFailsOntoAHostFolder) {
+TEST_F(DiskToolTest, GetIntoAHostFolderUsesTheDisksName) {
   NewFormatted();
-  PutFile("HELLO.TXT", "new");
+  PutFile("HELLO.TXT", "hi");
   ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  for (std::string_view folder : {"mem:/out", "mem:/out/"}) {
+    absl::Status status = tool_->Get(kImagePath, "hello.txt", folder, false);
+    ASSERT_TRUE(status.ok()) << folder << ": " << status;
+    EXPECT_EQ(ReadHost("mem:/out/HELLO.TXT"), "hi") << folder;
+    ASSERT_TRUE(file_system_.DeleteFile("mem:/out/HELLO.TXT"));
+  }
+}
+
+TEST_F(DiskToolTest, GetIntoAHostFolderKeepsTextAndAttributes) {
+  NewFormatted();
+  WriteHost("mem:/in.txt", "odd");
+  ASSERT_TRUE(tool_->Put(kImagePath, "mem:/in.txt", "HELLO.TXT", true).ok());
+  SetDiskAttributes("HELLO.TXT", gb::FileAttribute::kHidden);
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  absl::Status status = tool_->Get(kImagePath, "HELLO.TXT", "mem:/out", true);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_EQ(ReadHost("mem:/out/HELLO.TXT"), "odd");
+  EXPECT_EQ(file_system_.GetPathInfo("mem:/out/HELLO.TXT").attributes,
+            gb::FileAttributes(gb::FileAttribute::kHidden));
+  EXPECT_EQ(file_system_.GetPathInfo("mem:/out").attributes,
+            gb::FileAttributes());
+}
+
+TEST_F(DiskToolTest, GetIntoAHostFolderFailsOntoAFolderOfTheName) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "hi");
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out/HELLO.TXT"));
   EXPECT_EQ(tool_->Get(kImagePath, "HELLO.TXT", "mem:/out", false).message(),
-            "mem:/out: can't be written");
+            "mem:/out/HELLO.TXT: can't be written");
 }
 
 //==============================================================================

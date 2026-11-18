@@ -393,15 +393,18 @@ absl::Status DiskTool::Put(std::string_view image_path,
 
 absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
                            std::string_view host_path, bool text) {
-  // A name that doesn't parse fails to be found before anything is written,
-  // so it needs no host path.
-  std::string default_path;
-  if (host_path.empty()) {
+  // Without a host path, or with a folder, the host file is named as the disk
+  // names it. A name that doesn't parse fails to be found before anything is
+  // written, so it needs no host file.
+  std::string named_path;
+  if (host_path.empty() ||
+      file_system_->GetPathInfo(host_path).type == gb::PathType::kFolder) {
     if (const std::optional<DiskFilename> filename = DiskFilename::Parse(name);
         filename.has_value()) {
-      default_path = filename->ToString();
+      named_path =
+          gb::JoinPath(gb::NormalizePath(host_path), filename->ToString());
+      host_path = named_path;
     }
-    host_path = default_path;
   }
 
   std::string bytes;
