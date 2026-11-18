@@ -870,9 +870,10 @@ TEST_F(DiskToolTest, PutAndGetKeepAttributes) {
 TEST_F(DiskToolTest, GetFailsWithNoFile) {
   NewFormatted();
   PutFile("A.TXT", "a");
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
   for (std::string_view name :
        {"NOPE", "*.TXT", "bad name", "./A.TXT", "/A.TXT", "X/../A.TXT"}) {
-    for (std::string_view host_path : {"mem:/out.bin", ""}) {
+    for (std::string_view host_path : {"mem:/out.bin", "", "mem:/out"}) {
       absl::Status status = tool_->Get(kImagePath, name, host_path, false);
       EXPECT_EQ(status.code(), absl::StatusCode::kNotFound) << name;
       EXPECT_EQ(status.message(),
@@ -947,17 +948,6 @@ TEST_F(DiskToolTest, GetIntoAHostFolderFailsOntoAFolderOfTheName) {
   ASSERT_TRUE(file_system_.CreateFolder("mem:/out/HELLO.TXT"));
   EXPECT_EQ(tool_->Get(kImagePath, "HELLO.TXT", "mem:/out", false).message(),
             "mem:/out/HELLO.TXT: can't be written");
-}
-
-TEST_F(DiskToolTest, GetIntoAHostFolderFailsWithNoFile) {
-  NewFormatted();
-  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
-  for (std::string_view name : {"NOPE", "bad name"}) {
-    absl::Status status = tool_->Get(kImagePath, name, "mem:/out", false);
-    EXPECT_EQ(status.code(), absl::StatusCode::kNotFound) << name;
-    EXPECT_EQ(status.message(),
-              absl::StrCat("mem:/work.ozd: ", name, ": not found"));
-  }
 }
 
 TEST_F(DiskToolTest, GetOfAWindowsDeviceNameNeedsAHostFile) {

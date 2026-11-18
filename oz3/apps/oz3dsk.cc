@@ -85,6 +85,8 @@ const gb::CliValidator<std::string_view> kLabelValidator = {
 const gb::CliValidator<std::string_view> kAttributesValidator = {
     .validate = ValidateAttributes,
 };
+// Its constraints are those of gb::kCliFolderExists and gb::kCliFileWritable,
+// which it calls.
 const gb::CliValidator<std::string_view> kGetHostFileValidator = {
     .validate = ValidateGetHostFile,
     .constraints = {&gb::kConstraintCliFileSystem,

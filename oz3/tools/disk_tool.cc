@@ -422,9 +422,7 @@ absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
                          ": names a device on Windows, so it needs a host "
                          "file given"));
       }
-      named_path = host_path.empty()
-                       ? disk_name
-                       : gb::JoinPath(gb::NormalizePath(host_path), disk_name);
+      named_path = gb::JoinPath(gb::NormalizePath(host_path), disk_name);
       host_path = named_path;
     }
   }
