@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_factory.h"
@@ -28,7 +28,7 @@ namespace oz3 {
 //
 // Its Device interface is public, so a step (or the test) can use its ports,
 // pages, memory, and interrupts directly, and so is the context it was created
-// with.
+// with, which gives it what its factory's constraints declare.
 class FakeDevice final : public Device {
  public:
   //----------------------------------------------------------------------------
@@ -50,9 +50,9 @@ class FakeDevice final : public Device {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Constructs a device wired as `config`, with `context`, which may be null,
-  // and otherwise must outlive the device.
-  FakeDevice(DeviceConfig config, gb::Context* context);
+  // Constructs a device wired as `config`, with `context`, which may be
+  // invalid (as a default constructed one is).
+  FakeDevice(DeviceConfig config, gb::ValidatedContext context);
   ~FakeDevice() override = default;
 
   //----------------------------------------------------------------------------
@@ -87,9 +87,9 @@ class FakeDevice final : public Device {
   // Returns the cycles the device ran at, in order.
   const std::vector<Cycles>& GetRunCycles() const { return run_cycles_; }
 
-  // Returns the context the device was created with: its Processor's, when its
-  // factory created it.
-  gb::Context* GetContext() const { return context_; }
+  // Returns the context the device was created with: its Processor's, with
+  // its factory's constraints, when its factory created it.
+  gb::ValidatedContext& GetContext() { return context_; }
 
  protected:
   //----------------------------------------------------------------------------
@@ -99,7 +99,7 @@ class FakeDevice final : public Device {
   void Execute() override;
 
  private:
-  gb::Context* const context_;
+  gb::ValidatedContext context_;
   std::unique_ptr<FakeMemoryMap> memory_map_;
   Step step_ = [](FakeDevice&) { return Cycles{1}; };
   std::vector<Cycles> run_cycles_;
@@ -109,18 +109,22 @@ class FakeDevice final : public Device {
 // FakeDeviceFactory
 //==============================================================================
 
-// A factory for a FakeDevice with any name and wiring.
+// A factory for a FakeDevice with any name and wiring, which takes what
+// `constraints` declare from the processor's context.
 class FakeDeviceFactory final : public DeviceFactory {
  public:
-  explicit FakeDeviceFactory(DeviceConfig config);
+  explicit FakeDeviceFactory(
+      DeviceConfig config, std::vector<gb::ContextConstraint> constraints = {});
   ~FakeDeviceFactory() override = default;
 
   // DeviceFactory implementation.
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice(gb::Context* context) const override;
+  std::unique_ptr<Device> CreateDevice(
+      gb::ValidatedContext& context) const override;
 
  private:
   const DeviceConfig config_;
+  const std::vector<gb::ContextConstraint> constraints_;
 };
 
 // Returns the device named `name` in `processor`, which must be a FakeDevice,

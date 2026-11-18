@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "gb/base/validated_context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
@@ -156,7 +157,7 @@ TEST(ExecutionComponentTest, WakeNeverMovesCyclesBackward) {
 }
 
 TEST(ExecutionComponentTest, WakeWithoutProcessorDoesNothing) {
-  FakeDevice device(DeviceConfig{.name = "Fake"}, /*context=*/nullptr);
+  FakeDevice device(DeviceConfig{.name = "Fake"}, gb::ValidatedContext());
   device.Wake();
   EXPECT_EQ(device.GetCycles(), 0);
   EXPECT_EQ(device.GetDueCycle(), 0);

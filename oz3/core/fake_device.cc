@@ -14,8 +14,8 @@
 
 namespace oz3 {
 
-FakeDevice::FakeDevice(DeviceConfig config, gb::Context* context)
-    : Device(config), context_(context) {
+FakeDevice::FakeDevice(DeviceConfig config, gb::ValidatedContext context)
+    : Device(config), context_(std::move(context)) {
   if (config.memory.pages.page_count > 0) {
     memory_map_ =
         std::make_unique<FakeMemoryMap>(config.memory.pages.page_count);
@@ -35,12 +35,17 @@ void FakeDevice::Execute() {
   CHECK(GetDueCycle() > start) << "The step must advance its cycles or sleep";
 }
 
-FakeDeviceFactory::FakeDeviceFactory(DeviceConfig config)
-    : config_(std::move(config)) {}
+FakeDeviceFactory::FakeDeviceFactory(
+    DeviceConfig config, std::vector<gb::ContextConstraint> constraints)
+    : config_(std::move(config)), constraints_(std::move(constraints)) {}
 
 std::unique_ptr<Device> FakeDeviceFactory::CreateDevice(
-    gb::Context* context) const {
-  return std::make_unique<FakeDevice>(GetConfig(), context);
+    gb::ValidatedContext& context) const {
+  gb::ValidatedContext device_context(context, constraints_);
+  if (!device_context.IsValid()) {
+    return nullptr;
+  }
+  return std::make_unique<FakeDevice>(GetConfig(), std::move(device_context));
 }
 
 FakeDevice* GetFakeDevice(Processor& processor, std::string_view name) {

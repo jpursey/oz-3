@@ -64,7 +64,7 @@ KeyboardFactory::KeyboardFactory(std::string_view name,
     : config_(GetKeyboardConfig(name, settings)), settings_(settings) {}
 
 std::unique_ptr<Device> KeyboardFactory::CreateDevice(
-    gb::Context* /*context*/) const {
+    gb::ValidatedContext& /*context*/) const {
   return absl::WrapUnique(new Keyboard(config_, settings_));
 }
 

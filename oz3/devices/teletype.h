@@ -11,7 +11,7 @@
 #include <string_view>
 
 #include "absl/status/statusor.h"
-#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_config.h"
 #include "oz3/core/device_factory.h"
@@ -71,7 +71,8 @@ class TeletypeFactory final : public DeviceFactory {
   //----------------------------------------------------------------------------
 
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice(gb::Context* context) const override;
+  std::unique_ptr<Device> CreateDevice(
+      gb::ValidatedContext& context) const override;
 
  private:
   //----------------------------------------------------------------------------

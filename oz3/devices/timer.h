@@ -11,7 +11,6 @@
 #include <string_view>
 
 #include "absl/status/statusor.h"
-#include "gb/base/context.h"
 #include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
@@ -90,7 +89,8 @@ class TimerFactory final : public DeviceFactory {
   //----------------------------------------------------------------------------
 
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice(gb::Context* context) const override;
+  std::unique_ptr<Device> CreateDevice(
+      gb::ValidatedContext& context) const override;
 
  private:
   //----------------------------------------------------------------------------

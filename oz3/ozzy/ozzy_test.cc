@@ -18,6 +18,7 @@
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
@@ -58,11 +59,25 @@ using ::testing::HasSubstr;
 
 // Returns an Ozzy for `settings`, with any images in `file_system`, failing
 // the test if it can't be created.
+// Returns a host's context for an Ozzy, with `file_system` and `clock` if they
+// aren't null.
+gb::Context HostContext(gb::FileSystem* file_system,
+                        HostClock clock = nullptr) {
+  gb::Context context;
+  if (file_system != nullptr) {
+    context.SetPtr<gb::FileSystem>(file_system);
+  }
+  if (clock != nullptr) {
+    context.SetValue<HostClock>(std::move(clock));
+  }
+  return context;
+}
+
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
                                  gb::FileSystem* file_system = nullptr,
                                  HostClock clock = nullptr) {
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings, file_system, std::move(clock));
+      Ozzy::Create(settings, HostContext(file_system, std::move(clock)));
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
@@ -488,7 +503,8 @@ TEST_F(OzzyDriveTest, MissingImage) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {.image = "mem:/b.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, HostContext(&host_));
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kNotFound);
   EXPECT_EQ(ozzy.status().message(),
@@ -508,7 +524,8 @@ TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
 TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
   OzzySettings settings;
   settings.drives = {{}, {.slots = 0}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, HostContext(&host_));
   ASSERT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Disk drive B: has 0 slots"));
 }
@@ -517,7 +534,8 @@ TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/a.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, HostContext(&host_));
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().message(),
             "drive D: image mem:/a.ozd is also drive A's");
@@ -719,6 +737,13 @@ TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
 //==============================================================================
 // Errors
 //==============================================================================
+
+TEST(OzzyTest, NoContext) {
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), static_cast<gb::Context*>(nullptr));
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
+}
 
 TEST(OzzyTest, InvalidSettings) {
   OzzySettings settings;

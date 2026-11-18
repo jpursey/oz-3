@@ -41,7 +41,7 @@ TeletypeFactory::TeletypeFactory(std::string_view name,
       settings_(settings) {}
 
 std::unique_ptr<Device> TeletypeFactory::CreateDevice(
-    gb::Context* /*context*/) const {
+    gb::ValidatedContext& /*context*/) const {
   return absl::WrapUnique(new Teletype(config_, settings_));
 }
 

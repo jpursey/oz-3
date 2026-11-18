@@ -29,6 +29,7 @@
 #include "gb/file/file_system.h"
 #include "gb/file/path.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/ozzy/console.h"
@@ -217,15 +218,9 @@ bool Run(gb::ValidatedContext& context,
     settings->screen->draw_pixels = false;
   }
   // The drives write to their images as the Ozzy is destroyed, which is before
-  // the file system is.
-  //
-  // Programs see the date and time where the user is, and files are stamped
-  // with it. It is the host's time, so when the Ozzy can't keep up with its
-  // clock rate (or runs at max speed), it drifts from the timer's ticks and
-  // milliseconds.
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
-      *settings, file_system,
-      [] { return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone()); });
+  // the file system and the clock in the context are.
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(*settings, Ozzy::Contract(context));
   if (!ozzy.ok()) {
     writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
                                              ozzy.status().message()));
@@ -260,6 +255,13 @@ int main(int argc, char* argv[]) {
   const std::unique_ptr<gb::FileSystem> file_system = gb::CreateCliFileSystem();
   gb::Context context;
   context.SetPtr<gb::FileSystem>(file_system.get());
+
+  // Programs see the date and time where the user is, and files are stamped
+  // with it. It is the host's time, so when the Ozzy can't keep up with its
+  // clock rate (or runs at max speed), it drifts from the timer's ticks and
+  // milliseconds.
+  context.SetValue<oz3::HostClock>(
+      [] { return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone()); });
   return gb::RunCommandLine(&context, &oz3::kProgram,
                             gb::GetMainArgs(argc, argv));
 }

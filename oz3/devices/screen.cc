@@ -228,7 +228,7 @@ ScreenFactory::ScreenFactory(std::string_view name,
       settings_(settings) {}
 
 std::unique_ptr<Device> ScreenFactory::CreateDevice(
-    gb::Context* /*context*/) const {
+    gb::ValidatedContext& /*context*/) const {
   return absl::WrapUnique(new Screen(config_, settings_));
 }
 

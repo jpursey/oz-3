@@ -44,7 +44,8 @@ TimerFactory::TimerFactory(std::string_view name, const TimerSettings& settings)
                .interrupts = {settings.interrupt}}),
       settings_(settings) {}
 
-std::unique_ptr<Device> TimerFactory::CreateDevice(gb::Context* context) const {
+std::unique_ptr<Device> TimerFactory::CreateDevice(
+    gb::ValidatedContext& context) const {
   Timer::Contract contract(context);
   if (!contract.IsValid()) {
     return nullptr;

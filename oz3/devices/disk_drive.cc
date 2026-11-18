@@ -79,7 +79,7 @@ DiskDriveFactory::DiskDriveFactory(std::string_view name,
       settings_(settings) {}
 
 std::unique_ptr<Device> DiskDriveFactory::CreateDevice(
-    gb::Context* context) const {
+    gb::ValidatedContext& context) const {
   DiskDrive::Contract contract(context);
   if (!contract.IsValid()) {
     return nullptr;

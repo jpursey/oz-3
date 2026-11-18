@@ -12,9 +12,10 @@
 
 #include "absl/status/statusor.h"
 #include "absl/time/time.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "gb/file/file_system.h"
 #include "oz3/core/core_types.h"
-#include "oz3/core/date_time.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
@@ -37,6 +38,20 @@ namespace oz3 {
 class Ozzy final {
  public:
   //----------------------------------------------------------------------------
+  // Contract
+  //----------------------------------------------------------------------------
+
+  // The file system the drives' images are opened in, which only an Ozzy whose
+  // settings give a drive an image needs. It must outlive the Ozzy, as the
+  // drives write to their images as it is destroyed.
+  static GB_CONTEXT_CONSTRAINT(kConstraintFileSystem, kInOptional,
+                               gb::FileSystem);
+
+  // What the Ozzy takes from its context. The context is also its processor's,
+  // so it holds what the devices need from the host too (see Create).
+  using Contract = gb::ContextContract<kConstraintFileSystem>;
+
+  //----------------------------------------------------------------------------
   // Constants
   //----------------------------------------------------------------------------
 
@@ -54,25 +69,23 @@ class Ozzy final {
 
   // Creates an Ozzy from `settings`, powered on: core 0 is about to run the
   // boot ROM, the other cores are idle, and each drive has the image its
-  // settings give, opened in `file_system`. Returns an error if the settings
-  // are invalid (see ValidateOzzySettings), if a device or the processor
-  // rejects them, naming the device, or if an image doesn't open, naming its
-  // drive.
+  // settings give, opened in the context's file system. Returns an error if the
+  // context doesn't meet the contract, if the settings are invalid (see
+  // ValidateOzzySettings), if a device or the processor rejects them, naming
+  // the device, or if an image doesn't open, naming its drive.
   //
-  // `file_system` may be null if no drive has an image. Otherwise it must
-  // outlive the Ozzy, as the drives write to their images as it is destroyed.
-  //
-  // `clock` is the host's date and time, which the timer answers programs with
-  // and the drives stamp files with, or none for the timer to read zeros and
-  // the drives to stamp no date. The Ozzy has no clock of its own, so a host
-  // gives it one. The clock's date and time move with the host's time, while
-  // the timer's ticks and milliseconds move with the time given to Run, so the
-  // two only keep pace while the host runs the Ozzy in real time. The drives
-  // call it as the Ozzy is destroyed, so whatever it uses must outlive the
-  // Ozzy.
+  // The Ozzy keeps the context, and gives it to its processor, so it is also
+  // where the devices find the host's clock (kConstraintHostClock): the date
+  // and time the timer answers programs with and the drives stamp files with.
+  // Without one, the timer reads zeros and the drives stamp no date. The Ozzy
+  // has no clock of its own, so a host gives it one. The clock's date and time
+  // move with the host's time, while the timer's ticks and milliseconds move
+  // with the time given to Run, so the two only keep pace while the host runs
+  // the Ozzy in real time. The drives call it as the Ozzy is destroyed, so
+  // whatever it uses, and the context itself unless the contract owns it, must
+  // outlive the Ozzy.
   static absl::StatusOr<std::unique_ptr<Ozzy>> Create(
-      const OzzySettings& settings, gb::FileSystem* file_system = nullptr,
-      HostClock clock = nullptr);
+      const OzzySettings& settings, Contract contract = gb::Context());
 
   Ozzy(const Ozzy&) = delete;
   Ozzy& operator=(const Ozzy&) = delete;
@@ -115,8 +128,11 @@ class Ozzy final {
   // Implementation
   //----------------------------------------------------------------------------
 
-  explicit Ozzy(std::unique_ptr<Processor> processor);
+  Ozzy(gb::ValidatedContext context, std::unique_ptr<Processor> processor);
 
+  // The context is declared first, so it outlives the processor, which uses
+  // it.
+  gb::ValidatedContext context_;
   const std::unique_ptr<Processor> processor_;
   Screen* const screen_;
   Keyboard* const keyboard_;

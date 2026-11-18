@@ -17,7 +17,6 @@
 #include "absl/status/statusor.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
-#include "gb/base/context.h"
 #include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
@@ -147,7 +146,8 @@ class DiskDriveFactory final : public DeviceFactory {
   //----------------------------------------------------------------------------
 
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice(gb::Context* context) const override;
+  std::unique_ptr<Device> CreateDevice(
+      gb::ValidatedContext& context) const override;
 
  private:
   //----------------------------------------------------------------------------
