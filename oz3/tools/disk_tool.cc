@@ -123,20 +123,6 @@ std::string EntryName(const DiskDirEntry& entry) {
   return name.has_value() ? name->ToString() : "(bad name)";
 }
 
-// Returns whether Windows opens a file named `name`, a disk name as
-// DiskFilename::ToString writes it, as a device rather than a file, whatever
-// its extension and folder.
-bool IsWindowsDeviceName(std::string_view name) {
-  const std::string_view stem = name.substr(0, name.find('.'));
-  if (stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
-      stem == "CONIN$" || stem == "CONOUT$") {
-    return true;
-  }
-  return stem.size() == 4 &&
-         (stem.starts_with("COM") || stem.starts_with("LPT")) &&
-         absl::ascii_isdigit(stem[3]);
-}
-
 // Returns what is wrong with a file's chain, as a person reads it.
 std::string_view ChainProblemText(DiskCheckReport::ChainProblem problem) {
   switch (problem) {
@@ -415,14 +401,8 @@ absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
       file_system_->GetPathInfo(host_path).type == gb::PathType::kFolder) {
     if (const std::optional<DiskFilename> filename = DiskFilename::Parse(name);
         filename.has_value()) {
-      const std::string disk_name = filename->ToString();
-      if (IsWindowsDeviceName(disk_name)) {
-        return absl::InvalidArgumentError(
-            absl::StrCat(disk_name,
-                         ": names a device on Windows, so it needs a host "
-                         "file given"));
-      }
-      named_path = gb::JoinPath(gb::NormalizePath(host_path), disk_name);
+      named_path =
+          gb::JoinPath(gb::NormalizePath(host_path), filename->ToString());
       host_path = named_path;
     }
   }

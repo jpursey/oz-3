@@ -403,17 +403,15 @@ protected or full disk, or a broken one. Once Game Bits returns `absl::Status`,
 commands pass it on, as in "work.ozd: HELLO.TXT: read-only", with nothing
 worked out ahead of the call.
 
-## oz3dsk on Game Bits' path checks
+## oz3dsk get on Game Bits' folder or file
 
 - **Layers:** tools
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** Game Bits *Windows device names*, and Game Bits *Command
-  line folder or file*
+- **Depends on:** Game Bits *Command line folder or file*
 - **Background:** none
 
-`DiskTool::Get` keeps its own list of the names Windows opens as devices
-(`IsWindowsDeviceName` in `disk_tool.cc`), and oz3dsk's `get` host file has its
-own validator that accepts a folder or a writable file, repeating the
-constraints of the two Game Bits validators it calls. Once Game Bits has both,
-use them and drop the copies, keeping `get`'s behavior as the manual has it.
+oz3dsk's `get` host file has its own validator that accepts a folder or a
+writable file (`ValidateGetHostFile` in `oz3dsk.cc`), repeating the
+constraints of the two Game Bits validators it calls. Once Game Bits has one
+that does this, use it and drop the copy.

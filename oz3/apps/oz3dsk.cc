@@ -67,10 +67,8 @@ absl::Status ValidateAttributes(const gb::ValidatedContext& context,
 // get's host file is a folder to copy into, or a file that can be written.
 absl::Status ValidateGetHostFile(const gb::ValidatedContext& context,
                                  const std::string_view& value) {
-  // Only InvalidArgument is the user's mistake; any other is the program's.
-  const absl::Status folder = gb::kCliFolderExists.validate(context, value);
-  if (folder.ok() || !absl::IsInvalidArgument(folder)) {
-    return folder;
+  if (gb::kCliFolderExists.validate(context, value).ok()) {
+    return absl::OkStatus();
   }
   return gb::kCliFileWritable.validate(context, value);
 }
