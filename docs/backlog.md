@@ -91,25 +91,6 @@ the disk library's own list (`kPunctuation` in `disk_packed_text.cc`), so the
 two can drift. The disk library should give the list, or say why text isn't a
 label, for the message to use.
 
-## Ozzy drives
-
-- **Layers:** ozzy, apps, manual
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** *Disk drive device*, and *Disk tools* to make disks to try
-  by hand
-- **Background:** [disk_design.md](disk_design.md) (Ozzy);
-  [disk-drive-device.md](worklog/disk-drive-device.md) (Host interface)
-
-Drives `A:` to `D:` in the Ozzy: the wiring (ports 16 to 27, with the ports
-kept for devices growing to 0 to 31), `{ type: "drive" }` in configs with an
-image attached at power on, the machine table's type 5, `Ozzy::GetDrive`, the
-host clock, flushing at shutdown, and how the `ozzy` app changes disks while
-it runs. `DiskDrive` has no host `Flush`: detaching discards what the file
-system hadn't committed, as pulling a floppy would, and only destroying the
-drive writes it back. If the app should eject a disk cleanly, the drive gains
-a `Flush` (or a clean `DetachImage`) here.
-
 ## Ozzy OS
 
 - **Layers:** ozzy, manual
@@ -121,6 +102,28 @@ a `Flush` (or a clean `DetachImage`) here.
 The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
+
+## Changing disks in ozzy
+
+- **Layers:** ozzy, apps, manual
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** *Ozzy drives*
+- **Background:** [ozzy-drives.md](worklog/ozzy-drives.md);
+  [disk_design.md](disk_design.md) (Open questions)
+
+The `ozzy` app puts the config's disks in their drives at power on, and they
+stay there until it quits. Changing them while it runs needs the console
+frontend to pick a drive and an image, or none to eject. Two ways were
+considered: a key chord (such as Ctrl+Alt+D) that pauses the Ozzy and opens a
+prompt line on the console's bottom row (`A: disks/work.ozd`, or `A:` to
+eject), which takes any image; or a list of images for each drive in the
+config, with Ctrl+Alt+A to D stepping a drive through them and then empty,
+which needs no typing and suits the teletype's line mode. The prompt (or the
+list) belongs in the ozzy library, tested against a fake `Console`, as the
+rest of the frontend is. Ejecting is a floppy pulled, as `DiskDrive` has it:
+what the file system hadn't committed is lost, and the OS commits with `CLOSE`
+and `FLUSH`.
 
 ## Kitty keyboard protocol
 

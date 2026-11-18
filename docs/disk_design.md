@@ -632,24 +632,26 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 
 | Drive | Ports | Interrupt |
 | --- | --- | --- |
-| `A:` | 16–18 | 2, on every core |
-| `B:` | 19–21 | 3, on every core |
-| `C:` | 22–24 | 4, on every core |
-| `D:` | 25–27 | 5, on every core |
+| `A:` | 16–18 | 2, on core 0 |
+| `B:` | 19–21 | 3, on core 0 |
+| `C:` | 22–24 | 4, on core 0 |
+| `D:` | 25–27 | 5, on core 0 |
 
 - **Ports:** the existing devices keep their ports (the keyboard 1 and 6–15, the teletype 2, and the timer 3 and 4), and the ports kept for devices grow from 0–15 to 0–31. So `ports`' minimum rises from 16 to 32, and its default from 32 to 48, leaving programs the same 16 free ports by default. Ports 0, 5, and 28–31 are left for devices to come.
-- **Interrupts:** a completion is news for whichever core issued the command, normally the OS's, so the interrupt is on every core and not shared, and every core with a handler is told, as with the timer.
-- **Config:** each drive is `{ type: "drive", letter: "A", ... }`, and only `type` and `letter` are required. The rest are the drive's settings, each optional:
-  - `preset`: one of the timing presets (see Timing presets), `floppy-1440k` if left out. It gives the read rate, write rate, and latency.
-  - `read_rate`, `write_rate`, `cache_rate`, and `latency_ms`: each overrides what the preset gives, so `{ type: "drive", letter: "B", preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
-  - `slots` and `read_cache`, with the drive's defaults.
+- **Interrupts:** each is on core 0 alone, the OS's core, which owns the drives (see Owning the drive). A completion can be read only once, so on every core, a program's handler could take it from the OS. Another core can still use a drive by polling its control port.
+- **Config:** the drives are a list of their own, `drives`, beside `devices`, lettered in order from `A:`, at most 4. Each is a map of the drive's settings, and an empty drive (with no image) keeps a later drive's letter:
+  - `preset`: one of the timing presets (see Timing presets), which every drive names, so `{ preset: "floppy-1440k" }` is an empty floppy drive. It gives the read rate, write rate, latency, and read cache.
+  - `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`, `cache_words_per_sec`, and `latency_ms`, the names the manual's Disk Drive page gives the settings: each overrides what the preset gives, whatever order the keys are in, so `{ preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
+  - `slots`, with the drive's default. These and `image` are optional.
   - `image`: an image attached at power on, or none for an empty drive. The disk's size is the image's, so a preset's image size only matters to `oz3dsk new`.
 
-  A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't exist is a config error, as a typo would be, and so are two drives of one letter or one image. An Ozzy has at most one of each other device, but one drive per letter. There is no drive by default.
-- **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores, no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
-- **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. The Ozzy gives each drive the host's clock, as it gives the timer, and each drive writes back everything dirty as the Ozzy is destroyed.
-- **The `ozzy` app** attaches the config's images at power on. Changing disks while it runs needs the console frontend's help (see Open questions).
-- **Manual:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors.
+  A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't open is an error from creating the Ozzy, naming the drive, which the app prints as a config error, and more than 4 drives or two drives with one image are config errors. There is no drive by default.
+- **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores (0001h), no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
+- **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. `Ozzy::SetClock` gives the timer and every drive the host's clock, and each drive writes back everything dirty as the Ozzy is destroyed. `Ozzy::Create` takes the file system the images are opened in, which must outlive the Ozzy.
+- **The `ozzy` app** attaches the config's images at power on, and they stay in their drives until it quits. Changing disks while it runs is the backlog's *Changing disks in ozzy*. Ejecting there is a floppy pulled, as the drive has it, so the drive has no host `Flush`.
+- **Manual:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors, and the Disk Drive page's `latency` as `latency_ms`.
+
+[ozzy-drives.md](worklog/ozzy-drives.md) is the plan that builds this.
 
 ## Prerequisites
 
@@ -713,7 +715,7 @@ The loader opens the `.oz3` file, reads its header with `READ`, then reads each 
 - [ ] Whether a data-ready interrupt is worth adding later, so the OS can `WAIT` through sector loads instead of polling. It would need its own enable bit in the control port, to keep the interrupt's single meaning by default.
 - [ ] Subdirectory commands, such as opening a directory entry as a directory handle, when the directory bit becomes real. Commands that take a name (`OPEN`, `CREATE`, `DELETE`, `RENAME`, and `ATTRIB`) could resolve it against a current directory, with a directory handle or a path as an option, so version 1 commands keep working unchanged.
 - [ ] What the boot area holds, with the Ozzy OS and booting from a drive.
-- [ ] How the `ozzy` app changes disks while it runs: the console frontend has only its quit keys today, so it needs a way to pick a drive and an image (or none), such as a key chord and a prompt line. Settled in *Ozzy drives*, or a later item of its own.
+- [x] How the `ozzy` app changes disks while it runs: a later item of its own, the backlog's *Changing disks in ozzy*. *Ozzy drives* attaches the config's images at power on only.
 - [ ] Assembler addition: allow `SIZE(n)` anywhere in a `.DW` list, applying until the next `SIZE`, so a name field fits in one directive.
 - [ ] More file system buffers, if FAT thrashing shows up in practice: configurable counts of FAT and directory buffers, reused least recently used first. Several files growing at once in different FAT sectors currently force the single working FAT buffer to be written at each switch. Since the file system already orders its own writes, more buffers change nothing about correctness, only RAM.
 - [ ] A write-back mode for `DiskHardware`, as a performance feature. Write order only matters if the image is left partly written, so a write-back cache can merge repeated writes freely, as long as it always writes out everything it holds when the image is detached and when the app shuts down. Then the image always ends as exactly what the file system wrote, and only a host app crash, or another host process touching the image (already ruled out by contract), could leave it inconsistent. Merging repeated writes would also absorb FAT thrashing. Its time would be charged as the cache actually writes, on a timer or when it needs room.
