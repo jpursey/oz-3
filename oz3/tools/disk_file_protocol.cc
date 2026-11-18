@@ -44,19 +44,15 @@ namespace {
 // from the image again for every lookup.
 constexpr int kReadCacheSectors = 64;
 
-// Returns the host's local time, the clock without one given.
-absl::CivilSecond GetLocalTime() {
-  return absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone());
-}
-
-// Returns `date_time`, which is in the host's local time as the clock gives it,
-// as a time, or nullopt with no date.
-std::optional<absl::Time> TimeFromDisk(const DateTime& date_time) {
+// Returns `date_time`, which is in `time_zone`, as a time, or nullopt with no
+// date.
+std::optional<absl::Time> TimeFromDisk(const DateTime& date_time,
+                                       absl::TimeZone time_zone) {
   const std::optional<absl::CivilSecond> civil = date_time.ToCivil();
   if (!civil.has_value()) {
     return std::nullopt;
   }
-  return absl::FromCivil(*civil, absl::LocalTimeZone());
+  return absl::FromCivil(*civil, time_zone);
 }
 
 // Returns the gb attributes of a directory entry's attribute word.
@@ -270,8 +266,12 @@ bool DiskFileProtocol::DiskRawFile::Flush() {
 // DiskFileProtocol
 //==============================================================================
 
-DiskFileProtocol::DiskFileProtocol(Clock clock, int max_open_files)
-    : clock_(clock != nullptr ? std::move(clock) : Clock(GetLocalTime)),
+DiskFileProtocol::DiskFileProtocol(Clock clock, absl::TimeZone time_zone,
+                                   int max_open_files)
+    : time_zone_(time_zone),
+      clock_(clock != nullptr ? std::move(clock) : Clock([this] {
+        return absl::ToCivilSecond(absl::Now(), time_zone_);
+      })),
       file_system_(
           DiskHardwareSettings{.read_cache_sectors = kReadCacheSectors},
           max_open_files) {
@@ -359,7 +359,7 @@ gb::PathInfo DiskFileProtocol::DoGetPathInfo(std::string_view protocol_name,
   return {.type = gb::PathType::kFile,
           .size = int64_t{entry.GetSize().value_or(0)} * 2,
           .attributes = AttributesFromDisk(entry.GetAttributes()),
-          .modified_time = TimeFromDisk(entry.GetModified())};
+          .modified_time = TimeFromDisk(entry.GetModified(), time_zone_)};
 }
 
 std::vector<std::string> DiskFileProtocol::DoList(

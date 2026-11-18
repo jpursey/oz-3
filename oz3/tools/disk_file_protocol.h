@@ -14,6 +14,8 @@
 
 #include "absl/functional/any_invocable.h"
 #include "absl/time/civil_time.h"
+#include "absl/time/time.h"
+#include "gb/base/local_time.h"
 #include "gb/file/file_protocol.h"
 #include "gb/file/file_types.h"
 #include "gb/file/raw_file.h"
@@ -51,7 +53,7 @@ namespace oz3 {
 // deleted, renamed, or have its attributes changed. Files written are stamped
 // from the clock as they are committed: flushed, or closed as the RawFile is
 // destroyed. GetPathInfo gives a file's stamp as its modified time, reading
-// the disk's dates as the host's local time, as the clock gives them. A file
+// the disk's dates in the protocol's time zone, as the clock gives them. A file
 // with no date has no time, and neither does the root.
 //
 // While a formatted disk is mounted, its root is open in a slot of its own,
@@ -65,7 +67,8 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // Types and Constants
   //----------------------------------------------------------------------------
 
-  // Returns the host's date and time, as the drive's clock does.
+  // Returns the date and time in the protocol's time zone, as the drive's
+  // clock does.
   using Clock = absl::AnyInvocable<absl::CivilSecond()>;
 
   static constexpr std::string_view kDefaultName = "ozdisk";
@@ -76,9 +79,12 @@ class DiskFileProtocol final : public gb::FileProtocol {
   //----------------------------------------------------------------------------
 
   // Makes a protocol with nothing mounted, stamping files from `clock`, or the
-  // host's local time without one. Up to `max_open_files` files may be open at
-  // once, which must be at least 2, the root's slot included.
+  // time now in `time_zone` without one. The disk's dates are in `time_zone`,
+  // by default the host's as it is when the protocol is made (see
+  // gb::GetLocalTimeZone). Up to `max_open_files` files may be open at once,
+  // which must be at least 2, the root's slot included.
   explicit DiskFileProtocol(Clock clock = nullptr,
+                            absl::TimeZone time_zone = gb::GetLocalTimeZone(),
                             int max_open_files = kDefaultMaxOpenFiles);
   DiskFileProtocol(const DiskFileProtocol&) = delete;
   DiskFileProtocol& operator=(const DiskFileProtocol&) = delete;
@@ -105,6 +111,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // nothing mounted, kIoError for a failed image, the failure committing, or
   // kOk. The image is detached whatever it returns.
   DiskStatus Unmount(std::unique_ptr<DiskImage>* image = nullptr);
+
+  // Returns the time zone the disk's dates are in.
+  absl::TimeZone GetTimeZone() const { return time_zone_; }
 
   // Returns whether an image is mounted.
   bool IsMounted() const { return file_system_.HasImage(); }
@@ -183,6 +192,7 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // isn't one.
   static std::optional<DiskFilename> GetName(std::string_view path);
 
+  const absl::TimeZone time_zone_;
   Clock clock_;
   DiskFileSystem file_system_;
   DiskFile root_ = -1;

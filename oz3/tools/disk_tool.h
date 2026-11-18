@@ -45,8 +45,9 @@ class DiskTool final {
 
   // Makes a tool on `file_system`, registering a DiskFileProtocol there as
   // `protocol_name`, which stamps files written from `clock`, or the host's
-  // local time without one. Fails if the name can't be registered, as when it
-  // is taken. `file_system` must outlive the tool, and the protocol stays
+  // local time without one. The disk's dates are in the host's local time zone
+  // (see gb::GetLocalTimeZone). Fails if the name can't be registered, as when
+  // it is taken. `file_system` must outlive the tool, and the protocol stays
   // registered after it, with nothing mounted.
   static absl::StatusOr<std::unique_ptr<DiskTool>> Create(
       gb::FileSystem* file_system, Clock clock = nullptr,

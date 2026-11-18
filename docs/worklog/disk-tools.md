@@ -87,8 +87,11 @@ them. It settles the points below, and updates disk_design.md to match.
   committed, as the drive's `FIND` gives it.
 - **`dir` lists through the protocol,** as disk_design.md has it: the names
   from `ListFiles`, and each one's size, attributes, and modified time from
-  `PathInfo`. The protocol reads the disk's dates as the host's local time,
-  as its clock gives them, and `dir` shows them in it, to the minute. A file
+  `PathInfo`. The protocol has one time zone, the host's by default
+  (`gb::GetLocalTimeZone()`, as `absl::LocalTimeZone()` is UTC on Windows).
+  Its clock gives dates in it, it reads the disk's dates in it, and `dir`
+  shows them in it, to the minute. On Windows, the host's zone is its offset
+  when the protocol is made, as `gb::GetLocalTimeZone()` gives it. A file
   with no date (all zeros, as a program may leave one) has no time, and `dir`
   shows none.
 - **`new` won't replace a file.** `DiskImage::Create` replaces any file at its
@@ -344,8 +347,8 @@ class DiskTool final {
   any path in the file system is, and a bad one is the command's failure.
 - **Text output is returned,** for the app to write, so tests check it
   exactly: `Info`'s medium and volume, `Dir`'s lines (name, size in words,
-  `r` and `h`, and modified time), `Attrib`'s letters, and `Check`'s report, one line per
-  problem.
+  `r` and `h`, and modified time), `Attrib`'s letters, and `Check`'s report,
+  one line per problem.
 - **What each command uses,** as disk_design.md has it: `put` and `get` read
   the whole file, convert text (see host text transfer), write it, then
   `SetAttributes` with the attributes both protocols support. They don't use
@@ -521,17 +524,19 @@ Depends on: CL5, and *Disk drive device*'s CL7, which writes
 Depends on: CL6, and Game Bits *File modified times*. This is OZ-3's
 *Modified times in oz3dsk dir*, taken out of the backlog.
 
-- `disk_file_protocol.h` and `.cc`: `GetPathInfo` gives each file's stamp as
-  its `modified_time`, reading the disk's dates as the host's local time, and
-  none for a file with no date or for the root.
+- `disk_file_protocol.h` and `.cc`: a time zone, the host's by default,
+  which the default clock and the disk's dates are in. `GetPathInfo` gives
+  each file's stamp as its `modified_time`, and none for a file with no date
+  or for the root.
 - `disk_tool.h` and `.cc`: `Dir` ends each line with the file's modified
-  time to the minute in the host's local time, or nothing with no date.
+  time to the minute in the protocol's zone, or nothing with no date.
 - Manual and `disk_design.md`: `dir`'s times, and the protocol reporting
   them.
 
 **Verify**
 - Standard checks.
-- Unit tests: the protocol's time for a file as stamped and as stamped
-  again, none for the root, and none for a file made with no date; `Dir`'s
+- Unit tests: the protocol's default zone; the time for a file as stamped
+  and as stamped again, in a zone that is no likely host's, none for the
+  root, and none for a file made with no date; `Dir`'s
   lines with times, and without one for a file with no date.
 - By hand on Linux: `oz3dsk dir` shows a file's time as it was put.
