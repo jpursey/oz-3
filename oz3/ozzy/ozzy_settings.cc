@@ -361,20 +361,26 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
     }
   }
 
+  const int drive_count = static_cast<int>(settings.drives.size());
+  if (drive_count > kOzzyDriveCount) {
+    return PathError("drives", absl::StrCat("must have at most ",
+                                            kOzzyDriveCount, " drives"));
+  }
+
   // Images are compared as normalized text, so two spellings of one file may
   // still get past this.
   std::array<std::string, kOzzyDriveCount> images;
-  for (int i = 0; i < kOzzyDriveCount; ++i) {
-    const std::optional<OzzyDriveSettings>& drive = settings.drives[i];
-    if (!drive.has_value() || drive->image.empty()) {
+  for (int i = 0; i < drive_count; ++i) {
+    const OzzyDriveSettings& drive = settings.drives[i];
+    if (drive.image.empty()) {
       continue;
     }
-    images[i] = gb::NormalizePath(drive->image);
+    images[i] = gb::NormalizePath(drive.image);
     for (int j = 0; j < i; ++j) {
       if (images[j] == images[i]) {
         return PathError(
             absl::StrCat("drive ", std::string(1, GetOzzyDriveLetter(i))),
-            absl::StrCat("image ", drive->image, " is also drive ",
+            absl::StrCat("image ", drive.image, " is also drive ",
                          std::string(1, GetOzzyDriveLetter(j)), "'s"));
       }
     }

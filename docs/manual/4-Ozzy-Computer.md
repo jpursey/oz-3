@@ -54,14 +54,14 @@ Each device is wired the same way in every Ozzy, so a config file doesn't say ho
 | Keyboard | 1 for typed keys, and 6 to 15 key state | 1, shared by every core | none              |
 | Teletype | 2                                       | none                    | none              |
 | Timer    | 3 for ticks, and 4 the clock            | 0, on every core        | none              |
-| Drive A: | 16 to 18                                | 2, on every core        | none              |
-| Drive B: | 19 to 21                                | 3, on every core        | none              |
-| Drive C: | 22 to 24                                | 4, on every core        | none              |
-| Drive D: | 25 to 27                                | 5, on every core        | none              |
+| Drive A: | 16 to 18                                | 2, on core 0            | none              |
+| Drive B: | 19 to 21                                | 3, on core 0            | none              |
+| Drive C: | 22 to 24                                | 4, on core 0            | none              |
+| Drive D: | 25 to 27                                | 5, on core 0            | none              |
 
-The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on ports 6 to 15. Each drive has 3 ports, its command, data, and control ports (see [Ports](3.5-Disk-Drive.md#ports)), from port 16 for `A:`, leaving ports 0, 5, and 28 to 31 for devices to come.
+The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on ports 6 to 15. Each drive has 3 ports, its command, data, and control ports (see [Ports](3.5-Disk-Drive.md#ports)), from port 16 for `A:`, leaving ports 0, 5, and 28 to 31 for devices to come. An Ozzy's drives are lettered in order, from `A:`, so an Ozzy with drives always has an `A:`, which may be empty.
 
-The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh, the timer's tick, and a drive's completion are news for every core, so they are not shared, and every core with a handler for them is told. A drive's completion is only read once, so only the core that issues the drive's commands, normally the operating system's, sets a handler for it (see [The command protocol](3.5-Disk-Drive.md#the-command-protocol)).
+The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh and the timer's tick are news for every core, so they are not shared, and every core with a handler for them is told. A drive's completion is for core 0 alone, which boots the Ozzy and runs the operating system, as the operating system issues every drive command, and a completion can be read only once (see [The command protocol](3.5-Disk-Drive.md#the-command-protocol)). Another core can still use a drive by reading its control port, but only core 0 can wait for its interrupt.
 
 So with a screen, page 15 of bank 0 must not be RAM.
 

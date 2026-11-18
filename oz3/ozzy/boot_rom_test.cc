@@ -236,7 +236,7 @@ TEST(BootRomTest, EveryDevice) {
   // The machine table has 8 devices, with the drives last.
   OzzySettings settings;
   settings.teletype = OzzyTeletypeSettings();
-  settings.drives.fill(OzzyDriveSettings());
+  settings.drives.resize(kOzzyDriveCount);
   std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   ExpectScreen(*ozzy, GetBannerRows(kDefaultBanner));

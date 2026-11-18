@@ -6,7 +6,6 @@
 #ifndef OZ3_OZZY_OZZY_SETTINGS_H_
 #define OZ3_OZZY_OZZY_SETTINGS_H_
 
-#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -44,8 +43,9 @@ constexpr uint16_t GetBootRomPages(int bank) {
 // interrupt and its first key state port, the teletype's port, the timer's
 // first port and interrupt, and the drives'. Interrupt cores have bit n for
 // core n. The keyboard's interrupt is shared, so each key is handled by one
-// core, while the screen's refresh, the timer's tick, and a drive's completion
-// are news for every core with a handler.
+// core, while the screen's refresh and the timer's tick are news for every core
+// with a handler. A drive's completion is for core 0 alone, the OS's, which
+// issues the drives' commands, as a completion can be read only once.
 inline constexpr int kOzzyScreenBank = 0;
 inline constexpr int kOzzyScreenPage = 15;
 inline constexpr int kOzzyScreenInterrupt = 6;
@@ -65,7 +65,7 @@ inline constexpr uint8_t kOzzyTimerInterruptCores = kAllCores;
 inline constexpr int kOzzyDriveCount = 4;
 inline constexpr int kOzzyDrivePort = 16;
 inline constexpr int kOzzyDriveInterrupt = 2;
-inline constexpr uint8_t kOzzyDriveInterruptCores = kAllCores;
+inline constexpr uint8_t kOzzyDriveInterruptCores = 0x01;  // Core 0.
 
 // Returns the letter of drive `drive`: 'A' for drive 0.
 constexpr char GetOzzyDriveLetter(int drive) {
@@ -168,13 +168,16 @@ struct OzzySettings {
   std::vector<uint16_t> banks = {0x7FFE};
 
   // The devices, which an Ozzy has at most one of each of. With a screen, its
-  // page isn't RAM. The drives are by their number, so drives[0] is A:, and no
-  // two of them have the same image.
+  // page isn't RAM.
   std::optional<OzzyScreenSettings> screen = OzzyScreenSettings();
   bool keyboard = true;
   std::optional<OzzyTeletypeSettings> teletype;
   std::optional<OzzyTimerSettings> timer = OzzyTimerSettings();
-  std::array<std::optional<OzzyDriveSettings>, kOzzyDriveCount> drives;
+
+  // The drives, lettered in order from A:, at most kOzzyDriveCount of them, no
+  // two with the same image. A drive with no image keeps its place, so a disk
+  // in B: has an empty A: before it.
+  std::vector<OzzyDriveSettings> drives;
 };
 
 //==============================================================================

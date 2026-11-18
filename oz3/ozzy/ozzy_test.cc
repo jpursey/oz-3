@@ -367,16 +367,15 @@ class OzzyDriveTest : public ::testing::Test {
 
 TEST_F(OzzyDriveTest, GetDrive) {
   OzzySettings settings;
-  settings.drives[0] = OzzyDriveSettings();
-  settings.drives[2] = OzzyDriveSettings();
+  settings.drives.resize(2);
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
   ASSERT_NE(ozzy->GetDrive('A'), nullptr);
   EXPECT_EQ(ozzy->GetDrive('A'), processor->GetDevice("A:"));
-  EXPECT_EQ(ozzy->GetDrive('B'), nullptr);
-  ASSERT_NE(ozzy->GetDrive('C'), nullptr);
-  EXPECT_EQ(ozzy->GetDrive('C'), processor->GetDevice("C:"));
+  ASSERT_NE(ozzy->GetDrive('B'), nullptr);
+  EXPECT_EQ(ozzy->GetDrive('B'), processor->GetDevice("B:"));
+  EXPECT_EQ(ozzy->GetDrive('C'), nullptr);
   EXPECT_EQ(ozzy->GetDrive('D'), nullptr);
   for (const char letter : {'a', 'c', '@', 'E', 'Z', '\0'}) {
     EXPECT_EQ(ozzy->GetDrive(letter), nullptr) << letter;
@@ -384,21 +383,20 @@ TEST_F(OzzyDriveTest, GetDrive) {
 }
 
 TEST_F(OzzyDriveTest, MachineTableWithSomeDrives) {
-  // Drives come after the timer, in letter order, with nothing for those the
-  // Ozzy doesn't have.
+  // Drives come after the timer, in letter order, and their interrupts are
+  // core 0's alone, however many cores the Ozzy has.
   OzzySettings settings;
-  settings.cores = 2;
-  settings.drives[0] = OzzyDriveSettings{.slots = 3};
-  settings.drives[2] = OzzyDriveSettings{.slots = 255};
+  settings.cores = 4;
+  settings.drives = {{.slots = 3}, {.slots = 255}};
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 5);
   EXPECT_EQ(GetDeviceEntry(*ozzy, 2)[kMachineDeviceType],
             static_cast<uint16_t>(MachineDeviceType::kTimer));
   EXPECT_THAT(GetDeviceEntry(*ozzy, 3),
-              ElementsAre(5, 16, 2, 0x03, 0xFFFF, 0xFFFF, 'A', 3));
+              ElementsAre(5, 16, 2, 0x01, 0xFFFF, 0xFFFF, 'A', 3));
   EXPECT_THAT(GetDeviceEntry(*ozzy, 4),
-              ElementsAre(5, 22, 4, 0x03, 0xFFFF, 0xFFFF, 'C', 255));
+              ElementsAre(5, 19, 3, 0x01, 0xFFFF, 0xFFFF, 'B', 255));
   const int offset = kMachineTableDevices + 5 * kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
@@ -407,7 +405,7 @@ TEST_F(OzzyDriveTest, MachineTableWithSomeDrives) {
 TEST_F(OzzyDriveTest, MachineTableWithEveryDevice) {
   OzzySettings settings;
   settings.teletype = OzzyTeletypeSettings();
-  settings.drives.fill(OzzyDriveSettings());
+  settings.drives.resize(kOzzyDriveCount);
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 8);
@@ -428,9 +426,7 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
   MakeImage("mem:/a.ozd");
   MakeImage("mem:/d.ozd");
   OzzySettings settings;
-  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
-  settings.drives[1] = OzzyDriveSettings();
-  settings.drives[3] = OzzyDriveSettings{.image = "mem:/d.ozd"};
+  settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/d.ozd"}};
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, &host_);
   ASSERT_NE(ozzy, nullptr);
 
@@ -449,8 +445,7 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
 TEST_F(OzzyDriveTest, MissingImage) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
-  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
-  settings.drives[1] = OzzyDriveSettings{.image = "mem:/b.ozd"};
+  settings.drives = {{.image = "mem:/a.ozd"}, {.image = "mem:/b.ozd"}};
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kNotFound);
@@ -460,7 +455,7 @@ TEST_F(OzzyDriveTest, MissingImage) {
 
 TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
   OzzySettings settings;
-  settings.drives[2] = OzzyDriveSettings{.image = "mem:/c.ozd"};
+  settings.drives = {{}, {}, {.image = "mem:/c.ozd"}};
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
@@ -470,7 +465,7 @@ TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
 
 TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
   OzzySettings settings;
-  settings.drives[1] = OzzyDriveSettings{.slots = 0};
+  settings.drives = {{}, {.slots = 0}};
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
   ASSERT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Disk drive B: has 0 slots"));
@@ -479,8 +474,7 @@ TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
 TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
-  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
-  settings.drives[3] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/a.ozd"}};
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().message(),
@@ -676,7 +670,7 @@ bool LoadOnCore0(Ozzy& ozzy, std::string_view text) {
 TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
-  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  settings.drives = {{.image = "mem:/a.ozd"}};
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, &host_);
   ASSERT_NE(ozzy, nullptr);
   const absl::CivilSecond now(2026, 11, 18, 9, 30, 15);

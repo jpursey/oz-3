@@ -134,7 +134,7 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
       entries[kMachineDeviceData] =
           static_cast<uint16_t>(GetOzzyDriveLetter(drive));
       entries[kMachineDeviceData + 1] =
-          static_cast<uint16_t>(settings.drives[drive]->slots);
+          static_cast<uint16_t>(settings.drives[drive].slots);
     }
     entries.remove_prefix(kMachineDeviceSize);
   }
@@ -202,13 +202,11 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
     }
     config.AddDevice(std::move(*timer));
   }
-  for (int i = 0; i < kOzzyDriveCount; ++i) {
-    if (!settings.drives[i].has_value()) {
-      continue;
-    }
+  const int drive_count = static_cast<int>(settings.drives.size());
+  for (int i = 0; i < drive_count; ++i) {
     absl::StatusOr<std::unique_ptr<DiskDriveFactory>> drive =
         DiskDriveFactory::Create(Ozzy::kDriveNames[i],
-                                 GetOzzyDriveSettings(i, *settings.drives[i]));
+                                 GetOzzyDriveSettings(i, settings.drives[i]));
     if (!drive.ok()) {
       return drive.status();
     }
@@ -225,18 +223,19 @@ using DriveImages = std::array<std::unique_ptr<DiskImage>, kOzzyDriveCount>;
 absl::StatusOr<DriveImages> OpenDriveImages(const OzzySettings& settings,
                                             gb::FileSystem* file_system) {
   DriveImages images;
-  for (int i = 0; i < kOzzyDriveCount; ++i) {
-    const std::optional<OzzyDriveSettings>& drive = settings.drives[i];
-    if (!drive.has_value() || drive->image.empty()) {
+  const int drive_count = static_cast<int>(settings.drives.size());
+  for (int i = 0; i < drive_count; ++i) {
+    const OzzyDriveSettings& drive = settings.drives[i];
+    if (drive.image.empty()) {
       continue;
     }
     if (file_system == nullptr) {
       return absl::InvalidArgumentError(
           absl::StrCat("Drive ", Ozzy::kDriveNames[i], " has image ",
-                       drive->image, ", but no file system to open it"));
+                       drive.image, ", but no file system to open it"));
     }
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
-        DiskImage::Open(file_system, drive->image);
+        DiskImage::Open(file_system, drive.image);
     if (!image.ok()) {
       return absl::Status(image.status().code(),
                           absl::StrCat("Drive ", Ozzy::kDriveNames[i], " ",

@@ -6,7 +6,6 @@
 #include "oz3/ozzy/ozzy_settings.h"
 
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -30,9 +29,9 @@
 namespace oz3 {
 namespace {
 
-using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::EndsWith;
+using ::testing::IsEmpty;
 using ::testing::StartsWith;
 
 // Returns the error message from reading `text`, or "ok" if it reads.
@@ -109,7 +108,7 @@ TEST(OzzySettingsTest, TimerSettings) {
 }
 
 TEST(OzzySettingsTest, DriveSettings) {
-  // Each drive has 3 ports from 16, and an interrupt from 2, on every core.
+  // Each drive has 3 ports from 16, and an interrupt from 2, on core 0 alone.
   const OzzyDriveSettings drive = {
       .slots = 9,
       .hardware = GetDiskDrivePreset(DiskDrivePreset::kHardDisk20m),
@@ -117,7 +116,7 @@ TEST(OzzySettingsTest, DriveSettings) {
   for (int i = 0; i < kOzzyDriveCount; ++i) {
     const DiskDriveSettings expected = {
         .port = 16 + 3 * i,
-        .interrupt = {.interrupt = 2 + i, .cores = kAllCores},
+        .interrupt = {.interrupt = 2 + i, .cores = 0x01},
         .slots = 9,
         .hardware = GetDiskDrivePreset(DiskDrivePreset::kHardDisk20m)};
     EXPECT_EQ(GetOzzyDriveSettings(i, drive), expected) << i;
@@ -145,7 +144,7 @@ TEST(OzzySettingsTest, DefaultOzzy) {
   EXPECT_TRUE(settings.keyboard);
   EXPECT_FALSE(settings.teletype.has_value());
   EXPECT_EQ(settings.timer, OzzyTimerSettings());
-  EXPECT_THAT(settings.drives, Each(std::nullopt));
+  EXPECT_THAT(settings.drives, IsEmpty());
 }
 
 TEST(OzzySettingsTest, EmptyConfigIsDefaultOzzy) {
@@ -532,22 +531,30 @@ TEST(OzzySettingsTest, ValidateTimerTickHz) {
 
 TEST(OzzySettingsTest, ValidateDriveImages) {
   OzzySettings settings;
-  settings.drives[0] = OzzyDriveSettings{.image = "disks/a.ozd"};
-  settings.drives[1] = OzzyDriveSettings();
-  settings.drives[2] = OzzyDriveSettings{.image = "disks/c.ozd"};
-  settings.drives[3] = OzzyDriveSettings();
+  settings.drives = {
+      {.image = "disks/a.ozd"}, {}, {.image = "disks/c.ozd"}, {}};
   EXPECT_EQ(ValidateError(settings), "ok");
 
   // Paths are compared normalized.
-  settings.drives[3]->image = "disks/./a.ozd";
+  settings.drives[3].image = "disks/./a.ozd";
   EXPECT_EQ(ValidateError(settings),
             "drive D: image disks/./a.ozd is also drive A's");
-  settings.drives[3]->image = "disks\\c.ozd";
+  settings.drives[3].image = "disks\\c.ozd";
   EXPECT_EQ(ValidateError(settings),
             "drive D: image disks\\c.ozd is also drive C's");
-  settings.drives[1]->image = "disks/c.ozd";
+  settings.drives[1].image = "disks/c.ozd";
   EXPECT_EQ(ValidateError(settings),
             "drive C: image disks/c.ozd is also drive B's");
+}
+
+TEST(OzzySettingsTest, ValidateDriveCount) {
+  OzzySettings settings;
+  for (int count : {0, 1, kOzzyDriveCount}) {
+    settings.drives.resize(count);
+    EXPECT_EQ(ValidateError(settings), "ok") << count;
+  }
+  settings.drives.resize(kOzzyDriveCount + 1);
+  EXPECT_EQ(ValidateError(settings), "drives: must have at most 4 drives");
 }
 
 TEST(OzzySettingsTest, ValidateTimerTickHzAgainstClockHz) {
