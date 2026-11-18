@@ -110,7 +110,7 @@ first):
 | -         | 2     | Teletype (when there is no screen) |
 | 2-5       | 16-27 | Disk drives `A:` to `D:`, 3 each   |
 | 6         | -     | Screen refresh                     |
-| 24-31     | 16-23 | OS calls from cores 0 to 7         |
+| 24-31     | 32-39 | OS calls from cores 0 to 7         |
 
 A device's interrupt goes to the cores its line is connected to, which is the
 OS core by default (every core, for the screen's refresh). A program that

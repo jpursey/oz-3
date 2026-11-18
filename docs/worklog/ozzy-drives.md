@@ -1,0 +1,347 @@
+# Ozzy drives
+
+Drives `A:` to `D:` in the Ozzy, from [disk_design.md](../disk_design.md)
+(Ozzy). Each is a `DiskDrive` ([disk-drive-device.md](disk-drive-device.md)),
+wired the same in every Ozzy as its other devices are, so the Ozzy OS (the next
+item) can boot from `A:` knowing the drive's ports and interrupt as constants.
+A config file gives each drive its timing and the disk image in it at power
+on, the machine table lists the drives, and the `ozzy` app runs an Ozzy with
+its disks in:
+
+```
+// work.ozzy
+devices: [
+  { type: "screen" }, { type: "keyboard" }, { type: "timer" },
+  { type: "drive", letter: "A", image: "disks/system.ozd" },
+  { type: "drive", letter: "B", preset: "hd-20m", image: "disks/work.ozd" },
+]
+```
+
+A host that embeds Ozzy opens the images through its own file system, and can
+change disks between runs:
+
+```
+absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+    Ozzy::Create(*settings, &file_system);  // Opens and attaches the images.
+(*ozzy)->SetClock([] { return HostNow(); });  // The timer's and the drives'.
+(*ozzy)->Run(absl::Milliseconds(16));
+DiskDrive* b = (*ozzy)->GetDrive('B');
+b->AttachImage(*DiskImage::Open(&file_system, "disks/other.ozd"));
+ozzy->reset();  // Each drive writes back what it hasn't committed.
+```
+
+Changing disks while the `ozzy` app runs is left for a later item: the app's
+console frontend has only its quit keys, and it needs a way to pick a drive and
+an image (see the backlog's *Changing disks in ozzy*). Ejecting stays as the
+drive has it, a floppy pulled: what the file system hadn't committed is lost,
+as the OS commits with `CLOSE` and `FLUSH`. So `DiskDrive` gets no host
+`Flush`.
+
+## Behavior
+
+### Wiring
+
+| Drive | Ports    | Interrupt         |
+| ----- | -------- | ----------------- |
+| `A:`  | 16 to 18 | 2, on every core  |
+| `B:`  | 19 to 21 | 3, on every core  |
+| `C:`  | 22 to 24 | 4, on every core  |
+| `D:`  | 25 to 27 | 5, on every core  |
+
+- **The ports kept for devices grow from 0 to 15 to 0 to 31,** so `ports`'
+  minimum rises from 16 to 32, and its default from 32 to 48, leaving programs
+  the same 16 free ports by default. Ports 0, 5, and 28 to 31 are left for
+  devices to come. ozzy_design.md's OS call ports move from 16 to 23 to 32 to
+  39, the first ports past the devices'.
+- **The interrupts are on every core, and not shared:** a completion is news
+  for whichever core issued the command, normally the OS's, and every core
+  with a handler is told, as with the timer.
+- An Ozzy has one drive of each letter, and none by default.
+
+### The config file
+
+A drive is `{ type: "drive", letter: "A", ... }`, and only `type` and `letter`
+are needed. The rest are the drive's settings, each optional, with the names
+the manual's Disk Drive page gives them:
+- `preset`: the timing preset, which sets the read and write rates, the
+  latency, and the read cache. The names are the Ozzy's: `floppy-360k`,
+  `floppy-720k`, `floppy-1440k` (the default), `hd-10m`, `hd-20m`, and
+  `hd-40m`.
+- `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`,
+  `cache_words_per_sec`, and `latency_ms`: each changes what the preset gives,
+  whatever order the keys are in, so `{ type: "drive", letter: "B", preset:
+  "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek. The
+  Disk Drive page's `latency` becomes `latency_ms`, as a config's number names
+  its unit (as `tick_hz` does).
+- `slots`, 4 by default.
+- `image`: the path of the image in the drive at power on, or none for an
+  empty drive. A relative path is from the config file's folder, so a config
+  and its disks move together.
+
+Errors, as the other devices' are:
+- Read errors, with a line and column: `letter` missing or not `"A"` to `"D"`,
+  a second drive of a letter (`an Ozzy has only one drive A:`), a `preset`
+  that isn't one of the names, an empty `image`, and the usual unknown keys
+  and wrong types.
+- The Ozzy's own rules, with no line: two drives with one image
+  (`drive B: image disks/a.ozd is also drive A's`), comparing the paths as
+  normalized text.
+- The drive's own checks (slots, and rates and latency in range), from
+  `DiskDriveFactory::Create`, naming the drive: `Disk drive A: has 0 slots,
+  but it must have 1 to 255`.
+- An image that doesn't open, from `Ozzy::Create`, naming the drive and
+  giving `DiskImage::Open`'s message:
+  `Drive A: Disk image disks/a.ozd doesn't exist`. The app prints it as any
+  config error, and exits with 1.
+
+### The machine table
+
+Each drive is a device entry of type 5 (`MachineDeviceType::kDrive`), after
+the timer, in letter order: its first port (the command port), its interrupt
+and cores, no bank or page, and as its two words of its own, its letter (41h
+to 44h) and its slots. What disk is in it, if any, is the drive's to say
+(`MEDIA` and `VOLUME`), as it changes while the Ozzy runs. An Ozzy has at most
+8 devices, well within the table's 16.
+
+### `Ozzy`
+
+- **`Ozzy::Create(settings, file_system)`** opens each drive's image in
+  `file_system` with `DiskImage::Open`, before building anything, and attaches
+  it to its drive at power on, so the drive reads the superblock in its first
+  cycles. `file_system` must outlive the Ozzy, as the drives write to their
+  images as it is destroyed. It may be null when no drive has an image, and a
+  drive with an image and no file system is an error. A read-only host file is
+  a write-protected disk, as `DiskImage::Open` has it.
+- **`GetDrive(letter)`** returns the drive for `'A'` to `'D'`, or null if the
+  Ozzy doesn't have it (or for any other character). The host attaches and
+  detaches images through it between runs, as `DiskDrive`'s host interface
+  says.
+- **`SetClock(clock)`** sets the host's date and time for the timer and every
+  drive, replacing `GetTimer()->SetClock` as the way a host gives it, so a
+  host can't give the timer a clock and forget the drives. With none, the
+  timer reads zeros and the drives stamp no date.
+- **Shutting down:** destroying the Ozzy destroys its drives, and each writes
+  back everything it hadn't committed, stamped with the clock, so the images
+  stay consistent after a clean exit.
+
+### The `ozzy` app
+
+- It opens the config's images through its command line file system, so a
+  path in the config is the operating system's (relative paths from the
+  config's folder), and gives the Ozzy the host's local time with
+  `SetClock`.
+- The disks stay in their drives while it runs, and the drives write back
+  what they hold when it quits, however it quits short of a crash (its quit
+  keys, closing the window, or a signal, which all end its loop).
+- While it runs, nothing else may change an image in a drive, including
+  `oz3dsk`, as the manual's Disk Drive page says for any host.
+
+### Manual
+
+`4-Ozzy-Computer.md`: the drives in the introduction, the config's `ports`,
+the devices list and wiring table, the drive's keys and presets, errors, the
+machine table's type 5 and its words, the default table's ports (30h), and
+running `ozzy` with disks. `3.5-Disk-Drive.md`: `latency` becomes
+`latency_ms`, and a line on where the Ozzy has its drives.
+
+## Design
+
+### Names
+
+| Name                          | Candidates                                   | Avoids                                                       | Choice              |
+| ----------------------------- | -------------------------------------------- | ------------------------------------------------------------ | ------------------- |
+| A drive's settings in an Ozzy | `OzzyDriveSettings`, `OzzyDiskSettings`      | `DiskDriveSettings` (the device's, with its wiring)          | `OzzyDriveSettings` |
+| The drives in `OzzySettings`  | `drives`, `disk_drives`                      | `devices` (the config's list of every device)                | `drives`            |
+| Finding a drive               | `GetDrive(letter)`, `GetDiskDrive(letter)`   | `Processor::GetDevice` (by name)                             | `GetDrive`          |
+| The drives' device names      | `A:` to `D:`, `Drive A` to `Drive D`         | `Disk drive` (the device's own word in its errors)           | `A:` to `D:`        |
+| The host's time               | `SetClock`, `SetHostClock`                   | `Timer::SetClock` and `DiskDrive::SetClock` (one device's)   | `SetClock`          |
+| The machine table's type      | `kDrive`, `kDiskDrive`                       | `kScreen` and the others, which are named for what they are  | `kDrive`            |
+
+- The device names are the Ozzy's names for its drives, so the drive's own
+  errors read as the user would say them: `Disk drive A: has 0 slots`.
+- `GetDrive` takes the letter, as a host thinks of a drive by its letter, while
+  `OzzySettings::drives` is an array whose index is the drive's number, 0 for
+  `A:`, so a host can't give one letter two drives. The machine table's letter
+  word is `'A'` plus that number.
+- The config's preset names are the Ozzy's, as disk_design.md has them: the
+  devices library names its presets only in C++ (`DiskDrivePreset`).
+
+### ozzy: OzzyDriveSettings and the wiring
+
+```
+// ozzy_settings.h
+// The drives, A: to D:. Drive n's ports start at kOzzyDrivePort +
+// n * DiskDrive::kPorts, and its interrupt is kOzzyDriveInterrupt + n.
+inline constexpr int kOzzyDriveCount = 4;
+inline constexpr int kOzzyDrivePort = 16;
+inline constexpr int kOzzyDriveInterrupt = 2;
+inline constexpr uint8_t kOzzyDriveInterruptCores = kAllCores;
+
+// The settings of an Ozzy's drive that a host sets: all of DiskDriveSettings
+// but its wiring, with the same defaults, and the image in it at power on.
+struct OzzyDriveSettings {
+  int slots = DiskDriveSettings().slots;
+  DiskHardwareSettings hardware = DiskDriveSettings().hardware;
+
+  // The path of the disk image in the drive at power on, in the file system
+  // Ozzy::Create is given, or empty for none.
+  std::string image;
+};
+
+DiskDriveSettings GetOzzyDriveSettings(int drive,
+                                       const OzzyDriveSettings& settings);
+
+struct OzzySettings {
+  static constexpr int kMinPorts = 32;  // Ports 0 to 31 are for devices.
+  int ports = 48;
+  ...
+  // The drives, by number: drives[0] is A:.
+  std::array<std::optional<OzzyDriveSettings>, kOzzyDriveCount> drives;
+};
+```
+
+- `static_assert`s check that every drive's ports are below `kMinPorts` and
+  above the keyboard's key state, and that the interrupts are every core's and
+  differ from the other devices', as for the devices now.
+- `ValidateOzzySettings` adds the drives' one rule: no two drives with an
+  image whose normalized paths are the same.
+
+### ozzy: Ozzy
+
+```
+class Ozzy final {
+ public:
+  using Clock = absl::AnyInvocable<absl::CivilSecond()>;
+
+  // The drives' names in the Processor: "A:" to "D:".
+  static constexpr std::array<std::string_view, kOzzyDriveCount>
+      kDriveNames = {"A:", "B:", "C:", "D:"};
+
+  static absl::StatusOr<std::unique_ptr<Ozzy>> Create(
+      const OzzySettings& settings, gb::FileSystem* file_system = nullptr);
+
+  DiskDrive* GetDrive(char letter);  // Null without one.
+  void SetClock(Clock clock);
+};
+```
+
+- **Create** opens every image first, so a missing one fails before the
+  processor is built, then adds the drives' factories after the timer's, in
+  letter order, and attaches each image once the processor is made.
+- **The machine table** is written from the processor config's devices in
+  their order, as now: a drive's entry is found by its name in `kDriveNames`,
+  for its letter, and its slots come from its settings.
+- **The clock:** the Ozzy keeps the host's clock, and gives the timer and each
+  drive a clock that calls it, or none when it has none, so "no clock" stays
+  the devices' own "no date". The clock is declared before the processor, so
+  it outlives the drives, which call it as they are destroyed.
+
+**Brittleness:**
+- `file_system` must outlive the Ozzy, which its comment says, as for
+  `DiskImage::Open` and `DiskDrive`.
+- A host that attaches images itself with `GetDrive` must not put one image
+  in two drives; only the settings are checked.
+- Paths are compared as text, so two spellings of one file (a relative and an
+  absolute path, a difference in case where the file system ignores it, or a
+  link) get past the check, as in `oz3asm` (see the backlog's *Same-file check
+  through the file system*, which this item adds to).
+
+### ozzy: reading drives
+
+- `ReadOzzySettings(text, path)`: the second argument becomes the config
+  file's path, which errors begin with, as now, and which relative image paths
+  are from. Each image is normalized (`gb::NormalizePath`), rejected if it
+  doesn't normalize, and joined to the config's folder (`gb::RemoveFilename`
+  and `gb::JoinPath`) unless it is absolute (`gb::IsPathAbsolute`). A config
+  read with no path keeps its relative paths as they are.
+- `ReadDrive` reads `letter` first (a missing one is `missing letter`, as a
+  device's missing type is), then `preset` into the hardware settings with
+  `GetDiskDrivePreset`, and only then each setting that changes it, as a map
+  has no order.
+- `latency_ms` reads as an int and becomes `absl::Milliseconds`. Ranges are
+  the factory's to check, so no rule is written twice.
+
+### apps: ozzy
+
+`Run` passes the command line file system to `Ozzy::Create`, and gives the host
+time with `Ozzy::SetClock` in place of the timer's. `kProgram`'s help says the
+drives write back their disks when it quits.
+
+### Testing
+
+- `ozzy_settings_test.cc`: each drive's wiring from `GetOzzyDriveSettings`;
+  `ports` of 31 rejected and 32 accepted, and 48 by default; two drives with
+  one image rejected, also when written differently but normalizing the same
+  (`disks/./a.ozd`), and two different images accepted. With CL2: reading
+  every drive key; each preset name giving its `DiskDrivePreset`; a setting
+  changing the preset whatever the keys' order; relative images from the
+  config's folder, absolute ones kept, and kept as they are with no path; and
+  an error naming the place for each mistake.
+- `ozzy_test.cc`: `GetDrive` for every letter, null without one and for other
+  characters; each drive on its ports and interrupt in the processor; the
+  machine table's drive entries, after the timer and in letter order, with
+  gaps (only `A:` and `C:`) and with all four; an image attached at power on
+  (the control port shows the disk once the drive has run); errors for a
+  missing image, an image with no file system, and a drive setting the
+  factory rejects, each naming the drive; `SetClock` reaching the timer's
+  clock port, and none giving zeros. Images are in a `gb::MemoryFileProtocol`,
+  formatted with `DiskFileSystem`.
+- **A program on drive `A:`:** an assembled program on core 0 creates a file
+  on `A:` and writes words to it through ports 16 to 18, without closing it.
+  Destroying the Ozzy commits it: the file on the image has the words, stamped
+  with the Ozzy's clock. So the wiring a program relies on, attaching at power
+  on, and writing back at shutdown are tested end to end.
+- `boot_rom_test.cc`: an Ozzy with all four drives still boots to its banner,
+  with 8 devices in the table.
+- By hand, with a disk made by `oz3dsk`: `ozzy` with a drive config runs, and
+  a config with a missing image prints its error and exits with 1. Nothing
+  reads the disks until the Ozzy OS.
+
+### Performance
+
+An idle drive sleeps until a port access wakes it, so drives cost nothing
+until a program uses them, apart from the superblock read at power on.
+Nothing is measured.
+
+### To confirm
+
+- That `gb::IsPathAbsolute` takes a Windows drive (`C:\disks\a.ozd`, which the
+  command line file system reads as protocol `c`) as absolute, and that
+  `gb::JoinPath` of an empty folder gives the path unchanged (CL2).
+
+## CLs
+
+### CL1 [ ] ozzy: drives in the Ozzy
+
+Depends on: nothing.
+
+- `ozzy_settings.h` and `.cc`: the wiring, `OzzyDriveSettings`,
+  `GetOzzyDriveSettings`, `drives`, `kMinPorts` 32, `ports` 48, and the image
+  rule.
+- `machine_table.h`: `MachineDeviceType::kDrive`, and the drive's words.
+- `ozzy.h` and `.cc`: `Create` with a file system, `GetDrive`, `SetClock`,
+  and the drives' machine table entries.
+- `CMakeLists.txt`: `oz3_disk` and `gb_file` in `oz3_ozzy`'s deps.
+- `configs/*.ozzy`: `ports: 48`, and the comment's range.
+- The app keeps working unchanged: it has no drives, and still sets the
+  timer's clock.
+- Manual: the wiring, `ports`, and the machine table.
+
+**Verify**
+- Standard checks (see CLAUDE.md).
+- Unit tests: as Testing above, but reading drives.
+
+### CL2 [ ] ozzy, apps: drives in config files and the ozzy app
+
+Depends on: CL1.
+
+- `ozzy_settings.cc`: reading `{ type: "drive" }`, with presets by name and
+  image paths from the config's folder.
+- `ozzy_main.cc`: the file system to `Create`, and `Ozzy::SetClock`.
+- Manual: the drive's keys and presets, the errors, running `ozzy` with
+  disks, and `latency_ms` in the Disk Drive page.
+
+**Verify**
+- Standard checks.
+- Unit tests: reading drives, as Testing above.
+- By hand: as Testing above, left to the user.
