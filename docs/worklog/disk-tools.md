@@ -3,8 +3,8 @@
 The host side of disks, from [disk_design.md](../disk_design.md) (Tools), built
 on the disk library ([disk-library.md](disk-library.md)). The library is a
 complete file system, but a host can only reach it through `DiskFileSystem`'s
-own calls, and nothing makes or fills an image short of writing C++. This adds
-three things in `tools`, and one app:
+own calls, and nothing made or filled an image short of writing C++. The tools
+are three things in `tools`, and one app:
 
 - **`DiskFileProtocol`:** a `gb::FileProtocol` over a mounted image, so host
   code reaches the files on a disk as it reaches local or in-memory files:
@@ -20,7 +20,7 @@ three things in `tools`, and one app:
 
 ```
 gb::FileSystem host;  // With "local" (or "mem", in tests) registered.
-auto protocol = std::make_unique<DiskFileProtocol>(HostNow);
+auto protocol = std::make_unique<DiskFileProtocol>();  // The host's time.
 DiskFileProtocol* disk = protocol.get();
 host.Register(std::move(protocol));  // As "ozdisk".
 disk->Mount(*DiskImage::Open(&host, "local:/work.ozd"));
@@ -35,16 +35,16 @@ oz3dsk work.ozd put hello.oz3
 oz3dsk work.ozd dir *.OZ3
 ```
 
-The disk library gains status text for their messages. Nothing an OZ-3
-program can see changes. The manual gains `oz3dsk` and a paragraph on the
-protocol (see Manual).
+The disk library has status text for their messages. Nothing an OZ-3 program
+can see changed. The manual has `oz3dsk` and a paragraph on the protocol (see
+Manual).
 
 ## Behavior
 
 The protocol and `oz3dsk` behave as disk_design.md's Tools section describes:
 paths, flags, the byte view, attributes, moves, ownership, every command, sizes,
-disk names, binary and text, and attributes in copies. This plan doesn't repeat
-them. It settles the points below, and updates disk_design.md to match.
+disk names, binary and text, and attributes in copies, so this summary doesn't
+repeat them. It settles the points below, which disk_design.md matches.
 
 - **Copies don't keep file times.** disk_design.md had `put` stamp a file
   with the host file's modified time, and `get` set the host file's time from
@@ -126,10 +126,9 @@ them. It settles the points below, and updates disk_design.md to match.
 `oz3dsk` and the image format belong with the drive, so the tool gets a
 section of its own on `3.5-Disk-Drive.md`, after the disk itself, as
 `oz3asm` has one on Program Source. The section is the command table, sizes,
-disk names, binary and text, and attributes, with the examples above, and a
+disk names, binary and text, attributes, and times, with examples, and a
 paragraph on `DiskFileProtocol` for host applications. The tools in the
-manual's `README.md` gain `oz3dsk`. The drive's page is written by *Disk drive
-device*'s CL7, so this plan's manual CL comes after it.
+manual's `README.md` include `oz3dsk`.
 
 ## Design
 
@@ -173,10 +172,12 @@ class DiskFileProtocol final : public gb::FileProtocol {
   static constexpr std::string_view kDefaultName = "ozdisk";
   static constexpr int kDefaultMaxOpenFiles = 16;
 
-  // Files are stamped from `clock` as they are committed, or the host's local
-  // time without one. Up to `max_open_files` files may be open at once, the
-  // root's slot included.
+  // Files are stamped from `clock` as they are committed, or the time now in
+  // `time_zone` without one. The disk's dates are in `time_zone`, by default
+  // the host's. Up to `max_open_files` files may be open at once, the root's
+  // slot included.
   explicit DiskFileProtocol(Clock clock = nullptr,
+                            absl::TimeZone time_zone = gb::GetLocalTimeZone(),
                             int max_open_files = kDefaultMaxOpenFiles);
 
   // Unmounts as Unmount does.
@@ -194,6 +195,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // nothing mounted, and otherwise kOk. The image is detached whatever it
   // returns.
   DiskStatus Unmount(std::unique_ptr<DiskImage>* image = nullptr);
+
+  absl::TimeZone GetTimeZone() const;
+  bool IsMounted() const;
 
   // Formats the mounted disk as DiskFileSystem::Format does, stamped by the
   // clock, closing the root first and opening it again after. Returns kNoDisk
@@ -225,7 +229,7 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
 - **In `tools`,** as disk_design.md places it: it uses only the disk library
   and `gb_file`, and `tools` is the first library a host links for working
-  with the OZ-3. `tools` gains `oz3_disk` in its deps.
+  with the OZ-3. `tools` has `oz3_disk` in its deps.
 - **Flags:** info, list, file create, file read, file write, and move. No
   folders and no current path. **Attributes:** read-only and hidden.
 - **Paths** are `/` (the root folder, which has no attributes) and
@@ -234,7 +238,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
   is in upper case and `hello.txt` and `HELLO.TXT` are one file. Any other path
   is its own canonical path.
 - **`DoGetPathInfo`** seeks the root to 0 and `Find`s the name, giving its
-  entry's size × 2, and its attributes.
+  entry's size × 2, its attributes, and its stamp as the modified time, read
+  in the protocol's time zone. A file with no date has no time, and neither
+  does the root.
 - **`DoList`** walks the root with `Find` from 0, matching each formatted name
   against the pattern with
   `gb::PathMatchesPattern`, the pattern turned to upper case so case is
@@ -299,10 +305,10 @@ class DiskTool final {
   using Clock = DiskFileProtocol::Clock;
 
   // Registers a DiskFileProtocol in `file_system` as `protocol_name`, for
-  // copies, stamping files from `clock`. Fails if the name is taken.
-  // `file_system` must outlive the tool.
+  // copies, stamping files from `clock`, or the host's local time without
+  // one. Fails if the name is taken. `file_system` must outlive the tool.
   static absl::StatusOr<std::unique_ptr<DiskTool>> Create(
-      gb::FileSystem* file_system, Clock clock,
+      gb::FileSystem* file_system, Clock clock = nullptr,
       std::string_view protocol_name = DiskFileProtocol::kDefaultName);
 
   absl::Status New(std::string_view image_path, int sector_count);
@@ -388,28 +394,8 @@ left empty between them.
   name as the disk has it (`hello.txt` is written as `HELLO.TXT`), so `get`
   passes its host file only when one is given.
 
-### Testing
+### What it relies on in Game Bits
 
-- The protocol's tests go through a `gb::FileSystem`, as callers do, with the
-  image in a `gb::MemoryFileProtocol`: the byte view (odd and even sizes and
-  offsets, a byte at a time and all at once, reads across sectors and
-  clusters), every flag and attribute, `CopyFile` both ways keeping
-  attributes, `MoveFile` and case, read-only files refusing writes, replaces,
-  and deletes, open files refusing deletes and renames, mounting unformatted
-  and failed images (`FaultyFileProtocol`), and a `RawFile` across an unmount.
-  The root: `GetPathInfo` and `List` with every other slot taken, a root that
-  grows while open, `Format` formatting and reopening it, and `Format` with a
-  file open.
-  Game Bits' `CommonProtocolTest` isn't used: it is in `gb_file`'s tests, not
-  a library, and it makes folders and names a disk can't hold.
-- A `.oz3` written by `WriteProgramFile` into `ozdisk:` and read back with
-  `ReadProgramFile` is the same program, as disk_design.md promises.
-- `DiskTool`'s tests run each command and check its output and the image
-  after, with `CheckDisk` finding nothing wrong after every change.
-
-### To confirm
-
-Checked against Game Bits' `main` while planning, so nothing is left open:
 - `gb::PathMatchesPattern` matches the whole text, with only `*` as a
   wildcard, and case counts. So `DoList` matches each name (without its
   folder) against the pattern turned to upper case, as names are stored.
@@ -422,123 +408,28 @@ Checked against Game Bits' `main` while planning, so nothing is left open:
   required arguments before the subcommand's name, so `oz3dsk work.ozd put`
   does.
 
-## CLs
+### Testing
 
-### CL1 [x] disk: status text
-
-Depends on: nothing.
-
-- `disk_status.h` and a new `disk_status.cc`: `GetDiskStatusText`.
-- Unused, so no visible change.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- Unit tests: `GetDiskStatusText` of every status, each distinct.
-
-### CL2 [x] tools: DiskFileProtocol
-
-Depends on: CL1.
-
-- `disk_file_protocol.h` and `.cc`: the protocol and `DiskRawFile`.
-- `CMakeLists.txt`: `oz3_disk` in `oz3_tools`' deps, and `oz3_disk_testing`
-  in its tests'.
-- Unused by the apps, so no visible change.
-
-**Verify**
-- Standard checks.
-- Unit tests: as Testing above.
-
-### CL3 [x] tools: DiskTool on images
-
-Depends on: CL2.
-
-- `disk_tool.h` and `.cc`: `DiskTool` with `Create`, `ParseSectorCount`,
-  `New`, `Format`, `Info`, `Label`, `Protect`, and `Check`.
-
-**Verify**
-- Standard checks.
-- Unit tests: sizes (`K`, `M`, plain words, not whole sectors, 0, too big,
-  junk); `New` over an existing file; `Format` with and without a cluster size
-  and label, and a cluster size with no layout; `Info` of unformatted,
-  formatted, protected, and corrupt images; `Label`; `Protect` both ways and
-  on a read-only host file; `Check` of a sound and a broken image, and of
-  duplicate names, with and without fixing, and its output; the host failing
-  to read or write the image.
-
-### CL4 [x] tools: DiskTool on files
-
-Depends on: CL3.
-
-- `disk_transfer.h` and `.cc`: host text transfer.
-- `disk_tool.h` and `.cc`: `Dir`, `Put`, `Get`, `Delete`, `Rename`, and
-  `Attrib`, and `ParseAttributes`.
-
-**Verify**
-- Standard checks.
-- Unit tests: host text transfer with CRLF, CR, and LF going in, and zero
-  bytes dropped coming out. `Put` and `Get` binary
-  and text, with and without names, a host name that doesn't fit, replacing a
-  file, keeping a read-only one, a full disk leaving part of the file, a write
-  protected disk, and keeping attributes both ways; `Dir` with patterns, in
-  any case, and `--all`; `Delete` of a pattern with a read-only match and
-  with none; `Rename` onto a taken name and to a bad one; `Attrib` setting,
-  clearing, and showing; every file command on an unformatted and a corrupt
-  disk, and on a broken file; the host failing to read or write, or to set
-  attributes; `Delete` of an empty pattern; `Put` of a missing host file and
-  a host folder.
-
-### CL5 [x] apps: oz3dsk
-
-Depends on: CL4.
-
-- `oz3dsk.cc` and `apps/CMakeLists.txt`.
-- `disk_tool.h` and `.cc`: `ParseLabel`, for the app's label validator, and
-  `Get` without a host path. `Get` finds no file for a name that isn't a disk
-  name (such as `./HELLO.TXT`), like `Rename` and `Attrib`.
-
-**Verify**
-- Standard checks.
-- Unit tests: `ParseLabel` of good and bad labels, and its message; `Get`
-  without a host path, in a protocol with a current folder, and of paths that
-  aren't disk names, with and without one.
-- By hand on Linux: every command on a fresh image, `put` and `get` of a
-  `.oz3` from `oz3asm` and of a CRLF text file, and each usage error. On
-  Windows, left for the user, in the PR's comment.
-
-### CL6 [x] manual: oz3dsk
-
-Depends on: CL5, and *Disk drive device*'s CL7, which writes
-`3.5-Disk-Drive.md`.
-
-- Manual: `3.5-Disk-Drive.md`'s `oz3dsk` section and its paragraph on
-  `DiskFileProtocol`, and `oz3dsk` in `README.md`'s tools.
-- `disk_design.md`: the protocol's own calls in place of `GetFileSystem()`
-  and `GetRoot()`, and `dir` without modified times, as built.
-
-**Verify**
-- The section against `oz3dsk --help` and this plan's Behavior.
-- Its links resolve, by file name.
-
-### CL7 [x] tools: modified times in dir
-
-Depends on: CL6, and Game Bits *File modified times*. This is OZ-3's
-*Modified times in oz3dsk dir*, taken out of the backlog.
-
-- `disk_file_protocol.h` and `.cc`: a time zone, the host's by default,
-  which the default clock and the disk's dates are in. `GetPathInfo` gives
-  each file's stamp as its `modified_time`, and none for a file with no date
-  or for the root.
-- `disk_tool.h` and `.cc`: `Dir` ends each line with the file's modified
-  time to the minute in the protocol's zone, or nothing with no date.
-- Manual and `disk_design.md`: `dir`'s times, and the protocol reporting
-  them.
-- `ozzy_main.cc`: the timer's clock in `gb::GetLocalTimeZone()` too, as
-  `absl::LocalTimeZone()` is UTC on Windows.
-
-**Verify**
-- Standard checks.
-- Unit tests: the protocol's default zone; the time for a file as stamped
-  and as stamped again, in a zone that is no likely host's, none for the
-  root, and none for a file made with no date; `Dir`'s
-  lines with times, and without one for a file with no date.
-- By hand on Linux: `oz3dsk dir` shows a file's time as it was put.
+- The protocol's tests go through a `gb::FileSystem`, as callers do, with the
+  image in a `gb::MemoryFileProtocol`: the byte view (odd and even sizes and
+  offsets, a byte at a time and all at once, reads across sectors and
+  clusters), every flag and attribute, `CopyFile` both ways keeping
+  attributes, `MoveFile` and case, read-only files refusing writes, replaces,
+  and deletes, open files refusing deletes and renames, mounting unformatted
+  and failed images (`FaultyFileProtocol`), and a `RawFile` across an unmount.
+  The root: `GetPathInfo` and `List` with every other slot taken, a root that
+  grows while open, `Format` formatting and reopening it, and `Format` with a
+  file open. Modified times: as stamped and stamped again, in a fixed zone 5:30
+  ahead of UTC so that reading in any other fails, none for the root or a file
+  with no date, and the default zone.
+  Game Bits' `CommonProtocolTest` isn't used: it is in `gb_file`'s tests, not
+  a library, and it makes folders and names a disk can't hold.
+- A `.oz3` written by `WriteProgramFile` into `ozdisk:` and read back with
+  `ReadProgramFile` is the same program, as disk_design.md promises.
+- `DiskTool`'s tests run each command and check its output and the image
+  after, with `CheckDisk` finding nothing wrong after every change, and each
+  failure's message. The parsers are tested at each limit.
+- `oz3dsk` is `gb_cli` wiring with no tests of its own. It was run by hand on
+  Linux: every command on a fresh image, `put` and `get` of a `.oz3` from
+  `oz3asm` and of a CRLF text file, `dir`'s times under another `TZ`, and each
+  usage error.
