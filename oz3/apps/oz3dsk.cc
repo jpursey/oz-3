@@ -67,8 +67,10 @@ absl::Status ValidateAttributes(const gb::ValidatedContext& context,
 // get's host file is a folder to copy into, or a file that can be written.
 absl::Status ValidateGetHostFile(const gb::ValidatedContext& context,
                                  const std::string_view& value) {
-  if (gb::kCliFolderExists.validate(context, value).ok()) {
-    return absl::OkStatus();
+  // Only InvalidArgument is the user's mistake; any other is the program's.
+  const absl::Status folder = gb::kCliFolderExists.validate(context, value);
+  if (folder.ok() || !absl::IsInvalidArgument(folder)) {
+    return folder;
   }
   return gb::kCliFileWritable.validate(context, value);
 }
@@ -85,6 +87,7 @@ const gb::CliValidator<std::string_view> kLabelValidator = {
 const gb::CliValidator<std::string_view> kAttributesValidator = {
     .validate = ValidateAttributes,
 };
+
 // Its constraints are those of gb::kCliFolderExists and gb::kCliFileWritable,
 // which it calls.
 const gb::CliValidator<std::string_view> kGetHostFileValidator = {

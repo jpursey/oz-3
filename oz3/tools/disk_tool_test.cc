@@ -941,6 +941,21 @@ TEST_F(DiskToolTest, GetIntoAHostFolderUsesTheDisksName) {
   }
 }
 
+TEST_F(DiskToolTest, GetIntoAHostFolderKeepsTextAndAttributes) {
+  NewFormatted();
+  WriteHost("mem:/in.txt", "odd");
+  ASSERT_TRUE(tool_->Put(kImagePath, "mem:/in.txt", "HELLO.TXT", true).ok());
+  SetDiskAttributes("HELLO.TXT", gb::FileAttribute::kHidden);
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  absl::Status status = tool_->Get(kImagePath, "HELLO.TXT", "mem:/out", true);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_EQ(ReadHost("mem:/out/HELLO.TXT"), "odd");
+  EXPECT_EQ(file_system_.GetPathInfo("mem:/out/HELLO.TXT").attributes,
+            gb::FileAttributes(gb::FileAttribute::kHidden));
+  EXPECT_EQ(file_system_.GetPathInfo("mem:/out").attributes,
+            gb::FileAttributes());
+}
+
 TEST_F(DiskToolTest, GetIntoAHostFolderFailsOntoAFolderOfTheName) {
   NewFormatted();
   PutFile("HELLO.TXT", "hi");
