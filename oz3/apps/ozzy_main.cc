@@ -18,6 +18,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "gb/base/context.h"
+#include "gb/base/local_time.h"
 #include "gb/base/sleep.h"
 #include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
@@ -225,8 +226,9 @@ bool Run(gb::ValidatedContext& context,
   // so when the Ozzy can't keep up with its clock rate (or runs at max speed),
   // it drifts from the timer's ticks and milliseconds.
   if (Timer* timer = (*ozzy)->GetTimer(); timer != nullptr) {
-    timer->SetClock(
-        [] { return absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone()); });
+    timer->SetClock([] {
+      return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone());
+    });
   }
   absl::StatusOr<std::unique_ptr<Console>> console =
       Console::Create(GetOzzyConsoleMode(**ozzy));

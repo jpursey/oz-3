@@ -45,8 +45,9 @@ class DiskTool final {
 
   // Makes a tool on `file_system`, registering a DiskFileProtocol there as
   // `protocol_name`, which stamps files written from `clock`, or the host's
-  // local time without one. Fails if the name can't be registered, as when it
-  // is taken. `file_system` must outlive the tool, and the protocol stays
+  // local time without one. The disk's dates are in the host's local time zone
+  // (see gb::GetLocalTimeZone). Fails if the name can't be registered, as when
+  // it is taken. `file_system` must outlive the tool, and the protocol stays
   // registered after it, with nothing mounted.
   static absl::StatusOr<std::unique_ptr<DiskTool>> Create(
       gb::FileSystem* file_system, Clock clock = nullptr,
@@ -110,11 +111,13 @@ class DiskTool final {
   //----------------------------------------------------------------------------
 
   // Returns a line for each file `pattern` matches, in directory order: its
-  // name, its size in words, and its attributes (r and h, or - for each not
-  // set). Hidden files are left out unless `all` is true. The pattern is
-  // matched as gb::FileSystem::List matches one, ignoring case: * matches any
-  // characters, and an empty pattern matches every file. With no file to list,
-  // it returns "no files". Fails if the disk has no file system to read.
+  // name, its size in words, its attributes (r and h, or - for each not set),
+  // and its modified time to the minute in the host's local time, such as
+  // 2026-11-17 10:30, if it has one. Hidden files are left out unless `all` is
+  // true. The pattern is matched as gb::FileSystem::List matches one, ignoring
+  // case: * matches any characters, and an empty pattern matches every file.
+  // With no file to list, it returns "no files". Fails if the disk has no file
+  // system to read.
   absl::StatusOr<std::string> Dir(std::string_view image_path,
                                   std::string_view pattern, bool all);
 

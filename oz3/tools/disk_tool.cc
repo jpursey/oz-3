@@ -22,6 +22,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
+#include "absl/time/time.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "gb/file/path.h"
@@ -531,15 +532,22 @@ absl::Status DiskTool::DoInfo(std::string* text) {
 
 absl::Status DiskTool::DoDir(std::string_view pattern, bool all,
                              std::string* text) {
+  const absl::TimeZone time_zone = protocol_->GetTimeZone();
   for (const std::string& path :
        file_system_->ListFiles(GetDiskPath(""), pattern)) {
     const gb::PathInfo info = file_system_->GetPathInfo(path);
     if (info.attributes.IsSet(gb::FileAttribute::kHidden) && !all) {
       continue;
     }
-    absl::StrAppend(text, absl::StrFormat("%-17s %8d  %s\n",
+    absl::StrAppend(text, absl::StrFormat("%-17s %8d  %s",
                                           gb::RemoveFolder(path), info.size / 2,
                                           FormatAttributes(info.attributes)));
+    if (info.modified_time.has_value()) {
+      absl::StrAppend(
+          text, "  ",
+          absl::FormatTime("%Y-%m-%d %H:%M", *info.modified_time, time_zone));
+    }
+    absl::StrAppend(text, "\n");
   }
   if (text->empty()) {
     *text = "no files\n";

@@ -19,6 +19,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/local_time.h"
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
@@ -50,10 +51,14 @@ constexpr int kSectorCount = 720;
 constexpr int kMaxOpenFiles = 4;
 const absl::CivilSecond kNow(2026, 11, 17, 10, 30, 15);
 
+// A time zone five and a half hours ahead of UTC, unlike UTC or any likely
+// host's, so that reading the disk's dates in another zone shows.
+const absl::TimeZone kTimeZone = absl::FixedTimeZone((5 * 60 + 30) * 60);
+
 // Returns the host's local time, as a protocol with no clock stamps it.
 DateTime GetLocalTime() {
   return DateTime::FromCivil(
-      absl::ToCivilSecond(absl::Now(), absl::LocalTimeZone()));
+      absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone()));
 }
 
 class DiskFileProtocolTest : public ::testing::Test {
@@ -62,8 +67,8 @@ class DiskFileProtocolTest : public ::testing::Test {
     auto host = std::make_unique<FaultyFileProtocol>();
     host_ = host.get();
     file_system_.Register(std::move(host), "host");
-    auto protocol = std::make_unique<DiskFileProtocol>([this] { return now_; },
-                                                       kMaxOpenFiles);
+    auto protocol = std::make_unique<DiskFileProtocol>(
+        [this] { return now_; }, kTimeZone, kMaxOpenFiles);
     protocol_ = protocol.get();
     EXPECT_TRUE(file_system_.Register(std::move(protocol)));
   }
@@ -541,6 +546,39 @@ TEST_F(DiskFileProtocolTest, FilesAreStampedWhenCommitted) {
   now_ = absl::CivilSecond(2026, 11, 18, 9, 0, 0);
   file.reset();
   EXPECT_EQ(GetEntry("A")->GetModified(), DateTime::FromCivil(now_));
+}
+
+TEST_F(DiskFileProtocolTest, ModifiedTimesAreTheStamps) {
+  MountFormatted();
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "ab"));
+  EXPECT_EQ(
+      file_system_.GetPathInfo("ozdisk:/A").modified_time,
+      absl::FromCivil(kNow, absl::UTCTimeZone()) - absl::Minutes(5 * 60 + 30));
+  now_ = absl::CivilSecond(2026, 11, 18, 9, 0, 0);
+  ASSERT_TRUE(file_system_.WriteFile("ozdisk:/A", "cd"));
+  EXPECT_EQ(
+      file_system_.GetPathInfo("ozdisk:/A").modified_time,
+      absl::FromCivil(now_, absl::UTCTimeZone()) - absl::Minutes(5 * 60 + 30));
+  EXPECT_EQ(file_system_.GetPathInfo("ozdisk:/").modified_time, std::nullopt);
+
+  // A file made with no date, as a program can, has no time.
+  std::unique_ptr<DiskImage> image;
+  ASSERT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+  DiskFileSystem disk(DiskHardwareSettings{}, 2);
+  ASSERT_EQ(disk.AttachImage(std::move(image)), DiskStatus::kOk);
+  DiskFile file = -1;
+  ASSERT_EQ(disk.Create(*DiskFilename::Parse("NODATE"), DateTime(), &file),
+            DiskStatus::kOk);
+  ASSERT_EQ(disk.Close(file, DateTime()), DiskStatus::kOk);
+  ASSERT_EQ(protocol_->Mount(disk.DetachImage()), DiskStatus::kOk);
+  const gb::PathInfo info = file_system_.GetPathInfo("ozdisk:/NODATE");
+  EXPECT_EQ(info.type, gb::PathType::kFile);
+  EXPECT_EQ(info.modified_time, std::nullopt);
+}
+
+TEST(DiskFileProtocolTimeZoneTest, TheHostsByDefault) {
+  EXPECT_EQ(DiskFileProtocol().GetTimeZone(), gb::GetLocalTimeZone());
+  EXPECT_EQ(DiskFileProtocol(nullptr, kTimeZone).GetTimeZone(), kTimeZone);
 }
 
 TEST_F(DiskFileProtocolTest, NoClockStampsTheLocalTime) {

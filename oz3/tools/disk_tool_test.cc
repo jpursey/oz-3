@@ -623,19 +623,19 @@ TEST_F(DiskToolTest, DirListsMatches) {
   SetDiskAttributes("HELLO.TXT", gb::FileAttribute::kReadOnly);
 
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "", false)),
-            "HELLO.TXT                3  r-\n"
-            "PROGRAM.OZ3            500  --\n"
-            "README                   0  --\n"
-            "ABCDEFGHIJKL.TEXT        2  --\n");
+            "HELLO.TXT                3  r-  2026-11-17 10:30\n"
+            "PROGRAM.OZ3            500  --  2026-11-17 10:30\n"
+            "README                   0  --  2026-11-17 10:30\n"
+            "ABCDEFGHIJKL.TEXT        2  --  2026-11-17 10:30\n");
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "*", false)),
             Text(tool_->Dir(kImagePath, "", false)));
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "*.TXT", false)),
-            "HELLO.TXT                3  r-\n");
+            "HELLO.TXT                3  r-  2026-11-17 10:30\n");
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "*.t*", false)),
-            "HELLO.TXT                3  r-\n"
-            "ABCDEFGHIJKL.TEXT        2  --\n");
+            "HELLO.TXT                3  r-  2026-11-17 10:30\n"
+            "ABCDEFGHIJKL.TEXT        2  --  2026-11-17 10:30\n");
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "readme", false)),
-            "README                   0  --\n");
+            "README                   0  --  2026-11-17 10:30\n");
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "*.BIN", false)), "no files\n");
 }
 
@@ -645,11 +645,20 @@ TEST_F(DiskToolTest, DirShowsHiddenFilesOnlyWithAll) {
   PutFile("HIDDEN", "b");
   SetDiskAttributes("HIDDEN", gb::FileAttribute::kHidden);
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "", false)),
-            "SHOWN                    1  --\n");
+            "SHOWN                    1  --  2026-11-17 10:30\n");
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "", true)),
-            "SHOWN                    1  --\n"
-            "HIDDEN                   1  -h\n");
+            "SHOWN                    1  --  2026-11-17 10:30\n"
+            "HIDDEN                   1  -h  2026-11-17 10:30\n");
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "HIDDEN", false)), "no files\n");
+}
+
+TEST_F(DiskToolTest, DirShowsNoTimeForAFileWithNoDate) {
+  NewFormatted();
+  DiskDirEntry entry;
+  entry.SetName(*DiskFilename::Parse("NODATE"));
+  SetRootEntries({entry});
+  EXPECT_EQ(Text(tool_->Dir(kImagePath, "", false)),
+            "NODATE                   0  --\n");
 }
 
 TEST_F(DiskToolTest, DirOfAnEmptyDisk) {
@@ -712,7 +721,7 @@ TEST_F(DiskToolTest, PutAndGetBinary) {
   WriteHost("mem:/data.bin", bytes);
   ASSERT_TRUE(tool_->Put(kImagePath, "mem:/data.bin", "DATA.BIN", false).ok());
   EXPECT_EQ(Text(tool_->Dir(kImagePath, "DATA.BIN", false)),
-            "DATA.BIN                 3  --\n");
+            "DATA.BIN                 3  --  2026-11-17 10:30\n");
 
   // The odd last byte is padded with a zero.
   ASSERT_TRUE(tool_->Get(kImagePath, "data.bin", "mem:/out.bin", false).ok());
@@ -836,7 +845,7 @@ TEST_F(DiskToolTest, PutFailsOnAFullDiskLeavingPartOfTheFile) {
   EXPECT_EQ(status.code(), absl::StatusCode::kUnknown);
   EXPECT_EQ(status.message(), "mem:/small.ozd: BIG: can't be written");
   EXPECT_EQ(Text(tool_->Dir(kSmallPath, "", true)),
-            "BIG                   3328  --\n");
+            "BIG                   3328  --  2026-11-17 10:30\n");
 }
 
 TEST_F(DiskToolTest, PutAndGetKeepAttributes) {
@@ -1164,7 +1173,7 @@ TEST_F(DiskToolTest, PutFailsWhenItsAttributesCantBeSetKeepingTheFile) {
         absl::StrCat(image_path, ": IN.TXT: its attributes can't be set")) {
       EXPECT_EQ(status.code(), absl::StatusCode::kUnknown);
       EXPECT_EQ(Text(tool_->Dir(image_path, "", true)),
-                "IN.TXT                   1  --\n");
+                "IN.TXT                   1  --  2026-11-17 10:30\n");
       return;
     }
   }
