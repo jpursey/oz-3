@@ -639,10 +639,10 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 
 - **Ports:** the existing devices keep their ports (the keyboard 1 and 6–15, the teletype 2, and the timer 3 and 4), and the ports kept for devices grow from 0–15 to 0–31. So `ports`' minimum rises from 16 to 32, and its default from 32 to 48, leaving programs the same 16 free ports by default. Ports 0, 5, and 28–31 are left for devices to come.
 - **Interrupts:** each is on core 0 alone, the OS's core, which owns the drives (see Owning the drive). A completion can be read only once, so on every core, a program's handler could take it from the OS. Another core can still use a drive by polling its control port.
-- **Config:** the drives are a list of their own, `drives`, beside `devices`, lettered in order from `A:`, at most 4. Each is a map of the drive's settings, each optional, so `{}` is an empty floppy drive, and an empty drive keeps a later drive's letter:
-  - `preset`: one of the timing presets (see Timing presets), `floppy-1440k` if left out. It gives the read rate, write rate, latency, and read cache.
+- **Config:** the drives are a list of their own, `drives`, beside `devices`, lettered in order from `A:`, at most 4. Each is a map of the drive's settings, and an empty drive (with no image) keeps a later drive's letter:
+  - `preset`: one of the timing presets (see Timing presets), which every drive names, so `{ preset: "floppy-1440k" }` is an empty floppy drive. It gives the read rate, write rate, latency, and read cache.
   - `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`, `cache_words_per_sec`, and `latency_ms`, the names the manual's Disk Drive page gives the settings: each overrides what the preset gives, whatever order the keys are in, so `{ preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
-  - `slots`, with the drive's default.
+  - `slots`, with the drive's default. These and `image` are optional.
   - `image`: an image attached at power on, or none for an empty drive. The disk's size is the image's, so a preset's image size only matters to `oz3dsk new`.
 
   A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't open is an error from creating the Ozzy, naming the drive, which the app prints as a config error, and more than 4 drives or two drives with one image are config errors. There is no drive by default.

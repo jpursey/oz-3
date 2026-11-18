@@ -11,8 +11,8 @@ disk image in it at power on, the machine table lists the drives, and the
 ```
 // work.ozzy
 drives: [
-  { image: "disks/system.ozd" },                  // A:
-  { preset: "hd-20m", image: "disks/work.ozd" },  // B:
+  { preset: "floppy-1440k", image: "disks/system.ozd" },  // A:
+  { preset: "hd-20m", image: "disks/work.ozd" },          // B:
 ]
 ```
 
@@ -66,18 +66,20 @@ as the OS commits with `CLOSE` and `FLUSH`. So `DiskDrive` gets no host
 
 The drives are their own list, `drives`, beside `devices`, as they are the one
 device an Ozzy has several of, in an order that names them: the first is `A:`.
-Each is a map of the drive's settings, each optional, so `{}` is an empty
-floppy drive, with the names the manual's Disk Drive page gives them:
+Each is a map of the drive's settings, with the names the manual's Disk Drive
+page gives them. Only `preset` is needed, so `{ preset: "floppy-1440k" }` is an
+empty floppy drive:
 - `preset`: the timing preset, which sets the read and write rates, the
-  latency, and the read cache. The names are the Ozzy's: `floppy-360k`,
-  `floppy-720k`, `floppy-1440k` (the default), `hd-10m`, `hd-20m`, and
-  `hd-40m`.
+  latency, and the read cache. It has no default, as a drive's kind is the
+  first thing to say about it, and a floppy and a hard disk differ more than
+  any default could hide. The names are the Ozzy's: `floppy-360k`,
+  `floppy-720k`, `floppy-1440k`, `hd-10m`, `hd-20m`, and `hd-40m`.
 - `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`,
   `cache_words_per_sec`, and `latency_ms`: each changes what the preset gives,
   whatever order the keys are in, so `{ preset: "hd-20m", latency_ms: 30 }`
-  is a 20 MB hard disk with a faster seek. The
-  Disk Drive page's `latency` becomes `latency_ms`, as a config's number names
-  its unit (as `tick_hz` does).
+  is a 20 MB hard disk with a faster seek. The Disk Drive page's `latency`
+  becomes `latency_ms`, as a config's number names its unit (as `tick_hz`
+  does).
 - `slots`, 4 by default.
 - `image`: the path of the image in the drive at power on, or none for an
   empty drive. A relative path is from the config file's folder, so a config
@@ -85,9 +87,10 @@ floppy drive, with the names the manual's Disk Drive page gives them:
 
 Errors, as the other devices' are:
 - Read errors, with a line and column: more than 4 drives (`drives: must have
-  0 to 4 values`, as Game Bits' `ValidateArray` words it), a `preset` that isn't
-  one of the names, an empty `image`, and the usual unknown keys and wrong
-  types.
+  0 to 4 values`, as Game Bits' `ValidateArray` words it), a drive with no
+  `preset` (`drives[1]: missing preset`, as a device with no `type` is), a
+  `preset` that isn't one of the names, an empty `image`, and the usual
+  unknown keys and wrong types.
 - The Ozzy's own rules, with no line: more than 4 drives in settings made in
   code (`drives: must have at most 4 drives`), and two drives with one image
   (`drive B: image disks/a.ozd is also drive A's`), comparing the paths as
@@ -262,8 +265,12 @@ class Ozzy final {
   read with no path keeps its relative paths as they are.
 - `ReadDrives` reads the list with `ValidateArray(0, kOzzyDriveCount)`, and
   each drive reads `preset` into the hardware settings with
-  `GetDiskDrivePreset` first, and only then each setting that changes it, as
-  a map has no order.
+  `GetDiskDrivePreset` first, rejecting the drive if it has none, and only
+  then each setting that changes it, as a map has no order.
+- `OzzyDriveSettings` keeps its default hardware (the 1.44 MB floppy's, as
+  `DiskDriveSettings` has it), so a host that builds settings in code needn't
+  name a preset: requiring one is the config file's rule, where a drive's kind
+  is spelled out.
 - `latency_ms` reads as an int and becomes `absl::Milliseconds`. Ranges are
   the factory's to check, so no rule is written twice.
 
@@ -283,7 +290,8 @@ drives write back their disks when it quits.
   every drive key; each preset name giving its `DiskDrivePreset`; a setting
   changing the preset whatever the keys' order; relative images from the
   config's folder, absolute ones kept, and kept as they are with no path; and
-  an error naming the place for each mistake, including a fifth drive.
+  an error naming the place for each mistake, including a fifth drive and a
+  drive with no preset.
 - `ozzy_test.cc`: `GetDrive` for every letter, null without one and for other
   characters; each drive on its ports and interrupt in the processor; the
   machine table's drive entries, after the timer and in letter order, on core 0
@@ -342,7 +350,7 @@ Depends on: nothing.
 
 Depends on: CL1.
 
-- `ozzy_settings.cc`: reading `{ type: "drive" }`, with presets by name and
+- `ozzy_settings.cc`: reading the `drives` list, with presets by name and
   image paths from the config's folder.
 - `ozzy_main.cc`: the file system to `Create`, and `Ozzy::SetClock`.
 - Manual: the drive's keys and presets, the errors, running `ozzy` with
