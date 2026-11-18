@@ -651,7 +651,7 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 - **The `ozzy` app** attaches the config's images at power on, and they stay in their drives until it quits. Changing disks while it runs is the backlog's *Changing disks in ozzy*. Ejecting there is a floppy pulled, as the drive has it, so the drive has no host `Flush`.
 - **Manual:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors, and the Disk Drive page's `latency` as `latency_ms`.
 
-[ozzy-drives.md](worklog/ozzy-drives.md) is the plan that builds this.
+[ozzy-drives.md](worklog/ozzy-drives.md) summarizes how it was built.
 
 ## Prerequisites
 
