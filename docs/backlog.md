@@ -277,12 +277,13 @@ which readers of version 1 reject.
 
 ## Same-file check through the file system
 
-- **Layers:** apps
+- **Layers:** ozzy, apps
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** Game Bits *Canonical local paths*
-- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, and `Run()`
-  in `oz3/apps/oz3ism.cc`
+- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, `Run()` in
+  `oz3/apps/oz3ism.cc`, and `ValidateOzzySettings()` in
+  `oz3/ozzy/ozzy_settings.cc`
 
 `oz3asm` won't write a file that is the source or another file it writes, nor
 `oz3ism` one that is its input, but they only compare the paths as normalized
@@ -290,8 +291,9 @@ text. Two paths to one file that are
 written differently get past the check, and the file is overwritten: a
 relative and an absolute path, a drive and its `file:` form
 (`file:/c/src/a.oza` is `C:\src\a.oza`), a difference in case where the file
-system ignores it, or a link. Ask the file system whether two paths are the
-same file instead, once Game Bits' canonical paths resolve case and links, and
+system ignores it, or a link. The Ozzy's check that no two drives have one
+image compares its paths the same way, so one image can get into two drives.
+Ask the file system whether two paths are the same file instead, once Game Bits' canonical paths resolve case and links, and
 `gb::FileSystem` lets a caller ask for one.
 
 ## Sleeping cores

@@ -7,23 +7,46 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/file/file_system.h"
+#include "gb/file/memory_file_protocol.h"
+#include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
+#include "oz3/core/cpu_core.h"
+#include "oz3/core/date_time.h"
+#include "oz3/core/instruction_compiler.h"
+#include "oz3/core/lockable.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/port.h"
 #include "oz3/core/processor.h"
+#include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/timer.h"
+#include "oz3/disk/disk_dir_entry.h"
+#include "oz3/disk/disk_file_system.h"
+#include "oz3/disk/disk_filename.h"
+#include "oz3/disk/disk_image.h"
+#include "oz3/disk/disk_label.h"
+#include "oz3/disk/disk_status.h"
+#include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/tools/program_assembler.h"
+#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 namespace {
@@ -59,7 +82,7 @@ TEST(OzzyTest, DefaultOzzy) {
   Processor* processor = ozzy->GetProcessor();
   EXPECT_EQ(processor->GetClockHz(), 1'000'000);
   EXPECT_EQ(processor->GetNumCores(), 1);
-  EXPECT_EQ(processor->GetNumPorts(), 32);
+  EXPECT_EQ(processor->GetNumPorts(), 48);
   EXPECT_EQ(processor->GetCycles(), 0);
   ASSERT_NE(ozzy->GetScreen(), nullptr);
   EXPECT_EQ(ozzy->GetScreen(), processor->GetDevice(Ozzy::kScreenName));
@@ -68,6 +91,9 @@ TEST(OzzyTest, DefaultOzzy) {
   EXPECT_EQ(ozzy->GetTeletype(), nullptr);
   ASSERT_NE(ozzy->GetTimer(), nullptr);
   EXPECT_EQ(ozzy->GetTimer(), processor->GetDevice(Ozzy::kTimerName));
+  for (const char letter : {'A', 'B', 'C', 'D'}) {
+    EXPECT_EQ(ozzy->GetDrive(letter), nullptr) << letter;
+  }
 }
 
 TEST(OzzyTest, TimerTicks) {
@@ -177,7 +203,7 @@ TEST(OzzyTest, DefaultMachineTable) {
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
-      ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 32, 1, 3, 0));
+      ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 48, 1, 3, 0));
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, kMachineBankSize),
               ElementsAre(0x0001, 0x7FFE));
 
@@ -268,6 +294,406 @@ TEST(OzzyTest, NoDevicesMachineTable) {
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices,
                             kMachineTableSize - kMachineTableDevices),
               Each(0));
+}
+
+//==============================================================================
+// Drives
+//==============================================================================
+
+// The sectors of the images the tests make: a 360K floppy's.
+constexpr int kSectors = 720;
+
+// Returns `count` words of `ozzy`'s machine table device entry `device`.
+std::vector<uint16_t> GetDeviceEntry(Ozzy& ozzy, int device) {
+  return GetTableWords(ozzy, kMachineTableDevices + device * kMachineDeviceSize,
+                       kMachineDeviceSize);
+}
+
+// Tests of the drives, with a host file system in memory for their images,
+// which outlives every Ozzy a test makes.
+class OzzyDriveTest : public ::testing::Test {
+ protected:
+  OzzyDriveTest() {
+    host_.Register(std::make_unique<gb::MemoryFileProtocol>());
+  }
+
+  // Makes a formatted image at `path`.
+  void MakeImage(std::string_view path) {
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Create(&host_, path, kSectors);
+    ASSERT_TRUE(image.ok()) << image.status();
+    DiskFileSystem file_system({}, 1);
+    file_system.AttachImage(*std::move(image));
+    EXPECT_EQ(file_system.Format(*DiskLabel::Parse("WORK"), 0, DateTime()),
+              DiskStatus::kOk);
+  }
+
+  // Returns an Ozzy for `settings` with its images in host_, failing the test
+  // if it can't be created.
+  std::unique_ptr<Ozzy> CreateDriveOzzy(const OzzySettings& settings) {
+    absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+    EXPECT_TRUE(ozzy.ok()) << ozzy.status();
+    if (!ozzy.ok()) {
+      return nullptr;
+    }
+    return std::move(*ozzy);
+  }
+
+  // Returns the root's entry for `name` on the image at `path`, and its
+  // words, or nullopt if there is no such file. Nothing else may have the
+  // image open.
+  std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> ReadFile(
+      std::string_view path, std::string_view name) {
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(&host_, path);
+    EXPECT_TRUE(image.ok()) << image.status();
+    if (!image.ok()) {
+      return std::nullopt;
+    }
+    DiskFileSystem file_system({}, 1);
+    file_system.AttachImage(*std::move(image));
+    const DiskFilename filename = *DiskFilename::Parse(name);
+    DiskFile root = 0;
+    EXPECT_EQ(file_system.OpenRoot(&root), DiskStatus::kOk);
+    DiskDirEntry entry;
+    if (file_system.Find(root, filename, &entry) != DiskStatus::kOk) {
+      return std::nullopt;
+    }
+    EXPECT_EQ(file_system.Close(root, DateTime()), DiskStatus::kOk);
+    DiskFile file = 0;
+    EXPECT_EQ(file_system.Open(filename, &file), DiskStatus::kOk);
+    std::vector<uint16_t> words(entry.GetSize().value_or(0));
+    int read = 0;
+    EXPECT_EQ(file_system.Read(file, absl::MakeSpan(words), &read),
+              DiskStatus::kOk);
+    words.resize(read);
+    return std::make_pair(entry, std::move(words));
+  }
+
+  gb::FileSystem host_;
+};
+
+TEST_F(OzzyDriveTest, GetDrive) {
+  OzzySettings settings;
+  settings.drives[0] = OzzyDriveSettings();
+  settings.drives[2] = OzzyDriveSettings();
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  Processor* processor = ozzy->GetProcessor();
+  ASSERT_NE(ozzy->GetDrive('A'), nullptr);
+  EXPECT_EQ(ozzy->GetDrive('A'), processor->GetDevice("A:"));
+  EXPECT_EQ(ozzy->GetDrive('B'), nullptr);
+  ASSERT_NE(ozzy->GetDrive('C'), nullptr);
+  EXPECT_EQ(ozzy->GetDrive('C'), processor->GetDevice("C:"));
+  EXPECT_EQ(ozzy->GetDrive('D'), nullptr);
+  for (const char letter : {'a', 'c', '@', 'E', 'Z', '\0'}) {
+    EXPECT_EQ(ozzy->GetDrive(letter), nullptr) << letter;
+  }
+}
+
+TEST_F(OzzyDriveTest, MachineTableWithSomeDrives) {
+  // Drives come after the timer, in letter order, with nothing for those the
+  // Ozzy doesn't have.
+  OzzySettings settings;
+  settings.cores = 2;
+  settings.drives[0] = OzzyDriveSettings{.slots = 3};
+  settings.drives[2] = OzzyDriveSettings{.slots = 255};
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 5);
+  EXPECT_EQ(GetDeviceEntry(*ozzy, 2)[kMachineDeviceType],
+            static_cast<uint16_t>(MachineDeviceType::kTimer));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 3),
+              ElementsAre(5, 16, 2, 0x03, 0xFFFF, 0xFFFF, 'A', 3));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 4),
+              ElementsAre(5, 22, 4, 0x03, 0xFFFF, 0xFFFF, 'C', 255));
+  const int offset = kMachineTableDevices + 5 * kMachineDeviceSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
+              Each(0));
+}
+
+TEST_F(OzzyDriveTest, MachineTableWithEveryDevice) {
+  OzzySettings settings;
+  settings.teletype = OzzyTeletypeSettings();
+  settings.drives.fill(OzzyDriveSettings());
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 8);
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 4),
+              ElementsAre(5, 16, 2, 0x01, 0xFFFF, 0xFFFF, 'A', 4));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 5),
+              ElementsAre(5, 19, 3, 0x01, 0xFFFF, 0xFFFF, 'B', 4));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 6),
+              ElementsAre(5, 22, 4, 0x01, 0xFFFF, 0xFFFF, 'C', 4));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 7),
+              ElementsAre(5, 25, 5, 0x01, 0xFFFF, 0xFFFF, 'D', 4));
+  const int offset = kMachineTableDevices + 8 * kMachineDeviceSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
+              Each(0));
+}
+
+TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
+  MakeImage("mem:/a.ozd");
+  MakeImage("mem:/d.ozd");
+  OzzySettings settings;
+  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  settings.drives[1] = OzzyDriveSettings();
+  settings.drives[3] = OzzyDriveSettings{.image = "mem:/d.ozd"};
+  std::unique_ptr<Ozzy> ozzy = CreateDriveOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+
+  // Each control port shows whether its drive has a disk once it has read the
+  // superblock, which takes its latency and a sector.
+  ozzy->Run(absl::Milliseconds(200));
+  Processor* processor = ozzy->GetProcessor();
+  EXPECT_EQ(processor->GetPort(18).GetValue(0), DiskDrive::kDiskAttached);
+  EXPECT_EQ(processor->GetPort(21).GetValue(0), 0);
+  EXPECT_EQ(processor->GetPort(27).GetValue(0), DiskDrive::kDiskAttached);
+  EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
+  EXPECT_EQ(ozzy->GetDrive('B')->DetachImage(), nullptr);
+  EXPECT_NE(ozzy->GetDrive('D')->DetachImage(), nullptr);
+}
+
+TEST_F(OzzyDriveTest, MissingImage) {
+  MakeImage("mem:/a.ozd");
+  OzzySettings settings;
+  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  settings.drives[1] = OzzyDriveSettings{.image = "mem:/b.ozd"};
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(ozzy.status().message(),
+            "Drive B: Disk image mem:/b.ozd doesn't exist");
+}
+
+TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
+  OzzySettings settings;
+  settings.drives[2] = OzzyDriveSettings{.image = "mem:/c.ozd"};
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(ozzy.status().message(),
+            "Drive C: no file system to open its image mem:/c.ozd");
+}
+
+TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
+  OzzySettings settings;
+  settings.drives[1] = OzzyDriveSettings{.slots = 0};
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_THAT(ozzy.status().message(), HasSubstr("Disk drive B: has 0 slots"));
+}
+
+TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
+  MakeImage("mem:/a.ozd");
+  OzzySettings settings;
+  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  settings.drives[3] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_EQ(ozzy.status().message(),
+            "drive D: image mem:/a.ozd is also drive A's");
+}
+
+TEST_F(OzzyDriveTest, SetClockGivesTheTimerTheClock) {
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  ASSERT_NE(ozzy, nullptr);
+  ozzy->SetClock([] { return absl::CivilSecond(2026, 11, 18, 9, 30, 15); });
+
+  // Asks the timer's clock port for the time.
+  Port& clock_port = ozzy->GetProcessor()->GetPort(kOzzyTimerPort + 1);
+  const auto ask_time = [&] {
+    {
+      std::unique_ptr<Lock> lock =
+          ozzy->GetProcessor()->LockPort(kOzzyTimerPort + 1);
+      EXPECT_TRUE(lock->IsLocked());
+      clock_port.StoreWord(*lock, Port::S, kTimerTime);
+    }
+    ozzy->Run(absl::Milliseconds(1));
+    return std::vector<uint16_t>{clock_port.GetValue(0),
+                                 clock_port.GetValue(1)};
+  };
+  EXPECT_THAT(ask_time(), ElementsAre(9, 0x1E0F));
+  ozzy->SetClock(nullptr);
+  EXPECT_THAT(ask_time(), ElementsAre(0, 0));
+}
+
+// Creates the file LOG on drive A:, on its ports and interrupt, and writes the
+// words 1 to 4 to it, without closing it. It halts with R5 0, or the step that
+// failed.
+constexpr std::string_view kWriteLogProgram = R"---(
+    .STACK 16
+
+    .SEGMENT main CODE
+        SETI 2, handler         ; Reads a completion into R2, R3 fields
+        MVQ R6, 0               ; Completions handled
+        EI
+
+    idle_create:
+        IN 18, R0
+        AND R0, 15              ; Phase 0
+        JC NZ, idle_create
+        MOV R2, create_completion
+        MVQ R3, 2
+        MOV R1, create          ; The command word, then the name's 4 dwords
+        MVQ R7, 1
+    send_create:
+        OUTR.IW 16, (R1)
+        JC NS, send_create
+        MVQ R7, 4
+    send_name:
+        OUTR.ID 16, [R1]
+        JC NS, send_name
+    wait_create:
+        IN 18, R0
+        AND R0, 14              ; Phase 2 or higher
+        JC Z, wait_create
+        MOV R1, accept
+        MVQ R7, 1
+    read_create_accept:
+        INR.IW 16, (R1)
+        JC NS, read_create_accept
+        MVQ R5, 1
+        MOV R1, accept
+        MOV R0, (R1)
+        CMP R0, 0               ; OK
+        JC NZ, fail
+    wait_create_completion:
+        CMP R6, 1
+        JC NZ, wait_create_completion
+        MVQ R5, 2
+        MOV R1, create_completion
+        MOV R0, (R1)
+        CMP R0, 0               ; OK, in slot 0
+        JC NZ, fail
+        ADQ R1, 1
+        MOV R0, (R1)
+        CMP R0, 0
+        JC NZ, fail
+
+    idle_write:
+        IN 18, R0
+        AND R0, 15
+        JC NZ, idle_write
+        MOV R2, write_completion
+        MVQ R3, 2
+        MOV R1, write           ; WRITE 0 and its count
+        MVQ R7, 2
+    send_write:
+        OUTR.IW 16, (R1)
+        JC NS, send_write
+    wait_write:
+        IN 18, R0
+        AND R0, 14
+        JC Z, wait_write
+        MOV R1, accept
+        MVQ R7, 2
+    read_write_accept:
+        INR.IW 16, (R1)
+        JC NS, read_write_accept
+        MVQ R5, 3
+        MOV R1, accept
+        MOV R0, (R1)
+        CMP R0, 0               ; OK, for 4 words
+        JC NZ, fail
+        ADQ R1, 1
+        MOV R0, (R1)
+        CMP R0, 4
+        JC NZ, fail
+        MOV R1, words
+        MVQ R7, 4
+    send_words:
+        OUTR.IW 17, (R1)
+        JC NS, send_words
+    wait_write_completion:
+        CMP R6, 2
+        JC NZ, wait_write_completion
+        MVQ R5, 4
+        MOV R1, write_completion
+        MOV R0, (R1)
+        CMP R0, 0               ; OK, 4 written
+        JC NZ, fail
+        ADQ R1, 1
+        MOV R0, (R1)
+        CMP R0, 4
+        JC NZ, fail
+        MVQ R5, 0
+    fail:
+        HALT
+
+    handler:
+        MOV R7, R3
+    read_completion:
+        INR.IW 16, (R2)
+        JC NS, read_completion
+        ADQ R6, 1
+        IRT
+
+    .SEGMENT vars DATA
+    create:
+        .DW 1200h
+        .DW SIZE(6) "LOG"
+        .DW 0, 0
+    write:
+        .DW 2100h, 4
+    words:
+        .DW 1, 2, 3, 4
+    accept:
+        .DW 0FFFFh, 0FFFFh
+    create_completion:
+        .DW 0FFFFh, 0FFFFh
+    write_completion:
+        .DW 0FFFFh, 0FFFFh
+
+    .SEGMENT stack STACK
+)---";
+
+TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
+  MakeImage("mem:/a.ozd");
+  OzzySettings settings;
+  settings.drives[0] = OzzyDriveSettings{.image = "mem:/a.ozd"};
+  std::unique_ptr<Ozzy> ozzy = CreateDriveOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  const absl::CivilSecond now(2026, 11, 18, 9, 30, 15);
+  ozzy->SetClock([now] { return now; });
+
+  // The program runs on core 0 in place of the boot ROM.
+  InstructionError error;
+  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
+      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
+  ASSERT_NE(syntax, nullptr) << error.message;
+  std::vector<gb::ParseError> errors;
+  std::unique_ptr<AsmProgram> program =
+      AssembleProgram(*syntax, std::string(kWriteLogProgram), &errors);
+  for (const gb::ParseError& parse_error : errors) {
+    ADD_FAILURE() << parse_error.FormatMessage();
+  }
+  ASSERT_NE(program, nullptr);
+  ProgramLoader loader(ozzy->GetProcessor());
+  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
+  ASSERT_NE(handle, ProgramLoader::kInvalidHandle);
+  CpuCore* core = ozzy->GetProcessor()->GetCore(0);
+  {
+    std::unique_ptr<Lock> lock = core->RequestLock();
+    ASSERT_TRUE(lock->IsLocked());
+    core->Reset(*lock, loader.GetResetParams(handle));
+  }
+  for (int step = 0; step < 10'000 && core->GetState() != CpuCore::State::kIdle;
+       ++step) {
+    ozzy->Run(absl::Milliseconds(1));
+  }
+  ASSERT_EQ(core->GetState(), CpuCore::State::kIdle);
+  CpuCore::Registers registers;
+  core->GetRegisters(registers);
+  EXPECT_EQ(registers[CpuCore::R5], 0);
+
+  // The file isn't closed, so its words are still in the drive.
+  ozzy.reset();
+  std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> file =
+      ReadFile("mem:/a.ozd", "LOG");
+  ASSERT_TRUE(file.has_value());
+  EXPECT_EQ(file->first.GetModified(), DateTime::FromCivil(now));
+  EXPECT_THAT(file->second, ElementsAre(1, 2, 3, 4));
 }
 
 //==============================================================================

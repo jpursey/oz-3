@@ -200,6 +200,9 @@ struct OzzyDriveSettings {
 DiskDriveSettings GetOzzyDriveSettings(int drive,
                                        const OzzyDriveSettings& settings);
 
+// Returns the letter of drive `drive`: 'A' for drive 0.
+constexpr char GetOzzyDriveLetter(int drive);
+
 struct OzzySettings {
   static constexpr int kMinPorts = 32;  // Ports 0 to 31 are for devices.
   int ports = 48;
@@ -293,10 +296,11 @@ drives write back their disks when it quits.
   an error naming the place for each mistake, including a fifth drive and a
   drive with no preset.
 - `ozzy_test.cc`: `GetDrive` for every letter, null without one and for other
-  characters; each drive on its ports and interrupt in the processor; the
-  machine table's drive entries, after the timer and in letter order, on core 0
-  however many cores, with two and with all four; an image attached at power on
-  (the control port shows the disk once the drive has run); errors for a
+  characters; the machine table's drive entries (which give each drive's
+  ports, interrupt, and cores as the processor has them), after the timer and
+  in letter order, on core 0 however many cores, with two and with all four;
+  an image attached at power on (the control port shows the disk once the
+  drive has run); errors for a
   missing image, an image with no file system, and a drive setting the
   factory rejects, each naming the drive; `SetClock` reaching the timer's
   clock port, and none giving zeros. Images are in a `gb::MemoryFileProtocol`,
@@ -326,7 +330,7 @@ Nothing is measured.
 
 ## CLs
 
-### CL1 [ ] ozzy: drives in the Ozzy
+### CL1 [~] ozzy: drives in the Ozzy
 
 Depends on: nothing.
 

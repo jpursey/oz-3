@@ -6,6 +6,7 @@
 #include "oz3/ozzy/ozzy_settings.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,14 +20,17 @@
 #include "oz3/configs/teletype_config.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor_config.h"
+#include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
 #include "oz3/devices/timer.h"
+#include "oz3/disk/disk_hardware.h"
 
 namespace oz3 {
 namespace {
 
+using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::EndsWith;
 using ::testing::StartsWith;
@@ -104,6 +108,29 @@ TEST(OzzySettingsTest, TimerSettings) {
   EXPECT_EQ(GetOzzyTimerSettings({.tick_hz = 100}), expected);
 }
 
+TEST(OzzySettingsTest, DriveSettings) {
+  // Each drive has 3 ports from 16, and an interrupt from 2, on every core.
+  const OzzyDriveSettings drive = {
+      .slots = 9,
+      .hardware = GetDiskDrivePreset(DiskDrivePreset::kHardDisk20m),
+      .image = "a.ozd"};
+  for (int i = 0; i < kOzzyDriveCount; ++i) {
+    const DiskDriveSettings expected = {
+        .port = 16 + 3 * i,
+        .interrupt = {.interrupt = 2 + i, .cores = kAllCores},
+        .slots = 9,
+        .hardware = GetDiskDrivePreset(DiskDrivePreset::kHardDisk20m)};
+    EXPECT_EQ(GetOzzyDriveSettings(i, drive), expected) << i;
+  }
+
+  // The defaults are the drive's.
+  const DiskDriveSettings settings = GetOzzyDriveSettings(0, {});
+  EXPECT_EQ(settings.slots, DiskDriveSettings().slots);
+  EXPECT_EQ(settings.hardware, DiskDriveSettings().hardware);
+  EXPECT_EQ(GetOzzyDriveLetter(0), 'A');
+  EXPECT_EQ(GetOzzyDriveLetter(3), 'D');
+}
+
 //==============================================================================
 // Defaults
 //==============================================================================
@@ -112,12 +139,13 @@ TEST(OzzySettingsTest, DefaultOzzy) {
   const OzzySettings settings;
   EXPECT_EQ(settings.clock_hz, ProcessorConfig::kDefaultClockHz);
   EXPECT_EQ(settings.cores, 1);
-  EXPECT_EQ(settings.ports, 32);
+  EXPECT_EQ(settings.ports, 48);
   EXPECT_THAT(settings.banks, ElementsAre(0x7FFE));
   EXPECT_EQ(settings.screen, OzzyScreenSettings());
   EXPECT_TRUE(settings.keyboard);
   EXPECT_FALSE(settings.teletype.has_value());
   EXPECT_EQ(settings.timer, OzzyTimerSettings());
+  EXPECT_THAT(settings.drives, Each(std::nullopt));
 }
 
 TEST(OzzySettingsTest, EmptyConfigIsDefaultOzzy) {
@@ -446,14 +474,14 @@ TEST(OzzySettingsTest, ValidateClockHz) {
 TEST(OzzySettingsTest, ValidateCoresAndPorts) {
   OzzySettings settings;
   settings.cores = 8;
-  settings.ports = 16;
+  settings.ports = 32;
   EXPECT_EQ(ValidateError(settings), "ok");
   settings.ports = 256;
   EXPECT_EQ(ValidateError(settings), "ok");
-  settings.ports = 15;
-  EXPECT_EQ(ValidateError(settings), "ports: must be 16 to 256");
+  settings.ports = 31;
+  EXPECT_EQ(ValidateError(settings), "ports: must be 32 to 256");
   settings.ports = 257;
-  EXPECT_EQ(ValidateError(settings), "ports: must be 16 to 256");
+  EXPECT_EQ(ValidateError(settings), "ports: must be 32 to 256");
   settings.ports = 32;
   settings.cores = 0;
   EXPECT_EQ(ValidateError(settings), "cores: must be 1 to 8");
@@ -500,6 +528,26 @@ TEST(OzzySettingsTest, ValidateTimerTickHz) {
   EXPECT_EQ(ValidateError(settings), "ok");
   EXPECT_EQ(ReadError("devices: [{ type: 'timer', tick_hz: 100000 }]"),
             "timer: tick_hz must be at most 65535");
+}
+
+TEST(OzzySettingsTest, ValidateDriveImages) {
+  OzzySettings settings;
+  settings.drives[0] = OzzyDriveSettings{.image = "disks/a.ozd"};
+  settings.drives[1] = OzzyDriveSettings();
+  settings.drives[2] = OzzyDriveSettings{.image = "disks/c.ozd"};
+  settings.drives[3] = OzzyDriveSettings();
+  EXPECT_EQ(ValidateError(settings), "ok");
+
+  // Paths are compared normalized.
+  settings.drives[3]->image = "disks/./a.ozd";
+  EXPECT_EQ(ValidateError(settings),
+            "drive D: image disks/./a.ozd is also drive A's");
+  settings.drives[3]->image = "disks\\c.ozd";
+  EXPECT_EQ(ValidateError(settings),
+            "drive D: image disks\\c.ozd is also drive C's");
+  settings.drives[1]->image = "disks/c.ozd";
+  EXPECT_EQ(ValidateError(settings),
+            "drive C: image disks/c.ozd is also drive B's");
 }
 
 TEST(OzzySettingsTest, ValidateTimerTickHzAgainstClockHz) {

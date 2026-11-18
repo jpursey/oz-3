@@ -232,6 +232,16 @@ TEST(BootRomTest, Cores) {
   ExpectScreen(*ozzy, GetBannerRows("OZZY 0.1  1 MHz  8 cores  56K RAM"));
 }
 
+TEST(BootRomTest, EveryDevice) {
+  // The machine table has 8 devices, with the drives last.
+  OzzySettings settings;
+  settings.teletype = OzzyTeletypeSettings();
+  settings.drives.fill(OzzyDriveSettings());
+  std::unique_ptr<Ozzy> ozzy = BootOzzy(settings);
+  ASSERT_NE(ozzy, nullptr);
+  ExpectScreen(*ozzy, GetBannerRows(kDefaultBanner));
+}
+
 TEST(BootRomTest, LeastRam) {
   OzzySettings settings;
   settings.banks = {0x0002};

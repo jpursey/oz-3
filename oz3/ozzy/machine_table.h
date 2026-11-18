@@ -77,6 +77,7 @@ enum class MachineDeviceType : uint16_t {
   kKeyboard = 2,
   kTeletype = 3,
   kTimer = 4,
+  kDrive = 5,
 };
 
 inline constexpr int kMachineDeviceType = 0;
@@ -94,7 +95,7 @@ inline constexpr int kMachineDevicePage = 5;
 
 // Two words that are the type's own: a screen's columns and rows, a keyboard's
 // first key state port (kMachineTableNone for none) and 0, a timer's ticks a
-// second and 0, and otherwise 0.
+// second and 0, a drive's letter ('A' to 'D') and slots, and otherwise 0.
 inline constexpr int kMachineDeviceData = 6;
 inline constexpr int kMachineDeviceSize = 8;
 

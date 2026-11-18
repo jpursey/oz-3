@@ -5,19 +5,23 @@
 
 #include "oz3/ozzy/ozzy_settings.h"
 
+#include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "gb/config/config.h"
 #include "gb/config/config_reader.h"
 #include "gb/config/text_config.h"
+#include "gb/file/path.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 
@@ -44,14 +48,26 @@ static_assert(kOzzyKeyboardPort < kOzzyTimerPort &&
                   kOzzyTeletypePort < kOzzyTimerPort &&
                   kOzzyTimerPort + Timer::kPorts <= kOzzyKeyboardKeyStatePort,
               "The timer's ports must be between the other devices' ports");
+static_assert(kOzzyKeyboardKeyStatePort + Keyboard::kKeyStatePorts <=
+                      kOzzyDrivePort &&
+                  kOzzyDrivePort + kOzzyDriveCount * DiskDrive::kPorts <=
+                      OzzySettings::kMinPorts,
+              "The drives' ports must be after the keyboard's, and ports "
+              "every Ozzy has");
 static_assert(kOzzyScreenInterrupt < CpuCore::kInterruptCount &&
                   kOzzyKeyboardInterrupt < CpuCore::kInterruptCount &&
-                  kOzzyTimerInterrupt < CpuCore::kInterruptCount,
+                  kOzzyTimerInterrupt < CpuCore::kInterruptCount &&
+                  kOzzyDriveInterrupt + kOzzyDriveCount <=
+                      CpuCore::kInterruptCount,
               "Device interrupts must be interrupts every core has");
 static_assert(kOzzyTimerInterrupt != kOzzyScreenInterrupt &&
                   kOzzyTimerInterrupt != kOzzyKeyboardInterrupt &&
                   kOzzyScreenInterrupt != kOzzyKeyboardInterrupt,
               "Device interrupts must be different");
+static_assert(kOzzyKeyboardInterrupt < kOzzyDriveInterrupt &&
+                  kOzzyTimerInterrupt < kOzzyDriveInterrupt &&
+                  kOzzyDriveInterrupt + kOzzyDriveCount <= kOzzyScreenInterrupt,
+              "The drives' interrupts must be between the other devices'");
 
 //==============================================================================
 // Keys
@@ -288,6 +304,16 @@ TimerSettings GetOzzyTimerSettings(const OzzyTimerSettings& timer) {
           .tick_hz = timer.tick_hz};
 }
 
+DiskDriveSettings GetOzzyDriveSettings(int drive,
+                                       const OzzyDriveSettings& settings) {
+  DCHECK(drive >= 0 && drive < kOzzyDriveCount);
+  return {.port = kOzzyDrivePort + drive * DiskDrive::kPorts,
+          .interrupt = {.interrupt = kOzzyDriveInterrupt + drive,
+                        .cores = kOzzyDriveInterruptCores},
+          .slots = settings.slots,
+          .hardware = settings.hardware};
+}
+
 //==============================================================================
 // Validating settings
 //==============================================================================
@@ -334,6 +360,25 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
       return PathError("timer",
                        absl::StrCat("tick_hz must be at most clock_hz (",
                                     settings.clock_hz, ")"));
+    }
+  }
+
+  // Images are compared as normalized text, so two spellings of one file may
+  // still get past this.
+  std::array<std::string, kOzzyDriveCount> images;
+  for (int i = 0; i < kOzzyDriveCount; ++i) {
+    const std::optional<OzzyDriveSettings>& drive = settings.drives[i];
+    if (!drive.has_value() || drive->image.empty()) {
+      continue;
+    }
+    images[i] = gb::NormalizePath(drive->image);
+    for (int j = 0; j < i; ++j) {
+      if (!images[j].empty() && images[j] == images[i]) {
+        return PathError(
+            absl::StrCat("drive ", std::string(1, GetOzzyDriveLetter(i))),
+            absl::StrCat("image ", drive->image, " is also drive ",
+                         std::string(1, GetOzzyDriveLetter(j)), "'s"));
+      }
     }
   }
   return absl::OkStatus();

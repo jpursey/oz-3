@@ -17,6 +17,7 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "oz3/core/cpu_core.h"
@@ -27,6 +28,7 @@
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/processor_config.h"
+#include "oz3/disk/disk_image.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/ozzy/boot_rom.h"
 #include "oz3/ozzy/machine_table.h"
@@ -115,12 +117,22 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
     } else if (device_config.name == Ozzy::kTeletypeName) {
       WriteDeviceEntry(MachineDeviceType::kTeletype, device_config,
                        settings.cores, entries);
-    } else {
-      DCHECK(device_config.name == Ozzy::kTimerName);
+    } else if (device_config.name == Ozzy::kTimerName) {
       WriteDeviceEntry(MachineDeviceType::kTimer, device_config, settings.cores,
                        entries);
       entries[kMachineDeviceData] =
           static_cast<uint16_t>(settings.timer->tick_hz);
+    } else {
+      const int drive =
+          static_cast<int>(absl::c_find(Ozzy::kDriveNames, device_config.name) -
+                           Ozzy::kDriveNames.begin());
+      DCHECK_LT(drive, kOzzyDriveCount);
+      WriteDeviceEntry(MachineDeviceType::kDrive, device_config, settings.cores,
+                       entries);
+      entries[kMachineDeviceData] =
+          static_cast<uint16_t>(GetOzzyDriveLetter(drive));
+      entries[kMachineDeviceData + 1] =
+          static_cast<uint16_t>(settings.drives[drive]->slots);
     }
     entries.remove_prefix(kMachineDeviceSize);
   }
@@ -188,7 +200,49 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
     }
     config.AddDevice(std::move(*timer));
   }
+  for (int i = 0; i < kOzzyDriveCount; ++i) {
+    if (!settings.drives[i].has_value()) {
+      continue;
+    }
+    absl::StatusOr<std::unique_ptr<DiskDriveFactory>> drive =
+        DiskDriveFactory::Create(Ozzy::kDriveNames[i],
+                                 GetOzzyDriveSettings(i, *settings.drives[i]));
+    if (!drive.ok()) {
+      return drive.status();
+    }
+    config.AddDevice(std::move(*drive));
+  }
   return config;
+}
+
+// The drives' images at power on, by drive number, with null for none.
+using DriveImages = std::array<std::unique_ptr<DiskImage>, kOzzyDriveCount>;
+
+// Opens the drives' images in `file_system`, or returns an error naming the
+// drive whose image doesn't open.
+absl::StatusOr<DriveImages> OpenDriveImages(const OzzySettings& settings,
+                                            gb::FileSystem* file_system) {
+  DriveImages images;
+  for (int i = 0; i < kOzzyDriveCount; ++i) {
+    const std::optional<OzzyDriveSettings>& drive = settings.drives[i];
+    if (!drive.has_value() || drive->image.empty()) {
+      continue;
+    }
+    if (file_system == nullptr) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Drive ", Ozzy::kDriveNames[i],
+                       " no file system to open its image ", drive->image));
+    }
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(file_system, drive->image);
+    if (!image.ok()) {
+      return absl::Status(image.status().code(),
+                          absl::StrCat("Drive ", Ozzy::kDriveNames[i], " ",
+                                       image.status().message()));
+    }
+    images[i] = *std::move(image);
+  }
+  return images;
 }
 
 }  // namespace
@@ -198,7 +252,7 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
 //==============================================================================
 
 absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
-    const OzzySettings& settings) {
+    const OzzySettings& settings, gb::FileSystem* file_system) {
   absl::Status status = ValidateOzzySettings(settings);
   if (!status.ok()) {
     return status;
@@ -210,6 +264,10 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
   status = config->Validate();
   if (!status.ok()) {
     return status;
+  }
+  absl::StatusOr<DriveImages> images = OpenDriveImages(settings, file_system);
+  if (!images.ok()) {
+    return images.status();
   }
   auto processor = std::make_unique<Processor>(*config);
 
@@ -234,7 +292,15 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
   core->Reset(*lock, loader.GetResetParams(boot_rom));
   lock.reset();
 
-  return absl::WrapUnique(new Ozzy(std::move(processor)));
+  // The disks are in their drives at power on, which read their superblocks
+  // in their first runs.
+  auto ozzy = absl::WrapUnique(new Ozzy(std::move(processor)));
+  for (int i = 0; i < kOzzyDriveCount; ++i) {
+    if ((*images)[i] != nullptr) {
+      ozzy->drives_[i]->AttachImage(std::move((*images)[i]));
+    }
+  }
+  return ozzy;
 }
 
 Ozzy::Ozzy(std::unique_ptr<Processor> processor)
@@ -242,9 +308,39 @@ Ozzy::Ozzy(std::unique_ptr<Processor> processor)
       screen_(static_cast<Screen*>(processor_->GetDevice(kScreenName))),
       keyboard_(static_cast<Keyboard*>(processor_->GetDevice(kKeyboardName))),
       teletype_(static_cast<Teletype*>(processor_->GetDevice(kTeletypeName))),
-      timer_(static_cast<Timer*>(processor_->GetDevice(kTimerName))) {}
+      timer_(static_cast<Timer*>(processor_->GetDevice(kTimerName))) {
+  for (int i = 0; i < kOzzyDriveCount; ++i) {
+    drives_[i] = static_cast<DiskDrive*>(processor_->GetDevice(kDriveNames[i]));
+  }
+}
 
 Ozzy::~Ozzy() = default;
+
+DiskDrive* Ozzy::GetDrive(char letter) {
+  const int drive = letter - 'A';
+  if (drive < 0 || drive >= kOzzyDriveCount) {
+    return nullptr;
+  }
+  return drives_[drive];
+}
+
+void Ozzy::SetClock(Clock clock) {
+  clock_ = std::move(clock);
+
+  // Each device is given a clock only when there is one, as a device with
+  // none gives no date.
+  const bool has_clock = static_cast<bool>(clock_);
+  if (timer_ != nullptr) {
+    timer_->SetClock(has_clock ? Timer::Clock([this] { return clock_(); })
+                               : nullptr);
+  }
+  for (DiskDrive* drive : drives_) {
+    if (drive != nullptr) {
+      drive->SetClock(has_clock ? DiskDrive::Clock([this] { return clock_(); })
+                                : nullptr);
+    }
+  }
+}
 
 Cycles Ozzy::Run(absl::Duration time) {
   DCHECK(time != absl::InfiniteDuration());
