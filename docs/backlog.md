@@ -67,13 +67,17 @@ worked out ahead of the call.
 - **Feature workflow:** yes
 - **Depends on:** *Disk drive device*, and *Disk tools* to make disks to try
   by hand
-- **Background:** [disk_design.md](disk_design.md) (Ozzy)
+- **Background:** [disk_design.md](disk_design.md) (Ozzy);
+  [disk-drive-device.md](worklog/disk-drive-device.md) (Host interface)
 
 Drives `A:` to `D:` in the Ozzy: the wiring (ports 16 to 27, with the ports
 kept for devices growing to 0 to 31), `{ type: "drive" }` in configs with an
 image attached at power on, the machine table's type 5, `Ozzy::GetDrive`, the
 host clock, flushing at shutdown, and how the `ozzy` app changes disks while
-it runs.
+it runs. `DiskDrive` has no host `Flush`: detaching discards what the file
+system hadn't committed, as pulling a floppy would, and only destroying the
+drive writes it back. If the app should eject a disk cleanly, the drive gains
+a `Flush` (or a clean `DetachImage`) here.
 
 ## Ozzy OS
 
