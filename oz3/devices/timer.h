@@ -132,10 +132,11 @@ class TimerFactory final : public DeviceFactory {
 //
 // The date and time are the host's, from the clock in the processor's context
 // (see Contract), which the timer calls only when a program asks for the time,
-// from inside Processor::Execute. Without a clock, both are zeros, which means no date, since month 0 is invalid. They
-// are the host's time, not the machine's: they have nothing to do with the
-// cycle count, ticks, or milliseconds, so when a host runs the machine slower
-// or faster than its clock rate, the date and time drift from them.
+// from inside Processor::Execute. Without a clock, both are zeros, which means
+// no date, since month 0 is invalid. They are the host's time, not the
+// machine's: they have nothing to do with the cycle count, ticks, or
+// milliseconds, so when a host runs the machine slower or faster than its clock
+// rate, the date and time drift from them.
 //
 // The timer sleeps until its next tick, or a write to the clock port.
 class Timer final : public Device {

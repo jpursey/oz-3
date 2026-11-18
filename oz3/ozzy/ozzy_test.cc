@@ -127,9 +127,9 @@ std::vector<uint16_t> AskTime(Ozzy& ozzy) {
 }
 
 TEST(OzzyTest, TheTimerHasTheClock) {
-  std::unique_ptr<Ozzy> ozzy =
-      CreateOzzy(OzzySettings(), nullptr,
-                 [] { return absl::CivilSecond(2026, 11, 18, 9, 30, 15); });
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings(), nullptr, [] {
+    return absl::CivilSecond(2026, 11, 18, 9, 30, 15);
+  });
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(AskTime(*ozzy), ElementsAre(9, 0x1E0F));
 }

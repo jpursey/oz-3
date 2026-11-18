@@ -223,10 +223,9 @@ bool Run(gb::ValidatedContext& context,
   // with it. It is the host's time, so when the Ozzy can't keep up with its
   // clock rate (or runs at max speed), it drifts from the timer's ticks and
   // milliseconds.
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(*settings, file_system, [] {
-        return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone());
-      });
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
+      *settings, file_system,
+      [] { return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone()); });
   if (!ozzy.ok()) {
     writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
                                              ozzy.status().message()));

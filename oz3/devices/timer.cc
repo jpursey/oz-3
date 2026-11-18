@@ -44,8 +44,7 @@ TimerFactory::TimerFactory(std::string_view name, const TimerSettings& settings)
                .interrupts = {settings.interrupt}}),
       settings_(settings) {}
 
-std::unique_ptr<Device> TimerFactory::CreateDevice(
-    gb::Context* context) const {
+std::unique_ptr<Device> TimerFactory::CreateDevice(gb::Context* context) const {
   Timer::Contract contract(context);
   if (!contract.IsValid()) {
     return nullptr;
@@ -150,8 +149,6 @@ void Timer::AnswerClock(const Lock& lock, uint16_t index) {
   answer.Store(GetPort(kClockPort), lock, 0);
 }
 
-void Timer::LatchDateTime() {
-  latched_ = DateTime::FromHostClock(context_);
-}
+void Timer::LatchDateTime() { latched_ = DateTime::FromHostClock(context_); }
 
 }  // namespace oz3

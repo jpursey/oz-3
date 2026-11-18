@@ -52,10 +52,10 @@ class DeviceFactory {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Creates a device for one Processor, wired as GetConfig(), or returns null if
-  // `context` doesn't meet the device's contract. The device holds its own copy
-  // of what it needs, so it doesn't depend on this factory. `context` is the
-  // Processor's, which outlives the device.
+  // Creates a device for one Processor, wired as GetConfig(), or returns null
+  // if `context` doesn't meet the device's contract. The device holds its own
+  // copy of what it needs, so it doesn't depend on this factory. `context` is
+  // the Processor's, which outlives the device.
   virtual std::unique_ptr<Device> CreateDevice(gb::Context* context) const = 0;
 
  protected:

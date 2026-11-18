@@ -253,9 +253,9 @@ absl::StatusOr<DriveImages> OpenDriveImages(const OzzySettings& settings,
 // Ozzy
 //==============================================================================
 
-absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
-    const OzzySettings& settings, gb::FileSystem* file_system,
-    HostClock clock) {
+absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
+                                                   gb::FileSystem* file_system,
+                                                   HostClock clock) {
   absl::Status status = ValidateOzzySettings(settings);
   if (!status.ok()) {
     return status;
