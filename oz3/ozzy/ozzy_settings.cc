@@ -145,8 +145,8 @@ std::string GetIndexPath(std::string_view path, int index) {
 // Errors are left in the reader's status.
 class OzzySettingsReader final {
  public:
-  // Relative image paths are from `folder`, which is normalized, or kept as
-  // they are if it is empty.
+  // Relative image paths are from `folder`, which is normalized, and stay
+  // relative if it is empty.
   explicit OzzySettingsReader(std::string_view folder) : folder_(folder) {}
 
   OzzySettings Read(const gb::ConfigReader& reader);
@@ -345,7 +345,7 @@ void OzzySettingsReader::ReadImage(const gb::ConfigReader& image,
     return;
   }
   *path = gb::NormalizePath(text);
-  if (!path->empty() && !folder_.empty() && !gb::IsPathAbsolute(*path)) {
+  if (!path->empty() && !gb::IsPathAbsolute(*path)) {
     *path = gb::NormalizePath(gb::JoinPath(folder_, *path));
   }
   if (path->empty()) {

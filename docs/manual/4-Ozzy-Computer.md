@@ -76,20 +76,14 @@ A device's other keys are its settings, with the names, defaults, and ranges its
 
 `drives` is a list of the Ozzy's disk drives, lettered in order: the first is `A:`, the next `B:`, and so on, up to `D:`. They are a list of their own, as they are the one device an Ozzy has several of, and their order names them. A drive with no disk keeps its place, so an Ozzy whose only disk is in `B:` has an empty `A:` before it. There are no drives by default.
 
-Each drive is a map of its settings, which are the [Disk Drive](3.5-Disk-Drive.md#wiring-and-settings)'s:
+Each drive is a map with two keys of the Ozzy's own, and the drive's settings, with the names, defaults, and ranges its own page gives (see [Disk Drive](3.5-Disk-Drive.md#wiring-and-settings)):
 
-| Key                   | Default | What                                                                                |
-| --------------------- | ------- | ----------------------------------------------------------------------------------- |
-| `preset`              | none    | The drive's timing preset (below), which every drive names                         |
-| `read_cache_sectors`  | Preset  | Sectors in the drive's read cache, or 0 for none                                    |
-| `read_words_per_sec`  | Preset  | Words a second read from the disk                                                   |
-| `write_words_per_sec` | Preset  | Words a second written to the disk                                                  |
-| `cache_words_per_sec` | Preset  | Words a second copied out of the read cache                                         |
-| `latency_ms`          | Preset  | Milliseconds for a seek, at most 60,000                                             |
-| `slots`               | 4       | How many files can be open at once: 1 to 255                                        |
-| `image`               | none    | The disk image in the drive at power on, or none for an empty drive                 |
+| Key      | Default | What                                                                 |
+| -------- | ------- | -------------------------------------------------------------------- |
+| `preset` | none    | The drive's timing preset (below), which every drive names           |
+| `image`  | none    | The disk image in the drive at power on, or none for an empty drive  |
 
-The preset is the drive's kind, and the keys after it change what it gives, in any order, so `{ preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek. The presets are the Disk Drive's [timing presets](3.5-Disk-Drive.md#timing-presets):
+The preset is the drive's kind, and the drive's other settings change what it gives, in any order, so `{ preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek. The presets are the Disk Drive's [timing presets](3.5-Disk-Drive.md#timing-presets):
 
 | Preset         | Approximates                            |
 | -------------- | --------------------------------------- |
