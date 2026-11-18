@@ -38,23 +38,6 @@ The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
-## Write-back failures at shutdown
-
-- **Layers:** devices, ozzy, apps
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** `DiskDrive::~DiskDrive` in `oz3/devices/disk_drive.cc`, and
-  [ozzy-drives.md](worklog/ozzy-drives.md)
-
-A drive writes back what it hasn't committed as it is destroyed, and a failure
-there (a full or removed host disk, a file that can't be written) leaves the
-image as a crash would, with nothing told. So the `ozzy` app quits cleanly and
-exits with 0 having lost the session's writes. The host should be able to ask
-a drive to write back before destroying it, and learn whether it could, so
-`Ozzy` can write back every drive as the app quits, and the app report a drive
-that failed and exit with an error.
-
 ## Changing disks in ozzy
 
 - **Layers:** ozzy, apps, manual
