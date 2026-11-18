@@ -18,12 +18,15 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/time/time.h"
 #include "gb/config/config.h"
 #include "gb/config/config_reader.h"
 #include "gb/config/text_config.h"
 #include "gb/file/path.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
+#include "oz3/devices/disk_drive.h"
+#include "oz3/disk/disk_hardware.h"
 
 namespace oz3 {
 
@@ -71,8 +74,8 @@ static_assert(kOzzyKeyboardInterrupt < kOzzyDriveInterrupt &&
 // Keys
 //==============================================================================
 
-constexpr std::string_view kMachineKeys[] = {"clock_hz", "cores", "ports",
-                                             "banks", "devices"};
+constexpr std::string_view kMachineKeys[] = {"clock_hz", "cores",   "ports",
+                                             "banks",    "devices", "drives"};
 constexpr std::string_view kBankKeys[] = {"ram"};
 constexpr std::string_view kScreenKeys[] = {
     "type",          "columns",       "rows",      "refresh_hz",
@@ -80,6 +83,27 @@ constexpr std::string_view kScreenKeys[] = {
 constexpr std::string_view kKeyboardKeys[] = {"type"};
 constexpr std::string_view kTeletypeKeys[] = {"type", "baud", "buffer_size"};
 constexpr std::string_view kTimerKeys[] = {"type", "tick_hz"};
+constexpr std::string_view kDriveKeys[] = {"preset",
+                                           "read_cache_sectors",
+                                           "read_words_per_sec",
+                                           "write_words_per_sec",
+                                           "cache_words_per_sec",
+                                           "latency_ms",
+                                           "slots",
+                                           "image"};
+
+//==============================================================================
+// Drive presets
+//==============================================================================
+
+constexpr gb::ConfigEnumName<DiskDrivePreset> kDrivePresets[] = {
+    {"floppy-360k", DiskDrivePreset::kFloppy360k},
+    {"floppy-720k", DiskDrivePreset::kFloppy720k},
+    {"floppy-1440k", DiskDrivePreset::kFloppy1440k},
+    {"hd-10m", DiskDrivePreset::kHardDisk10m},
+    {"hd-20m", DiskDrivePreset::kHardDisk20m},
+    {"hd-40m", DiskDrivePreset::kHardDisk40m},
+};
 
 //==============================================================================
 // Device types
@@ -121,6 +145,10 @@ std::string GetIndexPath(std::string_view path, int index) {
 // Errors are left in the reader's status.
 class OzzySettingsReader final {
  public:
+  // Relative image paths are from `folder`, which is normalized, and stay
+  // relative if it is empty.
+  explicit OzzySettingsReader(std::string_view folder) : folder_(folder) {}
+
   OzzySettings Read(const gb::ConfigReader& reader);
 
  private:
@@ -131,7 +159,11 @@ class OzzySettingsReader final {
   void ReadKeyboard(const gb::ConfigReader& device);
   void ReadTeletype(const gb::ConfigReader& device);
   void ReadTimer(const gb::ConfigReader& device);
+  void ReadDrives(const gb::ConfigReader& drives);
+  void ReadDrive(const gb::ConfigReader& reader, OzzyDriveSettings* drive);
+  void ReadImage(const gb::ConfigReader& image, std::string* path);
 
+  const std::string folder_;
   OzzySettings settings_;
 };
 
@@ -142,6 +174,7 @@ OzzySettings OzzySettingsReader::Read(const gb::ConfigReader& reader) {
     reader.Get("ports").ReadInt(&settings_.ports);
     ReadBanks(reader.Get("banks"));
     ReadDevices(reader.Get("devices"));
+    ReadDrives(reader.Get("drives"));
   }
   return std::move(settings_);
 }
@@ -259,6 +292,71 @@ void OzzySettingsReader::ReadTimer(const gb::ConfigReader& device) {
     return;
   }
   device.Get("tick_hz").ReadInt(&timer.tick_hz);
+}
+
+void OzzySettingsReader::ReadDrives(const gb::ConfigReader& drives) {
+  if (!drives.ValidateArray(0, kOzzyDriveCount)) {
+    return;
+  }
+  const int drive_count = drives.GetArraySize();
+  settings_.drives.assign(drive_count, OzzyDriveSettings());
+  for (int i = 0; i < drive_count; ++i) {
+    ReadDrive(drives.Get(i), &settings_.drives[i]);
+  }
+}
+
+void OzzySettingsReader::ReadDrive(const gb::ConfigReader& reader,
+                                   OzzyDriveSettings* drive) {
+  if (!reader.ValidateMap(kDriveKeys)) {
+    return;
+  }
+
+  // The preset comes first, as the other settings change what it gives.
+  const gb::ConfigReader preset = reader.Get("preset");
+  if (preset.IsMissing()) {
+    reader.Reject("missing preset");
+    return;
+  }
+  DiskDrivePreset drive_preset = DiskDrivePreset::kFloppy1440k;
+  preset.ReadEnum<DiskDrivePreset>(kDrivePresets, &drive_preset);
+  DiskHardwareSettings& hardware = drive->hardware;
+  hardware = GetDiskDrivePreset(drive_preset);
+  reader.Get("read_cache_sectors").ReadInt(&hardware.read_cache_sectors);
+  reader.Get("read_words_per_sec").ReadInt(&hardware.read_words_per_sec);
+  reader.Get("write_words_per_sec").ReadInt(&hardware.write_words_per_sec);
+  reader.Get("cache_words_per_sec").ReadInt(&hardware.cache_words_per_sec);
+  if (const gb::ConfigReader latency = reader.Get("latency_ms");
+      !latency.IsMissing()) {
+    int latency_ms = 0;
+    latency.ReadInt(&latency_ms);
+    hardware.latency = absl::Milliseconds(latency_ms);
+  }
+  reader.Get("slots").ReadInt(&drive->slots);
+  ReadImage(reader.Get("image"), &drive->image);
+}
+
+void OzzySettingsReader::ReadImage(const gb::ConfigReader& image,
+                                   std::string* path) {
+  if (image.IsMissing()) {
+    return;
+  }
+  std::string text;
+  image.ReadString(&text);
+  if (text.empty()) {
+    image.Reject("must be a path");
+    return;
+  }
+  *path = gb::NormalizePath(text);
+  if (path->empty()) {
+    image.Reject(absl::StrCat("isn't a valid path: ", text));
+    return;
+  }
+  if (!gb::IsPathAbsolute(*path)) {
+    *path = gb::NormalizePath(gb::JoinPath(folder_, *path));
+    if (path->empty()) {
+      image.Reject(absl::StrCat("isn't a path in the config's folder: ", text));
+    }
+  }
 }
 
 }  // namespace
@@ -393,25 +491,27 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
 //==============================================================================
 
 absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
-                                              std::string_view filename) {
-  absl::StatusOr<gb::Config> config = gb::ReadConfigFromText(
-      std::move(text), gb::kRootlessTextConfig, filename);
+                                              std::string_view path) {
+  absl::StatusOr<gb::Config> config =
+      gb::ReadConfigFromText(std::move(text), gb::kRootlessTextConfig, path);
   if (!config.ok()) {
     return config.status();
   }
-  const gb::ConfigReader reader(&*config, filename);
-  OzzySettings settings = OzzySettingsReader().Read(reader);
+  const gb::ConfigReader reader(&*config, path);
+  OzzySettings settings =
+      OzzySettingsReader(gb::RemoveFilename(gb::NormalizePath(path)))
+          .Read(reader);
   if (absl::Status status = reader.GetStatus(); !status.ok()) {
     return status;
   }
 
   // The settings are no longer the text, so these errors have no location.
   if (absl::Status status = ValidateOzzySettings(settings); !status.ok()) {
-    if (filename.empty()) {
+    if (path.empty()) {
       return status;
     }
     return absl::InvalidArgumentError(
-        absl::StrCat(filename, ": ", status.message()));
+        absl::StrCat(path, ": ", status.message()));
   }
   return settings;
 }

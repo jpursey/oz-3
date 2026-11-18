@@ -71,9 +71,11 @@ const gb::CliCommand kProgram = {
     .name = "ozzy",
     .help =
         "Runs an Ozzy computer in the console, until Ctrl+Alt+Q or "
-        "Ctrl+Break, or the console's window is closed. Paths are written the "
-        "operating "
-        "system's way, absolute or relative to the current directory.",
+        "Ctrl+Break, or the console's window is closed. Its drives have the "
+        "disks the config gives them, and write back what they hold when it "
+        "quits. Paths are written the operating system's way, absolute or "
+        "relative to the current directory, and a config's disk images "
+        "relative to its folder.",
     .flags = {&kMaxSpeed, &kStats},
     .args = {&kConfigFile},
     .constraints = {&gb::kConstraintCliFileSystem},
@@ -214,7 +216,10 @@ bool Run(gb::ValidatedContext& context,
   if (settings->screen.has_value()) {
     settings->screen->draw_pixels = false;
   }
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(*settings);
+  // The drives write to their images as the Ozzy is destroyed, which is before
+  // the file system is.
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(*settings, file_system);
   if (!ozzy.ok()) {
     writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
                                              ozzy.status().message()));

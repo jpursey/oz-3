@@ -349,7 +349,7 @@ Depends on: nothing.
 - Standard checks (see CLAUDE.md).
 - Unit tests: as Testing above, but reading drives.
 
-### CL2 [ ] ozzy, apps: drives in config files and the ozzy app
+### CL2 [x] ozzy, apps: drives in config files and the ozzy app
 
 Depends on: CL1.
 

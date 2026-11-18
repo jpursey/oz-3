@@ -193,17 +193,24 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings);
 // Reads settings from the text of a config file (a `.ozzy` file): Game Bits'
 // text config format, rootless and with comments. Anything the text leaves
 // out keeps its default, as does any setting a device leaves out. Without
-// `devices`, the Ozzy has the default screen, keyboard, and timer.
+// `devices`, the Ozzy has the default screen, keyboard, and timer, and without
+// `drives`, no drives. Each drive names its preset, as a drive's kind is the
+// first thing to say about it.
+//
+// `path` is the config file's path, which errors begin with, if it isn't
+// empty. Drives' image paths are normalized, and relative ones are made from
+// its folder, so a config and its disks move together. Without a folder (an
+// empty path, or a file name alone), they are kept relative.
 //
 // Returns an error naming where the first problem in the text is, by its line
 // and column and its setting, such as `hello.ozzy(12:5): devices[1].port:
 // unknown key`: a syntax error, an unknown key, a value of the wrong type, a
-// value that doesn't fit its setting, or a second device of a type. Errors
-// begin with `filename`, if it isn't empty. Then the settings must be valid
-// (see ValidateOzzySettings), which names the setting but not its place in the
-// text: `hello.ozzy: screen: page 15 of bank 0 is RAM`.
+// value that doesn't fit its setting, a second device of a type, a drive
+// with no preset, or an image that isn't a path. Then the settings must be
+// valid (see ValidateOzzySettings), which names the setting but not its place
+// in the text: `hello.ozzy: screen: page 15 of bank 0 is RAM`.
 absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
-                                              std::string_view filename = {});
+                                              std::string_view path = {});
 
 }  // namespace oz3
 
