@@ -77,6 +77,37 @@ rest of the frontend is. Ejecting is a floppy pulled, as `DiskDrive` has it:
 what the file system hadn't committed is lost, and the OS commits with `CLOSE`
 and `FLUSH`.
 
+## Device context
+
+- **Layers:** core, devices, ozzy, manual
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `Ozzy::SetClock` in `oz3/ozzy/ozzy.cc`, `SetClock` in
+  `oz3/devices/timer.h` and `oz3/devices/disk_drive.h`, and Game Bits'
+  `gb/base/validated_context.h`
+
+The timer and the disk drive each take the host's date and time as a `Clock`
+of their own (the same `absl::AnyInvocable<absl::CivilSecond()>`), set after
+the processor is made, and `Ozzy::SetClock` hands one clock to each of them.
+So every device that needs something from the host adds its own setter, and
+every host that builds one has to remember to call it.
+
+Give devices what they need from the host through a `gb::Context` instead, as
+`gb::Context` is meant for: each piece in a chain declares what it needs,
+without the pieces between it and the host taking part.
+- The `Processor` takes a context and hands it to each `DeviceFactory` as it
+  creates the factory's device, knowing nothing of what is in it.
+- Each device declares a `gb::ContextContract` of what it needs, which is
+  validated as the device is created, and keeps the `gb::ValidatedContext`,
+  which gives it only what it declared.
+- Shared needs are one constraint every device uses, such as the clock,
+  declared once in `core` beside `DateTime`. An optional clock keeps "no clock
+  is no date".
+- `Ozzy` sets in the context it gives its processor everything the devices it
+  adds need, so `Ozzy::SetClock` and the devices' own `SetClock` go, and a
+  host gives an Ozzy its clock when it creates it.
+
 ## Kitty keyboard protocol
 
 - **Layers:** ozzy, wiki
@@ -229,12 +260,13 @@ which readers of version 1 reject.
 
 ## Same-file check through the file system
 
-- **Layers:** apps
+- **Layers:** ozzy, apps
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** Game Bits *Canonical local paths*
-- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, and `Run()`
-  in `oz3/apps/oz3ism.cc`
+- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, `Run()` in
+  `oz3/apps/oz3ism.cc`, and `ValidateOzzySettings()` in
+  `oz3/ozzy/ozzy_settings.cc`
 
 `oz3asm` won't write a file that is the source or another file it writes, nor
 `oz3ism` one that is its input, but they only compare the paths as normalized
@@ -242,9 +274,11 @@ text. Two paths to one file that are
 written differently get past the check, and the file is overwritten: a
 relative and an absolute path, a drive and its `file:` form
 (`file:/c/src/a.oza` is `C:\src\a.oza`), a difference in case where the file
-system ignores it, or a link. Ask the file system whether two paths are the
-same file instead, once Game Bits' canonical paths resolve case and links, and
-`gb::FileSystem` lets a caller ask for one.
+system ignores it, or a link. The Ozzy's check that no two drives have one
+image compares its paths the same way, so one image can get into two drives.
+Ask the file system whether two paths are the same file instead, once Game
+Bits' canonical paths resolve case and links, and `gb::FileSystem` lets a
+caller ask for one.
 
 ## Sleeping cores
 

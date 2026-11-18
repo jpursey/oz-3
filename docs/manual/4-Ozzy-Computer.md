@@ -1,18 +1,18 @@
 # Ozzy Computer
 
-The **Ozzy** is a computer built on the OZ-3: a processor with its cores, memory banks, and ports, a console of a [screen, a keyboard, and a teletype](3-Devices.md), and a [timer](3.4-Timer.md).
+The **Ozzy** is a computer built on the OZ-3: a processor with its cores, memory banks, and ports, a console of a [screen, a keyboard, and a teletype](3-Devices.md), a [timer](3.4-Timer.md), and up to four [disk drives](3.5-Disk-Drive.md), `A:` to `D:`.
 
 Ozzys aren't all alike. A config file says how fast an Ozzy is, how many cores and how much memory it has, and which devices it has. Programs find out what they are running on from the **machine table**, which the Ozzy puts in memory at power on. How each device is wired (its port, interrupt, and memory) is the same in every Ozzy, so programs can rely on it.
 
 ### The config file
 
-An Ozzy is described by a `.ozzy` file. Everything has a default, so an empty file is the default Ozzy: 1 MHz, one core, 32 ports, one bank with 56 Kiw of RAM, a screen, a keyboard, and a timer.
+An Ozzy is described by a `.ozzy` file. Everything has a default, so an empty file is the default Ozzy: 1 MHz, one core, 48 ports, one bank with 56 Kiw of RAM, a screen, a keyboard, and a timer, with no drives.
 
 ```
 // hello.ozzy
 clock_hz: 1000000,  // 1 Hz to 100 MHz
 cores: 4,           // 1 to 8
-ports: 32,          // 16 to 256
+ports: 48,          // 32 to 256
 banks: [
   { ram: 0x7FFE },  // Bank 0: pages 1 to 14 (page 0 is always the boot ROM)
   { ram: 0xFFFF }   // Bank 1: every page
@@ -30,7 +30,7 @@ The format is like JSON, without the braces around the whole file: keys needn't 
 | ---------- | --------- | ---------------------------------------------------------- |
 | `clock_hz` | 1000000   | The clock rate, in Hz: 1 to 100,000,000                    |
 | `cores`    | 1         | The cores: 1 to 8                                          |
-| `ports`    | 32        | The ports: 16 to 256. Ports 0 to 15 are for devices.       |
+| `ports`    | 48        | The ports: 32 to 256. Ports 0 to 31 are for devices.       |
 | `banks`    | one bank  | The memory banks, 1 to 16 of them (see below)              |
 | `devices`  | see below | The devices, each a map with a `type` and its own settings |
 
@@ -54,10 +54,14 @@ Each device is wired the same way in every Ozzy, so a config file doesn't say ho
 | Keyboard | 1 for typed keys, and 6 to 15 key state | 1, shared by every core | none              |
 | Teletype | 2                                       | none                    | none              |
 | Timer    | 3 for ticks, and 4 the clock            | 0, on every core        | none              |
+| Drive A: | 16 to 18                                | 2, on core 0            | none              |
+| Drive B: | 19 to 21                                | 3, on core 0            | none              |
+| Drive C: | 22 to 24                                | 4, on core 0            | none              |
+| Drive D: | 25 to 27                                | 5, on core 0            | none              |
 
-The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on the last of the ports kept for devices, leaving ports 0 and 5 for devices to come.
+The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on ports 6 to 15. Each drive has 3 ports, its command, data, and control ports (see [Ports](3.5-Disk-Drive.md#ports)), from port 16 for `A:`, leaving ports 0, 5, and 28 to 31 for devices to come. An Ozzy's drives are lettered in order, from `A:`, so an Ozzy with drives always has an `A:`, which may be empty.
 
-The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh and the timer's tick are news for every core, so they are not shared, and every core with a handler for them is told.
+The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh and the timer's tick are news for every core, so they are not shared, and every core with a handler for them is told. A drive's completion is for core 0 alone, which boots the Ozzy and runs the operating system, as the operating system issues every drive command, and a completion can be read only once (see [The command protocol](3.5-Disk-Drive.md#the-command-protocol)). Another core can still use a drive by reading its control port, but only core 0 can wait for its interrupt.
 
 So with a screen, page 15 of bank 0 must not be RAM.
 
@@ -125,28 +129,29 @@ Bank `n`'s entry is at `F08h + 2n`, with bit `p` for page `p`. A bank the Ozzy d
 | 0    | ROM pages: 0001h for bank 0, and 0 otherwise |
 | 1    | RAM pages                                    |
 
-Device entry `n` is at `F28h + 8n`. The Ozzy's devices come first, in a fixed order: the screen, the keyboard, the teletype, then the timer, for those it has. The entries after them are all 0.
+Device entry `n` is at `F28h + 8n`. The Ozzy's devices come first, in a fixed order: the screen, the keyboard, the teletype, the timer, then the drives in letter order, for those it has. The entries after them are all 0.
 
 | Word | Device entry                                                                                   |
 | ---- | ---------------------------------------------------------------------------------------------- |
-| 0    | Type: 1 for the screen, 2 the keyboard, 3 the teletype, 4 the timer, 0 for none               |
-| 1    | Port (the keyboard's typed keys, or the timer's tick port), or FFFFh for none                  |
+| 0    | Type: 1 for the screen, 2 the keyboard, 3 the teletype, 4 the timer, 5 a drive, 0 for none    |
+| 1    | Port (the keyboard's typed keys, the timer's tick port, or a drive's command port), or FFFFh for none |
 | 2    | Interrupt, or FFFFh for none                                                                   |
 | 3    | Interrupt cores, with bit `n` for core `n`, and bit 15 if it is shared, or 0 for no interrupt  |
 | 4    | Bank of the device's pages, or FFFFh for none                                                  |
 | 5    | First page, or FFFFh for none                                                                  |
-| 6, 7 | The type's own: the screen's columns and rows, the keyboard's first key state port (FFFFh for none) and 0, the timer's ticks a second and 0, and otherwise 0 |
+| 6, 7 | The type's own: the screen's columns and rows, the keyboard's first key state port (FFFFh for none) and 0, the timer's ticks a second and 0, a drive's letter (41h to 44h for `A` to `D`) and slots, and otherwise 0 |
 
 * A device's port, interrupt, and pages are always the same (see [Devices](#devices)), but the table gives them anyway, so it describes the hardware whole.
 * The interrupt cores are only cores the Ozzy has, so the screen's, every core, is 0001h on an Ozzy with one core, and the keyboard's, shared by every core, is 8001h.
-* A program finds a device by its type, not its place in the table, as an Ozzy may not have every device. It reads the entries from F28h until the header's count of devices, or until an entry of type 0. Devices to come (a disk drive) will have types of their own.
+* A program finds a device by its type, not its place in the table, as an Ozzy may not have every device. It reads the entries from F28h until the header's count of devices, or until an entry of type 0. Devices to come will have types of their own.
+* What disk is in a drive, if any, isn't in the table, as it changes while the Ozzy runs. A program asks the drive (see [Disk](3.5-Disk-Drive.md#disk)).
 * A program checks the version, which changes only if the table's layout does.
 
 For example, the default Ozzy's table is:
 
 | Words      | Values                               | What                                                            |
 | ---------- | ------------------------------------ | --------------------------------------------------------------- |
-| F00h-F07h  | 1, 4240h, 000Fh, 1, 20h, 1, 3, 0     | Version 1, 1 MHz, 1 core, 32 ports, 1 bank, and 3 devices       |
+| F00h-F07h  | 1, 4240h, 000Fh, 1, 30h, 1, 3, 0     | Version 1, 1 MHz, 1 core, 48 ports, 1 bank, and 3 devices       |
 | F08h-F09h  | 0001h, 7FFEh                         | Bank 0: the boot ROM on page 0, and RAM on pages 1 to 14        |
 | F0Ah-F27h  | 0                                    | Banks 1 to 15, which it doesn't have                            |
 | F28h-F2Fh  | 1, FFFFh, 6, 0001h, 0, 0Fh, 50h, 18h | The screen: interrupt 6 on core 0, page 15 of bank 0, 80 by 24  |

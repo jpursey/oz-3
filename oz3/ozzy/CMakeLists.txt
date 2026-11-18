@@ -34,6 +34,8 @@ set(oz3_ozzy_SOURCE
 )
 set(oz3_ozzy_DEPS
   absl::algorithm_container
+  absl::any_invocable
+  absl::civil_time
   absl::memory
   absl::no_destructor
   absl::span
@@ -43,9 +45,11 @@ set(oz3_ozzy_DEPS
   absl::time
   gb_base
   gb_config
+  gb_file
   gb_parse
   oz3_core
   oz3_devices
+  oz3_disk
   oz3_instruction_sets
   oz3_tools
 )

@@ -15,10 +15,12 @@
 #include "absl/status/statusor.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor_config.h"
+#include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
 #include "oz3/devices/timer.h"
+#include "oz3/disk/disk_hardware.h"
 
 namespace oz3 {
 
@@ -38,10 +40,12 @@ constexpr uint16_t GetBootRomPages(int bank) {
 
 // The wiring of each device, which is the same in every Ozzy, so programs know
 // it: the screen's page and interrupt, the keyboard's typed keys' port and
-// interrupt and its first key state port, the teletype's port, and the timer's
-// first port and interrupt. Interrupt cores have bit n for core n. The
-// keyboard's interrupt is shared, so each key is handled by one core, while the
-// screen's refresh and the timer's tick are news for every core with a handler.
+// interrupt and its first key state port, the teletype's port, the timer's
+// first port and interrupt, and the drives'. Interrupt cores have bit n for
+// core n. The keyboard's interrupt is shared, so each key is handled by one
+// core, while the screen's refresh and the timer's tick are news for every core
+// with a handler. A drive's completion is for core 0 alone, the OS's, which
+// issues the drives' commands, as a completion can be read only once.
 inline constexpr int kOzzyScreenBank = 0;
 inline constexpr int kOzzyScreenPage = 15;
 inline constexpr int kOzzyScreenInterrupt = 6;
@@ -54,6 +58,19 @@ inline constexpr int kOzzyTeletypePort = 2;
 inline constexpr int kOzzyTimerPort = 3;
 inline constexpr int kOzzyTimerInterrupt = 0;
 inline constexpr uint8_t kOzzyTimerInterruptCores = kAllCores;
+
+// The drives, A: to D:, numbered from 0 for A:. Drive n's ports start at
+// kOzzyDrivePort + n * DiskDrive::kPorts, and its interrupt is
+// kOzzyDriveInterrupt + n.
+inline constexpr int kOzzyDriveCount = 4;
+inline constexpr int kOzzyDrivePort = 16;
+inline constexpr int kOzzyDriveInterrupt = 2;
+inline constexpr uint8_t kOzzyDriveInterruptCores = 0x01;  // Core 0.
+
+// Returns the letter of drive `drive`: 'A' for drive 0.
+constexpr char GetOzzyDriveLetter(int drive) {
+  return static_cast<char>('A' + drive);
+}
 
 //==============================================================================
 // Device settings
@@ -92,11 +109,29 @@ struct OzzyTimerSettings {
   int tick_hz = TimerSettings().tick_hz;
 };
 
+// The settings of an Ozzy's drive that a host sets: all of DiskDriveSettings
+// but its wiring, with the same defaults, and the disk in it at power on.
+struct OzzyDriveSettings {
+  bool operator==(const OzzyDriveSettings&) const = default;
+
+  int slots = DiskDriveSettings().slots;
+  DiskHardwareSettings hardware = DiskDriveSettings().hardware;
+
+  // The path of the disk image in the drive at power on, in the file system
+  // Ozzy::Create is given, or empty for no disk.
+  std::string image;
+};
+
 // Returns the settings of an Ozzy's device: the host's, and the wiring.
 ScreenSettings GetOzzyScreenSettings(const OzzyScreenSettings& screen);
 KeyboardSettings GetOzzyKeyboardSettings();
 TeletypeSettings GetOzzyTeletypeSettings(const OzzyTeletypeSettings& teletype);
 TimerSettings GetOzzyTimerSettings(const OzzyTimerSettings& timer);
+
+// Returns the settings of drive `drive` (0 for A:) of an Ozzy, which must be
+// 0 to kOzzyDriveCount - 1.
+DiskDriveSettings GetOzzyDriveSettings(int drive,
+                                       const OzzyDriveSettings& settings);
 
 //==============================================================================
 // OzzySettings
@@ -104,13 +139,14 @@ TimerSettings GetOzzyTimerSettings(const OzzyTimerSettings& timer);
 
 // Everything a host sets about an Ozzy: the processor, its memory, and which
 // devices it has, with their own settings. The defaults are the default Ozzy:
-// one core at 1 MHz, one bank, a screen, a keyboard, and a timer.
+// one core at 1 MHz, one bank, a screen, a keyboard, and a timer, with no
+// drives.
 struct OzzySettings {
   // The fastest clock rate.
   static constexpr int64_t kMaxClockHz = 100'000'000;
 
-  // The fewest ports, which keeps ports 0 to 15 for devices.
-  static constexpr int kMinPorts = 16;
+  // The fewest ports, which keeps ports 0 to 31 for devices.
+  static constexpr int kMinPorts = 32;
 
   // The fastest a timer ticks, as the machine table holds its rate in a word.
   static constexpr int kMaxTimerTickHz = 0xFFFF;
@@ -124,7 +160,7 @@ struct OzzySettings {
   int cores = 1;
 
   // The ports, from kMinPorts to kMaxPorts.
-  int ports = 32;
+  int ports = 48;
 
   // The banks, from 1 to kMaxMemoryBanks of them, each given as its RAM pages,
   // with bit n for page n. Page 0 of bank 0 is always the boot ROM, so bank 0
@@ -137,6 +173,11 @@ struct OzzySettings {
   bool keyboard = true;
   std::optional<OzzyTeletypeSettings> teletype;
   std::optional<OzzyTimerSettings> timer = OzzyTimerSettings();
+
+  // The drives, lettered in order from A:, at most kOzzyDriveCount of them, no
+  // two with the same image. A drive with no image keeps its place, so a disk
+  // in B: has an empty A: before it.
+  std::vector<OzzyDriveSettings> drives;
 };
 
 //==============================================================================
