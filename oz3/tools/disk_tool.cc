@@ -123,6 +123,20 @@ std::string EntryName(const DiskDirEntry& entry) {
   return name.has_value() ? name->ToString() : "(bad name)";
 }
 
+// Returns whether Windows opens a file named `name`, a disk name as
+// DiskFilename::ToString writes it, as a device rather than a file, whatever
+// its extension and folder.
+bool IsWindowsDeviceName(std::string_view name) {
+  const std::string_view stem = name.substr(0, name.find('.'));
+  if (stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" ||
+      stem == "CONIN$" || stem == "CONOUT$") {
+    return true;
+  }
+  return stem.size() == 4 &&
+         (stem.starts_with("COM") || stem.starts_with("LPT")) &&
+         absl::ascii_isdigit(stem[3]);
+}
+
 // Returns what is wrong with a file's chain, as a person reads it.
 std::string_view ChainProblemText(DiskCheckReport::ChainProblem problem) {
   switch (problem) {
@@ -393,15 +407,26 @@ absl::Status DiskTool::Put(std::string_view image_path,
 
 absl::Status DiskTool::Get(std::string_view image_path, std::string_view name,
                            std::string_view host_path, bool text) {
-  // A name that doesn't parse fails to be found before anything is written,
-  // so it needs no host path.
-  std::string default_path;
-  if (host_path.empty()) {
+  // Without a host path, or with a folder, the host file is named as the disk
+  // names it. A name that doesn't parse fails to be found before anything is
+  // written, so it needs no host file.
+  std::string named_path;
+  if (host_path.empty() ||
+      file_system_->GetPathInfo(host_path).type == gb::PathType::kFolder) {
     if (const std::optional<DiskFilename> filename = DiskFilename::Parse(name);
         filename.has_value()) {
-      default_path = filename->ToString();
+      const std::string disk_name = filename->ToString();
+      if (IsWindowsDeviceName(disk_name)) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(disk_name,
+                         ": names a device on Windows, so it needs a host "
+                         "file given"));
+      }
+      named_path = host_path.empty()
+                       ? disk_name
+                       : gb::JoinPath(gb::NormalizePath(host_path), disk_name);
+      host_path = named_path;
     }
-    host_path = default_path;
   }
 
   std::string bytes;

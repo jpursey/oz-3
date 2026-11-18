@@ -64,6 +64,15 @@ absl::Status ValidateAttributes(const gb::ValidatedContext& context,
   return DiskTool::ParseAttributes(value).status();
 }
 
+// get's host file is a folder to copy into, or a file that can be written.
+absl::Status ValidateGetHostFile(const gb::ValidatedContext& context,
+                                 const std::string_view& value) {
+  if (gb::kCliFolderExists.validate(context, value).ok()) {
+    return absl::OkStatus();
+  }
+  return gb::kCliFileWritable.validate(context, value);
+}
+
 const gb::CliValidator<std::string_view> kSizeValidator = {
     .validate = ValidateSize,
 };
@@ -75,6 +84,11 @@ const gb::CliValidator<std::string_view> kLabelValidator = {
 };
 const gb::CliValidator<std::string_view> kAttributesValidator = {
     .validate = ValidateAttributes,
+};
+const gb::CliValidator<std::string_view> kGetHostFileValidator = {
+    .validate = ValidateGetHostFile,
+    .constraints = {&gb::kConstraintCliFileSystem,
+                    &gb::kConstraintCliFileProtocol},
 };
 
 //==============================================================================
@@ -158,10 +172,10 @@ const gb::CliArg<std::string_view> kName = {
 const gb::CliArg<std::string_view> kGetHostFile = {
     .name = "host file",
     .help =
-        "Where to copy the file. Defaults to its name on the disk, in the "
-        "current directory.",
+        "Where to copy the file, or a folder to copy it into under its name "
+        "on the disk. Defaults to the current directory.",
     .optional = true,
-    .validators = {&gb::kCliFileWritable},
+    .validators = {&kGetHostFileValidator},
 };
 const gb::CliArg<std::string_view> kNewName = {
     .name = "new name",

@@ -26,23 +26,6 @@ Each item carries:
   project asked for. For ranking only.
 - **Background**: where the context is, if anywhere.
 
-## oz3dsk get destinations
-
-- **Layers:** tools, manual
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [disk-tools.md](worklog/disk-tools.md) (Behavior)
-
-`get`'s host file can only be a file. Given a folder, as in `oz3dsk work.ozd
-get HELLO.TXT out`, it fails as a file that can't be written. It should write
-the file in the folder under its dotted disk name, as it does in the current
-folder without a host file. Without one, the disk name is also the host name,
-and on Windows a name such as `CON.TXT`, `NUL`, or `COM1.OZ3` is a device, not
-a file, so `get` writes to the device instead. Those names should fail, asking
-for a host file, before anything is read. `DiskTool::Get` does both, and the
-manual's `get` row says so.
-
 ## Ozzy OS
 
 - **Layers:** ozzy, manual

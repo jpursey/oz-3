@@ -928,12 +928,78 @@ TEST_F(DiskToolTest, GetFailsWhenItsAttributesCantBeSet) {
   EXPECT_EQ(ReadHost("fixed:/out.txt"), "hi");
 }
 
-TEST_F(DiskToolTest, GetFailsOntoAHostFolder) {
+TEST_F(DiskToolTest, GetIntoAHostFolderUsesTheDisksName) {
   NewFormatted();
-  PutFile("HELLO.TXT", "new");
+  PutFile("HELLO.TXT", "hi");
   ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  for (std::string_view folder : {"mem:/out", "mem:/out/"}) {
+    absl::Status status = tool_->Get(kImagePath, "hello.txt", folder, false);
+    ASSERT_TRUE(status.ok()) << folder << ": " << status;
+    EXPECT_EQ(ReadHost("mem:/out/HELLO.TXT"), "hi") << folder;
+    ASSERT_TRUE(file_system_.DeleteFile("mem:/out/HELLO.TXT"));
+  }
+}
+
+TEST_F(DiskToolTest, GetIntoAHostFolderFailsOntoAFolderOfTheName) {
+  NewFormatted();
+  PutFile("HELLO.TXT", "hi");
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out/HELLO.TXT"));
   EXPECT_EQ(tool_->Get(kImagePath, "HELLO.TXT", "mem:/out", false).message(),
-            "mem:/out: can't be written");
+            "mem:/out/HELLO.TXT: can't be written");
+}
+
+TEST_F(DiskToolTest, GetIntoAHostFolderFailsWithNoFile) {
+  NewFormatted();
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  for (std::string_view name : {"NOPE", "bad name"}) {
+    absl::Status status = tool_->Get(kImagePath, name, "mem:/out", false);
+    EXPECT_EQ(status.code(), absl::StatusCode::kNotFound) << name;
+    EXPECT_EQ(status.message(),
+              absl::StrCat("mem:/work.ozd: ", name, ": not found"));
+  }
+}
+
+TEST_F(DiskToolTest, GetOfAWindowsDeviceNameNeedsAHostFile) {
+  NewFormatted();
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  for (std::string_view name :
+       {"CON", "con.txt", "PRN", "AUX.OZ3", "NUL", "COM0", "COM1.OZ3", "com9",
+        "LPT0", "LPT1", "LPT9.TXT", "CONIN$", "CONOUT$.TXT"}) {
+    PutFile(name, "hi");
+    const std::string disk_name = DiskFilename::Parse(name)->ToString();
+
+    // It fails before reading the image, so a host that can't read gives the
+    // same failure.
+    host_->SetLimits({.reads = 0});
+    for (std::string_view host_path : {"", "mem:/out"}) {
+      absl::Status status = tool_->Get(kImagePath, name, host_path, false);
+      EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument) << name;
+      EXPECT_EQ(status.message(),
+                absl::StrCat(disk_name,
+                             ": names a device on Windows, so it needs a host "
+                             "file given"));
+    }
+    host_->SetLimits({});
+    EXPECT_FALSE(file_system_.IsValidPath(absl::StrCat("mem:/out/", disk_name)))
+        << name;
+    ASSERT_TRUE(tool_->Get(kImagePath, name, "mem:/out/dev.bin", false).ok())
+        << name;
+    EXPECT_EQ(ReadHost("mem:/out/dev.bin"), "hi");
+  }
+}
+
+TEST_F(DiskToolTest, GetOfANameLikeAWindowsDeviceUsesTheDisksName) {
+  NewFormatted();
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/out"));
+  for (std::string_view name :
+       {"CONS", "CO", "NULL.TXT", "COM", "COM10", "LPTX", "XCON", "CONIN"}) {
+    PutFile(name, "hi");
+    const std::string disk_name = DiskFilename::Parse(name)->ToString();
+    absl::Status status = tool_->Get(kImagePath, name, "mem:/out", false);
+    ASSERT_TRUE(status.ok()) << name << ": " << status;
+    EXPECT_EQ(ReadHost(absl::StrCat("mem:/out/", disk_name)), "hi");
+  }
 }
 
 //==============================================================================

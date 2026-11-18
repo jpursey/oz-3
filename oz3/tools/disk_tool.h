@@ -131,12 +131,15 @@ class DiskTool final {
   absl::Status Put(std::string_view image_path, std::string_view host_path,
                    std::string_view name, bool text);
 
-  // Copies the file `name` from the disk to the host file at `host_path`, or
-  // to the file's name as the disk has it (HELLO.TXT) in the file system's
-  // current folder if `host_path` is empty, replacing any file there that can
-  // be replaced, which a read-only one can't. As `text`, zero bytes are dropped
-  // (see HostTextFromDisk). The copy keeps attributes as Put's does, and fails
-  // if they can't be set, leaving the file it wrote.
+  // Copies the file `name` from the disk to the host file at `host_path`,
+  // replacing any file there that can be replaced, which a read-only one
+  // can't. If `host_path` is a folder, the host file is in it, with the file's
+  // name as the disk has it (HELLO.TXT), and if `host_path` is empty, it is
+  // that name in the file system's current folder. Either way, a name Windows
+  // opens as a device, such as CON.TXT or COM1, fails before anything is read,
+  // on every host, as it needs a host file given. As `text`, zero bytes are
+  // dropped (see HostTextFromDisk). The copy keeps attributes as Put's does,
+  // and fails if they can't be set, leaving the file it wrote.
   absl::Status Get(std::string_view image_path, std::string_view name,
                    std::string_view host_path, bool text);
 
