@@ -4,16 +4,15 @@ Drives `A:` to `D:` in the Ozzy, from [disk_design.md](../disk_design.md)
 (Ozzy). Each is a `DiskDrive` ([disk-drive-device.md](disk-drive-device.md)),
 wired the same in every Ozzy as its other devices are, so the Ozzy OS (the next
 item) can boot from `A:` knowing the drive's ports and interrupt as constants.
-A config file gives each drive its timing and the disk image in it at power
-on, the machine table lists the drives, and the `ozzy` app runs an Ozzy with
-its disks in:
+A config file lists the drives in letter order, giving each its timing and the
+disk image in it at power on, the machine table lists the drives, and the
+`ozzy` app runs an Ozzy with its disks in:
 
 ```
 // work.ozzy
-devices: [
-  { type: "screen" }, { type: "keyboard" }, { type: "timer" },
-  { type: "drive", letter: "A", image: "disks/system.ozd" },
-  { type: "drive", letter: "B", preset: "hd-20m", image: "disks/work.ozd" },
+drives: [
+  { image: "disks/system.ozd" },                  // A:
+  { preset: "hd-20m", image: "disks/work.ozd" },  // B:
 ]
 ```
 
@@ -43,34 +42,40 @@ as the OS commits with `CLOSE` and `FLUSH`. So `DiskDrive` gets no host
 
 | Drive | Ports    | Interrupt         |
 | ----- | -------- | ----------------- |
-| `A:`  | 16 to 18 | 2, on every core  |
-| `B:`  | 19 to 21 | 3, on every core  |
-| `C:`  | 22 to 24 | 4, on every core  |
-| `D:`  | 25 to 27 | 5, on every core  |
+| `A:`  | 16 to 18 | 2, on core 0      |
+| `B:`  | 19 to 21 | 3, on core 0      |
+| `C:`  | 22 to 24 | 4, on core 0      |
+| `D:`  | 25 to 27 | 5, on core 0      |
 
 - **The ports kept for devices grow from 0 to 15 to 0 to 31,** so `ports`'
   minimum rises from 16 to 32, and its default from 32 to 48, leaving programs
   the same 16 free ports by default. Ports 0, 5, and 28 to 31 are left for
   devices to come. ozzy_design.md's OS call ports move from 16 to 23 to 32 to
   39, the first ports past the devices'.
-- **The interrupts are on every core, and not shared:** a completion is news
-  for whichever core issued the command, normally the OS's, and every core
-  with a handler is told, as with the timer.
-- An Ozzy has one drive of each letter, and none by default.
+- **The interrupts are on core 0 alone,** the OS's core, which boots and owns
+  the drives, issuing every command (see disk_design.md's OS examples). A
+  completion can be read only once, so on every core, a program's handler
+  could take it from the OS. Another core can still use a drive by polling its
+  control port, but only core 0 can wait on its interrupt.
+- **Drives are lettered in order,** from `A:`, so an Ozzy with drives always has
+  an `A:`, the one it boots from. An empty drive, with no image, keeps a
+  drive's place: an Ozzy whose only disk is in `B:` has an empty `A:`. An
+  Ozzy has at most 4, and none by default.
 
 ### The config file
 
-A drive is `{ type: "drive", letter: "A", ... }`, and only `type` and `letter`
-are needed. The rest are the drive's settings, each optional, with the names
-the manual's Disk Drive page gives them:
+The drives are their own list, `drives`, beside `devices`, as they are the one
+device an Ozzy has several of, in an order that names them: the first is `A:`.
+Each is a map of the drive's settings, each optional, so `{}` is an empty
+floppy drive, with the names the manual's Disk Drive page gives them:
 - `preset`: the timing preset, which sets the read and write rates, the
   latency, and the read cache. The names are the Ozzy's: `floppy-360k`,
   `floppy-720k`, `floppy-1440k` (the default), `hd-10m`, `hd-20m`, and
   `hd-40m`.
 - `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`,
   `cache_words_per_sec`, and `latency_ms`: each changes what the preset gives,
-  whatever order the keys are in, so `{ type: "drive", letter: "B", preset:
-  "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek. The
+  whatever order the keys are in, so `{ preset: "hd-20m", latency_ms: 30 }`
+  is a 20 MB hard disk with a faster seek. The
   Disk Drive page's `latency` becomes `latency_ms`, as a config's number names
   its unit (as `tick_hz` does).
 - `slots`, 4 by default.
@@ -79,11 +84,12 @@ the manual's Disk Drive page gives them:
   and its disks move together.
 
 Errors, as the other devices' are:
-- Read errors, with a line and column: `letter` missing or not `"A"` to `"D"`,
-  a second drive of a letter (`an Ozzy has only one drive A:`), a `preset`
-  that isn't one of the names, an empty `image`, and the usual unknown keys
-  and wrong types.
-- The Ozzy's own rules, with no line: two drives with one image
+- Read errors, with a line and column: more than 4 drives (`drives: must have
+  0 to 4 values`, as Game Bits' `ValidateArray` words it), a `preset` that isn't
+  one of the names, an empty `image`, and the usual unknown keys and wrong
+  types.
+- The Ozzy's own rules, with no line: more than 4 drives in settings made in
+  code (`drives: must have at most 4 drives`), and two drives with one image
   (`drive B: image disks/a.ozd is also drive A's`), comparing the paths as
   normalized text.
 - The drive's own checks (slots, and rates and latency in range), from
@@ -98,8 +104,8 @@ Errors, as the other devices' are:
 
 Each drive is a device entry of type 5 (`MachineDeviceType::kDrive`), after
 the timer, in letter order: its first port (the command port), its interrupt
-and cores, no bank or page, and as its two words of its own, its letter (41h
-to 44h) and its slots. What disk is in it, if any, is the drive's to say
+and its cores (0001h, not shared), no bank or page, and as its two words of its
+own, its letter (41h to 44h) and its slots. What disk is in it, if any, is the drive's to say
 (`MEDIA` and `VOLUME`), as it changes while the Ozzy runs. An Ozzy has at most
 8 devices, well within the table's 16.
 
@@ -139,8 +145,8 @@ to 44h) and its slots. What disk is in it, if any, is the drive's to say
 ### Manual
 
 `4-Ozzy-Computer.md`: the drives in the introduction, the config's `ports`,
-the devices list and wiring table, the drive's keys and presets, errors, the
-machine table's type 5 and its words, the default table's ports (30h), and
+the wiring table, the `drives` list with the drive's keys and presets, errors,
+the machine table's type 5 and its words, the default table's ports (30h), and
 running `ozzy` with disks. `3.5-Disk-Drive.md`: `latency` becomes
 `latency_ms`, and a line on where the Ozzy has its drives.
 
@@ -160,8 +166,8 @@ running `ozzy` with disks. `3.5-Disk-Drive.md`: `latency` becomes
 - The device names are the Ozzy's names for its drives, so the drive's own
   errors read as the user would say them: `Disk drive A: has 0 slots`.
 - `GetDrive` takes the letter, as a host thinks of a drive by its letter, while
-  `OzzySettings::drives` is an array whose index is the drive's number, 0 for
-  `A:`, so a host can't give one letter two drives. The machine table's letter
+  `OzzySettings::drives` is a list in letter order, whose index is the drive's
+  number, 0 for `A:`, as the config's `drives` is. The machine table's letter
   word is `'A'` plus that number.
 - The config's preset names are the Ozzy's, as disk_design.md has them: the
   devices library names its presets only in C++ (`DiskDrivePreset`).
@@ -175,7 +181,7 @@ running `ozzy` with disks. `3.5-Disk-Drive.md`: `latency` becomes
 inline constexpr int kOzzyDriveCount = 4;
 inline constexpr int kOzzyDrivePort = 16;
 inline constexpr int kOzzyDriveInterrupt = 2;
-inline constexpr uint8_t kOzzyDriveInterruptCores = kAllCores;
+inline constexpr uint8_t kOzzyDriveInterruptCores = 0x01;  // Core 0.
 
 // The settings of an Ozzy's drive that a host sets: all of DiskDriveSettings
 // but its wiring, with the same defaults, and the image in it at power on.
@@ -195,16 +201,16 @@ struct OzzySettings {
   static constexpr int kMinPorts = 32;  // Ports 0 to 31 are for devices.
   int ports = 48;
   ...
-  // The drives, by number: drives[0] is A:.
-  std::array<std::optional<OzzyDriveSettings>, kOzzyDriveCount> drives;
+  // The drives, A: first, at most kOzzyDriveCount of them.
+  std::vector<OzzyDriveSettings> drives;
 };
 ```
 
 - `static_assert`s check that every drive's ports are below `kMinPorts` and
   above the keyboard's key state, and that the interrupts are every core's and
   differ from the other devices', as for the devices now.
-- `ValidateOzzySettings` adds the drives' one rule: no two drives with an
-  image whose normalized paths are the same.
+- `ValidateOzzySettings` adds the drives' rules: at most `kOzzyDriveCount`,
+  and no two drives with an image whose normalized paths are the same.
 
 ### ozzy: Ozzy
 
@@ -227,7 +233,7 @@ class Ozzy final {
 
 - **Create** opens every image first, so a missing one fails before the
   processor is built, then adds the drives' factories after the timer's, in
-  letter order, and attaches each image once the processor is made.
+  order, and attaches each image once the processor is made.
 - **The machine table** is written from the processor config's devices in
   their order, as now: a drive's entry is found by its name in `kDriveNames`,
   for its letter, and its slots come from its settings.
@@ -254,10 +260,10 @@ class Ozzy final {
   doesn't normalize, and joined to the config's folder (`gb::RemoveFilename`
   and `gb::JoinPath`) unless it is absolute (`gb::IsPathAbsolute`). A config
   read with no path keeps its relative paths as they are.
-- `ReadDrive` reads `letter` first (a missing one is `missing letter`, as a
-  device's missing type is), then `preset` into the hardware settings with
-  `GetDiskDrivePreset`, and only then each setting that changes it, as a map
-  has no order.
+- `ReadDrives` reads the list with `ValidateArray(0, kOzzyDriveCount)`, and
+  each drive reads `preset` into the hardware settings with
+  `GetDiskDrivePreset` first, and only then each setting that changes it, as
+  a map has no order.
 - `latency_ms` reads as an int and becomes `absl::Milliseconds`. Ranges are
   the factory's to check, so no rule is written twice.
 
@@ -272,15 +278,16 @@ drives write back their disks when it quits.
 - `ozzy_settings_test.cc`: each drive's wiring from `GetOzzyDriveSettings`;
   `ports` of 31 rejected and 32 accepted, and 48 by default; two drives with
   one image rejected, also when written differently but normalizing the same
-  (`disks/./a.ozd`), and two different images accepted. With CL2: reading
+  (`disks/./a.ozd`), and two different images accepted; more than 4 drives
+  rejected, and none, one, and 4 accepted. With CL2: reading
   every drive key; each preset name giving its `DiskDrivePreset`; a setting
   changing the preset whatever the keys' order; relative images from the
   config's folder, absolute ones kept, and kept as they are with no path; and
-  an error naming the place for each mistake.
+  an error naming the place for each mistake, including a fifth drive.
 - `ozzy_test.cc`: `GetDrive` for every letter, null without one and for other
   characters; each drive on its ports and interrupt in the processor; the
-  machine table's drive entries, after the timer and in letter order, with
-  gaps (only `A:` and `C:`) and with all four; an image attached at power on
+  machine table's drive entries, after the timer and in letter order, on core 0
+  however many cores, with two and with all four; an image attached at power on
   (the control port shows the disk once the drive has run); errors for a
   missing image, an image with no file system, and a drive setting the
   factory rejects, each naming the drive; `SetClock` reaching the timer's

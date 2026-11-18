@@ -632,21 +632,21 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 
 | Drive | Ports | Interrupt |
 | --- | --- | --- |
-| `A:` | 16–18 | 2, on every core |
-| `B:` | 19–21 | 3, on every core |
-| `C:` | 22–24 | 4, on every core |
-| `D:` | 25–27 | 5, on every core |
+| `A:` | 16–18 | 2, on core 0 |
+| `B:` | 19–21 | 3, on core 0 |
+| `C:` | 22–24 | 4, on core 0 |
+| `D:` | 25–27 | 5, on core 0 |
 
 - **Ports:** the existing devices keep their ports (the keyboard 1 and 6–15, the teletype 2, and the timer 3 and 4), and the ports kept for devices grow from 0–15 to 0–31. So `ports`' minimum rises from 16 to 32, and its default from 32 to 48, leaving programs the same 16 free ports by default. Ports 0, 5, and 28–31 are left for devices to come.
-- **Interrupts:** a completion is news for whichever core issued the command, normally the OS's, so the interrupt is on every core and not shared, and every core with a handler is told, as with the timer.
-- **Config:** each drive is `{ type: "drive", letter: "A", ... }`, and only `type` and `letter` are required. The rest are the drive's settings, each optional:
+- **Interrupts:** each is on core 0 alone, the OS's core, which owns the drives (see Owning the drive). A completion can be read only once, so on every core, a program's handler could take it from the OS. Another core can still use a drive by polling its control port.
+- **Config:** the drives are a list of their own, `drives`, beside `devices`, lettered in order from `A:`, at most 4. Each is a map of the drive's settings, each optional, so `{}` is an empty floppy drive, and an empty drive keeps a later drive's letter:
   - `preset`: one of the timing presets (see Timing presets), `floppy-1440k` if left out. It gives the read rate, write rate, latency, and read cache.
-  - `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`, `cache_words_per_sec`, and `latency_ms`, the names the manual's Disk Drive page gives the settings: each overrides what the preset gives, whatever order the keys are in, so `{ type: "drive", letter: "B", preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
+  - `read_cache_sectors`, `read_words_per_sec`, `write_words_per_sec`, `cache_words_per_sec`, and `latency_ms`, the names the manual's Disk Drive page gives the settings: each overrides what the preset gives, whatever order the keys are in, so `{ preset: "hd-20m", latency_ms: 30 }` is a 20 MB hard disk with a faster seek.
   - `slots`, with the drive's default.
   - `image`: an image attached at power on, or none for an empty drive. The disk's size is the image's, so a preset's image size only matters to `oz3dsk new`.
 
-  A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't open is an error from creating the Ozzy, naming the drive, which the app prints as a config error, and two drives of one letter or one image are config errors. An Ozzy has at most one of each other device, but one drive per letter. There is no drive by default.
-- **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores, no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
+  A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't open is an error from creating the Ozzy, naming the drive, which the app prints as a config error, and more than 4 drives or two drives with one image are config errors. There is no drive by default.
+- **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores (0001h), no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
 - **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. `Ozzy::SetClock` gives the timer and every drive the host's clock, and each drive writes back everything dirty as the Ozzy is destroyed. `Ozzy::Create` takes the file system the images are opened in, which must outlive the Ozzy.
 - **The `ozzy` app** attaches the config's images at power on, and they stay in their drives until it quits. Changing disks while it runs is the backlog's *Changing disks in ozzy*. Ejecting there is a floppy pulled, as the drive has it, so the drive has no host `Flush`.
 - **Manual:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors, and the Disk Drive page's `latency` as `latency_ms`.
