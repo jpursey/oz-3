@@ -12,15 +12,16 @@ drive's new `WRITE BOOT` command.
 At power on, the boot ROM shows its banner in a box and a prompt, as the
 Executive did, and waits for Enter. Then it boots, or says why it can't and
 waits again, always on the same status line, so the screen never scrolls. It
-no longer echoes keys:
+no longer echoes keys (the box is drawn with the cells' edge lines, shown
+here with line characters):
 
 ```
-╔════════════════════════╗
-║ Ozzy 1.0               ║
-║                        ║
-║ 1 core  56K RAM  1 MHz ║
-║ Drives: A, B           ║
-╚════════════════════════╝
+┌────────────────────────┐
+│ Ozzy 1.0               │
+│                        │
+│ 1 core  56K RAM  1 MHz │
+│ Drives: A, B           │
+└────────────────────────┘
 
 Press Enter to Boot...
 
@@ -146,14 +147,18 @@ machine table:
   banner writes them today (`2 cores`, `4770 kHz`).
 - The drives, by letter, as `Drives: A, B`, or `Drives: none`.
 
-**On the screen,** the banner is in a box of double lines (the font's ╔ ═ ╗ ║
-╚ ╝), with a space each side of its widest line. Below the
-box come a blank line, the prompt, another blank line, and then the **status
-line**: empty at first, `Loading...` once Enter is pressed, then `ERROR:` and
-the reason, or `Ready` just before the loader starts. Each status replaces the
-last, clearing the row, so the screen never scrolls. The cursor blinks after
-the prompt while the ROM waits, and is hidden from Enter on. On a screen too
-small for it, what passes the right edge or the bottom row isn't drawn.
+**On the screen,** the banner is in a box drawn with the cells' edge lines
+(their top, bottom, left, and right line attributes), so it takes no cells of
+its own. The box is the banner's rows, and its widest line with a blank column
+each side: its top row's cells have the top line, its bottom row's the bottom
+line, its first column's the left line, and its last column's the right line,
+so the corners have two. Below the box come a blank line, the prompt, another
+blank line, and then the **status line**: empty at first, `Loading...` once
+Enter is pressed, then `ERROR:` and the reason, or `Ready` just before the
+loader starts. Each status replaces the last, clearing the row, so the screen
+never scrolls. The cursor blinks after the prompt while the ROM waits, and is
+hidden from Enter on. On a screen too small for it, what passes the right edge
+or the bottom row isn't drawn.
 
 **On the teletype,** in an Ozzy without a screen, it is the same without the
 box, and each status is a line of its own, straight after the prompt. After an
@@ -301,8 +306,11 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
   Enter, the drive's `READ BOOT` exchange on its three ports, and the
   signature check. It finds the drives in the machine table (type 5), so an
   Ozzy with no drives says so.
-- The box and the status line are drawn by writing cells, as the banner is
-  today; the status line is cleared by writing spaces across its row.
+- The box is the banner's cells written with line attributes (1000h top,
+  2000h bottom, 4000h left, 8000h right), each cell only the lines on the
+  box's outside edges, as two neighboring cells' lines on a shared edge would
+  draw it twice as thick. The status line is cleared by writing spaces across
+  its row.
 - The ROM has room: it is one page, 4K words, less the machine table's 256.
 
 ### To confirm
@@ -415,11 +423,11 @@ Depends on: CL2, and CL4 to make system disks by hand.
 **Verify**
 - Standard checks.
 - Unit tests in `boot_rom_test.cc`, with images made in the test: the boxed
-  banner's cells, including the drives line with none, one, and four drives;
-  the teletype's lines, with the blank line and prompt again after an error;
-  no prompt without a keyboard; keys other than Enter ignored; each status
-  (no drives, no disk, unformatted, no signature, a drive status), replacing
-  a longer one on the same row; a small screen cutting the banner off rather
+  banner's cells and their line attributes, including the drives line with
+  none, one, and four drives; the teletype's lines, with the blank line and
+  prompt again after an error; no prompt without a keyboard; keys other than
+  Enter ignored; each status (no drives, no disk, unformatted, no signature, a
+  drive status), replacing a longer one on the same row; a small screen cutting the banner off rather
   than scrolling; a retry after inserting a disk; a test loader that boots and
   writes to the screen, checking its banks, `R0`, `R1`, and that interrupts are
   disabled.
