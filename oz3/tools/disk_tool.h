@@ -194,7 +194,8 @@ class DiskTool final {
 
   // What a command needs of the mounted disk.
   enum class Access {
-    kImage,  // Only the image, to format or report on.
+    kImage,  // The image, and its volume's own words: to format or report
+             // on it, or to set its label or boot area.
     kFiles,  // Its file system, to read or change files.
   };
 

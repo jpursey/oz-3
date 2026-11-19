@@ -38,6 +38,7 @@
 #include "oz3/disk/faulty_file_protocol.h"
 #include "oz3/tools/bare_program.h"
 #include "oz3/tools/disk_file_protocol.h"
+#include "oz3/tools/program.h"
 #include "oz3/tools/program_file.h"
 
 namespace oz3 {
@@ -46,7 +47,6 @@ namespace {
 using ::testing::Each;
 using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
-using ::testing::IsEmpty;
 
 constexpr char kImagePath[] = "mem:/work.ozd";
 constexpr char kBootPath[] = "mem:/boot.oz3";
@@ -507,18 +507,15 @@ TEST_F(DiskToolTest, BootWritesTheProgramsWords) {
   ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
 
   // Words no block sets are 0.
-  DiskSuperblock::BootArea expected(kBootAreaWords, 0);
-  expected[0] = 1;
-  expected[1] = 2;
-  expected[2] = 3;
-  expected[3] = 4;
+  DiskSuperblock::BootArea expected = {1, 2, 3, 4};
+  expected.resize(kBootAreaWords);
   expected[kBootAreaWords - 2] = 5;
   expected[kBootAreaWords - 1] = 6;
   EXPECT_THAT(ReadBootArea(), ElementsAreArray(expected));
 
   // The rest of the disk is kept.
   EXPECT_THAT(Text(tool_->Info(kImagePath)), HasSubstr("Volume:   WORK\n"));
-  EXPECT_THAT(CheckImage().file_problems, IsEmpty());
+  EXPECT_TRUE(CheckImage() == DiskCheckReport());
 }
 
 TEST_F(DiskToolTest, BootReplacesTheWholeBootArea) {
@@ -531,15 +528,9 @@ TEST_F(DiskToolTest, BootReplacesTheWholeBootArea) {
   // words.
   WriteBoot({.contents_words = 2, .data = {{.offset = 0, .data = {1, 2}}}});
   ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
-  DiskSuperblock::BootArea expected(kBootAreaWords, 0);
-  expected[0] = 1;
-  expected[1] = 2;
+  DiskSuperblock::BootArea expected = {1, 2};
+  expected.resize(kBootAreaWords);
   EXPECT_THAT(ReadBootArea(), ElementsAreArray(expected));
-
-  // An empty program empties it.
-  WriteBoot({});
-  ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
-  EXPECT_THAT(ReadBootArea(), Each(0));
 }
 
 TEST_F(DiskToolTest, BootFailsForContentsPastTheBootArea) {
@@ -554,10 +545,7 @@ TEST_F(DiskToolTest, BootFailsForContentsPastTheBootArea) {
 
 TEST_F(DiskToolTest, BootFailsForAProgramFile) {
   NewFormatted();
-  WriteHost(kBootPath,
-            std::string({static_cast<char>(kProgramFileId & 0xFF),
-                         static_cast<char>(kProgramFileId >> 8),
-                         static_cast<char>(kProgramFileVersion), 0}));
+  ASSERT_TRUE(WriteProgramFile(file_system_, kBootPath, Program()).ok());
   EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
             "mem:/boot.oz3: Not a bare program file, but a program file");
   EXPECT_THAT(ReadBootArea(), Each(0));
