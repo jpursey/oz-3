@@ -380,7 +380,7 @@ Depends on: nothing.
   unformatted); no time charged for getting it, and a sector write's for
   setting it.
 
-### CL2 [~] devices: READ BOOT and WRITE BOOT
+### CL2 [x] devices: READ BOOT and WRITE BOOT
 
 Depends on: CL1.
 
