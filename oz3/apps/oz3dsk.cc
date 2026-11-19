@@ -187,6 +187,13 @@ const gb::CliArg<std::string_view> kProtection = {
     .choices = {{.name = "on", .help = "Write protects it."},
                 {.name = "off", .help = "Lets it be written."}},
 };
+const gb::CliArg<std::string_view> kBootProgram = {
+    .name = "program",
+    .help =
+        "The bare program to boot with, as oz3asm --bare writes one, of at "
+        "most 224 words.",
+    .validators = {&gb::kCliFileExists},
+};
 const gb::CliFlag<bool> kFix = {
     .name = "fix",
     .short_name = 'f',
@@ -328,6 +335,14 @@ bool RunLabel(gb::ValidatedContext& context,
                             *DiskTool::ParseLabel(*command_line.Get(kLabel))));
 }
 
+bool RunBoot(gb::ValidatedContext& context,
+             const gb::CliCommandLine& command_line) {
+  std::unique_ptr<DiskTool> tool = CreateTool(context);
+  return tool != nullptr &&
+         Report(context, tool->Boot(GetImage(command_line),
+                                    *command_line.Get(kBootProgram)));
+}
+
 bool RunProtect(gb::ValidatedContext& context,
                 const gb::CliCommandLine& command_line) {
   std::unique_ptr<DiskTool> tool = CreateTool(context);
@@ -423,6 +438,14 @@ const gb::CliCommand kLabelCommand = {
     .args = {&kLabel},
     .run = RunLabel,
 };
+const gb::CliCommand kBoot = {
+    .name = "boot",
+    .help =
+        "Writes a bare program into the disk's boot area, as its loader, "
+        "keeping the rest of the disk.",
+    .args = {&kBootProgram},
+    .run = RunBoot,
+};
 const gb::CliCommand kProtect = {
     .name = "protect",
     .help =
@@ -446,7 +469,7 @@ const gb::CliCommand kProgram = {
         "absolute or relative to the current directory.",
     .args = {&kImage},
     .commands = {&kNew, &kFormat, &kInfo, &kDir, &kPut, &kGet, &kDel, &kRen,
-                 &kAttrib, &kLabelCommand, &kProtect, &kCheck},
+                 &kAttrib, &kLabelCommand, &kBoot, &kProtect, &kCheck},
     .constraints = {&gb::kConstraintCliFileSystem},
 };
 

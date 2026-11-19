@@ -35,6 +35,7 @@
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_file.h"
@@ -42,7 +43,9 @@
 namespace oz3 {
 namespace {
 
+using ::testing::Each;
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::IsEmpty;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedElementsAreArray;
@@ -184,6 +187,9 @@ TEST_F(DiskFileProtocolTest, NothingMountedHasNoPaths) {
   DiskVolumeInfo info;
   EXPECT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kNoDisk);
   EXPECT_EQ(protocol_->SetLabel(DiskLabel()), DiskStatus::kNoDisk);
+  DiskSuperblock::BootArea boot_area(DiskSuperblock::kBootAreaWords);
+  EXPECT_EQ(protocol_->GetBootArea(&boot_area), DiskStatus::kNoDisk);
+  EXPECT_EQ(protocol_->SetBootArea(boot_area), DiskStatus::kNoDisk);
   EXPECT_FALSE(file_system_.IsValidPath("ozdisk:/"));
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
   EXPECT_EQ(protocol_->Unmount(), DiskStatus::kNoDisk);
@@ -197,6 +203,9 @@ TEST_F(DiskFileProtocolTest, UnformattedHasAnEmptyRoot) {
   EXPECT_EQ(protocol_->GetMedia()->GetSectorCount(), kSectorCount);
   DiskVolumeInfo info;
   EXPECT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kUnformatted);
+  DiskSuperblock::BootArea boot_area(DiskSuperblock::kBootAreaWords);
+  EXPECT_EQ(protocol_->GetBootArea(&boot_area), DiskStatus::kUnformatted);
+  EXPECT_EQ(protocol_->SetBootArea(boot_area), DiskStatus::kUnformatted);
   EXPECT_TRUE(file_system_.IsValidFolder("ozdisk:/"));
   EXPECT_THAT(file_system_.List("ozdisk:/"), IsEmpty());
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
@@ -216,6 +225,20 @@ TEST_F(DiskFileProtocolTest, FormatOpensTheRoot) {
   EXPECT_THAT(file_system_.List("ozdisk:/"), IsEmpty());
   ASSERT_TRUE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
   EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/HELLO.TXT"));
+}
+
+TEST_F(DiskFileProtocolTest, BootAreaReadsBackWhatIsSet) {
+  MountFormatted();
+  DiskSuperblock::BootArea words;
+  ASSERT_EQ(protocol_->GetBootArea(&words), DiskStatus::kOk);
+  EXPECT_THAT(words, Each(0));
+
+  DiskSuperblock::BootArea boot_area(DiskSuperblock::kBootAreaWords);
+  boot_area.front() = 1;
+  boot_area.back() = 2;
+  ASSERT_EQ(protocol_->SetBootArea(boot_area), DiskStatus::kOk);
+  ASSERT_EQ(protocol_->GetBootArea(&words), DiskStatus::kOk);
+  EXPECT_THAT(words, ElementsAreArray(boot_area));
 }
 
 TEST_F(DiskFileProtocolTest, FormatFailsWithAFileOpen) {

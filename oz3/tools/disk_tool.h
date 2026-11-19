@@ -119,6 +119,13 @@ class DiskTool final {
   // problems". After repairing, a last line says so.
   absl::StatusOr<std::string> Check(std::string_view image_path, bool fix);
 
+  // Writes the bare program file at `program_path` (see BareProgram) into the
+  // disk's boot area, as loading it at the boot area's first word would, with
+  // every word no data block sets 0. Its stack isn't written. Fails if its
+  // contents are more than the boot area's DiskSuperblock::kBootAreaWords
+  // words.
+  absl::Status Boot(std::string_view image_path, std::string_view program_path);
+
   //----------------------------------------------------------------------------
   // File commands
   //----------------------------------------------------------------------------
@@ -187,7 +194,8 @@ class DiskTool final {
 
   // What a command needs of the mounted disk.
   enum class Access {
-    kImage,  // Only the image, to format or report on.
+    kImage,  // The image, and its volume's own words: to format or report
+             // on it, or to set its label or boot area.
     kFiles,  // Its file system, to read or change files.
   };
 

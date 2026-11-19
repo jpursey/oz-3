@@ -27,6 +27,7 @@
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 
 namespace oz3 {
 
@@ -152,6 +153,19 @@ class DiskFileProtocol final : public gb::FileProtocol {
   // Returns kNoDisk with nothing mounted.
   DiskStatus SetLabel(const DiskLabel& label) {
     return file_system_.SetLabel(label);
+  }
+
+  // Sets `words` to the mounted disk's boot area, as
+  // DiskFileSystem::GetBootArea does. Returns kNoDisk with nothing mounted.
+  DiskStatus GetBootArea(DiskSuperblock::BootArea* words) const {
+    return file_system_.GetBootArea(words);
+  }
+
+  // Sets the mounted disk's boot area to `words`, which must be
+  // DiskSuperblock::kBootAreaWords words, as DiskFileSystem::SetBootArea does.
+  // Returns kNoDisk with nothing mounted.
+  DiskStatus SetBootArea(const DiskSuperblock::BootArea& words) {
+    return file_system_.SetBootArea(words);
   }
 
   //----------------------------------------------------------------------------
