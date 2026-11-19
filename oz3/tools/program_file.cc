@@ -115,8 +115,9 @@ std::vector<uint16_t> WriteValidBareProgramWords(const BareProgram& program) {
 }
 
 // Writes `words` to the file at `path`, each as two bytes, low byte first.
-absl::Status WriteWordsFile(gb::FileSystem& file_system, std::string_view path,
-                            absl::Span<const uint16_t> words) {
+absl::Status WriteWordsToFile(gb::FileSystem& file_system,
+                              std::string_view path,
+                              absl::Span<const uint16_t> words) {
   std::vector<std::byte> bytes;
   bytes.reserve(words.size() * 2);
   for (uint16_t word : words) {
@@ -133,11 +134,11 @@ absl::Status WriteWordsFile(gb::FileSystem& file_system, std::string_view path,
 // Reading
 //==============================================================================
 
-// Returns the words of the file at `path`, written by WriteWordsFile, or an
+// Returns the words of the file at `path`, written by WriteWordsToFile, or an
 // error naming it as a file of `format`.
-absl::StatusOr<std::vector<uint16_t>> ReadWordsFile(gb::FileSystem& file_system,
-                                                    std::string_view path,
-                                                    const FileFormat& format) {
+absl::StatusOr<std::vector<uint16_t>> ReadWordsFromFile(
+    gb::FileSystem& file_system, std::string_view path,
+    const FileFormat& format) {
   std::vector<std::byte> bytes;
   if (!file_system.ReadFile(path, &bytes)) {
     return absl::NotFoundError(absl::StrCat("Could not read file: ", path));
@@ -350,13 +351,13 @@ absl::Status WriteProgramFile(gb::FileSystem& file_system,
   if (!words.ok()) {
     return words.status();
   }
-  return WriteWordsFile(file_system, path, *words);
+  return WriteWordsToFile(file_system, path, *words);
 }
 
 absl::StatusOr<Program> ReadProgramFile(gb::FileSystem& file_system,
                                         std::string_view path) {
   absl::StatusOr<std::vector<uint16_t>> words =
-      ReadWordsFile(file_system, path, kProgramFormat);
+      ReadWordsFromFile(file_system, path, kProgramFormat);
   if (!words.ok()) {
     return words.status();
   }
@@ -413,13 +414,13 @@ absl::Status WriteBareProgramFile(gb::FileSystem& file_system,
   if (!words.ok()) {
     return words.status();
   }
-  return WriteWordsFile(file_system, path, *words);
+  return WriteWordsToFile(file_system, path, *words);
 }
 
 absl::StatusOr<BareProgram> ReadBareProgramFile(gb::FileSystem& file_system,
                                                 std::string_view path) {
   absl::StatusOr<std::vector<uint16_t>> words =
-      ReadWordsFile(file_system, path, kBareProgramFormat);
+      ReadWordsFromFile(file_system, path, kBareProgramFormat);
   if (!words.ok()) {
     return words.status();
   }
