@@ -2170,6 +2170,26 @@ TEST_F(DiskDriveTest, RemovingTheDiskEndsAReadEarly) {
   EXPECT_EQ(GetPhase(), 0);
 }
 
+TEST_F(DiskDriveTest, RemovingTheDiskBeforeAReadStartsFailsItAtOnce) {
+  using enum DiskDriveCommand;
+  ASSERT_TRUE(InitDrive());
+  drive_->AttachImage(MakeImageWithFile("A", 300));
+  OpenFile("A");
+
+  // The slot goes stale while the OS reads the accept, so the read fails
+  // before its first word, and the OS runs its loop out over zeros.
+  Start(CommandWord(kRead, 0));
+  SendField(PortWords::FromWord(300));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  ASSERT_NE(drive_->DetachImage(), nullptr);
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  EXPECT_EQ(ReceiveField(), PortWords::FromWord(300));
+  EXPECT_EQ(ReadData(300).transfers, std::vector<PortWords>(300));
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kDiskChanged)));
+  EXPECT_EQ(GetPhase(), 0);
+}
+
 TEST_F(DiskDriveTest, AFailedImageEndsAWriteEarly) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
