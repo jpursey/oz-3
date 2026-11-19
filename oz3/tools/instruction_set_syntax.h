@@ -65,7 +65,8 @@ class InstructionForm final {
 
     // For a $v, the bank (CpuCore::CODE, STACK, DATA, or EXTRA) whose base
     // register it is an address from, or -1 if it isn't one. This is the
-    // first $v of a macro code with an address bank (see
+    // first $v of an instruction's own source, or of a macro code, with an
+    // address bank (see InstructionDef::address_bank and
     // MacroCodeDef::address_bank).
     int address_bank = -1;
 

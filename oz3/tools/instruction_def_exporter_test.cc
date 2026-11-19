@@ -155,9 +155,34 @@ TEST(InstructionDefExporterTest, AddressBanks) {
        .arg1 = {ArgType::kMacro, 1},
        .arg_macro_name = "Get",
        .code = "$Get;"},
+      {.op = 2,
+       .op_name = "LDD",
+       .source = "$v",
+       .relative = true,
+       .address_bank = CpuCore::DATA,
+       .code = "LD(C0);UL;"},
+      {.op = 3,
+       .op_name = "LDX",
+       .source = "$v",
+       .address_bank = 7,
+       .code = "LD(C0);UL;"},
   };
-  EXPECT_THAT(Export({.instructions = instructions, .macros = macros}),
-              HasSubstr(R"---(
+  const std::string exported =
+      Export({.instructions = instructions, .macros = macros});
+  EXPECT_THAT(exported, HasSubstr(R"---(
+    {.op = 2,
+     .op_name = "LDD",
+     .source = "$v",
+     .relative = true,
+     .address_bank = oz3::CpuCore::DATA,
+     .code = "LD(C0);UL;"},
+    {.op = 3,
+     .op_name = "LDX",
+     .source = "$v",
+     .address_bank = 7,
+     .code = "LD(C0);UL;"},
+)---"));
+  EXPECT_THAT(exported, HasSubstr(R"---(
     {.source = "$v",
      .prefix = {0, 1},
      .code = "LD(C2);UL;"},

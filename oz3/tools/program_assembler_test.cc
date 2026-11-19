@@ -76,6 +76,7 @@ constexpr std::string_view kInstructionSet = R"---(
     code(address:EXTRA):C2 "E($v)" { LD(C2); UL; }
   }
   instruction(opcode:11) LDA "$r, $m" { $Address; MOV(a,r); }
+  instruction(opcode:12, address:STACK) STS "S($v), $r" { LD(C0); UL; }
 )---";
 
 // Matches a gb::ParseError at a line and column (from 0), whose message has
@@ -1070,6 +1071,31 @@ TEST_F(ProgramAssemblerTest, StackAddresses) {
       .DS 1
   )---"),
               ElementsAre(1));
+}
+
+TEST_F(ProgramAssemblerTest, InstructionAddresses) {
+  // An instruction's own address is checked and encoded as a code's is.
+  Program program = Assemble(R"---(.STACK 4
+    .SEGMENT main CODE
+      STS S(var), R1
+      STS S(1), R2
+    .SEGMENT stack STACK
+      .DS 2
+    var:
+      .DS 1
+  )---");
+  ASSERT_FALSE(program.segments.empty());
+  EXPECT_THAT(GetWords(program.segments[0]),
+              ElementsAre(0x0C01, 0xF002, 0x0C02, 1));
+
+  EXPECT_THAT(AssembleErrors(".STACK 4\n"
+                             ".SEGMENT main CODE\n"
+                             "STS S(here), R1\n"
+                             "here:\n"
+                             ".SEGMENT stack STACK\n"),
+              ElementsAre(IsErrorAt(2, 6,
+                                    "The address is in MAIN, but must be in "
+                                    "STACK, the segment with the STACK role")));
 }
 
 TEST_F(ProgramAssemblerTest, AddressesInTheDefaultProgram) {

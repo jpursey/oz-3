@@ -269,6 +269,12 @@ struct InstructionDef {
   // This is for instructions that add the value to IP.
   bool relative = false;
 
+  // The bank whose base register the first "$v" in the instruction's own
+  // source is an address from, or -1 if it has no such address, as for
+  // MacroCodeDef::address_bank. An address is never relative. A macro code in
+  // place of "$m" has its own address_bank.
+  int8_t address_bank = -1;
+
   // The argument definitions for the instruction that are encoded in the lower
   // byte of the instruction word. The total number of bits required must not
   // exceed a byte (8 bits).
@@ -349,7 +355,8 @@ struct ValueSetDef {
 // The sources, value sets, relative marks, register exclusions, and address
 // banks are for the OZ-3 assembler and debugger, which have rules of their own
 // for them (see InstructionDef::source, InstructionDef::arg1_excluded,
-// MacroCodeDef::source, MacroCodeDef::address_bank, and ValueSetDef).
+// InstructionDef::address_bank, MacroCodeDef::source,
+// MacroCodeDef::address_bank, and ValueSetDef).
 // CompileInstructionSet doesn't check those rules, so an instruction set that
 // compiles may not be one the assembler can use.
 //

@@ -189,6 +189,27 @@ InstructionForm::Arg::Kind GetArgKind(const Part& part) {
   }
 }
 
+// An address is the first $v of the source it marks, so the source needs one.
+// The error says what is wrong with the source.
+absl::Status ValidateAddressBank(int address_bank,
+                                 const SourcePattern& pattern) {
+  if (address_bank == -1) {
+    return absl::OkStatus();
+  }
+  if (address_bank < 0 || address_bank >= CpuCore::kBankCount) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("has an invalid address bank (", address_bank, ")"));
+  }
+  if (absl::c_none_of(pattern.GetParts(), [](const Part& part) {
+        return part.kind == Part::Kind::kWord;
+      })) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("is an address in ", CpuCore::GetBankName(address_bank),
+                     ", but has no $v for it"));
+  }
+  return absl::OkStatus();
+}
+
 }  // namespace
 
 //==============================================================================
@@ -559,21 +580,10 @@ bool InstructionSetSyntaxBuilder::ParseMacroCode(
                           static_cast<int>(code.arg.size), " bits)");
   }
 
-  // A code's address is its first $v, so it needs one.
-  if (code.address_bank != -1) {
-    if (code.address_bank < 0 || code.address_bank >= CpuCore::kBankCount) {
-      return MacroCodeError(macro, code, "Macro code source \"", code.source,
-                            "\" has an invalid address bank (",
-                            static_cast<int>(code.address_bank), ")");
-    }
-    if (absl::c_none_of(pattern->GetParts(), [](const Part& part) {
-          return part.kind == Part::Kind::kWord;
-        })) {
-      return MacroCodeError(macro, code, "Macro code source \"", code.source,
-                            "\" is an address in ",
-                            CpuCore::GetBankName(code.address_bank),
-                            ", but has no $v for it");
-    }
+  if (absl::Status status = ValidateAddressBank(code.address_bank, *pattern);
+      !status.ok()) {
+    return MacroCodeError(macro, code, "Macro code source \"", code.source,
+                          "\" ", status.message());
   }
 
   // Each form of an instruction must be one a program can name, and its
@@ -601,6 +611,12 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
   if (!CheckInstructionArgs(instruction, *pattern) ||
       !CheckRegisterRules(instruction)) {
     return false;
+  }
+  if (absl::Status status =
+          ValidateAddressBank(instruction.address_bank, *pattern);
+      !status.ok()) {
+    return InstructionDefError(instruction, "Instruction code source \"",
+                               instruction.source, "\" ", status.message());
   }
 
   const int first_form = static_cast<int>(syntax_->forms_.size());
@@ -731,6 +747,7 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
   form.code_word_mask_ = 0xFF00;
   int arg_index = 0;
   int offset_change = 0;  // How far the macro code moved the parts after it.
+  bool needs_address = (instruction.address_bank >= 0);
   for (Part part : pattern.GetParts()) {
     part.offset += offset_change;
     const int shift = (arg_index == 0 ? 0 : instruction.arg1.size);
@@ -740,7 +757,14 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     if (part.kind != Part::Kind::kArgument ||
         part.arg.type != ArgType::kMacro) {
       const bool is_code_word_arg = (part.kind == Part::Kind::kArgument);
-      AddPart(form, instruction, std::move(part), shift, -1);
+
+      // The instruction's address, if it has one, is its own first $v.
+      int address_bank = -1;
+      if (needs_address && part.kind == Part::Kind::kWord) {
+        address_bank = instruction.address_bank;
+        needs_address = false;
+      }
+      AddPart(form, instruction, std::move(part), shift, address_bank);
 
       // The register rules are only for the instruction's own arguments, which
       // CheckRegisterRules checked are registers if they have any.
@@ -761,16 +785,16 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     form.pattern_.replace(part.offset, part.size, code.source);
     offset_change += static_cast<int>(code.source.size()) - part.size;
     form.size_ += code_pattern.GetValueWords();
-    bool needs_address = (code.address_bank >= 0);
+    bool code_needs_address = (code.address_bank >= 0);
     for (Part code_part : code_pattern.GetParts()) {
       code_part.offset += part.offset;
       code_part.whole_arg = code_part.whole_arg && part.whole_arg;
 
       // The code's address, if it has one, is its first $v.
       int address_bank = -1;
-      if (needs_address && code_part.kind == Part::Kind::kWord) {
+      if (code_needs_address && code_part.kind == Part::Kind::kWord) {
         address_bank = code.address_bank;
-        needs_address = false;
+        code_needs_address = false;
       }
       AddPart(form, instruction, std::move(code_part), shift, address_bank);
     }

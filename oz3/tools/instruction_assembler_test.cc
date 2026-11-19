@@ -782,6 +782,31 @@ TEST(InstructionAssemblerTest, MacroCodeInvalidAddressBank) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 19));
 }
 
+TEST(InstructionAssemblerTest, InstructionAddressBank) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction LD "$r, $v" { LD(C0); UL; }
+    instruction(address:EXTRA) LDE "$r, $v" { LD(C0); UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  const auto& instructions = asm_set->GetInstructionSetDef().instructions;
+  ASSERT_EQ(instructions.size(), 2);
+  EXPECT_EQ(instructions[0].address_bank, -1);
+  EXPECT_EQ(instructions[1].address_bank, CpuCore::EXTRA);
+}
+
+TEST(InstructionAssemblerTest, InstructionInvalidAddressBank) {
+  gb::ParseError error;
+  std::string source = R"---(
+    instruction(address:extra) LDE "$r, $v" { LD(C0); UL; }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid address bank: extra"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 24));
+}
+
 TEST(InstructionAssemblerTest, DuplicateMacroCodeSource) {
   gb::ParseError error;
   std::string source = R"---(

@@ -289,6 +289,28 @@ TEST(InstructionSetSyntaxTest, AddressesAreTheFirstValueOfTheirCodes) {
   EXPECT_EQ(forms[3]->GetArgs()[1].address_bank, CpuCore::DATA);
 }
 
+TEST(InstructionSetSyntaxTest, InstructionAddressIsItsOwnFirstValue) {
+  // POKE's address is the $v in its own source, and a code's is the code's.
+  TestDef def(absl::StrCat(kInstructionSet, R"---(
+    instruction(opcode:8) POKE "$v, $m" { LD(C0); $GetWord; MOV(R0,r); }
+  )---"));
+  def.instructions[8].address_bank = CpuCore::DATA;
+  def.codes[0][1].address_bank = CpuCore::EXTRA;  // ($r + $v)
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("POKE");
+  ASSERT_EQ(forms.size(), 4);
+  ASSERT_EQ(forms[0]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[0]->GetArgs()[0].address_bank, CpuCore::DATA);
+  EXPECT_EQ(forms[0]->GetArgs()[1].address_bank, -1);  // $r
+  ASSERT_EQ(forms[1]->GetArgs().size(), 3);
+  EXPECT_EQ(forms[1]->GetArgs()[0].address_bank, CpuCore::DATA);
+  EXPECT_EQ(forms[1]->GetArgs()[2].address_bank, CpuCore::EXTRA);
+  ASSERT_EQ(forms[2]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[2]->GetArgs()[0].address_bank, CpuCore::DATA);
+  EXPECT_EQ(forms[2]->GetArgs()[1].address_bank, -1);  // $v
+}
+
 TEST(InstructionSetSyntaxTest, MacroCodeIsOnlyWholeIfMacroIs) {
   TestDef def(kInstructionSet);
   auto syntax = InstructionSetSyntax::Create(def.GetDef());
@@ -569,6 +591,25 @@ TEST(InstructionSetSyntaxTest, MacroCodeInvalidAddressBank) {
   def.codes[0][3].address_bank = 4;
   InstructionError error =
       ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_THAT(error.message, HasSubstr("has an invalid address bank (4)"));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionAddressWithoutValue) {
+  // PEEK's $m can be a $v, but its own source has none.
+  TestDef def(kInstructionSet);
+  def.instructions[7].address_bank = CpuCore::DATA;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "PEEK");
+  EXPECT_THAT(error.message,
+              HasSubstr("Instruction code source \"[$m]\" is an address in "
+                        "DATA, but has no $v for it"));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionInvalidAddressBank) {
+  TestDef def(kInstructionSet);
+  def.instructions[7].address_bank = 4;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "PEEK");
   EXPECT_THAT(error.message, HasSubstr("has an invalid address bank (4)"));
 }
 

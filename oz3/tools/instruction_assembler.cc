@@ -100,6 +100,7 @@ constexpr std::string_view kParserProgram = R"---(
   InstructionConfig {
     "opcode" ":" $opcode=%int;
     $relative="relative";
+    "address" ":" $address=%ident;
     $distinct="distinct";
     "exclude_a" ":" $exclude_a=%ident;
     "exclude_b" ":" $exclude_b=%ident;
@@ -195,6 +196,8 @@ class InstructionSetAssembler {
   bool AssembleInstructionCodeSource(const gb::ParsedItem& parsed_instruction,
                                      std::string_view source,
                                      InstructionDef& instruction_def);
+  bool AssembleAddressBank(const gb::ParsedItem& parsed_item,
+                           int8_t& address_bank);
   bool AssembleExcludedRegisters(const gb::ParsedItem& parsed_instruction,
                                  std::string_view option, const Argument& arg,
                                  uint16_t& excluded);
@@ -417,15 +420,8 @@ bool InstructionSetAssembler::AssembleMacroCode(
     return false;
   }
 
-  if (const gb::ParsedItem* address = parsed_macro_code.GetItem("address");
-      address != nullptr) {
-    const std::string_view bank = address->GetToken().GetString();
-    macro_code_def.address_bank =
-        static_cast<int8_t>(CpuCore::GetBankFromName(bank));
-    if (macro_code_def.address_bank < 0) {
-      return ErrorAt(*address, "Invalid address bank: ", bank,
-                     " (expected CODE, STACK, DATA, or EXTRA)");
-    }
+  if (!AssembleAddressBank(parsed_macro_code, macro_code_def.address_bank)) {
+    return false;
   }
 
   std::string_view ret = parsed_macro_code.GetString("ret");
@@ -529,7 +525,8 @@ bool InstructionSetAssembler::AssembleInstruction(
                                  instruction_def.arg1_excluded) ||
       !AssembleExcludedRegisters(parsed_instruction, "exclude_b",
                                  instruction_def.arg2,
-                                 instruction_def.arg2_excluded)) {
+                                 instruction_def.arg2_excluded) ||
+      !AssembleAddressBank(parsed_instruction, instruction_def.address_bank)) {
     return false;
   }
   Argument* macro_arg = nullptr;
@@ -572,6 +569,23 @@ bool InstructionSetAssembler::AssembleInstructionCodeSource(
   }
   if (args.size() > 1) {
     instruction_def.arg2 = args[1];
+  }
+  return true;
+}
+
+// The bank an "address" option names, if there is one, is held in
+// `address_bank`.
+bool InstructionSetAssembler::AssembleAddressBank(
+    const gb::ParsedItem& parsed_item, int8_t& address_bank) {
+  const gb::ParsedItem* address = parsed_item.GetItem("address");
+  if (address == nullptr) {
+    return true;
+  }
+  const std::string_view bank = address->GetToken().GetString();
+  address_bank = static_cast<int8_t>(CpuCore::GetBankFromName(bank));
+  if (address_bank < 0) {
+    return ErrorAt(*address, "Invalid address bank: ", bank,
+                   " (expected CODE, STACK, DATA, or EXTRA)");
   }
   return true;
 }
