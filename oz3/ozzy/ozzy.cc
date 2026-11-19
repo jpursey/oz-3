@@ -302,8 +302,7 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
 
   // The disks are in their drives at power on, which read their superblocks
   // in their first runs.
-  auto ozzy =
-      absl::WrapUnique(new Ozzy(std::move(context), std::move(processor)));
+  auto ozzy = absl::WrapUnique(new Ozzy(std::move(processor)));
   for (int i = 0; i < kOzzyDriveCount; ++i) {
     if ((*images)[i] != nullptr) {
       ozzy->drives_[i]->AttachImage(std::move((*images)[i]));
@@ -312,9 +311,8 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
   return ozzy;
 }
 
-Ozzy::Ozzy(gb::ValidatedContext context, std::unique_ptr<Processor> processor)
-    : context_(std::move(context)),
-      processor_(std::move(processor)),
+Ozzy::Ozzy(std::unique_ptr<Processor> processor)
+    : processor_(std::move(processor)),
       screen_(static_cast<Screen*>(processor_->GetDevice(kScreenName))),
       keyboard_(static_cast<Keyboard*>(processor_->GetDevice(kKeyboardName))),
       teletype_(static_cast<Teletype*>(processor_->GetDevice(kTeletypeName))),

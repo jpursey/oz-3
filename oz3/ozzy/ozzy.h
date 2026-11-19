@@ -74,16 +74,16 @@ class Ozzy final {
   // ValidateOzzySettings), if a device or the processor rejects them, naming
   // the device, or if an image doesn't open, naming its drive.
   //
-  // The Ozzy keeps the context, and gives it to its processor, so it is also
-  // where the devices find the host's clock (kConstraintHostClock): the date
+  // The Ozzy gives the context to its processor, so it is also where the
+  // devices find the host's clock (kConstraintHostClock): the date
   // and time the timer answers programs with and the drives stamp files with.
   // Without one, it is the host's local time, and with an empty one, the timer
   // reads zeros and the drives stamp no date. The clock's date and time move
   // with the host's time, while the timer's ticks and milliseconds move with
   // the time given to Run, so the two only keep pace while the host runs the
   // Ozzy in real time. The drives call it as the Ozzy is destroyed, so
-  // whatever it uses, and the context itself unless the contract owns it, must
-  // outlive the Ozzy.
+  // whatever it uses must outlive the Ozzy, as must the context itself unless
+  // the contract owns it.
   static absl::StatusOr<std::unique_ptr<Ozzy>> Create(
       const OzzySettings& settings, Contract contract = gb::Context());
 
@@ -128,11 +128,8 @@ class Ozzy final {
   // Implementation
   //----------------------------------------------------------------------------
 
-  Ozzy(gb::ValidatedContext context, std::unique_ptr<Processor> processor);
+  explicit Ozzy(std::unique_ptr<Processor> processor);
 
-  // The context is declared first, so it outlives the processor, which uses
-  // it.
-  gb::ValidatedContext context_;
   const std::unique_ptr<Processor> processor_;
   Screen* const screen_;
   Keyboard* const keyboard_;
