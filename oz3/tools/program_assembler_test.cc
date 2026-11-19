@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/log/check.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
@@ -27,6 +28,7 @@
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor.h"
 #include "oz3/core/processor_config.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_assembler.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
@@ -560,6 +562,55 @@ TEST_F(ProgramAssemblerTest, DataBlocks) {
                           Data{.offset = 4, .data = {2, 3}},
                           Data{.offset = 10, .data = {4, 0, 5, 6, 7, 0}}));
   EXPECT_THAT(Assemble(".STACK 1\n.DS 5").segments[0].data, IsEmpty());
+}
+
+TEST_F(ProgramAssemblerTest, BareProgram) {
+  // The default program's data blocks, with its contents before its stack,
+  // reserved words included, rounded up to whole units.
+  std::unique_ptr<AsmProgram> program = AssembleAsmProgram(R"---(.STACK 64
+    .DW 1
+    .DS 3
+    .DW 2, 3
+    .DS 3
+  )---");
+  ASSERT_NE(program, nullptr);
+  const absl::StatusOr<BareProgram>& bare_program = program->GetBareProgram();
+  ASSERT_TRUE(bare_program.ok()) << bare_program.status();
+  EXPECT_EQ(bare_program->contents_words, 10);
+  EXPECT_EQ(bare_program->stack_words, 64);
+  EXPECT_EQ(bare_program->data, program->GetProgram().segments[0].data);
+}
+
+TEST_F(ProgramAssemblerTest, BareProgramOfOnlyAStack) {
+  std::unique_ptr<AsmProgram> program = AssembleAsmProgram(".STACK 16");
+  ASSERT_NE(program, nullptr);
+  const absl::StatusOr<BareProgram>& bare_program = program->GetBareProgram();
+  ASSERT_TRUE(bare_program.ok()) << bare_program.status();
+  EXPECT_EQ(*bare_program, (BareProgram{.stack_words = 16}));
+}
+
+TEST_F(ProgramAssemblerTest, BareProgramNeedsDefaultProgram) {
+  std::unique_ptr<AsmProgram> program = AssembleAsmProgram(
+      ".STACK 4\n.SEGMENT main CODE STACK DATA EXTRA\nNOP\n");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              HasSubstr("declares segments"));
+}
+
+TEST_F(ProgramAssemblerTest, BareProgramPastBank) {
+  // The contents round up to a word more than the program's, which with its
+  // stack passes the end of a bank.
+  std::unique_ptr<AsmProgram> program =
+      AssembleAsmProgram(".STACK 3\n.DS 65533");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              HasSubstr("pass the end of a bank"));
+
+  // Or the contents are more than a word can hold.
+  program = AssembleAsmProgram(".STACK 1\n.DS 65535");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              HasSubstr("contents are 65536 words"));
 }
 
 TEST_F(ProgramAssemblerTest, NoFormMatches) {

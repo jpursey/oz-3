@@ -33,6 +33,7 @@ set(oz3asm_SOURCE
 set(oz3asm_DEPS
   absl::algorithm_container
   absl::status
+  absl::statusor
   absl::strings
   gb_base
   gb_cli

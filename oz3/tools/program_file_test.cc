@@ -13,6 +13,7 @@
 #include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/program.h"
 
 namespace oz3 {
@@ -242,6 +243,200 @@ TEST(ProgramFileTest, ReadFileFailsForOddByteCount) {
   ASSERT_TRUE(file_system.WriteFile("mem:/test.oz3", bytes));
   absl::StatusOr<Program> program =
       ReadProgramFile(file_system, "mem:/test.oz3");
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(), HasSubstr("odd number of bytes"));
+}
+
+TEST(ProgramFileTest, ReadFailsForBareProgramFile) {
+  absl::StatusOr<Program> program = ReadProgramWords(
+      {kBareProgramFileId, kBareProgramFileVersion, 0, 0, 0, 0});
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(),
+              HasSubstr("Not a program file, but a bare program file"));
+}
+
+//==============================================================================
+// Bare program files
+//==============================================================================
+
+// A bare program that sets every field of a BareProgram, with two blocks and a
+// gap between them, and the words of its bare program file.
+BareProgram MakeTestBareProgram() {
+  return {.contents_words = 12,
+          .stack_words = 64,
+          .data = {{.offset = 0, .data = {1, 2, 3, 4}},
+                   {.offset = 8, .data = {5, 6}}}};
+}
+
+// clang-format off
+const std::vector<uint16_t> kTestBareProgramWords = {
+    0x424F, 1,             // Header: identifier, version
+    12, 64,                // Contents and stack, in words
+    2, 0,                  // Block count, reserved
+    0, 2, 1, 2, 3, 4,      // Blocks: offset and size in units, words
+    4, 1, 5, 6,            //
+};
+// clang-format on
+
+TEST(BareProgramFileTest, WriteWords) {
+  absl::StatusOr<std::vector<uint16_t>> words =
+      WriteBareProgramWords(MakeTestBareProgram());
+  ASSERT_TRUE(words.ok()) << words.status();
+  EXPECT_THAT(*words, ElementsAreArray(kTestBareProgramWords));
+}
+
+TEST(BareProgramFileTest, ReadWords) {
+  absl::StatusOr<BareProgram> program =
+      ReadBareProgramWords(kTestBareProgramWords);
+  ASSERT_TRUE(program.ok()) << program.status();
+  EXPECT_EQ(*program, MakeTestBareProgram());
+}
+
+TEST(BareProgramFileTest, EmptyProgram) {
+  absl::StatusOr<std::vector<uint16_t>> words = WriteBareProgramWords({});
+  ASSERT_TRUE(words.ok()) << words.status();
+  EXPECT_THAT(*words, ElementsAre(0x424F, 1, 0, 0, 0, 0));
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(*words);
+  ASSERT_TRUE(program.ok()) << program.status();
+  EXPECT_EQ(*program, BareProgram{});
+}
+
+TEST(BareProgramFileTest, LargestProgram) {
+  BareProgram program = {.contents_words = 0xFFFE, .stack_words = 2};
+  std::vector<uint16_t>& data = program.data.emplace_back().data;
+  data.resize(0xFFFE);
+  for (int i = 0; i < static_cast<int>(data.size()); ++i) {
+    data[i] = static_cast<uint16_t>(i * 3);
+  }
+
+  absl::StatusOr<std::vector<uint16_t>> words = WriteBareProgramWords(program);
+  ASSERT_TRUE(words.ok()) << words.status();
+  absl::StatusOr<BareProgram> read_program = ReadBareProgramWords(*words);
+  ASSERT_TRUE(read_program.ok()) << read_program.status();
+  EXPECT_EQ(*read_program, program);
+}
+
+TEST(BareProgramFileTest, WriteFailsForInvalidProgram) {
+  BareProgram program = MakeTestBareProgram();
+  program.contents_words = 8;
+  absl::StatusOr<std::vector<uint16_t>> words = WriteBareProgramWords(program);
+  EXPECT_FALSE(words.ok());
+  EXPECT_THAT(words.status().message(), HasSubstr("end of the contents"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForProgramFile) {
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(kTestProgramWords);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(),
+              HasSubstr("Not a bare program file, but a program file"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForNotBareProgramFile) {
+  EXPECT_FALSE(ReadBareProgramWords({}).ok());
+  std::vector<uint16_t> words = kTestBareProgramWords;
+  words[0] = 0x4F42;
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_EQ(program.status().message(), "Not a bare program file");
+}
+
+TEST(BareProgramFileTest, ReadFailsForOtherVersion) {
+  std::vector<uint16_t> words = kTestBareProgramWords;
+  words[1] = 2;
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(), HasSubstr("version 2"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForReservedWord) {
+  std::vector<uint16_t> words = kTestBareProgramWords;
+  words[5] = 1;
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(), HasSubstr("reserved word"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForEveryTruncation) {
+  for (int size = 0; size < static_cast<int>(kTestBareProgramWords.size());
+       ++size) {
+    absl::StatusOr<BareProgram> program = ReadBareProgramWords(
+        absl::MakeConstSpan(kTestBareProgramWords).first(size));
+    EXPECT_FALSE(program.ok()) << "Size: " << size;
+  }
+}
+
+TEST(BareProgramFileTest, ReadFailsForBlockCountPastEnd) {
+  std::vector<uint16_t> words = kTestBareProgramWords;
+  words[4] = 0xFFFF;
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(), HasSubstr("ends before"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForOffsetPastBank) {
+  std::vector<uint16_t> words = kTestBareProgramWords;
+  words[12] = 0x8000;  // The second block's offset.
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(), HasSubstr("past the end of a bank"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForInvalidProgram) {
+  // The blocks swapped, so they are out of order.
+  const std::vector<uint16_t> words = {0x424F, 1, 12, 64, 2, 0, 4, 1,
+                                       5,      6, 0,  2,  1, 2, 3, 4};
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(),
+              HasSubstr("before the end of the block before it"));
+}
+
+TEST(BareProgramFileTest, ReadFailsForWordsAfterProgram) {
+  std::vector<uint16_t> words = kTestBareProgramWords;
+  words.push_back(0);
+  absl::StatusOr<BareProgram> program = ReadBareProgramWords(words);
+  EXPECT_FALSE(program.ok());
+  EXPECT_THAT(program.status().message(), HasSubstr("1 words after"));
+}
+
+TEST(BareProgramFileTest, WriteAndReadFile) {
+  gb::FileSystem file_system;
+  file_system.Register(std::make_unique<gb::MemoryFileProtocol>());
+  absl::Status status =
+      WriteBareProgramFile(file_system, "mem:/test.oz3", MakeTestBareProgram());
+  ASSERT_TRUE(status.ok()) << status;
+
+  std::vector<std::byte> bytes;
+  ASSERT_TRUE(file_system.ReadFile("mem:/test.oz3", &bytes));
+  ASSERT_EQ(bytes.size(), kTestBareProgramWords.size() * 2);
+
+  // "OB", version 1, and 12 words of contents.
+  const std::byte kHeaderBytes[] = {std::byte{'O'}, std::byte{'B'},
+                                    std::byte{1},   std::byte{0},
+                                    std::byte{12},  std::byte{0}};
+  EXPECT_THAT(absl::MakeConstSpan(bytes).first(6),
+              ElementsAreArray(kHeaderBytes));
+
+  absl::StatusOr<BareProgram> program =
+      ReadBareProgramFile(file_system, "mem:/test.oz3");
+  ASSERT_TRUE(program.ok()) << program.status();
+  EXPECT_EQ(*program, MakeTestBareProgram());
+}
+
+TEST(BareProgramFileTest, ReadFileFailsForMissingFile) {
+  gb::FileSystem file_system;
+  file_system.Register(std::make_unique<gb::MemoryFileProtocol>());
+  EXPECT_FALSE(ReadBareProgramFile(file_system, "mem:/missing.oz3").ok());
+}
+
+TEST(BareProgramFileTest, ReadFileFailsForOddByteCount) {
+  gb::FileSystem file_system;
+  file_system.Register(std::make_unique<gb::MemoryFileProtocol>());
+  const std::vector<std::byte> bytes = {std::byte{'O'}, std::byte{'B'},
+                                        std::byte{1}};
+  ASSERT_TRUE(file_system.WriteFile("mem:/test.oz3", bytes));
+  absl::StatusOr<BareProgram> program =
+      ReadBareProgramFile(file_system, "mem:/test.oz3");
   EXPECT_FALSE(program.ok());
   EXPECT_THAT(program.status().message(), HasSubstr("odd number of bytes"));
 }
