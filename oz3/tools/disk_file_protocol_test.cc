@@ -35,6 +35,7 @@
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_file.h"
@@ -42,7 +43,9 @@
 namespace oz3 {
 namespace {
 
+using ::testing::Each;
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::IsEmpty;
 using ::testing::UnorderedElementsAre;
 using ::testing::UnorderedElementsAreArray;
@@ -184,6 +187,11 @@ TEST_F(DiskFileProtocolTest, NothingMountedHasNoPaths) {
   DiskVolumeInfo info;
   EXPECT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kNoDisk);
   EXPECT_EQ(protocol_->SetLabel(DiskLabel()), DiskStatus::kNoDisk);
+  DiskSuperblock::BootArea boot_area;
+  EXPECT_EQ(protocol_->GetBootArea(&boot_area), DiskStatus::kNoDisk);
+  EXPECT_EQ(protocol_->SetBootArea(
+                DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0)),
+            DiskStatus::kNoDisk);
   EXPECT_FALSE(file_system_.IsValidPath("ozdisk:/"));
   EXPECT_FALSE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
   EXPECT_EQ(protocol_->Unmount(), DiskStatus::kNoDisk);
@@ -216,6 +224,38 @@ TEST_F(DiskFileProtocolTest, FormatOpensTheRoot) {
   EXPECT_THAT(file_system_.List("ozdisk:/"), IsEmpty());
   ASSERT_TRUE(file_system_.WriteFile("ozdisk:/HELLO.TXT", "hi"));
   EXPECT_TRUE(file_system_.IsValidFile("ozdisk:/HELLO.TXT"));
+}
+
+TEST_F(DiskFileProtocolTest, BootAreaNeedsAFileSystem) {
+  EXPECT_EQ(protocol_->Mount(MakeImage()), DiskStatus::kUnformatted);
+  DiskSuperblock::BootArea words;
+  EXPECT_EQ(protocol_->GetBootArea(&words), DiskStatus::kUnformatted);
+  EXPECT_EQ(protocol_->SetBootArea(
+                DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0)),
+            DiskStatus::kUnformatted);
+}
+
+TEST_F(DiskFileProtocolTest, BootAreaIsKeptOnTheDisk) {
+  MountFormatted();
+  DiskSuperblock::BootArea words;
+  ASSERT_EQ(protocol_->GetBootArea(&words), DiskStatus::kOk);
+  EXPECT_THAT(words, Each(0));
+
+  DiskSuperblock::BootArea boot_area(DiskSuperblock::kBootAreaWords, 0);
+  boot_area.front() = 1;
+  boot_area.back() = 2;
+  ASSERT_EQ(protocol_->SetBootArea(boot_area), DiskStatus::kOk);
+
+  // It is on the disk, so it is there when the disk is mounted again, with
+  // the label kept.
+  std::unique_ptr<DiskImage> image;
+  ASSERT_EQ(protocol_->Unmount(&image), DiskStatus::kOk);
+  ASSERT_EQ(protocol_->Mount(std::move(image)), DiskStatus::kOk);
+  ASSERT_EQ(protocol_->GetBootArea(&words), DiskStatus::kOk);
+  EXPECT_THAT(words, ElementsAreArray(boot_area));
+  DiskVolumeInfo info;
+  ASSERT_EQ(protocol_->GetVolumeInfo(&info), DiskStatus::kOk);
+  EXPECT_EQ(info.label, *DiskLabel::Parse("WORK"));
 }
 
 TEST_F(DiskFileProtocolTest, FormatFailsWithAFileOpen) {

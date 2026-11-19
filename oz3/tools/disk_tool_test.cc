@@ -34,15 +34,23 @@
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/disk_file_protocol.h"
+#include "oz3/tools/program_file.h"
 
 namespace oz3 {
 namespace {
 
+using ::testing::Each;
+using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 
 constexpr char kImagePath[] = "mem:/work.ozd";
+constexpr char kBootPath[] = "mem:/boot.oz3";
+constexpr int kBootAreaWords = DiskSuperblock::kBootAreaWords;
 constexpr int kSectorCount = 720;
 const absl::CivilSecond kNow(2026, 11, 17, 10, 30, 15);
 
@@ -216,6 +224,28 @@ class DiskToolTest : public ::testing::Test {
   // Sets the image's write protection, as DiskTool::Protect does.
   void SetProtected(bool write_protected) {
     ASSERT_TRUE(tool_->Protect(kImagePath, write_protected).ok());
+  }
+
+  // Writes `program` as a bare program file at kBootPath.
+  void WriteBoot(const BareProgram& program) {
+    ASSERT_TRUE(WriteBareProgramFile(file_system_, kBootPath, program).ok());
+  }
+
+  // Returns the image's boot area, read through a protocol of its own, or an
+  // empty one if it can't be read.
+  DiskSuperblock::BootArea ReadBootArea() {
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(&file_system_, kImagePath);
+    EXPECT_TRUE(image.ok()) << image.status();
+    if (!image.ok()) {
+      return {};
+    }
+    DiskFileProtocol protocol;
+    EXPECT_EQ(protocol.Mount(*std::move(image)), DiskStatus::kOk);
+    DiskSuperblock::BootArea words;
+    EXPECT_EQ(protocol.GetBootArea(&words), DiskStatus::kOk);
+    EXPECT_EQ(protocol.Unmount(), DiskStatus::kOk);
+    return words;
   }
 
   gb::FileSystem file_system_;
@@ -462,6 +492,97 @@ TEST_F(DiskToolTest, LabelOnAProtectedImage) {
   EXPECT_EQ(tool_->Label(kImagePath, DiskLabel()).message(),
             "mem:/work.ozd: write protected");
   EXPECT_THAT(Text(tool_->Info(kImagePath)), HasSubstr("Volume:   WORK\n"));
+}
+
+//==============================================================================
+// Boot
+//==============================================================================
+
+TEST_F(DiskToolTest, BootWritesTheProgramsWords) {
+  NewFormatted();
+  WriteBoot({.contents_words = kBootAreaWords,
+             .stack_words = 64,
+             .data = {{.offset = 0, .data = {1, 2, 3, 4}},
+                      {.offset = kBootAreaWords - 2, .data = {5, 6}}}});
+  ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
+
+  // Words no block sets are 0.
+  DiskSuperblock::BootArea expected(kBootAreaWords, 0);
+  expected[0] = 1;
+  expected[1] = 2;
+  expected[2] = 3;
+  expected[3] = 4;
+  expected[kBootAreaWords - 2] = 5;
+  expected[kBootAreaWords - 1] = 6;
+  EXPECT_THAT(ReadBootArea(), ElementsAreArray(expected));
+
+  // The rest of the disk is kept.
+  EXPECT_THAT(Text(tool_->Info(kImagePath)), HasSubstr("Volume:   WORK\n"));
+  EXPECT_THAT(CheckImage().file_problems, IsEmpty());
+}
+
+TEST_F(DiskToolTest, BootReplacesTheWholeBootArea) {
+  NewFormatted();
+  WriteBoot({.contents_words = kBootAreaWords,
+             .data = {{.offset = kBootAreaWords - 2, .data = {5, 6}}}});
+  ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
+
+  // A smaller program leaves 0 after its contents, not the last program's
+  // words.
+  WriteBoot({.contents_words = 2, .data = {{.offset = 0, .data = {1, 2}}}});
+  ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
+  DiskSuperblock::BootArea expected(kBootAreaWords, 0);
+  expected[0] = 1;
+  expected[1] = 2;
+  EXPECT_THAT(ReadBootArea(), ElementsAreArray(expected));
+
+  // An empty program empties it.
+  WriteBoot({});
+  ASSERT_TRUE(tool_->Boot(kImagePath, kBootPath).ok());
+  EXPECT_THAT(ReadBootArea(), Each(0));
+}
+
+TEST_F(DiskToolTest, BootFailsForContentsPastTheBootArea) {
+  NewFormatted();
+  WriteBoot({.contents_words = kBootAreaWords + 2,
+             .data = {{.offset = 0, .data = {1, 2}}}});
+  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
+            absl::StrCat("mem:/boot.oz3: its contents are ", kBootAreaWords + 2,
+                         " words, but the boot area holds ", kBootAreaWords));
+  EXPECT_THAT(ReadBootArea(), Each(0));
+}
+
+TEST_F(DiskToolTest, BootFailsForAProgramFile) {
+  NewFormatted();
+  WriteHost(kBootPath,
+            std::string({static_cast<char>(kProgramFileId & 0xFF),
+                         static_cast<char>(kProgramFileId >> 8),
+                         static_cast<char>(kProgramFileVersion), 0}));
+  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
+            "mem:/boot.oz3: Not a bare program file, but a program file");
+  EXPECT_THAT(ReadBootArea(), Each(0));
+}
+
+TEST_F(DiskToolTest, BootFailsForAMissingProgram) {
+  NewFormatted();
+  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
+            "mem:/boot.oz3: not found");
+}
+
+TEST_F(DiskToolTest, BootNeedsAFileSystem) {
+  ASSERT_TRUE(tool_->New(kImagePath, kSectorCount).ok());
+  WriteBoot({});
+  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
+            "mem:/work.ozd: unformatted");
+}
+
+TEST_F(DiskToolTest, BootOnAProtectedImage) {
+  NewFormatted();
+  WriteBoot({.contents_words = 2, .data = {{.offset = 0, .data = {1, 2}}}});
+  SetProtected(true);
+  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
+            "mem:/work.ozd: write protected");
+  EXPECT_THAT(ReadBootArea(), Each(0));
 }
 
 //==============================================================================

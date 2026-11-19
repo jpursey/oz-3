@@ -35,8 +35,12 @@
 #include "oz3/disk/disk_layout.h"
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/disk_file_protocol.h"
 #include "oz3/tools/disk_transfer.h"
+#include "oz3/tools/program.h"
+#include "oz3/tools/program_file.h"
 
 namespace oz3 {
 
@@ -343,6 +347,31 @@ absl::StatusOr<std::string> DiskTool::Check(std::string_view image_path,
     return Named(image_path, ToStatus(status));
   }
   return FormatReport(report, fix);
+}
+
+absl::Status DiskTool::Boot(std::string_view image_path,
+                            std::string_view program_path) {
+  if (!file_system_->IsValidFile(program_path)) {
+    return absl::NotFoundError(absl::StrCat(program_path, ": not found"));
+  }
+  absl::StatusOr<BareProgram> program =
+      ReadBareProgramFile(*file_system_, program_path);
+  if (!program.ok()) {
+    return Named(program_path, program.status());
+  }
+  if (program->contents_words > DiskSuperblock::kBootAreaWords) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        program_path, ": its contents are ", program->contents_words,
+        " words, but the boot area holds ", DiskSuperblock::kBootAreaWords));
+  }
+
+  // A valid bare program's blocks are all within its contents.
+  DiskSuperblock::BootArea words(DiskSuperblock::kBootAreaWords, 0);
+  for (const Program::Segment::Data& block : program->data) {
+    absl::c_copy(block.data, words.begin() + block.offset);
+  }
+  return RunMounted(image_path, Access::kImage,
+                    [&] { return ToStatus(protocol_->SetBootArea(words)); });
 }
 
 //==============================================================================

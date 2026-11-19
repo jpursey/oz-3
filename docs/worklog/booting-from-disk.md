@@ -432,7 +432,7 @@ Depends on: nothing.
   block order rejected; `oz3asm --bare` end to end.
 - Manual pages updated.
 
-### CL4 [ ] tools, apps: oz3dsk boot
+### CL4 [x] tools, apps: oz3dsk boot
 
 Depends on: CL1, CL3.
 
