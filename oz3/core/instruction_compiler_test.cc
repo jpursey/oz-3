@@ -2703,8 +2703,7 @@ TEST(InstructionCompilerTest, AssemblerRulesNotChecked) {
       {.op = 0, .op_name = "VALUE", .source = "$v, $#4", .code = "UL;"},
       {.op = 1,
        .op_name = "MACRO",
-       .source = "$r",
-       .relative = true,
+       .source = "$r:relative",
        .arg1 = {ArgType::kMacro, 3},
        .code = "LD(C0);$Macro;"},
   };

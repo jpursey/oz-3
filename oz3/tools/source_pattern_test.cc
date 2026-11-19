@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "absl/status/statusor.h"
@@ -16,6 +17,7 @@
 #include "gb/parse/token.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_def.h"
 
 namespace oz3 {
@@ -260,6 +262,80 @@ TEST(SourcePatternTest, PlaceholdersBeforeValueSets) {
   ExpectArgument(parts[0], ArgType::kWordReg,
                  GetDefaultArgTypeSize(ArgType::kWordReg), true);
   EXPECT_EQ(parts[2].kind, Kind::kWord);
+}
+
+TEST(SourcePatternTest, ValueTypes) {
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("$m:relative, S($v:STACK) + $v", {});
+  ASSERT_TRUE(pattern.ok()) << pattern.status();
+  auto parts = pattern->GetParts();
+  ASSERT_EQ(parts.size(), 8);
+  EXPECT_EQ(parts[0].value_type, ValueType::kRelative);
+  EXPECT_EQ(parts[0].arg.type, ArgType::kMacro);
+  EXPECT_EQ(parts[4].kind, Kind::kWord);
+  EXPECT_EQ(parts[4].value_type, ValueType::kStack);
+  EXPECT_EQ(parts[7].value_type, ValueType::kNumber);
+
+  // The text leaves the types out, and the offsets are in it.
+  EXPECT_EQ(pattern->GetText(), "$m, S($v) + $v");
+  const int kOffsets[] = {0, 2, 4, 5, 6, 8, 10, 12};
+  const int kSizes[] = {2, 1, 1, 1, 2, 1, 1, 2};
+  for (int i = 0; i < 8; ++i) {
+    EXPECT_EQ(parts[i].offset, kOffsets[i]) << i;
+    EXPECT_EQ(parts[i].size, kSizes[i]) << i;
+  }
+}
+
+TEST(SourcePatternTest, EveryValueType) {
+  const std::pair<std::string_view, ValueType> kTypes[] = {
+      {"$v:CODE", ValueType::kCode},         {"$v:STACK", ValueType::kStack},
+      {"$v:DATA", ValueType::kData},         {"$v:EXTRA", ValueType::kExtra},
+      {"$v:relative", ValueType::kRelative},
+  };
+  for (const auto& [source, type] : kTypes) {
+    absl::StatusOr<SourcePattern> pattern =
+        SourcePattern::ParseMacroCode(source, {});
+    ASSERT_TRUE(pattern.ok()) << source << ": " << pattern.status();
+    ASSERT_EQ(pattern->GetParts().size(), 1) << source;
+    EXPECT_EQ(pattern->GetParts()[0].value_type, type) << source;
+    EXPECT_EQ(pattern->GetText(), "$v") << source;
+  }
+}
+
+TEST(SourcePatternTest, LiteralColonAfterPlaceholder) {
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("$v : SP", {});
+  ASSERT_TRUE(pattern.ok()) << pattern.status();
+  auto parts = pattern->GetParts();
+  ASSERT_EQ(parts.size(), 3);
+  EXPECT_EQ(parts[0].value_type, ValueType::kNumber);
+  ExpectSymbol(parts[1], ':');
+  ExpectIdent(parts[2], "SP");
+  EXPECT_EQ(pattern->GetText(), "$v : SP");
+}
+
+TEST(SourcePatternTest, ValueTypeErrors) {
+  ExpectError("$v:Data", "$v:Data has an unknown value type");
+  ExpectError("$v:RELATIVE", "$v:RELATIVE has an unknown value type");
+  ExpectError("$v:", "$v: has an unknown value type");
+  ExpectError("$v: SP", "$v: has an unknown value type");
+  ExpectError("$v:5", "$v:5 has an unknown value type");
+  ExpectError("$r:CODE", "$r:CODE has a value type, but only $v and $m can");
+  ExpectError("$R:CODE", "$R:CODE has a value type, but only $v and $m can");
+  ExpectError("$V:CODE", "$V:CODE has a value type, but only $v and $m can");
+  ExpectError("$#4:CODE", "$#4:CODE has a value type, but only $v and $m can");
+  ExpectError("$Condition:CODE",
+              "$Condition:CODE has a value type, but only $v and $m can");
+  ExpectError("$x:CODE", "$x is not a placeholder or value set");
+}
+
+TEST(SourcePatternTest, GetValueTypeBank) {
+  EXPECT_EQ(GetValueTypeBank(ValueType::kNumber), -1);
+  EXPECT_EQ(GetValueTypeBank(ValueType::kCode), CpuCore::CODE);
+  EXPECT_EQ(GetValueTypeBank(ValueType::kStack), CpuCore::STACK);
+  EXPECT_EQ(GetValueTypeBank(ValueType::kData), CpuCore::DATA);
+  EXPECT_EQ(GetValueTypeBank(ValueType::kExtra), CpuCore::EXTRA);
+  EXPECT_EQ(GetValueTypeBank(ValueType::kRelative), CpuCore::CODE);
 }
 
 TEST(SourcePatternTest, Errors) {

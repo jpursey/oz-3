@@ -13,7 +13,6 @@
 #include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_def.h"
 
 namespace oz3 {
@@ -43,8 +42,7 @@ TEST(InstructionDefExporterTest, ValueSetsAndRelativeInstructions) {
   const InstructionDef instructions[] = {
       {.op = 1,
        .op_name = "JR",
-       .source = "$Condition, $v",
-       .relative = true,
+       .source = "$Condition, $v:relative",
        .arg1 = {ArgType::kImmediate, 3},
        .code = "LD(C0);UL;"},
       {.op = 2,
@@ -76,8 +74,7 @@ constexpr oz3::ValueSetDef kTestValueSets[] = {
 constexpr oz3::InstructionDef kTestInstructions[] = {
     {.op = 1,
      .op_name = "JR",
-     .source = "$Condition, $v",
-     .relative = true,
+     .source = "$Condition, $v:relative",
      .arg1 = {oz3::ArgType::kImmediate, 3},
      .code = "LD(C0);UL;"},
     {.op = 2,
@@ -103,7 +100,6 @@ TEST(InstructionDefExporterTest, NoValueSetsOrRelativeInstructions) {
   EXPECT_THAT(text, Not(HasSubstr("NamedValueDef")));
   EXPECT_THAT(text, Not(HasSubstr("ValueSet")));
   EXPECT_THAT(text, Not(HasSubstr("value_sets")));
-  EXPECT_THAT(text, Not(HasSubstr("relative")));
   EXPECT_THAT(text, Not(HasSubstr("excluded")));
   EXPECT_THAT(text, Not(HasSubstr("distinct")));
 }
@@ -130,70 +126,6 @@ TEST(InstructionDefExporterTest, RegisterRules) {
      .arg2_excluded = 0x0041,
      .distinct_args = true,
      .code = "UL;"},
-)---"));
-}
-
-// A bank that isn't one is exported as its number, which the assembler then
-// rejects, so the exported def is still the one that was given.
-TEST(InstructionDefExporterTest, AddressBanks) {
-  const MacroCodeDef codes[] = {
-      {.source = "$v", .prefix = {0, 1}, .code = "LD(C2);UL;"},
-      {.source = "S($v)",
-       .address_bank = CpuCore::STACK,
-       .prefix = {2, 2},
-       .code = "LD(C2);UL;"},
-      {.source = "X($v)",
-       .address_bank = 7,
-       .prefix = {3, 2},
-       .code = "LD(C2);UL;"},
-  };
-  const MacroDef macros[] = {{.name = "Get", .size = 1, .code = codes}};
-  const InstructionDef instructions[] = {
-      {.op = 1,
-       .op_name = "GET",
-       .source = "$m",
-       .arg1 = {ArgType::kMacro, 1},
-       .arg_macro_name = "Get",
-       .code = "$Get;"},
-      {.op = 2,
-       .op_name = "LDD",
-       .source = "$v",
-       .relative = true,
-       .address_bank = CpuCore::DATA,
-       .code = "LD(C0);UL;"},
-      {.op = 3,
-       .op_name = "LDX",
-       .source = "$v",
-       .address_bank = 7,
-       .code = "LD(C0);UL;"},
-  };
-  const std::string exported =
-      Export({.instructions = instructions, .macros = macros});
-  EXPECT_THAT(exported, HasSubstr(R"---(
-    {.op = 2,
-     .op_name = "LDD",
-     .source = "$v",
-     .relative = true,
-     .address_bank = oz3::CpuCore::DATA,
-     .code = "LD(C0);UL;"},
-    {.op = 3,
-     .op_name = "LDX",
-     .source = "$v",
-     .address_bank = 7,
-     .code = "LD(C0);UL;"},
-)---"));
-  EXPECT_THAT(exported, HasSubstr(R"---(
-    {.source = "$v",
-     .prefix = {0, 1},
-     .code = "LD(C2);UL;"},
-    {.source = "S($v)",
-     .address_bank = oz3::CpuCore::STACK,
-     .prefix = {2, 2},
-     .code = "LD(C2);UL;"},
-    {.source = "X($v)",
-     .address_bank = 7,
-     .prefix = {3, 2},
-     .code = "LD(C2);UL;"},
 )---"));
 }
 

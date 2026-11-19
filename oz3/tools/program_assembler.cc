@@ -42,6 +42,7 @@
 #include "oz3/tools/program_grammar.h"
 #include "oz3/tools/program_lexer.h"
 #include "oz3/tools/program_map.h"
+#include "oz3/tools/source_pattern.h"
 
 namespace oz3 {
 
@@ -1312,14 +1313,13 @@ void ProgramAssembler::EncodeInstruction(
     if (kind != ArgKind::kWord && kind != ArgKind::kDword) {
       continue;
     }
-    const int address_bank = form.GetArgs()[i].address_bank;
+    const int bank = GetValueTypeBank(form.GetArgs()[i].value_type);
     const std::optional<uint32_t> value =
-        address_bank >= 0
-            ? EvaluateAddress(*instruction.args[i].value, address_bank, context)
-            : Evaluate(*instruction.args[i].value,
-                       kind == ArgKind::kWord ? ExpressionWidth::kWord
-                                              : ExpressionWidth::kDword,
-                       context);
+        bank >= 0 ? EvaluateAddress(*instruction.args[i].value, bank, context)
+                  : Evaluate(*instruction.args[i].value,
+                             kind == ArgKind::kWord ? ExpressionWidth::kWord
+                                                    : ExpressionWidth::kDword,
+                             context);
     ok = ok && value.has_value();
     values[i] = value.value_or(0);
   }

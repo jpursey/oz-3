@@ -63,7 +63,7 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:3) PUSH.D "$V" { LD(C0); LD(C1); UL; }
   instruction(opcode:4) MVQ "$r, $#3" { UL; }
   instruction(opcode:5) JC "$Condition, $v" { LD(C0); UL; }
-  instruction(opcode:6, relative) JPR "$v" { LD(C0); UL; }
+  instruction(opcode:6) JPR "$v:relative" { LD(C0); UL; }
   instruction(opcode:7) RST "SELF, $#2" { UL; }
   instruction(opcode:8) RST.C "$#3, $#2" { UL; }
   instruction(opcode:9, distinct, exclude_a:R7, exclude_b:R7)
@@ -71,12 +71,13 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:10, exclude_b:R7) CPIR "$r, ($r)" { UL; }
 
   macro Address:r {
-    code(address:STACK):C2 "S($v)" { LD(C2); UL; }
-    code(address:DATA):C2 "D($v)" { LD(C2); UL; }
-    code(address:EXTRA):C2 "E($v)" { LD(C2); UL; }
+    code:C2 "S($v:STACK)" { LD(C2); UL; }
+    code:C2 "D($v:DATA)" { LD(C2); UL; }
+    code:C2 "E($v:EXTRA)" { LD(C2); UL; }
   }
   instruction(opcode:11) LDA "$r, $m" { $Address; MOV(a,r); }
-  instruction(opcode:12, address:STACK) STS "S($v), $r" { LD(C0); UL; }
+  instruction(opcode:12) STS "S($v:STACK), $r" { LD(C0); UL; }
+  instruction(opcode:13) JP "$m:CODE" { $GetWord; }
 )---";
 
 // Matches a gb::ParseError at a line and column (from 0), whose message has
@@ -1150,6 +1151,31 @@ TEST_F(ProgramAssemblerTest, AddressesInTheWrongSegment) {
                                     "The address is in MAIN, but must be in "
                                     "the segment with the DATA role, and no "
                                     "segment has it")));
+}
+
+TEST_F(ProgramAssemblerTest, JumpTargetsInCode) {
+  // A CODE value, or a relative one, is a target in the CODE segment, but a
+  // register or plain number isn't checked.
+  EXPECT_THAT(AssembleErrors(R"---(.STACK 4
+        .SEGMENT main CODE
+        start:
+          JP start
+          JPR start
+          JP R1
+          JP 1234h
+          JP table
+          JPR table
+        .SEGMENT data DATA
+        table:
+          .DW 1
+        .SEGMENT stack STACK
+      )---"),
+              ElementsAre(IsErrorAt(7, 13,
+                                    "The address is in DATA, but must be in "
+                                    "MAIN, the segment with the CODE role"),
+                          IsErrorAt(8, 14,
+                                    "The address is in DATA, but must be in "
+                                    "MAIN, the segment with the CODE role")));
 }
 
 TEST_F(ProgramAssemblerTest, Banks) {

@@ -127,9 +127,9 @@ class AssembleFormTest : public InstructionTest {
         Code("(SP + 4)", "(SP + $v)", 0, {4}),
         Code("(FP)", "(FP)"),
         Code("(FP + -2)", "(FP + $v)", 0, {0xFFFE}),
-        Code("S(10)", "S($v)", 0, {10}),
-        Code("D(20h)", "D($v)", 0, {0x20}),
-        Code("E(0FFFFh)", "E($v)", 0, {0xFFFF}),
+        Code("S(10)", "S($v:STACK)", 0, {10}),
+        Code("D(20h)", "D($v:DATA)", 0, {0x20}),
+        Code("E(0FFFFh)", "E($v:EXTRA)", 0, {0xFFFF}),
     };
   }
   static std::vector<Operand> DwordAddresses() {
@@ -140,9 +140,9 @@ class AssembleFormTest : public InstructionTest {
         Code("[SP + 6]", "[SP + $v]", 0, {6}),
         Code("[FP]", "[FP]"),
         Code("[FP + -4]", "[FP + $v]", 0, {0xFFFC}),
-        Code("S[11]", "S[$v]", 0, {11}),
-        Code("D[30h]", "D[$v]", 0, {0x30}),
-        Code("E[0FFFEh]", "E[$v]", 0, {0xFFFE}),
+        Code("S[11]", "S[$v:STACK]", 0, {11}),
+        Code("D[30h]", "D[$v:DATA]", 0, {0x30}),
+        Code("E[0FFFEh]", "E[$v:EXTRA]", 0, {0xFFFE}),
     };
   }
 
@@ -309,9 +309,9 @@ TEST_F(AssembleFormTest, EveryForm) {
                Code("(SP + 4), 4", "(SP + $v), $v", 0, {4, 4}),
                Code("(FP), 5", "(FP), $v", 0, {5}),
                Code("(FP + -2), 6", "(FP + $v), $v", 0, {0xFFFE, 6}),
-               Code("S(10), 7", "S($v), $v", 0, {10, 7}),
-               Code("D(20h), 8", "D($v), $v", 0, {0x20, 8}),
-               Code("E(0FFFFh), 9", "E($v), $v", 0, {0xFFFF, 9}),
+               Code("S(10), 7", "S($v:STACK), $v", 0, {10, 7}),
+               Code("D(20h), 8", "D($v:DATA), $v", 0, {0x20, 8}),
+               Code("E(0FFFFh), 9", "E($v:EXTRA), $v", 0, {0xFFFF, 9}),
            });
   AddForms(
       "MOV.SDV",
@@ -322,9 +322,9 @@ TEST_F(AssembleFormTest, EveryForm) {
           Code("[SP + 6], 40004h", "[SP + $v], $V", 0, {6, 4, 4}),
           Code("[FP], 50005h", "[FP], $V", 0, {5, 5}),
           Code("[FP + -4], 60006h", "[FP + $v], $V", 0, {0xFFFC, 6, 6}),
-          Code("S[11], 70007h", "S[$v], $V", 0, {11, 7, 7}),
-          Code("D[30h], 80008h", "D[$v], $V", 0, {0x30, 8, 8}),
-          Code("E[0FFFEh], 90009h", "E[$v], $V", 0, {0xFFFE, 9, 9}),
+          Code("S[11], 70007h", "S[$v:STACK], $V", 0, {11, 7, 7}),
+          Code("D[30h], 80008h", "D[$v:DATA], $V", 0, {0x30, 8, 8}),
+          Code("E[0FFFEh], 90009h", "E[$v:EXTRA], $V", 0, {0xFFFE, 9, 9}),
       });
   AddForms("MOV.S", {
                         Code("R0, BC", "$r, BC", CpuCore::R0),

@@ -41,7 +41,6 @@ class InstructionDefExporter {
 
  private:
   void ExportArgumentField(std::string field_name, const Argument& arg);
-  void ExportAddressBank(int8_t address_bank);
   void ExportNamedValue(const NamedValueDef& value);
   void ExportValueSet(const ValueSetDef& value_set);
   void ExportMacroCode(const MacroDef& macro, const MacroCodeDef& code);
@@ -63,17 +62,6 @@ void InstructionDefExporter::ExportArgumentField(std::string field_name,
                   ArgTypeConstName(arg.type), ", ", arg.size, "}");
 }
 
-// A bank that isn't one is exported as its number, so the C++ still compiles.
-void InstructionDefExporter::ExportAddressBank(int8_t address_bank) {
-  if (address_bank >= 0 && address_bank < CpuCore::kBankCount) {
-    absl::StrAppend(&result_, ",\n     .address_bank = oz3::CpuCore::",
-                    CpuCore::GetBankName(address_bank));
-  } else if (address_bank != -1) {
-    absl::StrAppend(&result_,
-                    ",\n     .address_bank = ", static_cast<int>(address_bank));
-  }
-}
-
 void InstructionDefExporter::ExportNamedValue(const NamedValueDef& value) {
   absl::StrAppend(&result_, "    {.name = \"", value.name,
                   "\", .value = ", value.value, "},\n");
@@ -92,9 +80,8 @@ void InstructionDefExporter::ExportValueSet(const ValueSetDef& value_set) {
 
 void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
                                              const MacroCodeDef& code) {
-  absl::StrAppend(&result_, "    {.source = \"", code.source, "\"");
-  ExportAddressBank(code.address_bank);
-  absl::StrAppend(&result_, ",\n     .prefix = {", code.prefix.value, ", ",
+  absl::StrAppend(&result_, "    {.source = \"", code.source,
+                  "\",\n     .prefix = {", code.prefix.value, ", ",
                   code.prefix.size, "}");
   ExportArgumentField("arg", code.arg);
   std::string_view ret_name;
@@ -153,10 +140,6 @@ void InstructionDefExporter::ExportInstruction(
   if (!instruction.source.empty()) {
     absl::StrAppend(&result_, ",\n     .source = \"", instruction.source, "\"");
   }
-  if (instruction.relative) {
-    absl::StrAppend(&result_, ",\n     .relative = true");
-  }
-  ExportAddressBank(instruction.address_bank);
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);
   if (instruction.arg1_excluded != 0) {

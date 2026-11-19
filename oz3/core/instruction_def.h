@@ -137,20 +137,13 @@ struct MacroCodeDef {
   //   result in added word and dword values to the instruction word. These do
   //   not map to the argument. See InstructionDef::source for how many there
   //   must be.
+  // - A "$v" may have a value type, as "$v:STACK" (see InstructionDef::source).
   // - It may contain any parentheses, brackets, or braces, but they must be
   //   balanced, and nested correctly.
   // - It may contain C-style identifiers, integer, floating-point, string, and
   //   character constants.
   // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
-
-  // The bank (CpuCore::CODE, STACK, DATA, or EXTRA) whose base register the
-  // code's first "$v" is an address from, as in the "S($v)" form, or -1 if it
-  // has no such address. The OZ-3 assembler uses it to check a label in the
-  // address, and to make one in the stack segment work from BS (see
-  // InstructionSetSyntax). A code with one has a "$v". CompileInstructionSet
-  // ignores it.
-  int8_t address_bank = -1;
 
   // A string of prefix bits which uniquely identify the macro code. This is
   // used to determine which MacroCoedeDef to use. The prefix must be unique
@@ -256,24 +249,19 @@ struct InstructionDef {
   //   not map to the arguments. With the source of the macro code that takes
   //   the place of "$m", there must be a "$v" for each word the microcode
   //   reads with LD in the fetch phase (a "$V" for two).
+  // - A "$v" may have a value type right after it, with no space: "CODE",
+  //   "STACK", "DATA", or "EXTRA" for an address from that bank's base
+  //   register, as in "S($v:STACK)", or "relative" for a target address in
+  //   CODE, encoded as its offset from the next instruction. A "$m" may have
+  //   one too, for the "$v" of a macro code that is just "$v" in its place,
+  //   which then can't have its own. Nothing else may have one, and a ':'
+  //   right after a placeholder is always a value type.
   // - It may contain any parentheses, brackets, or braces, but they must be
   //   balanced, and nested correctly.
   // - It may contain C-style identifiers, integer, floating-point, string, and
   //   character constants.
   // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
-
-  // If true, a program writes each argument that is only "$v" (in the source,
-  // or in the source of the macro code that takes the place of "$m") as a
-  // target address, which is encoded as its offset from the next instruction.
-  // This is for instructions that add the value to IP.
-  bool relative = false;
-
-  // The bank whose base register the first "$v" in the instruction's own
-  // source is an address from, or -1 if it has no such address, as for
-  // MacroCodeDef::address_bank. An address is never relative. A macro code in
-  // place of "$m" has its own address_bank.
-  int8_t address_bank = -1;
 
   // The argument definitions for the instruction that are encoded in the lower
   // byte of the instruction word. The total number of bits required must not
@@ -352,11 +340,10 @@ struct ValueSetDef {
 // Defines a set of instructions and macros for the OZ-3 CPU.
 //
 // CompileInstructionSet checks only what cores need to run the instructions.
-// The sources, value sets, relative marks, register exclusions, and address
-// banks are for the OZ-3 assembler and debugger, which have rules of their own
-// for them (see InstructionDef::source, InstructionDef::arg1_excluded,
-// InstructionDef::address_bank, MacroCodeDef::source,
-// MacroCodeDef::address_bank, and ValueSetDef).
+// The sources (with their value types), value sets, and register exclusions
+// are for the OZ-3 assembler and debugger, which have rules of their own for
+// them (see InstructionDef::source, InstructionDef::arg1_excluded,
+// MacroCodeDef::source, and ValueSetDef).
 // CompileInstructionSet doesn't check those rules, so an instruction set that
 // compiles may not be one the assembler can use.
 //

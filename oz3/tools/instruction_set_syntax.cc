@@ -189,25 +189,10 @@ InstructionForm::Arg::Kind GetArgKind(const Part& part) {
   }
 }
 
-// An address is the first $v of the source it marks, so the source needs one.
-// The error says what is wrong with the source.
-absl::Status ValidateAddressBank(int address_bank,
-                                 const SourcePattern& pattern) {
-  if (address_bank == -1) {
-    return absl::OkStatus();
-  }
-  if (address_bank < 0 || address_bank >= CpuCore::kBankCount) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("has an invalid address bank (", address_bank, ")"));
-  }
-  if (absl::c_none_of(pattern.GetParts(), [](const Part& part) {
-        return part.kind == Part::Kind::kWord;
-      })) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("is an address in ", CpuCore::GetBankName(address_bank),
-                     ", but has no $v for it"));
-  }
-  return absl::OkStatus();
+// Returns true if a pattern is just "$v", whose type a $m can give.
+bool IsJustValue(const SourcePattern& pattern) {
+  return pattern.GetParts().size() == 1 &&
+         pattern.GetParts()[0].kind == Part::Kind::kWord;
 }
 
 }  // namespace
@@ -259,7 +244,7 @@ bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
           return fail("Value ", value, " does not fit in a word");
         }
         uint16_t word = static_cast<uint16_t>(value);
-        if (arg.relative) {
+        if (arg.value_type == ValueType::kRelative) {
           // The offset from the next instruction, wrapping as IP does.
           word -= static_cast<uint16_t>(address + size_);
         }
@@ -359,7 +344,7 @@ std::string InstructionForm::Disassemble(absl::Span<const uint16_t> words,
         break;
       case Arg::Kind::kWord: {
         uint16_t word = words[word_index++];
-        if (arg.relative) {
+        if (arg.value_type == ValueType::kRelative) {
           word += static_cast<uint16_t>(address + size_);
         }
         absl::StrAppend(&text, FormatHexNumber(word, 4));
@@ -451,13 +436,15 @@ class InstructionSetSyntaxBuilder final {
   bool CheckInstructionArgs(const InstructionDef& instruction,
                             const SourcePattern& pattern);
   bool CheckRegisterRules(const InstructionDef& instruction);
+  bool CheckMacroValueType(const InstructionDef& instruction,
+                           const SourcePattern& pattern,
+                           const MacroSyntax& macro);
   bool CheckExcludedRegisters(const InstructionDef& instruction,
                               const Argument& arg, uint16_t excluded,
                               std::string_view arg_name);
   void AddForm(const InstructionDef& instruction, const SourcePattern& pattern,
                const MacroSyntax* macro, int code_index);
-  void AddPart(InstructionForm& form, const InstructionDef& instruction,
-               Part part, int shift, int address_bank);
+  void AddPart(InstructionForm& form, Part part, int shift);
   bool CheckSize(const InstructionForm& form,
                  const InstructionSet& instruction_set);
   void IndexForms();
@@ -580,12 +567,6 @@ bool InstructionSetSyntaxBuilder::ParseMacroCode(
                           static_cast<int>(code.arg.size), " bits)");
   }
 
-  if (absl::Status status = ValidateAddressBank(code.address_bank, *pattern);
-      !status.ok()) {
-    return MacroCodeError(macro, code, "Macro code source \"", code.source,
-                          "\" ", status.message());
-  }
-
   // Each form of an instruction must be one a program can name, and its
   // macro's codes are what tell its forms apart.
   for (int i = 0; i < static_cast<int>(patterns.size()); ++i) {
@@ -612,12 +593,6 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
       !CheckRegisterRules(instruction)) {
     return false;
   }
-  if (absl::Status status =
-          ValidateAddressBank(instruction.address_bank, *pattern);
-      !status.ok()) {
-    return InstructionDefError(instruction, "Instruction code source \"",
-                               instruction.source, "\" ", status.message());
-  }
 
   const int first_form = static_cast<int>(syntax_->forms_.size());
   if (instruction.arg_macro_name.empty()) {
@@ -629,12 +604,14 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
                                  "Unknown macro: ", instruction.arg_macro_name);
     }
     const MacroSyntax& macro = it->second;
+    if (!CheckMacroValueType(instruction, *pattern, macro)) {
+      return false;
+    }
     for (int i = 0; i < static_cast<int>(macro.patterns.size()); ++i) {
       AddForm(instruction, *pattern, &macro, i);
     }
   }
 
-  bool has_relative_arg = false;
   for (int i = first_form; i < static_cast<int>(syntax_->forms_.size()); ++i) {
     const InstructionForm& form = syntax_->forms_[i];
 
@@ -651,14 +628,41 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
     if (!CheckSize(form, instruction_set)) {
       return false;
     }
-    for (const InstructionForm::Arg& arg : form.args_) {
-      has_relative_arg = has_relative_arg || arg.relative;
-    }
   }
-  if (instruction.relative && !has_relative_arg) {
-    return InstructionDefError(instruction, "Relative instruction '",
-                               instruction.op_name,
-                               "' has no form where $v is a whole argument");
+  return true;
+}
+
+// A $m's value type is for its macro's codes that are just "$v", so the macro
+// must have one, and none of them can have a type of its own.
+bool InstructionSetSyntaxBuilder::CheckMacroValueType(
+    const InstructionDef& instruction, const SourcePattern& pattern,
+    const MacroSyntax& macro) {
+  const auto parts = pattern.GetParts();
+  auto macro_part = absl::c_find_if(parts, [](const Part& part) {
+    return part.kind == Part::Kind::kArgument &&
+           part.arg.type == ArgType::kMacro;
+  });
+  if (macro_part->value_type == ValueType::kNumber) {
+    return true;
+  }
+  bool has_value_code = false;
+  for (int i = 0; i < static_cast<int>(macro.patterns.size()); ++i) {
+    if (!IsJustValue(macro.patterns[i])) {
+      continue;
+    }
+    if (macro.patterns[i].GetParts()[0].value_type != ValueType::kNumber) {
+      return InstructionDefError(
+          instruction, "Source \"", instruction.source,
+          "\" gives its $m a value type, but macro code \"",
+          macro.def->code[i].source, "\" of ", macro.def->name,
+          " has one of its own");
+    }
+    has_value_code = true;
+  }
+  if (!has_value_code) {
+    return InstructionDefError(instruction, "Source \"", instruction.source,
+                               "\" gives its $m a value type, but no code of ",
+                               macro.def->name, " is just \"$v\"");
   }
   return true;
 }
@@ -738,7 +742,7 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
   syntax_->forms_.push_back(InstructionForm());
   InstructionForm& form = syntax_->forms_.back();
   form.instruction_ = &instruction;
-  form.pattern_ = std::string(instruction.source);
+  form.pattern_ = std::string(pattern.GetText());
   form.size_ = 1 + pattern.GetValueWords();
 
   // Arguments in the code word are in the order of the instruction's
@@ -747,7 +751,6 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
   form.code_word_mask_ = 0xFF00;
   int arg_index = 0;
   int offset_change = 0;  // How far the macro code moved the parts after it.
-  bool needs_address = (instruction.address_bank >= 0);
   for (Part part : pattern.GetParts()) {
     part.offset += offset_change;
     const int shift = (arg_index == 0 ? 0 : instruction.arg1.size);
@@ -757,14 +760,7 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     if (part.kind != Part::Kind::kArgument ||
         part.arg.type != ArgType::kMacro) {
       const bool is_code_word_arg = (part.kind == Part::Kind::kArgument);
-
-      // The instruction's address, if it has one, is its own first $v.
-      int address_bank = -1;
-      if (needs_address && part.kind == Part::Kind::kWord) {
-        address_bank = instruction.address_bank;
-        needs_address = false;
-      }
-      AddPart(form, instruction, std::move(part), shift, address_bank);
+      AddPart(form, std::move(part), shift);
 
       // The register rules are only for the instruction's own arguments, which
       // CheckRegisterRules checked are registers if they have any.
@@ -777,26 +773,26 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
       continue;
     }
 
-    // The macro code's source and parts take the place of the $m. Its parts
-    // are whole arguments of the form only if the $m is.
+    // The macro code's text and parts take the place of the $m. Its parts are
+    // whole arguments of the form only if the $m is, and a code that is just
+    // "$v" takes the $m's value type (CheckMacroValueType checked it has none
+    // of its own if the $m has one).
     const MacroCodeDef& code = macro->def->code[code_index];
     const SourcePattern& code_pattern = macro->patterns[code_index];
+    const std::string_view code_text = code_pattern.GetText();
     form.macro_code_ = &code;
-    form.pattern_.replace(part.offset, part.size, code.source);
-    offset_change += static_cast<int>(code.source.size()) - part.size;
+    form.pattern_.replace(part.offset, part.size, code_text);
+    offset_change += static_cast<int>(code_text.size()) - part.size;
     form.size_ += code_pattern.GetValueWords();
-    bool code_needs_address = (code.address_bank >= 0);
+    const bool takes_type =
+        part.value_type != ValueType::kNumber && IsJustValue(code_pattern);
     for (Part code_part : code_pattern.GetParts()) {
       code_part.offset += part.offset;
       code_part.whole_arg = code_part.whole_arg && part.whole_arg;
-
-      // The code's address, if it has one, is its first $v.
-      int address_bank = -1;
-      if (code_needs_address && code_part.kind == Part::Kind::kWord) {
-        address_bank = code.address_bank;
-        code_needs_address = false;
+      if (takes_type) {
+        code_part.value_type = part.value_type;
       }
-      AddPart(form, instruction, std::move(code_part), shift, address_bank);
+      AddPart(form, std::move(code_part), shift);
     }
     code_word_args[arg_index - 1] = macro->def->Encode(code_index, 0);
     form.code_word_mask_ |= ((1 << code.prefix.size) - 1)
@@ -806,23 +802,17 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
 }
 
 // Adds a part to a form, with its argument if it is a placeholder. A code word
-// argument's bits start at `shift`, and a $v that is an address from a bank's
-// base register has its `address_bank` (or -1).
-void InstructionSetSyntaxBuilder::AddPart(InstructionForm& form,
-                                          const InstructionDef& instruction,
-                                          Part part, int shift,
-                                          int address_bank) {
+// argument's bits start at `shift`.
+void InstructionSetSyntaxBuilder::AddPart(InstructionForm& form, Part part,
+                                          int shift) {
   if (part.kind == Part::Kind::kArgument) {
     form.args_.push_back({.kind = GetArgKind(part),
                           .bits = part.arg.size,
                           .shift = shift,
                           .value_set = part.value_set});
   } else if (part.kind != Part::Kind::kLiteral) {
-    form.args_.push_back({.kind = GetArgKind(part),
-                          .relative = instruction.relative &&
-                                      part.kind == Part::Kind::kWord &&
-                                      part.whole_arg && address_bank < 0,
-                          .address_bank = address_bank});
+    form.args_.push_back(
+        {.kind = GetArgKind(part), .value_type = part.value_type});
   }
   form.parts_.push_back(std::move(part));
 }

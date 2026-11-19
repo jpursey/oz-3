@@ -749,62 +749,55 @@ TEST(InstructionAssemblerTest, MacroCodeInvalidDwordRegReturn) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
-TEST(InstructionAssemblerTest, MacroCodeAddressBank) {
+TEST(InstructionAssemblerTest, ValueTypes) {
   gb::ParseError error;
   std::string source = R"---(
     macro Macro:r {
       code:C2 "$v" { LD(C2); UL; }
-      code(address:STACK):C2 "S($v)" { LD(C2); UL; }
-      code(address:CODE):C2 "C($v)" { LD(C2); UL; }
+      code:C2 "S($v:STACK)" { LD(C2); UL; }
     }
+    instruction LDE "$r, E($v:EXTRA)" { LD(C0); UL; }
+    instruction JPR "$m:relative" { $Macro; }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
   ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
-  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
-  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
-  ASSERT_EQ(macro.code.size(), 3);
-  EXPECT_EQ(macro.code[0].address_bank, -1);
-  EXPECT_EQ(macro.code[1].address_bank, CpuCore::STACK);
-  EXPECT_EQ(macro.code[1].ret, CpuCore::C2);
-  EXPECT_EQ(macro.code[2].address_bank, CpuCore::CODE);
+  const InstructionSetDef& def = asm_set->GetInstructionSetDef();
+  ASSERT_EQ(def.macros.size(), 1);
+  ASSERT_EQ(def.macros[0].code.size(), 2);
+  EXPECT_EQ(def.macros[0].code[1].source, "S($v:STACK)");
+  EXPECT_EQ(def.macros[0].code[1].ret, CpuCore::C2);
+  ASSERT_EQ(def.instructions.size(), 2);
+  EXPECT_EQ(def.instructions[0].source, "$r, E($v:EXTRA)");
+  EXPECT_EQ(def.instructions[1].source, "$m:relative");
 }
 
-TEST(InstructionAssemblerTest, MacroCodeInvalidAddressBank) {
-  gb::ParseError error;
-  std::string source = R"---(
-    macro Macro {
-      code(address:stack) "S($v)" { LD(C2); UL; }
-    }
-  )---";
-  auto asm_set = AssembleInstructionSet(source, &error);
-  EXPECT_EQ(asm_set, nullptr);
-  EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid address bank: stack"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 19));
-}
-
-TEST(InstructionAssemblerTest, InstructionAddressBank) {
-  gb::ParseError error;
-  std::string source = R"---(
-    instruction LD "$r, $v" { LD(C0); UL; }
-    instruction(address:EXTRA) LDE "$r, $v" { LD(C0); UL; }
-  )---";
-  auto asm_set = AssembleInstructionSet(source, &error);
-  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
-  const auto& instructions = asm_set->GetInstructionSetDef().instructions;
-  ASSERT_EQ(instructions.size(), 2);
-  EXPECT_EQ(instructions[0].address_bank, -1);
-  EXPECT_EQ(instructions[1].address_bank, CpuCore::EXTRA);
-}
-
-TEST(InstructionAssemblerTest, InstructionInvalidAddressBank) {
-  gb::ParseError error;
-  std::string source = R"---(
-    instruction(address:extra) LDE "$r, $v" { LD(C0); UL; }
-  )---";
-  auto asm_set = AssembleInstructionSet(source, &error);
-  EXPECT_EQ(asm_set, nullptr);
-  EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid address bank: extra"));
-  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 24));
+TEST(InstructionAssemblerTest, InvalidValueTypes) {
+  struct Case {
+    std::string_view source;
+    std::string_view error;
+    int line = 0;
+    int column = 0;
+  };
+  const Case cases[] = {
+      {.source = "macro Macro { code \"S($v:stack)\" { LD(C2); UL; } }",
+       .error = "$v:stack has an unknown value type",
+       .column = 14},
+      {.source = "macro Macro { code \"S($v:)\" { LD(C2); UL; } }",
+       .error = "$v: has an unknown value type",
+       .column = 14},
+      {.source = "instruction LDE \"$r:EXTRA\" { UL; }",
+       .error = "$r:EXTRA has a value type, but only $v and $m can"},
+      {.source = "instruction LDE \"$V:DATA\" { LD(C0); LD(C1); UL; }",
+       .error = "$V:DATA has a value type, but only $v and $m can"},
+  };
+  for (const Case& test : cases) {
+    gb::ParseError error;
+    auto asm_set = AssembleInstructionSet(std::string(test.source), &error);
+    EXPECT_EQ(asm_set, nullptr) << test.source;
+    EXPECT_THAT(error.GetMessage(), HasSubstr(test.error)) << test.source;
+    EXPECT_THAT(error.GetLocation(), AtLineCol(test.line, test.column))
+        << test.source;
+  }
 }
 
 TEST(InstructionAssemblerTest, DuplicateMacroCodeSource) {
@@ -1590,60 +1583,30 @@ TEST(InstructionAssemblerTest, MacroCodeSourceSizeDoesNotMatchMicrocode) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(5, 4));
 }
 
-TEST(InstructionAssemblerTest, RelativeInstructions) {
+TEST(InstructionAssemblerTest, MacroValueTypeWithoutValueCode) {
   gb::ParseError error;
-  std::string source = R"---(
-    macro Value {
-      code "$r" { UL; }
-      code "$v" { LD(C0); UL; }
-    }
-    instruction(relative) DIRECT "$r, $v" { LD(C0); UL; }
-    instruction(opcode:5, relative) VIA_MACRO "$m" { $Value; }
-    instruction(relative, opcode:6) VIA_SIZED_MACRO "$m4, $#4" { $Value; }
-    instruction ABSOLUTE "$v" { LD(C0); UL; }
-  )---";
-  auto asm_set = AssembleInstructionSet(source, &error);
-  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
-  const InstructionSetDef& def = asm_set->GetInstructionSetDef();
-  ASSERT_EQ(def.instructions.size(), 4);
-  EXPECT_EQ(def.instructions[0].op_name, "DIRECT");
-  EXPECT_TRUE(def.instructions[0].relative);
-  EXPECT_EQ(def.instructions[1].op_name, "VIA_MACRO");
-  EXPECT_EQ(def.instructions[1].op, 5);
-  EXPECT_TRUE(def.instructions[1].relative);
-  EXPECT_EQ(def.instructions[2].op_name, "VIA_SIZED_MACRO");
-  EXPECT_EQ(def.instructions[2].op, 6);
-  EXPECT_TRUE(def.instructions[2].relative);
-  EXPECT_EQ(def.instructions[3].op_name, "ABSOLUTE");
-  EXPECT_FALSE(def.instructions[3].relative);
+  auto asm_set = AssembleInstructionSet(
+      "macro Value { code \"($v)\" { LD(C0); UL; } }\n"
+      "instruction TEST \"$m:relative\" { $Value; }",
+      &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              HasSubstr("gives its $m a value type, but no code of Value is "
+                        "just \"$v\""));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 0));
 }
 
-TEST(InstructionAssemblerTest, RelativeInstructionWithoutWholeArgValue) {
-  struct Case {
-    std::string_view source;
-    std::string_view instruction;
-  };
-  const Case cases[] = {
-      {.instruction = "instruction(relative) TEST { UL; }"},
-      {.instruction = "instruction(relative) TEST \"D($v)\" { LD(C0); UL; }"},
-      {.instruction = "instruction(relative) TEST \"R1 + $v\" { LD(C0); UL; }"},
-      {.instruction = "instruction(relative) TEST \"$V\" "
-                      "{ LD(C0); LD(C1); UL; }"},
-      {.source = "macro Value { code \"($v)\" { LD(C0); UL; } }",
-       .instruction = "instruction(relative) TEST \"$m\" { $Value; }"},
-      {.source = "macro Value { code \"$v\" { LD(C0); UL; } }",
-       .instruction = "instruction(relative) TEST \"($m)\" { $Value; }"},
-  };
-  for (const Case& test : cases) {
-    gb::ParseError error;
-    auto asm_set = AssembleInstructionSet(
-        absl::StrCat(test.source, "\n", test.instruction), &error);
-    EXPECT_EQ(asm_set, nullptr) << test.instruction;
-    EXPECT_THAT(error.GetMessage(),
-                HasSubstr("has no form where $v is a whole argument"))
-        << test.instruction;
-    EXPECT_THAT(error.GetLocation(), AtLineCol(1, 0)) << test.instruction;
-  }
+TEST(InstructionAssemblerTest, MacroValueTypeOnTypedValueCode) {
+  gb::ParseError error;
+  auto asm_set = AssembleInstructionSet(
+      "macro Value { code \"$v:DATA\" { LD(C0); UL; } }\n"
+      "instruction TEST \"$m:CODE\" { $Value; }",
+      &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(),
+              HasSubstr("gives its $m a value type, but macro code "
+                        "\"$v:DATA\" of Value has one of its own"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(1, 0));
 }
 
 TEST(InstructionAssemblerTest, RegisterRules) {

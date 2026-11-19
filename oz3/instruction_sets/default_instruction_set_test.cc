@@ -38,7 +38,7 @@ namespace {
 // Instructions with opcodes below this have pinned code words.
 constexpr int kPinnedInstructionCount = 0x93;
 
-constexpr uint64_t kPinnedFingerprint = 0xD813E5BDE83CAB53;
+constexpr uint64_t kPinnedFingerprint = 0x440531A867BBB23B;
 
 std::string ArgumentLayout(const Argument& arg) {
   return absl::StrCat(ArgTypeToString(arg.type), ":",
@@ -79,13 +79,14 @@ std::string ValueSetLayouts(const InstructionSetDef& def,
 
 // Returns everything about an instruction that determines its code words and
 // syntax, including the codes of a macro argument, and the value sets they
-// use. The macro's name is left out, as it doesn't affect either.
+// use. The sources include their value types, which say how a program's values
+// are encoded. The macro's name is left out, as it doesn't affect either.
 std::string EncodingLayout(const InstructionSetDef& def,
                            const InstructionDef& instruction) {
   std::string layout = absl::StrCat(
       static_cast<int>(instruction.op), " ", instruction.op_name, " \"",
       instruction.source, "\" ", ArgumentLayout(instruction.arg1), " ",
-      ArgumentLayout(instruction.arg2), instruction.relative ? " relative" : "",
+      ArgumentLayout(instruction.arg2),
       ValueSetLayouts(def, instruction.source));
   if (instruction.arg1.type != ArgType::kMacro &&
       instruction.arg2.type != ArgType::kMacro) {
