@@ -267,10 +267,25 @@ DiskStatus SetBootArea(const DiskSuperblock::BootArea& words);
 
 ### devices: READ BOOT and WRITE BOOT
 
-- `disk_drive_command` gains the two codes. `READ BOOT` copies the boot area
-  into the command's buffer at accept, and streams it as a `READ` streams a
-  sector. `WRITE BOOT` takes words into the buffer, and does its disk work
-  only after the 224th.
+- `disk_drive_command` gains the two codes, with no arguments and no results.
+- The data phase of `READ` and `WRITE` moves words to and from a file through
+  its handle, one file system call per word. The boot area has no handle, so
+  each command gets a data state of its own, holding a `BootArea` as its
+  buffer:
+  - `READ BOOT`'s accept calls `GetBootArea`, whose status is the accept's,
+    and its state starts with the words. It puts each dword on the data port
+    once the OS has taken the last, as `ReadingState` does, but with no disk
+    call, then sends an **ok** completion. A disk ejected meanwhile doesn't
+    stop it, as its words were taken at accept, as `VOLUME`'s label is.
+  - `WRITE BOOT`'s accept only checks `GetWritableStatus`, and its state takes
+    each dword into the buffer. After the 112th, it calls `SetBootArea`,
+    charges its busy time as any disk call is, and sends its status as the
+    completion. A reset before then drops the buffer, so nothing is written.
+- Neither moves a count, so the states set 112 themselves rather than use
+  `MakeTransfer` and `EndTransfer`, which take the count from the accept and
+  send it back in the completion. Their port handling is written out rather
+  than shared with `ReadingState` and `WritingState` behind a flag, as it is a
+  dozen lines.
 
 **Brittleness:** none new: the drive's phases already make a caller read the
 accept before the data, and the data before the completion.
@@ -374,9 +389,10 @@ Depends on: CL1.
 **Verify**
 - Standard checks.
 - Unit tests, as programs with `DeviceProgramTest`: a read and a write through
-  the ports, as 112 dwords; each accept status; a write reset partway leaving the
-  old boot area; a write failing at its sector write; a write's timing, and a
-  read's taking no disk time.
+  the ports, as 112 dwords; each accept status; a write reset partway leaving
+  the old boot area; a write failing at its sector write; a read completing ok
+  though the disk is ejected partway; a write's timing, and a read's taking no
+  disk time.
 - Manual pages updated.
 
 ### CL3 [ ] tools, apps: bare programs
