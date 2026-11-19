@@ -88,7 +88,7 @@ The superblock is words 0–31 of sector 0, and records everything needed to fin
 | 16–19 | Formatted | Date and time in the timer's layout, or all zeros |
 | 20–31 | Reserved |  |
 
-Words 32–255 of sector 0 are the **boot area**: 224 words holding a system disk's loader, the code a machine's boot ROM loads and starts to load its operating system (see [booting-from-disk.md](worklog/booting-from-disk.md)). Nothing in the file system depends on it: formatting zeroes it, relabeling keeps it, and `DiskFileSystem::ReadBootArea` and `WriteBootArea` read and rewrite it whole, keeping the rest of the sector, on a formatted disk.
+Words 32–255 of sector 0 are the **boot area**: 224 words holding a system disk's loader, the code a machine's boot ROM loads and starts to load its operating system (see [booting-from-disk.md](worklog/booting-from-disk.md)). Nothing in the file system depends on it: formatting zeroes it, relabeling keeps it, and `DiskFileSystem::GetBootArea` and `SetBootArea` get and rewrite it whole, keeping the rest of the sector, on a formatted disk. Getting it reads nothing, as the file system holds sector 0 from when the disk was attached, as it does the label.
 
 - Sectors per cluster is stored as a count, and must be a power of two so code can shift.
 - The label is plain packed text, not split into name and extension, with letters in upper case.
