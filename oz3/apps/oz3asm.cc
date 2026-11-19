@@ -11,6 +11,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "gb/base/context.h"
 #include "gb/base/validated_context.h"
@@ -26,6 +27,7 @@
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_set.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_assembler.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
@@ -48,6 +50,13 @@ const gb::CliFlag<std::string_view> kInstructionSet = {
         "Assembles for the instruction set in this source file (.izm), "
         "rather than the default one.",
     .validators = {&gb::kCliFileExists},
+};
+const gb::CliFlag<bool> kBare = {
+    .name = "bare",
+    .short_name = 'b',
+    .help =
+        "Writes a bare program file, for a program that declares no "
+        "segments.",
 };
 const gb::CliFlag<bool> kMap = {
     .name = "map",
@@ -81,7 +90,7 @@ const gb::CliCommand kProgram = {
         "Assembles a program, and writes its program file. Paths are "
         "written the operating system's way, absolute or relative to the "
         "current directory.",
-    .flags = {&kInstructionSet, &kMap, &kListing},
+    .flags = {&kInstructionSet, &kBare, &kMap, &kListing},
     .args = {&kSourceFile, &kProgramFile},
     .constraints = {&gb::kConstraintCliFileSystem},
     .run = Run,
@@ -95,6 +104,7 @@ const gb::CliCommand kProgram = {
 // written are normalized (see gb::NormalizePath()).
 struct Options {
   std::string_view instruction_set_path;  // Empty for the default one.
+  bool bare = false;                      // Writes a bare program file.
   std::string source_path;
   std::string program_path;
   std::string map_path;      // Empty unless the map is written.
@@ -105,6 +115,7 @@ struct Options {
 Options ReadOptions(const gb::CliCommandLine& command_line) {
   Options options;
   options.instruction_set_path = command_line.Get(kInstructionSet).value_or("");
+  options.bare = command_line.Get(kBare);
 
   // The validators of the source and program files check that their paths
   // normalize.
@@ -227,9 +238,22 @@ bool Run(gb::ValidatedContext& context,
     return false;
   }
 
-  if (!ReportWrite(writer, "program",
-                   WriteProgramFile(*file_system, options.program_path,
-                                    program->GetProgram()))) {
+  absl::Status status;
+  if (options.bare) {
+    const absl::StatusOr<BareProgram>& bare_program = program->GetBareProgram();
+    if (!bare_program.ok()) {
+      writer(gb::CliText::kError,
+             absl::StrCat(options.source_path, ": ",
+                          bare_program.status().message()));
+      return false;
+    }
+    status =
+        WriteBareProgramFile(*file_system, options.program_path, *bare_program);
+  } else {
+    status = WriteProgramFile(*file_system, options.program_path,
+                              program->GetProgram());
+  }
+  if (!ReportWrite(writer, "program", status)) {
     return false;
   }
   if (!options.map_path.empty() &&

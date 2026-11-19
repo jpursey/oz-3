@@ -11,8 +11,10 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/status/statusor.h"
 #include "gb/file/file_system.h"
 #include "gb/parse/parse_error.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_map.h"
@@ -33,6 +35,14 @@ class AsmProgram final {
   // Returns the program, which is valid (see ValidateProgram).
   const Program& GetProgram() const { return program_; }
 
+  // Returns the program as a bare program, which is valid (see
+  // ValidateBareProgram), or an error if it can't be one: if it declares
+  // segments, or its contents, rounded up to a multiple of
+  // Program::Segment::Data::kAlignment, and its stack pass the end of a bank.
+  const absl::StatusOr<BareProgram>& GetBareProgram() const {
+    return bare_program_;
+  }
+
   // Returns the program's map: its source files, where each statement's words
   // are, and its labels and constants.
   const ProgramMap& GetMap() const { return map_; }
@@ -43,6 +53,7 @@ class AsmProgram final {
   AsmProgram() = default;
 
   Program program_;
+  absl::StatusOr<BareProgram> bare_program_;
   ProgramMap map_;
 };
 

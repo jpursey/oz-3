@@ -35,6 +35,7 @@
 #include "gb/parse/token.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
+#include "oz3/tools/bare_program.h"
 #include "oz3/tools/expression.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
@@ -364,6 +365,7 @@ class ProgramAssembler final {
   void EncodeData(const Statement& statement, const DataStatement& data,
                   std::vector<uint16_t>& words);
   std::unique_ptr<AsmProgram> BuildProgram();
+  absl::StatusOr<BareProgram> BuildBareProgram(const Program& program) const;
   Program::Segment BuildSegment(int index) const;
   ProgramMap BuildMap();
 
@@ -1354,8 +1356,38 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
         absl::StrCat("The program isn't valid: ", status.message())));
     return nullptr;
   }
+  result->bare_program_ = BuildBareProgram(program);
   result->map_ = BuildMap();
   return result;
+}
+
+absl::StatusOr<BareProgram> ProgramAssembler::BuildBareProgram(
+    const Program& program) const {
+  // Only the default program can be a bare program. It can't declare banks or
+  // more than one instance either, as the first pass reports: .BANK and
+  // .INSTANCES above 1 each need segments.
+  const Segment& segment = segments_.front();
+  if (segment.name.has_value()) {
+    return absl::FailedPreconditionError(
+        "The program declares segments, so it can't be a bare program");
+  }
+
+  // Its contents are the segment's words before its stack, rounded up to
+  // whole units, as its data blocks are.
+  constexpr int kAlignment = Program::Segment::Data::kAlignment;
+  const int contents_words =
+      static_cast<int>(segment.reserved_size) - stack_words_;
+  BareProgram bare_program = {
+      .contents_words =
+          (contents_words + kAlignment - 1) / kAlignment * kAlignment,
+      .stack_words = stack_words_,
+      .data = program.segments.front().data,
+  };
+  if (absl::Status status = ValidateBareProgram(bare_program); !status.ok()) {
+    return absl::FailedPreconditionError(absl::StrCat(
+        "The program can't be a bare program: ", status.message()));
+  }
+  return bare_program;
 }
 
 Program::Segment ProgramAssembler::BuildSegment(int index) const {

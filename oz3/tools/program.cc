@@ -44,31 +44,8 @@ absl::Status ValidateSegment(const Program& program, int index) {
         segment.page_count, " pages, past the end of its bank"));
   }
 
-  constexpr int kAlignment = Program::Segment::Data::kAlignment;
-  int data_end = 0;
-  for (int b = 0; b < static_cast<int>(segment.data.size()); ++b) {
-    const Program::Segment::Data& data = segment.data[b];
-    const int size = static_cast<int>(data.data.size());
-    if (size == 0 || data.offset % kAlignment != 0 || size % kAlignment != 0) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Segment ", index, " has a data block at offset ", data.offset,
-          " of ", size, " words, but both must be multiples of ", kAlignment,
-          ", and the size can't be 0"));
-    }
-    if (data.offset < data_end) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Segment ", index, " has a data block at offset ", data.offset,
-          ", before the end of the block before it (", data_end, ")"));
-    }
-    data_end = data.offset + size;
-    if (data_end > GetSegmentSize(segment)) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Segment ", index, " has a data block at offset ", data.offset,
-          " of ", size, " words, past the end of the segment (",
-          GetSegmentSize(segment), " words)"));
-    }
-  }
-  return absl::OkStatus();
+  return ValidateSegmentData(segment.data, GetSegmentSize(segment),
+                             absl::StrCat("Segment ", index), "segment");
 }
 
 absl::Status ValidateBankPages(const Program& program) {
@@ -121,6 +98,36 @@ absl::Status ValidateRole(const Program& program, std::string_view role,
 }
 
 }  // namespace
+
+absl::Status ValidateSegmentData(absl::Span<const Program::Segment::Data> data,
+                                 int size, std::string_view holder,
+                                 std::string_view end_name) {
+  constexpr int kAlignment = Program::Segment::Data::kAlignment;
+  int data_end = 0;
+  for (const Program::Segment::Data& block : data) {
+    const int block_size = static_cast<int>(block.data.size());
+    if (block_size == 0 || block.offset % kAlignment != 0 ||
+        block_size % kAlignment != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          holder, " has a data block at offset ", block.offset, " of ",
+          block_size, " words, but both must be multiples of ", kAlignment,
+          ", and the size can't be 0"));
+    }
+    if (block.offset < data_end) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          holder, " has a data block at offset ", block.offset,
+          ", before the end of the block before it (", data_end, ")"));
+    }
+    data_end = block.offset + block_size;
+    if (data_end > size) {
+      return absl::InvalidArgumentError(
+          absl::StrCat(holder, " has a data block at offset ", block.offset,
+                       " of ", block_size, " words, past the end of the ",
+                       end_name, " (", size, " words)"));
+    }
+  }
+  return absl::OkStatus();
+}
 
 absl::Status ValidateProgram(const Program& program) {
   if (program.banks.size() > kMaxMemoryBanks) {

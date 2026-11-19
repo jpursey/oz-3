@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_tools_SOURCE
+  bare_program.cc bare_program.h
   disk_file_protocol.cc disk_file_protocol.h
   disk_tool.cc disk_tool.h
   disk_transfer.cc disk_transfer.h
@@ -46,6 +47,7 @@ set(oz3_tools_LIBS
 )
 
 set(oz3_tools_TEST_SOURCE
+  bare_program_test.cc
   disk_file_protocol_test.cc
   disk_tool_test.cc
   disk_transfer_test.cc

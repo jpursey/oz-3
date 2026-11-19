@@ -118,8 +118,10 @@ loader can read the whole file with `READ PACKED`:
   versions on its own, and a program file reader rejects a bare program for
   the right reason.
 - **`oz3asm --bare`** writes one, with the extension `.oz3` as usual. It fails
-  for a program that declares segments, or has more than one instance. Maps
-  and listings are as for the default program, whose offsets are the same.
+  for a program that declares segments (the default program already can't have
+  more than one instance), or whose contents, rounded up to whole dwords, and
+  stack pass 64 Kiw. Maps and listings are as for the default program, whose
+  offsets are the same.
 - In C++, `WriteBareProgramFile` and `ReadBareProgramFile` (and their `Words`
   forms) beside `WriteProgramFile`, holding a `BareProgram`: the sizes, and
   the data blocks as `Program::Segment::Data`.
@@ -307,15 +309,21 @@ struct BareProgram {
   std::vector<Program::Segment::Data> data;  // In order, as in a segment
 };
 
-// Returns the default program `program` as a bare program, or an error if
-// it declares segments or has more than one instance.
-absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
+absl::Status ValidateBareProgram(const BareProgram& program);
+
+// AsmProgram, beside GetProgram: the default program as a bare program, or an
+// error if the program declares segments.
+const absl::StatusOr<BareProgram>& GetBareProgram() const;
 ```
 
 - `ValidateBareProgram` checks what `ValidateProgram` checks of a segment's
-  data, against the contents' size.
-- The program assembler already builds the default program as a `Program`,
-  so `oz3asm --bare` converts it, and nothing in the assembler changes.
+  data, against the contents' size, and that each size fits in a word.
+- The assembler builds the bare program beside the `Program`, as a `Program`
+  doesn't say what a bare program needs: the stack's size (it is folded into
+  the segment's pages), the contents' size where they end in `.DS` (which has
+  no data block), or whether `.SEGMENT` declared the one segment. The contents
+  are the segment's words before its stack, rounded up to whole dwords, as its
+  data blocks are.
 
 ### tools and apps: oz3dsk boot
 
@@ -350,9 +358,11 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 - [ ] `.DS 222 - $` pads a loader to its signature (`$` is in the assembler's
   expressions; `.DS` must accept it), and `.DW 'BOOT'` packs to 4F42h, 544Fh
   (CL5's test loader).
-- [ ] The assembler's default program is a `Program` of one segment, all four
+- [x] The assembler's default program is a `Program` of one segment, all four
   roles, and one instance with zero offsets, so `GetBareProgram` can tell it
-  from a program that declares one segment (CL3).
+  from a program that declares one segment (CL3). It can't: a declared
+  segment with all four roles is the same `Program`, and the `Program` has no
+  stack size either, so the assembler builds the bare program itself.
 
 ## Open questions
 
@@ -402,12 +412,12 @@ Depends on: CL1.
   disk time.
 - Manual pages updated.
 
-### CL3 [ ] tools, apps: bare programs
+### CL3 [x] tools, apps: bare programs
 
 Depends on: nothing.
 
-- `bare_program.h`: `BareProgram`, `GetBareProgram`, and
-  `ValidateBareProgram`.
+- `bare_program.h`: `BareProgram` and `ValidateBareProgram`.
+- `program_assembler.h`: `AsmProgram::GetBareProgram`.
 - `program_file.h`: reading and writing bare program files and words.
 - `oz3asm`: `--bare`.
 - Manual: Program Files gains Bare programs, and Program Source's oz3asm and
