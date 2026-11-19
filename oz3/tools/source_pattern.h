@@ -20,15 +20,15 @@
 namespace oz3 {
 
 // What a program's value for a $v is, which says how the OZ-3 assembler checks
-// and encodes it. A pattern writes it right after the $v, as "$v:STACK", or
+// and encodes it. A pattern writes it right after the $v, as "$v:stack", or
 // after a $m, for a macro code that is just "$v" in its place (see
 // InstructionDef::source). It never changes the code word.
 enum class ValueType {
   kNumber,    // No type: a number, encoded as written.
-  kCode,      // "CODE": an address from BC.
-  kStack,     // "STACK": an address from BS.
-  kData,      // "DATA": an address from BD.
-  kExtra,     // "EXTRA": an address from BE.
+  kCode,      // "code": an address from BC.
+  kStack,     // "stack": an address from BS.
+  kData,      // "data": an address from BD.
+  kExtra,     // "extra": an address from BE.
   kRelative,  // "relative": a target address in CODE, encoded as its offset
               // from the next instruction.
 };

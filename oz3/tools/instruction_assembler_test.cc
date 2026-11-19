@@ -754,9 +754,9 @@ TEST(InstructionAssemblerTest, ValueTypes) {
   std::string source = R"---(
     macro Macro:r {
       code:C2 "$v" { LD(C2); UL; }
-      code:C2 "S($v:STACK)" { LD(C2); UL; }
+      code:C2 "S($v:stack)" { LD(C2); UL; }
     }
-    instruction LDE "$r, E($v:EXTRA)" { LD(C0); UL; }
+    instruction LDE "$r, E($v:extra)" { LD(C0); UL; }
     instruction JPR "$m:relative" { $Macro; }
   )---";
   auto asm_set = AssembleInstructionSet(source, &error);
@@ -764,10 +764,10 @@ TEST(InstructionAssemblerTest, ValueTypes) {
   const InstructionSetDef& def = asm_set->GetInstructionSetDef();
   ASSERT_EQ(def.macros.size(), 1);
   ASSERT_EQ(def.macros[0].code.size(), 2);
-  EXPECT_EQ(def.macros[0].code[1].source, "S($v:STACK)");
+  EXPECT_EQ(def.macros[0].code[1].source, "S($v:stack)");
   EXPECT_EQ(def.macros[0].code[1].ret, CpuCore::C2);
   ASSERT_EQ(def.instructions.size(), 2);
-  EXPECT_EQ(def.instructions[0].source, "$r, E($v:EXTRA)");
+  EXPECT_EQ(def.instructions[0].source, "$r, E($v:extra)");
   EXPECT_EQ(def.instructions[1].source, "$m:relative");
 }
 
@@ -779,16 +779,16 @@ TEST(InstructionAssemblerTest, InvalidValueTypes) {
     int column = 0;
   };
   const Case cases[] = {
-      {.source = "macro Macro { code \"S($v:stack)\" { LD(C2); UL; } }",
-       .error = "$v:stack has an unknown value type",
+      {.source = "macro Macro { code \"S($v:STACK)\" { LD(C2); UL; } }",
+       .error = "$v:STACK has an unknown value type",
        .column = 14},
       {.source = "macro Macro { code \"S($v:)\" { LD(C2); UL; } }",
        .error = "$v: has an unknown value type",
        .column = 14},
-      {.source = "instruction LDE \"$r:EXTRA\" { UL; }",
-       .error = "$r:EXTRA has a value type, but only $v and $m can"},
-      {.source = "instruction LDE \"$V:DATA\" { LD(C0); LD(C1); UL; }",
-       .error = "$V:DATA has a value type, but only $v and $m can"},
+      {.source = "instruction LDE \"$r:extra\" { UL; }",
+       .error = "$r:extra has a value type, but only $v and $m can"},
+      {.source = "instruction LDE \"$V:data\" { LD(C0); LD(C1); UL; }",
+       .error = "$V:data has a value type, but only $v and $m can"},
   };
   for (const Case& test : cases) {
     gb::ParseError error;
@@ -1599,13 +1599,13 @@ TEST(InstructionAssemblerTest, MacroValueTypeWithoutValueCode) {
 TEST(InstructionAssemblerTest, MacroValueTypeOnTypedValueCode) {
   gb::ParseError error;
   auto asm_set = AssembleInstructionSet(
-      "macro Value { code \"$v:DATA\" { LD(C0); UL; } }\n"
-      "instruction TEST \"$m:CODE\" { $Value; }",
+      "macro Value { code \"$v:data\" { LD(C0); UL; } }\n"
+      "instruction TEST \"$m:code\" { $Value; }",
       &error);
   EXPECT_EQ(asm_set, nullptr);
   EXPECT_THAT(error.GetMessage(),
               HasSubstr("gives its $m a value type, but macro code "
-                        "\"$v:DATA\" of Value has one of its own"));
+                        "\"$v:data\" of Value has one of its own"));
   EXPECT_THAT(error.GetLocation(), AtLineCol(1, 0));
 }
 

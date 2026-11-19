@@ -57,13 +57,13 @@ TEST_F(InstructionTest, MathOpsGetWord) {
   state.code.AddValue(Encode("ADD.W", CpuCore::R7, "$v")).AddValue(24);
   const uint16_t ip10 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  state.code.AddValue(Encode("ADD.W", CpuCore::R7, "S($v:STACK)")).AddValue(-1);
+  state.code.AddValue(Encode("ADD.W", CpuCore::R7, "S($v:stack)")).AddValue(-1);
   const uint16_t ip11 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  state.code.AddValue(Encode("ADD.W", CpuCore::R7, "D($v:DATA)")).AddValue(100);
+  state.code.AddValue(Encode("ADD.W", CpuCore::R7, "D($v:data)")).AddValue(100);
   const uint16_t ip12 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LW", CpuCore::R7, 0));
-  state.code.AddValue(Encode("ADD.W", CpuCore::R7, "E($v:EXTRA)"))
+  state.code.AddValue(Encode("ADD.W", CpuCore::R7, "E($v:extra)"))
       .AddValue(200);
   const uint16_t ip13 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("HALT"));
@@ -144,13 +144,13 @@ TEST_F(InstructionTest, MathOpsGetDword) {
   state.code.AddValue(Encode("ADD.D", 1, "[FP + $v]")).AddValue(-2);
   const uint16_t ip10 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LD", 1, 0));
-  state.code.AddValue(Encode("ADD.D", 1, "S[$v:STACK]")).AddValue(-2);
+  state.code.AddValue(Encode("ADD.D", 1, "S[$v:stack]")).AddValue(-2);
   const uint16_t ip11 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LD", 1, 0));
-  state.code.AddValue(Encode("ADD.D", 1, "D[$v:DATA]")).AddValue(100);
+  state.code.AddValue(Encode("ADD.D", 1, "D[$v:data]")).AddValue(100);
   const uint16_t ip12 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LD", 1, 0));
-  state.code.AddValue(Encode("ADD.D", 1, "E[$v:EXTRA]")).AddValue(200);
+  state.code.AddValue(Encode("ADD.D", 1, "E[$v:extra]")).AddValue(200);
   const uint16_t ip13 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("MVQ.LD", 1, 0));
   state.code.AddValue(Encode("HALT"));

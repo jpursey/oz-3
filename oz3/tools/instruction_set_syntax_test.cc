@@ -277,9 +277,9 @@ TEST(InstructionSetSyntaxTest, CodeValueTypes) {
   // A code's types are its own, whatever instruction uses it. JPR's $m has no
   // type here, so the "$v" code can have one.
   TestDef def(kInstructionSet);
-  def.codes[0][1].source = "($r + $v:EXTRA)";
-  def.codes[0][2].source = "$v:CODE";
-  def.codes[0][3].source = "D($v:DATA)";
+  def.codes[0][1].source = "($r + $v:extra)";
+  def.codes[0][2].source = "$v:code";
+  def.codes[0][3].source = "D($v:data)";
   def.instructions[4].source = "$m";
   auto syntax = InstructionSetSyntax::Create(def.GetDef());
   ASSERT_NE(syntax, nullptr);
@@ -300,9 +300,9 @@ TEST(InstructionSetSyntaxTest, CodeValueTypes) {
 TEST(InstructionSetSyntaxTest, InstructionValueTypes) {
   // POKE's own $v has its type, and each code's $v has the code's.
   TestDef def(absl::StrCat(kInstructionSet, R"---(
-    instruction(opcode:8) POKE "$v:DATA, $m" { LD(C0); $GetWord; MOV(R0,r); }
+    instruction(opcode:8) POKE "$v:data, $m" { LD(C0); $GetWord; MOV(R0,r); }
   )---"));
-  def.codes[0][1].source = "($r + $v:EXTRA)";
+  def.codes[0][1].source = "($r + $v:extra)";
   auto syntax = InstructionSetSyntax::Create(def.GetDef());
   ASSERT_NE(syntax, nullptr);
   auto forms = syntax->GetForms("POKE");
@@ -583,21 +583,21 @@ TEST(InstructionSetSyntaxTest, MacroCodeSourceDisagreesWithArgument) {
 
 TEST(InstructionSetSyntaxTest, MacroCodeInvalidValueType) {
   TestDef def(kInstructionSet);
-  def.codes[0][0].source = "$r:DATA";
+  def.codes[0][0].source = "$r:data";
   InstructionError error =
       ExpectError(def, InstructionError::Def::kMacro, "GetWord");
-  EXPECT_EQ(error.macro_source_name, "$r:DATA");
+  EXPECT_EQ(error.macro_source_name, "$r:data");
   EXPECT_THAT(error.message,
-              HasSubstr("$r:DATA has a value type, but only $v and $m can"));
+              HasSubstr("$r:data has a value type, but only $v and $m can"));
 }
 
 TEST(InstructionSetSyntaxTest, InstructionInvalidValueType) {
   TestDef def(kInstructionSet);
-  def.instructions[3].source = "$Condition:CODE";
+  def.instructions[3].source = "$Condition:code";
   InstructionError error =
       ExpectError(def, InstructionError::Def::kInstruction, "SETC");
   EXPECT_THAT(error.message,
-              HasSubstr("$Condition:CODE has a value type, but only $v and $m "
+              HasSubstr("$Condition:code has a value type, but only $v and $m "
                         "can"));
 }
 
@@ -703,12 +703,12 @@ TEST(InstructionSetSyntaxTest, MacroValueTypeWithoutValueCode) {
 
 TEST(InstructionSetSyntaxTest, MacroValueTypeOnTypedValueCode) {
   TestDef def(kInstructionSet);
-  def.codes[0][2].source = "$v:CODE";
+  def.codes[0][2].source = "$v:code";
   InstructionError error =
       ExpectError(def, InstructionError::Def::kInstruction, "JPR");
   EXPECT_THAT(error.message,
               HasSubstr("Source \"$m:relative\" gives its $m a value type, "
-                        "but macro code \"$v:CODE\" of GetWord has one of "
+                        "but macro code \"$v:code\" of GetWord has one of "
                         "its own"));
 }
 

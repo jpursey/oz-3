@@ -71,13 +71,13 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:10, exclude_b:R7) CPIR "$r, ($r)" { UL; }
 
   macro Address:r {
-    code:C2 "S($v:STACK)" { LD(C2); UL; }
-    code:C2 "D($v:DATA)" { LD(C2); UL; }
-    code:C2 "E($v:EXTRA)" { LD(C2); UL; }
+    code:C2 "S($v:stack)" { LD(C2); UL; }
+    code:C2 "D($v:data)" { LD(C2); UL; }
+    code:C2 "E($v:extra)" { LD(C2); UL; }
   }
   instruction(opcode:11) LDA "$r, $m" { $Address; MOV(a,r); }
-  instruction(opcode:12) STS "S($v:STACK), $r" { LD(C0); UL; }
-  instruction(opcode:13) JP "$m:CODE" { $GetWord; }
+  instruction(opcode:12) STS "S($v:stack), $r" { LD(C0); UL; }
+  instruction(opcode:13) JP "$m:code" { $GetWord; }
 )---";
 
 // Matches a gb::ParseError at a line and column (from 0), whose message has

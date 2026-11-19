@@ -266,7 +266,7 @@ TEST(SourcePatternTest, PlaceholdersBeforeValueSets) {
 
 TEST(SourcePatternTest, ValueTypes) {
   absl::StatusOr<SourcePattern> pattern =
-      SourcePattern::ParseInstruction("$m:relative, S($v:STACK) + $v", {});
+      SourcePattern::ParseInstruction("$m:relative, S($v:stack) + $v", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 8);
@@ -288,8 +288,8 @@ TEST(SourcePatternTest, ValueTypes) {
 
 TEST(SourcePatternTest, EveryValueType) {
   const std::pair<std::string_view, ValueType> kTypes[] = {
-      {"$v:CODE", ValueType::kCode},         {"$v:STACK", ValueType::kStack},
-      {"$v:DATA", ValueType::kData},         {"$v:EXTRA", ValueType::kExtra},
+      {"$v:code", ValueType::kCode},         {"$v:stack", ValueType::kStack},
+      {"$v:data", ValueType::kData},         {"$v:extra", ValueType::kExtra},
       {"$v:relative", ValueType::kRelative},
   };
   for (const auto& [source, type] : kTypes) {
@@ -316,17 +316,18 @@ TEST(SourcePatternTest, LiteralColonAfterPlaceholder) {
 
 TEST(SourcePatternTest, ValueTypeErrors) {
   ExpectError("$v:Data", "$v:Data has an unknown value type");
+  ExpectError("$v:STACK", "$v:STACK has an unknown value type");
   ExpectError("$v:RELATIVE", "$v:RELATIVE has an unknown value type");
   ExpectError("$v:", "$v: has an unknown value type");
   ExpectError("$v: SP", "$v: has an unknown value type");
   ExpectError("$v:5", "$v:5 has an unknown value type");
-  ExpectError("$r:CODE", "$r:CODE has a value type, but only $v and $m can");
-  ExpectError("$R:CODE", "$R:CODE has a value type, but only $v and $m can");
-  ExpectError("$V:CODE", "$V:CODE has a value type, but only $v and $m can");
-  ExpectError("$#4:CODE", "$#4:CODE has a value type, but only $v and $m can");
-  ExpectError("$Condition:CODE",
-              "$Condition:CODE has a value type, but only $v and $m can");
-  ExpectError("$x:CODE", "$x is not a placeholder or value set");
+  ExpectError("$r:code", "$r:code has a value type, but only $v and $m can");
+  ExpectError("$R:code", "$R:code has a value type, but only $v and $m can");
+  ExpectError("$V:code", "$V:code has a value type, but only $v and $m can");
+  ExpectError("$#4:code", "$#4:code has a value type, but only $v and $m can");
+  ExpectError("$Condition:code",
+              "$Condition:code has a value type, but only $v and $m can");
+  ExpectError("$x:code", "$x is not a placeholder or value set");
 }
 
 TEST(SourcePatternTest, GetValueTypeBank) {

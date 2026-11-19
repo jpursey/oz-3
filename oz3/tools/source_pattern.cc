@@ -140,21 +140,21 @@ std::optional<SourcePattern::Part> ParsePlaceholder(
   return part;
 }
 
-// Returns the value type `name` names: a bank's name as microcode writes it,
-// or "relative". Returns nullopt if it names none.
+// Returns the value type `name` names, or nullopt if it names none.
 std::optional<ValueType> ParseValueType(std::string_view name) {
-  if (name == "relative") {
-    return ValueType::kRelative;
-  }
-  switch (CpuCore::GetBankFromName(name)) {
-    case CpuCore::CODE:
-      return ValueType::kCode;
-    case CpuCore::STACK:
-      return ValueType::kStack;
-    case CpuCore::DATA:
-      return ValueType::kData;
-    case CpuCore::EXTRA:
-      return ValueType::kExtra;
+  struct Name {
+    std::string_view name;
+    ValueType type;
+  };
+  static constexpr Name kNames[] = {
+      {"code", ValueType::kCode},         {"stack", ValueType::kStack},
+      {"data", ValueType::kData},         {"extra", ValueType::kExtra},
+      {"relative", ValueType::kRelative},
+  };
+  for (const Name& entry : kNames) {
+    if (entry.name == name) {
+      return entry.type;
+    }
   }
   return std::nullopt;
 }
@@ -292,7 +292,7 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
         if (!type.has_value()) {
           return absl::InvalidArgumentError(absl::StrCat(
               token_text,
-              " has an unknown value type (expected CODE, STACK, DATA, EXTRA, "
+              " has an unknown value type (expected code, stack, data, extra, "
               "or relative)"));
         }
         part->value_type = *type;
