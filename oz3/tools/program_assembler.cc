@@ -117,8 +117,9 @@ class ProgramAssembler final {
   };
 
   // A constant, whose value is its expression, evaluated with the segment and
-  // offset ("$") and the scope of local labels where it is defined. Its
-  // segment is -1 if it is defined before the first .SEGMENT.
+  // offset ("$") and the scope of local labels where it is defined. Once a
+  // .SEGMENT replaces the default segment, a constant defined before it has
+  // segment -1, and "$" in it is just a number.
   struct Constant {
     gb::Token token;  // Its name where it is defined.
     int segment = -1;
@@ -291,10 +292,12 @@ class ProgramAssembler final {
                        std::string_view name);
 
   // Returns the value of `expression` as `width` in `context`, or reports its
-  // error and returns nullopt.
+  // error and returns nullopt. If `segment` isn't null, it is set to the
+  // segment the value is an offset in (see ExpressionResult::segment).
   std::optional<uint32_t> Evaluate(const Expression& expression,
                                    ExpressionWidth width,
-                                   const ExpressionContext& context);
+                                   const ExpressionContext& context,
+                                   int* segment = nullptr);
 
   // Returns the value of a first pass expression, which is a word evaluated
   // where the statement is.
@@ -696,11 +699,14 @@ bool ProgramAssembler::CheckNotDefined(const gb::Token& token,
 
 std::optional<uint32_t> ProgramAssembler::Evaluate(
     const Expression& expression, ExpressionWidth width,
-    const ExpressionContext& context) {
+    const ExpressionContext& context, int* segment) {
   ExpressionResult result = expression.Evaluate(width, context);
   if (result.kind != ExpressionResult::Kind::kValue) {
     AddError(std::move(result.error));
     return std::nullopt;
+  }
+  if (segment != nullptr) {
+    *segment = result.segment;
   }
   return result.value;
 }
@@ -1322,43 +1328,40 @@ void ProgramAssembler::EncodeInstruction(
 std::optional<uint32_t> ProgramAssembler::EvaluateAddress(
     const Expression& expression, const InstructionForm& form, int bank,
     const ExpressionContext& context) {
-  ExpressionResult result =
-      expression.Evaluate(ExpressionWidth::kWord, context);
-  if (result.kind != ExpressionResult::Kind::kValue) {
-    AddError(std::move(result.error));
-    return std::nullopt;
-  }
-  if (result.segment < 0) {
-    return result.value;
+  int segment = -1;
+  const std::optional<uint32_t> value =
+      Evaluate(expression, ExpressionWidth::kWord, context, &segment);
+  if (!value.has_value() || segment < 0) {
+    return value;
   }
 
   // The default program's one segment has every role, so a segment that
   // doesn't have this one is a declared segment, with a name.
   const int role_segment = roles_[bank];
-  if (result.segment != role_segment) {
+  if (segment != role_segment) {
     const std::string_view bank_name = CpuCore::GetBankName(bank);
-    Error(
-        expression.GetToken(),
-        absl::StrCat(
-            "The address is in ", segments_[result.segment].name->GetString(),
-            ", but ", form.GetMacroCode()->source, " is an address in the ",
-            bank_name, " segment",
-            role_segment < 0
-                ? absl::StrCat(", and no segment has the ", bank_name, " role")
-                : absl::StrCat(", ",
-                               segments_[role_segment].name->GetString())));
+    const std::string role_name =
+        role_segment < 0
+            ? absl::StrCat(", and no segment has the ", bank_name, " role")
+            : absl::StrCat(", ", segments_[role_segment].name->GetString());
+    Error(expression.GetToken(),
+          absl::StrCat("The address is in ",
+                       segments_[segment].name->GetString(), ", but ",
+                       form.GetMacroCode()->source, " is an address in the ",
+                       bank_name, " segment", role_name));
     return std::nullopt;
   }
 
-  // Only BS isn't at the start of its segment, or of an instance's words.
+  // Only BS isn't at the start of its segment, or of an instance's words. It
+  // is the stack's offset (as the loader has it) down from the segment's end,
+  // which is the same distance past the start of every instance's words.
   if (bank != CpuCore::STACK) {
-    return result.value;
+    return value;
   }
-  const Segment& segment = segments_[role_segment];
-  const int64_t base = segment.instance_token.has_value()
-                           ? segment.reserved_size
-                           : int64_t{segment.page_count} * kMemoryBankPageSize;
-  return static_cast<uint16_t>(result.value - base);
+  const int64_t base =
+      int64_t{segments_[role_segment].page_count} * kMemoryBankPageSize -
+      GetInstanceOffset(CpuCore::STACK, 0);
+  return static_cast<uint16_t>(*value - base);
 }
 
 void ProgramAssembler::EncodeData(const Statement& statement,

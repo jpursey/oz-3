@@ -206,6 +206,9 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int DATA = 2;   // Data bank
   static constexpr int EXTRA = 3;  // Extra bank
 
+  // The number of banks, which are numbered from 0.
+  static constexpr int kBankCount = 4;
+
   // Register / memory bank association.
   static constexpr int kRegisterBankMap[] = {
       DATA, DATA,  DATA, DATA, EXTRA, EXTRA, STACK, STACK, CODE, STACK,

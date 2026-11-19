@@ -91,7 +91,7 @@ static_assert(kBankNames[CpuCore::CODE] == "CODE");
 static_assert(kBankNames[CpuCore::STACK] == "STACK");
 static_assert(kBankNames[CpuCore::DATA] == "DATA");
 static_assert(kBankNames[CpuCore::EXTRA] == "EXTRA");
-constexpr int kBankCount = static_cast<int>(ABSL_ARRAYSIZE(kBankNames));
+static_assert(ABSL_ARRAYSIZE(kBankNames) == CpuCore::kBankCount);
 
 constexpr std::string_view kDwordRegNamesCompressed[] = {
     "D0", "D1", "D2", "D3", "CD",

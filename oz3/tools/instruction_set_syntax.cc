@@ -561,8 +561,7 @@ bool InstructionSetSyntaxBuilder::ParseMacroCode(
 
   // A code's address is its first $v, so it needs one.
   if (code.address_bank != -1) {
-    if (code.address_bank < CpuCore::CODE ||
-        code.address_bank > CpuCore::EXTRA) {
+    if (code.address_bank < 0 || code.address_bank >= CpuCore::kBankCount) {
       return MacroCodeError(macro, code, "Macro code source \"", code.source,
                             "\" has an invalid address bank (",
                             static_cast<int>(code.address_bank), ")");

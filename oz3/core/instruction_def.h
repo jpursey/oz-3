@@ -346,12 +346,12 @@ struct ValueSetDef {
 // Defines a set of instructions and macros for the OZ-3 CPU.
 //
 // CompileInstructionSet checks only what cores need to run the instructions.
-// The sources, value sets, relative marks, and register exclusions are for the
-// OZ-3 assembler and debugger, which have rules of their own for them (see
-// InstructionDef::source, InstructionDef::arg1_excluded, MacroCodeDef::source,
-// and ValueSetDef). CompileInstructionSet doesn't check
-// those rules, so an instruction set that compiles may not be one the
-// assembler can use.
+// The sources, value sets, relative marks, register exclusions, and address
+// banks are for the OZ-3 assembler and debugger, which have rules of their own
+// for them (see InstructionDef::source, InstructionDef::arg1_excluded,
+// MacroCodeDef::source, MacroCodeDef::address_bank, and ValueSetDef).
+// CompileInstructionSet doesn't check those rules, so an instruction set that
+// compiles may not be one the assembler can use.
 //
 // Instruction set source (.izm) is the format for instruction sets the OZ-3
 // tools can use, and assembling it checks their rules. An instruction set that
