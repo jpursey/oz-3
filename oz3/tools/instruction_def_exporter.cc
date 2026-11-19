@@ -81,9 +81,12 @@ void InstructionDefExporter::ExportValueSet(const ValueSetDef& value_set) {
 void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
                                              const MacroCodeDef& code) {
   absl::StrAppend(&result_, "    {.source = \"", code.source, "\"");
-  if (code.address_bank >= 0) {
+  if (code.address_bank >= 0 && code.address_bank < CpuCore::kBankCount) {
     absl::StrAppend(&result_, ",\n     .address_bank = oz3::CpuCore::",
                     CpuCore::GetBankName(code.address_bank));
+  } else if (code.address_bank != -1) {
+    absl::StrAppend(&result_, ",\n     .address_bank = ",
+                    static_cast<int>(code.address_bank));
   }
   absl::StrAppend(&result_, ",\n     .prefix = {", code.prefix.value, ", ",
                   code.prefix.size, "}");

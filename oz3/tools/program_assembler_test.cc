@@ -1072,28 +1072,29 @@ TEST_F(ProgramAssemblerTest, AddressesInTheWrongSegment) {
         .CONST VAR_END = $
         .SEGMENT stack STACK
       )---"),
-      ElementsAre(IsErrorAt(2, 20,
-                            "The address is in EXTRA, but D($v) is an address "
-                            "in the DATA segment, DATA"),
-                  IsErrorAt(3, 20,
-                            "The address is in DATA, but E($v) is an address "
-                            "in the EXTRA segment, EXTRA"),
-                  IsErrorAt(4, 20,
-                            "The address is in EXTRA, but S($v) is an address "
-                            "in the STACK segment, STACK"),
-                  IsErrorAt(5, 20,
-                            "The address is in MAIN, but E($v) is an address "
-                            "in the EXTRA segment, EXTRA"),
-                  IsErrorAt(6, 20,
-                            "The address is in MAIN, but D($v) is an address "
-                            "in the DATA segment, DATA")));
+      ElementsAre(
+          IsErrorAt(2, 20,
+                    "The address is in EXTRA, but must be in DATA, the "
+                    "segment with the DATA role"),
+          IsErrorAt(3, 20,
+                    "The address is in DATA, but must be in EXTRA, the "
+                    "segment with the EXTRA role"),
+          IsErrorAt(4, 20,
+                    "The address is in EXTRA, but must be in STACK, the "
+                    "segment with the STACK role"),
+          IsErrorAt(5, 20,
+                    "The address is in MAIN, but must be in EXTRA, the "
+                    "segment with the EXTRA role"),
+          IsErrorAt(6, 20,
+                    "The address is in MAIN, but must be in DATA, the "
+                    "segment with the DATA role")));
   EXPECT_THAT(AssembleErrors(".SEGMENT main CODE\n"
                              "LDA R1, D(value)\n"
                              "value: .DW 1\n"),
               ElementsAre(IsErrorAt(1, 10,
-                                    "The address is in MAIN, but D($v) is an "
-                                    "address in the DATA segment, and no "
-                                    "segment has the DATA role")));
+                                    "The address is in MAIN, but must be in "
+                                    "the segment with the DATA role, and no "
+                                    "segment has it")));
 }
 
 TEST_F(ProgramAssemblerTest, Banks) {

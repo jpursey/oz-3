@@ -133,12 +133,18 @@ TEST(InstructionDefExporterTest, RegisterRules) {
 )---"));
 }
 
+// A bank that isn't one is exported as its number, which the assembler then
+// rejects, so the exported def is still the one that was given.
 TEST(InstructionDefExporterTest, AddressBanks) {
   const MacroCodeDef codes[] = {
       {.source = "$v", .prefix = {0, 1}, .code = "LD(C2);UL;"},
       {.source = "S($v)",
        .address_bank = CpuCore::STACK,
-       .prefix = {1, 1},
+       .prefix = {2, 2},
+       .code = "LD(C2);UL;"},
+      {.source = "X($v)",
+       .address_bank = 7,
+       .prefix = {3, 2},
        .code = "LD(C2);UL;"},
   };
   const MacroDef macros[] = {{.name = "Get", .size = 1, .code = codes}};
@@ -157,7 +163,11 @@ TEST(InstructionDefExporterTest, AddressBanks) {
      .code = "LD(C2);UL;"},
     {.source = "S($v)",
      .address_bank = oz3::CpuCore::STACK,
-     .prefix = {1, 1},
+     .prefix = {2, 2},
+     .code = "LD(C2);UL;"},
+    {.source = "X($v)",
+     .address_bank = 7,
+     .prefix = {3, 2},
      .code = "LD(C2);UL;"},
 )---"));
 }

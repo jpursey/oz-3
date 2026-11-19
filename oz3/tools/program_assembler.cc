@@ -370,13 +370,13 @@ class ProgramAssembler final {
   void EncodeData(const Statement& statement, const DataStatement& data,
                   std::vector<uint16_t>& words);
 
-  // Returns the value of a $v of `form` that is an address from the base
+  // Returns the value of `expression`, an instruction's address from the base
   // register of bank index `bank`, or reports its error and returns nullopt.
   // An offset in a segment (a label) must be in the segment with the bank's
   // role, and is made an address from the base register, which for the stack
   // is at the end of the segment, or of an instance's words.
   std::optional<uint32_t> EvaluateAddress(const Expression& expression,
-                                          const InstructionForm& form, int bank,
+                                          int bank,
                                           const ExpressionContext& context);
   std::unique_ptr<AsmProgram> BuildProgram();
   absl::StatusOr<BareProgram> BuildBareProgram(const Program& program) const;
@@ -443,7 +443,7 @@ class ProgramAssembler final {
 
   // The segment with each role, by bank index, or -1 for none.
   // The default program's segment has every role.
-  std::array<int, 4> roles_ = {0, 0, 0, 0};
+  std::array<int, CpuCore::kBankCount> roles_ = {0, 0, 0, 0};
 
   // The statements the second pass finishes, and the stack's size (.STACK)
   // and where it is given.
@@ -1310,8 +1310,7 @@ void ProgramAssembler::EncodeInstruction(
     const int address_bank = form.GetArgs()[i].address_bank;
     const std::optional<uint32_t> value =
         address_bank >= 0
-            ? EvaluateAddress(*instruction.args[i].value, form, address_bank,
-                              context)
+            ? EvaluateAddress(*instruction.args[i].value, address_bank, context)
             : Evaluate(*instruction.args[i].value,
                        kind == ArgKind::kWord ? ExpressionWidth::kWord
                                               : ExpressionWidth::kDword,
@@ -1326,8 +1325,7 @@ void ProgramAssembler::EncodeInstruction(
 }
 
 std::optional<uint32_t> ProgramAssembler::EvaluateAddress(
-    const Expression& expression, const InstructionForm& form, int bank,
-    const ExpressionContext& context) {
+    const Expression& expression, int bank, const ExpressionContext& context) {
   int segment = -1;
   const std::optional<uint32_t> value =
       Evaluate(expression, ExpressionWidth::kWord, context, &segment);
@@ -1340,15 +1338,16 @@ std::optional<uint32_t> ProgramAssembler::EvaluateAddress(
   const int role_segment = roles_[bank];
   if (segment != role_segment) {
     const std::string_view bank_name = CpuCore::GetBankName(bank);
-    const std::string role_name =
+    const std::string expected =
         role_segment < 0
-            ? absl::StrCat(", and no segment has the ", bank_name, " role")
-            : absl::StrCat(", ", segments_[role_segment].name->GetString());
-    Error(expression.GetToken(),
-          absl::StrCat("The address is in ",
-                       segments_[segment].name->GetString(), ", but ",
-                       form.GetMacroCode()->source, " is an address in the ",
-                       bank_name, " segment", role_name));
+            ? absl::StrCat("the segment with the ", bank_name,
+                           " role, and no segment has it")
+            : absl::StrCat(segments_[role_segment].name->GetString(),
+                           ", the segment with the ", bank_name, " role");
+    Error(
+        expression.GetToken(),
+        absl::StrCat("The address is in ", segments_[segment].name->GetString(),
+                     ", but must be in ", expected));
     return std::nullopt;
   }
 
