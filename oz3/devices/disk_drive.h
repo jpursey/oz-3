@@ -268,8 +268,8 @@ class DiskDrive final : public Device {
   //----------------------------------------------------------------------------
 
   // A command the OS has written: its command word, its definition (null for
-  // an unknown code), the argument fields taken so far, and the arguments its
-  // accept decoded.
+  // an unknown code), the argument fields taken so far, and what its accept
+  // decoded or took for the steps after it.
   struct Command {
     // Returns the handle in the command word.
     int GetHandle() const { return word & 0xFF; }

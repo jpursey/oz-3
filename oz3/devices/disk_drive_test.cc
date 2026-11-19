@@ -2792,7 +2792,28 @@ TEST_F(DiskDriveTest, AResetBeforeTheLastDwordWritesNoBootArea) {
   WriteData(absl::MakeConstSpan(transfers).first(kBootDwords - 1));
   Request(DiskDrive::kResetRequest);
   EXPECT_EQ(GetPhase(), 0);
+  EXPECT_FALSE(IsSet(kDataPort));
   EXPECT_EQ(DetachAndReadSuperblock().GetBootArea(), old_boot);
+}
+
+TEST_F(DiskDriveTest, AResetEndsReadBootWithItsDwordWithdrawn) {
+  ASSERT_TRUE(InitDrive());
+  AttachWithBootArea(BootWords(0x1000));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  ReadData(10);
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_EQ(GetPhase(), 0);
+  EXPECT_FALSE(IsSet(kDataPort));
+  EXPECT_FALSE(IsSet(kCommandPort));
+
+  // The drive takes the next command at once.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(ReadData(kBootDwords).transfers,
+            DataWords(BootWords(0x1000), /*packed=*/true));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
 }
 
 TEST_F(DiskDriveTest, WriteBootFailsAtItsSectorWrite) {
