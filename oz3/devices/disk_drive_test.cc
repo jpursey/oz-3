@@ -84,7 +84,7 @@ constexpr char kThirdPath[] = "mem:/third.ozd";
 constexpr int kSectors = 720;
 
 // The dwords of the boot area, which READ BOOT and WRITE BOOT move.
-constexpr int kBootDwords = 112;
+constexpr int kBootDwords = DiskSuperblock::kBootAreaWords / 2;
 
 constexpr DiskStatus kOk = DiskStatus::kOk;
 
@@ -3339,7 +3339,7 @@ std::string MakeBootProgram(DiskDriveCommand command,
         INR.IW 16, (R1)
         JC NS, read_accept
         MOV R1, buffer
-        MOV R7, 112
+        MOV R7, $DWORDS
     data:
         $INSTRUCTION 17, [R1]
         JC NS, data
@@ -3365,11 +3365,13 @@ std::string MakeBootProgram(DiskDriveCommand command,
     completion:
         .DW 0FFFFh
     buffer:
-        .DS 224
+        .DS $WORDS
 
     .SEGMENT stack STACK
   )---",
       {{"$INSTRUCTION", instruction},
+       {"$DWORDS", absl::StrCat(kBootDwords)},
+       {"$WORDS", absl::StrCat(DiskSuperblock::kBootAreaWords)},
        {"$COMMAND", absl::StrCat(CommandWord(command))}});
 }
 
