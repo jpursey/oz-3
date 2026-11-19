@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
@@ -435,7 +436,7 @@ class InstructionSetSyntaxBuilder final {
   void AddForm(const InstructionDef& instruction, const SourcePattern& pattern,
                const MacroSyntax* macro, int code_index);
   void AddPart(InstructionForm& form, const InstructionDef& instruction,
-               Part part, int shift);
+               Part part, int shift, int address_bank);
   bool CheckSize(const InstructionForm& form,
                  const InstructionSet& instruction_set);
   void IndexForms();
@@ -556,6 +557,24 @@ bool InstructionSetSyntaxBuilder::ParseMacroCode(
                           "\" doesn't match its argument (",
                           ArgTypeToString(code.arg.type), " of ",
                           static_cast<int>(code.arg.size), " bits)");
+  }
+
+  // A code's address is its first $v, so it needs one.
+  if (code.address_bank != -1) {
+    if (code.address_bank < CpuCore::CODE ||
+        code.address_bank > CpuCore::EXTRA) {
+      return MacroCodeError(macro, code, "Macro code source \"", code.source,
+                            "\" has an invalid address bank (",
+                            static_cast<int>(code.address_bank), ")");
+    }
+    if (absl::c_none_of(pattern->GetParts(), [](const Part& part) {
+          return part.kind == Part::Kind::kWord;
+        })) {
+      return MacroCodeError(macro, code, "Macro code source \"", code.source,
+                            "\" is an address in ",
+                            CpuCore::GetBankName(code.address_bank),
+                            ", but has no $v for it");
+    }
   }
 
   // Each form of an instruction must be one a program can name, and its
@@ -722,7 +741,7 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     if (part.kind != Part::Kind::kArgument ||
         part.arg.type != ArgType::kMacro) {
       const bool is_code_word_arg = (part.kind == Part::Kind::kArgument);
-      AddPart(form, instruction, std::move(part), shift);
+      AddPart(form, instruction, std::move(part), shift, -1);
 
       // The register rules are only for the instruction's own arguments, which
       // CheckRegisterRules checked are registers if they have any.
@@ -743,10 +762,18 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     form.pattern_.replace(part.offset, part.size, code.source);
     offset_change += static_cast<int>(code.source.size()) - part.size;
     form.size_ += code_pattern.GetValueWords();
+    bool needs_address = (code.address_bank >= 0);
     for (Part code_part : code_pattern.GetParts()) {
       code_part.offset += part.offset;
       code_part.whole_arg = code_part.whole_arg && part.whole_arg;
-      AddPart(form, instruction, std::move(code_part), shift);
+
+      // The code's address, if it has one, is its first $v.
+      int address_bank = -1;
+      if (needs_address && code_part.kind == Part::Kind::kWord) {
+        address_bank = code.address_bank;
+        needs_address = false;
+      }
+      AddPart(form, instruction, std::move(code_part), shift, address_bank);
     }
     code_word_args[arg_index - 1] = macro->def->Encode(code_index, 0);
     form.code_word_mask_ |= ((1 << code.prefix.size) - 1)
@@ -756,10 +783,12 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
 }
 
 // Adds a part to a form, with its argument if it is a placeholder. A code word
-// argument's bits start at `shift`.
+// argument's bits start at `shift`, and a $v that is an address from a bank's
+// base register has its `address_bank` (or -1).
 void InstructionSetSyntaxBuilder::AddPart(InstructionForm& form,
                                           const InstructionDef& instruction,
-                                          Part part, int shift) {
+                                          Part part, int shift,
+                                          int address_bank) {
   if (part.kind == Part::Kind::kArgument) {
     form.args_.push_back({.kind = GetArgKind(part),
                           .bits = part.arg.size,
@@ -769,7 +798,8 @@ void InstructionSetSyntaxBuilder::AddPart(InstructionForm& form,
     form.args_.push_back({.kind = GetArgKind(part),
                           .relative = instruction.relative &&
                                       part.kind == Part::Kind::kWord &&
-                                      part.whole_arg});
+                                      part.whole_arg && address_bank < 0,
+                          .address_bank = address_bank});
   }
   form.parts_.push_back(std::move(part));
 }

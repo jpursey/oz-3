@@ -80,8 +80,12 @@ void InstructionDefExporter::ExportValueSet(const ValueSetDef& value_set) {
 
 void InstructionDefExporter::ExportMacroCode(const MacroDef& macro,
                                              const MacroCodeDef& code) {
-  absl::StrAppend(&result_, "    {.source = \"", code.source,
-                  "\",\n     .prefix = {", code.prefix.value, ", ",
+  absl::StrAppend(&result_, "    {.source = \"", code.source, "\"");
+  if (code.address_bank >= 0) {
+    absl::StrAppend(&result_, ",\n     .address_bank = oz3::CpuCore::",
+                    CpuCore::GetBankName(code.address_bank));
+  }
+  absl::StrAppend(&result_, ",\n     .prefix = {", code.prefix.value, ", ",
                   code.prefix.size, "}");
   ExportArgumentField("arg", code.arg);
   std::string_view ret_name;

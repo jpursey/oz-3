@@ -60,8 +60,14 @@ class InstructionForm final {
 
     // For a $v, whether it is a target address, which is encoded as its offset
     // from the next instruction. This is a $v that is a whole argument of a
-    // relative instruction.
+    // relative instruction, unless it is an address (see `address_bank`).
     bool relative = false;
+
+    // For a $v, the bank (CpuCore::CODE, STACK, DATA, or EXTRA) whose base
+    // register it is an address from, or -1 if it isn't one. This is the
+    // first $v of a macro code with an address bank (see
+    // MacroCodeDef::address_bank).
+    int address_bank = -1;
 
     // For a register, the registers a program can't write for it (bit n for
     // register n), from the instruction's rules for its own arguments (see

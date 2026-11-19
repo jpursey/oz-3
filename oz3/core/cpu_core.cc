@@ -86,6 +86,13 @@ static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MP)] == "P");
 static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MR)] == "R");
 static_assert(kVirtualDwordRegNames[VRegToNameIndex(CpuCore::MM)] == "M");
 
+constexpr std::string_view kBankNames[] = {"CODE", "STACK", "DATA", "EXTRA"};
+static_assert(kBankNames[CpuCore::CODE] == "CODE");
+static_assert(kBankNames[CpuCore::STACK] == "STACK");
+static_assert(kBankNames[CpuCore::DATA] == "DATA");
+static_assert(kBankNames[CpuCore::EXTRA] == "EXTRA");
+constexpr int kBankCount = static_cast<int>(ABSL_ARRAYSIZE(kBankNames));
+
 constexpr std::string_view kDwordRegNamesCompressed[] = {
     "D0", "D1", "D2", "D3", "CD",
 };
@@ -110,6 +117,22 @@ absl::Span<const std::string_view> CpuCore::GetWordRegisterNames() {
 
 absl::Span<const std::string_view> CpuCore::GetDwordRegisterNames() {
   return kDwordRegNamesCompressed;
+}
+
+std::string_view CpuCore::GetBankName(int bank) {
+  if (bank < 0 || bank >= kBankCount) {
+    return "invalid";
+  }
+  return kBankNames[bank];
+}
+
+int CpuCore::GetBankFromName(std::string_view name) {
+  for (int i = 0; i < kBankCount; ++i) {
+    if (kBankNames[i] == name) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 std::string_view CpuCore::GetWordRegName(int reg) {

@@ -144,6 +144,14 @@ struct MacroCodeDef {
   // - It may contain any of the following symbols: "-+*/%~&|^!<>=.:?"
   std::string_view source;
 
+  // The bank (CpuCore::CODE, STACK, DATA, or EXTRA) whose base register the
+  // code's first "$v" is an address from, as in the "S($v)" form, or -1 if it
+  // has no such address. The OZ-3 assembler uses it to check a label in the
+  // address, and to make one in the stack segment work from BS (see
+  // InstructionSetSyntax). A code with one has a "$v". CompileInstructionSet
+  // ignores it.
+  int8_t address_bank = -1;
+
   // A string of prefix bits which uniquely identify the macro code. This is
   // used to determine which MacroCoedeDef to use. The prefix must be unique
   // within the MacroDef. In addition prefix.size + arg.size must equal the

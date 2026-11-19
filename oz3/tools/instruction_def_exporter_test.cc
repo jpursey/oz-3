@@ -13,6 +13,7 @@
 #include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_def.h"
 
 namespace oz3 {
@@ -129,6 +130,35 @@ TEST(InstructionDefExporterTest, RegisterRules) {
      .arg2_excluded = 0x0041,
      .distinct_args = true,
      .code = "UL;"},
+)---"));
+}
+
+TEST(InstructionDefExporterTest, AddressBanks) {
+  const MacroCodeDef codes[] = {
+      {.source = "$v", .prefix = {0, 1}, .code = "LD(C2);UL;"},
+      {.source = "S($v)",
+       .address_bank = CpuCore::STACK,
+       .prefix = {1, 1},
+       .code = "LD(C2);UL;"},
+  };
+  const MacroDef macros[] = {{.name = "Get", .size = 1, .code = codes}};
+  const InstructionDef instructions[] = {
+      {.op = 1,
+       .op_name = "GET",
+       .source = "$m",
+       .arg1 = {ArgType::kMacro, 1},
+       .arg_macro_name = "Get",
+       .code = "$Get;"},
+  };
+  EXPECT_THAT(Export({.instructions = instructions, .macros = macros}),
+              HasSubstr(R"---(
+    {.source = "$v",
+     .prefix = {0, 1},
+     .code = "LD(C2);UL;"},
+    {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
+     .prefix = {1, 1},
+     .code = "LD(C2);UL;"},
 )---"));
 }
 

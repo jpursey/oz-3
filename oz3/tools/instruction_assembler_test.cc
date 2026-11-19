@@ -749,6 +749,39 @@ TEST(InstructionAssemblerTest, MacroCodeInvalidDwordRegReturn) {
   EXPECT_THAT(error.GetLocation(), AtLineCol(2, 6));
 }
 
+TEST(InstructionAssemblerTest, MacroCodeAddressBank) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro:r {
+      code:C2 "$v" { LD(C2); UL; }
+      code(address:STACK):C2 "S($v)" { LD(C2); UL; }
+      code(address:CODE):C2 "C($v)" { LD(C2); UL; }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  ASSERT_NE(asm_set, nullptr) << "Error: " << error.FormatMessage();
+  ASSERT_EQ(asm_set->GetInstructionSetDef().macros.size(), 1);
+  const auto& macro = asm_set->GetInstructionSetDef().macros[0];
+  ASSERT_EQ(macro.code.size(), 3);
+  EXPECT_EQ(macro.code[0].address_bank, -1);
+  EXPECT_EQ(macro.code[1].address_bank, CpuCore::STACK);
+  EXPECT_EQ(macro.code[1].ret, CpuCore::C2);
+  EXPECT_EQ(macro.code[2].address_bank, CpuCore::CODE);
+}
+
+TEST(InstructionAssemblerTest, MacroCodeInvalidAddressBank) {
+  gb::ParseError error;
+  std::string source = R"---(
+    macro Macro {
+      code(address:stack) "S($v)" { LD(C2); UL; }
+    }
+  )---";
+  auto asm_set = AssembleInstructionSet(source, &error);
+  EXPECT_EQ(asm_set, nullptr);
+  EXPECT_THAT(error.GetMessage(), HasSubstr("Invalid address bank: stack"));
+  EXPECT_THAT(error.GetLocation(), AtLineCol(2, 19));
+}
+
 TEST(InstructionAssemblerTest, DuplicateMacroCodeSource) {
   gb::ParseError error;
   std::string source = R"---(

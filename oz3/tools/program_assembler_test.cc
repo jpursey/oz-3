@@ -68,6 +68,13 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:9, distinct, exclude_a:R7, exclude_b:R7)
       MVIR "($r), ($r)" { UL; }
   instruction(opcode:10, exclude_b:R7) CPIR "$r, ($r)" { UL; }
+
+  macro Address:r {
+    code(address:STACK):C2 "S($v)" { LD(C2); UL; }
+    code(address:DATA):C2 "D($v)" { LD(C2); UL; }
+    code(address:EXTRA):C2 "E($v)" { LD(C2); UL; }
+  }
+  instruction(opcode:11) LDA "$r, $m" { $Address; MOV(a,r); }
 )---";
 
 // Matches a gb::ParseError at a line and column (from 0), whose message has
@@ -142,6 +149,22 @@ class ProgramAssemblerTest : public ::testing::Test {
       return {};
     }
     return GetWords(program.segments[0]);
+  }
+
+  // Returns the value of each LDA in the first segment of the program
+  // assembled from `text`, whose first segment has only LDAs.
+  std::vector<uint16_t> AssembleAddresses(std::string_view text) {
+    Program program = Assemble(text);
+    if (program.segments.empty()) {
+      ADD_FAILURE() << "Expected a segment";
+      return {};
+    }
+    const std::vector<uint16_t> words = GetWords(program.segments[0]);
+    std::vector<uint16_t> addresses;
+    for (int i = 1; i < static_cast<int>(words.size()); i += 2) {
+      addresses.push_back(words[i]);
+    }
+    return addresses;
   }
 
   // Returns a segment's words, from 0 to the end of its last data block, with
@@ -922,6 +945,155 @@ TEST_F(ProgramAssemblerTest, ExampleProgram) {
   EXPECT_EQ(program.stack_segment, 2);
   EXPECT_EQ(program.data_segment, 1);
   EXPECT_EQ(program.extra_segment, 0xFFFF);
+}
+
+TEST_F(ProgramAssemblerTest, AddressesInTheirSegments) {
+  // A label in D() or E() is its offset in the DATA or EXTRA segment, which
+  // their base registers are at the start of. Numbers, and distances between
+  // labels, are just numbers, which are never checked.
+  EXPECT_THAT(AssembleAddresses(R"---(.STACK 4
+    .SEGMENT main CODE
+      LDA R1, D(table)
+      LDA R1, D(table + 1)
+      LDA R1, E(vars)
+      LDA R1, E(NEXT_VAR)
+      LDA R1, D(5)
+      LDA R1, D(table_end - table)
+    .SEGMENT data DATA
+      .DW 0
+    table:
+      .DW 1, 2
+    table_end:
+    .SEGMENT extra EXTRA
+      .DS 2
+    vars:
+      .DS 1
+    .CONST NEXT_VAR = $
+    .SEGMENT stack STACK
+  )---"),
+              ElementsAre(1, 2, 2, 3, 5, 2));
+}
+
+TEST_F(ProgramAssemblerTest, ConstantsBeforeTheFirstSegmentAreNotOffsets) {
+  // "$" before the first .SEGMENT is 0, in no segment, even if it was used
+  // there.
+  EXPECT_THAT(AssembleAddresses(R"---(.CONST HERE = $
+    .STACK HERE + 4
+    .SEGMENT main CODE
+      LDA R1, D(HERE)
+      LDA R1, S(HERE)
+    .SEGMENT data DATA
+    .SEGMENT stack STACK
+  )---"),
+              ElementsAre(0, 0));
+}
+
+TEST_F(ProgramAssemblerTest, StackAddresses) {
+  // BS is at the end of the stack segment, so a label in S() is its offset
+  // from there, which wraps.
+  EXPECT_THAT(AssembleAddresses(R"---(.STACK 4
+    .SEGMENT main CODE
+      LDA R1, S(top)
+      LDA R1, S(var)
+      LDA R1, S(var + 1)
+      LDA R1, S(1)
+    .SEGMENT stack STACK
+    top:
+      .DS 2
+    var:
+      .DS 1
+  )---"),
+              ElementsAre(0xF000, 0xF002, 0xF003, 1));
+
+  // PAGES makes the segment bigger, and the stack gets the extra space.
+  EXPECT_THAT(AssembleAddresses(R"---(.STACK 4
+    .SEGMENT main CODE
+      LDA R1, S(var)
+    .SEGMENT stack STACK PAGES(2)
+      .DS 1
+    var:
+      .DS 1
+  )---"),
+              ElementsAre(0x10000 - 8192 + 1));
+
+  // A per instance stack is at the end of each instance's words: here, its 2
+  // words and 4 words of stack.
+  EXPECT_THAT(AssembleAddresses(R"---(.INSTANCES 2
+    .STACK 4
+    .SEGMENT main CODE
+      LDA R1, S(var)
+    .SEGMENT stack STACK INSTANCE
+      .DS 1
+    var:
+      .DS 1
+  )---"),
+              ElementsAre(0x10000 - 6 + 1));
+
+  // A stack segment of 16 pages, a whole bank, ends where it starts.
+  EXPECT_THAT(AssembleAddresses(R"---(.STACK 4
+    .BANK main
+    .BANK stack
+    .SEGMENT main CODE BANK(main)
+      LDA R1, S(var)
+    .SEGMENT stack STACK BANK(stack) PAGES(16)
+      .DS 1
+    var:
+      .DS 1
+  )---"),
+              ElementsAre(1));
+}
+
+TEST_F(ProgramAssemblerTest, AddressesInTheDefaultProgram) {
+  // The default program's one segment has every role.
+  EXPECT_THAT(AssembleAddresses(".STACK 4\n"
+                                "LDA R1, D(value)\n"
+                                "LDA R1, E(value)\n"
+                                "LDA R1, S(value)\n"
+                                "value: .DS 1\n"),
+              ElementsAre(6, 6, 0xF006));
+}
+
+TEST_F(ProgramAssemblerTest, AddressesInTheWrongSegment) {
+  EXPECT_THAT(
+      AssembleErrors(R"---(.STACK 4
+        .SEGMENT main CODE
+          LDA R1, D(var)
+          LDA R1, E(table + 1)
+          LDA R1, S(VAR_END)
+          LDA R1, E($)
+          LDA R1, D(@local)
+        @local:
+        .SEGMENT data DATA
+        table:
+          .DW 1
+        .SEGMENT extra EXTRA
+        var:
+          .DS 1
+        .CONST VAR_END = $
+        .SEGMENT stack STACK
+      )---"),
+      ElementsAre(IsErrorAt(2, 20,
+                            "The address is in EXTRA, but D($v) is an address "
+                            "in the DATA segment, DATA"),
+                  IsErrorAt(3, 20,
+                            "The address is in DATA, but E($v) is an address "
+                            "in the EXTRA segment, EXTRA"),
+                  IsErrorAt(4, 20,
+                            "The address is in EXTRA, but S($v) is an address "
+                            "in the STACK segment, STACK"),
+                  IsErrorAt(5, 20,
+                            "The address is in MAIN, but E($v) is an address "
+                            "in the EXTRA segment, EXTRA"),
+                  IsErrorAt(6, 20,
+                            "The address is in MAIN, but D($v) is an address "
+                            "in the DATA segment, DATA")));
+  EXPECT_THAT(AssembleErrors(".SEGMENT main CODE\n"
+                             "LDA R1, D(value)\n"
+                             "value: .DW 1\n"),
+              ElementsAre(IsErrorAt(1, 10,
+                                    "The address is in MAIN, but D($v) is an "
+                                    "address in the DATA segment, and no "
+                                    "segment has the DATA role")));
 }
 
 TEST_F(ProgramAssemblerTest, Banks) {

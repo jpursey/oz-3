@@ -18,6 +18,7 @@
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
@@ -756,6 +757,51 @@ TEST_F(AssembledProgramTest, StoresDwordInDataSegment) {
   EXPECT_EQ(data.GetValue(), 0xFFFF);
   EXPECT_EQ(data.GetValue32(), 3628800u);
   EXPECT_EQ(GetState().d2(), 3628800u);
+}
+
+TEST_F(AssembledProgramTest, AddressesLabelsInTheirSegments) {
+  // Each base register is at the start of its segment, apart from BS, which
+  // is at the end of the stack segment, below the stack's own words.
+  ASSERT_TRUE(Load(R"---(
+    .STACK 16
+
+    .SEGMENT main CODE
+        MOV S(counter), 7   ; MOV.SWV: the 7 is no address
+        PUSH.W 9
+        MOV R1, S(counter)
+        MOV R2, D(values + 1)
+        MOV E(result), R2
+        MOV R3, E(result)
+        HALT
+
+    .SEGMENT vars DATA
+    values:
+        .DW 1, 2
+
+    .SEGMENT out EXTRA
+        .DS 1
+    result:
+        .DS 1
+
+    .SEGMENT stack STACK
+        .DS 1
+    counter:
+        .DS 1
+  )---"));
+  ASSERT_TRUE(RunUntilHalt());
+  const CoreState& state = GetState();
+  EXPECT_EQ(state.r1, 7);
+  EXPECT_EQ(state.r2, 2);
+  EXPECT_EQ(state.r3, 2);
+
+  // The stack segment is one page, and BS is at its end.
+  MemAccessor memory = GetMemory();
+  memory.SetAddress(static_cast<uint16_t>(state.bs - kMemoryBankPageSize + 1));
+  EXPECT_EQ(memory.GetValue(), 7);
+  memory.SetAddress(static_cast<uint16_t>(state.bs - 1));
+  EXPECT_EQ(memory.GetValue(), 9);
+  memory.SetAddress(static_cast<uint16_t>(state.be + 1));
+  EXPECT_EQ(memory.GetValue(), 2);
 }
 
 TEST_F(AssembledProgramTest, HandlesInterrupt) {

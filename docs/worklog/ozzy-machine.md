@@ -171,8 +171,7 @@ first real OZ-3 code Ozzy runs.
 
 The boot ROM's stack is in the first page of RAM of the lowest bank that has
 any, which `ProgramLoader` picks, so an Ozzy must have some RAM. Its variables
-are the first words it pushes, addressed as `S(-1)` down, as a label in the
-stack segment can't be (see the backlog's *Labels in address forms*).
+are the first words it pushes, addressed as `S(-1)` down.
 
 ### `Ozzy`
 

@@ -72,6 +72,7 @@ constexpr std::string_view kInstructionSet = R"---(
 class FakeContext : public ExpressionContext {
  public:
   uint16_t GetOffset() const override { return 0; }
+  int GetSegment() const override { return -1; }
   std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const override {
     auto it = symbols.find(name);

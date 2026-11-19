@@ -418,6 +418,14 @@ class CpuCore final : public ExecutionComponent {
   // register or virtual register name.
   static int GetVirtualWordRegFromName(std::string_view name);
 
+  // Returns the name of a bank (CODE, STACK, DATA, or EXTRA), as microcode
+  // writes it, or "invalid" if it is not a bank.
+  static std::string_view GetBankName(int bank);
+
+  // Returns the bank with a name as microcode writes it ("STACK" is STACK), or
+  // -1 if the name is not a bank's.
+  static int GetBankFromName(std::string_view name);
+
   // Returns true if the index is a 32-bit register index.
   static bool IsDwordReg(int reg) {
     return reg == D0 || reg == D1 || reg == D2 || reg == D3 || reg == CD;

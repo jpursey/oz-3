@@ -74,14 +74,17 @@ constexpr oz3::MacroCodeDef kMacroCode_GetWord[] = {
      .ret = oz3::CpuCore::C2,
      .code = "LD(C2);UL;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {29, 5},
      .ret = oz3::CpuCore::C2,
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C2);UL;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {30, 5},
      .ret = oz3::CpuCore::C2,
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C2);UL;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {31, 5},
      .ret = oz3::CpuCore::C2,
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C2);UL;"},
@@ -124,14 +127,17 @@ constexpr oz3::MacroCodeDef kMacroCode_GetDword[] = {
      .ret = oz3::CpuCore::CD,
      .code = "LD(C0);LD(C1);UL;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {25, 5},
      .ret = oz3::CpuCore::CD,
      .code = "LD(C0);UL;LK(STACK);ADR(C0);LD(C0);LD(C1);UL;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {26, 5},
      .ret = oz3::CpuCore::CD,
      .code = "LD(C0);UL;LK(DATA);ADR(C0);LD(C0);LD(C1);UL;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {27, 5},
      .ret = oz3::CpuCore::CD,
      .code = "LD(C0);UL;LK(EXTRA);ADR(C0);LD(C0);LD(C1);UL;"},
@@ -379,12 +385,15 @@ constexpr oz3::MacroCodeDef kMacroCode_LoadWord[] = {
      .prefix = {28, 5},
      .code = "LD(p);UL;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {29, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(p);UL;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {30, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(p);UL;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {31, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(p);UL;"},
 };
@@ -418,12 +427,15 @@ constexpr oz3::MacroCodeDef kMacroCode_LoadDword[] = {
      .prefix = {24, 5},
      .code = "LD(p0);LD(p1);UL;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {25, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(p0);LD(p1);UL;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(p0);LD(p1);UL;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {27, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(p0);LD(p1);UL;"},
 };
@@ -450,12 +462,15 @@ constexpr oz3::MacroCodeDef kMacroCode_StoreWordRegister[] = {
      .prefix = {19, 5},
      .code = "LD(C2);UL;ADD(C2,FP);LK(STACK);ADR(C2);ST(p);UL;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {20, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);ST(p);UL;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {21, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);ST(p);UL;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {22, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);ST(p);UL;"},
 };
@@ -482,12 +497,15 @@ constexpr oz3::MacroCodeDef kMacroCode_StoreWordValue[] = {
      .prefix = {19, 5},
      .code = "LD(C2);LD(C1);UL;ADD(C2,FP);LK(STACK);ADR(C2);ST(C1);UL;"},
     {.source = "S($v), $v",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {20, 5},
      .code = "LD(C2);LD(C1);UL;LK(STACK);ADR(C2);ST(C1);UL;"},
     {.source = "D($v), $v",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {21, 5},
      .code = "LD(C2);LD(C1);UL;LK(DATA);ADR(C2);ST(C1);UL;"},
     {.source = "E($v), $v",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {22, 5},
      .code = "LD(C2);LD(C1);UL;LK(EXTRA);ADR(C2);ST(C1);UL;"},
 };
@@ -514,12 +532,15 @@ constexpr oz3::MacroCodeDef kMacroCode_StoreDwordRegister[] = {
      .prefix = {19, 5},
      .code = "LD(C2);UL;ADD(C2,FP);LK(STACK);ADR(C2);ST(p0);ST(p1);UL;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {20, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);ST(p0);ST(p1);UL;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {21, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);ST(p0);ST(p1);UL;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {22, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);ST(p0);ST(p1);UL;"},
 };
@@ -549,12 +570,15 @@ constexpr oz3::MacroCodeDef kMacroCode_StoreDwordValue[] = {
      .code = "LD(C2);LD(C0);LD(C1);UL;ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);"
              "ST(C1);UL;"},
     {.source = "S[$v], $V",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {20, 5},
      .code = "LD(C2);LD(C0);LD(C1);UL;LK(STACK);ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "D[$v], $V",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {21, 5},
      .code = "LD(C2);LD(C0);LD(C1);UL;LK(DATA);ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "E[$v], $V",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {22, 5},
      .code = "LD(C2);LD(C0);LD(C1);UL;LK(EXTRA);ADR(C2);ST(C0);ST(C1);UL;"},
 };
@@ -658,13 +682,16 @@ constexpr oz3::MacroCodeDef kMacroCode_PopWord[] = {
      .code = "LD(C0);UL;LK(STACK);ADR(SP);LD(C2);LAD(SP);ADD(C0,FP);"
              "ADR(C0);ST(C2);UL;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {28, 5},
      .code = "LD(C0);UL;LK(STACK);ADR(SP);LD(C2);LAD(SP);ADR(C0);ST(C2);UL;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {29, 5},
      .code = "LD(C0);UL;LK(STACK);ADR(SP);LD(C2);LAD(SP);UL;LK(DATA);"
              "ADR(C0);ST(C2);UL;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {30, 5},
      .code = "LD(C0);UL;LK(STACK);ADR(SP);LD(C2);LAD(SP);UL;LK(EXTRA);"
              "ADR(C0);ST(C2);UL;"},
@@ -701,14 +728,17 @@ constexpr oz3::MacroCodeDef kMacroCode_PopDword[] = {
      .code = "LD(C2);UL;LK(STACK);ADR(SP);LD(C0);LD(C1);LAD(SP);ADD(C2,FP);"
              "ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {24, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(SP);LD(C0);LD(C1);LAD(SP);ADR(C2);"
              "ST(C0);ST(C1);UL;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {25, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(SP);LD(C0);LD(C1);LAD(SP);UL;"
              "LK(DATA);ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(SP);LD(C0);LD(C1);LAD(SP);UL;"
              "LK(EXTRA);ADR(C2);ST(C0);ST(C1);UL;"},
@@ -743,12 +773,15 @@ constexpr oz3::MacroCodeDef kMacroCode_SwapWord[] = {
      .code = "LD(C2);UL;ADD(C2,FP);MOV(C0,p);LK(STACK);ADR(C2);LD(p);"
              "STP(C0);UL;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {28, 5},
      .code = "LD(C2);UL;MOV(C0,p);LK(STACK);ADR(C2);LD(p);STP(C0);UL;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {29, 5},
      .code = "LD(C2);UL;MOV(C0,p);LK(DATA);ADR(C2);LD(p);STP(C0);UL;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {30, 5},
      .code = "LD(C2);UL;MOV(C0,p);LK(EXTRA);ADR(C2);LD(p);STP(C0);UL;"},
 };
@@ -786,14 +819,17 @@ constexpr oz3::MacroCodeDef kMacroCode_SwapDword[] = {
      .code = "LD(C2);UL;ADD(C2,FP);MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(C2);"
              "LD(p0);LD(p1);STP(C1);STP(C0);UL;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {24, 5},
      .code = "LD(C2);UL;MOV(C0,p0);MOV(C1,p1);LK(STACK);ADR(C2);LD(p0);"
              "LD(p1);STP(C1);STP(C0);UL;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {25, 5},
      .code = "LD(C2);UL;MOV(C0,p0);MOV(C1,p1);LK(DATA);ADR(C2);LD(p0);"
              "LD(p1);STP(C1);STP(C0);UL;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;MOV(C0,p0);MOV(C1,p1);LK(EXTRA);ADR(C2);LD(p0);"
              "LD(p1);STP(C1);STP(C0);UL;"},
@@ -1915,14 +1951,17 @@ constexpr oz3::MacroCodeDef kMacroCode_ReadPortWord[] = {
      .code = "LD(C2);UL;ADD(C2,FP);PLK(p);PLD(S,C0);MSR(S,S);PUL;LK(STACK);"
              "ADR(C2);ST(C0);UL;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {28, 5},
      .code = "LD(C2);UL;PLK(p);PLD(S,C0);MSR(S,S);PUL;LK(STACK);ADR(C2);"
              "ST(C0);UL;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {29, 5},
      .code = "LD(C2);UL;PLK(p);PLD(S,C0);MSR(S,S);PUL;LK(DATA);ADR(C2);"
              "ST(C0);UL;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {30, 5},
      .code = "LD(C2);UL;PLK(p);PLD(S,C0);MSR(S,S);PUL;LK(EXTRA);ADR(C2);"
              "ST(C0);UL;"},
@@ -1960,14 +1999,17 @@ constexpr oz3::MacroCodeDef kMacroCode_ReadPortDword[] = {
      .code = "LD(C2);UL;ADD(C2,FP);PLK(p);PLD(A,C0);PLD(S,C1);MSR(S,S);PUL;"
              "LK(STACK);ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {24, 5},
      .code = "LD(C2);UL;PLK(p);PLD(A,C0);PLD(S,C1);MSR(S,S);PUL;LK(STACK);"
              "ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {25, 5},
      .code = "LD(C2);UL;PLK(p);PLD(A,C0);PLD(S,C1);MSR(S,S);PUL;LK(DATA);"
              "ADR(C2);ST(C0);ST(C1);UL;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;PLK(p);PLD(A,C0);PLD(S,C1);MSR(S,S);PUL;LK(EXTRA);"
              "ADR(C2);ST(C0);ST(C1);UL;"},
@@ -2005,14 +2047,17 @@ constexpr oz3::MacroCodeDef kMacroCode_ReadPortWordIfReady[] = {
      .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
              "ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {28, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
              "LK(STACK);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {29, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
              "LK(DATA);ADR(C2);ST(C0);UL;@done:END;"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {30, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TS,C0);MSR(S,S);PUL;JC(NS,@done);"
              "LK(EXTRA);ADR(C2);ST(C0);UL;@done:END;"},
@@ -2053,14 +2098,17 @@ constexpr oz3::MacroCodeDef kMacroCode_ReadPortDwordIfReady[] = {
              "JC(NS,@done);ADD(C2,FP);LK(STACK);ADR(C2);ST(C0);ST(C1);UL;"
              "@done:END;"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {24, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
              "JC(NS,@done);LK(STACK);ADR(C2);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {25, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
              "JC(NS,@done);LK(DATA);ADR(C2);ST(C0);ST(C1);UL;@done:END;"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;PLK(p);PLD(TA,C0);PLD(TS,C1);MSR(S,S);PUL;"
              "JC(NS,@done);LK(EXTRA);ADR(C2);ST(C0);ST(C1);UL;@done:END;"},
@@ -2101,14 +2149,17 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortWord[] = {
      .prefix = {28, 5},
      .code = "LD(C0);UL;PLK(p);PST(S,C0);PUL;MSS(S);MSR(_,S);"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {29, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C0);UL;PLK(p);PST(S,C0);PUL;"
              "MSS(S);MSR(_,S);"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {30, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C0);UL;PLK(p);PST(S,C0);PUL;"
              "MSS(S);MSR(_,S);"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {31, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C0);UL;PLK(p);PST(S,C0);PUL;"
              "MSS(S);MSR(_,S);"},
@@ -2150,14 +2201,17 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortDword[] = {
      .code = "LD(C0);LD(C1);UL;PLK(p);PST(A,C0);PST(S,C1);PUL;MSS(S);"
              "MSR(_,S);"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {25, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
              "PST(A,C0);PST(S,C1);PUL;MSS(S);MSR(_,S);"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C0);LD(C1);UL;PLK(p);PST(A,C0);"
              "PST(S,C1);PUL;MSS(S);MSR(_,S);"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {27, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
              "PST(A,C0);PST(S,C1);PUL;MSS(S);MSR(_,S);"},
@@ -2198,14 +2252,17 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortWordIfReady[] = {
      .prefix = {28, 5},
      .code = "LD(C0);UL;PLK(p);PST(TS,C0);PUL;MSX(S);MSR(S,S);"},
     {.source = "S($v)",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {29, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C0);UL;PLK(p);PST(TS,C0);PUL;"
              "MSX(S);MSR(S,S);"},
     {.source = "D($v)",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {30, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C0);UL;PLK(p);PST(TS,C0);PUL;"
              "MSX(S);MSR(S,S);"},
     {.source = "E($v)",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {31, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C0);UL;PLK(p);PST(TS,C0);PUL;"
              "MSX(S);MSR(S,S);"},
@@ -2247,14 +2304,17 @@ constexpr oz3::MacroCodeDef kMacroCode_WritePortDwordIfReady[] = {
      .code = "LD(C0);LD(C1);UL;PLK(p);PST(TA,C0);PST(TS,C1);PUL;MSX(S);"
              "MSR(S,S);"},
     {.source = "S[$v]",
+     .address_bank = oz3::CpuCore::STACK,
      .prefix = {25, 5},
      .code = "LD(C2);UL;LK(STACK);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
     {.source = "D[$v]",
+     .address_bank = oz3::CpuCore::DATA,
      .prefix = {26, 5},
      .code = "LD(C2);UL;LK(DATA);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},
     {.source = "E[$v]",
+     .address_bank = oz3::CpuCore::EXTRA,
      .prefix = {27, 5},
      .code = "LD(C2);UL;LK(EXTRA);ADR(C2);LD(C0);LD(C1);UL;PLK(p);"
              "PST(TA,C0);PST(TS,C1);PUL;MSX(S);MSR(S,S);"},

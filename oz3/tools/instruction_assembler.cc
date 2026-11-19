@@ -84,7 +84,8 @@ constexpr std::string_view kParserProgram = R"---(
   }
 
   MacroCode {
-    "code" [":" $ret=%ident] $source=%string
+    "code" ["(" "address" ":" $address=%ident ")"] [":" $ret=%ident]
+    $source=%string
     "{" $code=MicroCode* "}";
   }
 
@@ -414,6 +415,17 @@ bool InstructionSetAssembler::AssembleMacroCode(
   if (!AssembleMacroCodeSource(parsed_macro_code, macro_code_def.source,
                                macro_code_def)) {
     return false;
+  }
+
+  if (const gb::ParsedItem* address = parsed_macro_code.GetItem("address");
+      address != nullptr) {
+    const std::string_view bank = address->GetToken().GetString();
+    macro_code_def.address_bank =
+        static_cast<int8_t>(CpuCore::GetBankFromName(bank));
+    if (macro_code_def.address_bank < 0) {
+      return ErrorAt(*address, "Invalid address bank: ", bank,
+                     " (expected CODE, STACK, DATA, or EXTRA)");
+    }
   }
 
   std::string_view ret = parsed_macro_code.GetString("ret");

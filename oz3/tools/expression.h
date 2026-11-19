@@ -44,6 +44,13 @@ struct ExpressionResult {
   // 0FFFFh as a word.
   uint32_t value = 0;
 
+  // The segment the value is an offset in, or -1 if it is just a number. A
+  // label is an offset in its segment, and "$" in the statement's (see
+  // ExpressionContext). Adding a number to one, or subtracting a number from
+  // one, is an offset in the same segment. Any other arithmetic on one (such
+  // as subtracting two labels, for their distance) is just a number.
+  int segment = -1;
+
   gb::ParseError error;
 };
 
@@ -56,16 +63,20 @@ class ExpressionContext {
  public:
   virtual ~ExpressionContext() = default;
 
-  // Returns the offset of the statement the expression is in, for "$".
+  // Returns the offset of the statement the expression is in, for "$", and
+  // the segment it is an offset in, or -1 for none. Segments are numbered by
+  // the context, and an expression only passes them on in its results.
   virtual uint16_t GetOffset() const = 0;
+  virtual int GetSegment() const = 0;
 
   // Returns the value of the symbol `name`, used where a value of `width` is:
   // an upper case name ("LOOP"), or an upper case local label with its "@"
-  // ("@LOOP"). Returns nullopt if there is no such symbol (yet), which the
-  // expression reports as kUndefined. Any result is the expression's, so a
-  // symbol with its own expression (a constant) returns that expression's
-  // kUndefined or kError as it is. An error without a location is reported
-  // where the symbol is used.
+  // ("@LOOP"), and the segment it is an offset in, if it is a label (see
+  // ExpressionResult::segment). Returns nullopt if there is no such symbol
+  // (yet), which the expression reports as kUndefined. Any result is the
+  // expression's, so a symbol with its own expression (a constant) returns that
+  // expression's result as it is, its segment, kUndefined, or kError included.
+  // An error without a location is reported where the symbol is used.
   virtual std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const = 0;
 };

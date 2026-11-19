@@ -19,6 +19,7 @@
 #include "gb/parse/token.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/tools/instruction_assembler.h"
@@ -268,6 +269,24 @@ TEST(InstructionSetSyntaxTest, RelativeValuesAreWholeArguments) {
   forms = syntax->GetForms("ADD.W");
   ASSERT_EQ(forms.size(), 4);
   EXPECT_FALSE(forms[2]->GetArgs()[1].relative);
+}
+
+TEST(InstructionSetSyntaxTest, AddressesAreTheFirstValueOfTheirCodes) {
+  TestDef def(kInstructionSet);
+  def.codes[0][1].address_bank = CpuCore::EXTRA;  // ($r + $v)
+  def.codes[0][3].address_bank = CpuCore::DATA;   // D($v)
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("ADD.W");
+  ASSERT_EQ(forms.size(), 4);
+  ASSERT_EQ(forms[1]->GetArgs().size(), 3);
+  EXPECT_EQ(forms[1]->GetArgs()[0].address_bank, -1);
+  EXPECT_EQ(forms[1]->GetArgs()[1].address_bank, -1);
+  EXPECT_EQ(forms[1]->GetArgs()[2].address_bank, CpuCore::EXTRA);
+  ASSERT_EQ(forms[2]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[2]->GetArgs()[1].address_bank, -1);  // $v
+  ASSERT_EQ(forms[3]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[3]->GetArgs()[1].address_bank, CpuCore::DATA);
 }
 
 TEST(InstructionSetSyntaxTest, MacroCodeIsOnlyWholeIfMacroIs) {
@@ -535,6 +554,24 @@ TEST(InstructionSetSyntaxTest, MacroCodeSourceDisagreesWithArgument) {
   EXPECT_THAT(error.message, HasSubstr("doesn't match its argument"));
 }
 
+TEST(InstructionSetSyntaxTest, MacroCodeAddressWithoutValue) {
+  TestDef def(kInstructionSet);
+  def.codes[0][0].address_bank = CpuCore::DATA;  // $r
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_EQ(error.macro_source_name, "$r");
+  EXPECT_THAT(error.message,
+              HasSubstr("is an address in DATA, but has no $v for it"));
+}
+
+TEST(InstructionSetSyntaxTest, MacroCodeInvalidAddressBank) {
+  TestDef def(kInstructionSet);
+  def.codes[0][3].address_bank = 4;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_THAT(error.message, HasSubstr("has an invalid address bank (4)"));
+}
+
 TEST(InstructionSetSyntaxTest, MacroCodesWrittenTheSameWay) {
   // Each case changes one of GetWord's codes, and expects the error at
   // `error_code`, which is written the same way as `same_as` before it.
@@ -630,6 +667,16 @@ TEST(InstructionSetSyntaxTest, RelativeWithoutWholeValue) {
   def.instructions[7].relative = true;
   InstructionError error =
       ExpectError(def, InstructionError::Def::kInstruction, "PEEK");
+  EXPECT_THAT(error.message,
+              HasSubstr("has no form where $v is a whole argument"));
+}
+
+TEST(InstructionSetSyntaxTest, AddressesAreNeverRelative) {
+  // JPR's only relative form is its "$v" code, which an address takes away.
+  TestDef def(kInstructionSet);
+  def.codes[0][2].address_bank = CpuCore::CODE;
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "JPR");
   EXPECT_THAT(error.message,
               HasSubstr("has no form where $v is a whole argument"));
 }

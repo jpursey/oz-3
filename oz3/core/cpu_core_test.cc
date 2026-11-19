@@ -832,6 +832,18 @@ class CpuCoreTest : public BaseCoreTest {
       : BaseCoreTest({kMicroTestInstructions}, GetMicroTestInstructionSet()) {}
 };
 
+TEST(CpuCoreBankTest, BankNames) {
+  for (int bank :
+       {CpuCore::CODE, CpuCore::STACK, CpuCore::DATA, CpuCore::EXTRA}) {
+    EXPECT_EQ(CpuCore::GetBankFromName(CpuCore::GetBankName(bank)), bank);
+  }
+  EXPECT_EQ(CpuCore::GetBankName(CpuCore::STACK), "STACK");
+  EXPECT_EQ(CpuCore::GetBankName(-1), "invalid");
+  EXPECT_EQ(CpuCore::GetBankName(4), "invalid");
+  EXPECT_EQ(CpuCore::GetBankFromName("stack"), -1);
+  EXPECT_EQ(CpuCore::GetBankFromName(""), -1);
+}
+
 TEST_F(CpuCoreTest, CpuCoreInitialState) {
   CpuCore core(CpuCoreConfig{GetMicroTestInstructionSet()});
 

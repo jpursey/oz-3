@@ -83,6 +83,23 @@ bool IsValue(const ExpressionResult& result) {
   return result.kind == ExpressionResult::Kind::kValue;
 }
 
+// Returns a value that is an offset in `segment` (see
+// ExpressionResult::segment).
+ExpressionResult InSegment(ExpressionResult result, int segment) {
+  result.segment = segment;
+  return result;
+}
+
+// Returns the segment of the sum of offsets in segments `a` and `b` (or -1 for
+// a number). An offset plus a number, either way around, is still an offset,
+// and the sum of two offsets is just a number.
+int GetSumSegment(int a, int b) {
+  if (a < 0) {
+    return b;
+  }
+  return b < 0 ? a : -1;
+}
+
 }  // namespace
 
 std::string_view Expression::GetParserRules() { return kParserRules; }
@@ -186,7 +203,7 @@ ExpressionResult Expression::EvaluateNode(ExpressionWidth width,
     case NodeKind::kSymbol:
       return EvaluateSymbol(width, context, node);
     case NodeKind::kOffset:
-      return Value(width, context.GetOffset());
+      return InSegment(Value(width, context.GetOffset()), context.GetSegment());
     case NodeKind::kUnary:
       return EvaluateUnary(width, context, node);
     case NodeKind::kBinary:
@@ -230,9 +247,11 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
   const uint64_t b = right.value;
   switch (node.op) {
     case '+':
-      return Value(width, a + b);
+      return InSegment(Value(width, a + b),
+                       GetSumSegment(left.segment, right.segment));
     case '-':
-      return Value(width, a - b);
+      return InSegment(Value(width, a - b),
+                       right.segment < 0 ? left.segment : -1);
     case '*':
       return Value(width, a * b);
     case '/':
@@ -269,7 +288,8 @@ ExpressionResult Expression::EvaluateSymbol(ExpressionWidth width,
     return undefined;
   }
   if (IsValue(*result)) {
-    return CheckValue(width, result->value, node.token);
+    ExpressionResult value = CheckValue(width, result->value, node.token);
+    return IsValue(value) ? InSegment(value, result->segment) : value;
   }
 
   // An error without a location is the use's.
