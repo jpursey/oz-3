@@ -351,8 +351,13 @@ absl::StatusOr<std::string> DiskTool::Check(std::string_view image_path,
 
 absl::Status DiskTool::Boot(std::string_view image_path,
                             std::string_view program_path) {
-  if (!file_system_->IsValidFile(program_path)) {
+  const gb::PathType path_type = file_system_->GetPathInfo(program_path).type;
+  if (path_type == gb::PathType::kInvalid) {
     return absl::NotFoundError(absl::StrCat(program_path, ": not found"));
+  }
+  if (path_type != gb::PathType::kFile) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(program_path, ": not a file"));
   }
   absl::StatusOr<BareProgram> program =
       ReadBareProgramFile(*file_system_, program_path);

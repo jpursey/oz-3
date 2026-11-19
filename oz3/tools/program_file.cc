@@ -145,7 +145,7 @@ absl::StatusOr<std::vector<uint16_t>> ReadWordsFromFile(
   }
   if (bytes.size() % 2 != 0) {
     return absl::InvalidArgumentError(
-        absl::StrCat(format.name, " ", path, " has an odd number of bytes"));
+        absl::StrCat(format.name, " has an odd number of bytes"));
   }
   std::vector<uint16_t> words(bytes.size() / 2);
   for (int i = 0; i < static_cast<int>(words.size()); ++i) {

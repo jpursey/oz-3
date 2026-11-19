@@ -551,10 +551,25 @@ TEST_F(DiskToolTest, BootFailsForAProgramFile) {
   EXPECT_THAT(ReadBootArea(), Each(0));
 }
 
+TEST_F(DiskToolTest, BootFailsForABadProgramFile) {
+  NewFormatted();
+  WriteHost(kBootPath, "odd");
+  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
+            "mem:/boot.oz3: Bare program file has an odd number of bytes");
+  EXPECT_THAT(ReadBootArea(), Each(0));
+}
+
 TEST_F(DiskToolTest, BootFailsForAMissingProgram) {
   NewFormatted();
-  EXPECT_EQ(tool_->Boot(kImagePath, kBootPath).message(),
-            "mem:/boot.oz3: not found");
+  absl::Status status = tool_->Boot(kImagePath, "mem:/missing.oz3");
+  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.message(), "mem:/missing.oz3: not found");
+
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/folder"));
+  status = tool_->Boot(kImagePath, "mem:/folder");
+  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(status.message(), "mem:/folder: not a file");
+  EXPECT_THAT(ReadBootArea(), Each(0));
 }
 
 TEST_F(DiskToolTest, BootNeedsAFileSystem) {
