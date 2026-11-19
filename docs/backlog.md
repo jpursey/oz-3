@@ -390,6 +390,24 @@ repeat a held key itself, after a delay and at a rate in real time turned into
 cycles, so it repeats the same on every run. The cost is the layout: on any
 other, keys type the US characters, so AZERTY's `A` types `q`.
 
+## The boot ROM's stack in the machine table
+
+- **Layers:** ozzy, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [booting-from-disk.md](worklog/booting-from-disk.md)
+  (Brittleness); the manual's `4-Ozzy-Computer.md` (The boot ROM's stack)
+
+The boot ROM starts the loader with `RST SELF`, which needs the stack's bank,
+but a program can't read `MB`. So the ROM finds the bank in the machine table
+as the lowest with RAM, repeating the rule `Ozzy::Create` places the stack by,
+which a `CHECK` there holds the two to. The machine table could give the boot
+ROM's stack's bank and page itself, so the rule is written once, in the Ozzy,
+and the ROM reads it as it reads the rest of its hardware. It changes the
+machine table, which programs read, so it is best done before the Ozzy OS
+reads it.
+
 ## Disk tool failure reasons
 
 - **Layers:** tools
