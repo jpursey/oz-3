@@ -629,11 +629,16 @@ class AssembledProgramTest : public InstructionTest {
   // The most cycles a program may run before it must halt.
   static constexpr int kMaxCycles = 10000;
 
-  void SetUp() override { ASSERT_TRUE(Init({.num_ports = 2})); }
+  // The processor has `num_cores` cores.
+  explicit AssembledProgramTest(int num_cores = 1) : num_cores_(num_cores) {}
 
-  // Assembles `text`, which must assemble, loads it, and resets core 0 to run
-  // it. Returns whether it did.
-  bool Load(std::string_view text) {
+  void SetUp() override {
+    ASSERT_TRUE(Init({.num_cores = num_cores_, .num_ports = 2}));
+  }
+
+  // Assembles `text`, which must assemble, loads it, and resets cores 0 to
+  // `instances` - 1 to run it, each as that instance. Returns whether it did.
+  bool Load(std::string_view text, int instances = 1) {
     std::unique_ptr<AsmProgram> program =
         AssembleOrFail(*syntax_, std::string(text));
     if (program == nullptr) {
@@ -645,7 +650,9 @@ class AssembledProgramTest : public InstructionTest {
       ADD_FAILURE() << "The program doesn't load";
       return false;
     }
-    GetState().ResetCore(loader.GetResetParams(handle));
+    for (int i = 0; i < instances; ++i) {
+      GetState(i).ResetCore(loader.GetResetParams(handle, i));
+    }
     return true;
   }
 
@@ -664,6 +671,7 @@ class AssembledProgramTest : public InstructionTest {
   }
 
  private:
+  const int num_cores_;
   const std::unique_ptr<InstructionSetSyntax> syntax_ = CreateDefaultSyntax();
 };
 
@@ -802,6 +810,60 @@ TEST_F(AssembledProgramTest, AddressesLabelsInTheirSegments) {
   EXPECT_EQ(memory.GetValue(), 9);
   memory.SetAddress(static_cast<uint16_t>(state.be + 1));
   EXPECT_EQ(memory.GetValue(), 2);
+}
+
+// A program with two instances, run on two cores.
+class AssembledInstancesTest : public AssembledProgramTest {
+ protected:
+  AssembledInstancesTest() : AssembledProgramTest(2) {}
+};
+
+TEST_F(AssembledInstancesTest, AddressesLabelsInEachInstance) {
+  // Each instance's base registers are at its own words of a per instance
+  // segment, so the same labels address each instance's own words.
+  ASSERT_TRUE(Load(R"---(
+    .INSTANCES 2
+    .STACK 8
+
+    .SEGMENT main CODE
+        MOV S(counter), R0
+        MOV R1, S(counter)
+        MOV E(result), R1
+        MOV R2, E(result)
+        HALT
+
+    .SEGMENT vars EXTRA INSTANCE
+        .DS 1
+    result:
+        .DS 1
+
+    .SEGMENT stack STACK INSTANCE
+        .DS 1
+    counter:
+        .DS 1
+  )---",
+                   2));
+  GetState(0).SetRegisters({{CpuCore::R0, 10}});
+  GetState(1).SetRegisters({{CpuCore::R0, 20}});
+  ASSERT_TRUE(ExecuteUntilHalt(0));
+  ASSERT_TRUE(ExecuteUntilHalt(1));
+  EXPECT_NE(GetState(0).bs, GetState(1).bs);
+  EXPECT_NE(GetState(0).be, GetState(1).be);
+
+  // Each instance's stack words are its 2 words and its 8 words of stack, with
+  // BS at their end.
+  MemAccessor memory = GetMemory();
+  for (int i = 0; i < 2; ++i) {
+    SCOPED_TRACE(absl::StrCat("Instance ", i));
+    const CoreState& state = GetState(i);
+    const int value = (i + 1) * 10;
+    EXPECT_EQ(state.r1, value);
+    EXPECT_EQ(state.r2, value);
+    memory.SetAddress(static_cast<uint16_t>(state.bs - 10 + 1));
+    EXPECT_EQ(memory.GetValue(), value);
+    memory.SetAddress(static_cast<uint16_t>(state.be + 1));
+    EXPECT_EQ(memory.GetValue(), value);
+  }
 }
 
 TEST_F(AssembledProgramTest, HandlesInterrupt) {

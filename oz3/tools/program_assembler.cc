@@ -451,6 +451,11 @@ class ProgramAssembler final {
   uint16_t stack_words_ = 0;
   std::optional<gb::Token> stack_token_;
 
+  // Why the default program can't be a bare program, if it can't for one of
+  // its statements: the first label in an address from BS or BE, which a bare
+  // program doesn't start where this program's offsets need them.
+  std::optional<std::string> bare_error_;
+
   // The number of instances (.INSTANCES), and where it is given.
   int instance_count_ = 1;
   std::optional<gb::Token> instances_token_;
@@ -1351,6 +1356,23 @@ std::optional<uint32_t> ProgramAssembler::EvaluateAddress(
     return std::nullopt;
   }
 
+  // A bare program starts BC and BD at its start, as loading a program file
+  // does, but BS at the end of its stack words, which isn't on a page, and
+  // leaves BE as it is.
+  if (!segments_[role_segment].name.has_value() && !bare_error_.has_value() &&
+      (bank == CpuCore::STACK || bank == CpuCore::EXTRA)) {
+    const gb::LexerLocation location =
+        GetLexer().GetTokenLocation(expression.GetToken());
+    bare_error_ = absl::StrCat(
+        "The label at ", location.filename, "(", location.line + 1, ":",
+        location.column + 1, ") is in an address from ",
+        bank == CpuCore::STACK
+            ? "BS, which a bare program starts at the end of its stack "
+              "words, not its pages"
+            : "BE, which a bare program leaves as it is",
+        ", so it can't be a bare program");
+  }
+
   // Only BS isn't at the start of its segment, or of an instance's words. It
   // is the stack's offset (as the loader has it) down from the segment's end,
   // which is the same distance past the start of every instance's words.
@@ -1442,6 +1464,9 @@ absl::StatusOr<BareProgram> ProgramAssembler::BuildBareProgram(
   if (segment.name.has_value()) {
     return absl::FailedPreconditionError(
         "The program declares segments, so it can't be a bare program");
+  }
+  if (bare_error_.has_value()) {
+    return absl::FailedPreconditionError(*bare_error_);
   }
 
   // Its contents are the segment's words before its stack, rounded up to

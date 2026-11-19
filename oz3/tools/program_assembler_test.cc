@@ -38,6 +38,7 @@
 namespace oz3 {
 namespace {
 
+using ::testing::AllOf;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
@@ -618,6 +619,34 @@ TEST_F(ProgramAssemblerTest, BareProgramNeedsDefaultProgram) {
   ASSERT_NE(program, nullptr);
   EXPECT_THAT(program->GetBareProgram().status().message(),
               HasSubstr("declares segments"));
+}
+
+TEST_F(ProgramAssemblerTest, BareProgramAddresses) {
+  // A bare program starts BC and BD at its start, as loading a program file
+  // does, so labels in addresses from them work in both.
+  std::unique_ptr<AsmProgram> program = AssembleAsmProgram(
+      ".STACK 4\nLDA R1, D(value)\nLDA R1, D(5)\nLDA R1, S(5)\n"
+      "LDA R1, E(5)\nvalue: .DS 1\n");
+  ASSERT_NE(program, nullptr);
+  EXPECT_TRUE(program->GetBareProgram().ok())
+      << program->GetBareProgram().status();
+
+  // But not BS or BE, so a label in an address from either can't be in one,
+  // though it is still in the program.
+  program = AssembleAsmProgram(
+      ".STACK 4\nLDA R1, D(value)\nLDA R1, S(value + 1)\n"
+      "LDA R1, E(value)\nvalue: .DS 2\n");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              AllOf(HasSubstr("(3:11) is in an address from BS, which a bare "
+                              "program starts at the end of its stack words"),
+                    HasSubstr("so it can't be a bare program")));
+  program = AssembleAsmProgram(
+      ".STACK 4\nLDA R1, D(value)\nLDA R1, E(value)\nvalue: .DS 1\n");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              HasSubstr("(3:11) is in an address from BE, which a bare "
+                        "program leaves as it is"));
 }
 
 TEST_F(ProgramAssemblerTest, BareProgramPastBank) {
