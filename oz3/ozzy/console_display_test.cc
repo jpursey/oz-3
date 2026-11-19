@@ -56,7 +56,10 @@ class FakeConsole final : public Console {
 // Long enough for the boot ROM to show its banner.
 constexpr absl::Duration kBootTime = absl::Seconds(1);
 
-// Long enough for a key to be echoed, and the screen refreshed.
+// What the boot ROM shows when Enter is pressed in an Ozzy with no drives.
+constexpr std::string_view kNoDrive = "ERROR: No drive A:";
+
+// Long enough for the boot ROM to answer Enter, and the screen to refresh.
 constexpr absl::Duration kKeyTime = absl::Milliseconds(100);
 
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings) {
@@ -103,7 +106,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeFirst) {
   display.Update();
   const std::string text = console.TakeText();
   EXPECT_EQ(text, DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
-  EXPECT_THAT(text, HasSubstr("OZZY 0.1"));
+  EXPECT_THAT(text, HasSubstr("Ozzy 1.0"));
 }
 
 TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
@@ -120,13 +123,13 @@ TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
   EXPECT_EQ(console.TakeText(), "");
 
   const ScreenPicture before = ozzy->GetScreen()->GetPicture();
-  ozzy->GetKeyboard()->TypeKey('x');
+  ozzy->GetKeyboard()->TypeKey(kKeyEnter);
   ozzy->Run(kKeyTime);
   display.Update();
   const std::string text = console.TakeText();
   EXPECT_EQ(text, DrawConsoleText(ozzy->GetScreen()->GetPicture(), &before));
-  EXPECT_THAT(text, HasSubstr("x"));
-  EXPECT_THAT(text, Not(HasSubstr("OZZY 0.1")));
+  EXPECT_THAT(text, HasSubstr(kNoDrive));
+  EXPECT_THAT(text, Not(HasSubstr("Ozzy 1.0")));
 }
 
 TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
@@ -143,7 +146,7 @@ TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
   EXPECT_THAT(text,
               HasSubstr(absl::StrCat("the screen is ", kScreenSize.columns,
                                      " by ", kScreenSize.rows)));
-  EXPECT_THAT(text, Not(HasSubstr("OZZY 0.1")));
+  EXPECT_THAT(text, Not(HasSubstr("Ozzy 1.0")));
 
   // The message isn't drawn again, and the picture isn't drawn, as it changes.
   display.Update();
@@ -242,12 +245,13 @@ TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
   ConsoleDisplay display(*ozzy, console);
   ozzy->Run(kBootTime);
   display.Update();
-  EXPECT_THAT(console.TakeText(), HasSubstr("OZZY 0.1"));
+  EXPECT_THAT(console.TakeText(), HasSubstr("Ozzy 1.0"));
 
-  ozzy->GetKeyboard()->TypeKey('x');
+  ozzy->GetKeyboard()->TypeKey(kKeyEnter);
   ozzy->Run(kKeyTime);
   display.Update();
-  EXPECT_EQ(console.TakeText(), "x");
+  EXPECT_EQ(console.TakeText(), absl::StrCat("\r\nLoading...\r\n", kNoDrive,
+                                             "\r\n\r\nPress Enter to Boot..."));
 }
 
 TEST(ConsoleDisplayTest, NeitherScreenNorTeletype) {

@@ -7,14 +7,16 @@
 ; The Ozzy's boot ROM
 ;
 ; Core 0 runs this at power on, from page 0 of bank 0. It reads the machine
-; table, clears the screen, prints the banner to the screen (or, without one, to
-; the teletype), and halts with interrupts enabled. With a keyboard, its
-; interrupt handler echoes each key.
+; table, clears the screen, and shows the banner on the screen (or, without
+; one, on the teletype). With a keyboard, it then prompts, and waits for Enter
+; to boot from A:, reading the disk's boot area into its stack's page and
+; starting the loader there. Without one, it halts.
 ;
 ; The code and its strings are one ROM segment, which is also the DATA segment,
 ; so the machine table is read with D(n). The screen's page is the EXTRA bank.
 ; The stack is in a page of RAM the host places, and the variables are the
-; first words pushed onto it, from S(-1) down.
+; first words pushed onto it, from S(-1) down. The loader goes at the start of
+; the same page.
 ;===============================================================================
 
 ;-------------------------------------------------------------------------------
@@ -38,56 +40,103 @@
 .CONST DEVICE_PORT = 1
 .CONST DEVICE_BANK = 4
 .CONST DEVICE_PAGE = 5
-.CONST DEVICE_COLUMNS = 6
+.CONST DEVICE_COLUMNS = 6  ; A screen's
 .CONST DEVICE_ROWS = 7
+.CONST DEVICE_LETTER = 6   ; A drive's
 .CONST DEVICE_SIZE = 8
 
 ; Device types.
 .CONST SCREEN = 1
 .CONST KEYBOARD = 2
 .CONST TELETYPE = 3
+.CONST DRIVE = 5
 
 ;-------------------------------------------------------------------------------
 ; The keyboard's wiring, which is the same in every Ozzy (see the manual's Ozzy
-; Computer page)
+; Computer page), and the key that boots
 ;-------------------------------------------------------------------------------
 
 .CONST KEYBOARD_PORT = 1
 .CONST KEYBOARD_INTERRUPT = 1
-
-;-------------------------------------------------------------------------------
-; Keys (see the manual's Ozzy Computer page)
-;-------------------------------------------------------------------------------
-
-.CONST KEY_BACKSPACE = 08h
 .CONST KEY_ENTER = 0Dh
-.CONST KEY_FIRST_CHAR = 20h  ; The characters that echo, 20h to 7Eh
-.CONST KEY_LAST_CHAR = 7Eh
 
 ;-------------------------------------------------------------------------------
-; The screen's control words (see the manual's Ozzy Computer page)
+; The screen's control words and cell attributes (see the manual's Screen page)
 ;-------------------------------------------------------------------------------
 
-.CONST SCREEN_SCROLL_ROW = 0FF4h
 .CONST SCREEN_CURSOR_COLUMN = 0FF5h
 .CONST SCREEN_CURSOR_ROW = 0FF6h
 .CONST SCREEN_CURSOR = 0FF7h
 .CONST SCREEN_FILL = 0FF8h
 .CONST SCREEN_FILL_ROW = 0FFAh
 
-; A slow blinking underline.
+; A slow blinking underline, or no cursor.
 .CONST CURSOR_STYLE = 2 | 8
+.CONST CURSOR_OFF = 0
+
+; The lines on a cell's edges, which draw the box.
+.CONST LINE_TOP = 1000h
+.CONST LINE_BOTTOM = 2000h
+.CONST LINE_LEFT = 4000h
+.CONST LINE_RIGHT = 8000h
+
+;-------------------------------------------------------------------------------
+; Where everything is on the screen
+;-------------------------------------------------------------------------------
+
+.CONST BANNER_ROWS = 4  ; The box is these rows
+.CONST STATUS_ROW = 7   ; Below the box, a blank row, the prompt, a blank row
+
+;-------------------------------------------------------------------------------
+; The disk drive (see the manual's Disk Drive page)
+;-------------------------------------------------------------------------------
+
+; The drive's ports, from its command port.
+.CONST DRIVE_DATA = 1
+.CONST DRIVE_CONTROL = 2
+
+; The control port: the reset request, and the state word's phase.
+.CONST DRIVE_RESET = 1
+.CONST DRIVE_PHASE = 0Fh
+.CONST PHASE_WORKING = 2
+
+; READ BOOT's command word, and the statuses the boot ROM names.
+.CONST READ_BOOT = 4400h
+.CONST NO_DISK = 20h
+.CONST UNFORMATTED = 23h
+
+; The drive it boots from, by letter and number.
+.CONST BOOT_LETTER = 'A'
+.CONST BOOT_DRIVE = 0
+
+;-------------------------------------------------------------------------------
+; The loader
+;-------------------------------------------------------------------------------
+
+; The boot area's size, in the dwords READ BOOT moves.
+.CONST BOOT_AREA_DWORDS = 112
+
+; The loader is the first words of the stack's page, which ends at BS.
+.CONST PAGE_SIZE = 1000h
+.CONST LOADER = -PAGE_SIZE
+
+; The boot signature, "BOOT" packed, in the boot area's last two words.
+.CONST SIGNATURE = LOADER + 2 * BOOT_AREA_DWORDS - 2
+.CONST SIGNATURE_LOW = 4F42h
+.CONST SIGNATURE_HIGH = 544Fh
 
 ;-------------------------------------------------------------------------------
 ; Variables, at S(n), in the order start pushes them
 ;-------------------------------------------------------------------------------
 
-.CONST V_COLUMNS = -1   ; The screen's columns, or 0 without a screen
-.CONST V_ROWS = -2      ; The screen's rows
-.CONST V_COLUMN = -3    ; Where the next character goes on the screen
+.CONST V_COLUMNS = -1    ; The screen's columns, or 0 without a screen
+.CONST V_ROWS = -2       ; The screen's rows
+.CONST V_COLUMN = -3     ; Where the next character goes on the screen
 .CONST V_ROW = -4
-.CONST V_SCROLL = -5    ; The screen's scroll row
-.CONST V_TELETYPE = -6  ; The teletype's port, or 0FFFFh without one
+.CONST V_TELETYPE = -5   ; The teletype's port, or 0FFFFh without one
+.CONST V_KEYBOARD = -6   ; 1 with a keyboard, or 0 without one
+.CONST V_DRIVE = -7      ; The boot drive's command port, or 0FFFFh without it
+.CONST V_BOX_RIGHT = -8  ; The box's last column
 
 ; The words of each unit's text, for the clock rate.
 .CONST UNIT_SIZE = 5
@@ -98,7 +147,7 @@
 
 .BANK rom, 1
 .BANK ram
-.STACK 64
+.STACK 128
 
 .SEGMENT rom CODE DATA ROM PAGE(0) BANK(rom)
 
@@ -107,61 +156,46 @@ start:
     PUSH.W 0        ; V_ROWS
     PUSH.W 0        ; V_COLUMN
     PUSH.W 0        ; V_ROW
-    PUSH.W 0        ; V_SCROLL
     PUSH.W 0FFFFh   ; V_TELETYPE
+    PUSH.W 0        ; V_KEYBOARD
+    PUSH.W 0FFFFh   ; V_DRIVE
+    PUSH.W 0        ; V_BOX_RIGHT
     CALL find_devices
     CALL clear_screen
+    CALL print_banner
 
-    MOV R1, banner_text
-    CALL print_string
-    CALL print_clock
-    MOV R1, gap_text
-    CALL print_string
-    MOV R2, D(TABLE_CORES)
-    MVQ R3, 0
-    CALL print_number
-    MOV R1, core_text
-    CALL print_string
-    CMP R2, 1
-    JC Z, @one_core
-    MOV R0, 's'
-    CALL put_char
-@one_core:
-    MOV R1, gap_text
-    CALL print_string
-    CALL count_ram
-    CALL print_number
-    MOV R1, ram_text
-    CALL print_string
-    CALL new_line
-    CALL new_line
-    CALL show_cursor
-
-    ; A halted core still handles interrupts, so from here on the boot ROM
-    ; runs only when a key comes. Keys pressed since power on come at once.
-    EI
+    ; Without a keyboard, nothing could answer a prompt. Interrupts are
+    ; disabled from power on, so the core stays halted.
+    TST S(V_KEYBOARD)
+    JC NZ, @prompt
     HALT
 
-banner_text:
-    .DW 'OZZY 0.1  ', 0
-core_text:
-    .DW ' core', 0
-gap_text:
-    .DW '  ', 0
-ram_text:
-    .DW 'K RAM', 0
+@prompt:
+    CALL new_line
+    MOV R1, prompt_text
+    CALL print_string
+    CALL place_cursor
+@wait:
+    MOV R0, CURSOR_STYLE
+    CALL set_cursor
+    CALL wait_for_enter
+    MVQ R0, CURSOR_OFF
+    CALL set_cursor
+    CALL boot
+    CALL prompt_again
+    JP @wait
 
-; The clock rate's units, each UNIT_SIZE words, from the smallest.
-unit_text:
-    .DW SIZE(UNIT_SIZE) ' Hz'
-    .DW SIZE(UNIT_SIZE) ' kHz'
-    .DW SIZE(UNIT_SIZE) ' MHz'
+version_text:
+    .DW 'Ozzy 1.0', 0
+prompt_text:
+    .DW 'Press Enter to Boot...', 0
 
 ;-------------------------------------------------------------------------------
-; find_devices: Finds the screen, the keyboard, and the teletype in the machine
-; table. With a screen, sets the EXTRA bank to its page, and V_COLUMNS and
-; V_ROWS to its size. With a keyboard, sets key_handler as its interrupt's
-; handler. With a teletype, sets V_TELETYPE to its port.
+; find_devices: Finds the screen, the keyboard, the teletype, and the boot
+; drive in the machine table. With a screen, sets the EXTRA bank to its page,
+; and V_COLUMNS and V_ROWS to its size. With a keyboard, sets V_KEYBOARD, and
+; wake as its interrupt's handler. With a teletype, sets V_TELETYPE to its
+; port, and with the boot drive, V_DRIVE to its command port.
 ;-------------------------------------------------------------------------------
 
 find_devices:
@@ -186,20 +220,31 @@ find_devices:
 @not_screen:
     CMP R0, KEYBOARD
     JC NZ, @not_keyboard
-    SETI KEYBOARD_INTERRUPT, key_handler
+    MOV S(V_KEYBOARD), 1
+    SETI KEYBOARD_INTERRUPT, wake
     JP @step
 @not_keyboard:
     CMP R0, TELETYPE
-    JC NZ, @step
+    JC NZ, @not_teletype
     MOV R0, (R1 + DEVICE_PORT)
     MOV S(V_TELETYPE), R0
+    JP @step
+@not_teletype:
+    CMP R0, DRIVE
+    JC NZ, @step
+    MOV R0, (R1 + DEVICE_LETTER)
+    CMP R0, BOOT_LETTER
+    JC NZ, @step
+    MOV R0, (R1 + DEVICE_PORT)
+    MOV S(V_DRIVE), R0
 @step:
     ADQ R1, DEVICE_SIZE
     JD R2, @next
     RET
 
 ;-------------------------------------------------------------------------------
-; clear_screen: Fills every row of the screen with spaces.
+; clear_screen: Fills every row of the screen with spaces, which leaves the
+; fill cell a space, for show_status.
 ;-------------------------------------------------------------------------------
 
 clear_screen:
@@ -214,65 +259,500 @@ clear_screen:
     RET
 
 ;-------------------------------------------------------------------------------
-; key_handler: The keyboard's interrupt handler. Reads a key, and echoes it:
-; a character from KEY_FIRST_CHAR to KEY_LAST_CHAR prints, Enter starts a new
-; line, and Backspace erases the character before. Other keys are ignored, and
-; the modifier keys held with a key make no difference.
+; print_banner: Prints the banner, a line at a time, each followed by a new
+; line. On the screen, each line starts a column in, and the banner is in a
+; box.
 ;-------------------------------------------------------------------------------
 
-key_handler:
-    PUSH R0
-    INS KEYBOARD_PORT, R0
-    JC NS, @done
-    AND R0, 0FFh
-
-    CMP R0, KEY_ENTER
-    JC NZ, @not_enter
-    CALL new_line
-    JP @shown
-@not_enter:
-    CMP R0, KEY_BACKSPACE
-    JC NZ, @not_backspace
-    CALL back_space
-    JP @shown
-@not_backspace:
-    CMP R0, KEY_FIRST_CHAR
-    JC C, @done
-    CMP R0, KEY_LAST_CHAR + 1
-    JC NC, @done
-    CALL put_char
-@shown:
-    CALL show_cursor
-
-@done:
-    POP R0
-    IRT
+print_banner:
+    PUSH R1
+    CALL start_banner_line
+    MOV R1, version_text
+    CALL print_string
+    CALL end_banner_line
+    CALL start_banner_line
+    CALL end_banner_line
+    CALL start_banner_line
+    CALL print_hardware
+    CALL end_banner_line
+    CALL start_banner_line
+    CALL print_drives
+    CALL end_banner_line
+    CALL draw_box
+    POP R1
+    RET
 
 ;-------------------------------------------------------------------------------
-; show_cursor: Shows the cursor where the next character goes on the screen,
-; or on the last column after a full line, until the next character wraps.
+; start_banner_line: On the screen, leaves a blank column for the box's left
+; side.
 ;-------------------------------------------------------------------------------
 
-show_cursor:
+start_banner_line:
     TST S(V_COLUMNS)
     RETC Z
+    MOV S(V_COLUMN), 1
+    RET
+
+;-------------------------------------------------------------------------------
+; end_banner_line: On the screen, widens the box to the blank column after the
+; line, if it isn't that wide yet. Then starts a new line.
+;-------------------------------------------------------------------------------
+
+end_banner_line:
     PUSH R0
+    TST S(V_COLUMNS)
+    JC Z, @new_line
     MOV R0, S(V_COLUMN)
-    CMP R0, S(V_COLUMNS)
-    JC C, @column
-    SBQ R0, 1
-@column:
-    MOV E(SCREEN_CURSOR_COLUMN), R0
-    MOV R0, S(V_ROW)
-    MOV E(SCREEN_CURSOR_ROW), R0
-    MOV E(SCREEN_CURSOR), CURSOR_STYLE
+    CMP R0, S(V_BOX_RIGHT)
+    JC C, @new_line
+    MOV S(V_BOX_RIGHT), R0
+@new_line:
+    CALL new_line
     POP R0
     RET
 
 ;-------------------------------------------------------------------------------
+; draw_box: Draws the box around the banner, on its rows, from the first
+; column to V_BOX_RIGHT. Each cell gets only the lines on the box's outside
+; edges, as two cells' lines on the edge between them would draw it twice as
+; thick. Only the cells on the screen are drawn.
+;-------------------------------------------------------------------------------
+
+draw_box:
+    TST S(V_COLUMNS)
+    RETC Z
+    PUSH R0
+    PUSH R1
+    PUSH R2
+    PUSH R3
+    PUSH R4
+    MVQ R2, 0
+@row:
+    CMP R2, BANNER_ROWS
+    JC NC, @done
+    CMP R2, S(V_ROWS)
+    JC NC, @done
+    MVQ R3, 0
+@column:
+    CMP R3, S(V_COLUMNS)
+    JC NC, @next_row
+    MOV R0, S(V_BOX_RIGHT)
+    CMP R0, R3
+    JC C, @next_row
+
+    ; The lines for the cell's place in the box.
+    MVQ R0, 0
+    TST R2
+    JC NZ, @not_top
+    OR R0, LINE_TOP
+@not_top:
+    CMP R2, BANNER_ROWS - 1
+    JC NZ, @not_bottom
+    OR R0, LINE_BOTTOM
+@not_bottom:
+    TST R3
+    JC NZ, @not_left
+    OR R0, LINE_LEFT
+@not_left:
+    CMP R3, S(V_BOX_RIGHT)
+    JC NZ, @not_right
+    OR R0, LINE_RIGHT
+@not_right:
+    MOV R4, R2
+    MUL R4, S(V_COLUMNS)
+    ADD R4, R3
+    MOV R1, (R4)
+    OR R1, R0
+    MOV (R4), R1
+    ADQ R3, 1
+    JP @column
+@next_row:
+    ADQ R2, 1
+    JP @row
+
+@done:
+    POP R4
+    POP R3
+    POP R2
+    POP R1
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; print_hardware: Prints the cores, RAM, and clock rate.
+;-------------------------------------------------------------------------------
+
+print_hardware:
+    PUSH R0
+    PUSH R1
+    PUSH.D D1
+    MOV R2, D(TABLE_CORES)
+    MVQ R3, 0
+    CALL print_number
+    MOV R1, core_text
+    CALL print_string
+    CMP R2, 1
+    JC Z, @one_core
+    MOV R0, 's'
+    CALL put_char
+@one_core:
+    MOV R1, gap_text
+    CALL print_string
+    CALL count_ram
+    CALL print_number
+    MOV R1, ram_text
+    CALL print_string
+    MOV R1, gap_text
+    CALL print_string
+    CALL print_clock
+    POP.D D1
+    POP R1
+    POP R0
+    RET
+
+core_text:
+    .DW ' core', 0
+gap_text:
+    .DW '  ', 0
+ram_text:
+    .DW 'K RAM', 0
+
+; The clock rate's units, each UNIT_SIZE words, from the smallest.
+unit_text:
+    .DW SIZE(UNIT_SIZE) ' Hz'
+    .DW SIZE(UNIT_SIZE) ' kHz'
+    .DW SIZE(UNIT_SIZE) ' MHz'
+
+;-------------------------------------------------------------------------------
+; print_drives: Prints the drives' letters, in the order the machine table has
+; them, or that there are none.
+;-------------------------------------------------------------------------------
+
+print_drives:
+    PUSH R0
+    PUSH R1
+    PUSH R2
+    PUSH R3
+    MOV R1, drives_text
+    CALL print_string
+    MVQ R3, 0
+    MOV R2, D(TABLE_DEVICES)
+    TST R2
+    JC Z, @none
+    MOV R1, TABLE_DEVICE_ENTRIES
+@next:
+    MOV R0, (R1 + DEVICE_TYPE)
+    CMP R0, DRIVE
+    JC NZ, @step
+    TST R3
+    JC Z, @letter
+    PUSH R1
+    MOV R1, comma_text
+    CALL print_string
+    POP R1
+@letter:
+    MOV R0, (R1 + DEVICE_LETTER)
+    CALL put_char
+    ADQ R3, 1
+@step:
+    ADQ R1, DEVICE_SIZE
+    JD R2, @next
+
+@none:
+    TST R3
+    JC NZ, @done
+    MOV R1, none_text
+    CALL print_string
+@done:
+    POP R3
+    POP R2
+    POP R1
+    POP R0
+    RET
+
+drives_text:
+    .DW 'Drives: ', 0
+comma_text:
+    .DW ', ', 0
+none_text:
+    .DW 'none', 0
+
+;-------------------------------------------------------------------------------
+; place_cursor: Places the screen's cursor where the next character goes.
+;-------------------------------------------------------------------------------
+
+place_cursor:
+    TST S(V_COLUMNS)
+    RETC Z
+    PUSH R0
+    MOV R0, S(V_COLUMN)
+    MOV E(SCREEN_CURSOR_COLUMN), R0
+    MOV R0, S(V_ROW)
+    MOV E(SCREEN_CURSOR_ROW), R0
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; set_cursor: Sets the screen's cursor to the mode and style in R0.
+;-------------------------------------------------------------------------------
+
+set_cursor:
+    TST S(V_COLUMNS)
+    RETC Z
+    MOV E(SCREEN_CURSOR), R0
+    RET
+
+;-------------------------------------------------------------------------------
+; wait_for_enter: Waits for Enter, ignoring every other key, whatever modifier
+; keys are held with it. Interrupts are enabled while it waits, so the
+; keyboard's interrupt can end each WAIT (see wake), and disabled again once it
+; returns.
+;-------------------------------------------------------------------------------
+
+wait_for_enter:
+    PUSH R0
+    EI
+@poll:
+    INS KEYBOARD_PORT, R0
+    JC S, @key
+
+    ; A key that comes before the WAIT starts makes it end at once.
+    MOV R0, 0FFFFh
+    WAIT R0
+    JP @poll
+@key:
+    AND R0, 0FFh
+    CMP R0, KEY_ENTER
+    JC NZ, @poll
+    DI
+    POP R0
+    RET
+
+;-------------------------------------------------------------------------------
+; wake: The keyboard's interrupt handler, which ends wait_for_enter's WAIT, so
+; it reads the key.
+;-------------------------------------------------------------------------------
+
+wake:
+    WAKE SELF
+    IRT
+
+;-------------------------------------------------------------------------------
+; boot: Boots from the boot drive (see read_boot_area), showing each status as
+; it goes. With a loader, starts it, and never returns. Otherwise, returns once
+; it has shown why it can't.
+;-------------------------------------------------------------------------------
+
+boot:
+    PUSH R0
+    PUSH R1
+    PUSH R2
+    MOV R1, loading_text
+    CALL show_status
+    MOV R1, no_drive_text
+    MOV R0, S(V_DRIVE)
+    CMP R0, 0FFFFh
+    JC Z, @failed
+    CALL read_boot_area
+    MOV R1, no_disk_text
+    CMP R2, NO_DISK
+    JC Z, @failed
+    MOV R1, unformatted_text
+    CMP R2, UNFORMATTED
+    JC Z, @failed
+    TST R2
+    JC NZ, @disk_error
+    MOV R1, not_system_text
+    MOV R2, S(SIGNATURE)
+    CMP R2, SIGNATURE_LOW
+    JC NZ, @failed
+    MOV R2, S(SIGNATURE + 1)
+    CMP R2, SIGNATURE_HIGH
+    JC NZ, @failed
+
+    ; The new line ends the status's line on the teletype.
+    MOV R1, ready_text
+    CALL show_status
+    CALL new_line
+    JP start_loader
+
+@disk_error:
+    MOV R1, disk_error_text
+    CALL show_status
+    MOV R0, R2
+    CALL print_hex_byte
+    MOV R0, 'h'
+    CALL put_char
+    JP @done
+@failed:
+    CALL show_status
+@done:
+    POP R2
+    POP R1
+    POP R0
+    RET
+
+loading_text:
+    .DW 'Loading...', 0
+ready_text:
+    .DW 'Ready', 0
+no_drive_text:
+    .DW 'ERROR: No drive A:', 0
+no_disk_text:
+    .DW 'ERROR: No disk in drive A:', 0
+unformatted_text:
+    .DW 'ERROR: Disk not formatted', 0
+not_system_text:
+    .DW 'ERROR: Not a system disk', 0
+disk_error_text:
+    .DW 'ERROR: Disk error ', 0
+
+;-------------------------------------------------------------------------------
+; read_boot_area: Reads the boot area of the disk in the drive whose command
+; port is R0 into the loader's words, with READ BOOT, and sets R2 to its status:
+; the accept's if that fails, or else the completion's. It resets the drive
+; first, so it starts from idle whatever the last boot left, and polls the
+; ports, so it never needs the drive's interrupt.
+;-------------------------------------------------------------------------------
+
+read_boot_area:
+    PUSH R1
+    PUSH R3
+    PUSH R6
+    PUSH R7
+    MOV R1, R0
+    ADQ R1, DRIVE_CONTROL
+@reset:
+    OUTS.RW R1, DRIVE_RESET
+    JC NS, @reset
+@resetting:
+    TSTP R1
+    JC S, @resetting
+@command:
+    OUTS.RW R0, READ_BOOT
+    JC NS, @command
+
+    ; The drive has taken the command word once the phase is past arguments.
+@accepting:
+    IN R1, R2
+    AND R2, DRIVE_PHASE
+    CMP R2, PHASE_WORKING
+    JC C, @accepting
+    CALL read_status
+    TST R2
+    JC NZ, @done
+
+    MOV R3, R0
+    ADQ R3, DRIVE_DATA
+    MOV R6, LOADER
+    MOV R7, BOOT_AREA_DWORDS
+@data:
+    INR R3, [R6]
+    JC NS, @data
+    CALL read_status
+
+@done:
+    POP R7
+    POP R6
+    POP R3
+    POP R1
+    RET
+
+;-------------------------------------------------------------------------------
+; read_status: Sets R2 to the next word from the drive whose command port is
+; R0, waiting for it.
+;-------------------------------------------------------------------------------
+
+read_status:
+    INS R0, R2
+    JC NS, read_status
+    RET
+
+;-------------------------------------------------------------------------------
+; start_loader: Starts the loader with RST, which never returns: CODE and DATA
+; are the stack's page, from its start, STACK is the same bank, ending at the
+; end of the page, and EXTRA is bank 0. R0 is the boot drive's command port,
+; and R1 its drive number.
+;-------------------------------------------------------------------------------
+
+start_loader:
+    CALL find_stack_bank
+    MOV R2, R3
+    SHL R2, 4
+    OR R3, R2
+    SHL R2, 4
+    OR R3, R2
+    MOV R5, BS
+    MOV R4, R5
+    SUB R4, PAGE_SIZE
+    MOV R6, R4
+    MVQ R7, 0
+    MOV R0, S(V_DRIVE)
+    MVQ R1, BOOT_DRIVE
+    RST SELF, CODE | STACK | DATA | EXTRA
+
+;-------------------------------------------------------------------------------
+; find_stack_bank: Sets R3 to the stack's bank, which is the lowest that has
+; RAM, as the Ozzy places the stack there.
+;-------------------------------------------------------------------------------
+
+find_stack_bank:
+    PUSH R1
+    MVQ R3, 0
+    MOV R1, TABLE_BANK_ENTRIES + BANK_RAM
+@bank:
+    TST (R1)
+    JC NZ, @done
+    ADQ R3, 1
+    ADQ R1, BANK_SIZE
+    JP @bank
+@done:
+    POP R1
+    RET
+
+;-------------------------------------------------------------------------------
+; show_status: Shows the status at R1 in DATA. On the screen, it replaces the
+; last on the status row, clearing the row. On the teletype, it starts a new
+; line.
+;-------------------------------------------------------------------------------
+
+show_status:
+    TST S(V_COLUMNS)
+    JC Z, @teletype
+    PUSH R0
+    MOV R0, STATUS_ROW
+    MOV S(V_ROW), R0
+    MOV S(V_COLUMN), 0
+    CMP R0, S(V_ROWS)
+    JC NC, @cleared
+    MOV E(SCREEN_FILL_ROW), R0
+@cleared:
+    POP R0
+    JP print_string
+@teletype:
+    CALL new_line
+    JP print_string
+
+;-------------------------------------------------------------------------------
+; prompt_again: On the teletype, prints a blank line and the prompt after a
+; failed boot. The screen still shows its prompt.
+;-------------------------------------------------------------------------------
+
+prompt_again:
+    TST S(V_COLUMNS)
+    RETC NZ
+    PUSH R1
+    CALL new_line
+    CALL new_line
+    MOV R1, prompt_text
+    CALL print_string
+    POP R1
+    RET
+
+;-------------------------------------------------------------------------------
 ; put_char: Prints the character in R0. On the screen, it goes where the next
-; character goes, which then moves right. Past the right edge, the character
-; goes at the start of the next line.
+; character goes, which then moves right, and isn't drawn if that is past the
+; right edge or the bottom row.
 ;-------------------------------------------------------------------------------
 
 put_char:
@@ -280,17 +760,16 @@ put_char:
     PUSH R4
     TST S(V_COLUMNS)
     JC Z, @teletype
-
-    ; A full line wraps when the next character comes, so a line that fills
-    ; the row is followed by no blank row.
     MOV R1, S(V_COLUMN)
     CMP R1, S(V_COLUMNS)
-    JC C, @write_cell
-    CALL new_line
-@write_cell:
-    CALL get_cell
+    JC NC, @moved
+    MOV R4, S(V_ROW)
+    CMP R4, S(V_ROWS)
+    JC NC, @moved
+    MUL R4, S(V_COLUMNS)
+    ADD R4, R1
     MOV (R4), R0
-    MOV R1, S(V_COLUMN)
+@moved:
     ADQ R1, 1
     MOV S(V_COLUMN), R1
     JP @done
@@ -309,78 +788,19 @@ put_char:
     RET
 
 ;-------------------------------------------------------------------------------
-; back_space: Erases the character before the one where the next character
-; goes, which then goes there instead. On the screen, it does nothing at the
-; start of a row. On the teletype, it is a backspace, a space, and a backspace.
-;-------------------------------------------------------------------------------
-
-back_space:
-    PUSH R1
-    PUSH R4
-    TST S(V_COLUMNS)
-    JC Z, @teletype
-    MOV R1, S(V_COLUMN)
-    TST R1
-    JC Z, @done
-    SBQ R1, 1
-    MOV S(V_COLUMN), R1
-    CALL get_cell
-    MOV (R4), ' '
-    JP @done
-
-@teletype:
-    MOV R1, erase_text
-    CALL print_string
-
-@done:
-    POP R4
-    POP R1
-    RET
-
-erase_text:
-    .DW 08h, ' ', 08h, 0
-
-;-------------------------------------------------------------------------------
-; get_cell: Sets R4 to the screen's cell where the next character goes: the row
-; as shown, after the scroll row, at the column.
-;-------------------------------------------------------------------------------
-
-get_cell:
-    MOV R4, S(V_ROW)
-    ADD R4, S(V_SCROLL)
-    MOD R4, S(V_ROWS)
-    MUL R4, S(V_COLUMNS)
-    ADD R4, S(V_COLUMN)
-    RET
-
-;-------------------------------------------------------------------------------
-; new_line: Starts a new line. On the screen, below the bottom row, it scrolls
-; the screen up a row, and clears the new bottom row. On the teletype, it is a
-; carriage return and a line feed.
+; new_line: Starts a new line. On the screen, it moves to the start of the next
+; row, and never scrolls. On the teletype, it is a carriage return and a line
+; feed.
 ;-------------------------------------------------------------------------------
 
 new_line:
     PUSH R0
-    PUSH R1
     TST S(V_COLUMNS)
     JC Z, @teletype
     MOV S(V_COLUMN), 0
-    MOV R1, S(V_ROW)
-    ADQ R1, 1
-    CMP R1, S(V_ROWS)
-    JC NC, @scroll
-    MOV S(V_ROW), R1
-    JP @done
-
-@scroll:
-    MOV R1, S(V_SCROLL)
-    ADQ R1, 1
-    MOD R1, S(V_ROWS)
-    MOV S(V_SCROLL), R1
-    MOV E(SCREEN_SCROLL_ROW), R1
-    MOV R1, S(V_ROWS)
-    SBQ R1, 1
-    MOV E(SCREEN_FILL_ROW), R1
+    MOV R0, S(V_ROW)
+    ADQ R0, 1
+    MOV S(V_ROW), R0
     JP @done
 
 @teletype:
@@ -390,7 +810,6 @@ new_line:
     CALL put_char
 
 @done:
-    POP R1
     POP R0
     RET
 
@@ -413,6 +832,33 @@ print_string:
     POP R1
     POP R0
     RET
+
+;-------------------------------------------------------------------------------
+; print_hex_byte: Prints the low byte of R0 as two hex digits.
+;-------------------------------------------------------------------------------
+
+print_hex_byte:
+    PUSH R0
+    PUSH R1
+    MOV R1, R0
+    SHR R0, 4
+    AND R0, 0Fh
+    CALL print_hex_digit
+    MOV R0, R1
+    AND R0, 0Fh
+    CALL print_hex_digit
+    POP R1
+    POP R0
+    RET
+
+; Prints the hex digit for R0, from 0 to 15, changing R0.
+print_hex_digit:
+    CMP R0, 10
+    JC C, @decimal
+    ADD R0, 'A' - '0' - 10
+@decimal:
+    ADD R0, '0'
+    JP put_char
 
 ;-------------------------------------------------------------------------------
 ; print_clock: Prints the clock rate in the largest of Hz, kHz, and MHz that

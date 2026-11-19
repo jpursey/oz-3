@@ -64,6 +64,9 @@ set(oz3_ozzy_TEST_SOURCE
   terminal_keys_test.cc
   ${oz3_ozzy_internal_TEST_SOURCE}
 )
+set(oz3_ozzy_TEST_DEPS
+  oz3_disk_testing
+)
 
 gb_add_library(oz3_ozzy)
 

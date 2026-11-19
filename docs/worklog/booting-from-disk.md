@@ -38,9 +38,10 @@ than on a page:
 ; boot.oza: assembled with oz3asm --bare, then written with
 ;   oz3dsk system.ozd boot boot.oz3
 ; The ROM starts it at IP 0, with the boot drive's command port in R0.
+    .STACK 0                ; It runs on the ROM's stack's page
     ...                     ; Load OZOS.SYS after itself, and RST into it
     .DS 222 - $             ; Padding up to word 222
-    .DW 'BOOT'              ; The boot signature, in the last two words
+    .DW "BOOT"              ; The boot signature, in the last two words
 ```
 
 The OS a loader loads can be a bare program too, so a loader can put it
@@ -193,7 +194,7 @@ counts, so Ctrl+M is Enter, as Ctrl+H is Backspace today.
 **Booting:** on Enter, it shows `Loading...`, then reads the boot area from
 `A:` with `READ BOOT` into the first 224 words of its stack's page (1000h to
 10DFh by default), and checks that its last two words are the boot signature,
-`'BOOT'` packed (4F42h, 544Fh). If they are, it shows `Ready` and starts the
+`"BOOT"` packed (4F42h, 544Fh). If they are, it shows `Ready` and starts the
 loader. If anything fails, it shows why and waits for Enter again:
 
 | Why                                     | Status                       |
@@ -202,7 +203,7 @@ loader. If anything fails, it shows why and waits for Enter again:
 | **no disk**                             | `ERROR: No disk in drive A:` |
 | **unformatted**                         | `ERROR: Disk not formatted`  |
 | The last two words aren't the signature | `ERROR: Not a system disk`   |
-| Any other status, such as **I/O error** | `ERROR: Disk error 21h`      |
+| Any other status, such as **I/O error** | `ERROR: Disk error 25h`      |
 
 The ROM polls the drive's control port, and never takes its interrupt. Keys
 typed after Enter wait in the keyboard for the loader.
@@ -334,30 +335,40 @@ const absl::StatusOr<BareProgram>& GetBareProgram() const;
 
 ### ozzy: the boot ROM
 
-- `boot_rom.oza` loses its keyboard handler and echo code, and gains the
-  boxed banner with its drives line, the prompt, the status line, the wait for
+- `boot_rom.oza` loses its echo code, keeping a keyboard handler only to end
+  its `WAIT`, and gains the boxed banner with its drives line, the prompt, the status line, the wait for
   Enter, the drive's `READ BOOT` exchange on its three ports, and the
   signature check. It finds the drives in the machine table (type 5), so an
   Ozzy with no drives says so.
 - The box is the banner's cells written with line attributes (1000h top,
   2000h bottom, 4000h left, 8000h right), each cell only the lines on the
   box's outside edges, as two neighboring cells' lines on a shared edge would
-  draw it twice as thick. The status line is cleared by writing spaces across
-  its row.
+  draw it twice as thick. The status line is cleared with the screen's fill
+  row, the fill cell being the space the ROM cleared the screen with.
 - The ROM has room: it is one page, 4K words, less the machine table's 256.
 
 ### To confirm
 
-- [ ] `DiskSuperblock` holds the whole sector, and formatting writes 0 to the
+- [x] `DiskSuperblock` holds the whole sector, and formatting writes 0 to the
   boot area (CL1).
-- [ ] `RST SELF` with every bank leaves nothing of the ROM running, and its
+- [x] `RST SELF` with every bank leaves nothing of the ROM running, and its
   `R0` and `R1` copy reaches the loader, with `R2` to `R7` free for the ROM to
-  set the banks (CL5).
-- [ ] How the ROM waits for Enter: halting with a keyboard handler, then
-  leaving it to `RST` to clear, or polling the keyboard's port (CL5).
-- [ ] `.DS 222 - $` pads a loader to its signature (`$` is in the assembler's
+  set the banks (CL5). It does: `R3` is the new `MB`, and `R4` to `R7` the
+  base registers. `MB` can't be read, so the ROM finds its stack's bank in the
+  machine table, as the lowest with RAM, where the Ozzy places it, and the
+  page from `BS`.
+- [x] How the ROM waits for Enter: halting with a keyboard handler, then
+  leaving it to `RST` to clear, or polling the keyboard's port (CL5). Neither:
+  `HALT` ends only with `RST`, and polling alone never rests the core. The
+  ROM `WAIT`s with interrupts enabled, and the keyboard's handler only does
+  `WAKE SELF`, which ends the `WAIT`, or makes the next one end at once if a
+  key comes before it. The ROM then reads the key from the port. Interrupts
+  are disabled from Enter on, so later keys stay in the keyboard.
+- [x] `.DS 222 - $` pads a loader to its signature (`$` is in the assembler's
   expressions; `.DS` must accept it), and `.DW 'BOOT'` packs to 4F42h, 544Fh
-  (CL5's test loader).
+  (CL5's test loader). `.DS 222 - $` does, but single quotes give one
+  character a word, so the signature is `.DW "BOOT"`, as the double quotes
+  pack. A loader needs `.STACK 0` too, as a bare program states its stack.
 - [x] The assembler's default program is a `Program` of one segment, all four
   roles, and one instance with zero offsets, so `GetBareProgram` can tell it
   from a program that declares one segment (CL3). It can't: a declared
@@ -447,7 +458,7 @@ Depends on: CL1, CL3.
   rejected; an unformatted or protected disk.
 - Manual pages updated.
 
-### CL5 [ ] ozzy: boot from A:
+### CL5 [x] ozzy: boot from A:
 
 Depends on: CL2, and CL4 to make system disks by hand.
 

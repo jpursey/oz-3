@@ -323,9 +323,15 @@ core.
 
 At power on, the host builds the machine, writes the boot ROM and the machine
 table, and starts core 0 at `IP` 0 of bank 0. The boot ROM clears the screen,
-prints a banner, and loads `OZZY.SYS` (the OS, a program file) from drive `A:`
-into RAM pages, then jumps into it with `RST SELF`. The first milestone stops
-short of disks: the boot ROM prints its banner and echoes keys.
+shows its banner in a box and a prompt, and waits for Enter. Then it boots in
+two stages, as the Osborne Executive's CP/M Plus did: it reads a small
+**loader** from the boot area of the disk in `A:` into its stack's page,
+checks the loader's boot signature, and starts it with `RST SELF`. The loader
+is the disk's own code, written with `oz3dsk boot`, and loads the OS (such as
+`OZZY.SYS`) with the drive's ordinary commands. If the boot fails, the boot ROM
+says why and waits for Enter again. The manual's Ozzy Computer page says what
+the loader starts with, and
+[booting-from-disk.md](worklog/booting-from-disk.md) how it came to be.
 
 ### Calls
 
@@ -454,8 +460,11 @@ The backlog items build this in order, each updating the manual as it goes:
 6. *Timer device* (devices, ozzy).
 7. The disk drive, in the items [disk_design.md](disk_design.md) lists: disk
    images, the drive, its tools, and drives in the Ozzy.
-8. *Ozzy OS* (ozzy, manual): booting from disk, the calls, the loader, running
-   programs in the foreground and in parallel, and the shell.
+8. *Booting from disk* (disk, devices, tools, ozzy): the boot area, the
+   drive's `READ BOOT` and `WRITE BOOT`, bare programs, `oz3dsk boot`, and a
+   boot ROM that starts a disk's loader.
+9. *Ozzy OS* (ozzy, manual): the loader and the OS it loads, the calls,
+   running programs in the foreground and in parallel, and the shell.
 
 Then *Debugger (oz3dbg)*, which Ozzy integrates once there is a machine worth
 debugging. Later, and waiting in the backlog: the DMA coprocessor for fast
