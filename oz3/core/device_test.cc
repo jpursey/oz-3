@@ -12,10 +12,13 @@
 #include <vector>
 
 #include "absl/types/span.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/cpu_core.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/fake_device.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
@@ -68,6 +71,83 @@ TEST(DeviceTest, ProcessorFindsDevicesByName) {
   ASSERT_NE(processor.GetDevice("B"), nullptr);
   EXPECT_EQ(processor.GetDevice("A")->GetName(), "A");
   EXPECT_EQ(processor.GetDevice("B")->GetName(), "B");
+}
+
+// A value a fake device may require from the processor's context.
+GB_CONTEXT_CONSTRAINT(kConstraintValue, kInRequired, int);
+
+TEST(DeviceTest, FactoryGetsTheProcessorsContext) {
+  const ProcessorConfig config =
+      ProcessorConfig()
+          .AddDevice(std::make_shared<FakeDeviceFactory>(
+              DeviceConfig{.name = "A"},
+              std::vector<gb::ContextConstraint>{kConstraintValue}))
+          .AddDevice(std::make_shared<FakeDeviceFactory>(
+              DeviceConfig{.name = "B"},
+              std::vector<gb::ContextConstraint>{kConstraintValue}));
+  gb::Context context_a;
+  context_a.SetValue<int>(1);
+  Processor processor_a(config, std::move(context_a));
+  gb::Context context_b;
+  context_b.SetValue<int>(2);
+  Processor processor_b(config, std::move(context_b));
+
+  FakeDevice* device_a = GetFakeDevice(processor_a, "A");
+  ASSERT_NE(device_a, nullptr);
+  EXPECT_EQ(device_a->GetContext().GetValue<int>(), 1);
+  FakeDevice* other_a = GetFakeDevice(processor_a, "B");
+  ASSERT_NE(other_a, nullptr);
+  EXPECT_EQ(other_a->GetContext().GetContext(),
+            device_a->GetContext().GetContext());
+  FakeDevice* device_b = GetFakeDevice(processor_b, "A");
+  ASSERT_NE(device_b, nullptr);
+  EXPECT_EQ(device_b->GetContext().GetValue<int>(), 2);
+}
+
+TEST(DeviceTest, DeviceReadsOnlyWhatItDeclares) {
+  gb::Context context;
+  context.SetValue<int>(1);
+  Processor processor(
+      ProcessorConfig().AddDevice(
+          std::make_shared<FakeDeviceFactory>(DeviceConfig{.name = "Fake"})),
+      std::move(context));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  ASSERT_NE(device, nullptr);
+  ASSERT_TRUE(device->GetContext().IsValid());
+  EXPECT_FALSE(device->GetContext().Exists<int>());
+  EXPECT_FALSE(device->GetContext().SetValue<int>(2));
+}
+
+TEST(DeviceTest, FactoryRejectsAContextWithoutWhatTheDeviceRequires) {
+  const FakeDeviceFactory factory(
+      DeviceConfig{.name = "Fake"},
+      std::vector<gb::ContextConstraint>{kConstraintValue});
+  gb::Context context;
+  gb::ValidatedContext validated(&context, {});
+  EXPECT_EQ(factory.CreateDevice(validated), nullptr);
+  context.SetValue<int>(1);
+  EXPECT_NE(factory.CreateDevice(validated), nullptr);
+}
+
+TEST(DeviceTest, ContextHasTheLocalHostClockByDefault) {
+  Processor processor(
+      ProcessorConfig().AddDevice(std::make_shared<FakeDeviceFactory>(
+          DeviceConfig{.name = "Fake"},
+          std::vector<gb::ContextConstraint>{kConstraintHostClock})));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  ASSERT_NE(device, nullptr);
+  HostClock* clock = device->GetContext().GetPtr<HostClock>();
+  ASSERT_NE(clock, nullptr);
+  EXPECT_TRUE(*clock);
+}
+
+TEST(DeviceTest, ContextIsEmptyByDefault) {
+  Processor processor(ProcessorConfig().AddDevice(
+      std::make_shared<FakeDeviceFactory>(DeviceConfig{.name = "Fake"})));
+  FakeDevice* device = GetFakeDevice(processor, "Fake");
+  ASSERT_NE(device, nullptr);
+  ASSERT_TRUE(device->GetContext().IsValid());
+  EXPECT_TRUE(device->GetContext().GetContext()->Empty());
 }
 
 TEST(DeviceTest, GetsProcessorClockRate) {

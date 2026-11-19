@@ -220,8 +220,7 @@ bool Report(gb::ValidatedContext& context,
 // Returns a tool on the context's file system, or null after writing the error
 // if it can't be made.
 std::unique_ptr<DiskTool> CreateTool(gb::ValidatedContext& context) {
-  absl::StatusOr<std::unique_ptr<DiskTool>> tool =
-      DiskTool::Create(context.GetPtr<gb::FileSystem>());
+  absl::StatusOr<std::unique_ptr<DiskTool>> tool = DiskTool::Create(context);
   if (!Report(context, tool.status())) {
     return nullptr;
   }

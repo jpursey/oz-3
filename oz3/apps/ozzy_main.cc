@@ -14,11 +14,9 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
-#include "absl/time/civil_time.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "gb/base/context.h"
-#include "gb/base/local_time.h"
 #include "gb/base/sleep.h"
 #include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
@@ -217,21 +215,18 @@ bool Run(gb::ValidatedContext& context,
     settings->screen->draw_pixels = false;
   }
   // The drives write to their images as the Ozzy is destroyed, which is before
-  // the file system is.
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(*settings, file_system);
+  // the file system in the context is.
+  //
+  // Programs see the date and time where the user is, and files are stamped
+  // with it, as the context has no clock of its own (see kConstraintHostClock).
+  // It is the host's time, so when the Ozzy can't keep up with its clock rate
+  // (or runs at max speed), it drifts from the timer's ticks and milliseconds.
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(*settings, context);
   if (!ozzy.ok()) {
     writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
                                              ozzy.status().message()));
     return false;
   }
-
-  // Programs see the date and time where the user is, and files are stamped
-  // with it. It is the host's time, so when the Ozzy can't keep up with its
-  // clock rate (or runs at max speed), it drifts from the timer's ticks and
-  // milliseconds.
-  (*ozzy)->SetClock(
-      [] { return absl::ToCivilSecond(absl::Now(), gb::GetLocalTimeZone()); });
   absl::StatusOr<std::unique_ptr<Console>> console =
       Console::Create(GetOzzyConsoleMode(**ozzy));
   if (!console.ok()) {

@@ -9,11 +9,9 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
-#include <utility>
 
-#include "absl/functional/any_invocable.h"
 #include "absl/status/statusor.h"
-#include "absl/time/civil_time.h"
+#include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/date_time.h"
 #include "oz3/core/device.h"
@@ -91,7 +89,8 @@ class TimerFactory final : public DeviceFactory {
   //----------------------------------------------------------------------------
 
   const DeviceConfig& GetConfig() const override { return config_; }
-  std::unique_ptr<Device> CreateDevice() const override;
+  std::unique_ptr<Device> CreateDevice(
+      gb::ValidatedContext& context) const override;
 
  private:
   //----------------------------------------------------------------------------
@@ -131,12 +130,13 @@ class TimerFactory final : public DeviceFactory {
 // another core's is still waiting for the timer replaces it, and both read the
 // answer to the second, so cores that share the timer take turns asking.
 //
-// The date and time are the host's, from the clock it sets with SetClock(),
-// which the timer calls only when a program asks for the time. Without a
-// clock, both are zeros, which means no date, since month 0 is invalid. They
-// are the host's time, not the machine's: they have nothing to do with the
-// cycle count, ticks, or milliseconds, so when a host runs the machine slower
-// or faster than its clock rate, the date and time drift from them.
+// The date and time are the host's, from the clock in the processor's context
+// (see Contract), which the timer calls only when a program asks for the time,
+// from inside Processor::Execute. Without a clock, both are zeros, which means
+// no date, since month 0 is invalid. A year outside 0 to 65535 reads as its low
+// 16 bits. They are the host's time, not the machine's: they have nothing to do
+// with the cycle count, ticks, or milliseconds, so when a host runs the machine
+// slower or faster than its clock rate, the date and time drift from them.
 //
 // The timer sleeps until its next tick, or a write to the clock port.
 class Timer final : public Device {
@@ -145,9 +145,9 @@ class Timer final : public Device {
   // Types
   //----------------------------------------------------------------------------
 
-  // Returns the host's date and time, in the time zone the host wants programs
-  // to see. A year outside 0 to 65535 reads as its low 16 bits.
-  using Clock = absl::AnyInvocable<absl::CivilSecond()>;
+  // What the timer takes from the processor's context: the host's clock, if
+  // it has one.
+  using Contract = gb::ContextContract<kConstraintHostClock>;
 
   //----------------------------------------------------------------------------
   // Constants
@@ -168,11 +168,6 @@ class Timer final : public Device {
   // Called between Processor::Execute calls.
   //----------------------------------------------------------------------------
 
-  // Sets the clock the timer gets the date and time from, replacing any it had,
-  // or none for the timer to answer with zeros for both. The timer calls
-  // it from inside Processor::Execute, each time a program asks for the time.
-  void SetClock(Clock clock) { clock_ = std::move(clock); }
-
   // Returns the number of ticks since power on, which the tick port holds the
   // low 32 bits of.
   int64_t GetTickCount() const { return tick_count_; }
@@ -192,7 +187,7 @@ class Timer final : public Device {
   // The factory constructs the timer with its validated settings.
   friend class TimerFactory;
 
-  Timer(DeviceConfig config, const TimerSettings& settings);
+  Timer(DeviceConfig config, const TimerSettings& settings, Contract contract);
 
   // Returns the cycle of the next tick.
   Cycles GetTickCycle() const;
@@ -213,7 +208,7 @@ class Timer final : public Device {
 
   const int tick_hz_;
   int64_t tick_count_ = 0;
-  Clock clock_;
+  gb::ValidatedContext context_;
   DateTime latched_;                  // At the last kTimerTime.
   std::unique_ptr<Lock> tick_lock_;   // While it is requested.
   std::unique_ptr<Lock> clock_lock_;  // While it is requested.

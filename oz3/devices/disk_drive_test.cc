@@ -191,14 +191,16 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   static constexpr Cycles kMaxRunCycles = 100'000;
 
   // Initializes a processor with a drive named "Drive" with `settings`, and
-  // sets drive_ to it. Returns whether it did.
+  // sets drive_ to it, with the host's clock from GetHostContext(). Returns
+  // whether it did.
   bool InitDrive(DiskDriveSettings settings = GetSettings()) {
     absl::StatusOr<std::unique_ptr<DiskDriveFactory>> factory =
         DiskDriveFactory::Create("Drive", settings);
     EXPECT_TRUE(factory.ok()) << factory.status();
     if (!factory.ok() || !Init({.num_ports = settings.port + DiskDrive::kPorts,
                                 .clock_hz = kClockHz,
-                                .devices = {*std::move(factory)}})) {
+                                .devices = {*std::move(factory)},
+                                .context = GetHostContext()})) {
       return false;
     }
     drive_ = static_cast<DiskDrive*>(GetProcessor().GetDevice("Drive"));
@@ -1458,7 +1460,7 @@ TEST_F(DiskDriveTest, OpenChecksAtAccept) {
 
 TEST_F(DiskDriveTest, CreateMakesAnEmptyFileStampedWithTheClock) {
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   AttachFormatted();
   EXPECT_THAT(
       Run(CommandWord(DiskDriveCommand::kCreate), NameFields("new.txt")),
@@ -1477,6 +1479,18 @@ TEST_F(DiskDriveTest, CreateMakesAnEmptyFileStampedWithTheClock) {
   EXPECT_EQ(entry->GetSize(), 0);
   EXPECT_EQ(entry->GetFirstCluster(), 0);
   EXPECT_EQ(entry->GetModified(), DateTime::FromCivil(kNow));
+}
+
+TEST_F(DiskDriveTest, WithAnEmptyClockFilesAreStampedNoDate) {
+  with_clock_ = false;
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  EXPECT_THAT(
+      Run(CommandWord(DiskDriveCommand::kCreate), NameFields("new.txt")),
+      ElementsAre(Field(kOk), PortWords::FromWord(0)));
+  std::optional<DiskDirEntry> entry = DetachAndFindEntry("NEW.TXT");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->GetModified(), DateTime());
 }
 
 TEST_F(DiskDriveTest, CreateChecksAtAccept) {
@@ -1823,7 +1837,7 @@ TEST_F(DiskDriveTest, WritesNeedAWritableFile) {
 TEST_F(DiskDriveTest, WriteTakesEachWord) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
 
   // disk_design.md's example: 100 words written at the end of a 500-word
   // file. The OS writes a transfer while the drive works on the one before, so
@@ -1851,7 +1865,7 @@ TEST_F(DiskDriveTest, WriteTakesEachWord) {
   EXPECT_LT(GetCycles() - start, kLatencyCycles);
 
   // CLOSE commits the file, stamped with the clock.
-  drive_->SetClock([] { return kLater; });
+  SetNow(kLater);
   EXPECT_THAT(Run(CommandWord(kClose, 0)), ElementsAre(Field(kOk)));
   drive_->DetachImage();
   ExpectCommitted("A", FileWords(0, 600), kLater);
@@ -1964,7 +1978,7 @@ TEST_F(DiskDriveTest, PackedTransfersCrossSectors) {
 TEST_F(DiskDriveTest, TruncateShrinksTheFile) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   drive_->AttachImage(MakeImageWithFile("A", 600));
   OpenFile("A");
   EXPECT_THAT(Seek(0, 300), ElementsAre(Field(kOk)));
@@ -1982,10 +1996,10 @@ TEST_F(DiskDriveTest, TruncateShrinksTheFile) {
 TEST_F(DiskDriveTest, FlushCommitsAWrittenFile) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   AttachFormatted();
   CreateFile("A");
-  drive_->SetClock([] { return kLater; });
+  SetNow(kLater);
   WriteWords(0, FileWords(0, 300));
 
   protocol_->CollectWriteOffsets();
@@ -1998,10 +2012,10 @@ TEST_F(DiskDriveTest, FlushCommitsAWrittenFile) {
 TEST_F(DiskDriveTest, TheDriveCommitsWhenDestroyed) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   AttachFormatted();
   CreateFile("A");
-  drive_->SetClock([] { return kLater; });
+  SetNow(kLater);
   WriteWords(0, FileWords(0, 300));
   drive_ = nullptr;
   DestroyProcessor();
@@ -2155,7 +2169,7 @@ TEST_F(DiskDriveTest, AFailedImageEndsAWriteEarly) {
 TEST_F(DiskDriveTest, ABrokenChainEndsAWriteEarlyAfterAFlush) {
   using enum DiskDriveCommand;
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   drive_->AttachImage(BreakChain(MakeImageWithFile("A", 600), "A"));
   OpenFile("A");
   EXPECT_THAT(Transfer(kWrite, 0, 300),
@@ -2404,7 +2418,7 @@ TEST_F(DiskDriveTest, DeleteFreesTheFile) {
 
 TEST_F(DiskDriveTest, RenameKeepsTheRestOfTheEntry) {
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   DiskFileSystem file_system({}, 1);
   file_system.AttachImage(MakeImageWithFile("A", 10));
   AddFile(file_system, "B", 1);
@@ -2548,7 +2562,7 @@ TEST_F(DiskDriveTest, VolumeKeepsTheFreeCount) {
 
 TEST_F(DiskDriveTest, FormatMakesAnEmptyFileSystem) {
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   drive_->AttachImage(MakeImage(/*formatted=*/false));
   EXPECT_THAT(Run(CommandWord(DiskDriveCommand::kFormat),
                   AndWord(LabelFields("games"), 2)),
@@ -2764,7 +2778,7 @@ std::vector<uint16_t> CommandData(uint16_t command_word,
 
 TEST_F(DiskDriveTest, AProgramFormatsAndListsTheDisk) {
   ASSERT_TRUE(InitDrive());
-  drive_->SetClock([] { return kNow; });
+  SetNow(kNow);
   drive_->AttachImage(MakeImage(/*formatted=*/false));
   ASSERT_TRUE(Load(R"---(
     .STACK 16

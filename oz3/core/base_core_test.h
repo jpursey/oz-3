@@ -13,6 +13,7 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/functional/function_ref.h"
 #include "absl/log/log.h"
+#include "gb/base/context.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
@@ -30,6 +31,7 @@ class BaseCoreTest : public testing::Test {
     int num_ports = 0;
     int64_t clock_hz = ProcessorConfig::kDefaultClockHz;
     std::vector<std::shared_ptr<const DeviceFactory>> devices;
+    gb::Context context;  // The processor's, for its devices.
   };
 
   struct RegisterValue {

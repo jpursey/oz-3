@@ -22,9 +22,10 @@ absl::StatusOr<std::unique_ptr<DiskDriveFactory>> factory =
     DiskDriveFactory::Create("Drive", {.port = 16,
                                        .interrupt = {.interrupt = 2}});
 ProcessorConfig config = {..., .devices = {*std::move(factory)}};
-auto processor = std::make_unique<Processor>(config);
+gb::Context context;
+context.SetValue<HostClock>([] { return HostNow(); });  // Stamps files.
+auto processor = std::make_unique<Processor>(config, std::move(context));
 auto* drive = static_cast<DiskDrive*>(processor->GetDevice("Drive"));
-drive->SetClock([] { return HostNow(); });
 drive->AttachImage(*DiskImage::Open(&host, "local:/work.ozd"));
 processor->Execute(...);  // Programs open, read, and write files.
 processor.reset();        // The drive writes back what it hasn't committed.
@@ -90,8 +91,10 @@ program's side.
 
 ### Host interface
 
-- **`SetClock`** sets what the drive stamps files with, as the timer's clock
-  does. With none, files get no date.
+- **The host's clock**, which the drive stamps files with, is in the
+  processor's context (`DiskDrive::Contract`), as the timer's is: the host's
+  local time unless the host gives another. With an empty one, files get no
+  date.
 - **`AttachImage`** takes ownership of the image, first detaching any attached.
   It returns nothing: a program finds out what the disk holds from its
   commands, and a host that wants to know first opens the image with

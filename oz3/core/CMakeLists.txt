@@ -31,6 +31,8 @@ set(oz3_core_DEPS
   absl::span
   absl::status
   absl::strings
+  absl::time
+  gb_base
   gb_container
 )
 set(oz3_core_LIBS

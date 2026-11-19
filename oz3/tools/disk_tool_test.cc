@@ -20,6 +20,7 @@
 #include "absl/strings/str_split.h"
 #include "absl/time/civil_time.h"
 #include "absl/types/span.h"
+#include "gb/base/context_builder.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
@@ -77,7 +78,10 @@ class DiskToolTest : public ::testing::Test {
     host_ = host.get();
     file_system_.Register(std::move(host), "mem");
     absl::StatusOr<std::unique_ptr<DiskTool>> tool =
-        DiskTool::Create(&file_system_, [] { return kNow; });
+        DiskTool::Create(gb::ContextBuilder()
+                             .SetPtr<gb::FileSystem>(&file_system_)
+                             .SetValue<HostClock>([] { return kNow; })
+                             .Build());
     ASSERT_TRUE(tool.ok()) << tool.status();
     tool_ = *std::move(tool);
   }
@@ -228,11 +232,23 @@ TEST_F(DiskToolTest, RegistersItsProtocol) {
 }
 
 TEST_F(DiskToolTest, ProtocolNameMustBeFree) {
-  absl::StatusOr<std::unique_ptr<DiskTool>> tool =
-      DiskTool::Create(&file_system_, nullptr, "mem");
+  absl::StatusOr<std::unique_ptr<DiskTool>> tool = DiskTool::Create(
+      gb::ContextBuilder()
+          .SetPtr<gb::FileSystem>(&file_system_)
+          .SetValue<std::string>(DiskTool::kKeyProtocolName, "mem")
+          .Build());
   EXPECT_FALSE(tool.ok());
   EXPECT_THAT(tool.status().message(), HasSubstr("\"mem\""));
-  EXPECT_TRUE(DiskTool::Create(&file_system_, nullptr, "other").ok());
+  EXPECT_TRUE(DiskTool::Create(gb::ContextBuilder()
+                                   .SetPtr<gb::FileSystem>(&file_system_)
+                                   .SetValue<std::string>(
+                                       DiskTool::kKeyProtocolName, "other")
+                                   .Build())
+                  .ok());
+}
+
+TEST(DiskToolContextTest, NeedsAFileSystem) {
+  EXPECT_FALSE(DiskTool::Create(gb::Context()).ok());
 }
 
 //==============================================================================

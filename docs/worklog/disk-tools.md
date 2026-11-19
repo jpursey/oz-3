@@ -167,18 +167,17 @@ std::string_view GetDiskStatusText(DiskStatus status);
 class DiskFileProtocol final : public gb::FileProtocol {
  public:
   // As the drive's: the host's date and time.
-  using Clock = absl::AnyInvocable<absl::CivilSecond()>;
-
   static constexpr std::string_view kDefaultName = "ozdisk";
   static constexpr int kDefaultMaxOpenFiles = 16;
 
-  // Files are stamped from `clock` as they are committed, or the time now in
-  // `time_zone` without one. The disk's dates are in `time_zone`, by default
-  // the host's. Up to `max_open_files` files may be open at once, the root's
-  // slot included.
-  explicit DiskFileProtocol(Clock clock = nullptr,
-                            absl::TimeZone time_zone = gb::GetLocalTimeZone(),
-                            int max_open_files = kDefaultMaxOpenFiles);
+  // Files are stamped from the context's host clock (kConstraintHostClock,
+  // the host's local time by default) as they are committed. The disk's dates
+  // are in the context's time zone, by default the host's. Up to its max open
+  // files may be open at once, the root's slot included.
+  using Contract = gb::ContextContract<kConstraintHostClock,
+                                       kConstraintTimeZone,
+                                       kConstraintMaxOpenFiles>;
+  explicit DiskFileProtocol(Contract contract = gb::Context());
 
   // Unmounts as Unmount does.
   ~DiskFileProtocol() override;
@@ -302,14 +301,13 @@ std::string HostTextFromDisk(std::string_view disk_text);
 // messages naming what failed (see Behavior).
 class DiskTool final {
  public:
-  using Clock = DiskFileProtocol::Clock;
-
-  // Registers a DiskFileProtocol in `file_system` as `protocol_name`, for
-  // copies, stamping files from `clock`, or the host's local time without
-  // one. Fails if the name is taken. `file_system` must outlive the tool.
-  static absl::StatusOr<std::unique_ptr<DiskTool>> Create(
-      gb::FileSystem* file_system, Clock clock = nullptr,
-      std::string_view protocol_name = DiskFileProtocol::kDefaultName);
+  // Registers a DiskFileProtocol, made from the same context, in the context's
+  // file system under its protocol name, for copies. Fails if the name is
+  // taken. The file system must outlive the tool.
+  using Contract =
+      gb::DerivedContextContract<DiskFileProtocol::Contract,
+                                 kConstraintFileSystem, kConstraintProtocolName>;
+  static absl::StatusOr<std::unique_ptr<DiskTool>> Create(Contract contract);
 
   absl::Status New(std::string_view image_path, int sector_count);
   absl::Status Format(std::string_view image_path, const DiskLabel& label,

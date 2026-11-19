@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "gb/container/array.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/port.h"
@@ -26,12 +28,27 @@ namespace oz3 {
 class Processor final {
  public:
   //----------------------------------------------------------------------------
+  // Types
+  //----------------------------------------------------------------------------
+
+  // What the Processor takes from its context: nothing of its own. It only
+  // keeps the context for its devices.
+  using Contract = gb::ContextContract<>;
+
+  //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
   // Creates a new Processor with the specified configuration, which must be
   // valid (see ProcessorConfig::Validate).
-  explicit Processor(const ProcessorConfig& config);
+  //
+  // The Processor keeps `contract`'s context, and gives it to each device's
+  // factory as it creates the device. The context must meet every device's
+  // contract (see DeviceFactory::CreateDevice), such as by holding the host's
+  // clock for the devices that need it, and must outlive the Processor unless
+  // the contract owns it.
+  explicit Processor(const ProcessorConfig& config,
+                     Contract contract = gb::Context());
 
   Processor(const Processor&) = delete;
   Processor& operator=(const Processor&) = delete;
@@ -121,7 +138,11 @@ class Processor final {
 
   uint8_t DoRaiseInterrupt(int interrupt, uint8_t cores, bool shared);
 
-  // The devices are declared first, so they are destroyed after everything
+  // The context is declared first, so it outlives the devices, which use it as
+  // they are destroyed.
+  gb::ValidatedContext context_;
+
+  // The devices are declared next, so they are destroyed after everything else
   // they use.
   std::vector<std::unique_ptr<Device>> devices_;
 

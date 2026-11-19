@@ -22,6 +22,8 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/local_time.h"
+#include "gb/base/validated_context.h"
 #include "gb/file/file_protocol.h"
 #include "gb/file/file_types.h"
 #include "gb/file/path.h"
@@ -266,16 +268,27 @@ bool DiskFileProtocol::DiskRawFile::Flush() {
 // DiskFileProtocol
 //==============================================================================
 
-DiskFileProtocol::DiskFileProtocol(Clock clock, absl::TimeZone time_zone,
-                                   int max_open_files)
-    : time_zone_(time_zone),
-      clock_(clock != nullptr ? std::move(clock) : Clock([this] {
-        return absl::ToCivilSecond(absl::Now(), time_zone_);
-      })),
+DiskFileProtocol::DiskFileProtocol(Contract contract)
+    : DiskFileProtocol(GetOptions(std::move(contract))) {}
+
+DiskFileProtocol::DiskFileProtocol(Options options)
+    : time_zone_(options.time_zone),
+      clock_(std::move(options.clock)),
       file_system_(
           DiskHardwareSettings{.read_cache_sectors = kReadCacheSectors},
-          max_open_files) {
-  CHECK_GE(max_open_files, 2);
+          options.max_open_files) {}
+
+DiskFileProtocol::Options DiskFileProtocol::GetOptions(Contract contract) {
+  const gb::ValidatedContext context(std::move(contract));
+  CHECK(context.IsValid()) << "The disk protocol's context is invalid";
+  Options options = {
+      .time_zone =
+          context.GetValueOrDefault<absl::TimeZone>(gb::GetLocalTimeZone()),
+      .clock = context.GetValue<HostClock>(),
+      .max_open_files = context.GetValue<int>(kKeyMaxOpenFiles),
+  };
+  CHECK_GE(options.max_open_files, 2);
+  return options;
 }
 
 DiskFileProtocol::~DiskFileProtocol() { Unmount(); }
@@ -455,7 +468,7 @@ std::unique_ptr<gb::RawFile> DiskFileProtocol::BasicOpenFile(
   return raw_file;
 }
 
-DateTime DiskFileProtocol::GetNow() { return DateTime::FromCivil(clock_()); }
+DateTime DiskFileProtocol::GetNow() { return DateTime::FromHostClock(clock_); }
 
 DiskStatus DiskFileProtocol::OpenRoot() {
   if (file_system_.GetVolumeStatus() != DiskStatus::kOk) {

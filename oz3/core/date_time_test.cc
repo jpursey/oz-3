@@ -8,6 +8,8 @@
 #include <optional>
 
 #include "absl/time/civil_time.h"
+#include "gb/base/context.h"
+#include "gb/base/validated_context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -88,6 +90,40 @@ TEST(DateTimeTest, OrdersChronologicallyAcrossEachWord) {
             DateTime::FromCivil(absl::CivilSecond(2026, 6, 15, 12, 31, 0)));
   EXPECT_LT(base,
             DateTime::FromCivil(absl::CivilSecond(2026, 6, 15, 12, 30, 31)));
+}
+
+TEST(DateTimeTest, FromHostClockCallsTheClock) {
+  int calls = 0;
+  gb::Context context;
+  context.SetValue<HostClock>([&calls] {
+    ++calls;
+    return absl::CivilSecond(2026, 6, 15, 12, 30, 30 + calls);
+  });
+  const gb::ValidatedContext validated(&context, {kConstraintHostClock});
+  EXPECT_EQ(DateTime::FromHostClock(validated),
+            DateTime::FromCivil(absl::CivilSecond(2026, 6, 15, 12, 30, 31)));
+  EXPECT_EQ(DateTime::FromHostClock(validated),
+            DateTime::FromCivil(absl::CivilSecond(2026, 6, 15, 12, 30, 32)));
+  EXPECT_EQ(calls, 2);
+}
+
+TEST(DateTimeTest, FromHostClockIsTheLocalTimeByDefault) {
+  gb::Context context;
+  const gb::ValidatedContext validated(&context, {kConstraintHostClock});
+  ASSERT_TRUE(validated.IsValid());
+  const DateTime before = DateTime::FromCivil(GetLocalHostTime());
+  const DateTime now = DateTime::FromHostClock(validated);
+  const DateTime after = DateTime::FromCivil(GetLocalHostTime());
+  EXPECT_LE(before, now);
+  EXPECT_LE(now, after);
+}
+
+TEST(DateTimeTest, FromHostClockWithAnEmptyClockIsNoDate) {
+  gb::Context context;
+  context.SetValue<HostClock>(HostClock());
+  const gb::ValidatedContext validated(&context, {kConstraintHostClock});
+  ASSERT_TRUE(validated.IsValid());
+  EXPECT_EQ(DateTime::FromHostClock(validated), DateTime());
 }
 
 }  // namespace

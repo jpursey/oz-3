@@ -13,7 +13,6 @@ set(oz3_devices_SOURCE
   timer.cc timer.h
 )
 set(oz3_devices_DEPS
-  absl::any_invocable
   absl::civil_time
   absl::int128
   absl::memory
@@ -22,6 +21,7 @@ set(oz3_devices_DEPS
   absl::statusor
   absl::strings
   absl::time
+  gb_base
   gb_container
   oz3_core
   oz3_disk

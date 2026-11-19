@@ -147,7 +147,7 @@ A directory is a cluster chain of 16-word entries, 16 to a sector. The root dire
 The timer gives the date as two words (the year, then the month in the high byte and the day in the low) and the time as two (the hour, then the minute high and the second low). Stored date first, the four words compare in order chronologically, and a program can copy the timer's values straight in.
 
 - Only the modified time is kept. A creation time would push entries to 20 words.
-- All zeros means no date, since month 0 is invalid. A drive with no clock, or a tool that doesn't know the date, writes zeros.
+- All zeros means no date, since month 0 is invalid. A drive given an empty clock, or a tool that doesn't know the date, writes zeros.
 - The drive stamps a file with the host clock when it creates it, and again when it closes it after a write, so every file it makes is stamped, and a file written in many requests gets one stamp.
 
 #### Subdirectories later
@@ -228,7 +228,7 @@ The drive maps its slots one to one onto `DiskFile` handles, and its `DiskFileSy
 | Cache rate | Words per second copied out of the read cache | Preset |
 | Latency | Fixed time for a transfer that isn't continuous with the previous one | Preset |
 
-The drive has no drive letter, which is the Ozzy's concept, and no image path. The host attaches and detaches images at runtime. The drive also takes a clock from the host, the same as the timer's, for timestamps. A drive with no clock stamps zeros, as a timer with no clock reads zeros (see Prerequisites).
+The drive has no drive letter, which is the Ozzy's concept, and no image path. The host attaches and detaches images at runtime. The drive also takes a clock from the host, the same as the timer's, for timestamps. A drive given an empty clock stamps zeros, as a timer given one reads zeros (see Prerequisites).
 
 #### Timing presets
 
@@ -647,7 +647,7 @@ An Ozzy has up to four drives, `A:` to `D:`, each a drive device with its three 
 
   A relative image path is from the config file's folder, so a config and its disks move together. An image that doesn't open is an error from creating the Ozzy, naming the drive, which the app prints as a config error, and more than 4 drives or two drives with one image are config errors. There is no drive by default.
 - **Machine table:** each drive is a device entry of type 5, after the timer, in letter order: its first port, interrupt, and cores (0001h), no pages, and its letter (41h to 44h) and slots as its two words. What disk is in it, if any, is the drive's to say (`MEDIA` and `VOLUME`), since it changes while the Ozzy runs.
-- **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. `Ozzy::SetClock` gives the timer and every drive the host's clock, and each drive writes back everything dirty as the Ozzy is destroyed. `Ozzy::Create` takes the file system the images are opened in, which must outlive the Ozzy.
+- **Host:** `Ozzy::GetDrive(letter)` returns the drive, or null, for the host to attach and detach images and for tests. `Ozzy::Create` takes a context holding the file system the images are opened in, which must outlive the Ozzy, and the host's clock, which the timer and every drive find there. Each drive writes back everything dirty as the Ozzy is destroyed.
 - **The `ozzy` app** attaches the config's images at power on, and they stay in their drives until it quits. Changing disks while it runs is the backlog's *Changing disks in ozzy*. Ejecting there is a floppy pulled, as the drive has it, so the drive has no host `Flush`.
 - **Manual:** `4-Ozzy-Computer.md`'s config, devices table, ports, machine table, and errors, and the Disk Drive page's `latency` as `latency_ms`.
 

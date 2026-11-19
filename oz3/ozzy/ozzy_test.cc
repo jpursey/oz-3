@@ -18,6 +18,8 @@
 #include "absl/time/civil_time.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
+#include "gb/base/context_builder.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
@@ -56,12 +58,12 @@ using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 
-// Returns an Ozzy for `settings`, with any images in `file_system`, failing
-// the test if it can't be created.
+// Returns an Ozzy for `settings`, with `context` as its host's, failing the
+// test if it can't be created.
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
-                                 gb::FileSystem* file_system = nullptr) {
+                                 gb::Context context = {}) {
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings, file_system);
+      Ozzy::Create(settings, std::move(context));
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
@@ -110,6 +112,39 @@ TEST(OzzyTest, TimerTicks) {
   ozzy->Run(absl::Milliseconds(25));
   EXPECT_EQ(ozzy->GetTimer()->GetTickCount(), 2);
   EXPECT_EQ(ozzy->GetProcessor()->GetPort(3).GetValue(0), 2);
+}
+
+// Asks the timer's clock port of `ozzy` for the time, and returns its answer.
+std::vector<uint16_t> AskTime(Ozzy& ozzy) {
+  Port& clock_port = ozzy.GetProcessor()->GetPort(kOzzyTimerPort + 1);
+  {
+    std::unique_ptr<Lock> lock =
+        ozzy.GetProcessor()->LockPort(kOzzyTimerPort + 1);
+    EXPECT_TRUE(lock->IsLocked());
+    clock_port.StoreWord(*lock, Port::S, kTimerTime);
+  }
+  ozzy.Run(absl::Milliseconds(1));
+  return {clock_port.GetValue(0), clock_port.GetValue(1)};
+}
+
+TEST(OzzyTest, TheTimerHasTheClock) {
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(
+      OzzySettings(), gb::ContextBuilder()
+                          .SetValue<HostClock>([] {
+                            return absl::CivilSecond(2026, 11, 18, 9, 30, 15);
+                          })
+                          .Build());
+  ASSERT_NE(ozzy, nullptr);
+  EXPECT_THAT(AskTime(*ozzy), ElementsAre(9, 0x1E0F));
+}
+
+TEST(OzzyTest, TheTimerReadsZerosWithAnEmptyClock) {
+  gb::Context context;
+  context.SetValue<HostClock>(HostClock());
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), std::move(context));
+  ASSERT_TRUE(ozzy.ok()) << ozzy.status();
+  EXPECT_THAT(AskTime(**ozzy), ElementsAre(0, 0));
 }
 
 TEST(OzzyTest, KeyboardKeyState) {
@@ -428,7 +463,8 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
   MakeImage("mem:/d.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/d.ozd"}};
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, &host_);
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(
+      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
   ASSERT_NE(ozzy, nullptr);
 
   // Each control port shows whether its drive has a disk once it has read the
@@ -451,7 +487,8 @@ TEST_F(OzzyDriveTest, AConfigsImagesAreFromItsFolder) {
       "drives: [{ preset: 'floppy-1440k', image: 'disks/a.ozd' }]",
       "mem:/configs/work.ozzy");
   ASSERT_TRUE(settings.ok()) << settings.status();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(*settings, &host_);
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(
+      *settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
   ASSERT_NE(ozzy, nullptr);
   EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
 }
@@ -460,7 +497,8 @@ TEST_F(OzzyDriveTest, MissingImage) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {.image = "mem:/b.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
+      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kNotFound);
   EXPECT_EQ(ozzy.status().message(),
@@ -480,7 +518,8 @@ TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
 TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
   OzzySettings settings;
   settings.drives = {{}, {.slots = 0}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
+      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Disk drive B: has 0 slots"));
 }
@@ -489,33 +528,11 @@ TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/a.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings, &host_);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
+      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().message(),
             "drive D: image mem:/a.ozd is also drive A's");
-}
-
-TEST_F(OzzyDriveTest, SetClockGivesTheTimerTheClock) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
-  ASSERT_NE(ozzy, nullptr);
-  ozzy->SetClock([] { return absl::CivilSecond(2026, 11, 18, 9, 30, 15); });
-
-  // Asks the timer's clock port for the time.
-  Port& clock_port = ozzy->GetProcessor()->GetPort(kOzzyTimerPort + 1);
-  const auto ask_time = [&] {
-    {
-      std::unique_ptr<Lock> lock =
-          ozzy->GetProcessor()->LockPort(kOzzyTimerPort + 1);
-      EXPECT_TRUE(lock->IsLocked());
-      clock_port.StoreWord(*lock, Port::S, kTimerTime);
-    }
-    ozzy->Run(absl::Milliseconds(1));
-    return std::vector<uint16_t>{clock_port.GetValue(0),
-                                 clock_port.GetValue(1)};
-  };
-  EXPECT_THAT(ask_time(), ElementsAre(9, 0x1E0F));
-  ozzy->SetClock(nullptr);
-  EXPECT_THAT(ask_time(), ElementsAre(0, 0));
 }
 
 // Creates the file LOG on drive A:, on its ports and interrupt, and writes the
@@ -685,10 +702,13 @@ TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}};
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, &host_);
-  ASSERT_NE(ozzy, nullptr);
   const absl::CivilSecond now(2026, 11, 18, 9, 30, 15);
-  ozzy->SetClock([now] { return now; });
+  std::unique_ptr<Ozzy> ozzy =
+      CreateOzzy(settings, gb::ContextBuilder()
+                               .SetPtr<gb::FileSystem>(&host_)
+                               .SetValue<HostClock>([now] { return now; })
+                               .Build());
+  ASSERT_NE(ozzy, nullptr);
 
   // The program runs on core 0 in place of the boot ROM.
   ASSERT_TRUE(LoadOnCore0(*ozzy, kWriteLogProgram));
@@ -714,6 +734,13 @@ TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
 //==============================================================================
 // Errors
 //==============================================================================
+
+TEST(OzzyTest, NoContext) {
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), static_cast<gb::Context*>(nullptr));
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
+}
 
 TEST(OzzyTest, InvalidSettings) {
   OzzySettings settings;

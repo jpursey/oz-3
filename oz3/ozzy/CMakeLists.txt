@@ -34,7 +34,6 @@ set(oz3_ozzy_SOURCE
 )
 set(oz3_ozzy_DEPS
   absl::algorithm_container
-  absl::any_invocable
   absl::civil_time
   absl::memory
   absl::no_destructor

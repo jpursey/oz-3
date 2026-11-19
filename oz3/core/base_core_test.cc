@@ -5,6 +5,8 @@
 
 #include "oz3/core/base_core_test.h"
 
+#include <utility>
+
 #include "oz3/core/instruction_compiler.h"
 
 namespace oz3 {
@@ -61,7 +63,8 @@ bool BaseCoreTest::Init(InitConfig config) {
   for (const std::shared_ptr<const DeviceFactory>& device : config.devices) {
     processor_config.AddDevice(device);
   }
-  processor_ = std::make_unique<Processor>(processor_config);
+  processor_ =
+      std::make_unique<Processor>(processor_config, std::move(config.context));
   states_.reserve(config.num_cores);
   for (int i = 0; i < config.num_cores; ++i) {
     states_.emplace_back(*processor_->GetCore(i));
@@ -70,12 +73,14 @@ bool BaseCoreTest::Init(InitConfig config) {
 }
 
 bool BaseCoreTest::InitAndReset(InitConfig config) {
-  if (!Init(config)) {
+  const int num_cores = config.num_cores;
+  const int num_memory_banks = config.num_memory_banks;
+  if (!Init(std::move(config))) {
     return false;
   }
-  int extra_bank_index = config.num_memory_banks - 1;
+  int extra_bank_index = num_memory_banks - 1;
   int bank_index = 0;
-  for (int core_index = 0; core_index < config.num_cores; ++core_index) {
+  for (int core_index = 0; core_index < num_cores; ++core_index) {
     auto& state = states_[core_index];
     state.ResetCore({.mask = CpuCore::ResetParams::ALL,
                      .mb = CpuCore::Banks{.code = bank_index,
@@ -88,7 +93,7 @@ bool BaseCoreTest::InitAndReset(InitConfig config) {
     state.SetRegisters({{CpuCore::ST, CpuCore::I}});
     state.data.SetAddress(1000);
     state.extra.SetAddress(2000);
-    bank_index = (bank_index + 1) % config.num_memory_banks;
+    bank_index = (bank_index + 1) % num_memory_banks;
   }
   return true;
 }

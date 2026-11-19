@@ -43,7 +43,8 @@ class TimerTest : public DeviceProgramTest {
   static constexpr Cycles kMaxTickCycles = 1'000'000;
 
   // Initializes a processor with a timer named "Timer" with `settings`, and
-  // sets timer_ to it. Returns whether it did.
+  // sets timer_ to it, with the host's clock from GetHostContext(). Returns
+  // whether it did.
   bool InitTimer(
       const TimerSettings& settings = {.port = kTickPort,
                                        .interrupt = {.interrupt = kInterrupt}},
@@ -53,7 +54,8 @@ class TimerTest : public DeviceProgramTest {
     EXPECT_TRUE(factory.ok()) << factory.status();
     if (!factory.ok() || !Init({.num_ports = settings.port + Timer::kPorts,
                                 .clock_hz = clock_hz,
-                                .devices = {*std::move(factory)}})) {
+                                .devices = {*std::move(factory)},
+                                .context = GetHostContext()})) {
       return false;
     }
     timer_ = static_cast<Timer*>(GetProcessor().GetDevice("Timer"));
@@ -102,21 +104,7 @@ class TimerTest : public DeviceProgramTest {
     return (GetState().core.GetInterrupts() & (1u << kInterrupt)) != 0;
   }
 
-  // Gives the timer a clock that returns `now`.
-  void SetNow(absl::CivilSecond now) {
-    now_ = now;
-    timer_->SetClock([this] { return GetNow(); });
-  }
-
-  // The timer's clock, which counts its calls.
-  absl::CivilSecond GetNow() {
-    ++clock_calls_;
-    return now_;
-  }
-
   Timer* timer_ = nullptr;
-  absl::CivilSecond now_;
-  int clock_calls_ = 0;
 };
 
 TEST_F(TimerTest, TickPortIsClearAtPowerOn) {
@@ -359,19 +347,20 @@ TEST_F(TimerTest, ReadBeforeTheAnswerTakesTheIndexBack) {
   EXPECT_EQ(GetStatus(kClockPort), 0);
 }
 
-TEST_F(TimerTest, DateAndTimeAreZerosWithoutAClock) {
+TEST_F(TimerTest, DateAndTimeAreZerosWithAnEmptyClock) {
+  with_clock_ = false;
   ASSERT_TRUE(InitTimer());
   Execute(1);
   EXPECT_EQ(AskClock(kTimerTime), 0);
   EXPECT_EQ(AskClock(kTimerDate), 0);
+}
 
-  // Taking the clock away goes back to zeros.
+TEST_F(TimerTest, DateAndTimeAreFromTheClock) {
+  ASSERT_TRUE(InitTimer());
+  Execute(1);
   SetNow(absl::CivilSecond(2026, 11, 7, 13, 45, 30));
   EXPECT_EQ(AskClock(kTimerTime), 0x2D1E'000D);
   EXPECT_EQ(AskClock(kTimerDate), 0x0B07'07EA);
-  timer_->SetClock(nullptr);
-  EXPECT_EQ(AskClock(kTimerTime), 0);
-  EXPECT_EQ(AskClock(kTimerDate), 0);
 }
 
 TEST_F(TimerTest, DateIsZerosBeforeTheFirstTime) {

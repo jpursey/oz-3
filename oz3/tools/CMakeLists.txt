@@ -25,7 +25,6 @@ set(oz3_tools_SOURCE
 )
 set(oz3_tools_DEPS
   absl::algorithm_container
-  absl::any_invocable
   absl::flat_hash_map
   absl::flat_hash_set
   absl::function_ref

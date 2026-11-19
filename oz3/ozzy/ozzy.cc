@@ -20,6 +20,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/validated_context.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/cpu_core_config.h"
 #include "oz3/core/device_config.h"
@@ -252,8 +253,13 @@ absl::StatusOr<DriveImages> OpenDriveImages(const OzzySettings& settings,
 // Ozzy
 //==============================================================================
 
-absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
-    const OzzySettings& settings, gb::FileSystem* file_system) {
+absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
+                                                   Contract contract) {
+  gb::ValidatedContext context(std::move(contract));
+  if (!context.IsValid()) {
+    return absl::InvalidArgumentError(
+        "The context doesn't meet the Ozzy's contract");
+  }
   absl::Status status = ValidateOzzySettings(settings);
   if (!status.ok()) {
     return status;
@@ -266,11 +272,12 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
   if (!status.ok()) {
     return status;
   }
-  absl::StatusOr<DriveImages> images = OpenDriveImages(settings, file_system);
+  absl::StatusOr<DriveImages> images =
+      OpenDriveImages(settings, context.GetPtr<gb::FileSystem>());
   if (!images.ok()) {
     return images.status();
   }
-  auto processor = std::make_unique<Processor>(*config);
+  auto processor = std::make_unique<Processor>(*config, context);
 
   // The loader writes the boot ROM into its page, as a ROM programmer would,
   // and places its stack in RAM, which the settings always have.
@@ -295,7 +302,8 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
 
   // The disks are in their drives at power on, which read their superblocks
   // in their first runs.
-  auto ozzy = absl::WrapUnique(new Ozzy(std::move(processor)));
+  auto ozzy =
+      absl::WrapUnique(new Ozzy(std::move(context), std::move(processor)));
   for (int i = 0; i < kOzzyDriveCount; ++i) {
     if ((*images)[i] != nullptr) {
       ozzy->drives_[i]->AttachImage(std::move((*images)[i]));
@@ -304,8 +312,9 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(
   return ozzy;
 }
 
-Ozzy::Ozzy(std::unique_ptr<Processor> processor)
-    : processor_(std::move(processor)),
+Ozzy::Ozzy(gb::ValidatedContext context, std::unique_ptr<Processor> processor)
+    : context_(std::move(context)),
+      processor_(std::move(processor)),
       screen_(static_cast<Screen*>(processor_->GetDevice(kScreenName))),
       keyboard_(static_cast<Keyboard*>(processor_->GetDevice(kKeyboardName))),
       teletype_(static_cast<Teletype*>(processor_->GetDevice(kTeletypeName))),
@@ -323,27 +332,6 @@ DiskDrive* Ozzy::GetDrive(char letter) {
     return nullptr;
   }
   return drives_[drive];
-}
-
-void Ozzy::SetClock(Clock clock) {
-  clock_ = std::move(clock);
-  if (timer_ != nullptr) {
-    timer_->SetClock(GetDeviceClock());
-  }
-  for (DiskDrive* drive : drives_) {
-    if (drive != nullptr) {
-      drive->SetClock(GetDeviceClock());
-    }
-  }
-}
-
-Ozzy::Clock Ozzy::GetDeviceClock() {
-  // A device is given a clock only when there is one, as a device with none
-  // gives no date.
-  if (!clock_) {
-    return nullptr;
-  }
-  return [this] { return clock_(); };
 }
 
 Cycles Ozzy::Run(absl::Duration time) {
