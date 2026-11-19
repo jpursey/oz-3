@@ -1363,8 +1363,9 @@ std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {
 
 absl::StatusOr<BareProgram> ProgramAssembler::BuildBareProgram(
     const Program& program) const {
-  // Only the default program can be a bare program. It has one instance and
-  // no banks, as the first pass reports otherwise.
+  // Only the default program can be a bare program. It can't declare banks or
+  // more than one instance either, as the first pass reports: .BANK and
+  // .INSTANCES above 1 each need segments.
   const Segment& segment = segments_.front();
   if (segment.name.has_value()) {
     return absl::FailedPreconditionError(
