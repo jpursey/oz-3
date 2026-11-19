@@ -547,12 +547,18 @@ DiskDrive::State DiskDrive::GetStateAfterAccept(Command command,
     case DiskCommandKind::kLatent:
       return RunningWorkState{.command = std::move(command)};
     case DiskCommandKind::kRead: {
-      // The accept has checked the handle.
+      // The accept checked the handle, but the disk may have been ejected
+      // since, while the OS took the accept status, leaving the slot stale.
+      // Then the read fails before its first transfer, as it would at it.
+      Transfer transfer = MakeTransfer(std::move(command), accept);
       DiskFileInfo info;
-      const DiskStatus status =
-          file_system_.GetFileInfo(command.GetHandle(), &info);
-      DCHECK(status == DiskStatus::kOk);
-      return ReadingState{.transfer = MakeTransfer(std::move(command), accept),
+      if (const DiskStatus status =
+              file_system_.GetFileInfo(transfer.command.GetHandle(), &info);
+          status != DiskStatus::kOk) {
+        return FailedReadingState{
+            .failure = FailTransfer(std::move(transfer), status)};
+      }
+      return ReadingState{.transfer = std::move(transfer),
                           .start_position = info.position};
     }
     case DiskCommandKind::kWrite:
