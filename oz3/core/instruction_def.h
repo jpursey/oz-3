@@ -175,7 +175,8 @@ struct MacroCodeDef {
 struct MacroDef {
   // Encodes a macro code arg into a value which can be passed to
   // InstructionDef::Encode. An index into `code`, or the source of the code in
-  // the `code` array may be passed.
+  // the `code` array may be passed, exactly as written there (value types
+  // included, as "S($v:STACK)").
   uint16_t Encode(int code_index, uint16_t arg) const;
   uint16_t Encode(std::string_view code_source, uint16_t arg) const;
 

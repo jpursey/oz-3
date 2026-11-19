@@ -12,11 +12,13 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "absl/base/no_destructor.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
 #include "absl/types/span.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/parser.h"
@@ -270,14 +272,15 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
     std::string_view part_text = token_text;
     std::optional<Part> part;
     if (token.IsUser(kTokenPlaceholder)) {
-      const auto colon = token_text.find(':');
-      part_text = token_text.substr(0, colon);
+      const std::vector<std::string_view> pieces =
+          absl::StrSplit(token_text, absl::MaxSplits(':', 1));
+      part_text = pieces[0];
       part = ParsePlaceholder(part_text.substr(1), value_sets);
       if (!part.has_value()) {
         return absl::InvalidArgumentError(
             absl::StrCat(part_text, " is not a placeholder or value set"));
       }
-      if (colon != std::string_view::npos) {
+      if (pieces.size() == 2) {
         const bool can_have_type = part->kind == Part::Kind::kWord ||
                                    (part->kind == Part::Kind::kArgument &&
                                     part->arg.type == ArgType::kMacro);
@@ -285,8 +288,7 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
           return absl::InvalidArgumentError(absl::StrCat(
               token_text, " has a value type, but only $v and $m can"));
         }
-        const std::optional<ValueType> type =
-            ParseValueType(token_text.substr(colon + 1));
+        const std::optional<ValueType> type = ParseValueType(pieces[1]);
         if (!type.has_value()) {
           return absl::InvalidArgumentError(absl::StrCat(
               token_text,

@@ -436,9 +436,9 @@ class InstructionSetSyntaxBuilder final {
   bool CheckInstructionArgs(const InstructionDef& instruction,
                             const SourcePattern& pattern);
   bool CheckRegisterRules(const InstructionDef& instruction);
-  bool CheckMacroValueType(const InstructionDef& instruction,
-                           const SourcePattern& pattern,
-                           const MacroSyntax& macro);
+  bool ValidateMacroValueType(const InstructionDef& instruction,
+                              const SourcePattern& pattern,
+                              const MacroSyntax& macro);
   bool CheckExcludedRegisters(const InstructionDef& instruction,
                               const Argument& arg, uint16_t excluded,
                               std::string_view arg_name);
@@ -604,7 +604,7 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
                                  "Unknown macro: ", instruction.arg_macro_name);
     }
     const MacroSyntax& macro = it->second;
-    if (!CheckMacroValueType(instruction, *pattern, macro)) {
+    if (!ValidateMacroValueType(instruction, *pattern, macro)) {
       return false;
     }
     for (int i = 0; i < static_cast<int>(macro.patterns.size()); ++i) {
@@ -634,7 +634,7 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
 
 // A $m's value type is for its macro's codes that are just "$v", so the macro
 // must have one, and none of them can have a type of its own.
-bool InstructionSetSyntaxBuilder::CheckMacroValueType(
+bool InstructionSetSyntaxBuilder::ValidateMacroValueType(
     const InstructionDef& instruction, const SourcePattern& pattern,
     const MacroSyntax& macro) {
   const auto parts = pattern.GetParts();
@@ -775,8 +775,8 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
 
     // The macro code's text and parts take the place of the $m. Its parts are
     // whole arguments of the form only if the $m is, and a code that is just
-    // "$v" takes the $m's value type (CheckMacroValueType checked it has none
-    // of its own if the $m has one).
+    // "$v" takes the $m's value type (ValidateMacroValueType checked it has
+    // none of its own if the $m has one).
     const MacroCodeDef& code = macro->def->code[code_index];
     const SourcePattern& code_pattern = macro->patterns[code_index];
     const std::string_view code_text = code_pattern.GetText();
