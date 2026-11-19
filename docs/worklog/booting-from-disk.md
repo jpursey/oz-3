@@ -243,8 +243,7 @@ starts them.
 
 ```
 // DiskSuperblock, which holds sector 0's words:
-static constexpr int kBootAreaWord = 32;
-static constexpr int kBootAreaWords = kDiskSectorWords - kBootAreaWord;
+static constexpr int kBootAreaWords = kDiskSectorWords - 32;  // From word 32
 using BootArea = std::array<uint16_t, kBootAreaWords>;
 BootArea GetBootArea() const;
 void SetBootArea(const BootArea& words);
@@ -349,7 +348,7 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 
 Depends on: nothing.
 
-- `DiskSuperblock`: the boot area's offset, size, and words.
+- `DiskSuperblock`: the boot area's size and words.
 - `DiskFileSystem`: `ReadBootArea` and `WriteBootArea`.
 - disk_design.md: the boot area's description, and its open question answered.
 - Unused, so no visible change.

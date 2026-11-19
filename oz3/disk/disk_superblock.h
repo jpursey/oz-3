@@ -34,10 +34,8 @@ class DiskSuperblock final {
   // The words of the sector, in order.
   using Words = std::array<uint16_t, kDiskSectorWords>;
 
-  // The first word of the boot area, and its size in words: the rest of the
-  // sector.
-  static constexpr int kBootAreaWord = 32;
-  static constexpr int kBootAreaWords = kDiskSectorWords - kBootAreaWord;
+  // The boot area's size in words: the rest of the sector, from word 32.
+  static constexpr int kBootAreaWords = kDiskSectorWords - 32;
 
   // The words of the boot area, in order.
   using BootArea = std::array<uint16_t, kBootAreaWords>;
@@ -117,6 +115,7 @@ class DiskSuperblock final {
   static constexpr int kRootClusterWord = 6;
   static constexpr int kLabelWord = 8;
   static constexpr int kFormattedWord = 16;
+  static constexpr int kBootAreaWord = kDiskSectorWords - kBootAreaWords;
 
   explicit DiskSuperblock(const Words& words) : words_(words) {}
 

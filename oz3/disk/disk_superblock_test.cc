@@ -5,6 +5,7 @@
 
 #include "oz3/disk/disk_superblock.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 
@@ -123,9 +124,7 @@ TEST(DiskSuperblockTest, TheBootAreaIsTheRestOfTheSector) {
   new_boot_area.fill(0x1234);
   superblock.SetBootArea(new_boot_area);
   EXPECT_EQ(superblock.GetBootArea(), new_boot_area);
-  for (int i = 32; i < kDiskSectorWords; ++i) {
-    words[i] = 0x1234;
-  }
+  std::fill(words.begin() + 32, words.end(), 0x1234);
   EXPECT_EQ(superblock.GetWords(), words);
 }
 
