@@ -44,6 +44,8 @@ enum class DiskDriveCommand : uint8_t {
   kVolume = 0x41,
   kFormat = 0x42,
   kLabel = 0x43,
+  kReadBoot = 0x44,
+  kWriteBoot = 0x45,
 };
 
 //==============================================================================

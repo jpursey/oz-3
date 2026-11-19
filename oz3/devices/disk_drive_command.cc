@@ -96,6 +96,8 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kLabel,
      .kind = kLatent,
      .arguments = kDiskNameFields},
+    {.command = DiskDriveCommand::kReadBoot, .kind = kRead, .packed = true},
+    {.command = DiskDriveCommand::kWriteBoot, .kind = kWrite, .packed = true},
 };
 
 }  // namespace
