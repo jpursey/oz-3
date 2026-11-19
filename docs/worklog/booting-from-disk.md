@@ -423,13 +423,13 @@ Depends on: CL2, and CL4 to make system disks by hand.
 **Verify**
 - Standard checks.
 - Unit tests in `boot_rom_test.cc`, with images made in the test: the boxed
-  banner's cells and their line attributes, including the drives line with
-  none, one, and four drives; the teletype's lines, with the blank line and
-  prompt again after an error; no prompt without a keyboard; keys other than
-  Enter ignored; each status (no drives, no disk, unformatted, no signature, a
-  drive status), replacing a longer one on the same row; a small screen cutting the banner off rather
-  than scrolling; a retry after inserting a disk; a test loader that boots and
-  writes to the screen, checking its banks, `R0`, `R1`, and that interrupts are
-  disabled.
+  banner's cells and their line attributes, including the drives line with none,
+  one, and four drives; the teletype's lines, with the blank line and prompt
+  again after an error; no prompt without a keyboard; keys other than Enter
+  ignored; each status (no drives, no disk, unformatted, no signature, a drive
+  status), replacing a longer one on the same row; a small screen cutting the
+  banner off rather than scrolling; a retry after inserting a disk; a test
+  loader that boots and writes to the screen, checking its banks, `R0`, `R1`,
+  and that interrupts are disabled.
 - By hand, left for the user: `ozzy` with a config whose `A:` holds a system
   disk made with `oz3dsk boot`.
