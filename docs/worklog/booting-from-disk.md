@@ -22,18 +22,24 @@ Not a system disk
 _
 ```
 
-A loader is an ordinary program of at most 224 words, ending in the boot
-signature, which the ROM checks before running it:
+A loader is a default program (one with no segments) of at most 224 words,
+ending in the boot signature, which the ROM checks before running it. The
+assembler writes it as a **bare program**, a new and smaller program file
+format for a default program, which a loader can place at any word rather
+than on a page:
 
 ```
-; boot.oza: assembled with oz3asm, then written with
+; boot.oza: assembled with oz3asm --bare, then written with
 ;   oz3dsk system.ozd sys boot.oz3
 ; The ROM starts it at IP 0, with the boot drive's command port in R0.
-    .SEGMENT boot CODE
-    ...                     ; OPEN OZZY.SYS, READ it into RAM, RST into it
-    .DS ...                 ; Padding up to word 222
+    ...                     ; Load OZOS.SYS after itself, and RST into it
+    .DS 222 - $             ; Padding up to word 222
     .DW 'BOOT'              ; The boot signature, in the last two words
 ```
+
+The OS a loader loads can be a bare program too, so a loader can put it
+straight after itself in the same page, which a page-placed program file
+can't say.
 
 This settles disk_design.md's open question of what the boot area holds, and
 replaces ozzy_design.md's plan of a boot ROM that loads `OZZY.SYS` itself. The
@@ -70,15 +76,50 @@ Two commands join the Disk group:
 - **Reset:** a `WRITE BOOT` reset before its last word writes nothing, unlike a
   file `WRITE`, so a boot area is never left half old and half new.
 
+### Bare programs (tools, apps, manual's Program Files and Program Source pages)
+
+A bare program is a default program (see Program Source's *The default
+program*) with none of a program file's page structure: one block of memory,
+code and data from its start, and its stack after them, loaded at any word of
+any bank. Every field is one word, and the header is 6 words, so the header, a
+block's offset and size, and a block's words are each whole dwords, and a
+loader can read the whole file with `READ PACKED`:
+
+| Words | What                                                                  |
+| ----- | --------------------------------------------------------------------- |
+| 0     | The identifier, `424Fh` ("OB" on a host)                              |
+| 1     | The version of the format, `1`                                        |
+| 2     | The size of its contents, code and data, in words                     |
+| 3     | The size of its stack, in words (`.STACK`)                            |
+| 4     | The number of data blocks                                             |
+| 5     | Reserved, 0                                                           |
+| 6...  | Each data block, as in a program file: its offset and its size in units of two words, then its words |
+
+- **Loading** at base address b: each block's words are copied to b plus its
+  offset, and words outside every block (such as `.DS`) are left as they are.
+  The program needs contents plus stack words from b, all in one bank.
+- **Starting:** `BC` and `BD` are b, and `BS` is b plus contents plus stack,
+  so the stack is empty at the end, with `SP` 0. `BE` is left as it is.
+- **Its own identifier,** not a version of the program file's: each format
+  versions on its own, and a program file reader rejects a bare program for
+  the right reason.
+- **`oz3asm --bare`** writes one, with the extension `.oz3` as usual. It fails
+  for a program that declares segments, or has more than one instance. Maps
+  and listings are as for the default program, whose offsets are the same.
+- In C++, `WriteBareProgramFile` and `ReadBareProgramFile` (and their `Words`
+  forms) beside `WriteProgramFile`, holding a `BareProgram`: the sizes, and
+  the data blocks as `Program::Segment::Data`.
+
 ### oz3dsk (tools, apps, manual's Disk Drive page)
 
 ```
-oz3dsk <image> sys <program>
+oz3dsk <image> sys <bare program>
 ```
 
-- Writes a program file's words into the boot area. The program must be one
-  segment, with all its data in its first 224 words. Words it doesn't set are
-  0.
+- Writes a bare program's words into the boot area, as loading it at the boot
+  area's start would. Its contents must be at most 224 words; its stack isn't
+  in the boot area, as the loader runs on the ROM's stack's page. Words no
+  block sets are 0.
 - It writes the words as they are: the boot signature is part of the program,
   so `oz3dsk` knows nothing of the Ozzy.
 
@@ -141,6 +182,11 @@ starts them.
   words the same way.
 - **`oz3dsk sys`**, after DOS's `SYS` and CP/M's `SYSGEN`: making a disk a
   system disk.
+- **Bare program** (`BareProgram`, `oz3asm --bare`): a program with nothing
+  but its words. Not "raw", which the drive's raw directory reads, the
+  console's raw mode, and Game Bits' `RawFile` already use, nor "flat" or
+  "min". The **default program** is what it is assembled from; a bare program
+  is its file format.
 - **Boot signature**, and **system disk**, for a disk whose boot area has one.
 
 ### disk: the boot area
@@ -176,11 +222,31 @@ DiskStatus WriteBootArea(const BootArea& words);
 **Brittleness:** none new: the drive's phases already make a caller read the
 accept before the data, and the data before the completion.
 
+### tools and apps: bare programs
+
+```
+// oz3/tools/bare_program.h
+struct BareProgram {
+  int contents_words = 0;  // Code and data, at most 65,536 with the stack
+  int stack_words = 0;
+  std::vector<Program::Segment::Data> data;  // In order, as in a segment
+};
+
+// Returns the default program `program` as a bare program, or an error if
+// it declares segments or has more than one instance.
+absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
+```
+
+- `ValidateBareProgram` checks what `ValidateProgram` checks of a segment's
+  data, against the contents' size.
+- The program assembler already builds the default program as a `Program`,
+  so `oz3asm --bare` converts it, and nothing in the assembler changes.
+
 ### tools and apps: oz3dsk sys
 
 - `DiskFileProtocol` gains `ReadBootArea` and `WriteBootArea`, passing through
   to the file system, as `SetLabel` does.
-- `DiskTool` gains `sys`, which reads the program file, validates its shape,
+- `DiskTool` gains `sys`, which reads the bare program, validates its size,
   lays its words into a `BootArea`, and writes it.
 
 ### ozzy: the boot ROM
@@ -197,23 +263,27 @@ accept before the data, and the data before the completion.
   boot area (CL1).
 - [ ] `RST SELF` with every bank leaves nothing of the ROM running, and its
   `R0` and `R1` copy reaches the loader, with `R2` to `R7` free for the ROM to
-  set the banks (CL4).
+  set the banks (CL5).
 - [ ] How the ROM waits for Enter: halting with a keyboard handler, then
-  leaving it to `RST` to clear, or polling the keyboard's port (CL4).
-- [ ] How a loader's source pads to word 222 for its signature: a `.DS` whose
-  count comes from a label, if the assembler's expressions allow it, or else a
-  hand-counted `.DS`, with any assembler addition left to the backlog. And that
-  `.DW 'BOOT'` packs to 4F42h, 544Fh (CL4's test loader).
+  leaving it to `RST` to clear, or polling the keyboard's port (CL5).
+- [ ] `.DS 222 - $` pads a loader to its signature (`$` is in the assembler's
+  expressions; `.DS` must accept it), and `.DW 'BOOT'` packs to 4F42h, 544Fh
+  (CL5's test loader).
+- [ ] The assembler's default program is a `Program` of one segment, all four
+  roles, and one instance with zero offsets, so `GetBareProgram` can tell it
+  from a program that declares one segment (CL3).
 
 ## Open questions
 
 - [ ] The prompt and message wording, and the signature's value. The ones above
   are a first draft.
-- [ ] Whether the ROM should exist as a public library (a fixed jump table of
-  its console and drive routines that the OS calls, as the C64's KERNAL or the
-  BBC Micro's MOS had), or stay only a boot ROM, with the OS bringing its own
-  drivers, as CP/M's BIOS on disk did. This plan assumes the second; the first
-  would be its own backlog item.
+- [ ] The bare program's name and identifier. "Bare" and `424Fh` ("OB") are a
+  first draft.
+- [x] Whether the ROM is a public library (a fixed jump table of its console
+  and drive routines, as the C64's KERNAL or the BBC Micro's MOS had), or only
+  a boot ROM. Only a boot ROM: the Ozzy has one maker and fixed hardware, so
+  there is no reason to split a BIOS from the OS, and the OS brings its own
+  drivers, loaded after the loader in the same page.
 
 ## CLs
 
@@ -249,9 +319,29 @@ Depends on: CL1.
   read cache's timing.
 - Manual pages updated.
 
-### CL3 [ ] tools, apps: oz3dsk sys
+### CL3 [ ] tools, apps: bare programs
 
-Depends on: CL1.
+Depends on: nothing.
+
+- `bare_program.h`: `BareProgram`, `GetBareProgram`, and
+  `ValidateBareProgram`.
+- `program_file.h`: reading and writing bare program files and words.
+- `oz3asm`: `--bare`.
+- Manual: Program Files gains Bare programs, and Program Source's oz3asm and
+  The default program mention `--bare`.
+
+**Verify**
+- Standard checks.
+- Unit tests: words written and read back, matching the format table
+  exactly; several blocks from `.DS` gaps; a program with segments, or more
+  than one instance, rejected; reading a program file as bare, and a bare
+  file as a program file, failing on the identifier; bad sizes, offsets, and
+  block order rejected; `oz3asm --bare` end to end.
+- Manual pages updated.
+
+### CL4 [ ] tools, apps: oz3dsk sys
+
+Depends on: CL1, CL3.
 
 - `DiskFileProtocol`: `ReadBootArea` and `WriteBootArea`.
 - `DiskTool` and `oz3dsk`: `sys`.
@@ -259,14 +349,14 @@ Depends on: CL1.
 
 **Verify**
 - Standard checks.
-- Unit tests: a program written and read back through the protocol; programs
-  rejected for two segments or data past word 223; an unformatted or protected
-  disk.
+- Unit tests: a bare program written and read back through the protocol,
+  with unset words 0; a program file rejected; contents past 224 words
+  rejected; an unformatted or protected disk.
 - Manual pages updated.
 
-### CL4 [ ] ozzy: boot from A:
+### CL5 [ ] ozzy: boot from A:
 
-Depends on: CL2, and CL3 to make system disks by hand.
+Depends on: CL2, and CL4 to make system disks by hand.
 
 - `boot_rom.oza`: the prompt, waiting for Enter, booting, and the messages; the
   echo removed; version 0.2.
