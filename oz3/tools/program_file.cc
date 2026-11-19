@@ -6,6 +6,7 @@
 #include "oz3/tools/program_file.h"
 
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -41,6 +42,9 @@ constexpr FileFormat kBareProgramFormat = {
     .id = kBareProgramFileId,
     .version = kBareProgramFileVersion,
 };
+
+// Every format, so reading a file of one as another says what it is.
+constexpr FileFormat kFileFormats[] = {kProgramFormat, kBareProgramFormat};
 
 //==============================================================================
 // Writing
@@ -176,9 +180,6 @@ class WordReader {
   absl::Status ReadBlocks(int count,
                           std::vector<Program::Segment::Data>& blocks);
 
-  // Returns whether the words are truncated.
-  bool IsTruncated() const { return truncated_; }
-
   // Returns an error if the words were truncated, or if any remain unread.
   absl::Status ValidateEnd() const;
 
@@ -199,16 +200,15 @@ class WordReader {
 absl::Status WordReader::ReadHeader() {
   const uint16_t id = ReadWord();
   if (id != format_.id) {
-    // Each format has its own identifier, so a file of the other one says so.
-    const FileFormat& other =
-        (format_.id == kProgramFileId) ? kBareProgramFormat : kProgramFormat;
-    if (id == other.id) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Not a ", absl::AsciiStrToLower(format_.name),
-                       ", but a ", absl::AsciiStrToLower(other.name)));
+    std::string message =
+        absl::StrCat("Not a ", absl::AsciiStrToLower(format_.name));
+    for (const FileFormat& other : kFileFormats) {
+      if (id == other.id) {
+        absl::StrAppend(&message, ", but a ",
+                        absl::AsciiStrToLower(other.name));
+      }
     }
-    return absl::InvalidArgumentError(
-        absl::StrCat("Not a ", absl::AsciiStrToLower(format_.name)));
+    return absl::InvalidArgumentError(message);
   }
   const uint16_t version = ReadWord();
   if (!truncated_ && version != format_.version) {
@@ -387,11 +387,6 @@ absl::StatusOr<BareProgram> ReadBareProgramWords(
   program.stack_words = reader.ReadWord();
   const int block_count = reader.ReadWord();
   const uint16_t reserved = reader.ReadWord();
-  if (!reader.IsTruncated() && reserved != 0) {
-    return absl::InvalidArgumentError(
-        absl::StrCat(kBareProgramFormat.name, " has ", reserved,
-                     " in its reserved word, which must be 0"));
-  }
   if (absl::Status status = reader.ReadBlocks(block_count, program.data);
       !status.ok()) {
     return status;
@@ -399,6 +394,11 @@ absl::StatusOr<BareProgram> ReadBareProgramWords(
 
   if (absl::Status status = reader.ValidateEnd(); !status.ok()) {
     return status;
+  }
+  if (reserved != 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(kBareProgramFormat.name, " has ", reserved,
+                     " in its reserved word, which must be 0"));
   }
   if (absl::Status status = ValidateBareProgram(program); !status.ok()) {
     return status;

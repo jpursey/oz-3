@@ -31,29 +31,8 @@ absl::Status ValidateBareProgram(const BareProgram& program) {
         kMemoryBankMaxSize, " words"));
   }
 
-  int data_end = 0;
-  for (const Program::Segment::Data& data : program.data) {
-    const int size = static_cast<int>(data.data.size());
-    if (size == 0 || data.offset % kAlignment != 0 || size % kAlignment != 0) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("A data block at offset ", data.offset, " has ", size,
-                       " words, but both must be multiples of ", kAlignment,
-                       ", and the size can't be 0"));
-    }
-    if (data.offset < data_end) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "A data block at offset ", data.offset,
-          " is before the end of the block before it (", data_end, ")"));
-    }
-    data_end = data.offset + size;
-    if (data_end > program.contents_words) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("A data block at offset ", data.offset, " of ", size,
-                       " words passes the end of the contents (",
-                       program.contents_words, " words)"));
-    }
-  }
-  return absl::OkStatus();
+  return ValidateSegmentData(program.data, program.contents_words,
+                             "The program", "contents");
 }
 
 }  // namespace oz3

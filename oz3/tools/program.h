@@ -7,9 +7,11 @@
 #define OZ3_TOOLS_PROGRAM_H_
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "absl/status/status.h"
+#include "absl/types/span.h"
 
 namespace oz3 {
 
@@ -142,6 +144,16 @@ struct Program {
 // it is a valid program, which ProgramLoader can load if there is memory for
 // it, and a program file can hold.
 absl::Status ValidateProgram(const Program& program);
+
+// Returns an error naming the first rule for a segment's data (see
+// Program::Segment::Data) that `data` breaks, if what holds it is `size` words,
+// or OK if it breaks none. Each block is aligned and isn't empty, the blocks
+// are in order and don't overlap, and none passes `size`. An error starts with
+// `holder`, what holds the data ("Segment 2"), and calls its end the end of the
+// `end_name` ("segment").
+absl::Status ValidateSegmentData(absl::Span<const Program::Segment::Data> data,
+                                 int size, std::string_view holder,
+                                 std::string_view end_name);
 
 }  // namespace oz3
 
