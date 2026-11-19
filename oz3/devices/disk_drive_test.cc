@@ -59,9 +59,9 @@ using ::testing::Pair;
 // The processor ports of the drive's command, data, and control ports, and its
 // interrupt.
 constexpr int kPort = 16;
-constexpr int kCommandPort = kPort;
-constexpr int kDataPort = kPort + 1;
-constexpr int kControlPort = kPort + 2;
+constexpr int kCommandPort = kPort + DiskDrive::kCommandPort;
+constexpr int kDataPort = kPort + DiskDrive::kDataPort;
+constexpr int kControlPort = kPort + DiskDrive::kControlPort;
 constexpr int kInterrupt = 2;
 
 // A clock rate of a cycle a millisecond, and hardware where a sector read

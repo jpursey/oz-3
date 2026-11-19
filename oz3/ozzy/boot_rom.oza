@@ -261,53 +261,39 @@ clear_screen:
 ;-------------------------------------------------------------------------------
 ; print_banner: Prints the banner, a line at a time, each followed by a new
 ; line. On the screen, each line starts a column in, and the banner is in a
-; box.
+; box. The teletype ignores the column and the box.
 ;-------------------------------------------------------------------------------
 
 print_banner:
     PUSH R1
-    CALL start_banner_line
+    MOV S(V_COLUMN), 1
     MOV R1, version_text
     CALL print_string
-    CALL end_banner_line
-    CALL start_banner_line
-    CALL end_banner_line
-    CALL start_banner_line
+    CALL next_banner_line
+    CALL next_banner_line
     CALL print_hardware
-    CALL end_banner_line
-    CALL start_banner_line
+    CALL next_banner_line
     CALL print_drives
-    CALL end_banner_line
+    CALL next_banner_line
     CALL draw_box
     POP R1
     RET
 
 ;-------------------------------------------------------------------------------
-; start_banner_line: On the screen, leaves a blank column for the box's left
-; side.
+; next_banner_line: Widens the box to the blank column after the line, if it
+; isn't that wide yet. Then starts a new line, leaving a blank column for the
+; box's left side.
 ;-------------------------------------------------------------------------------
 
-start_banner_line:
-    TST S(V_COLUMNS)
-    RETC Z
-    MOV S(V_COLUMN), 1
-    RET
-
-;-------------------------------------------------------------------------------
-; end_banner_line: On the screen, widens the box to the blank column after the
-; line, if it isn't that wide yet. Then starts a new line.
-;-------------------------------------------------------------------------------
-
-end_banner_line:
+next_banner_line:
     PUSH R0
-    TST S(V_COLUMNS)
-    JC Z, @new_line
     MOV R0, S(V_COLUMN)
     CMP R0, S(V_BOX_RIGHT)
     JC C, @new_line
     MOV S(V_BOX_RIGHT), R0
 @new_line:
     CALL new_line
+    MOV S(V_COLUMN), 1
     POP R0
     RET
 
@@ -326,20 +312,27 @@ draw_box:
     PUSH R2
     PUSH R3
     PUSH R4
+    PUSH R5
+    PUSH R6
+
+    ; The box's rows (R5) and columns (R6) that are on the screen.
+    MOV R5, S(V_ROWS)
+    CMP R5, BANNER_ROWS
+    JC C, @rows
+    MOV R5, BANNER_ROWS
+@rows:
+    MOV R6, S(V_BOX_RIGHT)
+    ADQ R6, 1
+    CMP R6, S(V_COLUMNS)
+    JC C, @columns
+    MOV R6, S(V_COLUMNS)
+@columns:
     MVQ R2, 0
 @row:
-    CMP R2, BANNER_ROWS
-    JC NC, @done
-    CMP R2, S(V_ROWS)
-    JC NC, @done
+    MOV R4, R2
+    MUL R4, S(V_COLUMNS)
     MVQ R3, 0
 @column:
-    CMP R3, S(V_COLUMNS)
-    JC NC, @next_row
-    MOV R0, S(V_BOX_RIGHT)
-    CMP R0, R3
-    JC C, @next_row
-
     ; The lines for the cell's place in the box.
     MVQ R0, 0
     TST R2
@@ -358,19 +351,19 @@ draw_box:
     JC NZ, @not_right
     OR R0, LINE_RIGHT
 @not_right:
-    MOV R4, R2
-    MUL R4, S(V_COLUMNS)
-    ADD R4, R3
     MOV R1, (R4)
     OR R1, R0
     MOV (R4), R1
+    ADQ R4, 1
     ADQ R3, 1
-    JP @column
-@next_row:
+    CMP R3, R6
+    JC C, @column
     ADQ R2, 1
-    JP @row
+    CMP R2, R5
+    JC C, @row
 
-@done:
+    POP R6
+    POP R5
     POP R4
     POP R3
     POP R2
@@ -717,20 +710,20 @@ find_stack_bank:
 ;-------------------------------------------------------------------------------
 
 show_status:
-    TST S(V_COLUMNS)
-    JC Z, @teletype
     PUSH R0
+    TST S(V_COLUMNS)
+    JC NZ, @screen
+    CALL new_line
+    JP @print
+@screen:
     MOV R0, STATUS_ROW
     MOV S(V_ROW), R0
     MOV S(V_COLUMN), 0
     CMP R0, S(V_ROWS)
-    JC NC, @cleared
+    JC NC, @print
     MOV E(SCREEN_FILL_ROW), R0
-@cleared:
+@print:
     POP R0
-    JP print_string
-@teletype:
-    CALL new_line
     JP print_string
 
 ;-------------------------------------------------------------------------------

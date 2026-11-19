@@ -56,6 +56,9 @@ class FakeConsole final : public Console {
 // Long enough for the boot ROM to show its banner.
 constexpr absl::Duration kBootTime = absl::Seconds(1);
 
+// The boot ROM's banner's first line.
+constexpr std::string_view kVersion = "Ozzy 1.0";
+
 // What the boot ROM shows when Enter is pressed in an Ozzy with no drives.
 constexpr std::string_view kNoDrive = "ERROR: No drive A:";
 
@@ -106,7 +109,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeFirst) {
   display.Update();
   const std::string text = console.TakeText();
   EXPECT_EQ(text, DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
-  EXPECT_THAT(text, HasSubstr("Ozzy 1.0"));
+  EXPECT_THAT(text, HasSubstr(kVersion));
 }
 
 TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
@@ -129,7 +132,7 @@ TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
   const std::string text = console.TakeText();
   EXPECT_EQ(text, DrawConsoleText(ozzy->GetScreen()->GetPicture(), &before));
   EXPECT_THAT(text, HasSubstr(kNoDrive));
-  EXPECT_THAT(text, Not(HasSubstr("Ozzy 1.0")));
+  EXPECT_THAT(text, Not(HasSubstr(kVersion)));
 }
 
 TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
@@ -146,7 +149,7 @@ TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
   EXPECT_THAT(text,
               HasSubstr(absl::StrCat("the screen is ", kScreenSize.columns,
                                      " by ", kScreenSize.rows)));
-  EXPECT_THAT(text, Not(HasSubstr("Ozzy 1.0")));
+  EXPECT_THAT(text, Not(HasSubstr(kVersion)));
 
   // The message isn't drawn again, and the picture isn't drawn, as it changes.
   display.Update();
@@ -245,7 +248,7 @@ TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
   ConsoleDisplay display(*ozzy, console);
   ozzy->Run(kBootTime);
   display.Update();
-  EXPECT_THAT(console.TakeText(), HasSubstr("Ozzy 1.0"));
+  EXPECT_THAT(console.TakeText(), HasSubstr(kVersion));
 
   ozzy->GetKeyboard()->TypeKey(kKeyEnter);
   ozzy->Run(kKeyTime);

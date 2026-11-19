@@ -9,11 +9,13 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -27,6 +29,7 @@
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/date_time.h"
 #include "oz3/core/instruction_compiler.h"
+#include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
 #include "oz3/devices/disk_drive_command.h"
 #include "oz3/devices/keyboard.h"
@@ -73,16 +76,21 @@ constexpr int kBannerRows = 4;
 constexpr int kPromptRow = 5;
 constexpr int kStatusRow = 7;
 
-// The default screen's size.
-constexpr int kColumns = 80;
+// The default screen's rows.
 constexpr int kRows = 24;
 
 // The sectors of the images the tests make.
 constexpr int kSectors = 720;
 
-// The line attributes of a cell.
-constexpr uint16_t kLines =
-    kScreenLineTop | kScreenLineBottom | kScreenLineLeft | kScreenLineRight;
+// Long enough for the screen to refresh, 30 times a second.
+constexpr absl::Duration kScreenRefreshTime = absl::Milliseconds(34);
+
+// Long enough for the teletype to print a character at 9600 baud, the slowest
+// the tests use.
+constexpr absl::Duration kTeletypeCharacterTime = absl::Milliseconds(2);
+
+// The most cycles the boot ROM takes to settle.
+constexpr Cycles kMaxSettleCycles = 10'000'000;
 
 // A loader that shows it ran, where the screen's page is in the default Ozzy,
 // then halts: it writes its own word 'L' to the first cell, and the next key
@@ -141,18 +149,20 @@ CpuCore::Registers GetRegisters(Ozzy& ozzy) {
 }
 
 // Runs `ozzy` until core 0 is waiting for Enter or halts, and long enough after
-// for the screen to refresh, 30 times a second, and the teletype to print the
+// for the screen to refresh, or without a screen, for the teletype to print the
 // character its port holds. It runs at least a millisecond first, for keys
 // just typed to reach it.
 void Settle(Ozzy& ozzy) {
-  // In steps of a millisecond, for up to a minute, so a slow clock has time
-  // and a fast one doesn't run far past it.
-  int step = 0;
+  // In steps of a millisecond, up to kMaxSettleCycles, so a fast clock doesn't
+  // run far past it.
+  const Processor* processor = ozzy.GetProcessor();
+  const Cycles end_cycles = processor->GetCycles() + kMaxSettleCycles;
   do {
     ozzy.Run(absl::Milliseconds(1));
-  } while (++step < 60'000 && !IsSettled(ozzy));
+  } while (!IsSettled(ozzy) && processor->GetCycles() < end_cycles);
   EXPECT_TRUE(IsSettled(ozzy)) << "The boot ROM didn't settle";
-  ozzy.Run(absl::Milliseconds(34));
+  ozzy.Run(ozzy.GetScreen() != nullptr ? kScreenRefreshTime
+                                       : kTeletypeCharacterTime);
 }
 
 // Presses each of `keys`, and settles `ozzy`.
@@ -260,8 +270,13 @@ std::string GetTeletypeBanner(std::string_view hardware,
   return absl::StrCat(kVersion, "\r\n\r\n", hardware, "\r\n", drives, "\r\n");
 }
 
-// Returns the test loader in its boot area.
-DiskSuperblock::BootArea GetLoaderBootArea() {
+// Returns a boot area of all 0.
+DiskSuperblock::BootArea GetBlankBootArea() {
+  return DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0);
+}
+
+// Returns the test loader in its boot area, assembled.
+DiskSuperblock::BootArea AssembleLoaderBootArea() {
   const int screen = kOzzyScreenPage * kMemoryBankPageSize;
   const std::string source = absl::StrFormat(
       kLoaderSource, screen, kOzzyKeyboardPort, screen + 1,
@@ -277,7 +292,7 @@ DiskSuperblock::BootArea GetLoaderBootArea() {
   for (const gb::ParseError& parse_error : errors) {
     ADD_FAILURE() << parse_error.FormatMessage();
   }
-  DiskSuperblock::BootArea boot_area(DiskSuperblock::kBootAreaWords);
+  DiskSuperblock::BootArea boot_area = GetBlankBootArea();
   if (program == nullptr) {
     return boot_area;
   }
@@ -288,11 +303,62 @@ DiskSuperblock::BootArea GetLoaderBootArea() {
   }
   EXPECT_EQ(bare->contents_words, DiskSuperblock::kBootAreaWords);
   for (const Program::Segment::Data& data : bare->data) {
-    for (int i = 0; i < static_cast<int>(data.data.size()); ++i) {
-      boot_area[data.offset + i] = data.data[i];
-    }
+    absl::c_copy(data.data, boot_area.begin() + data.offset);
   }
   return boot_area;
+}
+
+// Returns the test loader in its boot area, assembled once, as it never
+// changes.
+const DiskSuperblock::BootArea& GetLoaderBootArea() {
+  static const DiskSuperblock::BootArea* const s_boot_area =
+      new DiskSuperblock::BootArea(AssembleLoaderBootArea());
+  return *s_boot_area;
+}
+
+// Returns the settings of the default Ozzy with a teletype at `baud` in place
+// of the screen.
+OzzySettings GetTeletypeSettings(int baud) {
+  OzzySettings settings;
+  settings.screen.reset();
+  settings.teletype = OzzyTeletypeSettings();
+  settings.teletype->baud = baud;
+  return settings;
+}
+
+// Expects the test loader to have run and halted, with the banks of the stack
+// page `page` of bank `bank`, and to have written the key `key` to the
+// screen.
+void ExpectLoaderRan(Ozzy& ozzy, int bank, int page, uint16_t key) {
+  ASSERT_TRUE(IsHalted(ozzy));
+  const CpuCore::Registers registers = GetRegisters(ozzy);
+  const CpuCore::Banks banks = CpuCore::Banks::FromWord(registers[CpuCore::MB]);
+  EXPECT_EQ(banks.code, bank);
+  EXPECT_EQ(banks.stack, bank);
+  EXPECT_EQ(banks.data, bank);
+  EXPECT_EQ(banks.extra, 0);
+  EXPECT_EQ(registers[CpuCore::BC], page * kMemoryBankPageSize);
+  EXPECT_EQ(registers[CpuCore::BD], page * kMemoryBankPageSize);
+  EXPECT_EQ(registers[CpuCore::BS],
+            static_cast<uint16_t>((page + 1) * kMemoryBankPageSize));
+  EXPECT_EQ(registers[CpuCore::BE], 0);
+  EXPECT_EQ(registers[CpuCore::SP], 0);
+  EXPECT_EQ(registers[CpuCore::R0], kOzzyDrivePort);
+  EXPECT_EQ(registers[CpuCore::R1], 0);
+  EXPECT_EQ(registers[CpuCore::ST] & CpuCore::I, 0);
+
+  // It wrote its own word, and the key, over the box's first two cells, and
+  // the cursor is hidden.
+  if (ozzy.GetScreen() == nullptr) {
+    return;
+  }
+  const ScreenPicture& picture = ozzy.GetScreen()->GetPicture();
+  EXPECT_EQ(picture.cells[0], 'L');
+  EXPECT_EQ(picture.cells[1], key);
+  EXPECT_EQ(GetRowText(picture, 0).substr(2), kVersion.substr(1));
+  EXPECT_EQ(GetRowText(picture, kPromptRow), kPrompt);
+  EXPECT_EQ(GetRowText(picture, kStatusRow), kReady);
+  EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kOff);
 }
 
 //==============================================================================
@@ -317,8 +383,11 @@ class BootRomTest : public ::testing::Test {
     absl::StatusOr<std::unique_ptr<DiskImage>> image =
         DiskImage::Create(&host_, path, kSectors);
     EXPECT_TRUE(image.ok()) << image.status();
-    if (!image.ok() || !boot_area.has_value()) {
-      return image.ok() ? *std::move(image) : nullptr;
+    if (!image.ok()) {
+      return nullptr;
+    }
+    if (!boot_area.has_value()) {
+      return *std::move(image);
     }
     DiskFileSystem file_system({}, 1);
     file_system.AttachImage(*std::move(image));
@@ -331,8 +400,7 @@ class BootRomTest : public ::testing::Test {
 
   // Returns a formatted image whose boot area is all 0.
   std::unique_ptr<DiskImage> MakeBlankImage() {
-    return MakeImage(
-        DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0));
+    return MakeImage(GetBlankBootArea());
   }
 
   // Returns a formatted image whose boot area is the test loader.
@@ -438,10 +506,11 @@ TEST_F(BootRomTest, SourceKnowsTheScreen) {
 }
 
 TEST_F(BootRomTest, SourceKnowsTheDrive) {
-  // The source's own copy of the drive's control word, commands, and statuses
-  // matches the drive's, and its boot drive is A:. The drive keeps its ports'
-  // order to itself, so only booting tests the source's.
+  // The source's own copy of the drive's ports, control word, commands, and
+  // statuses matches the drive's, and its boot drive is A:.
   ExpectSourceConstants({
+      {"DRIVE_DATA", DiskDrive::kDataPort - DiskDrive::kCommandPort},
+      {"DRIVE_CONTROL", DiskDrive::kControlPort - DiskDrive::kCommandPort},
       {"DRIVE_RESET", DiskDrive::kResetRequest},
       {"DRIVE_PHASE", DiskDrive::kPhaseMask},
       {"PHASE_WORKING", static_cast<uint32_t>(DiskDrivePhase::kWorking)},
@@ -526,10 +595,8 @@ TEST_F(BootRomTest, ClockRate) {
 
 TEST_F(BootRomTest, FastestClockRates) {
   // The most digits are a dword.
-  OzzySettings settings;
-  settings.screen.reset();
+  OzzySettings settings = GetTeletypeSettings(0);
   settings.keyboard = false;
-  settings.teletype = OzzyTeletypeSettings();
   settings.clock_hz = OzzySettings::kMaxClockHz;
   std::unique_ptr<Ozzy> ozzy = Boot(settings);
   ASSERT_NE(ozzy, nullptr);
@@ -551,10 +618,6 @@ TEST_F(BootRomTest, Drives) {
   std::unique_ptr<Ozzy> ozzy = Boot(settings);
   ASSERT_NE(ozzy, nullptr);
   ExpectWaiting(*ozzy, kDefaultHardware, "Drives: A");
-
-  ozzy = BootWithDrives();
-  ASSERT_NE(ozzy, nullptr);
-  ExpectWaiting(*ozzy, kDefaultHardware, kEveryDrive);
 
   settings.banks.assign(2, 0xFFFF);
   settings.banks[0] = 0x7FFE;
@@ -656,8 +719,7 @@ TEST_F(BootRomTest, NoScreenOrTeletype) {
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetState(*ozzy), CpuCore::State::kWaiting);
   PressEnter(*ozzy);
-  EXPECT_TRUE(IsHalted(*ozzy));
-  EXPECT_EQ(GetRegisters(*ozzy)[CpuCore::BC], kMemoryBankPageSize);
+  ExpectLoaderRan(*ozzy, 0, 1, 0);
 }
 
 TEST_F(BootRomTest, OtherKeysAreIgnored) {
@@ -718,13 +780,6 @@ TEST_F(BootRomTest, NoDrive) {
   ExpectWaiting(*ozzy, kDefaultHardware, kNoDrives, kNoDrive);
 }
 
-TEST_F(BootRomTest, NoDisk) {
-  std::unique_ptr<Ozzy> ozzy = BootWithDrives();
-  ASSERT_NE(ozzy, nullptr);
-  PressEnter(*ozzy);
-  ExpectWaiting(*ozzy, kDefaultHardware, kEveryDrive, kNoDisk);
-}
-
 TEST_F(BootRomTest, OnlyADiskInA) {
   // A disk in another drive doesn't boot.
   std::unique_ptr<Ozzy> ozzy = BootWithDrives();
@@ -750,7 +805,7 @@ TEST_F(BootRomTest, NotASystemDisk) {
   // Each word of the signature counts.
   for (int word = 0; word < static_cast<int>(kBootSignature.size()); ++word) {
     SCOPED_TRACE(word);
-    DiskSuperblock::BootArea boot_area(DiskSuperblock::kBootAreaWords, 0);
+    DiskSuperblock::BootArea boot_area = GetBlankBootArea();
     boot_area[DiskSuperblock::kBootAreaWords - kBootSignature.size() + word] =
         kBootSignature[word];
     ozzy = BootWithDrives(MakeImage(boot_area));
@@ -786,41 +841,6 @@ TEST_F(BootRomTest, StatusReplacesTheLast) {
 //==============================================================================
 // Booting
 //==============================================================================
-
-// Expects the test loader to have run and halted, with the banks of the stack
-// page `page` of bank `bank`, and to have written the key `key` to the
-// screen.
-void ExpectLoaderRan(Ozzy& ozzy, int bank, int page, uint16_t key) {
-  ASSERT_TRUE(IsHalted(ozzy));
-  const CpuCore::Registers registers = GetRegisters(ozzy);
-  const CpuCore::Banks banks = CpuCore::Banks::FromWord(registers[CpuCore::MB]);
-  EXPECT_EQ(banks.code, bank);
-  EXPECT_EQ(banks.stack, bank);
-  EXPECT_EQ(banks.data, bank);
-  EXPECT_EQ(banks.extra, 0);
-  EXPECT_EQ(registers[CpuCore::BC], page * kMemoryBankPageSize);
-  EXPECT_EQ(registers[CpuCore::BD], page * kMemoryBankPageSize);
-  EXPECT_EQ(registers[CpuCore::BS],
-            static_cast<uint16_t>((page + 1) * kMemoryBankPageSize));
-  EXPECT_EQ(registers[CpuCore::BE], 0);
-  EXPECT_EQ(registers[CpuCore::SP], 0);
-  EXPECT_EQ(registers[CpuCore::R0], kOzzyDrivePort);
-  EXPECT_EQ(registers[CpuCore::R1], 0);
-  EXPECT_EQ(registers[CpuCore::ST] & CpuCore::I, 0);
-
-  // It wrote its own word, and the key, over the box's first two cells, and
-  // the cursor is hidden.
-  if (ozzy.GetScreen() == nullptr) {
-    return;
-  }
-  const ScreenPicture& picture = ozzy.GetScreen()->GetPicture();
-  EXPECT_EQ(picture.cells[0], 'L');
-  EXPECT_EQ(picture.cells[1], key);
-  EXPECT_EQ(GetRowText(picture, 0).substr(2), kVersion.substr(1));
-  EXPECT_EQ(GetRowText(picture, kPromptRow), kPrompt);
-  EXPECT_EQ(GetRowText(picture, kStatusRow), kReady);
-  EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kOff);
-}
 
 TEST_F(BootRomTest, BootsTheLoader) {
   std::unique_ptr<Ozzy> ozzy = BootWithDrives(MakeSystemImage());
@@ -862,11 +882,8 @@ TEST_F(BootRomTest, TeletypeWithoutKeyboard) {
   // for. Without a keyboard, it halts after the banner.
   for (int baud : {0, 9600}) {
     SCOPED_TRACE(baud);
-    OzzySettings settings;
-    settings.screen.reset();
+    OzzySettings settings = GetTeletypeSettings(baud);
     settings.keyboard = false;
-    settings.teletype = OzzyTeletypeSettings();
-    settings.teletype->baud = baud;
     std::unique_ptr<Ozzy> ozzy = Boot(settings);
     ASSERT_NE(ozzy, nullptr);
     EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(),
@@ -880,10 +897,7 @@ TEST_F(BootRomTest, Teletype) {
   // line and the prompt again.
   for (int baud : {0, 9600}) {
     SCOPED_TRACE(baud);
-    OzzySettings settings;
-    settings.screen.reset();
-    settings.teletype = OzzyTeletypeSettings();
-    settings.teletype->baud = baud;
+    OzzySettings settings = GetTeletypeSettings(baud);
     settings.drives.resize(1);
     std::unique_ptr<Ozzy> ozzy = Boot(settings);
     ASSERT_NE(ozzy, nullptr);

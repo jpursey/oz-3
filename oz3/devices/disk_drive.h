@@ -194,8 +194,11 @@ class DiskDrive final : public Device {
   // Constants
   //----------------------------------------------------------------------------
 
-  // The ports the drive is wired to.
+  // The ports the drive is wired to, and each one's offset from the first.
   static constexpr int kPorts = 3;
+  static constexpr int kCommandPort = 0;
+  static constexpr int kDataPort = 1;
+  static constexpr int kControlPort = 2;
 
   // The control port's control word: the phase (a DiskDrivePhase) in its low
   // nibble, whether an image is attached, and the current command's code in
@@ -251,11 +254,7 @@ class DiskDrive final : public Device {
   // Constants
   //----------------------------------------------------------------------------
 
-  // The drive's ports, as numbered in its DeviceConfig, and each one's bit in
-  // a mask of ports to lock.
-  static constexpr int kCommandPort = 0;
-  static constexpr int kDataPort = 1;
-  static constexpr int kControlPort = 2;
+  // Each of the drive's ports' bit in a mask of ports to lock.
   static constexpr uint8_t kCommandLock = 1 << kCommandPort;
   static constexpr uint8_t kDataLock = 1 << kDataPort;
   static constexpr uint8_t kControlLock = 1 << kControlPort;
