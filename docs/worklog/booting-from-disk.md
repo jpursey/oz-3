@@ -6,20 +6,25 @@ from the disk's boot area (words 32 to 255 of sector 0, beside the superblock)
 and starts it. The loader is the disk's own code, and loads whatever it likes,
 such as an OS file, with the drive's ordinary file commands. So copying an OS
 file onto a disk doesn't make it bootable: its boot area must hold a loader
-too, written by `oz3dsk sys` on the host, or by an OS's own `SYSGEN` with the
+too, written by `oz3dsk boot` on the host, or by an OS's own `SYSGEN` with the
 drive's new `WRITE BOOT` command.
 
-At power on, the boot ROM prints its banner and a prompt, as the Executive did,
-and waits for Enter. Then it boots, or says why it can't and waits again. It no
-longer echoes keys:
+At power on, the boot ROM shows its banner in a box and a prompt, as the
+Executive did, and waits for Enter. Then it boots, or says why it can't and
+waits again, always on the same status line, so the screen never scrolls. It
+no longer echoes keys:
 
 ```
-OZZY 0.2  1 MHz  1 core  56K RAM
+╔════════════════════════╗
+║ Ozzy 1.0               ║
+║                        ║
+║ 1 core  56K RAM  1 MHz ║
+║ Drives: A, B           ║
+╚════════════════════════╝
 
-Insert disk in drive A: and press Enter.
-No disk in drive A:
-Not a system disk
-_
+Press Enter to Boot...
+
+ERROR: Not a system disk
 ```
 
 A loader is a default program (one with no segments) of at most 224 words,
@@ -30,7 +35,7 @@ than on a page:
 
 ```
 ; boot.oza: assembled with oz3asm --bare, then written with
-;   oz3dsk system.ozd sys boot.oz3
+;   oz3dsk system.ozd boot boot.oz3
 ; The ROM starts it at IP 0, with the boot drive's command port in R0.
     ...                     ; Load OZOS.SYS after itself, and RST into it
     .DS 222 - $             ; Padding up to word 222
@@ -60,13 +65,17 @@ OS*), so this feature ends where the loader starts.
 
 Two commands join the Disk group:
 
-| Code | Command      | Arguments | Accept    | Data                | Completion           |
-| ---- | ------------ | --------- | --------- | ------------------- | -------------------- |
-| 44h  | `READ BOOT`  | —         | status, n | OS reads n words    | status, words read   |
-| 45h  | `WRITE BOOT` | —         | status, n | OS writes n words   | status               |
+| Code | Command      | Arguments | Accept | Data                 | Completion |
+| ---- | ------------ | --------- | ------ | -------------------- | ---------- |
+| 44h  | `READ BOOT`  | —         | status | OS reads 112 dwords  | status     |
+| 45h  | `WRITE BOOT` | —         | status | OS writes 112 dwords | status     |
 
-- n is always 224, the whole boot area, so there is no count, and the data step
-  works as `READ`'s and `WRITE`'s do, including early completion.
+- **Always the whole boot area,** 224 words, so there is no count, and the
+  accept and completion give no count back either. It moves as dwords, as
+  `READ PACKED` and `WRITE PACKED` do, low word first, so the OS's loop is the
+  dword form of `INR` or `OUTR` with `R7` at 112. Otherwise the data step works
+  as theirs does, including early completion, after which a failed read's
+  remaining dwords are zeros.
 - **Accept** checks the disk as other handle-less commands do: **no disk**,
   **I/O error**, **write protected** for `WRITE BOOT`, then **unformatted**, as
   the boot area exists only on a formatted disk. Open files don't matter.
@@ -113,7 +122,7 @@ loader can read the whole file with `READ PACKED`:
 ### oz3dsk (tools, apps, manual's Disk Drive page)
 
 ```
-oz3dsk <image> sys <bare program>
+oz3dsk <image> boot <bare program>
 ```
 
 - Writes a bare program's words into the boot area, as loading it at the boot
@@ -125,28 +134,64 @@ oz3dsk <image> sys <bare program>
 
 ### The boot ROM (ozzy, manual's Ozzy Computer page)
 
-At power on, core 0 runs the boot ROM, which:
+At power on, core 0 runs the boot ROM. It shows the banner, then, with a
+keyboard, the prompt, `Press Enter to Boot...`, and waits for Enter. Without a
+keyboard it shows only the banner and halts, as nothing could answer.
 
-1. Prints the banner as now, with the version raised to 0.2, then a blank line.
-2. **With a keyboard**, prints the prompt, `Insert disk in drive A: and press
-   Enter.`, and waits. Without one, it halts, as nothing could answer. On the
-   teletype, each line ends with a carriage return and line feed.
-3. **Ignores every key but Enter.** Nothing is echoed. Only the key counts, so
-   Ctrl+M is Enter, as Ctrl+H is Backspace today.
-4. **On Enter**, starts a new line and tries to boot from `A:`. If it can't, it
-   prints why on its own line and waits for Enter again:
+**The banner** is the boot ROM's version and the Ozzy's hardware, from the
+machine table:
 
-   | Why                                        | Message                   |
-   | ------------------------------------------ | ------------------------- |
-   | The Ozzy has no drives                     | `No drive A:`             |
-   | **no disk**                                | `No disk in drive A:`     |
-   | **unformatted**                            | `Disk not formatted`      |
-   | The last two words aren't the signature    | `Not a system disk`       |
-   | Any other status, such as **I/O error**    | `Disk error 21h`          |
+- `Ozzy 1.0`, then a blank line.
+- The cores, RAM, and clock rate, as `1 core  56K RAM  1 MHz`, written as the
+  banner writes them today (`2 cores`, `4770 kHz`).
+- The drives, by letter, as `Drives: A, B`, or `Drives: none`.
 
-5. **Boots:** reads the boot area with `READ BOOT` into the first 224 words of
-   its stack's page (1000h to 10DFh by default), checks that its last two words
-   are the boot signature, `'BOOT'` packed (4F42h, 544Fh), and starts it.
+**On the screen,** the banner is in a box of double lines (the font's ╔ ═ ╗ ║
+╚ ╝), with a space each side of its widest line. Below the
+box come a blank line, the prompt, another blank line, and then the **status
+line**: empty at first, `Loading...` once Enter is pressed, then `ERROR:` and
+the reason, or `Ready` just before the loader starts. Each status replaces the
+last, clearing the row, so the screen never scrolls. The cursor blinks after
+the prompt while the ROM waits, and is hidden from Enter on. On a screen too
+small for it, what passes the right edge or the bottom row isn't drawn.
+
+**On the teletype,** in an Ozzy without a screen, it is the same without the
+box, and each status is a line of its own, straight after the prompt. After an
+error it prints a blank line and the prompt again:
+
+```
+Ozzy 1.0
+
+1 core  56K RAM  1 MHz
+Drives: A
+
+Press Enter to Boot...
+Loading...
+ERROR: No disk in drive A:
+
+Press Enter to Boot...
+Loading...
+Ready
+```
+
+Each teletype line ends with a carriage return and line feed.
+
+**Waiting:** it ignores every key but Enter, and echoes nothing. Only the key
+counts, so Ctrl+M is Enter, as Ctrl+H is Backspace today.
+
+**Booting:** on Enter, it shows `Loading...`, then reads the boot area from
+`A:` with `READ BOOT` into the first 224 words of its stack's page (1000h to
+10DFh by default), and checks that its last two words are the boot signature,
+`'BOOT'` packed (4F42h, 544Fh). If they are, it shows `Ready` and starts the
+loader. If anything fails, it shows why and waits for Enter again:
+
+| Why                                     | Status                       |
+| --------------------------------------- | ---------------------------- |
+| The Ozzy has no drives                  | `ERROR: No drive A:`         |
+| **no disk**                             | `ERROR: No disk in drive A:` |
+| **unformatted**                         | `ERROR: Disk not formatted`  |
+| The last two words aren't the signature | `ERROR: Not a system disk`   |
+| Any other status, such as **I/O error** | `ERROR: Disk error 21h`      |
 
 The ROM polls the drive's control port, and never takes its interrupt. Keys
 typed after Enter wait in the keyboard for the loader.
@@ -178,10 +223,10 @@ starts them.
 - **Loader**: the code in the boot area. "Boot loader" is fine in prose, but
   "loader" alone matches CP/M's `CPMLDR`. Distinct from the tools library's
   `ProgramLoader`, a host-side C++ class, which prose should name in full.
-- **`READ BOOT`** and **`WRITE BOOT`**, after `READ` and `WRITE`, as they move
-  words the same way.
-- **`oz3dsk sys`**, after DOS's `SYS` and CP/M's `SYSGEN`: making a disk a
-  system disk.
+- **`READ BOOT`** and **`WRITE BOOT`**, after `READ PACKED` and `WRITE
+  PACKED`, as they move dwords the same way.
+- **`oz3dsk boot`**, after the boot area it writes, matching the drive's
+  commands. A disk whose boot area holds a loader is a **system disk**.
 - **Bare program** (`BareProgram`, `oz3asm --bare`): a program with nothing
   but its words. Not "raw", which the drive's raw directory reads, the
   console's raw mode, and Game Bits' `RawFile` already use, nor "flat" or
@@ -242,19 +287,22 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 - The program assembler already builds the default program as a `Program`,
   so `oz3asm --bare` converts it, and nothing in the assembler changes.
 
-### tools and apps: oz3dsk sys
+### tools and apps: oz3dsk boot
 
 - `DiskFileProtocol` gains `ReadBootArea` and `WriteBootArea`, passing through
   to the file system, as `SetLabel` does.
-- `DiskTool` gains `sys`, which reads the bare program, validates its size,
+- `DiskTool` gains `boot`, which reads the bare program, validates its size,
   lays its words into a `BootArea`, and writes it.
 
 ### ozzy: the boot ROM
 
-- `boot_rom.oza` loses its keyboard handler and echo code, and gains the prompt,
-  the wait for Enter, the drive's `READ BOOT` exchange on its three ports,
-  the signature check, and the messages. It finds `A:` in the machine table
-  (type 5, letter 41h), so an Ozzy with no drives says so.
+- `boot_rom.oza` loses its keyboard handler and echo code, and gains the
+  boxed banner with its drives line, the prompt, the status line, the wait for
+  Enter, the drive's `READ BOOT` exchange on its three ports, and the
+  signature check. It finds the drives in the machine table (type 5), so an
+  Ozzy with no drives says so.
+- The box and the status line are drawn by writing cells, as the banner is
+  today; the status line is cleared by writing spaces across its row.
 - The ROM has room: it is one page, 4K words, less the machine table's 256.
 
 ### To confirm
@@ -275,10 +323,10 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 
 ## Open questions
 
-- [ ] The prompt and message wording, and the signature's value. The ones above
-  are a first draft.
-- [ ] The bare program's name and identifier. "Bare" and `424Fh` ("OB") are a
-  first draft.
+- [x] The prompt and message wording, and the signature's value: as above,
+  with the banner in a box on the screen, and the status on one line that is
+  replaced rather than scrolled.
+- [x] The bare program's name and identifier: "bare", and `424Fh` ("OB").
 - [x] Whether the ROM is a public library (a fixed jump table of its console
   and drive routines, as the C64's KERNAL or the BBC Micro's MOS had), or only
   a boot ROM. Only a boot ROM: the Ozzy has one maker and fixed hardware, so
@@ -314,7 +362,7 @@ Depends on: CL1.
 **Verify**
 - Standard checks.
 - Unit tests, as programs with `DeviceProgramTest`: a read and a write through
-  the ports, with n 224; each accept status; a write reset partway leaving the
+  the ports, as 112 dwords; each accept status; a write reset partway leaving the
   old boot area; a read and a write failing partway (early completion); the
   read cache's timing.
 - Manual pages updated.
@@ -339,12 +387,12 @@ Depends on: nothing.
   block order rejected; `oz3asm --bare` end to end.
 - Manual pages updated.
 
-### CL4 [ ] tools, apps: oz3dsk sys
+### CL4 [ ] tools, apps: oz3dsk boot
 
 Depends on: CL1, CL3.
 
 - `DiskFileProtocol`: `ReadBootArea` and `WriteBootArea`.
-- `DiskTool` and `oz3dsk`: `sys`.
+- `DiskTool` and `oz3dsk`: `boot`.
 - Manual: Disk Drive's oz3dsk table.
 
 **Verify**
@@ -358,19 +406,22 @@ Depends on: CL1, CL3.
 
 Depends on: CL2, and CL4 to make system disks by hand.
 
-- `boot_rom.oza`: the prompt, waiting for Enter, booting, and the messages; the
-  echo removed; version 0.2.
+- `boot_rom.oza`: the boxed banner and its drives line, the prompt, waiting
+  for Enter, booting, and the status line; the echo removed; version 1.0.
 - Manual: Ozzy Computer's boot ROM section, with Echoing keys replaced by
   booting, and the loader's contract (where it loads, its signature, and what
   it starts with). ozzy_design.md's Boot section to match.
 
 **Verify**
 - Standard checks.
-- Unit tests in `boot_rom_test.cc`, with images made in the test: the prompt on
-  the screen and on the teletype; no prompt without a keyboard; keys other than
-  Enter ignored; each message (no drives, no disk, unformatted, no signature, a
-  drive status); a retry after inserting a disk; a test loader that boots and
+- Unit tests in `boot_rom_test.cc`, with images made in the test: the boxed
+  banner's cells, including the drives line with none, one, and four drives;
+  the teletype's lines, with the blank line and prompt again after an error;
+  no prompt without a keyboard; keys other than Enter ignored; each status
+  (no drives, no disk, unformatted, no signature, a drive status), replacing
+  a longer one on the same row; a small screen cutting the banner off rather
+  than scrolling; a retry after inserting a disk; a test loader that boots and
   writes to the screen, checking its banks, `R0`, `R1`, and that interrupts are
   disabled.
 - By hand, left for the user: `ozzy` with a config whose `A:` holds a system
-  disk made with `oz3dsk sys`.
+  disk made with `oz3dsk boot`.
