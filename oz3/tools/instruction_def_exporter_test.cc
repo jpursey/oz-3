@@ -32,7 +32,7 @@ std::string Export(const InstructionSetDef& instruction_set) {
   return text;
 }
 
-TEST(InstructionDefExporterTest, ValueSetsAndRelativeInstructions) {
+TEST(InstructionDefExporterTest, ValueSets) {
   const NamedValueDef conditions[] = {{"Z", 4}, {"NZ", 0}};
   const NamedValueDef flags[] = {{"C", 4}};
   const ValueSetDef value_sets[] = {
@@ -91,7 +91,7 @@ constexpr oz3::InstructionSetDef kTestInstructionSet = {
 )---");
 }
 
-TEST(InstructionDefExporterTest, NoValueSetsOrRelativeInstructions) {
+TEST(InstructionDefExporterTest, NoValueSets) {
   const InstructionDef instructions[] = {
       {.op = 0, .op_name = "NOP", .code = "UL;"},
   };

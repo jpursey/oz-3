@@ -103,8 +103,7 @@ struct ValueSetDef {
   instruction's or macro's options, a value set's are positional. A third
   option would be the time to make them a list in any order, with an error
   when `bits` is missing.
-- `InstructionDefExporter` writes `.flags = true` only when set, as it does
-  `.relative`.
+- `InstructionDefExporter` writes `.flags = true` only when set.
 
 ### Brittleness
 

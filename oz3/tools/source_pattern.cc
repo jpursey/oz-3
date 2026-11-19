@@ -55,10 +55,6 @@ constexpr gb::LexerConfig::UserToken kUserTokens[] = {
      .regex = R"-((\$(?:#[1-8]|[a-zA-Z_]\w*)(?::\w*)?))-"},
 };
 
-// The name of each value type a pattern can write, by ValueType.
-constexpr std::string_view kValueTypeNames[] = {"",     "CODE",  "STACK",
-                                                "DATA", "EXTRA", "relative"};
-
 constexpr gb::LexerConfig kLexerConfig = {
     .flags = {gb::kLexerFlags_AllIntegers, gb::kLexerFlags_AllFloats,
               gb::LexerFlag::kDoubleQuoteString,
@@ -142,12 +138,21 @@ std::optional<SourcePattern::Part> ParsePlaceholder(
   return part;
 }
 
-// Returns the value type `name` names, or nullopt if it names none.
+// Returns the value type `name` names: a bank's name as microcode writes it,
+// or "relative". Returns nullopt if it names none.
 std::optional<ValueType> ParseValueType(std::string_view name) {
-  for (int i = 1; i < std::ssize(kValueTypeNames); ++i) {
-    if (kValueTypeNames[i] == name) {
-      return static_cast<ValueType>(i);
-    }
+  if (name == "relative") {
+    return ValueType::kRelative;
+  }
+  switch (CpuCore::GetBankFromName(name)) {
+    case CpuCore::CODE:
+      return ValueType::kCode;
+    case CpuCore::STACK:
+      return ValueType::kStack;
+    case CpuCore::DATA:
+      return ValueType::kData;
+    case CpuCore::EXTRA:
+      return ValueType::kExtra;
   }
   return std::nullopt;
 }
