@@ -147,9 +147,10 @@ covers how it is built, and the decisions behind it.
   doesn't know is a `CHECK`, as indexing the drives past their end would be
   worse.
 - **The clock** is in the context (`kConstraintHostClock`), which the Ozzy
-  gives its processor, and keeps until after the processor's devices are
-  destroyed, as the drives call it then. The Ozzy doesn't declare the clock,
-  as only the devices need it: each declares only what it needs.
+  gives its processor. Each device that needs it keeps a contract built from
+  the context, which shares it, so it lives as long as the drives, which call
+  it as they are destroyed. The Ozzy doesn't declare the clock, as only the
+  devices need it: each declares only what it needs.
 
 **Brittleness:**
 - `file_system` must outlive the Ozzy, which its comment says.

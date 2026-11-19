@@ -23,16 +23,15 @@
 namespace oz3 {
 
 Processor::Processor(const ProcessorConfig& config, Contract contract)
-    : context_(std::move(contract)),
-      ports_(config.GetPortCount()),
-      clock_hz_(config.GetClockHz()) {
+    : ports_(config.GetPortCount()), clock_hz_(config.GetClockHz()) {
   DCHECK_OK(config.Validate());
-  CHECK(context_.IsValid()) << "The processor has no context";
+  gb::ValidatedContext context(std::move(contract));
+  CHECK(context.IsValid()) << "The processor has no context";
   std::array<std::vector<MemoryMapPages>, kMaxMemoryBanks> bank_maps;
   for (const std::shared_ptr<const DeviceFactory>& factory :
        config.GetDevices()) {
     const DeviceConfig& device_config = factory->GetConfig();
-    std::unique_ptr<Device> device = factory->CreateDevice(context_);
+    std::unique_ptr<Device> device = factory->CreateDevice(context);
     CHECK(device != nullptr)
         << device_config.name << " doesn't meet its contract in the context";
     MemoryMap* const map = device->GetMemoryMap();

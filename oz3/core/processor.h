@@ -42,11 +42,11 @@ class Processor final {
   // Creates a new Processor with the specified configuration, which must be
   // valid (see ProcessorConfig::Validate).
   //
-  // The Processor keeps `contract`'s context, and gives it to each device's
-  // factory as it creates the device. The context must meet every device's
-  // contract (see DeviceFactory::CreateDevice), such as by holding the host's
-  // clock for the devices that need it, and must outlive the Processor unless
-  // the contract owns it.
+  // The Processor gives `contract`'s context to each device's factory as it
+  // creates the device. The context must meet every device's contract (see
+  // DeviceFactory::CreateDevice), such as by holding the host's clock for the
+  // devices that need it. A context the contract owns lives as long as the
+  // devices that keep it; any other must outlive the Processor.
   explicit Processor(const ProcessorConfig& config,
                      Contract contract = gb::Context());
 
@@ -138,11 +138,7 @@ class Processor final {
 
   uint8_t DoRaiseInterrupt(int interrupt, uint8_t cores, bool shared);
 
-  // The context is declared first, so it outlives the devices, which use it as
-  // they are destroyed.
-  gb::ValidatedContext context_;
-
-  // The devices are declared next, so they are destroyed after everything else
+  // The devices are declared first, so they are destroyed after everything
   // they use.
   std::vector<std::unique_ptr<Device>> devices_;
 
