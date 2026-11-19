@@ -19,6 +19,8 @@ constexpr int kVolumeResults = kDiskNameFields + 3;  // Label, and three counts.
 constexpr DiskCommandKind kLatent = DiskCommandKind::kLatent;
 constexpr DiskCommandKind kRead = DiskCommandKind::kRead;
 constexpr DiskCommandKind kWrite = DiskCommandKind::kWrite;
+constexpr DiskCommandKind kReadBoot = DiskCommandKind::kReadBoot;
+constexpr DiskCommandKind kWriteBoot = DiskCommandKind::kWriteBoot;
 
 // The command table, as the Commands section of docs/disk_design.md has it.
 const DiskCommandDef kCommandDefs[] = {
@@ -96,6 +98,10 @@ const DiskCommandDef kCommandDefs[] = {
     {.command = DiskDriveCommand::kLabel,
      .kind = kLatent,
      .arguments = kDiskNameFields},
+    {.command = DiskDriveCommand::kReadBoot, .kind = kReadBoot, .packed = true},
+    {.command = DiskDriveCommand::kWriteBoot,
+     .kind = kWriteBoot,
+     .packed = true},
 };
 
 }  // namespace

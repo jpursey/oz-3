@@ -49,6 +49,7 @@ namespace oz3 {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Le;
@@ -81,6 +82,9 @@ constexpr char kPath[] = "mem:/disk.ozd";
 constexpr char kOtherPath[] = "mem:/other.ozd";
 constexpr char kThirdPath[] = "mem:/third.ozd";
 constexpr int kSectors = 720;
+
+// The dwords of the boot area, which READ BOOT and WRITE BOOT move.
+constexpr int kBootDwords = DiskSuperblock::kBootAreaWords / 2;
 
 constexpr DiskStatus kOk = DiskStatus::kOk;
 
@@ -241,6 +245,15 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return file_system.DetachImage();
   }
 
+  // Returns a boot area whose words count up from `first`.
+  static DiskSuperblock::BootArea BootWords(uint16_t first) {
+    DiskSuperblock::BootArea words(DiskSuperblock::kBootAreaWords);
+    for (int i = 0; i < DiskSuperblock::kBootAreaWords; ++i) {
+      words[i] = static_cast<uint16_t>(first + i);
+    }
+    return words;
+  }
+
   // Returns word `i` of a file AddFile makes.
   static uint16_t FileWord(int i) { return static_cast<uint16_t>(i + 1); }
 
@@ -387,6 +400,17 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // superblock.
   void AttachFormatted() {
     drive_->AttachImage(MakeImage());
+    Execute(kAttachCycles + 2);
+  }
+
+  // Attaches a new formatted image whose boot area is `words`, and runs until
+  // the drive has read its superblock.
+  void AttachWithBootArea(const DiskSuperblock::BootArea& words,
+                          std::string_view path = kPath) {
+    DiskFileSystem file_system({}, 1);
+    file_system.AttachImage(MakeImage(/*formatted=*/true, path));
+    EXPECT_EQ(file_system.SetBootArea(words), kOk);
+    drive_->AttachImage(file_system.DetachImage());
     Execute(kAttachCycles + 2);
   }
 
@@ -754,6 +778,8 @@ TEST(DiskCommandDefTest, EveryCommandIsAsDesigned) {
       {kVolume, false, kLatent, false, 0, 0, kName + 3},
       {kFormat, false, kLatent, false, kName + 1, 0, 0},
       {kLabel, false, kLatent, false, kName, 0, 0},
+      {kReadBoot, false, DiskCommandKind::kReadBoot, true, 0, 0, 0},
+      {kWriteBoot, false, DiskCommandKind::kWriteBoot, true, 0, 0, 0},
   };
   for (const DiskCommandDef& command : expected) {
     SCOPED_TRACE(static_cast<int>(command.command));
@@ -1082,7 +1108,8 @@ TEST_F(DiskDriveTest, AFailedImageFailsCommandsWithNoHandle) {
   drive_->AttachImage(std::move(image));
   for (const DiskDriveCommand command :
        {DiskDriveCommand::kMedia, DiskDriveCommand::kOpenRoot,
-        DiskDriveCommand::kVolume}) {
+        DiskDriveCommand::kVolume, DiskDriveCommand::kReadBoot,
+        DiskDriveCommand::kWriteBoot}) {
     SCOPED_TRACE(static_cast<int>(command));
     EXPECT_THAT(Command(CommandWord(command)),
                 ElementsAre(Field(DiskStatus::kIoError)));
@@ -2668,6 +2695,216 @@ TEST_F(DiskDriveTest, CreateFailsWhenTheRootCannotGrow) {
 }
 
 //==============================================================================
+// Boot commands
+//==============================================================================
+
+TEST_F(DiskDriveTest, ReadBootSendsTheBootAreaWithNoDiskTime) {
+  ASSERT_TRUE(InitDrive());
+  const DiskSuperblock::BootArea boot = BootWords(0x1000);
+  AttachWithBootArea(boot);
+
+  // The drive holds the superblock, so no dword waits for the disk.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(GetPhase(), static_cast<int>(DiskDrivePhase::kReading));
+  const DataPhase data = ReadData(kBootDwords);
+  EXPECT_EQ(data.transfers, DataWords(boot, /*packed=*/true));
+  EXPECT_THAT(data.stalls, IsEmpty());
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_TRUE(IsInterruptRaised());
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
+}
+
+TEST_F(DiskDriveTest, WriteBootWritesTheBootAreaOnceItIsAllIn) {
+  ASSERT_TRUE(InitDrive());
+  SetNow(kNow);
+  AttachFormatted();
+  const DiskSuperblock before = DetachAndReadSuperblock();
+  drive_->AttachImage(ReopenImage());
+  Execute(kAttachCycles + 2);
+
+  // The OS never waits for the drive while it writes. The drive takes the
+  // last dword the cycle after it arrives, and then writes the superblock's
+  // sector, seeking back to it, before it completes.
+  const DiskSuperblock::BootArea boot = BootWords(0x2000);
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kWriteBoot)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(GetPhase(), static_cast<int>(DiskDrivePhase::kWriting));
+  EXPECT_THAT(WriteData(DataWords(boot, /*packed=*/true)), IsEmpty());
+  const Cycles written = GetCycles();
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kCommandPort); }));
+  EXPECT_EQ(GetCycles(), written + kLatencyCycles + kWriteCycles);
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+
+  // It is read back as written, and the rest of the superblock is kept.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(ReadData(kBootDwords).transfers, DataWords(boot, /*packed=*/true));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+  DiskSuperblock expected = before;
+  expected.SetBootArea(boot);
+  EXPECT_EQ(DetachAndReadSuperblock(), expected);
+}
+
+TEST_F(DiskDriveTest, BootCommandsCheckTheDiskAtAccept) {
+  using enum DiskDriveCommand;
+  ASSERT_TRUE(InitDrive());
+  Execute(1);
+  for (const DiskDriveCommand command : {kReadBoot, kWriteBoot}) {
+    EXPECT_THAT(Command(CommandWord(command)),
+                ElementsAre(Field(DiskStatus::kNoDisk)));
+  }
+
+  // Write protected comes before unformatted, and only for WRITE BOOT.
+  std::unique_ptr<DiskImage> image = MakeImage(/*formatted=*/false);
+  ASSERT_EQ(image->SetWriteProtected(true), kOk);
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Command(CommandWord(kWriteBoot)),
+              ElementsAre(Field(DiskStatus::kWriteProtected)));
+  EXPECT_THAT(Command(CommandWord(kReadBoot)),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
+  image = drive_->DetachImage();
+  ASSERT_EQ(image->SetWriteProtected(false), kOk);
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Command(CommandWord(kWriteBoot)),
+              ElementsAre(Field(DiskStatus::kUnformatted)));
+
+  // A protected disk can still be read, and open files don't matter.
+  image = MakeImage(/*formatted=*/true, kOtherPath);
+  ASSERT_EQ(image->SetWriteProtected(true), kOk);
+  drive_->AttachImage(std::move(image));
+  EXPECT_THAT(Run(CommandWord(kOpenRoot)),
+              ElementsAre(Field(kOk), PortWords::FromWord(0)));
+  EXPECT_THAT(Command(CommandWord(kReadBoot)), ElementsAre(Field(kOk)));
+  EXPECT_EQ(ReadData(kBootDwords).transfers,
+            DataWords(DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords),
+                      /*packed=*/true));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+}
+
+TEST_F(DiskDriveTest, AResetBeforeTheLastDwordWritesNoBootArea) {
+  ASSERT_TRUE(InitDrive());
+  const DiskSuperblock::BootArea old_boot = BootWords(0x1000);
+  AttachWithBootArea(old_boot);
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kWriteBoot)),
+              ElementsAre(Field(kOk)));
+  const std::vector<PortWords> transfers =
+      DataWords(BootWords(0x2000), /*packed=*/true);
+  WriteData(absl::MakeConstSpan(transfers).first(kBootDwords - 1));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_EQ(GetPhase(), 0);
+  EXPECT_FALSE(IsSet(kDataPort));
+  EXPECT_EQ(DetachAndReadSuperblock().GetBootArea(), old_boot);
+}
+
+TEST_F(DiskDriveTest, AResetEndsReadBootWithItsDwordWithdrawn) {
+  ASSERT_TRUE(InitDrive());
+  AttachWithBootArea(BootWords(0x1000));
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  ReadData(10);
+  ASSERT_TRUE(RunUntil([this] { return IsSet(kDataPort); }));
+  Request(DiskDrive::kResetRequest);
+  EXPECT_EQ(GetPhase(), 0);
+  EXPECT_FALSE(IsSet(kDataPort));
+  EXPECT_FALSE(IsSet(kCommandPort));
+
+  // The drive takes the next command at once.
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  EXPECT_EQ(ReadData(kBootDwords).transfers,
+            DataWords(BootWords(0x1000), /*packed=*/true));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+}
+
+TEST_F(DiskDriveTest, WriteBootFailsAtItsSectorWrite) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  protocol_->SetLimits({.writes = 0});
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kWriteBoot)),
+              ElementsAre(Field(kOk)));
+  EXPECT_THAT(WriteData(DataWords(BootWords(0x2000), /*packed=*/true)),
+              IsEmpty());
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kIoError)));
+  EXPECT_EQ(GetControlWord(), DiskDrive::kDiskAttached);
+}
+
+TEST_F(DiskDriveTest, WriteBootFindsNoDiskIfItIsRemoved) {
+  // The words are taken as before, and the write finds no disk.
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kWriteBoot)),
+              ElementsAre(Field(kOk)));
+  const std::vector<PortWords> transfers =
+      DataWords(BootWords(0x2000), /*packed=*/true);
+  EXPECT_THAT(WriteData(absl::MakeConstSpan(transfers).first(50)), IsEmpty());
+  ASSERT_NE(drive_->DetachImage(), nullptr);
+  EXPECT_THAT(WriteData(absl::MakeConstSpan(transfers).subspan(50)), IsEmpty());
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kNoDisk)));
+  EXPECT_EQ(GetControlWord(), 0);
+}
+
+TEST_F(DiskDriveTest, ReadBootTakesTheBootAreaOnceItsAcceptIsRead) {
+  // The accept status is still to be read, so the disk swapped in is the one
+  // whose boot area is sent.
+  ASSERT_TRUE(InitDrive());
+  AttachWithBootArea(BootWords(0x1000));
+  Start(CommandWord(DiskDriveCommand::kReadBoot));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  const DiskSuperblock::BootArea boot = BootWords(0x2000);
+  AttachWithBootArea(boot, kOtherPath);
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  EXPECT_EQ(ReadData(kBootDwords).transfers, DataWords(boot, /*packed=*/true));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+}
+
+TEST_F(DiskDriveTest, ReadBootSendsZerosIfTheDiskFailsOnceItsAcceptIsRead) {
+  // The accept promised every dword, so they all come, and the completion says
+  // there is no disk.
+  ASSERT_TRUE(InitDrive());
+  AttachWithBootArea(BootWords(0x1000));
+  Start(CommandWord(DiskDriveCommand::kReadBoot));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  ASSERT_NE(drive_->DetachImage(), nullptr);
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  const std::vector<PortWords> zeros =
+      DataWords(DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords),
+                /*packed=*/true);
+  EXPECT_EQ(ReadData(kBootDwords).transfers, zeros);
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kNoDisk)));
+  EXPECT_EQ(GetControlWord(), 0);
+
+  // The same goes for a disk swapped in that the accept would have failed.
+  AttachWithBootArea(BootWords(0x1000));
+  Start(CommandWord(DiskDriveCommand::kReadBoot));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  EXPECT_EQ(ReadData(kBootDwords).transfers, zeros);
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kUnformatted)));
+}
+
+TEST_F(DiskDriveTest, ReadBootCompletesThoughTheDiskIsRemoved) {
+  // The boot area was taken as the data phase started, so the rest is sent
+  // from it.
+  ASSERT_TRUE(InitDrive());
+  const DiskSuperblock::BootArea boot = BootWords(0x1000);
+  AttachWithBootArea(boot);
+  EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
+              ElementsAre(Field(kOk)));
+  const std::vector<PortWords> expected = DataWords(boot, /*packed=*/true);
+  EXPECT_EQ(ReadData(50).transfers, absl::MakeConstSpan(expected).first(50));
+  ASSERT_NE(drive_->DetachImage(), nullptr);
+  EXPECT_EQ(ReadData(kBootDwords - 50).transfers,
+            absl::MakeConstSpan(expected).subspan(50));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+}
+
+//==============================================================================
 // Programs
 //==============================================================================
 
@@ -3137,6 +3374,100 @@ TEST_F(DiskDriveProgramTest, AProgramReads64KiWords) {
   ExpectTransfer(kWords, {});
   EXPECT_THAT(Info(0), ElementsAre(Field(kOk), PortWords::FromDword(kWords),
                                    PortWords::FromDword(kWords)));
+}
+
+// Returns a program that runs `command`, READ BOOT or WRITE BOOT, as
+// disk_design.md's OS does: it writes the command word, reads the accept
+// (ACCEPT), moves the boot area between BUFFER and the data port with
+// `instruction` (INR.ID or OUTR.ID), and reads the completion (COMPLETION) once
+// its interrupt is handled, then halts. R6 counts the interrupts handled.
+std::string MakeBootProgram(DiskDriveCommand command,
+                            std::string_view instruction) {
+  return absl::StrReplaceAll(
+      R"---(
+    .STACK 16
+
+    .SEGMENT main CODE
+        SETI 2, handler
+        MVQ R6, 0               ; Interrupts handled
+        EI
+        MOV R1, command
+        MVQ R7, 1
+    send:
+        OUTR.IW 16, (R1)
+        JC NS, send
+    wait_accept:
+        IN 18, R0
+        AND R0, 14              ; Phase 2 or higher
+        JC Z, wait_accept
+        MOV R1, accept
+        MVQ R7, 1
+    read_accept:
+        INR.IW 16, (R1)
+        JC NS, read_accept
+        MOV R1, buffer
+        MOV R7, $DWORDS
+    data:
+        $INSTRUCTION 17, [R1]
+        JC NS, data
+    wait_completion:
+        CMP R6, 1
+        JC NZ, wait_completion
+        MOV R1, completion
+        MVQ R7, 1
+    read_completion:
+        INR.IW 16, (R1)
+        JC NS, read_completion
+        HALT
+
+    handler:
+        ADQ R6, 1
+        IRT
+
+    .SEGMENT vars DATA
+    command:
+        .DW $COMMAND
+    accept:
+        .DW 0FFFFh
+    completion:
+        .DW 0FFFFh
+    buffer:
+        .DS $WORDS
+
+    .SEGMENT stack STACK
+  )---",
+      {{"$INSTRUCTION", instruction},
+       {"$DWORDS", absl::StrCat(kBootDwords)},
+       {"$WORDS", absl::StrCat(DiskSuperblock::kBootAreaWords)},
+       {"$COMMAND", absl::StrCat(CommandWord(command))}});
+}
+
+TEST_F(DiskDriveProgramTest, AnInrDwordLoopReadsTheBootArea) {
+  ASSERT_TRUE(InitDrive());
+  const DiskSuperblock::BootArea boot = BootWords(0x1000);
+  AttachWithBootArea(boot);
+  ASSERT_TRUE(Load(MakeBootProgram(DiskDriveCommand::kReadBoot, "INR.ID")));
+  ASSERT_TRUE(ExecuteUntilHalt());
+  EXPECT_EQ(GetState().r6, 1);
+  EXPECT_THAT(GetData("ACCEPT", 1), ElementsAre(static_cast<uint16_t>(kOk)));
+  EXPECT_THAT(GetData("COMPLETION", 1),
+              ElementsAre(static_cast<uint16_t>(kOk)));
+  EXPECT_THAT(GetData("BUFFER", DiskSuperblock::kBootAreaWords),
+              ElementsAreArray(boot));
+}
+
+TEST_F(DiskDriveProgramTest, AnOutrDwordLoopWritesTheBootArea) {
+  ASSERT_TRUE(InitDrive());
+  AttachFormatted();
+  const DiskSuperblock::BootArea boot = BootWords(0x2000);
+  ASSERT_TRUE(Load(MakeBootProgram(DiskDriveCommand::kWriteBoot, "OUTR.ID")));
+  SetData("BUFFER", boot);
+  ASSERT_TRUE(ExecuteUntilHalt());
+  EXPECT_EQ(GetState().r6, 1);
+  EXPECT_THAT(GetData("ACCEPT", 1), ElementsAre(static_cast<uint16_t>(kOk)));
+  EXPECT_THAT(GetData("COMPLETION", 1),
+              ElementsAre(static_cast<uint16_t>(kOk)));
+  EXPECT_EQ(DetachAndReadSuperblock().GetBootArea(), boot);
 }
 
 }  // namespace

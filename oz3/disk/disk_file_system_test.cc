@@ -103,7 +103,7 @@ std::vector<uint16_t> MakeCountingWords(uint16_t first, int count) {
 
 // Returns a boot area whose words count up from `first`.
 DiskSuperblock::BootArea MakeBootArea(uint16_t first) {
-  DiskSuperblock::BootArea words;
+  DiskSuperblock::BootArea words(DiskSuperblock::kBootAreaWords);
   for (int i = 0; i < DiskSuperblock::kBootAreaWords; ++i) {
     words[i] = static_cast<uint16_t>(first + i);
   }
@@ -712,7 +712,7 @@ TEST_F(DiskFileSystemTest, EmptyDriveIsNoDisk) {
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kNoDisk);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kNoDisk);
-  DiskSuperblock::BootArea boot_area = {};
+  DiskSuperblock::BootArea boot_area = MakeBootArea(1);
   EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kNoDisk);
   EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kNoDisk);
 }
@@ -725,7 +725,7 @@ TEST_F(DiskFileSystemTest, BlankImageIsUnformatted) {
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("WORK")), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kUnformatted);
-  DiskSuperblock::BootArea boot_area = {};
+  DiskSuperblock::BootArea boot_area = MakeBootArea(1);
   EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kUnformatted);
 }
@@ -979,8 +979,7 @@ TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatLabelAndBootArea) {
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")),
             DiskStatus::kWriteProtected);
-  DiskSuperblock::BootArea boot_area;
-  boot_area.fill(0x1234);
+  DiskSuperblock::BootArea boot_area = MakeBootArea(1);
   EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kWriteProtected);
   DiskVolumeInfo volume;
   ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
@@ -1129,7 +1128,7 @@ TEST_F(DiskFileSystemTest, BootAreaTime) {
 
   // Getting it reads nothing, as the superblock is held from attaching, and
   // setting it writes sector 0, which isn't the next sector, so it seeks.
-  DiskSuperblock::BootArea boot_area = {};
+  DiskSuperblock::BootArea boot_area;
   ASSERT_EQ(timed.GetBootArea(&boot_area), DiskStatus::kOk);
   EXPECT_EQ(timed.CollectBusyTime(), absl::ZeroDuration());
   ASSERT_EQ(timed.SetBootArea(MakeBootArea(1)), DiskStatus::kOk);
@@ -1144,7 +1143,7 @@ TEST_F(DiskFileSystemTest, AFailedSetBootAreaLeavesTheDisksBootArea) {
   ASSERT_EQ(file_system_.SetBootArea(MakeBootArea(1)), DiskStatus::kOk);
   protocol_->SetLimits({.writes = 0});
   EXPECT_EQ(file_system_.SetBootArea(MakeBootArea(2)), DiskStatus::kIoError);
-  DiskSuperblock::BootArea boot_area = {};
+  DiskSuperblock::BootArea boot_area;
   EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kIoError);
   ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
   ASSERT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kOk);
@@ -1698,7 +1697,7 @@ TEST_F(DiskFileSystemTest, AFailedImageFailsEveryOperationUntilReattached) {
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kIoError);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")), DiskStatus::kIoError);
-  DiskSuperblock::BootArea boot_area = {};
+  DiskSuperblock::BootArea boot_area = MakeBootArea(1);
   EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kIoError);
   EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kIoError);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),

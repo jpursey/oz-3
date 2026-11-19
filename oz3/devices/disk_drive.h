@@ -32,6 +32,7 @@
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
+#include "oz3/disk/disk_superblock.h"
 
 namespace oz3 {
 
@@ -259,6 +260,9 @@ class DiskDrive final : public Device {
   static constexpr uint8_t kDataLock = 1 << kDataPort;
   static constexpr uint8_t kControlLock = 1 << kControlPort;
 
+  // The dwords READ BOOT and WRITE BOOT move: the whole boot area.
+  static constexpr int kBootDwords = DiskSuperblock::kBootAreaWords / 2;
+
   //----------------------------------------------------------------------------
   // Types
   //----------------------------------------------------------------------------
@@ -365,6 +369,37 @@ class DiskDrive final : public Device {
     Transfer transfer;
   };
 
+  // READ BOOT's and WRITE BOOT's data phases, of kBootDwords dwords and no
+  // count. Neither has a disk call to fail partway: READ BOOT takes the boot
+  // area as its data phase starts, and WRITE BOOT writes it once its last dword
+  // is in.
+  struct ReadingBootState {
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kReading; }
+    uint16_t GetCommandWord() const { return command.word; }
+
+    Command command;
+
+    // The boot area it sends, and the status of taking it, which it completes
+    // with. A failure sends zeros.
+    DiskSuperblock::BootArea words;
+    DiskStatus status = DiskStatus::kOk;
+
+    // The dwords put on the data port, though the OS may not have taken the
+    // last yet.
+    int moved = 0;
+  };
+  struct WritingBootState {
+    DiskDrivePhase GetPhase() const { return DiskDrivePhase::kWriting; }
+    uint16_t GetCommandWord() const { return command.word; }
+
+    Command command;
+
+    // The boot area, filled in from the data port, and how many dwords of it
+    // have been taken.
+    DiskSuperblock::BootArea words;
+    int moved = 0;
+  };
+
   // A data phase after a disk call failed. Its early completion's status goes
   // out first, and nothing moves on the data port until it has. The rest of
   // the transfers then move no data, at port speed.
@@ -410,7 +445,8 @@ class DiskDrive final : public Device {
   using State =
       std::variant<IdleState, ArgumentsState, SendingAcceptState,
                    RunningWorkState, SendingCompletionState, ReadingState,
-                   WritingState, FailedReadingState, FailedWritingState>;
+                   WritingState, FailedReadingState, FailedWritingState,
+                   ReadingBootState, WritingBootState>;
 
   // Whether a run can go on, after a state's step or the work a run does
   // before one.
@@ -500,6 +536,8 @@ class DiskDrive final : public Device {
   StateResult ExecuteState(WritingState& state);
   StateResult ExecuteState(FailedReadingState& state);
   StateResult ExecuteState(FailedWritingState& state);
+  StateResult ExecuteState(ReadingBootState& state);
+  StateResult ExecuteState(WritingBootState& state);
 
   // Returns the state that follows `command`'s accept, once the OS has taken
   // it: its work, its data phase, or idle.
@@ -636,6 +674,8 @@ class DiskDrive final : public Device {
   CommandResponse RunFormat(const Command& command);
   CommandResponse AcceptLabel(Command* command);
   CommandResponse RunLabel(const Command& command);
+  CommandResponse AcceptReadBoot();
+  CommandResponse AcceptWriteBoot();
 
   //----------------------------------------------------------------------------
   // State

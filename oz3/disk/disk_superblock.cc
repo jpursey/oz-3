@@ -67,12 +67,11 @@ void DiskSuperblock::SetLabel(const DiskLabel& label) {
 }
 
 DiskSuperblock::BootArea DiskSuperblock::GetBootArea() const {
-  BootArea words;
-  std::copy(words_.begin() + kBootAreaWord, words_.end(), words.begin());
-  return words;
+  return BootArea(words_.begin() + kBootAreaWord, words_.end());
 }
 
 void DiskSuperblock::SetBootArea(const BootArea& words) {
+  CHECK_EQ(static_cast<int>(words.size()), kBootAreaWords);
   std::copy(words.begin(), words.end(), words_.begin() + kBootAreaWord);
 }
 

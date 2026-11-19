@@ -162,9 +162,9 @@ class DiskFileSystem final {
   // system.
   DiskStatus GetBootArea(DiskSuperblock::BootArea* words) const;
 
-  // Rewrites the superblock's sector with the boot area set to `words`,
-  // keeping the rest of the sector. Returns kWriteProtected on a protected
-  // disk, and kUnformatted with no file system.
+  // Rewrites the superblock's sector with the boot area set to `words`, which
+  // must be kBootAreaWords words, keeping the rest of the sector. Returns
+  // kWriteProtected on a protected disk, and kUnformatted with no file system.
   DiskStatus SetBootArea(const DiskSuperblock::BootArea& words);
 
   // Returns kNoDisk with no image, kIoError for a failed one, kUnformatted

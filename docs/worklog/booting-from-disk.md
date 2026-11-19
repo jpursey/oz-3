@@ -75,9 +75,11 @@ Two commands join the Disk group:
   accept and completion give no count back either. It moves as dwords, as
   `READ PACKED` and `WRITE PACKED` do, low word first, so the OS's loop is the
   dword form of `INR` or `OUTR` with `R7` at 112. Otherwise the data step works
-  as theirs does. An accepted `READ BOOT` always completes **ok**, as it needs
-  no disk, and a `WRITE BOOT` fails only at its one sector write, after its
-  last word.
+  as theirs does. An accepted `READ BOOT` completes **ok**, as it needs no
+  disk, unless the disk is changed before the OS has read its accept status
+  and fails the accept's checks, such as with **no disk**: then the 112 dwords
+  are zeros, and it completes with that status. A
+  `WRITE BOOT` fails only at its one sector write, after its last word.
 - **Accept** checks the disk as other handle-less commands do: **no disk**,
   **I/O error**, **write protected** for `WRITE BOOT`, then **unformatted**, as
   the boot area exists only on a formatted disk. Open files don't matter.
@@ -246,7 +248,7 @@ starts them.
 ```
 // DiskSuperblock, which holds sector 0's words:
 static constexpr int kBootAreaWords = kDiskSectorWords - 32;  // From word 32
-using BootArea = std::array<uint16_t, kBootAreaWords>;
+using BootArea = std::vector<uint16_t>;  // Always kBootAreaWords words
 BootArea GetBootArea() const;
 void SetBootArea(const BootArea& words);
 
@@ -267,16 +269,21 @@ DiskStatus SetBootArea(const DiskSuperblock::BootArea& words);
 
 ### devices: READ BOOT and WRITE BOOT
 
-- `disk_drive_command` gains the two codes, with no arguments and no results.
+- `disk_drive_command` gains the two codes, with no arguments and no results,
+  and a `DiskCommandKind` each (`kReadBoot` and `kWriteBoot`), as what follows
+  their accept is neither a `READ`'s nor a `WRITE`'s data phase.
 - The data phase of `READ` and `WRITE` moves words to and from a file through
   its handle, one file system call per word. The boot area has no handle, so
   each command gets a data state of its own, holding a `BootArea` as its
   buffer:
-  - `READ BOOT`'s accept calls `GetBootArea`, whose status is the accept's,
-    and its state starts with the words. It puts each dword on the data port
-    once the OS has taken the last, as `ReadingState` does, but with no disk
-    call, then sends an **ok** completion. A disk ejected meanwhile doesn't
-    stop it, as its words were taken at accept, as `VOLUME`'s label is.
+  - `READ BOOT`'s accept only checks `GetVolumeStatus`, and the state after
+    the accept calls `GetBootArea` for its words, as `READ`'s calls
+    `GetFileInfo` for its position. A disk changed while the OS read the
+    accept status can fail that call, so the state then sends zeros and keeps
+    the status for its completion. It puts each dword on the data port once the
+    OS has taken the last, as `ReadingState` does, but with no disk call, then
+    completes. A disk ejected after it starts doesn't stop it, as it already
+    has its words.
   - `WRITE BOOT`'s accept only checks `GetWritableStatus`, and its state takes
     each dword into the buffer. After the 112th, it calls `SetBootArea`,
     charges its busy time as any disk call is, and sends its status as the
@@ -378,7 +385,7 @@ Depends on: nothing.
   unformatted); no time charged for getting it, and a sector write's for
   setting it.
 
-### CL2 [ ] devices: READ BOOT and WRITE BOOT
+### CL2 [x] devices: READ BOOT and WRITE BOOT
 
 Depends on: CL1.
 
