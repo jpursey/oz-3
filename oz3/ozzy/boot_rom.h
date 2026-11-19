@@ -6,6 +6,9 @@
 #ifndef OZ3_OZZY_BOOT_ROM_H_
 #define OZ3_OZZY_BOOT_ROM_H_
 
+#include <array>
+#include <cstdint>
+
 #include "oz3/tools/program_assembler.h"
 
 namespace oz3 {
@@ -15,6 +18,10 @@ namespace oz3 {
 // which ends before the machine table, and its stack a RAM segment in any
 // bank.
 const AsmProgram& GetBootRom();
+
+// The boot signature, "BOOT" packed, which the last two words of a disk's boot
+// area must be for the boot ROM to start the loader in it.
+inline constexpr std::array<uint16_t, 2> kBootSignature = {0x4F42, 0x544F};
 
 }  // namespace oz3
 

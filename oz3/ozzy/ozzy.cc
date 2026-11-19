@@ -293,11 +293,19 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
   DCHECK_EQ(memory.size(), table.size());
   absl::c_copy(table, memory.begin());
 
+  // The boot ROM finds its stack, where it reads the loader, in the lowest bank
+  // with RAM.
+  const CpuCore::ResetParams reset_params = loader.GetResetParams(boot_rom);
+  const int first_ram_bank = static_cast<int>(
+      absl::c_find_if(settings.banks, [](uint16_t ram) { return ram != 0; }) -
+      settings.banks.begin());
+  CHECK_EQ(CpuCore::Banks::FromWord(reset_params.mb).stack, first_ram_bank);
+
   // Power on: core 0 starts the boot ROM.
   CpuCore* core = processor->GetCore(0);
   std::unique_ptr<Lock> lock = core->RequestLock();
   DCHECK(lock->IsLocked());
-  core->Reset(*lock, loader.GetResetParams(boot_rom));
+  core->Reset(*lock, reset_params);
   lock.reset();
 
   // The disks are in their drives at power on, which read their superblocks

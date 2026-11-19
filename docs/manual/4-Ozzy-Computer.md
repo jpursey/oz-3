@@ -192,44 +192,99 @@ For example, the default Ozzy's table is:
 
 ### The boot ROM
 
-At power on, core 0 runs the boot ROM from its start, and the other cores are idle. The boot ROM reads the machine table to find the screen and the teletype, and then:
+At power on, core 0 runs the boot ROM from its start, and the other cores are idle. The boot ROM reads the machine table to find the screen, the keyboard, the teletype, and drive `A:`, shows the banner, and then:
 
-* **With a screen**, it clears the screen, filling every cell with a space, and prints the banner at the top. Then it leaves a blank line, and shows the cursor, a slow blinking underline, at the start of the line after it.
-* **Without one, with a teletype**, it prints the banner to the teletype, followed by a carriage return and a line feed, twice.
-* **With neither**, it has nowhere to print.
+* **With a keyboard**, it shows the prompt, `Press Enter to Boot...`, and waits for Enter, to boot from the disk in `A:` (see [Booting](#booting)).
+* **Without one**, it halts, as nothing could answer a prompt.
 
-Then it enables interrupts and halts. A halted core still handles interrupts, so from then on the boot ROM runs only to echo keys (see [Echoing keys](#echoing-keys)).
+It shows everything on the screen, or without one, on the teletype, or with neither, nowhere, though it still boots.
 
-The banner names the machine: `OZZY`, the boot ROM's version, and the clock rate, cores, and RAM from the machine table. The clock rate is in the largest of Hz, kHz, and MHz that it is a whole number of (`4770 kHz`, or `32768 Hz`), and the RAM in K, as old machines wrote it: on an Ozzy, K is 1024 words (1 Kiw), so a page is 4K:
+**The banner** is the boot ROM's version, then a blank line, then the Ozzy's hardware from the machine table: its cores, RAM, and clock rate, and its drives, by letter. The RAM is in K, as old machines wrote it: on an Ozzy, K is 1024 words (1 Kiw), so a page is 4K. The clock rate is in the largest of Hz, kHz, and MHz that it is a whole number of (`4770 kHz`, or `32768 Hz`). Without drives, the drives line is `Drives: none`.
+
+**On the screen**, the boot ROM clears the screen, filling every cell with a space, and shows the banner at the top, each line a column in, in a box drawn with the cells' edge lines (see [Screen](3.3-Screen.md)), so the box takes no cells of its own. The box is the banner's four rows, from the first column to the blank column after its widest line: its top row's cells have the top line, its bottom row's the bottom line, its first column's the left line, and its last column's the right line, so the corners have two. Then come a blank row, the prompt, another blank row, and the **status row**, empty until Enter. While the boot ROM waits, the cursor, a slow blinking underline, is after the prompt. The default Ozzy shows this (with the box drawn here in line characters):
 
 ```
-OZZY 0.1  1 MHz  1 core  56K RAM
+┌────────────────────────┐
+│ Ozzy 1.0               │
+│                        │
+│ 1 core  56K RAM  1 MHz │
+│ Drives: none           │
+└────────────────────────┘
+
+Press Enter to Boot...
 ```
 
-On a screen too narrow for it, the banner wraps onto the next row at the right edge, and a new line on the bottom row scrolls the screen up a row, clearing the new bottom row (see [Scrolling and filling](3.3-Screen.md#scrolling-and-filling)). So a small screen shows what fits.
+The screen never scrolls, and no line wraps: on a screen too small for it, what passes the right edge or the bottom row isn't drawn.
 
-#### Echoing keys
+**On the teletype**, the banner and the prompt are the same without the box, each line ending with a carriage return and a line feed, and each status is a line of its own after the prompt. After an error, it prints a blank line and the prompt again:
 
-With a keyboard, the boot ROM is the keyboard's interrupt handler, for interrupt 1 on core 0. The other cores have no handler for it, so each drops its own copy, and core 0 handles every key. Each time, it reads one key from port 1 (see [Keyboard](3.2-Keyboard.md)) and echoes it where the banner went, and the cursor follows:
+```
+Ozzy 1.0
 
-* **A character**, 20h to 7Eh, prints at the cursor, which moves right. After a full row, the cursor stays on the row's last column, and the next character goes at the start of the next row.
-* **Enter** starts a new line.
-* **Backspace** erases the character before the cursor, which moves back onto it. It does nothing at the start of a row, so it never goes back to the row above.
-* **Other keys** are ignored.
+1 core  56K RAM  1 MHz
+Drives: A
 
-Only the key counts, not the modifier keys held with it: `Shift` with `A` is `A`, and `Ctrl` with `H` is Backspace (08h).
+Press Enter to Boot...
+Loading...
+ERROR: No disk in drive A:
 
-On the teletype, Enter is a carriage return and a line feed, and Backspace is a backspace, a space, and a backspace, even at the start of a line, as the boot ROM doesn't know where the teletype is on its line.
+Press Enter to Boot...
+Loading...
+Ready
+```
 
-Keys pressed while the boot ROM prints the banner wait in the keyboard, and echo once it is done. The boot ROM sets no handler for any other interrupt, so a core 0 interrupt from another device, such as the screen's refresh or the timer's tick, is dropped.
+#### Waiting for Enter
+
+With a keyboard, the boot ROM is the keyboard's interrupt handler, for interrupt 1 on core 0, and waits with `WAIT`, which each key's interrupt ends. The other cores have no handler for it, so each drops its own copy. It reads the keys from port 1 (see [Keyboard](3.2-Keyboard.md)), and ignores every one but Enter, echoing nothing. Only the key counts, not the modifier keys held with it, so `Ctrl` with `M`, which is Enter (0Dh), boots too. Keys pressed while the boot ROM shows the banner wait in the keyboard, and count once it prompts. Keys pressed while it boots are thrown away, so they neither count toward the next prompt nor reach the loader.
+
+Interrupts are enabled only while it waits. The boot ROM sets no handler for any other interrupt, so a core 0 interrupt from another device, such as the screen's refresh or the timer's tick, is dropped.
+
+#### Booting
+
+On Enter, the boot ROM hides the cursor and shows `Loading...`. Then it reads the boot area of the disk in `A:` (see [Superblock](3.5-Disk-Drive.md#superblock)) with `READ BOOT` into the first 224 words of its stack's page (1000h to 10DFh by default), and checks that its last two words are the **boot signature**, `"BOOT"` packed: 4F42h, 544Fh. If they are, it shows `Ready` and starts the code in the boot area, the **loader** (see [The loader](#the-loader)). If anything fails, it shows why and waits for Enter again:
+
+| Why                                     | Status                       |
+| --------------------------------------- | ---------------------------- |
+| The Ozzy has no drive `A:`              | `ERROR: No drive A:`         |
+| **no disk** (20h)                       | `ERROR: No disk in drive A:` |
+| **unformatted** (23h)                   | `ERROR: Disk not formatted`  |
+| The last two words aren't the signature | `ERROR: Not a system disk`   |
+| Any other status, such as **I/O error** | `ERROR: Disk error 25h`      |
+
+Each status replaces the last on the status row, which is cleared first. The boot ROM boots only from `A:`, whatever disks the other drives hold. It resets the drive first, so it starts from idle whatever ran before, and polls the drive's ports, never taking its interrupt (see [Disk Drive](3.5-Disk-Drive.md)). A disk can be put in `A:` while the boot ROM waits, and Enter tries again.
+
+#### The loader
+
+A disk whose boot area holds a loader is a **system disk**. The loader is the disk's own code, so what it loads, and how, is up to it, such as an operating system file, with the drive's ordinary commands. It is a bare program of at most 224 words, ending with the boot signature, which `oz3asm --bare` assembles and `oz3dsk boot` writes (see [Bare programs](2.4-Program-Files.md#bare-programs) and [oz3dsk](3.5-Disk-Drive.md#oz3dsk)):
+
+```
+; boot.oza: assembled with oz3asm --bare, then written with
+;   oz3dsk system.ozd boot boot.oz3
+    .STACK 0                ; It runs on the boot ROM's stack's page
+    ...                     ; The loader
+    .DS 222 - $             ; Padding up to word 222
+    .DW "BOOT"              ; The boot signature, in the last two words
+```
+
+The boot ROM starts it with `RST SELF, CODE | STACK | DATA | EXTRA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
+
+* `CODE` and `DATA` are the bank of the boot ROM's stack's page, both based at the loader's first word: it starts at `IP` 0, and reads its own words as `D(n)`.
+* `STACK` is the same bank, based at the end of the page (2000h by default), with `SP` 0, so its stack starts empty at the top of the page.
+* `EXTRA` is bank 0 at base 0, so the machine table is at `E(F00h)`.
+* `R0` is the boot drive's command port (16 for `A:`), and `R1` its number (0 for `A:`).
+* No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE` leaves them, and its notify flag (`N`) is set, so its first `WAIT` ends at once.
+* The keyboard is empty, as the boot ROM throws away the keys pressed while it boots, and no interrupt its own work raised is pending, such as the drive's for `READ BOOT`, so the loader's first drive interrupt is for its own command.
+* RAM is as at power on, but for the loader itself and the boot ROM's stack's page, which the loader now owns.
+
+The other cores are still idle, as at power on, until the loader or what it loads starts them.
 
 #### The boot ROM's stack
 
 The boot ROM's stack is the first page of RAM in the lowest bank that has any: page 1 of bank 0 by default, or else the lowest RAM page of bank 0, or of the first bank after it with RAM. So every Ozzy must have some RAM.
 
 * Core 0's `STACK` bank is that bank, and `BS` is the end of the page (2000h for page 1), so the stack grows down from the page's last word (1FFFh by default).
-* The boot ROM's variables are the first 6 words it pushes, at the top of the page (1FFAh to 1FFFh by default), and its stack is below them. It uses far less than the page.
-* The rest of RAM, and the rest of that page, the boot ROM leaves alone, and it uses the page for as long as it runs.
+* The boot ROM's variables are the first 8 words it pushes, at the top of the page (1FF8h to 1FFFh by default), and its stack is below them. It uses far less than the page, and the loader is read into its first words.
+* The rest of RAM, and the rest of that page, the boot ROM leaves alone.
 
 The boot ROM's source is `oz3/ozzy/boot_rom.oza`, written for the [default instruction set](2.2-Default-Instruction-Set.md), which `oz3asm` assembles for a listing (see [Program Source](2.5-Program-Source.md#oz3asm)).
 
