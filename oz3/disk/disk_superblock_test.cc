@@ -5,6 +5,7 @@
 
 #include "oz3/disk/disk_superblock.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 
@@ -105,6 +106,25 @@ TEST(DiskSuperblockTest, SetLabelChangesOnlyItsWords) {
   words[10] = 'I' | 'V' << 8;
   words[11] = 'E';
   words[12] = words[13] = words[14] = words[15] = 0;
+  EXPECT_EQ(superblock.GetWords(), words);
+}
+
+TEST(DiskSuperblockTest, TheBootAreaIsTheRestOfTheSector) {
+  DiskSuperblock::Words words;
+  for (int i = 0; i < kDiskSectorWords; ++i) {
+    words[i] = static_cast<uint16_t>(0xA000 + i);
+  }
+  DiskSuperblock superblock = DiskSuperblock::FromWords(words);
+  const DiskSuperblock::BootArea boot_area = superblock.GetBootArea();
+  ASSERT_EQ(boot_area.size(), 224);
+  EXPECT_EQ(boot_area.front(), 0xA000 + 32);
+  EXPECT_EQ(boot_area.back(), 0xA000 + 255);
+
+  DiskSuperblock::BootArea new_boot_area;
+  new_boot_area.fill(0x1234);
+  superblock.SetBootArea(new_boot_area);
+  EXPECT_EQ(superblock.GetBootArea(), new_boot_area);
+  std::fill(words.begin() + 32, words.end(), 0x1234);
   EXPECT_EQ(superblock.GetWords(), words);
 }
 

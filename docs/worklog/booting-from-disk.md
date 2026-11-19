@@ -75,14 +75,16 @@ Two commands join the Disk group:
   accept and completion give no count back either. It moves as dwords, as
   `READ PACKED` and `WRITE PACKED` do, low word first, so the OS's loop is the
   dword form of `INR` or `OUTR` with `R7` at 112. Otherwise the data step works
-  as theirs does, including early completion, after which a failed read's
-  remaining dwords are zeros.
+  as theirs does. An accepted `READ BOOT` always completes **ok**, as it needs
+  no disk, and a `WRITE BOOT` fails only at its one sector write, after its
+  last word.
 - **Accept** checks the disk as other handle-less commands do: **no disk**,
   **I/O error**, **write protected** for `WRITE BOOT`, then **unformatted**, as
   the boot area exists only on a formatted disk. Open files don't matter.
-- **Timing:** `READ BOOT` reads sector 0 as any sector, through the read cache.
-  `WRITE BOOT` writes sector 0 once all 224 words are in, keeping the
-  superblock, and is committed when it completes.
+- **Timing:** `READ BOOT` takes no disk time, as the drive holds sector 0 from
+  when the disk was inserted, as it does the label `VOLUME` gives. `WRITE BOOT`
+  writes sector 0 once all 224 words are in, keeping the superblock, and is
+  committed when it completes.
 - **Reset:** a `WRITE BOOT` reset before its last word writes nothing, unlike a
   file `WRITE`, so a boot area is never left half old and half new.
 
@@ -242,20 +244,21 @@ starts them.
 ### disk: the boot area
 
 ```
-// In DiskLayout (or beside the superblock's constants):
-static constexpr int kBootAreaOffset = 32;  // Word in the superblock's sector
-static constexpr int kBootAreaWords = 224;
+// DiskSuperblock, which holds sector 0's words:
+static constexpr int kBootAreaWords = kDiskSectorWords - 32;  // From word 32
+using BootArea = std::array<uint16_t, kBootAreaWords>;
+BootArea GetBootArea() const;
+void SetBootArea(const BootArea& words);
 
 // DiskFileSystem
-using BootArea = std::array<uint16_t, kBootAreaWords>;
+// Gets the boot area as the superblock holds it, without reading the disk.
+// Returns kUnformatted with no file system.
+DiskStatus GetBootArea(DiskSuperblock::BootArea* words) const;
 
-// Reads the boot area, charging a sector read through the read cache.
-// Returns GetVolumeStatus() if it isn't kOk.
-DiskStatus ReadBootArea(BootArea* words);
-
-// Writes the boot area, keeping the superblock, charging a sector write, and
-// committing it. Returns GetWritableStatus() if it isn't kOk.
-DiskStatus WriteBootArea(const BootArea& words);
+// Rewrites sector 0 with the boot area set, keeping the rest of the sector.
+// Returns kWriteProtected on a protected disk, and kUnformatted with no file
+// system.
+DiskStatus SetBootArea(const DiskSuperblock::BootArea& words);
 ```
 
 - `DiskSuperblock` already holds the whole sector exactly, so writing keeps the
@@ -264,10 +267,25 @@ DiskStatus WriteBootArea(const BootArea& words);
 
 ### devices: READ BOOT and WRITE BOOT
 
-- `disk_drive_command` gains the two codes. `READ BOOT` reads the boot area
-  into the command's buffer once its disk work starts, and streams it as a
-  `READ` streams a sector. `WRITE BOOT` takes words into the buffer, and does
-  its disk work only after the 224th.
+- `disk_drive_command` gains the two codes, with no arguments and no results.
+- The data phase of `READ` and `WRITE` moves words to and from a file through
+  its handle, one file system call per word. The boot area has no handle, so
+  each command gets a data state of its own, holding a `BootArea` as its
+  buffer:
+  - `READ BOOT`'s accept calls `GetBootArea`, whose status is the accept's,
+    and its state starts with the words. It puts each dword on the data port
+    once the OS has taken the last, as `ReadingState` does, but with no disk
+    call, then sends an **ok** completion. A disk ejected meanwhile doesn't
+    stop it, as its words were taken at accept, as `VOLUME`'s label is.
+  - `WRITE BOOT`'s accept only checks `GetWritableStatus`, and its state takes
+    each dword into the buffer. After the 112th, it calls `SetBootArea`,
+    charges its busy time as any disk call is, and sends its status as the
+    completion. A reset before then drops the buffer, so nothing is written.
+- Neither moves a count, so the states set 112 themselves rather than use
+  `MakeTransfer` and `EndTransfer`, which take the count from the accept and
+  send it back in the completion. Their port handling is written out rather
+  than shared with `ReadingState` and `WritingState` behind a flag, as it is a
+  dozen lines.
 
 **Brittleness:** none new: the drive's phases already make a caller read the
 accept before the data, and the data before the completion.
@@ -294,7 +312,7 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 
 ### tools and apps: oz3dsk boot
 
-- `DiskFileProtocol` gains `ReadBootArea` and `WriteBootArea`, passing through
+- `DiskFileProtocol` gains `GetBootArea` and `SetBootArea`, passing through
   to the file system, as `SetLabel` does.
 - `DiskTool` gains `boot`, which reads the bare program, validates its size,
   lays its words into a `BootArea`, and writes it.
@@ -343,12 +361,12 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 
 ## CLs
 
-### CL1 [ ] disk: the boot area
+### CL1 [x] disk: the boot area
 
 Depends on: nothing.
 
-- `DiskLayout`: the boot area's offset and size.
-- `DiskFileSystem`: `ReadBootArea` and `WriteBootArea`.
+- `DiskSuperblock`: the boot area's size and words.
+- `DiskFileSystem`: `GetBootArea` and `SetBootArea`.
 - disk_design.md: the boot area's description, and its open question answered.
 - Unused, so no visible change.
 
@@ -357,7 +375,8 @@ Depends on: nothing.
 - Unit tests: reading a fresh format gives zeros; writing then reading round
   trips, keeping the label and everything else in the superblock; `SetLabel`
   keeps the boot area; each status (no disk, I/O error, write protected,
-  unformatted); time charged for a read, a cached read, and a write.
+  unformatted); no time charged for getting it, and a sector write's for
+  setting it.
 
 ### CL2 [ ] devices: READ BOOT and WRITE BOOT
 
@@ -370,9 +389,10 @@ Depends on: CL1.
 **Verify**
 - Standard checks.
 - Unit tests, as programs with `DeviceProgramTest`: a read and a write through
-  the ports, as 112 dwords; each accept status; a write reset partway leaving the
-  old boot area; a read and a write failing partway (early completion); the
-  read cache's timing.
+  the ports, as 112 dwords; each accept status; a write reset partway leaving
+  the old boot area; a write failing at its sector write; a read completing ok
+  though the disk is ejected partway; a write's timing, and a read's taking no
+  disk time.
 - Manual pages updated.
 
 ### CL3 [ ] tools, apps: bare programs
@@ -399,7 +419,7 @@ Depends on: nothing.
 
 Depends on: CL1, CL3.
 
-- `DiskFileProtocol`: `ReadBootArea` and `WriteBootArea`.
+- `DiskFileProtocol`: `GetBootArea` and `SetBootArea`.
 - `DiskTool` and `oz3dsk`: `boot`.
 - Manual: Disk Drive's oz3dsk table.
 

@@ -101,6 +101,15 @@ std::vector<uint16_t> MakeCountingWords(uint16_t first, int count) {
   return words;
 }
 
+// Returns a boot area whose words count up from `first`.
+DiskSuperblock::BootArea MakeBootArea(uint16_t first) {
+  DiskSuperblock::BootArea words;
+  for (int i = 0; i < DiskSuperblock::kBootAreaWords; ++i) {
+    words[i] = static_cast<uint16_t>(first + i);
+  }
+  return words;
+}
+
 // Returns a directory entry for the file `name`, modified at `modified`.
 DiskDirEntry MakeEntry(std::string_view name, int first_cluster, int size,
                        uint16_t attributes = 0, DateTime modified = GetNow()) {
@@ -703,6 +712,9 @@ TEST_F(DiskFileSystemTest, EmptyDriveIsNoDisk) {
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kNoDisk);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kNoDisk);
+  DiskSuperblock::BootArea boot_area = {};
+  EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kNoDisk);
+  EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kNoDisk);
 }
 
 TEST_F(DiskFileSystemTest, BlankImageIsUnformatted) {
@@ -713,6 +725,9 @@ TEST_F(DiskFileSystemTest, BlankImageIsUnformatted) {
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("WORK")), DiskStatus::kUnformatted);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kUnformatted);
+  DiskSuperblock::BootArea boot_area = {};
+  EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kUnformatted);
+  EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kUnformatted);
 }
 
 TEST_F(DiskFileSystemTest, MediaIsTheImageFormattedOrNot) {
@@ -728,8 +743,10 @@ TEST_F(DiskFileSystemTest, MediaIsTheImageFormattedOrNot) {
 }
 
 TEST_F(DiskFileSystemTest, FormatWritesTheSuperblockFatAndRoot) {
-  // Fill the root's sector, to see formatting clear it.
+  // Fill the superblock's sector, boot area included, and the root's, to see
+  // formatting clear them.
   std::unique_ptr<DiskImage> image = MakeImage(kFloppySectors);
+  WriteSector(*image, 0, MakeFilledSector(0xEEEE));
   WriteSector(*image, 4, MakeFilledSector(0xEEEE));
   ASSERT_EQ(file_system_.AttachImage(std::move(image)),
             DiskStatus::kUnformatted);
@@ -951,7 +968,7 @@ TEST_F(DiskFileSystemTest, SetLabelRewritesOnlyTheLabel) {
   EXPECT_EQ(ReadSuperblock(*image), expected);
 }
 
-TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
+TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatLabelAndBootArea) {
   AttachFormatted(kFloppySectors);
   EXPECT_EQ(file_system_.GetWritableStatus(), DiskStatus::kOk);
   ASSERT_EQ(SetWriteProtected(true), DiskStatus::kOk);
@@ -962,9 +979,16 @@ TEST_F(DiskFileSystemTest, WriteProtectionRefusesFormatAndLabel) {
             DiskStatus::kWriteProtected);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")),
             DiskStatus::kWriteProtected);
+  DiskSuperblock::BootArea boot_area;
+  boot_area.fill(0x1234);
+  EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kWriteProtected);
   DiskVolumeInfo volume;
   ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
   EXPECT_EQ(volume.label, GetLabel("WORK"));
+
+  // A protected disk's boot area can still be read, as formatting left it.
+  ASSERT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kOk);
+  EXPECT_THAT(boot_area, Each(0));
 
   // An unformatted disk is protected too.
   std::unique_ptr<DiskImage> blank = MakeImage(kFloppySectors, kOtherPath);
@@ -1055,6 +1079,76 @@ TEST_F(DiskFileSystemTest, AFailedSetLabelLeavesTheDisksLabel) {
   DiskVolumeInfo volume;
   ASSERT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kOk);
   EXPECT_EQ(volume.label, GetLabel("WORK"));
+}
+
+TEST_F(DiskFileSystemTest, SetBootAreaRewritesOnlyTheBootArea) {
+  // The superblock it attached, reserved words included, with only the boot
+  // area changed.
+  AttachFormatted(kFloppySectors);
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  Sector words = ReadSector(*image, 0);
+  words[7] = 0x1234;   // Reserved flags
+  words[31] = 0x5678;  // The last reserved word
+  WriteSector(*image, 0, words);
+  ASSERT_EQ(file_system_.AttachImage(std::move(image)), DiskStatus::kOk);
+
+  const DiskSuperblock::BootArea boot_area = MakeBootArea(0xB000);
+  ASSERT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kOk);
+  DiskSuperblock::BootArea read = {};
+  ASSERT_EQ(file_system_.GetBootArea(&read), DiskStatus::kOk);
+  EXPECT_EQ(read, boot_area);
+
+  DiskSuperblock expected = DiskSuperblock::FromWords(words);
+  expected.SetBootArea(boot_area);
+  image = file_system_.DetachImage();
+  EXPECT_EQ(ReadSuperblock(*image), expected);
+}
+
+TEST_F(DiskFileSystemTest, SetLabelKeepsAWrittenBootArea) {
+  AttachFormatted(kFloppySectors);
+  const DiskSuperblock::BootArea boot_area = MakeBootArea(0xB000);
+  ASSERT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.SetLabel(GetLabel("ARCHIVE")), DiskStatus::kOk);
+  std::unique_ptr<DiskImage> image = file_system_.DetachImage();
+  const DiskSuperblock superblock = ReadSuperblock(*image);
+  EXPECT_EQ(superblock.GetBootArea(), boot_area);
+  EXPECT_EQ(superblock.GetLabel(), GetLabel("ARCHIVE"));
+}
+
+TEST_F(DiskFileSystemTest, BootAreaTime) {
+  AttachFormatted(kFloppySectors);
+  DiskFileSystem timed(
+      {
+          .read_words_per_sec = kDiskSectorWords,
+          .write_words_per_sec = kDiskSectorWords,
+          .latency = kLatency,
+      },
+      kMaxOpenFiles);
+  ASSERT_EQ(timed.AttachImage(file_system_.DetachImage()), DiskStatus::kOk);
+  timed.CollectBusyTime();
+
+  // Getting it reads nothing, as the superblock is held from attaching, and
+  // setting it writes sector 0, which isn't the next sector, so it seeks.
+  DiskSuperblock::BootArea boot_area = {};
+  ASSERT_EQ(timed.GetBootArea(&boot_area), DiskStatus::kOk);
+  EXPECT_EQ(timed.CollectBusyTime(), absl::ZeroDuration());
+  ASSERT_EQ(timed.SetBootArea(MakeBootArea(1)), DiskStatus::kOk);
+  EXPECT_EQ(timed.CollectBusyTime(), kLatency + absl::Seconds(1));
+  ASSERT_EQ(timed.GetBootArea(&boot_area), DiskStatus::kOk);
+  EXPECT_EQ(timed.CollectBusyTime(), absl::ZeroDuration());
+  EXPECT_EQ(boot_area, MakeBootArea(1));
+}
+
+TEST_F(DiskFileSystemTest, AFailedSetBootAreaLeavesTheDisksBootArea) {
+  AttachFormatted(kFloppySectors);
+  ASSERT_EQ(file_system_.SetBootArea(MakeBootArea(1)), DiskStatus::kOk);
+  protocol_->SetLimits({.writes = 0});
+  EXPECT_EQ(file_system_.SetBootArea(MakeBootArea(2)), DiskStatus::kIoError);
+  DiskSuperblock::BootArea boot_area = {};
+  EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kIoError);
+  ASSERT_EQ(ReopenImage(), DiskStatus::kOk);
+  ASSERT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kOk);
+  EXPECT_EQ(boot_area, MakeBootArea(1));
 }
 
 TEST_F(DiskFileSystemTest, OpeningNeedsAFileSystem) {
@@ -1604,6 +1698,9 @@ TEST_F(DiskFileSystemTest, AFailedImageFailsEveryOperationUntilReattached) {
   DiskVolumeInfo volume;
   EXPECT_EQ(file_system_.GetVolumeInfo(&volume), DiskStatus::kIoError);
   EXPECT_EQ(file_system_.SetLabel(GetLabel("OTHER")), DiskStatus::kIoError);
+  DiskSuperblock::BootArea boot_area = {};
+  EXPECT_EQ(file_system_.GetBootArea(&boot_area), DiskStatus::kIoError);
+  EXPECT_EQ(file_system_.SetBootArea(boot_area), DiskStatus::kIoError);
   EXPECT_EQ(file_system_.Format(GetLabel("OTHER"), 0, GetNow()),
             DiskStatus::kIoError);
   EXPECT_EQ(file_system_.Delete(GetName("NEW")), DiskStatus::kIoError);

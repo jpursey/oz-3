@@ -17,10 +17,10 @@
 namespace oz3 {
 
 // A disk's sector 0: the superblock's fields, in words 0-31, then the boot
-// area. By word, the fields are the format ID, "OZFS" packed (0 and 1), the
-// version (2), the layout (3-5), the root directory's first cluster (6),
-// reserved flags (7), the volume label (8-15), and when it was formatted
-// (16-19).
+// area, words 32-255, which holds a system disk's loader. By word, the fields
+// are the format ID, "OZFS" packed (0 and 1), the version (2), the layout
+// (3-5), the root directory's first cluster (6), reserved flags (7), the volume
+// label (8-15), and when it was formatted (16-19).
 //
 // It holds its words exactly, as the disk has them, so one read from a disk
 // may describe no file system, which IsValid says. The getters say what it
@@ -34,6 +34,12 @@ class DiskSuperblock final {
   // The words of the sector, in order.
   using Words = std::array<uint16_t, kDiskSectorWords>;
 
+  // The boot area's size in words: the rest of the sector, from word 32.
+  static constexpr int kBootAreaWords = kDiskSectorWords - 32;
+
+  // The words of the boot area, in order.
+  using BootArea = std::array<uint16_t, kBootAreaWords>;
+
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
@@ -43,7 +49,7 @@ class DiskSuperblock final {
 
   // The superblock formatting writes: the format ID and version, `layout`,
   // the root directory at `root_cluster`, `label`, and `formatted`, with every
-  // other word 0. Every field must fit its words.
+  // other word 0, the boot area's included. Every field must fit its words.
   DiskSuperblock(const DiskLayout& layout, int root_cluster,
                  const DiskLabel& label, DateTime formatted);
 
@@ -86,6 +92,12 @@ class DiskSuperblock final {
   // Sets the volume label.
   void SetLabel(const DiskLabel& label);
 
+  // Returns the boot area.
+  BootArea GetBootArea() const;
+
+  // Sets the boot area.
+  void SetBootArea(const BootArea& words);
+
   // Returns the words.
   const Words& GetWords() const { return words_; }
 
@@ -103,6 +115,7 @@ class DiskSuperblock final {
   static constexpr int kRootClusterWord = 6;
   static constexpr int kLabelWord = 8;
   static constexpr int kFormattedWord = 16;
+  static constexpr int kBootAreaWord = kDiskSectorWords - kBootAreaWords;
 
   explicit DiskSuperblock(const Words& words) : words_(words) {}
 

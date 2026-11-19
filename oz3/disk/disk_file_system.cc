@@ -118,6 +118,23 @@ DiskStatus DiskFileSystem::SetLabel(const DiskLabel& label) {
                                superblock_.GetWords(), WriteCaching::kSkip);
 }
 
+DiskStatus DiskFileSystem::GetBootArea(DiskSuperblock::BootArea* words) const {
+  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  *words = superblock_.GetBootArea();
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::SetBootArea(const DiskSuperblock::BootArea& words) {
+  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  superblock_.SetBootArea(words);
+  return hardware_.WriteSector(DiskLayout::kSuperblockSector,
+                               superblock_.GetWords(), WriteCaching::kSkip);
+}
+
 DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
   if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
     return status;
