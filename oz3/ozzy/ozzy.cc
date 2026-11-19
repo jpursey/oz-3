@@ -299,7 +299,7 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
   const int first_ram_bank = static_cast<int>(
       absl::c_find_if(settings.banks, [](uint16_t ram) { return ram != 0; }) -
       settings.banks.begin());
-  DCHECK_EQ(CpuCore::Banks::FromWord(reset_params.mb).stack, first_ram_bank);
+  CHECK_EQ(CpuCore::Banks::FromWord(reset_params.mb).stack, first_ram_bank);
 
   // Power on: core 0 starts the boot ROM.
   CpuCore* core = processor->GetCore(0);

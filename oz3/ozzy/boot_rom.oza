@@ -666,9 +666,22 @@ read_status:
 ; are the stack's page, from its start, STACK is the same bank, ending at the
 ; end of the page, and EXTRA is bank 0. R0 is the boot drive's command port,
 ; and R1 its drive number.
+;
+; RST keeps pending interrupts, so first it drops those the boot ROM's work
+; left, such as the drive's for READ BOOT's completion, which the loader would
+; otherwise take for its own command's. With no handlers set, they are dropped
+; as soon as interrupts are enabled. A key typed after Enter still waits in the
+; keyboard, so its interrupt is raised again for the loader.
 ;-------------------------------------------------------------------------------
 
 start_loader:
+    SETI KEYBOARD_INTERRUPT, 0
+    EI
+    DI
+    TSTP KEYBOARD_PORT
+    JC NS, @no_key
+    INT KEYBOARD_INTERRUPT
+@no_key:
     CALL find_stack_bank
     MOV R2, R3
     SHL R2, 4

@@ -219,7 +219,11 @@ STACK | DATA | EXTRA`, so:
 - `R0` is the boot drive's command port (16 for `A:`), and `R1` its number (0
   for `A:`).
 - No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE`
-  leaves them. Pending interrupts are kept, as `RST` keeps them.
+  leaves them, and its `N` flag is set, so its first `WAIT` ends at once.
+- The ROM drops the interrupts its own work left pending, such as the drive's
+  for `READ BOOT`, so the loader's first drive interrupt is for its own
+  command. A key typed after Enter waits in the keyboard, with the keyboard's
+  interrupt pending.
 - RAM is as at power on, but for the loader itself and the ROM's stack's page,
   which the loader owns.
 

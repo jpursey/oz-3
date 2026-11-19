@@ -347,6 +347,13 @@ void ExpectLoaderRan(Ozzy& ozzy, int bank, int page, uint16_t key) {
   EXPECT_EQ(registers[CpuCore::R1], 0);
   EXPECT_EQ(registers[CpuCore::ST] & CpuCore::I, 0);
 
+  // Of the interrupts the boot ROM's work raised, only the keyboard's for a
+  // key typed after Enter is still pending, and not READ BOOT's completion.
+  const CpuCore* core = ozzy.GetProcessor()->GetCore(0);
+  const uint32_t pending = core->GetInterrupts() | core->GetSharedInterrupts();
+  EXPECT_EQ(pending & (1 << kOzzyDriveInterrupt), 0);
+  EXPECT_EQ((pending & (1 << kOzzyKeyboardInterrupt)) != 0, key != 0);
+
   // It wrote its own word, and the key, over the box's first two cells, and
   // the cursor is hidden.
   if (ozzy.GetScreen() == nullptr) {
@@ -803,10 +810,11 @@ TEST_F(BootRomTest, NotASystemDisk) {
   ExpectWaiting(*ozzy, kDefaultHardware, kEveryDrive, kNotSystemDisk);
 
   // Each word of the signature counts.
-  for (int word = 0; word < static_cast<int>(kBootSignature.size()); ++word) {
+  const int signature_words = static_cast<int>(kBootSignature.size());
+  for (int word = 0; word < signature_words; ++word) {
     SCOPED_TRACE(word);
     DiskSuperblock::BootArea boot_area = GetBlankBootArea();
-    boot_area[DiskSuperblock::kBootAreaWords - kBootSignature.size() + word] =
+    boot_area[DiskSuperblock::kBootAreaWords - signature_words + word] =
         kBootSignature[word];
     ozzy = BootWithDrives(MakeImage(boot_area));
     ASSERT_NE(ozzy, nullptr);

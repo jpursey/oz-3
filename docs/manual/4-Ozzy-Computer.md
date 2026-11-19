@@ -272,7 +272,8 @@ The boot ROM starts it with `RST SELF, CODE | STACK | DATA | EXTRA` (see [RST](2
 * `STACK` is the same bank, based at the end of the page (2000h by default), with `SP` 0, so its stack starts empty at the top of the page.
 * `EXTRA` is bank 0 at base 0, so the machine table is at `E(F00h)`.
 * `R0` is the boot drive's command port (16 for `A:`), and `R1` its number (0 for `A:`).
-* No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE` leaves them. Pending interrupts are kept, as `RST` keeps them, so keys pressed after Enter wait in the keyboard for the loader.
+* No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE` leaves them, and its notify flag (`N`) is set, so its first `WAIT` ends at once.
+* The boot ROM drops the interrupts its own work left pending, such as the drive's for `READ BOOT`, so the loader's first drive interrupt is for its own command. A key typed after Enter waits in the keyboard for the loader, with the keyboard's interrupt pending.
 * RAM is as at power on, but for the loader itself and the boot ROM's stack's page, which the loader now owns.
 
 The other cores are still idle, as at power on, until the loader or what it loads starts them.
