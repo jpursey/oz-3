@@ -31,10 +31,11 @@ Each item carries:
 - **Layers:** ozzy, manual
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Ozzy drives*
-- **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS)
+- **Depends on:** *Booting from disk*
+- **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS),
+  [booting-from-disk.md](worklog/booting-from-disk.md)
 
-The OS, in OZ-3 assembly: booting from drive `A:`, the calls, the program
+The OS, in OZ-3 assembly: the loader in the boot area, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
