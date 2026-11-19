@@ -507,9 +507,8 @@ DiskDrive::StateResult DiskDrive::ExecuteState(ReadingBootState& state) {
   if (!LockPorts(kDataLock)) {
     return StateResult::kWait;
   }
-  const DiskSuperblock::BootArea& words = *state.command.boot_area;
-  PortWords::FromWords(words[2 * state.moved], words[2 * state.moved + 1])
-      .Store(port, GetLock(kDataPort), kFieldMode);
+  state.command.boot_area[state.moved].Store(port, GetLock(kDataPort),
+                                             kFieldMode);
   ++state.moved;
   return StateResult::kContinue;
 }
@@ -540,14 +539,6 @@ DiskDrive::State DiskDrive::GetStateAfterAccept(Command command,
   if (accept.status != DiskStatus::kOk) {
     return IdleState();
   }
-
-  // The boot commands move the boot area rather than a file's words.
-  if (command.def->command == DiskDriveCommand::kReadBoot) {
-    return ReadingBootState{.command = std::move(command)};
-  }
-  if (command.def->command == DiskDriveCommand::kWriteBoot) {
-    return WritingBootState{.command = std::move(command)};
-  }
   switch (command.def->kind) {
     case DiskCommandKind::kSynchronous:
       return IdleState();
@@ -564,6 +555,10 @@ DiskDrive::State DiskDrive::GetStateAfterAccept(Command command,
     }
     case DiskCommandKind::kWrite:
       return WritingState{.transfer = MakeTransfer(std::move(command), accept)};
+    case DiskCommandKind::kReadBoot:
+      return ReadingBootState{.command = std::move(command)};
+    case DiskCommandKind::kWriteBoot:
+      return WritingBootState{.command = std::move(command)};
   }
   return IdleState();
 }
@@ -1141,7 +1136,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptReadBoot(Command* command) {
   DiskSuperblock::BootArea words;
   const DiskStatus status = file_system_.GetBootArea(&words);
   if (status == DiskStatus::kOk) {
-    command->boot_area = words;
+    AppendWordFields(words, &command->boot_area);
   }
   return {.status = status};
 }

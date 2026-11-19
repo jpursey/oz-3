@@ -284,8 +284,9 @@ class DiskDrive final : public Device {
     std::optional<DiskFilename> new_name;
     std::optional<DiskLabel> label;
 
-    // READ BOOT's boot area, which its accept takes for its data phase.
-    std::optional<DiskSuperblock::BootArea> boot_area;
+    // READ BOOT's boot area, as the dwords its data phase sends. Its accept
+    // takes them, so a disk ejected after doesn't change them.
+    std::vector<PortWords> boot_area;
   };
 
   // An accept or a completion: its status, its results, which a command has

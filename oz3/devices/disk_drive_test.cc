@@ -254,15 +254,6 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
     return words;
   }
 
-  // Returns a new formatted image whose boot area is `words`.
-  std::unique_ptr<DiskImage> MakeImageWithBootArea(
-      const DiskSuperblock::BootArea& words) {
-    DiskFileSystem file_system({}, 1);
-    file_system.AttachImage(MakeImage());
-    EXPECT_EQ(file_system.SetBootArea(words), kOk);
-    return file_system.DetachImage();
-  }
-
   // Returns word `i` of a file AddFile makes.
   static uint16_t FileWord(int i) { return static_cast<uint16_t>(i + 1); }
 
@@ -409,6 +400,16 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
   // superblock.
   void AttachFormatted() {
     drive_->AttachImage(MakeImage());
+    Execute(kAttachCycles + 2);
+  }
+
+  // Attaches a new formatted image whose boot area is `words`, and runs until
+  // the drive has read its superblock.
+  void AttachWithBootArea(const DiskSuperblock::BootArea& words) {
+    DiskFileSystem file_system({}, 1);
+    file_system.AttachImage(MakeImage());
+    EXPECT_EQ(file_system.SetBootArea(words), kOk);
+    drive_->AttachImage(file_system.DetachImage());
     Execute(kAttachCycles + 2);
   }
 
@@ -776,8 +777,8 @@ TEST(DiskCommandDefTest, EveryCommandIsAsDesigned) {
       {kVolume, false, kLatent, false, 0, 0, kName + 3},
       {kFormat, false, kLatent, false, kName + 1, 0, 0},
       {kLabel, false, kLatent, false, kName, 0, 0},
-      {kReadBoot, false, kReads, true, 0, 0, 0},
-      {kWriteBoot, false, kWrites, true, 0, 0, 0},
+      {kReadBoot, false, DiskCommandKind::kReadBoot, true, 0, 0, 0},
+      {kWriteBoot, false, DiskCommandKind::kWriteBoot, true, 0, 0, 0},
   };
   for (const DiskCommandDef& command : expected) {
     SCOPED_TRACE(static_cast<int>(command.command));
@@ -2699,8 +2700,7 @@ TEST_F(DiskDriveTest, CreateFailsWhenTheRootCannotGrow) {
 TEST_F(DiskDriveTest, ReadBootSendsTheBootAreaWithNoDiskTime) {
   ASSERT_TRUE(InitDrive());
   const DiskSuperblock::BootArea boot = BootWords(0x1000);
-  drive_->AttachImage(MakeImageWithBootArea(boot));
-  Execute(kAttachCycles + 2);
+  AttachWithBootArea(boot);
 
   // The drive holds the superblock, so no dword waits for the disk.
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
@@ -2784,8 +2784,7 @@ TEST_F(DiskDriveTest, BootCommandsCheckTheDiskAtAccept) {
 TEST_F(DiskDriveTest, AResetBeforeTheLastDwordWritesNoBootArea) {
   ASSERT_TRUE(InitDrive());
   const DiskSuperblock::BootArea old_boot = BootWords(0x1000);
-  drive_->AttachImage(MakeImageWithBootArea(old_boot));
-  Execute(kAttachCycles + 2);
+  AttachWithBootArea(old_boot);
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kWriteBoot)),
               ElementsAre(Field(kOk)));
   const std::vector<PortWords> transfers =
@@ -2827,8 +2826,7 @@ TEST_F(DiskDriveTest, ReadBootCompletesThoughTheDiskIsRemoved) {
   // The accept took the boot area, so the rest is sent from it.
   ASSERT_TRUE(InitDrive());
   const DiskSuperblock::BootArea boot = BootWords(0x1000);
-  drive_->AttachImage(MakeImageWithBootArea(boot));
-  Execute(kAttachCycles + 2);
+  AttachWithBootArea(boot);
   EXPECT_THAT(Command(CommandWord(DiskDriveCommand::kReadBoot)),
               ElementsAre(Field(kOk)));
   const std::vector<PortWords> expected = DataWords(boot, /*packed=*/true);
@@ -3378,8 +3376,7 @@ std::string MakeBootProgram(DiskDriveCommand command,
 TEST_F(DiskDriveProgramTest, AnInrDwordLoopReadsTheBootArea) {
   ASSERT_TRUE(InitDrive());
   const DiskSuperblock::BootArea boot = BootWords(0x1000);
-  drive_->AttachImage(MakeImageWithBootArea(boot));
-  Execute(kAttachCycles + 2);
+  AttachWithBootArea(boot);
   ASSERT_TRUE(Load(MakeBootProgram(DiskDriveCommand::kReadBoot, "INR.ID")));
   ASSERT_TRUE(ExecuteUntilHalt());
   EXPECT_EQ(GetState().r6, 1);

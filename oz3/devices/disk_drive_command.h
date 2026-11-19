@@ -73,6 +73,8 @@ enum class DiskCommandKind : uint8_t {
   kLatent,       // A completion, posted later with the interrupt.
   kRead,         // A data phase out of the drive, then a completion.
   kWrite,        // A data phase into the drive, then a completion.
+  kReadBoot,     // The boot area out of the drive, then a completion.
+  kWriteBoot,    // The boot area into the drive, then a completion.
 };
 
 // The fields of a name, pattern, or label: 8 words, two to a field.

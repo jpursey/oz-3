@@ -267,7 +267,9 @@ DiskStatus SetBootArea(const DiskSuperblock::BootArea& words);
 
 ### devices: READ BOOT and WRITE BOOT
 
-- `disk_drive_command` gains the two codes, with no arguments and no results.
+- `disk_drive_command` gains the two codes, with no arguments and no results,
+  and a `DiskCommandKind` each (`kReadBoot` and `kWriteBoot`), as what follows
+  their accept is neither a `READ`'s nor a `WRITE`'s data phase.
 - The data phase of `READ` and `WRITE` moves words to and from a file through
   its handle, one file system call per word. The boot area has no handle, so
   each command gets a data state of its own, holding a `BootArea` as its
