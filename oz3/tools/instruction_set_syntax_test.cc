@@ -311,6 +311,25 @@ TEST(InstructionSetSyntaxTest, InstructionAddressIsItsOwnFirstValue) {
   EXPECT_EQ(forms[2]->GetArgs()[1].address_bank, -1);  // $v
 }
 
+TEST(InstructionSetSyntaxTest, InstructionAddressSkipsItsCodesValues) {
+  // PUT's $m comes first, but the $v of a code in its place, which has no
+  // address of its own, is never the instruction's address.
+  TestDef def(absl::StrCat(kInstructionSet, R"---(
+    instruction(opcode:8) PUT "$m, $v" { LD(C0); $GetWord; MOV(R0,r); }
+  )---"));
+  def.instructions[8].address_bank = CpuCore::DATA;
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("PUT");
+  ASSERT_EQ(forms.size(), 4);
+  ASSERT_EQ(forms[1]->GetArgs().size(), 3);  // ($r + $v), $v
+  EXPECT_EQ(forms[1]->GetArgs()[1].address_bank, -1);
+  EXPECT_EQ(forms[1]->GetArgs()[2].address_bank, CpuCore::DATA);
+  ASSERT_EQ(forms[2]->GetArgs().size(), 2);  // $v, $v
+  EXPECT_EQ(forms[2]->GetArgs()[0].address_bank, -1);
+  EXPECT_EQ(forms[2]->GetArgs()[1].address_bank, CpuCore::DATA);
+}
+
 TEST(InstructionSetSyntaxTest, MacroCodeIsOnlyWholeIfMacroIs) {
   TestDef def(kInstructionSet);
   auto syntax = InstructionSetSyntax::Create(def.GetDef());
