@@ -120,8 +120,8 @@ TEST(DiskSuperblockTest, TheBootAreaIsTheRestOfTheSector) {
   EXPECT_EQ(boot_area.front(), 0xA000 + 32);
   EXPECT_EQ(boot_area.back(), 0xA000 + 255);
 
-  DiskSuperblock::BootArea new_boot_area;
-  new_boot_area.fill(0x1234);
+  const DiskSuperblock::BootArea new_boot_area(DiskSuperblock::kBootAreaWords,
+                                               0x1234);
   superblock.SetBootArea(new_boot_area);
   EXPECT_EQ(superblock.GetBootArea(), new_boot_area);
   std::fill(words.begin() + 32, words.end(), 0x1234);

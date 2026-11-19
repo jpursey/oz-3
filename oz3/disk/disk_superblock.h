@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "oz3/core/date_time.h"
 #include "oz3/disk/disk_label.h"
@@ -37,8 +38,8 @@ class DiskSuperblock final {
   // The boot area's size in words: the rest of the sector, from word 32.
   static constexpr int kBootAreaWords = kDiskSectorWords - 32;
 
-  // The words of the boot area, in order.
-  using BootArea = std::array<uint16_t, kBootAreaWords>;
+  // The words of the boot area, in order, always kBootAreaWords of them.
+  using BootArea = std::vector<uint16_t>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -95,7 +96,7 @@ class DiskSuperblock final {
   // Returns the boot area.
   BootArea GetBootArea() const;
 
-  // Sets the boot area.
+  // Sets the boot area to `words`, which must be kBootAreaWords words.
   void SetBootArea(const BootArea& words);
 
   // Returns the words.

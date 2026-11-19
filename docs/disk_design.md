@@ -467,7 +467,7 @@ Codes are grouped by kind, with the low nibble numbering commands within a group
 - `VOLUME` describes the file system, and fails with **unformatted** if there isn't one. Its free clusters come from the free count (see Free count below), so it is quick unless it is the first command to need the count.
 - `FORMAT` uses the image's full sector count, blanking the superblock, then writing the zeroed FAT, the root cluster, and last the superblock (with the formatted date), each sector charged. A format that fails partway leaves the disk unformatted. Sectors per cluster must be a power of two from 1 to 64, large enough that at most 65,534 clusters cover the image; 0 lets the drive pick the smallest that does. It fails with **in use** if any slot is open.
 - `LABEL` rewrites the superblock's label.
-- `READ BOOT` and `WRITE BOOT` move the whole boot area as 112 dwords on the data port, low word first, with no count. `READ BOOT` takes the words at accept, from the superblock the drive holds, so it takes no disk time and always completes **ok**. `WRITE BOOT` writes sector 0 once it has every word, so a reset before then writes nothing, and its completion is that write's status.
+- `READ BOOT` and `WRITE BOOT` move the whole boot area as 112 dwords on the data port, low word first, with no count. `READ BOOT` takes the words from the superblock the drive holds once the OS has read its accept status, so it takes no disk time, and completes **ok** unless the disk was changed in between and fails the accept's checks, such as with **no disk**, when it sends zeros and completes with that status. `WRITE BOOT` writes sector 0 once it has every word, so a reset before then writes nothing, and its completion is that write's status.
 
 #### Free count
 

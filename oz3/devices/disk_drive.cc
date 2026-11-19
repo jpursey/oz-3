@@ -501,14 +501,15 @@ DiskDrive::StateResult DiskDrive::ExecuteState(ReadingBootState& state) {
   }
   if (state.moved == kBootDwords) {
     state_ = SendingCompletionState{.command = std::move(state.command),
-                                    .completion = {.status = DiskStatus::kOk}};
+                                    .completion = {.status = state.status}};
     return StateResult::kContinue;
   }
   if (!LockPorts(kDataLock)) {
     return StateResult::kWait;
   }
-  state.command.boot_area[state.moved].Store(port, GetLock(kDataPort),
-                                             kFieldMode);
+  const int word = 2 * state.moved;
+  PortWords::FromWords(state.words[word], state.words[word + 1])
+      .Store(port, GetLock(kDataPort), kFieldMode);
   ++state.moved;
   return StateResult::kContinue;
 }
@@ -528,8 +529,9 @@ DiskDrive::StateResult DiskDrive::ExecuteState(WritingBootState& state) {
   }
   PortWords words;
   words.Load(port, GetLock(kDataPort), kFieldMode);
-  state.words[2 * state.moved] = words.GetWord(0);
-  state.words[2 * state.moved + 1] = words.GetWord(1);
+  const int word = 2 * state.moved;
+  state.words[word] = words.GetWord(0);
+  state.words[word + 1] = words.GetWord(1);
   ++state.moved;
   return StateResult::kContinue;
 }
@@ -555,10 +557,20 @@ DiskDrive::State DiskDrive::GetStateAfterAccept(Command command,
     }
     case DiskCommandKind::kWrite:
       return WritingState{.transfer = MakeTransfer(std::move(command), accept)};
-    case DiskCommandKind::kReadBoot:
-      return ReadingBootState{.command = std::move(command)};
+    case DiskCommandKind::kReadBoot: {
+      // The accept checked the disk, but it may have changed since, while the
+      // OS took the accept status. The OS still gets every dword the
+      // accept promised, so a failure sends zeros, and completes with it.
+      ReadingBootState state = {
+          .command = std::move(command),
+          .words = DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords)};
+      state.status = file_system_.GetBootArea(&state.words);
+      return state;
+    }
     case DiskCommandKind::kWriteBoot:
-      return WritingBootState{.command = std::move(command)};
+      return WritingBootState{
+          .command = std::move(command),
+          .words = DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords)};
   }
   return IdleState();
 }
@@ -768,7 +780,7 @@ DiskDrive::CommandResponse DiskDrive::AcceptCommand(Command* command) {
     case DiskDriveCommand::kLabel:
       return AcceptLabel(command);
     case DiskDriveCommand::kReadBoot:
-      return AcceptReadBoot(command);
+      return AcceptReadBoot();
     case DiskDriveCommand::kWriteBoot:
       return AcceptWriteBoot();
     default:
@@ -1132,13 +1144,8 @@ DiskDrive::CommandResponse DiskDrive::RunLabel(const Command& command) {
   return {.status = file_system_.SetLabel(*command.label)};
 }
 
-DiskDrive::CommandResponse DiskDrive::AcceptReadBoot(Command* command) {
-  DiskSuperblock::BootArea words;
-  const DiskStatus status = file_system_.GetBootArea(&words);
-  if (status == DiskStatus::kOk) {
-    AppendWordFields(words, &command->boot_area);
-  }
-  return {.status = status};
+DiskDrive::CommandResponse DiskDrive::AcceptReadBoot() {
+  return {.status = file_system_.GetVolumeStatus()};
 }
 
 DiskDrive::CommandResponse DiskDrive::AcceptWriteBoot() {

@@ -268,8 +268,8 @@ class DiskDrive final : public Device {
   //----------------------------------------------------------------------------
 
   // A command the OS has written: its command word, its definition (null for
-  // an unknown code), the argument fields taken so far, and what its accept
-  // decoded or took for the steps after it.
+  // an unknown code), the argument fields taken so far, and the arguments its
+  // accept decoded.
   struct Command {
     // Returns the handle in the command word.
     int GetHandle() const { return word & 0xFF; }
@@ -283,10 +283,6 @@ class DiskDrive final : public Device {
     std::optional<DiskFilename> name;
     std::optional<DiskFilename> new_name;
     std::optional<DiskLabel> label;
-
-    // READ BOOT's boot area, as the dwords its data phase sends. Its accept
-    // takes them, so a disk ejected after doesn't change them.
-    std::vector<PortWords> boot_area;
   };
 
   // An accept or a completion: its status, its results, which a command has
@@ -374,13 +370,19 @@ class DiskDrive final : public Device {
   };
 
   // READ BOOT's and WRITE BOOT's data phases, of kBootDwords dwords and no
-  // count. Neither has a disk call to fail partway: READ BOOT's accept takes
-  // the boot area, and WRITE BOOT writes it once its last dword is in.
+  // count. Neither has a disk call to fail partway: READ BOOT takes the boot
+  // area as its data phase starts, and WRITE BOOT writes it once its last dword
+  // is in.
   struct ReadingBootState {
     DiskDrivePhase GetPhase() const { return DiskDrivePhase::kReading; }
     uint16_t GetCommandWord() const { return command.word; }
 
     Command command;
+
+    // The boot area it sends, and the status of taking it, which it completes
+    // with. A failure sends zeros.
+    DiskSuperblock::BootArea words;
+    DiskStatus status = DiskStatus::kOk;
 
     // The dwords put on the data port, though the OS may not have taken the
     // last yet.
@@ -392,8 +394,9 @@ class DiskDrive final : public Device {
 
     Command command;
 
-    // The words taken from the data port so far, and how many dwords that is.
-    DiskSuperblock::BootArea words = {};
+    // The boot area, filled in from the data port, and how many dwords of it
+    // have been taken.
+    DiskSuperblock::BootArea words;
     int moved = 0;
   };
 
@@ -671,7 +674,7 @@ class DiskDrive final : public Device {
   CommandResponse RunFormat(const Command& command);
   CommandResponse AcceptLabel(Command* command);
   CommandResponse RunLabel(const Command& command);
-  CommandResponse AcceptReadBoot(Command* command);
+  CommandResponse AcceptReadBoot();
   CommandResponse AcceptWriteBoot();
 
   //----------------------------------------------------------------------------

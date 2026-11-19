@@ -127,6 +127,7 @@ DiskStatus DiskFileSystem::GetBootArea(DiskSuperblock::BootArea* words) const {
 }
 
 DiskStatus DiskFileSystem::SetBootArea(const DiskSuperblock::BootArea& words) {
+  CHECK_EQ(static_cast<int>(words.size()), DiskSuperblock::kBootAreaWords);
   if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
     return status;
   }

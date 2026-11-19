@@ -247,7 +247,7 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
 
   // Returns a boot area whose words count up from `first`.
   static DiskSuperblock::BootArea BootWords(uint16_t first) {
-    DiskSuperblock::BootArea words;
+    DiskSuperblock::BootArea words(DiskSuperblock::kBootAreaWords);
     for (int i = 0; i < DiskSuperblock::kBootAreaWords; ++i) {
       words[i] = static_cast<uint16_t>(first + i);
     }
@@ -405,9 +405,10 @@ class DiskDriveTest : public DiskHost, public DeviceProgramTest {
 
   // Attaches a new formatted image whose boot area is `words`, and runs until
   // the drive has read its superblock.
-  void AttachWithBootArea(const DiskSuperblock::BootArea& words) {
+  void AttachWithBootArea(const DiskSuperblock::BootArea& words,
+                          std::string_view path = kPath) {
     DiskFileSystem file_system({}, 1);
-    file_system.AttachImage(MakeImage());
+    file_system.AttachImage(MakeImage(/*formatted=*/true, path));
     EXPECT_EQ(file_system.SetBootArea(words), kOk);
     drive_->AttachImage(file_system.DetachImage());
     Execute(kAttachCycles + 2);
@@ -2777,7 +2778,8 @@ TEST_F(DiskDriveTest, BootCommandsCheckTheDiskAtAccept) {
               ElementsAre(Field(kOk), PortWords::FromWord(0)));
   EXPECT_THAT(Command(CommandWord(kReadBoot)), ElementsAre(Field(kOk)));
   EXPECT_EQ(ReadData(kBootDwords).transfers,
-            DataWords(DiskSuperblock::BootArea(), /*packed=*/true));
+            DataWords(DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords),
+                      /*packed=*/true));
   EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
 }
 
@@ -2843,8 +2845,52 @@ TEST_F(DiskDriveTest, WriteBootFindsNoDiskIfItIsRemoved) {
   EXPECT_EQ(GetControlWord(), 0);
 }
 
+TEST_F(DiskDriveTest, ReadBootTakesTheBootAreaOnceItsAcceptIsRead) {
+  // The accept status is still to be read, so the disk swapped in is the one
+  // whose boot area is sent.
+  ASSERT_TRUE(InitDrive());
+  AttachWithBootArea(BootWords(0x1000));
+  Start(CommandWord(DiskDriveCommand::kReadBoot));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  const DiskSuperblock::BootArea boot = BootWords(0x2000);
+  AttachWithBootArea(boot, kOtherPath);
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  EXPECT_EQ(ReadData(kBootDwords).transfers, DataWords(boot, /*packed=*/true));
+  EXPECT_THAT(Complete(), ElementsAre(Field(kOk)));
+}
+
+TEST_F(DiskDriveTest, ReadBootSendsZerosIfTheDiskFailsOnceItsAcceptIsRead) {
+  // The accept promised every dword, so they all come, and the completion says
+  // there is no disk.
+  ASSERT_TRUE(InitDrive());
+  AttachWithBootArea(BootWords(0x1000));
+  Start(CommandWord(DiskDriveCommand::kReadBoot));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  ASSERT_NE(drive_->DetachImage(), nullptr);
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  const std::vector<PortWords> zeros =
+      DataWords(DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords),
+                /*packed=*/true);
+  EXPECT_EQ(ReadData(kBootDwords).transfers, zeros);
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kNoDisk)));
+  EXPECT_EQ(GetControlWord(), 0);
+
+  // The same goes for a disk swapped in that the accept would have failed.
+  AttachWithBootArea(BootWords(0x1000));
+  Start(CommandWord(DiskDriveCommand::kReadBoot));
+  Execute(1);
+  ASSERT_EQ(GetPhase(), 3);
+  drive_->AttachImage(MakeImage(/*formatted=*/false, kOtherPath));
+  EXPECT_EQ(ReceiveField(), Field(kOk));
+  EXPECT_EQ(ReadData(kBootDwords).transfers, zeros);
+  EXPECT_THAT(Complete(), ElementsAre(Field(DiskStatus::kUnformatted)));
+}
+
 TEST_F(DiskDriveTest, ReadBootCompletesThoughTheDiskIsRemoved) {
-  // The accept took the boot area, so the rest is sent from it.
+  // The boot area was taken as the data phase started, so the rest is sent
+  // from it.
   ASSERT_TRUE(InitDrive());
   const DiskSuperblock::BootArea boot = BootWords(0x1000);
   AttachWithBootArea(boot);
