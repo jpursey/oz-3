@@ -206,7 +206,8 @@ loader. If anything fails, it shows why and waits for Enter again:
 | Any other status, such as **I/O error** | `ERROR: Disk error 25h`      |
 
 The ROM polls the drive's control port, and never takes its interrupt. Keys
-typed after Enter wait in the keyboard for the loader.
+typed while it boots are thrown away, so they neither count toward the next
+prompt nor reach the loader.
 
 **What the loader starts with.** The ROM starts it with `RST SELF, CODE |
 STACK | DATA | EXTRA`, so:
@@ -220,10 +221,9 @@ STACK | DATA | EXTRA`, so:
   for `A:`).
 - No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE`
   leaves them, and its `N` flag is set, so its first `WAIT` ends at once.
-- The ROM drops the interrupts its own work left pending, such as the drive's
-  for `READ BOOT`, so the loader's first drive interrupt is for its own
-  command. A key typed after Enter waits in the keyboard, with the keyboard's
-  interrupt pending.
+- The keyboard is empty, and no interrupt the ROM's own work raised is
+  pending, such as the drive's for `READ BOOT`, so the loader's first drive
+  interrupt is for its own command.
 - RAM is as at power on, but for the loader itself and the ROM's stack's page,
   which the loader owns.
 
@@ -367,7 +367,8 @@ const absl::StatusOr<BareProgram>& GetBareProgram() const;
   ROM `WAIT`s with interrupts enabled, and the keyboard's handler only does
   `WAKE SELF`, which ends the `WAIT`, or makes the next one end at once if a
   key comes before it. The ROM then reads the key from the port. Interrupts
-  are disabled from Enter on, so later keys stay in the keyboard.
+  are disabled from Enter on, and the keys typed while it boots are thrown
+  away.
 - [x] `.DS 222 - $` pads a loader to its signature (`$` is in the assembler's
   expressions; `.DS` must accept it), and `.DW 'BOOT'` packs to 4F42h, 544Fh
   (CL5's test loader). `.DS 222 - $` does, but single quotes give one

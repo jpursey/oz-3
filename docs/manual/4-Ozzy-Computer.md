@@ -235,7 +235,7 @@ Ready
 
 #### Waiting for Enter
 
-With a keyboard, the boot ROM is the keyboard's interrupt handler, for interrupt 1 on core 0, and waits with `WAIT`, which each key's interrupt ends. The other cores have no handler for it, so each drops its own copy. It reads the keys from port 1 (see [Keyboard](3.2-Keyboard.md)), and ignores every one but Enter, echoing nothing. Only the key counts, not the modifier keys held with it, so `Ctrl` with `M`, which is Enter (0Dh), boots too. Keys pressed while the boot ROM shows the banner wait in the keyboard, and count once it prompts.
+With a keyboard, the boot ROM is the keyboard's interrupt handler, for interrupt 1 on core 0, and waits with `WAIT`, which each key's interrupt ends. The other cores have no handler for it, so each drops its own copy. It reads the keys from port 1 (see [Keyboard](3.2-Keyboard.md)), and ignores every one but Enter, echoing nothing. Only the key counts, not the modifier keys held with it, so `Ctrl` with `M`, which is Enter (0Dh), boots too. Keys pressed while the boot ROM shows the banner wait in the keyboard, and count once it prompts. Keys pressed while it boots are thrown away, so they neither count toward the next prompt nor reach the loader.
 
 Interrupts are enabled only while it waits. The boot ROM sets no handler for any other interrupt, so a core 0 interrupt from another device, such as the screen's refresh or the timer's tick, is dropped.
 
@@ -273,7 +273,7 @@ The boot ROM starts it with `RST SELF, CODE | STACK | DATA | EXTRA` (see [RST](2
 * `EXTRA` is bank 0 at base 0, so the machine table is at `E(F00h)`.
 * `R0` is the boot drive's command port (16 for `A:`), and `R1` its number (0 for `A:`).
 * No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE` leaves them, and its notify flag (`N`) is set, so its first `WAIT` ends at once.
-* The boot ROM drops the interrupts its own work left pending, such as the drive's for `READ BOOT`, so the loader's first drive interrupt is for its own command. A key typed after Enter waits in the keyboard for the loader, with the keyboard's interrupt pending.
+* The keyboard is empty, as the boot ROM throws away the keys pressed while it boots, and no interrupt its own work raised is pending, such as the drive's for `READ BOOT`, so the loader's first drive interrupt is for its own command.
 * RAM is as at power on, but for the loader itself and the boot ROM's stack's page, which the loader now owns.
 
 The other cores are still idle, as at power on, until the loader or what it loads starts them.

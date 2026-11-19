@@ -182,6 +182,7 @@ start:
     MVQ R0, CURSOR_OFF
     CALL set_cursor
     CALL boot
+    CALL discard_keys
     CALL prompt_again
     JP @wait
 
@@ -667,21 +668,18 @@ read_status:
 ; end of the page, and EXTRA is bank 0. R0 is the boot drive's command port,
 ; and R1 its drive number.
 ;
-; RST keeps pending interrupts, so first it drops those the boot ROM's work
-; left, such as the drive's for READ BOOT's completion, which the loader would
-; otherwise take for its own command's. With no handlers set, they are dropped
-; as soon as interrupts are enabled. A key typed after Enter still waits in the
-; keyboard, so its interrupt is raised again for the loader.
+; First it throws away the keys typed while booting. RST keeps pending
+; interrupts, so it then drops those the boot ROM's work left, such as the
+; drive's for READ BOOT's completion, which the loader would otherwise take for
+; its own command's, and the keyboard's for the keys it threw away. With no
+; handlers set, they are dropped as soon as interrupts are enabled.
 ;-------------------------------------------------------------------------------
 
 start_loader:
     SETI KEYBOARD_INTERRUPT, 0
+    CALL discard_keys
     EI
     DI
-    TSTP KEYBOARD_PORT
-    JC NS, @no_key
-    INT KEYBOARD_INTERRUPT
-@no_key:
     CALL find_stack_bank
     MOV R2, R3
     SHL R2, 4
@@ -714,6 +712,19 @@ find_stack_bank:
     JP @bank
 @done:
     POP R1
+    RET
+
+;-------------------------------------------------------------------------------
+; discard_keys: Throws away the keys typed while booting, so they neither count
+; toward the next prompt nor reach the loader.
+;-------------------------------------------------------------------------------
+
+discard_keys:
+    PUSH R0
+@next:
+    INS KEYBOARD_PORT, R0
+    JC S, @next
+    POP R0
     RET
 
 ;-------------------------------------------------------------------------------

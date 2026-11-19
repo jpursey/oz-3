@@ -327,9 +327,8 @@ OzzySettings GetTeletypeSettings(int baud) {
 }
 
 // Expects the test loader to have run and halted, with the banks of the stack
-// page `page` of bank `bank`, and to have written the key `key` to the
-// screen.
-void ExpectLoaderRan(Ozzy& ozzy, int bank, int page, uint16_t key) {
+// page `page` of bank `bank`, and no key from the keyboard.
+void ExpectLoaderRan(Ozzy& ozzy, int bank, int page) {
   ASSERT_TRUE(IsHalted(ozzy));
   const CpuCore::Registers registers = GetRegisters(ozzy);
   const CpuCore::Banks banks = CpuCore::Banks::FromWord(registers[CpuCore::MB]);
@@ -347,21 +346,21 @@ void ExpectLoaderRan(Ozzy& ozzy, int bank, int page, uint16_t key) {
   EXPECT_EQ(registers[CpuCore::R1], 0);
   EXPECT_EQ(registers[CpuCore::ST] & CpuCore::I, 0);
 
-  // Of the interrupts the boot ROM's work raised, only the keyboard's for a
-  // key typed after Enter is still pending, and not READ BOOT's completion.
+  // None of the interrupts the boot ROM's work raised is still pending, such
+  // as READ BOOT's completion, or the keyboard's for the keys it threw away.
   const CpuCore* core = ozzy.GetProcessor()->GetCore(0);
   const uint32_t pending = core->GetInterrupts() | core->GetSharedInterrupts();
   EXPECT_EQ(pending & (1 << kOzzyDriveInterrupt), 0);
-  EXPECT_EQ((pending & (1 << kOzzyKeyboardInterrupt)) != 0, key != 0);
+  EXPECT_EQ(pending & (1 << kOzzyKeyboardInterrupt), 0);
 
-  // It wrote its own word, and the key, over the box's first two cells, and
-  // the cursor is hidden.
+  // It wrote its own word, and 0 for no key, over the box's first two cells,
+  // and the cursor is hidden.
   if (ozzy.GetScreen() == nullptr) {
     return;
   }
   const ScreenPicture& picture = ozzy.GetScreen()->GetPicture();
   EXPECT_EQ(picture.cells[0], 'L');
-  EXPECT_EQ(picture.cells[1], key);
+  EXPECT_EQ(picture.cells[1], 0);
   EXPECT_EQ(GetRowText(picture, 0).substr(2), kVersion.substr(1));
   EXPECT_EQ(GetRowText(picture, kPromptRow), kPrompt);
   EXPECT_EQ(GetRowText(picture, kStatusRow), kReady);
@@ -726,7 +725,7 @@ TEST_F(BootRomTest, NoScreenOrTeletype) {
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetState(*ozzy), CpuCore::State::kWaiting);
   PressEnter(*ozzy);
-  ExpectLoaderRan(*ozzy, 0, 1, 0);
+  ExpectLoaderRan(*ozzy, 0, 1);
 }
 
 TEST_F(BootRomTest, OtherKeysAreIgnored) {
@@ -770,6 +769,25 @@ TEST_F(BootRomTest, KeysWithEveryCore) {
   ASSERT_NE(ozzy, nullptr);
   PressKeys(*ozzy, {'a', kKeyEnter});
   ExpectWaiting(*ozzy, "8 cores  56K RAM  1 MHz", kNoDrives, kNoDrive);
+}
+
+TEST_F(BootRomTest, KeysWhileLoadingAreThrownAway) {
+  // Keys typed while a boot fails don't count toward the next prompt, so a
+  // second Enter doesn't boot again. On the teletype, each boot shows a line.
+  OzzySettings settings = GetTeletypeSettings(0);
+  settings.drives.resize(1);
+  std::unique_ptr<Ozzy> ozzy = Boot(settings);
+  ASSERT_NE(ozzy, nullptr);
+  ozzy->GetTeletype()->TakeOutput();
+  const std::string failed_boot =
+      absl::StrCat("\r\nLoading...\r\n", kNoDisk, "\r\n\r\n", kPrompt);
+  PressKeys(*ozzy, {kKeyEnter, 'a', kKeyEnter});
+  EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(), failed_boot);
+  EXPECT_EQ(GetState(*ozzy), CpuCore::State::kWaiting);
+
+  // The next Enter boots again.
+  PressEnter(*ozzy);
+  EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(), failed_boot);
 }
 
 //==============================================================================
@@ -855,9 +873,9 @@ TEST_F(BootRomTest, BootsTheLoader) {
   ASSERT_NE(ozzy, nullptr);
   ExpectWaiting(*ozzy, kDefaultHardware, kEveryDrive);
 
-  // The key after Enter waits in the keyboard for the loader.
-  PressKeys(*ozzy, {kKeyEnter, 'x'});
-  ExpectLoaderRan(*ozzy, 0, 1, 'x');
+  // Keys typed while it boots are thrown away, so none reach the loader.
+  PressKeys(*ozzy, {kKeyEnter, 'x', kKeyEnter});
+  ExpectLoaderRan(*ozzy, 0, 1);
 }
 
 TEST_F(BootRomTest, BootsTheLoaderInAnotherBank) {
@@ -868,7 +886,7 @@ TEST_F(BootRomTest, BootsTheLoaderInAnotherBank) {
   std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeSystemImage());
   ASSERT_NE(ozzy, nullptr);
   PressEnter(*ozzy);
-  ExpectLoaderRan(*ozzy, 1, 8, 0);
+  ExpectLoaderRan(*ozzy, 1, 8);
 }
 
 TEST_F(BootRomTest, RetryAfterInsertingADisk) {
@@ -878,7 +896,7 @@ TEST_F(BootRomTest, RetryAfterInsertingADisk) {
   ExpectWaiting(*ozzy, kDefaultHardware, kEveryDrive, kNoDisk);
   ozzy->GetDrive('A')->AttachImage(MakeSystemImage());
   PressEnter(*ozzy);
-  ExpectLoaderRan(*ozzy, 0, 1, 0);
+  ExpectLoaderRan(*ozzy, 0, 1);
 }
 
 //==============================================================================
@@ -923,7 +941,7 @@ TEST_F(BootRomTest, Teletype) {
     PressEnter(*ozzy);
     EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(),
               absl::StrCat("\r\nLoading...\r\n", kReady, "\r\n"));
-    ExpectLoaderRan(*ozzy, 0, 1, 0);
+    ExpectLoaderRan(*ozzy, 0, 1);
   }
 }
 
