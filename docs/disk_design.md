@@ -88,7 +88,7 @@ The superblock is words 0–31 of sector 0, and records everything needed to fin
 | 16–19 | Formatted | Date and time in the timer's layout, or all zeros |
 | 20–31 | Reserved |  |
 
-Words 32–255 of sector 0 are the boot area: 224 words for future boot code, 0 for now.
+Words 32–255 of sector 0 are the **boot area**: 224 words holding a system disk's loader, the code a machine's boot ROM loads and starts to load its operating system (see [booting-from-disk.md](worklog/booting-from-disk.md)). Nothing in the file system depends on it: formatting zeroes it, relabeling keeps it, and `DiskFileSystem::ReadBootArea` and `WriteBootArea` read and rewrite it whole, keeping the rest of the sector, on a formatted disk.
 
 - Sectors per cluster is stored as a count, and must be a power of two so code can shift.
 - The label is plain packed text, not split into name and extension, with letters in upper case.
@@ -714,7 +714,7 @@ The loader opens the `.oz3` file, reads its header with `READ`, then reads each 
 
 - [ ] Whether a data-ready interrupt is worth adding later, so the OS can `WAIT` through sector loads instead of polling. It would need its own enable bit in the control port, to keep the interrupt's single meaning by default.
 - [ ] Subdirectory commands, such as opening a directory entry as a directory handle, when the directory bit becomes real. Commands that take a name (`OPEN`, `CREATE`, `DELETE`, `RENAME`, and `ATTRIB`) could resolve it against a current directory, with a directory handle or a path as an option, so version 1 commands keep working unchanged.
-- [ ] What the boot area holds, with the Ozzy OS and booting from a drive.
+- [x] What the boot area holds: a system disk's loader, which *Booting from disk* adds (see [booting-from-disk.md](worklog/booting-from-disk.md)).
 - [x] How the `ozzy` app changes disks while it runs: a later item of its own, the backlog's *Changing disks in ozzy*. *Ozzy drives* attaches the config's images at power on only.
 - [ ] Assembler addition: allow `SIZE(n)` anywhere in a `.DW` list, applying until the next `SIZE`, so a name field fits in one directive.
 - [ ] More file system buffers, if FAT thrashing shows up in practice: configurable counts of FAT and directory buffers, reused least recently used first. Several files growing at once in different FAT sectors currently force the single working FAT buffer to be written at each switch. Since the file system already orders its own writes, more buffers change nothing about correctness, only RAM.

@@ -66,4 +66,14 @@ void DiskSuperblock::SetLabel(const DiskLabel& label) {
             words_.begin() + kLabelWord);
 }
 
+DiskSuperblock::BootArea DiskSuperblock::GetBootArea() const {
+  BootArea words;
+  std::copy(words_.begin() + kBootAreaWord, words_.end(), words.begin());
+  return words;
+}
+
+void DiskSuperblock::SetBootArea(const BootArea& words) {
+  std::copy(words.begin(), words.end(), words_.begin() + kBootAreaWord);
+}
+
 }  // namespace oz3

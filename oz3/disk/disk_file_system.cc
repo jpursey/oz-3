@@ -118,6 +118,32 @@ DiskStatus DiskFileSystem::SetLabel(const DiskLabel& label) {
                                superblock_.GetWords(), WriteCaching::kSkip);
 }
 
+DiskStatus DiskFileSystem::ReadBootArea(DiskSuperblock::BootArea* words) {
+  if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  DiskSuperblock::Words sector_words;
+  if (DiskStatus status = hardware_.ReadSector(DiskLayout::kSuperblockSector,
+                                               absl::MakeSpan(sector_words));
+      status != DiskStatus::kOk) {
+    return status;
+  }
+  *words = DiskSuperblock::FromWords(sector_words).GetBootArea();
+  return DiskStatus::kOk;
+}
+
+DiskStatus DiskFileSystem::WriteBootArea(
+    const DiskSuperblock::BootArea& words) {
+  if (DiskStatus status = GetWritableStatus(); status != DiskStatus::kOk) {
+    return status;
+  }
+  superblock_.SetBootArea(words);
+
+  // ReadBootArea reads the sector from the disk, so it is cached.
+  return hardware_.WriteSector(DiskLayout::kSuperblockSector,
+                               superblock_.GetWords(), WriteCaching::kCache);
+}
+
 DiskStatus DiskFileSystem::GetVolumeInfo(DiskVolumeInfo* info) {
   if (DiskStatus status = GetVolumeStatus(); status != DiskStatus::kOk) {
     return status;

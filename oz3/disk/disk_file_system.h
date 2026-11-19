@@ -157,6 +157,15 @@ class DiskFileSystem final {
   // disk, and kUnformatted with no file system.
   DiskStatus SetLabel(const DiskLabel& label);
 
+  // Sets `words` to the boot area (see DiskSuperblock), read from the disk
+  // through the read cache. Returns kUnformatted with no file system.
+  DiskStatus ReadBootArea(DiskSuperblock::BootArea* words);
+
+  // Rewrites the superblock's sector with the boot area set to `words`,
+  // keeping the rest of the sector. Returns kWriteProtected on a protected
+  // disk, and kUnformatted with no file system.
+  DiskStatus WriteBootArea(const DiskSuperblock::BootArea& words);
+
   // Returns kNoDisk with no image, kIoError for a failed one, kUnformatted
   // with no file system, or else kOk, as every use of the file system checks
   // first. It never reads the disk.

@@ -242,20 +242,22 @@ starts them.
 ### disk: the boot area
 
 ```
-// In DiskLayout (or beside the superblock's constants):
-static constexpr int kBootAreaOffset = 32;  // Word in the superblock's sector
-static constexpr int kBootAreaWords = 224;
+// DiskSuperblock, which holds sector 0's words:
+static constexpr int kBootAreaWord = 32;
+static constexpr int kBootAreaWords = kDiskSectorWords - kBootAreaWord;
+using BootArea = std::array<uint16_t, kBootAreaWords>;
+BootArea GetBootArea() const;
+void SetBootArea(const BootArea& words);
 
 // DiskFileSystem
-using BootArea = std::array<uint16_t, kBootAreaWords>;
+// Reads the boot area from the disk, through the read cache. Returns
+// kUnformatted with no file system.
+DiskStatus ReadBootArea(DiskSuperblock::BootArea* words);
 
-// Reads the boot area, charging a sector read through the read cache.
-// Returns GetVolumeStatus() if it isn't kOk.
-DiskStatus ReadBootArea(BootArea* words);
-
-// Writes the boot area, keeping the superblock, charging a sector write, and
-// committing it. Returns GetWritableStatus() if it isn't kOk.
-DiskStatus WriteBootArea(const BootArea& words);
+// Rewrites sector 0 with the boot area set, keeping the rest of the sector,
+// and caches it. Returns kWriteProtected on a protected disk, and
+// kUnformatted with no file system.
+DiskStatus WriteBootArea(const DiskSuperblock::BootArea& words);
 ```
 
 - `DiskSuperblock` already holds the whole sector exactly, so writing keeps the
@@ -343,11 +345,11 @@ absl::StatusOr<BareProgram> GetBareProgram(const Program& program);
 
 ## CLs
 
-### CL1 [ ] disk: the boot area
+### CL1 [x] disk: the boot area
 
 Depends on: nothing.
 
-- `DiskLayout`: the boot area's offset and size.
+- `DiskSuperblock`: the boot area's offset, size, and words.
 - `DiskFileSystem`: `ReadBootArea` and `WriteBootArea`.
 - disk_design.md: the boot area's description, and its open question answered.
 - Unused, so no visible change.
