@@ -65,11 +65,32 @@
           "CMAKE_C_COMPILER": "clang",
           "CMAKE_CXX_COMPILER": "clang++"
         },
-        // A program debugged from CMake Tools runs in a terminal of its own on
-        // the desktop, which gets every key, where VS Code's own terminal
-        // keeps the keys it has shortcuts for.
-        "cmake.debugConfig": {
-          "externalConsole": true
+        // ozzy, debugged from Run and Debug, is built first and then runs in a
+        // terminal of its own on the desktop, which gets every key, where VS
+        // Code's own terminal keeps the keys it has shortcuts for. Other
+        // programs debug from CMake Tools as usual.
+        "launch": {
+          "version": "0.2.0",
+          "configurations": [
+            {
+              "name": "ozzy (desktop terminal)",
+              "type": "cppdbg",
+              "request": "launch",
+              "program": "${input:ozzyPath}",
+              "args": [],
+              "cwd": "${workspaceFolder}",
+              "externalConsole": true,
+              "MIMode": "gdb"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "ozzyPath",
+              "type": "command",
+              "command": "cmake.launchTargetPath",
+              "args": { "targetName": "ozzy" }
+            }
+          ]
         },
         "terminal.external.linuxExec": "tilix",
         "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
