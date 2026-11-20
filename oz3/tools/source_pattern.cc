@@ -35,17 +35,19 @@ namespace {
 constexpr gb::TokenType kTokenPlaceholder = gb::kTokenUser + 0;
 
 // Patterns can't use ';' or '@', which programs use for comments and local
-// labels, or a '#' outside of "$#".
-constexpr gb::Symbol kSymbols[] = {'(', ')', '[', ']', '{', '}', ',', '+',
-                                   '-', '*', '/', '%', '&', '|', '^', '~',
-                                   '!', '<', '>', '=', ':', '.', '?'};
+// labels, or a '#' outside of "$#". The symbols of two characters are an
+// expression's operators, which a program's lexer reads as one symbol, so a
+// pattern does too.
+constexpr gb::Symbol kSymbols[] = {'(',  ')',  '[',  ']',  '{', '}', ',', '+',
+                                   '-',  '*',  '/',  '%',  '&', '|', '^', '~',
+                                   '!',  '<',  '>',  '=',  ':', '.', '?', "<<",
+                                   ">>", "<=", ">=", "==", "!="};
 
 // The symbols above that a program's expression goes on past, as binary
 // operators.
-constexpr gb::Symbol kBinaryOperators[] = {'+', '-', '*', '/', '%',
-                                           '&', '|', '^', '<', '>'};
-
-constexpr gb::Symbol kJoinedSymbols[] = {"<<", ">>", "<=", ">=", "==", "!="};
+constexpr gb::Symbol kBinaryOperators[] = {'+',  '-',  '*',  '/', '%',  '&',
+                                           '|',  '^',  '<',  '>', "<<", ">>",
+                                           "<=", ">=", "==", "!="};
 
 // A placeholder: "$#" with its size, or "$" and a name, which is either one of
 // the built-in placeholders (IsPlaceholderName) or a value set. A ':' right
@@ -88,6 +90,7 @@ constexpr std::string_view kParserProgram = R"---(
     '+'; '-'; '*'; '/'; '%';
     '~'; '&'; '|'; '^';
     '!'; '<'; '>'; '=';
+    '<<'; '>>'; '<='; '>='; '=='; '!=';
     ':'; '.'; '?';
   }
 )---";
@@ -217,10 +220,6 @@ absl::StatusOr<SourcePattern> SourcePattern::ParseMacroCode(
 
 absl::Span<const gb::Symbol> SourcePattern::GetSymbols() { return kSymbols; }
 
-absl::Span<const gb::Symbol> SourcePattern::GetJoinedSymbols() {
-  return kJoinedSymbols;
-}
-
 absl::Status SourcePattern::ValidateParts(std::string_view pattern,
                                           absl::Span<const Part> parts) {
   for (int i = 0; i + 1 < static_cast<int>(parts.size()); ++i) {
@@ -236,15 +235,16 @@ absl::Status SourcePattern::ValidateParts(std::string_view pattern,
           pattern.substr(part.offset, part.size), " is followed by '",
           symbol.GetString(), "', which would continue its expression"));
     }
-    if (part.literal_type != gb::kTokenSymbol) {
+    if (part.literal_type != gb::kTokenSymbol ||
+        part.offset + part.size != next.offset) {
       continue;
     }
     const gb::Symbol previous = std::get<gb::Symbol>(part.literal);
     const gb::Symbol joined =
-        absl::StrCat(previous.GetString(), symbol.GetString());
-    if (std::ranges::find(kJoinedSymbols, joined) != std::end(kJoinedSymbols)) {
+        absl::StrCat(previous.GetString(), symbol.GetString().substr(0, 1));
+    if (std::ranges::find(kSymbols, joined) != std::end(kSymbols)) {
       return absl::InvalidArgumentError(absl::StrCat(
-          "'", previous.GetString(), "' followed by '", symbol.GetString(),
+          "'", previous.GetString(), "' right before '", symbol.GetString(),
           "' is read as '", joined.GetString(), "' in a program"));
     }
   }

@@ -617,7 +617,8 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
 
     // Each pattern was validated as it was parsed, but where a macro code's
     // parts meet the instruction's, at its $m, a value can still be followed
-    // by an operator, or a symbol by one it joins with, from the other.
+    // by an operator from the other, or a symbol be right before one it joins
+    // with.
     if (absl::Status status =
             SourcePattern::ValidateParts(form.GetPattern(), form.GetParts());
         !status.ok()) {

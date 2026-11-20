@@ -838,7 +838,15 @@ TEST(InstructionSetSyntaxTest, MacroCodeSymbolJoinsInstructionSymbol) {
                                        "PEEK", def.GetCompiled());
   EXPECT_THAT(error.message,
               AllOf(HasSubstr("with macro code \"=D($v)\""),
-                    HasSubstr("'!' followed by '=' is read as '!='")));
+                    HasSubstr("'!' right before '=' is read as '!='")));
+
+  // With a space between them, a program can write them apart.
+  def.instructions[7].source = "[! $m]";
+  InstructionError no_error;
+  EXPECT_NE(
+      InstructionSetSyntax::Create(def.GetDef(), def.GetCompiled(), &no_error),
+      nullptr)
+      << no_error.message;
 }
 
 //==============================================================================

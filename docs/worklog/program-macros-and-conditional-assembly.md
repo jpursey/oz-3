@@ -81,10 +81,10 @@ that assembles today changes.
   follow a value with `<` or `>`, and `=` and `!` on their own aren't
   operators.
 - A program's lexer reads each of `<=`, `>=`, `==`, and `!=` as one symbol, as
-  it does `<<` and `>>`, so an instruction set's pattern can't write the two
-  symbols of one of them in a row (`"[$r] <= $v"`), as no program could match
-  it without a space between them. No pattern in the default instruction set
-  does.
+  it does `<<` and `>>`, so a pattern reads them that way too, and
+  `"$r <= $r"` matches `R1 <= R2`. Where a macro code meets its instruction's
+  `$m`, a symbol can't be right before one it joins with (`"[!$m]"` with a code
+  `"=$v"`). No pattern in the default instruction set has any of them.
 - Labels in different segments can't be compared, as they can't be combined
   with any other operator. A comparison's result is a number, never an offset.
 
@@ -245,10 +245,11 @@ unrelated to an instruction's macro argument.
   gains `<=`, `>=`, `==`, and `!=` as symbols.
 - A comparison's result is in no segment. Two offsets in different segments are
   an error, as for any other operator.
-- `SourcePattern::CheckValueEnds` becomes `ValidateParts`, which also rejects
-  two symbols in a row that join as one of the program lexer's symbols of two
-  characters, in each pattern and in each instruction form put together with a
-  macro code.
+- A pattern's lexer gains the symbols of two characters, as the program's
+  does, and they are binary operators a value can't be followed by.
+  `SourcePattern::CheckValueEnds` becomes `ValidateParts`, which also rejects a
+  symbol right before one it joins with, where a macro code meets an
+  instruction's pattern.
 
 ### Conditional assembly
 
@@ -393,7 +394,7 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 - [x] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
   pattern of the default instruction set, or any test's, is read (CL1): none
   writes two of `<`, `>`, `=`, and `!` in a row. Another instruction set's
-  could, so a pattern now can't (see Comparisons).
+  could, so a pattern now reads them as a program does (see Comparisons).
 
 ## Open questions
 
@@ -417,7 +418,7 @@ Depends on: nothing.
 
 - `expression.cc`: the comparison rules and their evaluation.
 - `program_lexer.cc`: the new symbols.
-- `source_pattern.cc`: `ValidateParts`, rejecting symbols that join.
+- `source_pattern.cc`: the symbols of two characters, and `ValidateParts`.
 - Manual: Program Source's Expressions, with the new operators, and the
   arithmetic's rules for them, and Instruction Set Source's rule for symbols
   that join.
@@ -427,9 +428,9 @@ Depends on: nothing.
 - Unit tests: each operator true and false, as words and dwords; unsigned
   comparison of negative values; precedence against shifts, `&`, and each
   other; offsets in one segment compared, and in two segments an error; a
-  comparison in an instruction's value and in `.DW`; each pair of symbols that
-  joins rejected in a pattern, with and without a space, and where a macro
-  code meets its instruction's pattern.
+  comparison in an instruction's value and in `.DW`; each symbol of two
+  characters read as one in a pattern, and matched; symbols that join where a
+  macro code meets its instruction's pattern, with and without a space.
 - Manual pages updated.
 
 ### CL2 [ ] tools: conditional assembly

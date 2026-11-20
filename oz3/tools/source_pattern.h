@@ -111,20 +111,16 @@ class SourcePattern final {
   // pattern that writes it.
   static absl::Span<const gb::Symbol> GetSymbols();
 
-  // Returns the symbols of two characters a program's lexer reads as one, each
-  // made of two of GetSymbols(): the shifts and comparisons of expressions. A
-  // pattern can't write their characters as two symbols in a row.
-  static absl::Span<const gb::Symbol> GetJoinedSymbols();
-
   // Returns an error if no statement could match `parts`, as a program's lexer
   // and expressions would read it differently. A value (a $#, a value set, $v,
   // $V, or a literal number) can't be followed by a binary operator, as a
   // program writes the value as an expression, which would go on past the
-  // operator. Two symbols in a row can't be ones a program's lexer reads as
-  // one symbol (such as '<' and '='), even with space between them in the
-  // pattern. `pattern` is the text the parts' offsets are in. Parsing
-  // validates each pattern, and this validates patterns put together, such as
-  // an instruction's with a macro code's in place of its $m.
+  // operator. A symbol can't be right before one it joins with to make
+  // another symbol (such as '!' before '='), as a program's lexer would read
+  // them as that symbol. `pattern` is the text the parts' offsets are in.
+  // Parsing validates each pattern, and this validates patterns put together,
+  // such as an instruction's with a macro code's in place of its $m, where
+  // symbols can meet.
   static absl::Status ValidateParts(std::string_view pattern,
                                     absl::Span<const Part> parts);
 

@@ -6,6 +6,7 @@
 #include "oz3/tools/program_lexer.h"
 
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -29,9 +30,9 @@ namespace oz3 {
 
 namespace {
 
-// '$' for the current offset, which only expressions use, beyond the symbols
-// patterns can write and those they join to make.
-constexpr gb::Symbol kOffsetSymbol = '$';
+// The symbols only expressions use, beyond those patterns can write: '$' for
+// the current offset.
+constexpr gb::Symbol kExpressionSymbols[] = {'$'};
 
 constexpr std::string_view kLineComments[] = {";"};
 
@@ -58,12 +59,10 @@ std::vector<std::string_view> GetRegisterNames() {
 
 std::vector<gb::Symbol> GetSymbols() {
   absl::Span<const gb::Symbol> pattern_symbols = SourcePattern::GetSymbols();
-  absl::Span<const gb::Symbol> joined_symbols =
-      SourcePattern::GetJoinedSymbols();
   std::vector<gb::Symbol> symbols(pattern_symbols.begin(),
                                   pattern_symbols.end());
-  symbols.insert(symbols.end(), joined_symbols.begin(), joined_symbols.end());
-  symbols.push_back(kOffsetSymbol);
+  symbols.insert(symbols.end(), std::begin(kExpressionSymbols),
+                 std::end(kExpressionSymbols));
   return symbols;
 }
 

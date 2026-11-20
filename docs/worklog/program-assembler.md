@@ -197,9 +197,9 @@ rule items*, and *Case of user tokens*.
 ### Values followed by operators
 
 `SourcePattern::Parse` rejects a value followed by a binary operator in each
-pattern, and two symbols in a row that a program's lexer reads as one, and
-`InstructionSetSyntax::Create` checks each form again, where a macro code's
-parts meet the instruction's, through `SourcePattern::ValidateParts`.
+pattern, and `InstructionSetSyntax::Create` checks each form again, where a
+macro code's parts meet the instruction's, and a symbol can also be right
+before one it joins with, through `SourcePattern::ValidateParts`.
 
 ### `ProgramGrammar` (`program_grammar.h`)
 

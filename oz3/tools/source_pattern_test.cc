@@ -359,8 +359,8 @@ TEST(SourcePatternTest, Errors) {
 }
 
 TEST(SourcePatternTest, ValueFollowedByOperator) {
-  for (std::string_view op :
-       {"+", "-", "*", "/", "%", "&", "|", "^", "<", ">"}) {
+  for (std::string_view op : {"+", "-", "*", "/", "%", "&", "|", "^", "<", ">",
+                              "<<", ">>", "<=", ">=", "==", "!="}) {
     const std::string expected =
         absl::StrCat(" is followed by '", op, "', which would continue");
     ExpectError(absl::StrCat("$v ", op, " 1"), absl::StrCat("$v", expected));
@@ -387,27 +387,28 @@ TEST(SourcePatternTest, ValueFollowedByOtherTokens) {
   }
 }
 
-TEST(SourcePatternTest, SymbolsAProgramReadsAsOne) {
-  for (std::string_view joined : {"<<", ">>", "<=", ">=", "==", "!="}) {
-    const std::string expected =
-        absl::StrCat("'", joined.substr(0, 1), "' followed by '",
-                     joined.substr(1), "' is read as '", joined, "'");
-    ExpectError(absl::StrCat("($r) ", joined, " $v"), expected);
-    ExpectError(
-        absl::StrCat("[$r]", joined.substr(0, 1), " ", joined.substr(1), "$v"),
-        expected);
-    ExpectError(absl::StrCat(joined, "$r"), expected);
+TEST(SourcePatternTest, SymbolsOfTwoCharacters) {
+  // A program's lexer reads each as one symbol, so a pattern does too.
+  for (std::string_view symbol : {"<<", ">>", "<=", ">=", "==", "!="}) {
+    absl::StatusOr<SourcePattern> pattern = SourcePattern::ParseInstruction(
+        absl::StrCat("$r ", symbol, " ($r)"), kValueSets);
+    ASSERT_TRUE(pattern.ok()) << symbol << ": " << pattern.status();
+    auto parts = pattern->GetParts();
+    ASSERT_EQ(parts.size(), 5) << symbol;
+    EXPECT_EQ(parts[1].kind, Kind::kLiteral);
+    EXPECT_EQ(parts[1].literal_type, gb::kTokenSymbol);
+    EXPECT_EQ(parts[1].literal, gb::TokenValue(gb::Symbol(symbol)));
+    EXPECT_EQ(pattern->GetText().substr(parts[1].offset, parts[1].size),
+              symbol);
   }
-}
 
-TEST(SourcePatternTest, SymbolsAProgramReadsApart) {
-  for (std::string_view source :
-       {"($r) < $v", "($r) = $v", "($r) ! $v", "$r =< $v", "$r => $v",
-        "$r <> $v", "$r =! $v", "$r ~= $v", "$r ++ $v", "<$r>", "=$r"}) {
-    absl::StatusOr<SourcePattern> pattern =
-        SourcePattern::ParseInstruction(source, kValueSets);
-    EXPECT_TRUE(pattern.ok()) << source << ": " << pattern.status();
-  }
+  // With a space between them, they are two symbols, as in a program.
+  absl::StatusOr<SourcePattern> pattern =
+      SourcePattern::ParseInstruction("$r < = ($r)", kValueSets);
+  ASSERT_TRUE(pattern.ok()) << pattern.status();
+  ASSERT_EQ(pattern->GetParts().size(), 6);
+  ExpectSymbol(pattern->GetParts()[1], '<');
+  ExpectSymbol(pattern->GetParts()[2], '=');
 }
 
 TEST(SourcePatternTest, ValidateParts) {
@@ -426,17 +427,36 @@ TEST(SourcePatternTest, ValidateParts) {
               HasSubstr("$v is followed by '+'"));
   EXPECT_TRUE(SourcePattern::ValidateParts("$v", code->GetParts()).ok());
 
-  absl::StatusOr<SourcePattern> start = SourcePattern::ParseMacroCode("<", {});
-  absl::StatusOr<SourcePattern> end = SourcePattern::ParseMacroCode("=$v", {});
-  ASSERT_TRUE(start.ok() && end.ok());
-  parts.assign(start->GetParts().begin(), start->GetParts().end());
-  for (SourcePattern::Part part : end->GetParts()) {
-    part.offset += 1;
-    parts.push_back(part);
+  // Symbols that meet join only right next to each other, as in a program.
+  struct Join {
+    std::string_view first;
+    std::string_view second;
+    std::string_view message;
+  };
+  for (const Join& join :
+       {Join{"!", "=$v", "'!' right before '=' is read as '!='"},
+        Join{"<", "<=$v", "'<' right before '<=' is read as '<<'"},
+        Join{"=", "=$v", "'=' right before '=' is read as '=='"}}) {
+    absl::StatusOr<SourcePattern> start =
+        SourcePattern::ParseMacroCode(join.first, {});
+    absl::StatusOr<SourcePattern> end =
+        SourcePattern::ParseMacroCode(join.second, {});
+    ASSERT_TRUE(start.ok() && end.ok());
+    for (std::string_view space : {"", " "}) {
+      parts.assign(start->GetParts().begin(), start->GetParts().end());
+      for (SourcePattern::Part part : end->GetParts()) {
+        part.offset += static_cast<int>(join.first.size() + space.size());
+        parts.push_back(part);
+      }
+      const std::string text = absl::StrCat(join.first, space, join.second);
+      const absl::Status status = SourcePattern::ValidateParts(text, parts);
+      if (space.empty()) {
+        EXPECT_THAT(status.message(), HasSubstr(join.message)) << text;
+      } else {
+        EXPECT_TRUE(status.ok()) << text << ": " << status;
+      }
+    }
   }
-  EXPECT_THAT(SourcePattern::ValidateParts("<=$v", parts).message(),
-              HasSubstr("'<' followed by '=' is read as '<='"));
-  EXPECT_TRUE(SourcePattern::ValidateParts("=$v", end->GetParts()).ok());
 }
 
 }  // namespace

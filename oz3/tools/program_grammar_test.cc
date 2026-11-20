@@ -67,6 +67,7 @@ constexpr std::string_view kInstructionSet = R"---(
   instruction(opcode:11) BIT "$r, $m" { $Bit; MOV(a,r); }
   instruction(opcode:12) OUTQ "$#3, 1" { UL; }
   instruction(opcode:13) DOT ".$r" { UL; }
+  instruction(opcode:14) CMPLE "$r <= $r" { UL; }
 )---";
 
 // Symbols by name.
@@ -460,6 +461,14 @@ TEST_F(ProgramGrammarTest, InstructionNames) {
     EXPECT_THAT(Match(text), ElementsAre("DOT .$r")) << text;
     EXPECT_EQ(ArgReg(0), 1) << text;
   }
+}
+
+TEST_F(ProgramGrammarTest, SymbolsOfTwoCharacters) {
+  // A pattern's "<=" is one symbol, as a program's is.
+  EXPECT_THAT(Match("CMPLE R1 <= R2"), ElementsAre("CMPLE $r <= $r"));
+  EXPECT_EQ(ArgReg(0), 1);
+  EXPECT_EQ(ArgReg(1), 2);
+  EXPECT_THAT(Match("CMPLE R1 < = R2"), IsEmpty());
 }
 
 //==============================================================================
