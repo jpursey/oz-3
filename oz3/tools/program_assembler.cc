@@ -118,9 +118,11 @@ class ProgramAssembler final {
   };
 
   // A constant, whose value is its expression, evaluated with the segment and
-  // offset ("$") and the scope of local labels where it is defined. Once a
-  // .SEGMENT replaces the default segment, a constant defined before it has
-  // segment -1, and "$" in it is just a number.
+  // offset ("$") and the scope of local labels where it is defined.
+  //
+  // A constant defined before the first .SEGMENT is in the default program's
+  // segment until that .SEGMENT replaces it, and then in no segment (-1). A "$"
+  // in it is then just a number, which is never checked as an address.
   struct Constant {
     gb::Token token;  // Its name where it is defined.
     int segment = -1;
