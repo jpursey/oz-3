@@ -60,7 +60,7 @@ to make the model concrete, and each is settled in the item that builds it.
 | New instructions | Byte swap, and signals to other cores (interrupt, wake)                        | `instruction_sets`      |
 | Machine          | The hardware built from a config file, with its machine table and boot ROM     | `ozzy` (new library)    |
 | Boot ROM, OS     | The system code, in OZ-3 assembly                                              | `ozzy`                  |
-| `ozzy`           | The host application: the console frontend, real-time pacing                   | `apps`                  |
+| `ozzy`           | The host applications: in a window, and in a terminal or headless (`ozzyterm`) | `apps`                  |
 
 `devices` and `ozzy` come after `instruction_sets` in the dependency order, and
 before `apps`, as CLAUDE.md already says.
@@ -116,6 +116,9 @@ A device's interrupt goes to the cores its line is connected to, which is the
 OS core by default (every core, for the screen's refresh). A program that
 wants a device's interrupts directly (a game reading the keyboard, say) can be
 connected too, and sets its own handler.
+
+The manual's Ozzy Computer page has the wiring as built, which moved from this
+sketch, and port 0 is the power port (see [Power](#power)).
 
 ### Machine table
 
@@ -398,15 +401,130 @@ table keep it small.
 
 ## Host application
 
-`ozzy <config>` builds the machine from a config file and runs it.
-- **The console frontend** draws the screen in the Windows console with virtual
-  terminal sequences (attributes and the cursor), and reads the keyboard from
-  console input. What is Windows-only (console input, sizing) is behind a
-  small interface in `win_` files, as the workflow's C++ style requires. For an
-  Ozzy without a screen, it shows the teletype's output.
-- **Real-time pacing:** each frame, it runs the cycles the clock speed gives
-  for the time passed (16,667 cycles per 60 Hz frame at 1 MHz), and draws the
-  screen if it changed. A config option runs as fast as the host can.
+Two apps run an Ozzy, built from one config file, on the same `ozzy` library:
+- **`ozzy`** runs it in a window of its own, whatever devices it has. It is
+  the one to start from the desktop, so it is a windowed program, which never
+  opens a console window.
+- **`ozzyterm`** runs it in a terminal (the Windows console, or a terminal on
+  POSIX systems), or with `--headless`, with no terminal at all.
+
+They are two programs, as one can't be both on Windows: a console program
+started from the desktop flashes a console window open, and a windowed one
+started from a shell has no console to write to, and the shell doesn't wait
+for it. It also keeps `ozzyterm` to what a terminal needs: only `ozzy` links
+SDL and Vulkan, and so only `ozzy` needs the Vulkan SDK to build. Until `ozzy`
+exists, the terminal app is `ozzy`, and it becomes `ozzyterm` when the window
+app takes the name.
+
+### The machine, its state, and the panel
+
+Both apps are three layers, and differ only in how they present the last:
+- **The machine** is the `Ozzy`, which exists only while it is on. Powering
+  on creates it, and powering off destroys it, which commits each drive as at
+  a clean shutdown. Restarting is powering off and on again, so RAM is
+  cleared, and every device starts as at power on.
+- **The machine's state** is the host's, and outlives the machine: the
+  settings from the config file, the disk in each drive, and whether the
+  machine is on. A disk changed while the machine is on goes into the drive
+  that is running, and into the state, so it is still in its drive after a
+  restart, as a floppy would be.
+- **The panel** is the host's controls for the machine, as the switches and
+  drive slots on the front of a machine were: commands to power it on and off,
+  restart it, change disks, and quit, with more to come (such as pausing, the
+  speed, and the debugger). The commands, and what they do to the state, are
+  in the `ozzy` library, tested against a fake `Console` as the rest of the
+  frontend is, so each app only presents them.
+
+### Power
+
+Every Ozzy has a **power port**, port 0, which programs write to shut the
+machine down or restart it. It is a port of two words: the first word is the
+command, and the second the exit code, a signed word, which a program writes
+with the command in one `OUT.ID`.
+
+| Command | What                                                        |
+| ------- | ----------------------------------------------------------- |
+| 1       | Shut down: power off, with the exit code                    |
+| 2       | Restart: power off and on again, ignoring the exit code     |
+
+Any other command is reserved, and does nothing. The command takes effect at
+once: no cycle runs after the one that wrote it. Its wiring is the same in
+every Ozzy, as every device's is, and a config file can't leave it out.
+
+What powering off does is up to the app:
+- `ozzyterm --headless` exits, with the exit code as its own. Windows keeps
+  all of it, so -1 is -1. POSIX systems keep its low 8 bits, so -1 is 255, and
+  codes from 0 to 255 are the same everywhere.
+- Otherwise, only the machine is off. The panel says so, with the exit code
+  ("Ozzy shut down, exit code 3"), and its `on` command powers it on again.
+  Quitting from the panel exits with 0.
+
+### The panel's commands
+
+Ctrl+Alt+P opens the panel and closes it again, in both apps, and Ctrl+Alt+Q
+still quits at once. While the panel is open, keys go to it rather than to the
+keyboard, but the machine keeps running, as a machine doesn't stop when its
+front panel is looked at. While the machine is off, there is nothing else for
+keys to go to, so the panel stays open.
+
+| Command                   | What                                               |
+| ------------------------- | -------------------------------------------------- |
+| `on`                      | Power the machine on                               |
+| `off`                     | Power it off, as at a clean shutdown               |
+| `restart`                 | Power it off and on again                          |
+| `insert <drive> <image>`  | Put a disk image in a drive (`insert A: work.ozd`) |
+| `eject <drive>`           | Take the disk out of a drive, as a floppy pulled   |
+| `drives`                  | List each drive and the image in it                |
+| `help`                    | List the commands                                  |
+| `quit`                    | Quit the app, powering the machine off first       |
+
+Paths go through the file system, as every path the apps open does. A path
+with no protocol is as typed at a shell: absolute, or relative to the current
+directory. The `config:` protocol is the config file's folder (or the current
+directory, without a config file), which is also where the config's own image
+paths are from by default. So `insert A: config:disks/work.ozd` takes a disk
+from beside the config, and a config can name `file:` paths of its own. On
+Windows, each drive letter is a protocol already, so `insert A: C:\disks\a.ozd`
+opens as written.
+
+### `ozzyterm`
+
+In a terminal, it is as the console frontend is now, with the panel in one of
+two forms:
+- **With a screen**, the console shows the screen's picture, and the panel
+  takes the whole console in its place: the machine's status at the top
+  (whether it is on, its clock rate and how well the host is keeping up, and
+  each drive's image), the panel's messages, and a command line at the bottom.
+- **Without a screen**, the console shows the teletype's lines, and the panel
+  is a line of its own among them, as telnet's escape is: Ctrl+Alt+P prints a
+  prompt, takes one command, and goes back to the teletype. What the teletype
+  prints meanwhile waits until the command is done, so the two never mix. An
+  Ozzy with neither a screen nor a teletype has the panel in this form.
+
+With **`--headless`**, it has no terminal, for running an Ozzy from a script
+or a test: `ozzyterm --headless test.ozzy < keys.txt > out.txt`. The standard
+input is typed keys, the teletype's output goes to the standard output, and a
+screen isn't shown. There is no panel, so powering off exits.
+
+### `ozzy`
+
+It is always a window, whatever devices the Ozzy has. The window shows the
+screen's picture as its pixels, or for an Ozzy without a screen, the
+teletype's lines in a space of their own (or a message, with neither). The
+panel is the same, opened over the machine's picture with the same key, and
+menus run the same commands. While the machine is off, its picture is dark. A
+config file with errors still opens the window, with the machine off and the
+errors in the panel.
+
+Later, it gains what a terminal can't have: other windows (such as the
+debugger's), a mouse, and rendering styles and themes for the app and the
+Ozzy's picture.
+
+### Pacing
+
+Each frame, the app runs the cycles the clock rate gives for the time passed
+(16,667 cycles per 60 Hz frame at 1 MHz), and draws the screen if it changed.
+A flag runs it as fast as the host can.
 
 Measured in Release, with a tight loop of `ADD`, `MOV`, and `JP` on every core
 and no devices, the emulator runs about 46 M cycles a second on one core, and
@@ -433,6 +551,8 @@ assembled system code is checked in.
 | Hardware table         | machine table, system table, device table | `InstructionSet` tables, `ProgramMap`                           | machine table          |
 | Config file            | `.ozzy`, `.ozc`, `.cfg`                   | `.oz3`, `.oza`, `.izm`                                          | `.ozzy` (`hello.ozzy`) |
 | Drive and disk         | drive (the device), disk (its folder)     | `MemoryBank`                                                    | both, as they were     |
+| Host controls          | panel, front panel, monitor               | `Console`, the console devices, a ROM monitor on the machine    | panel                  |
+| Terminal app           | `ozzyterm`, `ozzycon`, `ozzyw` (window)   | `Console`; `w` reads as Windows                                 | `ozzyterm`             |
 
 ## To confirm
 
@@ -465,6 +585,16 @@ The backlog items build this in order, each updating the manual as it goes:
    boot ROM that starts a disk's loader.
 9. *Ozzy OS* (ozzy, manual): the loader and the OS it loads, the calls,
    running programs in the foreground and in parallel, and the shell.
+
+The host application (see [Host application](#host-application)) is built
+alongside, independent of the OS, in its own items:
+1. *Power port* (devices, ozzy, apps, manual): port 0, and the machine's state
+   with the machine on or off, in the terminal app.
+2. *Panel* (ozzy, apps, manual): the panel's commands, in both of the
+   terminal app's forms.
+3. *Headless ozzyterm* (ozzy, apps, manual): `--headless`.
+4. *Window app* (ozzy, apps, manual): `ozzy` in a window, and the terminal app
+   renamed `ozzyterm`.
 
 Then *Debugger (oz3dbg)*, which Ozzy integrates once there is a machine worth
 debugging. Later, and waiting in the backlog: the DMA coprocessor for fast

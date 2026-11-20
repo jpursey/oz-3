@@ -95,7 +95,7 @@ covers how it is built, and the decisions behind it.
 - **Ejecting** is a floppy pulled, as `DiskDrive` has it: what the file system
   hadn't committed is lost, as the OS commits with `CLOSE` and `FLUSH`, so
   `DiskDrive` has no host `Flush`. The `ozzy` app can't change disks while it
-  runs (see the backlog's *Changing disks in ozzy*).
+  runs (see the backlog's *Panel*).
 
 ## Design
 
