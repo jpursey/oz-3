@@ -366,6 +366,7 @@ class ProgramAssembler final {
   void ReadLines(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadLine(gb::LexerContentId content, const gb::ParsedItem& line,
                 std::vector<OpenIf>* ifs);
+  void ReadInvalidLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadLabel(const gb::ParsedItem& label);
 
   // Conditional assembly. Each content has its own open .IFs, `ifs`,
@@ -377,7 +378,8 @@ class ProgramAssembler final {
   SkippedLine SkipLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadConditional(Conditional conditional, const gb::ParsedItem& directive,
                        std::vector<OpenIf>* ifs);
-  void ReadInvalidConditional(gb::LexerContentId content,
+  void ReadInvalidConditional(Conditional conditional,
+                              const gb::ParsedItem& directive,
                               std::vector<OpenIf>* ifs);
   std::optional<bool> ReadCondition(const gb::ParsedItem& directive);
   void ReadDirective(const gb::ParsedItem& directive);
@@ -844,7 +846,7 @@ void ProgramAssembler::ReadLines(gb::LexerContentId content,
       // next.
       AddError(line.GetError());
       const int line_index = lexer.GetCurrentLine(content);
-      ReadInvalidConditional(content, ifs);
+      ReadInvalidLine(content, ifs);
       lexer.NextLine(content);
       if (lexer.GetCurrentLine(content) == line_index) {
         return;
@@ -883,6 +885,23 @@ void ProgramAssembler::ReadLine(gb::LexerContentId content,
   } else if (const gb::ParsedItem* instruction = line.GetItem("instruction");
              instruction != nullptr) {
     ReadInstruction(content, *instruction);
+  }
+}
+
+void ProgramAssembler::ReadInvalidLine(gb::LexerContentId content,
+                                       std::vector<OpenIf>* ifs) {
+  // A line that doesn't parse is still read as far as a directive's name, for
+  // the directives the lines after it depend on.
+  gb::ParseResult line =
+      parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
+  if (!line.IsOk()) {
+    return;
+  }
+  const gb::ParsedItem* directive = line->GetItem("directive");
+  if (const Conditional conditional =
+          GetConditional(directive->GetString("directive"));
+      conditional != Conditional::kNone) {
+    ReadInvalidConditional(conditional, *directive, ifs);
   }
 }
 
@@ -1480,41 +1499,29 @@ void ProgramAssembler::ReadConditional(Conditional conditional,
   open.has_else = conditional == Conditional::kElse;
 }
 
-void ProgramAssembler::ReadInvalidConditional(gb::LexerContentId content,
+void ProgramAssembler::ReadInvalidConditional(Conditional conditional,
+                                              const gb::ParsedItem& directive,
                                               std::vector<OpenIf>* ifs) {
   // A conditional directive is still an .IF's start, block, or end if the rest
   // of its line is invalid, so the lines after it are read as they would be,
   // as for a condition with an error.
-  gb::ParseResult line =
-      parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
-  if (!line.IsOk()) {
+  const std::string_view name = directive.GetString("directive");
+  if (conditional == Conditional::kIf) {
+    ifs->push_back({.token = directive.GetToken(),
+                    .name = name,
+                    .state = IfState::kDisabled});
     return;
   }
-  const gb::ParsedItem* directive = line->GetItem("directive");
-  const std::string_view name = directive->GetString("directive");
-  switch (GetConditional(name)) {
-    case Conditional::kNone:
-      return;
-    case Conditional::kIf:
-      ifs->push_back({.token = directive->GetToken(),
-                      .name = name,
-                      .state = IfState::kDisabled});
-      return;
-    case Conditional::kElseIf:
-    case Conditional::kElse:
-      if (!ifs->empty()) {
-        OpenIf& open = ifs->back();
-        open.state = IfState::kDisabled;
-        open.has_else =
-            open.has_else || GetConditional(name) == Conditional::kElse;
-      }
-      return;
-    case Conditional::kEndIf:
-      if (!ifs->empty()) {
-        ifs->pop_back();
-      }
-      return;
+  if (ifs->empty()) {
+    return;
   }
+  if (conditional == Conditional::kEndIf) {
+    ifs->pop_back();
+    return;
+  }
+  OpenIf& open = ifs->back();
+  open.state = IfState::kDisabled;
+  open.has_else = open.has_else || conditional == Conditional::kElse;
 }
 
 std::optional<bool> ProgramAssembler::ReadCondition(
