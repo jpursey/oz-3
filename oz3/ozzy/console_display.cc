@@ -14,8 +14,8 @@
 
 namespace oz3 {
 
-ConsoleMode GetOzzyConsoleMode(Ozzy& ozzy) {
-  return ozzy.GetScreen() != nullptr ? ConsoleMode::kScreen
+ConsoleMode GetOzzyConsoleMode(const OzzySettings& settings) {
+  return settings.screen.has_value() ? ConsoleMode::kScreen
                                      : ConsoleMode::kLines;
 }
 

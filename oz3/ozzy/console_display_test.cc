@@ -24,6 +24,7 @@
 #include "oz3/ozzy/console_text.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/ozzy_testing.h"
 
 namespace oz3 {
 namespace {
@@ -66,17 +67,9 @@ constexpr std::string_view kNoDrive = "ERROR: No drive A:";
 // Long enough for the boot ROM to answer Enter, and the screen to refresh.
 constexpr absl::Duration kKeyTime = absl::Milliseconds(100);
 
-// Returns a context with a power request callback that ignores requests, as
-// every Ozzy needs one.
-gb::Context PowerContext() {
-  gb::Context context;
-  context.SetNew<PowerRequestCallback>([](PowerRequest) {});
-  return context;
-}
-
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings) {
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings, PowerContext());
+      Ozzy::Create(settings, WithPowerCallback());
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
@@ -92,13 +85,8 @@ OzzySettings TeletypeOnlySettings() {
 }
 
 TEST(ConsoleDisplayTest, ModeFollowsTheScreen) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
-  ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetOzzyConsoleMode(*ozzy), ConsoleMode::kScreen);
-
-  ozzy = CreateOzzy(TeletypeOnlySettings());
-  ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetOzzyConsoleMode(*ozzy), ConsoleMode::kLines);
+  EXPECT_EQ(GetOzzyConsoleMode(OzzySettings()), ConsoleMode::kScreen);
+  EXPECT_EQ(GetOzzyConsoleMode(TeletypeOnlySettings()), ConsoleMode::kLines);
 }
 
 TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefresh) {

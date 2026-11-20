@@ -12,12 +12,13 @@
 #include "oz3/devices/teletype.h"
 #include "oz3/ozzy/console.h"
 #include "oz3/ozzy/ozzy.h"
+#include "oz3/ozzy/ozzy_settings.h"
 
 namespace oz3 {
 
-// Returns the mode of the Console that shows `ozzy`: a screen if it has one,
-// or else lines.
-ConsoleMode GetOzzyConsoleMode(Ozzy& ozzy);
+// Returns the mode of the Console that shows an Ozzy with `settings`: a screen
+// if it has one, or else lines.
+ConsoleMode GetOzzyConsoleMode(const OzzySettings& settings);
 
 // Shows in `console`, which is in `mode`, that the Ozzy shut down with
 // `exit_code`, and how to quit: in place of the screen, or on a line of its

@@ -148,7 +148,7 @@ void RunOzzy(Ozzy& ozzy, Console& console,
   const absl::Time start_time = absl::Now();
   absl::Time last_time = start_time;
   absl::Time next_frame = last_time;
-  while (!console.IsQuitRequested() && !power_request.has_value()) {
+  while (!console.IsQuitRequested()) {
     const absl::Time frame_start = absl::Now();
 
     // Keys are taken without a keyboard too, so they don't pile up.
@@ -171,6 +171,10 @@ void RunOzzy(Ozzy& ozzy, Console& console,
       }
     } else {
       ozzy.Run(std::min(now - last_time, kMaxRunTime));
+    }
+    if (power_request.has_value()) {
+      // The Ozzy is about to power off, so this frame isn't shown.
+      break;
     }
     last_time = now;
     display.Update();
@@ -253,47 +257,43 @@ bool Run(gb::ValidatedContext& context,
         }
       });
 
+  // The console shows every power on, as its mode comes from the settings.
+  const ConsoleMode mode = GetOzzyConsoleMode(*settings);
+  absl::StatusOr<std::unique_ptr<Console>> console = Console::Create(mode);
+  if (!console.ok()) {
+    writer(gb::CliText::kError,
+           absl::StrCat("Failed to take over the console: ",
+                        console.status().message()));
+    return false;
+  }
+
   // Each power on creates the Ozzy from its settings, and each power off
-  // destroys it, which writes back its drives. The console stays, as the
-  // settings, and so its mode, are the same every time.
-  std::unique_ptr<Console> console;
+  // destroys it, which writes back its drives.
   RunStats stats;
   while (true) {
     absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
         Ozzy::Create(*settings, &ozzy_context);
     if (!ozzy.ok()) {
-      console.reset();
+      console->reset();
       writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
                                                ozzy.status().message()));
       return false;
     }
-    const ConsoleMode mode = GetOzzyConsoleMode(**ozzy);
-    if (console == nullptr) {
-      absl::StatusOr<std::unique_ptr<Console>> new_console =
-          Console::Create(mode);
-      if (!new_console.ok()) {
-        writer(gb::CliText::kError,
-               absl::StrCat("Failed to take over the console: ",
-                            new_console.status().message()));
-        return false;
-      }
-      console = *std::move(new_console);
-    }
     power_request.reset();
-    RunOzzy(**ozzy, *console, max_speed_run_time, power_request, &stats);
+    RunOzzy(**ozzy, **console, max_speed_run_time, power_request, &stats);
     ozzy->reset();
     if (!power_request.has_value()) {
       break;
     }
     if (power_request->command == PowerCommand::kShutDown) {
-      ShowOzzyShutDown(*console, mode, power_request->exit_code);
-      WaitForQuit(*console);
+      ShowOzzyShutDown(**console, mode, power_request->exit_code);
+      WaitForQuit(**console);
       break;
     }
   }
 
   // The console is given back first, so the stats are in its own buffer.
-  console.reset();
+  console->reset();
   if (command_line.Get(kStats)) {
     WriteStats(stats);
   }

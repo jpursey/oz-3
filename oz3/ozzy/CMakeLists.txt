@@ -66,9 +66,21 @@ set(oz3_ozzy_TEST_SOURCE
 )
 set(oz3_ozzy_TEST_DEPS
   oz3_disk_testing
+  oz3_ozzy_testing
 )
 
 gb_add_library(oz3_ozzy)
+
+# Test support for tests that create an Ozzy.
+set(oz3_ozzy_testing_SOURCE
+  ozzy_testing.cc ozzy_testing.h
+)
+set(oz3_ozzy_testing_DEPS
+  gb_base
+  oz3_devices
+)
+
+gb_add_library(oz3_ozzy_testing)
 
 # The boot ROM's source, which GetBootRom assembles.
 gb_embed_data(oz3_ozzy boot_rom.oza oz3/ozzy/boot_rom_source.h

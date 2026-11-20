@@ -45,6 +45,7 @@
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/ozzy_testing.h"
 #include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
@@ -55,14 +56,6 @@ namespace oz3 {
 namespace {
 
 using ::testing::IsEmpty;
-
-// Returns a context with a power request callback that ignores requests, as
-// every Ozzy needs one.
-gb::Context PowerContext() {
-  gb::Context context;
-  context.SetNew<PowerRequestCallback>([](PowerRequest) {});
-  return context;
-}
 
 //==============================================================================
 // Constants
@@ -429,7 +422,7 @@ class BootRomTest : public ::testing::Test {
   std::unique_ptr<Ozzy> Boot(const OzzySettings& settings,
                              std::unique_ptr<DiskImage> image = nullptr) {
     absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-        Ozzy::Create(settings, PowerContext());
+        Ozzy::Create(settings, WithPowerCallback());
     EXPECT_TRUE(ozzy.ok()) << ozzy.status();
     if (!ozzy.ok()) {
       return nullptr;
@@ -763,7 +756,7 @@ TEST_F(BootRomTest, ModifiersMakeNoDifference) {
 TEST_F(BootRomTest, KeysBeforeThePromptCount) {
   // Keys pressed while the boot ROM shows the banner wait in the keyboard.
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(OzzySettings(), PowerContext());
+      Ozzy::Create(OzzySettings(), WithPowerCallback());
   ASSERT_TRUE(ozzy.ok()) << ozzy.status();
   EXPECT_TRUE((*ozzy)->GetKeyboard()->TypeKey('a'));
   EXPECT_TRUE((*ozzy)->GetKeyboard()->TypeKey(kKeyEnter));
