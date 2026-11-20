@@ -144,10 +144,14 @@ class ProgramAssembler final {
     std::vector<InstructionArg> args;
   };
 
-  // Data of `width` (.DW or .DD): each item is a string's words, or an
-  // expression. Any words of the statement after its items (from SIZE) are
-  // zeros.
-  using DataItem = std::variant<std::vector<uint16_t>, Expression>;
+  // Zero words that fill a .DW or .DD field to its SIZE.
+  struct DataPadding {
+    int64_t words = 0;
+  };
+
+  // Data of `width` (.DW or .DD): each item is a string's words, an
+  // expression, or padding.
+  using DataItem = std::variant<std::vector<uint16_t>, Expression, DataPadding>;
   struct DataStatement {
     ExpressionWidth width = ExpressionWidth::kWord;
     std::vector<DataItem> items;
@@ -321,6 +325,8 @@ class ProgramAssembler final {
   void ReadInclude(const gb::ParsedItem& directive);
   void ReadConst(const gb::ParsedItem& directive);
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
+  void EndDataField(std::optional<int64_t> field_end, int64_t* size,
+                    DataStatement* data);
   void ReadStorage(const gb::ParsedItem& directive);
   void ReadStack(const gb::ParsedItem& directive);
   void ReadInstances(const gb::ParsedItem& directive);
@@ -855,23 +861,29 @@ void ProgramAssembler::ReadConst(const gb::ParsedItem& directive) {
 
 void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
                                 ExpressionWidth width) {
-  // SIZE fixes the statement's size, in values of its width, and the items
-  // must fit in it. If SIZE has an error, the statement is the size of its
-  // items.
+  // An item with SIZE starts a field of that many values of the width, which
+  // holds it and the items after it up to the next SIZE, and then zeros. The
+  // items must fit in their field. Items before the first SIZE, or after a
+  // SIZE with an error, are only their own words.
   DataStatement data = {.width = width};
   const int value_size = (width == ExpressionWidth::kWord ? 1 : 2);
-  std::optional<int64_t> fixed_words;
-  if (const gb::ParsedItem* size_item = directive.GetItem("size");
-      size_item != nullptr) {
-    if (const std::optional<uint32_t> count = EvaluateNow(*size_item);
-        count.has_value()) {
-      fixed_words = int64_t{*count} * value_size;
-    }
-  }
-
   int64_t size = 0;
+  int64_t field_start = 0;
+  std::optional<int64_t> field_end;
   for (const gb::ParsedItem& item : directive.GetItems("items")) {
-    Expression expression = Expression::Create(GetLexer(), item);
+    if (const gb::ParsedItem* size_item = item.GetItem("size");
+        size_item != nullptr) {
+      EndDataField(field_end, &size, &data);
+      field_start = size;
+      field_end.reset();
+      if (const std::optional<uint32_t> count = EvaluateNow(*size_item);
+          count.has_value()) {
+        field_end = size + int64_t{*count} * value_size;
+      }
+    }
+
+    Expression expression =
+        Expression::Create(GetLexer(), *item.GetItem("value"));
     const gb::Token token = expression.GetToken();
     const int64_t start = size;
     if (width == ExpressionWidth::kWord && expression.IsString()) {
@@ -887,14 +899,27 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
       size += value_size;
       data.items.emplace_back(std::move(expression));
     }
-    if (fixed_words.has_value() && start <= *fixed_words &&
-        size > *fixed_words) {
-      Error(token, absl::StrCat("This passes the end of the data, at its "
+    if (field_end.has_value() && start <= *field_end && size > *field_end) {
+      Error(token, absl::StrCat("This passes the end of its field, at its "
                                 "SIZE of ",
-                                *fixed_words / value_size));
+                                (*field_end - field_start) / value_size));
     }
   }
-  Write(fixed_words.value_or(size), directive.GetToken(), std::move(data));
+  EndDataField(field_end, &size, &data);
+  Write(size, directive.GetToken(), std::move(data));
+}
+
+void ProgramAssembler::EndDataField(std::optional<int64_t> field_end,
+                                    int64_t* size, DataStatement* data) {
+  // A field's items that pass its end are an error, and the field is still
+  // its SIZE, so the statements after it are where they would be.
+  if (!field_end.has_value()) {
+    return;
+  }
+  if (*size < *field_end) {
+    data->items.emplace_back(DataPadding{.words = *field_end - *size});
+  }
+  *size = *field_end;
 }
 
 void ProgramAssembler::ReadStorage(const gb::ParsedItem& directive) {
@@ -1399,24 +1424,25 @@ void ProgramAssembler::EncodeData(const Statement& statement,
       words.insert(words.end(), string_words->begin(), string_words->end());
     } else if (const auto* expression = std::get_if<Expression>(&item);
                expression != nullptr) {
-      const std::optional<uint32_t> value =
-          Evaluate(*expression, data.width, context);
-      if (!value.has_value()) {
-        continue;
-      }
+      // A value with an error is reported, and written as zero so the words
+      // after it stay in place.
+      const uint32_t value =
+          Evaluate(*expression, data.width, context).value_or(0);
 
       // A dword is written low word first.
-      words.push_back(static_cast<uint16_t>(*value));
+      words.push_back(static_cast<uint16_t>(value));
       if (data.width == ExpressionWidth::kDword) {
-        words.push_back(static_cast<uint16_t>(*value >> 16));
+        words.push_back(static_cast<uint16_t>(value >> 16));
       }
+    } else if (const auto* padding = std::get_if<DataPadding>(&item);
+               padding != nullptr) {
+      words.resize(words.size() + padding->words, 0);
     }
   }
 
-  // SIZE pads the data with zeros. Items that pass it are a first pass error,
-  // so there is no second pass.
-  DCHECK_LE(static_cast<int>(words.size()), statement.size);
-  words.resize(statement.size, 0);
+  // Items that pass their field's end are a first pass error, so there is no
+  // second pass.
+  DCHECK_EQ(static_cast<int>(words.size()), statement.size);
 }
 
 std::unique_ptr<AsmProgram> ProgramAssembler::BuildProgram() {

@@ -546,6 +546,15 @@ TEST_F(ProgramAssemblerTest, FixedSizeData) {
               ElementsAre(0x2E41, 0x5854, 0x0054, 0, 1, 'A', 'B', 0, 0x4241,
                           0x4443, 10, 0));
 
+  // Any item can have a SIZE, which starts a field of its own up to the next
+  // SIZE, and items before the first SIZE are only their own words.
+  EXPECT_THAT(
+      AssembleWords(".STACK 1\n"
+                    ".DW SIZE(6) \"HELLO\", SIZE(2) \"TXT\"\n"
+                    ".DW 7, 'A', SIZE(2) 1, 2, SIZE(3) '', SIZE(1) 3\n"),
+      ElementsAre(0x4548, 0x4C4C, 0x004F, 0, 0, 0, 0x5854, 0x0054, 7, 'A', 1, 2,
+                  0, 0, 0, 3));
+
   // SIZE can still be a symbol.
   EXPECT_THAT(AssembleWords(".STACK 1\n.CONST SIZE = 7\n.DW SIZE, SIZE + 1\n"),
               ElementsAre(7, 8));
@@ -558,16 +567,30 @@ TEST_F(ProgramAssemblerTest, FixedSizeData) {
                      ".DW SIZE(LATER) 1\n"
                      ".CONST LATER = 1\n"),
       ElementsAre(
-          IsErrorAt(1, 15, "passes the end of the data, at its SIZE of 2"),
-          IsErrorAt(2, 12, "passes the end of the data, at its SIZE of 2"),
+          IsErrorAt(1, 15, "passes the end of its field, at its SIZE of 2"),
+          IsErrorAt(2, 12, "passes the end of its field, at its SIZE of 2"),
           IsErrorAt(3, 9, "LATER is not defined")));
+
+  // Each field is checked on its own, and the items after a SIZE with an
+  // error aren't checked, up to the next SIZE.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".DW SIZE(1) 1, SIZE(1) 2, 3, SIZE(1) 4\n"
+                     ".DW SIZE(1) 1, SIZE(LATER) 2, 3, SIZE(1) 4, 5\n"
+                     ".CONST LATER = 1\n"),
+      ElementsAre(
+          IsErrorAt(1, 26, "passes the end of its field, at its SIZE of 1"),
+          IsErrorAt(2, 20, "LATER is not defined"),
+          IsErrorAt(2, 44, "passes the end of its field, at its SIZE of 1")));
 
   // In .DD, SIZE is in dwords.
   EXPECT_THAT(AssembleWords(".STACK 1\n.DD SIZE(2) 12345678h\n"),
               ElementsAre(0x5678, 0x1234, 0, 0));
+  EXPECT_THAT(AssembleWords(".STACK 1\n.DD 1, SIZE(2) 2, SIZE(1) 3\n"),
+              ElementsAre(1, 0, 2, 0, 0, 0, 3, 0));
   EXPECT_THAT(AssembleErrors(".STACK 1\n.DD SIZE(1) 1, 2\n"),
               ElementsAre(IsErrorAt(
-                  1, 15, "passes the end of the data, at its SIZE of 1")));
+                  1, 15, "passes the end of its field, at its SIZE of 1")));
 }
 
 TEST_F(ProgramAssemblerTest, DataBlocks) {
