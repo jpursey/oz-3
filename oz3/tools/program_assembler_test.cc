@@ -583,6 +583,11 @@ TEST_F(ProgramAssemblerTest, FixedSizeData) {
           IsErrorAt(2, 20, "LATER is not defined"),
           IsErrorAt(2, 44, "passes the end of its field, at its SIZE of 1")));
 
+  // A string with an error is only that error, and its field is the items
+  // after it.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n.DW SIZE(2) \"\u0100\", 1, 2\n"),
+              ElementsAre(IsErrorAt(1, 12, "does not fit in a byte")));
+
   // In .DD, SIZE is in dwords.
   EXPECT_THAT(AssembleWords(".STACK 1\n.DD SIZE(2) 12345678h\n"),
               ElementsAre(0x5678, 0x1234, 0, 0));
