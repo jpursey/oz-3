@@ -384,7 +384,10 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 - [ ] A body line's tokens can be lexed without disturbing the parser: the
   lexer is at the line after `.MACRO` once it is parsed, and reading the body
   a token at a time with `NextToken` then `NextLine` leaves it at the line
-  after `.ENDM` (CL2 for skipped lines, CL4 for bodies).
+  after `.ENDM` (CL2 for skipped lines, CL4 for bodies). Confirmed for
+  skipped lines in CL2: a skipped line is lexed a token at a time, then the
+  lexer goes on with `NextLine`, or puts its first token back with
+  `SetNextToken` for the parser to read a directive that ends the block.
 - [ ] The instruction's `$args` items give each argument's first and last
   token, so its text and columns can be copied, or the arguments are better
   read with a rule of their own (CL4).
@@ -433,7 +436,7 @@ Depends on: nothing.
   macro code meets its instruction's pattern, with and without a space.
 - Manual pages updated.
 
-### CL2 [ ] tools: conditional assembly
+### CL2 [x] tools: conditional assembly
 
 Depends on: CL1, for tests that compare.
 

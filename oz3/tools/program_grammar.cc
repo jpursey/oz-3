@@ -72,7 +72,9 @@ constexpr std::string_view kRules = R"---(
         (<DirectiveInclude> | <DirectiveConst> | <DirectiveDw> |
          <DirectiveDd> | <DirectiveDs> | <DirectiveStack> |
          <DirectiveInstances> | <DirectiveBank> |
-         <DirectiveSegment>):"Unknown directive";
+         <DirectiveSegment> | <DirectiveIf> | <DirectiveIfdef> |
+         <DirectiveIfndef> | <DirectiveElseif> | <DirectiveElse> |
+         <DirectiveEndif>):"Unknown directive";
   }
   DirectiveInclude {
     $directive="INCLUDE" $path=%string;
@@ -103,6 +105,24 @@ constexpr std::string_view kRules = R"---(
   }
   DirectiveSegment {
     $directive="SEGMENT" $name=%ident $attributes=SegmentAttribute*;
+  }
+  DirectiveIf {
+    $directive="IF" $condition=Expression;
+  }
+  DirectiveIfdef {
+    $directive="IFDEF" $name=%ident;
+  }
+  DirectiveIfndef {
+    $directive="IFNDEF" $name=%ident;
+  }
+  DirectiveElseif {
+    $directive="ELSEIF" $condition=Expression;
+  }
+  DirectiveElse {
+    $directive="ELSE";
+  }
+  DirectiveEndif {
+    $directive="ENDIF";
   }
   SegmentAttribute {
     $role=("CODE" | "STACK" | "DATA" | "EXTRA");

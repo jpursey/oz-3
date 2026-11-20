@@ -105,7 +105,14 @@ class ProgramGrammar final {
   //   INSTANCES  $count
   //   BANK       $name (%ident), then optionally ',' $mask
   //   SEGMENT    $name (%ident), then zero or more $attributes
-  // Each value ($value, $size, $count, $words, and $mask) is an Expression.
+  //   IF         $condition
+  //   IFDEF      $name (%ident)
+  //   IFNDEF     $name (%ident)
+  //   ELSEIF     $condition
+  //   ELSE       Nothing
+  //   ENDIF      Nothing
+  // Each value ($value, $size, $count, $words, $mask, and $condition) is an
+  // Expression.
   // Each segment attribute is one of $role ("CODE", "STACK", "DATA", or
   // "EXTRA"), $rom ("ROM"), $instance ("INSTANCE"), "PAGE" '(' $page ')',
   // "PAGES" '(' $pages ')', or "BANK" '(' $bank (%ident) ')'.

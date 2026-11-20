@@ -344,6 +344,37 @@ TEST_F(ProgramGrammarTest, Directives) {
   EXPECT_THAT(directive->GetItems("attributes"), IsEmpty());
 }
 
+TEST_F(ProgramGrammarTest, ConditionalDirectives) {
+  for (auto [text, name] :
+       {std::pair{".IF X == 1", "IF"}, {".elseif x", "ELSEIF"}}) {
+    gb::ParseResult line = ParseDirective(text);
+    const gb::ParsedItem* directive = line->GetItem("directive");
+    EXPECT_EQ(directive->GetString("directive"), name);
+    EXPECT_NE(directive->GetItem("condition"), nullptr) << text;
+  }
+  for (auto [text, name] :
+       {std::pair{".IFDEF debug", "IFDEF"}, {".IFNDEF debug", "IFNDEF"}}) {
+    gb::ParseResult line = ParseDirective(text);
+    const gb::ParsedItem* directive = line->GetItem("directive");
+    EXPECT_EQ(directive->GetString("directive"), name);
+    EXPECT_EQ(directive->GetString("name"), "DEBUG") << text;
+  }
+  for (auto [text, name] :
+       {std::pair{".ELSE", "ELSE"}, {".endif ; done", "ENDIF"}}) {
+    gb::ParseResult line = ParseDirective(text);
+    EXPECT_EQ(line->GetItem("directive")->GetString("directive"), name);
+  }
+
+  // A label parses, so the assembler can report it.
+  gb::ParseResult line = ParseDirective("here: .ENDIF");
+  EXPECT_NE(line->GetItem("label"), nullptr);
+
+  EXPECT_EQ(ParseLineError(".IF").GetLocation().column, 3);
+  EXPECT_EQ(ParseLineError(".IFDEF 5").GetLocation().column, 7);
+  EXPECT_EQ(ParseLineError(".ELSE 1").GetLocation().column, 6);
+  EXPECT_EQ(ParseLineError(".ENDIF X").GetLocation().column, 7);
+}
+
 TEST_F(ProgramGrammarTest, DirectiveErrors) {
   // The error is the one that gets furthest into the line.
   gb::ParseError error = ParseLineError(".CONST size 5");
