@@ -77,7 +77,10 @@ summary covers how it is built, and the decisions behind it.
   than a program file version, so each format versions on its own and each
   reader rejects the other for the right reason. The OS a loader loads can be
   one too, placed straight after the loader in the same page, which a
-  page-placed program file can't say.
+  page-placed program file can't say. The assembler encodes a label in `S()`
+  from the end of its segment's pages, and in `E()` from its start, where
+  loading a program file puts `BS` and `BE`, so a program with a label in
+  either can't be a bare one; `D()` addresses the same words either way.
 - **`oz3dsk <image> boot <bare program>`** lays the program's words into the
   boot area as loading it at the area's start would, with unset words 0. Its
   contents must fit in 224 words; its stack doesn't count, as the loader runs
