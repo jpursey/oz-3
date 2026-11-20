@@ -193,18 +193,19 @@ main.oza(12:5))`.
 ### Constants from the host (manual's Program Source, Assembling a program and oz3asm)
 
 ```
-oz3asm -D SCREEN=1,CORES=2 main.oza
+oz3asm -D SCREEN -D CORES=2 main.oza
 ```
 
 - `AssembleProgramFile` and `AssembleProgram` take constants from the host,
   each a name and a dword value, which the program sees as constants defined
   above its first line, so `.IF` and `.IFDEF` can test them.
-- `oz3asm -D` (`--define`) takes a comma separated list of `NAME` or
-  `NAME=value`, each value a number as the source writes one (`15`, `0Fh`, or
-  `1111b`), or 1 if left out. A flag can only be given once (Game Bits' command
-  line), hence the list.
+- `oz3asm -D` (`--define`) takes `NAME` or `NAME=value`, with the value a
+  number as the source writes one (`15`, `0Fh`, or `1111b`), or 1 if left out.
+  It is given once for each constant, as Game Bits' command line now repeats
+  flags (`CliFlag::repeated`, read with `CliCommandLine::GetAll()`).
 - A name the program defines again is an error at the program's definition. A
-  name that isn't a name, or is a register, is an error before assembling.
+  name that isn't a name, is a register, or is given twice, is an error before
+  assembling.
 - They aren't in the map, as no source line defines them.
 
 ## Design
@@ -487,16 +488,17 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
 
 ### CL5 [ ] tools, apps: constants from the host
 
-Depends on: CL2, for tests with `.IFDEF`.
+Depends on: CL2, for tests with `.IFDEF`, and Game Bits *Repeated command line
+flags*, which is done.
 
 - `program_assembler.h`: `AsmConstant`, and the overloads that take them.
-- `oz3asm`: `-D`/`--define`.
+- `oz3asm`: `-D`/`--define`, a repeated flag.
 - Manual: Program Source's Assembling a program, and oz3asm.
 
 **Verify**
 - Standard checks.
 - Unit tests: a host constant in an expression, `.IF`, and `.IFDEF`; one
-  defined again by the program, an error there; an invalid name and a register,
-  errors; not in the map.
+  defined again by the program, an error there; an invalid name, a register,
+  and a name given twice, errors; not in the map.
 - By hand, left for the user: `oz3asm -D` on a program with `.IF`s, as `oz3asm`
   has no tests of its own.
