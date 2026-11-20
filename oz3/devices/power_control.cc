@@ -58,14 +58,14 @@ void PowerControl::Execute() {
 }
 
 void PowerControl::Record(uint16_t command, uint16_t exit_code) {
-  if (command != static_cast<uint16_t>(PowerCommand::kShutDown) &&
-      command != static_cast<uint16_t>(PowerCommand::kRestart)) {
+  const PowerCommand power_command = static_cast<PowerCommand>(command);
+  if (power_command != PowerCommand::kShutDown &&
+      power_command != PowerCommand::kRestart) {
     return;
   }
   if (context_.Exists<PowerRequest>()) {
     return;
   }
-  const PowerCommand power_command = static_cast<PowerCommand>(command);
   context_.SetValue<PowerRequest>(PowerRequest{
       .command = power_command,
       .exit_code = power_command == PowerCommand::kShutDown

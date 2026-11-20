@@ -41,13 +41,6 @@ struct PowerRequest {
   int exit_code = 0;
 };
 
-// The request the power control records in the processor's context. The host
-// creates the Processor with a context it can read (such as by pointer), and
-// looks for a request between Processor::Execute calls. The request stays
-// until the host clears it: the power control records the first one, and
-// ignores the rest until then.
-GB_CONTEXT_CONSTRAINT(kConstraintPowerRequest, kOutOptional, PowerRequest);
-
 //==============================================================================
 // PowerControlSettings
 //==============================================================================
@@ -110,8 +103,18 @@ class PowerControlFactory final : public DeviceFactory {
 class PowerControl final : public Device {
  public:
   //----------------------------------------------------------------------------
-  // Types
+  // Contract
   //----------------------------------------------------------------------------
+
+  // The request the power control records in the processor's context. The
+  // host creates the Processor with a context it can read (such as by pointer),
+  // and looks for a request between Processor::Execute calls with
+  // gb::Context::GetPtr<PowerRequest>(), which is null without one. (GetValue
+  // can't tell no request from a shutdown with exit code 0.) The request stays
+  // until the host clears it: the power control records the first one, and
+  // ignores the rest until then.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPowerRequest, kOutOptional,
+                               PowerRequest);
 
   // What the power control gives the processor's context: the request.
   using Contract = gb::ContextContract<kConstraintPowerRequest>;

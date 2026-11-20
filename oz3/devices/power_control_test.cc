@@ -59,21 +59,7 @@ class PowerControlTest : public DeviceProgramTest {
   std::shared_ptr<gb::Context> host_context_ = std::make_shared<gb::Context>();
 };
 
-TEST_F(PowerControlTest, ShutDownRecordsTheExitCode) {
-  ASSERT_TRUE(InitPowerControl());
-  ASSERT_TRUE(Load(R"---(
-    .STACK 16
-        OUT.ID 1, 00030001h    ; Shut down, with exit code 3
-        HALT
-  )---"));
-  ASSERT_TRUE(ExecuteUntilHalt());
-  EXPECT_EQ(GetRequest(),
-            (PowerRequest{.command = PowerCommand::kShutDown, .exit_code = 3}));
-  EXPECT_EQ(GetPort(kPort).GetStatus(), 0);
-  EXPECT_EQ(GetWords(), PortWords());
-}
-
-TEST_F(PowerControlTest, ExitCodeIsSigned) {
+TEST_F(PowerControlTest, ShutDownRecordsTheSignedExitCode) {
   ASSERT_TRUE(InitPowerControl());
   ASSERT_TRUE(Load(R"---(
     .STACK 16
@@ -83,6 +69,8 @@ TEST_F(PowerControlTest, ExitCodeIsSigned) {
   ASSERT_TRUE(ExecuteUntilHalt());
   EXPECT_EQ(GetRequest(), (PowerRequest{.command = PowerCommand::kShutDown,
                                         .exit_code = -1}));
+  EXPECT_EQ(GetPort(kPort).GetStatus(), 0);
+  EXPECT_EQ(GetWords(), PortWords());
 }
 
 TEST_F(PowerControlTest, RestartHasNoExitCode) {
