@@ -309,6 +309,69 @@ TEST_F(ExpressionTest, Strings) {
   EXPECT_EQ(Error("\"ABC\""), "0: A string in an expression must be one word");
 }
 
+TEST_F(ExpressionTest, LowAndHighWords) {
+  EXPECT_EQ(Value("LOW(12345678h)"), 0x5678);
+  EXPECT_EQ(Value("HIGH(12345678h)"), 0x1234);
+  EXPECT_EQ(Value("low(12345678h)"), 0x5678);
+  EXPECT_EQ(Value("HIGH(5)"), 0);
+  EXPECT_EQ(Value("LOW(12345678h)", kDword), 0x5678);
+  EXPECT_EQ(Value("HIGH(12345678h)", kDword), 0x1234);
+
+  // The operand is a dword, so its arithmetic is too.
+  EXPECT_EQ(Value("LOW(-1)"), 0xFFFF);
+  EXPECT_EQ(Value("HIGH(-1)"), 0xFFFF);
+  EXPECT_EQ(Value("HIGH(65535 + 1)"), 1);
+  EXPECT_EQ(Value("HIGH(1 << 31)"), 0x8000);
+  EXPECT_EQ(Value("HIGH(LOW(-1) + 1)"), 1);
+
+  // They are values like any other.
+  EXPECT_EQ(Value("HIGH(70000) + 1"), 2);
+  EXPECT_EQ(Value("-LOW(1)"), 0xFFFF);
+  EXPECT_EQ(Value("2 * HIGH(30000h)"), 6);
+  EXPECT_FALSE(Parse("LOW(1)")->IsBracketed());
+}
+
+TEST_F(ExpressionTest, LowAndHighWordsOfSymbols) {
+  context_.symbols["BIG"] = {.value = 0x12345678};
+  EXPECT_EQ(Value("LOW(BIG)"), 0x5678);
+  EXPECT_EQ(Value("HIGH(BIG) + 1"), 0x1235);
+  EXPECT_THAT(context_.requests, ElementsAre("BIG:D", "BIG:D"));
+}
+
+TEST_F(ExpressionTest, LowAndHighWordsAreNumbers) {
+  context_.segment = 1;
+  context_.symbols["A"] = {.value = 10, .segment = 2};
+  context_.symbols["C"] = {.value = 3, .segment = 3};
+  EXPECT_EQ(Segment("LOW(A)"), -1);
+  EXPECT_EQ(Segment("HIGH($)"), -1);
+  EXPECT_EQ(Value("LOW(A) + C"), 13);
+
+  // The operand is still checked.
+  EXPECT_EQ(Error("LOW(A + C)"),
+            "6: Labels or $ in different segments can't be combined");
+}
+
+TEST_F(ExpressionTest, LowAndHighErrors) {
+  EXPECT_EQ(Error("LOW(100000000h)"),
+            "4: Value 4294967296 does not fit in a dword");
+  EXPECT_EQ(Error("HIGH(1 / 0)"), "7: Division by zero");
+  ExpressionResult result = Evaluate("LOW(X)");
+  EXPECT_EQ(result.kind, Kind::kUndefined);
+  EXPECT_EQ(result.error.GetMessage(), "X is not defined");
+  for (std::string_view text : {"LOW()", "LOW(1, 2)", "LOW 1", "HIGH(R1)"}) {
+    EXPECT_FALSE(Parse(text).has_value()) << text;
+  }
+}
+
+TEST_F(ExpressionTest, LowAndHighAreSymbolsWithoutParentheses) {
+  context_.symbols["LOW"] = {.value = 1};
+  context_.symbols["HIGH"] = {.value = 2};
+  EXPECT_EQ(Value("LOW"), 1);
+  EXPECT_EQ(Value("HIGH + LOW"), 3);
+  EXPECT_EQ(Value("HIGH(LOW)"), 0);
+  EXPECT_EQ(Value("LOW(HIGH)"), 2);
+}
+
 TEST_F(ExpressionTest, Offset) {
   context_.offset = 0x1234;
   EXPECT_EQ(Value("$"), 0x1234);

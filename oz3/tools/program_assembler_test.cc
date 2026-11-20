@@ -368,6 +368,26 @@ TEST_F(ProgramAssemblerTest, Constants) {
       ElementsAre(0xFFFE, 0xFFFC, 0xFFFE, 0xFFFF, 0xFFFC, 0xFFFF, 5, 0));
 }
 
+TEST_F(ProgramAssemblerTest, LowAndHighWords) {
+  // A dword's low and high words can be written where a word is used.
+  EXPECT_THAT(AssembleWords(R"---(.STACK 1
+    .CONST BIG = 12345678h
+    .DW LOW(BIG), HIGH(BIG), HIGH(LATER)
+    .DD LOW(BIG)
+    .CONST LATER = 70000
+  )---"),
+              ElementsAre(0x5678, 0x1234, 1, 0x5678, 0, 0));
+  std::vector<uint16_t> words = AssembleWords(R"---(.STACK 1
+    .CONST BIG = 30005h
+    MVQ R1, HIGH(BIG)
+    PUSH.W LOW(BIG)
+    PUSH.D HIGH(BIG)
+  )---");
+  EXPECT_EQ(Disassemble(words, 0), "MVQ R1, 3");
+  EXPECT_EQ(Disassemble(words, 1), "PUSH.W 0005h");
+  EXPECT_EQ(Disassemble(words, 3), "PUSH.D 00000003h");
+}
+
 TEST_F(ProgramAssemblerTest, OffsetInConstant) {
   // $ is the offset of the statement, and in a constant, where it is defined.
   EXPECT_THAT(AssembleWords(R"---(.STACK 1
@@ -1179,6 +1199,21 @@ TEST_F(ProgramAssemblerTest, AddressesInTheWrongSegment) {
                                     "The address is in MAIN, but must be in "
                                     "the segment with the DATA role, and no "
                                     "segment has it")));
+}
+
+TEST_F(ProgramAssemblerTest, LowAndHighWordsOfLabelsAreNotChecked) {
+  // LOW and HIGH of a label are just numbers, which no address checks.
+  EXPECT_THAT(AssembleAddresses(R"---(.STACK 4
+    .SEGMENT main CODE
+      LDA R1, D(LOW(var))
+      LDA R1, D(HIGH(var))
+    .SEGMENT extra EXTRA
+      .DS 3
+    var:
+      .DS 1
+    .SEGMENT stack STACK
+  )---"),
+              ElementsAre(3, 0));
 }
 
 TEST_F(ProgramAssemblerTest, LabelsInDifferentSegments) {

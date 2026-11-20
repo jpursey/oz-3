@@ -273,9 +273,13 @@ every operator works on them as the CPU would, with nothing wider underneath:
 
 A number, a character, and a symbol's value must fit the width, from 0 to its
 largest unsigned value, and dividing by zero is an error. A code word argument
-must also fit its bits. A dword's low or high word can't be written in a word,
-as `X & 0FFFFh` is an error where `X` doesn't fit one, which is left to *Low
-and high words*.
+must also fit its bits.
+
+`LOW(X)` and `HIGH(X)` are the low and high words of `X`, evaluated as a
+dword, so either half of a dword can be written where a word is used, which
+`X & 0FFFFh` can't be wherever `X` doesn't fit a word. Each is just a number,
+even of a label. They are functions only where `(` follows them, as `SIZE` is
+in `.DW`, so they reserve no names: `LOW` and `HIGH` can still be symbols.
 
 ## Instructions
 

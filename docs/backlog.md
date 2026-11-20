@@ -130,21 +130,6 @@ Macros in program source (`.MACRO`), for the boilerplate the instruction set
 doesn't cover, and conditional assembly (`.IF`), such as for building one
 source for different hardware configurations.
 
-## Low and high words
-
-- **Layers:** tools, manual
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** [assembler_design.md](assembler_design.md) (Expressions)
-
-A way to write a dword's low or high word where a word is used, such as
-`LOW(X)` and `HIGH(X)`, which evaluate `X` as a dword. An expression is
-evaluated in the width where it is used, and a constant or number in it must
-fit that width, so `X & 0FFFFh` is an error in a word wherever `X` doesn't fit
-one. Functions would be the first names an expression reserves, besides the
-registers.
-
 ## Case-sensitive programs
 
 - **Layers:** tools, manual
