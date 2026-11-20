@@ -15,6 +15,7 @@
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_error.h"
 #include "gb/parse/parse_result.h"
+#include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 
 namespace oz3 {
@@ -148,39 +149,12 @@ class Expression final {
     kHigh,      // The high word of `left`, as a dword.
   };
 
-  enum class Op {
-    kNone,
-
-    // Unary operators.
-    kNegate,      // -
-    kNot,         // ~
-    kLogicalNot,  // !
-
-    // Binary operators.
-    kMultiply,      // *
-    kDivide,        // /
-    kRemainder,     // %
-    kAdd,           // +
-    kSubtract,      // -
-    kShiftLeft,     // <<
-    kShiftRight,    // >>
-    kLess,          // <
-    kLessEqual,     // <=
-    kGreater,       // >
-    kGreaterEqual,  // >=
-    kEqual,         // ==
-    kNotEqual,      // !=
-    kAnd,           // &
-    kXor,           // ^
-    kOr,            // |
-  };
-
   // One step of the expression. Each node's operands come before it in
   // `nodes_`, so the last node is the whole expression.
   struct Node {
     NodeKind kind = NodeKind::kConstant;
     gb::Token token;  // The node's own token, for errors.
-    Op op = Op::kNone;
+    gb::Symbol op;    // The operator, for kUnary and kBinary.
     int left = -1;
     int right = -1;
     uint64_t value = 0;
@@ -188,10 +162,6 @@ class Expression final {
     std::string error;
     bool bracketed = false;
   };
-
-  // Returns the operator `token` is, as a unary or binary operator.
-  static Op GetUnaryOp(const gb::Token& token);
-  static Op GetBinaryOp(const gb::Token& token);
 
   explicit Expression(const gb::Lexer& lexer) : lexer_(&lexer) {}
 

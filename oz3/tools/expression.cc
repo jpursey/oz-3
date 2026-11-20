@@ -119,7 +119,7 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
       const gb::Token op = ops[i - 1].GetToken();
       left = AddNode({.kind = NodeKind::kBinary,
                       .token = op,
-                      .op = GetBinaryOp(op),
+                      .op = op.GetSymbol(),
                       .left = left,
                       .right = right});
     }
@@ -132,7 +132,7 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
     const gb::Token op = item.GetToken("op");
     return AddNode({.kind = NodeKind::kUnary,
                     .token = op,
-                    .op = GetUnaryOp(op),
+                    .op = op.GetSymbol(),
                     .left = operand});
   }
 
@@ -183,40 +183,6 @@ int Expression::AddValueNode(const gb::ParsedItem& item) {
   return AddNode(std::move(node));
 }
 
-Expression::Op Expression::GetUnaryOp(const gb::Token& token) {
-  const gb::Symbol symbol = token.GetSymbol();
-  if (symbol == '-') {
-    return Op::kNegate;
-  }
-  if (symbol == '~') {
-    return Op::kNot;
-  }
-  if (symbol == '!') {
-    return Op::kLogicalNot;
-  }
-  return Op::kNone;
-}
-
-Expression::Op Expression::GetBinaryOp(const gb::Token& token) {
-  static constexpr std::pair<gb::Symbol, Op> kOps[] = {
-      {'*', Op::kMultiply},      {'/', Op::kDivide},
-      {'%', Op::kRemainder},     {'+', Op::kAdd},
-      {'-', Op::kSubtract},      {"<<", Op::kShiftLeft},
-      {">>", Op::kShiftRight},   {'<', Op::kLess},
-      {"<=", Op::kLessEqual},    {'>', Op::kGreater},
-      {">=", Op::kGreaterEqual}, {"==", Op::kEqual},
-      {"!=", Op::kNotEqual},     {'&', Op::kAnd},
-      {'^', Op::kXor},           {'|', Op::kOr},
-  };
-  const gb::Symbol symbol = token.GetSymbol();
-  for (const auto& [op_symbol, op] : kOps) {
-    if (op_symbol == symbol) {
-      return op;
-    }
-  }
-  return Op::kNone;
-}
-
 int Expression::AddNode(Node node) {
   nodes_.push_back(std::move(node));
   return static_cast<int>(nodes_.size()) - 1;
@@ -260,15 +226,14 @@ ExpressionResult Expression::EvaluateUnary(ExpressionWidth width,
     return operand;
   }
   const uint64_t value = operand.value;
-  switch (node.op) {
-    case Op::kNegate:
-      return Value(width, 0 - value);
-    case Op::kNot:
-      return Value(width, ~value);
-    case Op::kLogicalNot:
-      return Value(width, value == 0 ? 1 : 0);
-    default:
-      break;
+  if (node.op == '-') {
+    return Value(width, 0 - value);
+  }
+  if (node.op == '~') {
+    return Value(width, ~value);
+  }
+  if (node.op == '!') {
+    return Value(width, value == 0 ? 1 : 0);
   }
   return Error(node.token, "Internal error: unknown unary operator");
 }
@@ -294,50 +259,60 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
   // them is unsigned.
   const uint64_t a = left.value;
   const uint64_t b = right.value;
-  switch (node.op) {
-    // An offset plus or minus a number is still an offset in its segment, and
-    // anything else is just a number.
-    case Op::kAdd:
-      return Value(width, a + b,
-                   left.segment < 0    ? right.segment
-                   : right.segment < 0 ? left.segment
-                                       : -1);
-    case Op::kSubtract:
-      return Value(width, a - b, right.segment < 0 ? left.segment : -1);
-    case Op::kMultiply:
-      return Value(width, a * b);
-    case Op::kDivide:
-    case Op::kRemainder:
-      if (b == 0) {
-        return Error(node.token, "Division by zero");
-      }
-      return Value(width, node.op == Op::kDivide ? a / b : a % b);
-    case Op::kShiftLeft:
-    case Op::kShiftRight:
-      if (b >= static_cast<uint64_t>(GetBits(width))) {
-        return Value(width, 0);
-      }
-      return Value(width, node.op == Op::kShiftLeft ? a << b : a >> b);
-    case Op::kLess:
-      return Value(width, a < b ? 1 : 0);
-    case Op::kLessEqual:
-      return Value(width, a <= b ? 1 : 0);
-    case Op::kGreater:
-      return Value(width, a > b ? 1 : 0);
-    case Op::kGreaterEqual:
-      return Value(width, a >= b ? 1 : 0);
-    case Op::kEqual:
-      return Value(width, a == b ? 1 : 0);
-    case Op::kNotEqual:
-      return Value(width, a != b ? 1 : 0);
-    case Op::kAnd:
-      return Value(width, a & b);
-    case Op::kXor:
-      return Value(width, a ^ b);
-    case Op::kOr:
-      return Value(width, a | b);
-    default:
-      break;
+  const gb::Symbol op = node.op;
+
+  // An offset plus or minus a number is still an offset in its segment, and
+  // anything else is just a number.
+  if (op == '+') {
+    return Value(width, a + b,
+                 left.segment < 0    ? right.segment
+                 : right.segment < 0 ? left.segment
+                                     : -1);
+  }
+  if (op == '-') {
+    return Value(width, a - b, right.segment < 0 ? left.segment : -1);
+  }
+  if (op == '*') {
+    return Value(width, a * b);
+  }
+  if (op == '/' || op == '%') {
+    if (b == 0) {
+      return Error(node.token, "Division by zero");
+    }
+    return Value(width, op == '/' ? a / b : a % b);
+  }
+  if (op == "<<" || op == ">>") {
+    if (b >= static_cast<uint64_t>(GetBits(width))) {
+      return Value(width, 0);
+    }
+    return Value(width, op == "<<" ? a << b : a >> b);
+  }
+  if (op == '<') {
+    return Value(width, a < b ? 1 : 0);
+  }
+  if (op == "<=") {
+    return Value(width, a <= b ? 1 : 0);
+  }
+  if (op == '>') {
+    return Value(width, a > b ? 1 : 0);
+  }
+  if (op == ">=") {
+    return Value(width, a >= b ? 1 : 0);
+  }
+  if (op == "==") {
+    return Value(width, a == b ? 1 : 0);
+  }
+  if (op == "!=") {
+    return Value(width, a != b ? 1 : 0);
+  }
+  if (op == '&') {
+    return Value(width, a & b);
+  }
+  if (op == '^') {
+    return Value(width, a ^ b);
+  }
+  if (op == '|') {
+    return Value(width, a | b);
   }
   return Error(node.token, "Internal error: unknown binary operator");
 }
