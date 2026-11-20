@@ -103,8 +103,10 @@ that assembles today changes.
   whether a label or constant of that name is defined above it. They pair with
   constants from the host (see below), as in `.IFDEF DEBUG`.
 - **The expression must be known as the `.IF` is read** (see Passes), as for
-  `.DS`, so its symbols are defined above it. It is evaluated as a dword, so any
-  constant can be tested, including one that doesn't fit a word.
+  `.DS`, so its symbols are defined above it. It is evaluated as a word, as
+  the other directives' values are, so a constant that doesn't fit one is an
+  error there, and is tested through its halves instead: with `.CONST BIG =
+  70000`, `.IF HIGH(BIG) != 0`.
 - **Lines that aren't assembled aren't read,** except to find the `.IF`
   directives that end their block, so they can hold anything, even text that
   isn't valid source. An `.ELSEIF` after a block that was assembled isn't
@@ -384,23 +386,19 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 
 ## Open questions
 
-- [ ] Whether a use's statements are at the line that uses it (as above), or
-  at the body's lines, as an included file's are. At the use, the listing
-  shows what each use became, and the debugger shows the line the programmer
-  wrote. At the body, a debugger could step through a macro's lines, but the
-  listing would show every use's words under the definition, and nothing at
-  the use. Showing both, as MASM's listings did, needs the expanded lines in
-  the map, a larger change for later if it is wanted.
-- [ ] Whether `.IF` is evaluated as a dword (as above), so any constant can be
-  tested, or as a word, as the other directives' values are.
-- [ ] Whether constants from the host (CL5) are part of this feature, or a
-  backlog item of their own: without them, a configuration is a small main
-  file that defines its constants and includes the shared source.
-- [ ] Left out, for the backlog when the feature is done: repeating a block
-  (`.REPT`), defaults for macro arguments, joining a parameter to other text
-  (`table_&n`), leaving a macro early (`.EXITM`), and comparing a macro
-  argument's text (`.IFIDN` and `.IFDIF`, as MASM's `IFIDN` and `IFDIF`), such
-  as for a sequence of its own when an argument is `R7`.
+- [x] Whether a use's statements are at the line that uses it, or at the
+  body's lines, as an included file's are: at the use, so the listing shows
+  what each use became, and the debugger shows the line the programmer wrote.
+- [x] Whether `.IF` is evaluated as a dword, or as a word, as the other
+  directives' values are: a word, with a dword constant tested through
+  `HIGH()` and `LOW()`, rather than a dword `.IFD` beside it, which would
+  read close to `.IFDEF` and need an `.ELSEIFD` too.
+- [x] Whether constants from the host are part of this feature, or a backlog
+  item of their own: part of it, as CL5.
+- [x] Left out, for the backlog when the feature is done: repeating a block
+  (`.REPT`), and comparing a macro argument's text (`.IFIDN` and `.IFDIF`, as
+  MASM's `IFIDN` and `IFDIF`), such as for a sequence of its own when an
+  argument is `R7`.
 
 ## CLs
 
@@ -437,7 +435,8 @@ Depends on: CL1, for tests that compare.
   taken and skipped blocks; invalid source in a skipped block; an `.ELSEIF`
   with an unknown symbol after a taken block; `.IFDEF` and `.IFNDEF` of a
   label and a constant above and below; a condition with a symbol defined
-  below, an error; a dword condition; each unmatched directive; an `.IF` left
+  below, an error; a constant that doesn't fit a word, an error, and its
+  `HIGH()` tested; each unmatched directive; an `.IF` left
   open at the end of an included file; a label on each directive; skipped
   lines in the listing.
 - Manual pages updated.
