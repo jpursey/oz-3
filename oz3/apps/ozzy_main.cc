@@ -29,6 +29,7 @@
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/devices/power_control.h"
 #include "oz3/ozzy/console.h"
 #include "oz3/ozzy/console_display.h"
 #include "oz3/ozzy/ozzy.h"
@@ -69,9 +70,11 @@ const gb::CliCommand kProgram = {
     .name = "ozzy",
     .help =
         "Runs an Ozzy computer in the console, until Ctrl+Alt+Q or "
-        "Ctrl+Break, or the console's window is closed. Its drives have the "
-        "disks the config gives them, and write back what they hold when it "
-        "quits. Paths are written the operating system's way, absolute or "
+        "Ctrl+Break, or the console's window is closed. A program on it can "
+        "restart it, or shut it down, which leaves it off until it quits. Its "
+        "drives have the disks the config gives them, and write back what "
+        "they hold when it quits or the Ozzy powers off. Paths are written the "
+        "operating system's way, absolute or "
         "relative to the current directory, and a config's disk images "
         "relative to its folder.",
     .flags = {&kMaxSpeed, &kStats},
@@ -122,27 +125,30 @@ std::optional<OzzySettings> ReadSettings(
   return *std::move(settings);
 }
 
-// How a run of an Ozzy went.
+// How the runs of the Ozzy went, from its first power on, through each
+// restart, to the last power off.
 struct RunStats {
   int64_t frames = 0;
-  absl::Duration time;        // From the first frame's start to the last's end.
+  absl::Duration time;  // From each first frame's start to its last's end.
   absl::Duration frame_time;  // The time frames took, without waiting.
   Cycles cycles = 0;
 };
 
-// Runs `ozzy` in `console` until the user quits, each frame for the time since
+// Runs `ozzy` in `console` until the user quits or a program asks to power
+// off, which `power_request` holds once it does, each frame for the time since
 // the last, or with `max_speed_run_time`, in runs of that time until the next
-// frame.
-RunStats RunOzzy(Ozzy& ozzy, Console& console,
-                 std::optional<absl::Duration> max_speed_run_time) {
+// frame. Adds how it ran to `stats`.
+void RunOzzy(Ozzy& ozzy, Console& console,
+             std::optional<absl::Duration> max_speed_run_time,
+             const std::optional<PowerRequest>& power_request,
+             RunStats* stats) {
   Keyboard* const keyboard = ozzy.GetKeyboard();
   ConsoleDisplay display(ozzy, console);
-  RunStats stats;
   const Cycles start_cycles = ozzy.GetProcessor()->GetCycles();
   const absl::Time start_time = absl::Now();
   absl::Time last_time = start_time;
   absl::Time next_frame = last_time;
-  while (!console.IsQuitRequested()) {
+  while (!console.IsQuitRequested() && !power_request.has_value()) {
     const absl::Time frame_start = absl::Now();
 
     // Keys are taken without a keyboard too, so they don't pile up.
@@ -159,7 +165,7 @@ RunStats RunOzzy(Ozzy& ozzy, Console& console,
     next_frame += kFrameTime;
     absl::Time now = absl::Now();
     if (max_speed_run_time.has_value()) {
-      while (now < next_frame) {
+      while (now < next_frame && !power_request.has_value()) {
         ozzy.Run(*max_speed_run_time);
         now = absl::Now();
       }
@@ -172,17 +178,25 @@ RunStats RunOzzy(Ozzy& ozzy, Console& console,
     // A frame that ends late starts the next at once, rather than catching
     // up with frames run back to back.
     now = absl::Now();
-    ++stats.frames;
-    stats.frame_time += now - frame_start;
+    ++stats->frames;
+    stats->frame_time += now - frame_start;
     if (next_frame > now) {
       gb::PreciseSleepFor(next_frame - now);
     } else {
       next_frame = now;
     }
   }
-  stats.time = absl::Now() - start_time;
-  stats.cycles = ozzy.GetProcessor()->GetCycles() - start_cycles;
-  return stats;
+  stats->time += absl::Now() - start_time;
+  stats->cycles += ozzy.GetProcessor()->GetCycles() - start_cycles;
+}
+
+// Waits until the user quits, with the Ozzy off, dropping the keys typed
+// meanwhile.
+void WaitForQuit(Console& console) {
+  while (!console.IsQuitRequested()) {
+    console.TakeKeys();
+    gb::PreciseSleepFor(kFrameTime);
+  }
 }
 
 // Writes `stats` to the standard output.
@@ -214,35 +228,72 @@ bool Run(gb::ValidatedContext& context,
   if (settings->screen.has_value()) {
     settings->screen->draw_pixels = false;
   }
-  // The drives write to their images as the Ozzy is destroyed, which is before
-  // the file system in the context is.
+  std::optional<absl::Duration> max_speed_run_time;
+  if (command_line.Get(kMaxSpeed)) {
+    max_speed_run_time = absl::Seconds(kMaxSpeedRunCycles) / settings->clock_hz;
+  }
+
+  // A program's request to power off ends the run, so the first in a run is
+  // the one acted on.
+  std::optional<PowerRequest> power_request;
+
+  // The Ozzy's context outlives each Ozzy, as the drives write to their images
+  // in the file system as the Ozzy is destroyed.
   //
   // Programs see the date and time where the user is, and files are stamped
   // with it, as the context has no clock of its own (see kConstraintHostClock).
   // It is the host's time, so when the Ozzy can't keep up with its clock rate
   // (or runs at max speed), it drifts from the timer's ticks and milliseconds.
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(*settings, context);
-  if (!ozzy.ok()) {
-    writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
-                                             ozzy.status().message()));
-    return false;
+  gb::Context ozzy_context;
+  ozzy_context.SetPtr<gb::FileSystem>(file_system);
+  ozzy_context.SetNew<PowerRequestCallback>(
+      [&power_request](PowerRequest request) {
+        if (!power_request.has_value()) {
+          power_request = request;
+        }
+      });
+
+  // Each power on creates the Ozzy from its settings, and each power off
+  // destroys it, which writes back its drives. The console stays, as the
+  // settings, and so its mode, are the same every time.
+  std::unique_ptr<Console> console;
+  RunStats stats;
+  while (true) {
+    absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+        Ozzy::Create(*settings, &ozzy_context);
+    if (!ozzy.ok()) {
+      console.reset();
+      writer(gb::CliText::kError, absl::StrCat("Failed to create the Ozzy: ",
+                                               ozzy.status().message()));
+      return false;
+    }
+    const ConsoleMode mode = GetOzzyConsoleMode(**ozzy);
+    if (console == nullptr) {
+      absl::StatusOr<std::unique_ptr<Console>> new_console =
+          Console::Create(mode);
+      if (!new_console.ok()) {
+        writer(gb::CliText::kError,
+               absl::StrCat("Failed to take over the console: ",
+                            new_console.status().message()));
+        return false;
+      }
+      console = *std::move(new_console);
+    }
+    power_request.reset();
+    RunOzzy(**ozzy, *console, max_speed_run_time, power_request, &stats);
+    ozzy->reset();
+    if (!power_request.has_value()) {
+      break;
+    }
+    if (power_request->command == PowerCommand::kShutDown) {
+      ShowOzzyShutDown(*console, mode, power_request->exit_code);
+      WaitForQuit(*console);
+      break;
+    }
   }
-  absl::StatusOr<std::unique_ptr<Console>> console =
-      Console::Create(GetOzzyConsoleMode(**ozzy));
-  if (!console.ok()) {
-    writer(gb::CliText::kError,
-           absl::StrCat("Failed to take over the console: ",
-                        console.status().message()));
-    return false;
-  }
-  std::optional<absl::Duration> max_speed_run_time;
-  if (command_line.Get(kMaxSpeed)) {
-    max_speed_run_time = absl::Seconds(kMaxSpeedRunCycles) / settings->clock_hz;
-  }
-  const RunStats stats = RunOzzy(**ozzy, **console, max_speed_run_time);
 
   // The console is given back first, so the stats are in its own buffer.
-  console->reset();
+  console.reset();
   if (command_line.Get(kStats)) {
     WriteStats(stats);
   }
@@ -251,7 +302,6 @@ bool Run(gb::ValidatedContext& context,
 
 }  // namespace
 }  // namespace oz3
-
 int main(int argc, char* argv[]) {
   const std::unique_ptr<gb::FileSystem> file_system = gb::CreateCliFileSystem();
   gb::Context context;

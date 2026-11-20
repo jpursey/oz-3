@@ -15,6 +15,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "gb/base/context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
@@ -65,8 +66,17 @@ constexpr std::string_view kNoDrive = "ERROR: No drive A:";
 // Long enough for the boot ROM to answer Enter, and the screen to refresh.
 constexpr absl::Duration kKeyTime = absl::Milliseconds(100);
 
+// Returns a context with a power request callback that ignores requests, as
+// every Ozzy needs one.
+gb::Context PowerContext() {
+  gb::Context context;
+  context.SetNew<PowerRequestCallback>([](PowerRequest) {});
+  return context;
+}
+
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings) {
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, PowerContext());
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
@@ -255,6 +265,21 @@ TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
   display.Update();
   EXPECT_EQ(console.TakeText(), absl::StrCat("\r\nLoading...\r\n", kNoDrive,
                                              "\r\n\r\nPress Enter to Boot..."));
+}
+
+TEST(ConsoleDisplayTest, ShutDownInPlaceOfTheScreen) {
+  FakeConsole console;
+  ShowOzzyShutDown(console, ConsoleMode::kScreen, -3);
+  const std::string lines[] = {"Ozzy shut down, exit code -3.",
+                               "Ctrl+Alt+Q quits."};
+  EXPECT_EQ(console.TakeText(), DrawConsoleLines(lines));
+}
+
+TEST(ConsoleDisplayTest, ShutDownOnALineAfterTheTeletype) {
+  FakeConsole console;
+  ShowOzzyShutDown(console, ConsoleMode::kLines, 7);
+  EXPECT_EQ(console.TakeText(),
+            "\r\nOzzy shut down, exit code 7. Ctrl+Alt+Q quits.\r\n");
 }
 
 TEST(ConsoleDisplayTest, NeitherScreenNorTeletype) {

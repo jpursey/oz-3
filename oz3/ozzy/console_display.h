@@ -19,6 +19,11 @@ namespace oz3 {
 // or else lines.
 ConsoleMode GetOzzyConsoleMode(Ozzy& ozzy);
 
+// Shows in `console`, which is in `mode`, that the Ozzy shut down with
+// `exit_code`, and how to quit: in place of the screen, or on a line of its
+// own after the teletype's.
+void ShowOzzyShutDown(Console& console, ConsoleMode mode, int exit_code);
+
 // Shows an Ozzy in a Console, which is in the mode GetOzzyConsoleMode
 // returns: its screen's picture, or without a screen, its teletype's output.
 // With a screen, the teletype's output is dropped, as the console shows only

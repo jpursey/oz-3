@@ -78,6 +78,7 @@ enum class MachineDeviceType : uint16_t {
   kTeletype = 3,
   kTimer = 4,
   kDrive = 5,
+  kPower = 6,
 };
 
 inline constexpr int kMachineDeviceType = 0;

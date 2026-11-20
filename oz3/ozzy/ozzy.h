@@ -19,6 +19,7 @@
 #include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/devices/power_control.h"
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
 #include "oz3/devices/timer.h"
@@ -47,15 +48,23 @@ class Ozzy final {
   static GB_CONTEXT_CONSTRAINT(kConstraintFileSystem, kInOptional,
                                gb::FileSystem);
 
-  // What the Ozzy takes from its context. The context is also its processor's,
-  // so it holds what the devices need from the host too (see Create).
-  using Contract = gb::ContextContract<kConstraintFileSystem>;
+  // What the Ozzy takes from its context: the file system, and the host's
+  // callback for the requests programs make on the power port to shut down or
+  // restart (PowerControl::kConstraintPowerRequestCallback), which every Ozzy
+  // needs. The callback is called from inside Run, so it must not destroy the
+  // Ozzy or run it: the host notes the request, and acts on it once Run
+  // returns. The context is also the processor's, so it holds what the devices
+  // need from the host too (see Create).
+  using Contract =
+      gb::ContextContract<kConstraintFileSystem,
+                          PowerControl::kConstraintPowerRequestCallback>;
 
   //----------------------------------------------------------------------------
   // Constants
   //----------------------------------------------------------------------------
 
   // The names of the devices in the Processor.
+  static constexpr std::string_view kPowerName = "Power";
   static constexpr std::string_view kScreenName = "Screen";
   static constexpr std::string_view kKeyboardName = "Keyboard";
   static constexpr std::string_view kTeletypeName = "Teletype";
@@ -85,7 +94,7 @@ class Ozzy final {
   // whatever it uses must outlive the Ozzy, as must the context itself unless
   // the contract owns it.
   static absl::StatusOr<std::unique_ptr<Ozzy>> Create(
-      const OzzySettings& settings, Contract contract = gb::Context());
+      const OzzySettings& settings, Contract contract);
 
   Ozzy(const Ozzy&) = delete;
   Ozzy& operator=(const Ozzy&) = delete;

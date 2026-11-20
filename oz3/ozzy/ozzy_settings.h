@@ -39,13 +39,15 @@ constexpr uint16_t GetBootRomPages(int bank) {
 //==============================================================================
 
 // The wiring of each device, which is the same in every Ozzy, so programs know
-// it: the screen's page and interrupt, the keyboard's typed keys' port and
-// interrupt and its first key state port, the teletype's port, the timer's
-// first port and interrupt, and the drives'. Interrupt cores have bit n for
-// core n. The keyboard's interrupt is shared, so each key is handled by one
-// core, while the screen's refresh and the timer's tick are news for every core
-// with a handler. A drive's completion is for core 0 alone, the OS's, which
-// issues the drives' commands, as a completion can be read only once.
+// it: the power control's port, the screen's page and interrupt, the keyboard's
+// typed keys' port and interrupt and its first key state port, the teletype's
+// port, the timer's first port and interrupt, and the drives'. Interrupt cores
+// have bit n for core n. The keyboard's interrupt is shared, so each key is
+// handled by one core, while the screen's refresh and the timer's tick are news
+// for every core with a handler. A drive's completion is for core 0 alone, the
+// OS's, which issues the drives' commands, as a completion can be read only
+// once.
+inline constexpr int kOzzyPowerPort = 0;
 inline constexpr int kOzzyScreenBank = 0;
 inline constexpr int kOzzyScreenPage = 15;
 inline constexpr int kOzzyScreenInterrupt = 6;
