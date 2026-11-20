@@ -14,9 +14,23 @@
 
 namespace oz3 {
 
-ConsoleMode GetOzzyConsoleMode(Ozzy& ozzy) {
-  return ozzy.GetScreen() != nullptr ? ConsoleMode::kScreen
+ConsoleMode GetOzzyConsoleMode(const OzzySettings& settings) {
+  return settings.screen.has_value() ? ConsoleMode::kScreen
                                      : ConsoleMode::kLines;
+}
+
+void ShowOzzyShutDown(Console& console, ConsoleMode mode, int exit_code) {
+  const std::string lines[] = {
+      absl::StrCat("Ozzy shut down, exit code ", exit_code, "."),
+      "Ctrl+Alt+Q quits.",
+  };
+  if (mode == ConsoleMode::kScreen) {
+    console.Write(DrawConsoleLines(lines));
+    return;
+  }
+
+  // The teletype's last line may be unended.
+  console.Write(absl::StrCat("\r\n", lines[0], " ", lines[1], "\r\n"));
 }
 
 ConsoleDisplay::ConsoleDisplay(Ozzy& ozzy, Console& console)

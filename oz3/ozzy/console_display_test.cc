@@ -15,6 +15,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "gb/base/context.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
@@ -23,6 +24,7 @@
 #include "oz3/ozzy/console_text.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/ozzy_testing.h"
 
 namespace oz3 {
 namespace {
@@ -66,7 +68,8 @@ constexpr std::string_view kNoDrive = "ERROR: No drive A:";
 constexpr absl::Duration kKeyTime = absl::Milliseconds(100);
 
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings) {
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, WithPowerCallback());
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
@@ -82,13 +85,8 @@ OzzySettings TeletypeOnlySettings() {
 }
 
 TEST(ConsoleDisplayTest, ModeFollowsTheScreen) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
-  ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetOzzyConsoleMode(*ozzy), ConsoleMode::kScreen);
-
-  ozzy = CreateOzzy(TeletypeOnlySettings());
-  ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetOzzyConsoleMode(*ozzy), ConsoleMode::kLines);
+  EXPECT_EQ(GetOzzyConsoleMode(OzzySettings()), ConsoleMode::kScreen);
+  EXPECT_EQ(GetOzzyConsoleMode(TeletypeOnlySettings()), ConsoleMode::kLines);
 }
 
 TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefresh) {
@@ -255,6 +253,21 @@ TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
   display.Update();
   EXPECT_EQ(console.TakeText(), absl::StrCat("\r\nLoading...\r\n", kNoDrive,
                                              "\r\n\r\nPress Enter to Boot..."));
+}
+
+TEST(ConsoleDisplayTest, ShutDownInPlaceOfTheScreen) {
+  FakeConsole console;
+  ShowOzzyShutDown(console, ConsoleMode::kScreen, -3);
+  const std::string lines[] = {"Ozzy shut down, exit code -3.",
+                               "Ctrl+Alt+Q quits."};
+  EXPECT_EQ(console.TakeText(), DrawConsoleLines(lines));
+}
+
+TEST(ConsoleDisplayTest, ShutDownOnALineAfterTheTeletype) {
+  FakeConsole console;
+  ShowOzzyShutDown(console, ConsoleMode::kLines, 7);
+  EXPECT_EQ(console.TakeText(),
+            "\r\nOzzy shut down, exit code 7. Ctrl+Alt+Q quits.\r\n");
 }
 
 TEST(ConsoleDisplayTest, NeitherScreenNorTeletype) {

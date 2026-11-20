@@ -1,12 +1,12 @@
 # Ozzy Computer
 
-The **Ozzy** is a computer built on the OZ-3: a processor with its cores, memory banks, and ports, a console of a [screen, a keyboard, and a teletype](3-Devices.md), a [timer](3.4-Timer.md), and up to four [disk drives](3.5-Disk-Drive.md), `A:` to `D:`.
+The **Ozzy** is a computer built on the OZ-3: a processor with its cores, memory banks, and ports, a console of a [screen, a keyboard, and a teletype](3-Devices.md), a [timer](3.4-Timer.md), up to four [disk drives](3.5-Disk-Drive.md), `A:` to `D:`, and a [power control](3.6-Power-Control.md), which programs shut it down and restart it with.
 
 Ozzys aren't all alike. A config file says how fast an Ozzy is, how many cores and how much memory it has, and which devices it has. Programs find out what they are running on from the **machine table**, which the Ozzy puts in memory at power on. How each device is wired (its port, interrupt, and memory) is the same in every Ozzy, so programs can rely on it.
 
 ### The config file
 
-An Ozzy is described by a `.ozzy` file. Everything has a default, so an empty file is the default Ozzy: 1 MHz, one core, 48 ports, one bank with 56 Kiw of RAM, a screen, a keyboard, and a timer, with no drives.
+An Ozzy is described by a `.ozzy` file. Everything has a default, so an empty file is the default Ozzy: 1 MHz, one core, 48 ports, one bank with 56 Kiw of RAM, a screen, a keyboard, and a timer, with no drives, and the power control every Ozzy has.
 
 ```
 // hello.ozzy
@@ -47,7 +47,7 @@ Page 0 of bank 0 is always the boot ROM, so bank 0's mask can't have bit 0. An O
 
 #### Devices
 
-`devices` is a list of the Ozzy's devices, each a map with a `type` of `"screen"`, `"keyboard"`, `"teletype"`, or `"timer"`, and its settings. A setting left out takes its default, so `{ type: "screen" }` is an 80 by 24 screen. Without `devices`, the Ozzy has a screen, a keyboard, and a timer, each with its defaults, and `devices: []` is an Ozzy with none.
+`devices` is a list of the Ozzy's devices, each a map with a `type` of `"screen"`, `"keyboard"`, `"teletype"`, or `"timer"`, and its settings. A setting left out takes its default, so `{ type: "screen" }` is an 80 by 24 screen. Without `devices`, the Ozzy has a screen, a keyboard, and a timer, each with its defaults, and `devices: []` is an Ozzy with none. Every Ozzy has a power control as well, which a config file doesn't list, as it has no settings and can't be left out.
 
 An Ozzy has at most one of each device, as its console shows one screen and one teletype, it is typed on with one keyboard, and one timer is all its cores need.
 
@@ -55,6 +55,7 @@ Each device is wired the same way in every Ozzy, so a config file doesn't say ho
 
 | Device   | Ports                                   | Interrupt               | Memory            |
 | -------- | --------------------------------------- | ----------------------- | ----------------- |
+| Power    | 0                                       | none                    | none              |
 | Screen   | none                                    | 6, on every core        | Page 15 of bank 0 |
 | Keyboard | 1 for typed keys, and 6 to 15 key state | 1, shared by every core | none              |
 | Teletype | 2                                       | none                    | none              |
@@ -64,7 +65,7 @@ Each device is wired the same way in every Ozzy, so a config file doesn't say ho
 | Drive C: | 22 to 24                                | 4, on core 0            | none              |
 | Drive D: | 25 to 27                                | 5, on core 0            | none              |
 
-The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on ports 6 to 15. Each drive has 3 ports, its command, data, and control ports (see [Ports](3.5-Disk-Drive.md#ports)), from port 16 for `A:`, leaving ports 0, 5, and 28 to 31 for devices to come. An Ozzy's drives are lettered in order, from `A:`, so an Ozzy with drives always has an `A:`, which may be empty.
+The keyboard has both typed keys and key state (see [Keyboard](3.2-Keyboard.md)), and its interrupt is for typed keys. Its key state is on ports 6 to 15. Each drive has 3 ports, its command, data, and control ports (see [Ports](3.5-Disk-Drive.md#ports)), from port 16 for `A:`, leaving ports 5 and 28 to 31 for devices to come. An Ozzy's drives are lettered in order, from `A:`, so an Ozzy with drives always has an `A:`, which may be empty.
 
 The keyboard's interrupt is shared, so each key is handled by only one core (see [Interrupts](2-Specifications.md#interrupts)). The screen's refresh and the timer's tick are news for every core, so they are not shared, and every core with a handler for them is told. A drive's completion is for core 0 alone, which boots the Ozzy and runs the operating system, as the operating system issues every drive command, and a completion can be read only once (see [The command protocol](3.5-Disk-Drive.md#the-command-protocol)). Another core can still use a drive by reading its control port, but only core 0 can wait for its interrupt.
 
@@ -160,11 +161,11 @@ Bank `n`'s entry is at `F08h + 2n`, with bit `p` for page `p`. A bank the Ozzy d
 | 0    | ROM pages: 0001h for bank 0, and 0 otherwise |
 | 1    | RAM pages                                    |
 
-Device entry `n` is at `F28h + 8n`. The Ozzy's devices come first, in a fixed order: the screen, the keyboard, the teletype, the timer, then the drives in letter order, for those it has. The entries after them are all 0.
+Device entry `n` is at `F28h + 8n`. The Ozzy's devices come first, in a fixed order: the power control, the screen, the keyboard, the teletype, the timer, then the drives in letter order, for those it has. The entries after them are all 0.
 
 | Word | Device entry                                                                                   |
 | ---- | ---------------------------------------------------------------------------------------------- |
-| 0    | Type: 1 for the screen, 2 the keyboard, 3 the teletype, 4 the timer, 5 a drive, 0 for none    |
+| 0    | Type: 1 for the screen, 2 the keyboard, 3 the teletype, 4 the timer, 5 a drive, 6 the power control, 0 for none |
 | 1    | Port (the keyboard's typed keys, the timer's tick port, or a drive's command port), or FFFFh for none |
 | 2    | Interrupt, or FFFFh for none                                                                   |
 | 3    | Interrupt cores, with bit `n` for core `n`, and bit 15 if it is shared, or 0 for no interrupt  |
@@ -182,13 +183,14 @@ For example, the default Ozzy's table is:
 
 | Words      | Values                               | What                                                            |
 | ---------- | ------------------------------------ | --------------------------------------------------------------- |
-| F00h-F07h  | 1, 4240h, 000Fh, 1, 30h, 1, 3, 0     | Version 1, 1 MHz, 1 core, 48 ports, 1 bank, and 3 devices       |
+| F00h-F07h  | 1, 4240h, 000Fh, 1, 30h, 1, 4, 0     | Version 1, 1 MHz, 1 core, 48 ports, 1 bank, and 4 devices       |
 | F08h-F09h  | 0001h, 7FFEh                         | Bank 0: the boot ROM on page 0, and RAM on pages 1 to 14        |
 | F0Ah-F27h  | 0                                    | Banks 1 to 15, which it doesn't have                            |
-| F28h-F2Fh  | 1, FFFFh, 6, 0001h, 0, 0Fh, 50h, 18h | The screen: interrupt 6 on core 0, page 15 of bank 0, 80 by 24  |
-| F30h-F37h  | 2, 1, 1, 8001h, FFFFh, FFFFh, 6, 0   | The keyboard: typed keys on port 1 with interrupt 1 shared on core 0, and key state on ports 6 to 15 |
-| F38h-F3Fh  | 4, 3, 0, 0001h, FFFFh, FFFFh, 3Ch, 0 | The timer: ticks on port 3 with interrupt 0 on core 0, and the clock on port 4, at 60 ticks a second |
-| F40h-FFFh  | 0                                    | No more devices, and the reserved words                         |
+| F28h-F2Fh  | 6, 0, FFFFh, 0, FFFFh, FFFFh, 0, 0   | The power control, on port 0                                    |
+| F30h-F37h  | 1, FFFFh, 6, 0001h, 0, 0Fh, 50h, 18h | The screen: interrupt 6 on core 0, page 15 of bank 0, 80 by 24  |
+| F38h-F3Fh  | 2, 1, 1, 8001h, FFFFh, FFFFh, 6, 0   | The keyboard: typed keys on port 1 with interrupt 1 shared on core 0, and key state on ports 6 to 15 |
+| F40h-F47h  | 4, 3, 0, 0001h, FFFFh, FFFFh, 3Ch, 0 | The timer: ticks on port 3 with interrupt 0 on core 0, and the clock on port 4, at 60 ticks a second |
+| F48h-FFFh  | 0                                    | No more devices, and the reserved words                         |
 
 ### The boot ROM
 
@@ -303,6 +305,7 @@ It runs at the Ozzy's clock rate, or with `--max-speed`, as fast as the host can
 * **The screen** is drawn as text, in place of what the console showed, which is back once `ozzy` quits. Each character is drawn as the Unicode character closest to its glyph, with the inverse, half intensity, blink, and top and bottom line attributes, and the cursor in its place, shape, and blinking. Text can't show the left and right lines, redefined glyphs, the alternate character set, or compact rows, so those are left out. The console needs to be at least as large as the screen: while it is smaller, it says how large it needs to be in place of the screen. A font with Unicode's sextants (such as Cascadia Mono) draws them.
 * **The teletype**, in an Ozzy without a screen, prints in the console as it comes, and its lines stay once `ozzy` quits, which ends the last line if the teletype left it unfinished. Control characters other than bell, backspace, tab, line feed, and carriage return are dropped. In an Ozzy with a screen, the teletype's output isn't shown.
 * **The keyboard** takes the console's keys, as typed keys, with the key events [Keyboard](3.2-Keyboard.md#key-events) lists, and as key state, each key held from its press to its release, by where it is on the keyboard (see [Key codes](3.2-Keyboard.md#key-codes)). Every key is typed, Ctrl+C too, but for the keys that quit, which are still in the key state. When the console loses focus, every key held is released, as the console doesn't see keys released elsewhere. A terminal sends only the characters typed, so there a character holds no Shift, and the key state is made up from each typed key: its key is where it is on a US keyboard (`!` is the 1 key), pressed and released at once, with the left Shift, Ctrl, and Alt its modifiers say. So a program sees each key pressed but never held, and a key held down pressed again as the terminal repeats it.
-* **The drives** have the disks the config gives them from power on, and keep them until `ozzy` quits, when each drive writes back to its image what it hadn't yet. Closing the Windows console's window gives `ozzy` only the few seconds Windows allows before ending it, which may not be long enough for a large write-back, so quit with Ctrl+Alt+Q to be sure. Disks can't be changed while it runs. Meanwhile, nothing else may change their images, not even `oz3dsk`.
+* **The drives** have the disks the config gives them from power on, and keep them until the Ozzy powers off, when each drive writes back to its image what it hadn't yet. Closing the Windows console's window gives `ozzy` only the few seconds Windows allows before ending it, which may not be long enough for a large write-back, so quit with Ctrl+Alt+Q to be sure. Disks can't be changed while it runs. Meanwhile, nothing else may change their images, not even `oz3dsk`.
 * **The timer's date and time**, and the drives' file stamps, are the host's, in its local time zone. They keep the host's time even when the Ozzy doesn't keep up with its clock rate, or runs with `--max-speed`, so then they drift from the timer's ticks and milliseconds.
+* **Powering off** is a program's to ask for, on the power port (see [Power Control](3.6-Power-Control.md)). A restart powers the Ozzy off and on again at once: RAM is cleared, every device starts as at power on, the drives write back and then have the config's disks again, and the boot ROM starts over. A shutdown powers it off, and leaves it off, saying so with the exit code (`Ozzy shut down, exit code 3.`), until `ozzy` quits, which exits with 0. If a program asks more than once before the Ozzy powers off, which takes up to a frame, the first request is the one acted on.
 * **Quitting** is Ctrl+Alt+Q, Ctrl+Break in the Windows console, or closing the console's window. AltGr is Ctrl+Alt, so where AltGr with Q types a character (such as @), it types it rather than quitting.

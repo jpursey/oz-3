@@ -21,6 +21,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
+#include "gb/base/context.h"
 #include "gb/file/file_system.h"
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
@@ -44,6 +45,7 @@
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/ozzy_testing.h"
 #include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program.h"
@@ -419,7 +421,8 @@ class BootRomTest : public ::testing::Test {
   // null, or null if the Ozzy can't be created.
   std::unique_ptr<Ozzy> Boot(const OzzySettings& settings,
                              std::unique_ptr<DiskImage> image = nullptr) {
-    absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+    absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+        Ozzy::Create(settings, WithPowerCallback());
     EXPECT_TRUE(ozzy.ok()) << ozzy.status();
     if (!ozzy.ok()) {
       return nullptr;
@@ -752,7 +755,8 @@ TEST_F(BootRomTest, ModifiersMakeNoDifference) {
 
 TEST_F(BootRomTest, KeysBeforeThePromptCount) {
   // Keys pressed while the boot ROM shows the banner wait in the keyboard.
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(OzzySettings());
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), WithPowerCallback());
   ASSERT_TRUE(ozzy.ok()) << ozzy.status();
   EXPECT_TRUE((*ozzy)->GetKeyboard()->TypeKey('a'));
   EXPECT_TRUE((*ozzy)->GetKeyboard()->TypeKey(kKeyEnter));

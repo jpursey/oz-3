@@ -37,6 +37,7 @@
 #include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/devices/power_control.h"
 #include "oz3/devices/timer.h"
 #include "oz3/disk/disk_dir_entry.h"
 #include "oz3/disk/disk_file_system.h"
@@ -47,6 +48,7 @@
 #include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/ozzy_testing.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
 #include "oz3/tools/program_loader.h"
@@ -58,17 +60,51 @@ using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 
-// Returns an Ozzy for `settings`, with `context` as its host's, failing the
-// test if it can't be created.
+// Returns an Ozzy for `settings`, with `context` and a power request callback
+// that ignores requests as its host's, failing the test if it can't be
+// created.
 std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
                                  gb::Context context = {}) {
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings, std::move(context));
+      Ozzy::Create(settings, WithPowerCallback(std::move(context)));
   EXPECT_TRUE(ozzy.ok()) << ozzy.status();
   if (!ozzy.ok()) {
     return nullptr;
   }
   return std::move(*ozzy);
+}
+
+// Assembles `text` in the default instruction set, adding a test failure for
+// each error, loads it into `ozzy`, and resets core 0 to run it. Returns
+// whether it did.
+bool LoadOnCore0(Ozzy& ozzy, std::string_view text) {
+  InstructionError error;
+  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
+      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
+  if (syntax == nullptr) {
+    ADD_FAILURE() << error.message;
+    return false;
+  }
+  std::vector<gb::ParseError> errors;
+  std::unique_ptr<AsmProgram> program =
+      AssembleProgram(*syntax, std::string(text), &errors);
+  for (const gb::ParseError& parse_error : errors) {
+    ADD_FAILURE() << parse_error.FormatMessage();
+  }
+  if (program == nullptr) {
+    return false;
+  }
+  ProgramLoader loader(ozzy.GetProcessor());
+  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
+  if (handle == ProgramLoader::kInvalidHandle) {
+    ADD_FAILURE() << "The program doesn't load";
+    return false;
+  }
+  CpuCore* core = ozzy.GetProcessor()->GetCore(0);
+  std::unique_ptr<Lock> lock = core->RequestLock();
+  EXPECT_TRUE(lock->IsLocked());
+  core->Reset(*lock, loader.GetResetParams(handle));
+  return true;
 }
 
 // Returns `count` words of the machine table from `offset`.
@@ -100,6 +136,28 @@ TEST(OzzyTest, DefaultOzzy) {
   for (const char letter : {'A', 'B', 'C', 'D'}) {
     EXPECT_EQ(ozzy->GetDrive(letter), nullptr) << letter;
   }
+}
+
+TEST(OzzyTest, PowerRequestsReachTheCallback) {
+  std::vector<PowerRequest> requests;
+  gb::Context context;
+  context.SetNew<PowerRequestCallback>(
+      [&requests](PowerRequest request) { requests.push_back(request); });
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), std::move(context));
+  ASSERT_TRUE(ozzy.ok()) << ozzy.status();
+
+  // The power port is port 0, with the command in word 0 and the exit code in
+  // word 1.
+  ASSERT_TRUE(LoadOnCore0(**ozzy, R"---(
+      .STACK 0
+      OUT.ID 0, 0FFFD0001h
+      HALT
+  )---"));
+  (*ozzy)->Run(absl::Milliseconds(1));
+  EXPECT_THAT(requests,
+              ElementsAre(PowerRequest{.command = PowerCommand::kShutDown,
+                                       .exit_code = -3}));
 }
 
 TEST(OzzyTest, TimerTicks) {
@@ -142,7 +200,7 @@ TEST(OzzyTest, TheTimerReadsZerosWithAnEmptyClock) {
   gb::Context context;
   context.SetValue<HostClock>(HostClock());
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(OzzySettings(), std::move(context));
+      Ozzy::Create(OzzySettings(), WithPowerCallback(std::move(context)));
   ASSERT_TRUE(ozzy.ok()) << ozzy.status();
   EXPECT_THAT(AskTime(**ozzy), ElementsAre(0, 0));
 }
@@ -242,7 +300,7 @@ TEST(OzzyTest, DefaultMachineTable) {
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
-      ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 48, 1, 3, 0));
+      ElementsAre(kMachineTableVersion, 0x4240, 0x000F, 1, 48, 1, 4, 0));
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, kMachineBankSize),
               ElementsAre(0x0001, 0x7FFE));
 
@@ -251,6 +309,9 @@ TEST(OzzyTest, DefaultMachineTable) {
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableDevices - offset),
               Each(0));
   offset = kMachineTableDevices;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
+              ElementsAre(6, 0, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));
+  offset += kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
               ElementsAre(1, 0xFFFF, 6, 0x01, 0, 15, 80, 24));
   offset += kMachineDeviceSize;
@@ -278,13 +339,16 @@ TEST(OzzyTest, FullMachineTable) {
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
-      ElementsAre(kMachineTableVersion, 0xE100, 0x05F5, 3, 256, 3, 4, 0));
+      ElementsAre(kMachineTableVersion, 0xE100, 0x05F5, 3, 256, 3, 5, 0));
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableBanks, 3 * kMachineBankSize),
               ElementsAre(0x0001, 0x0002, 0, 0xFFFF, 0, 0x7FFF));
   int offset = kMachineTableBanks + 3 * kMachineBankSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableDevices - offset),
               Each(0));
   offset = kMachineTableDevices;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineDeviceSize),
+              ElementsAre(6, 0, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));
+  offset += kMachineDeviceSize;
 
   // The screen's, keyboard's, and timer's interrupts are on every core, which
   // is only the cores the Ozzy has. The keyboard's is shared.
@@ -319,19 +383,22 @@ TEST(OzzyTest, AllBanksMachineTable) {
   // The devices are where they always are, right after the last bank.
   EXPECT_EQ(last_bank + kMachineBankSize, kMachineTableDevices);
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices, kMachineDeviceSize),
-              ElementsAre(1, 0xFFFF, 6, 0x01, 0, 15, 80, 24));
+              ElementsAre(6, 0, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));
 }
 
 TEST(OzzyTest, NoDevicesMachineTable) {
+  // The power control is the one device every Ozzy has.
   OzzySettings settings;
   settings.screen.reset();
   settings.keyboard = false;
   settings.timer.reset();
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 0);
-  EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices,
-                            kMachineTableSize - kMachineTableDevices),
+  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 1);
+  EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices, kMachineDeviceSize),
+              ElementsAre(6, 0, 0xFFFF, 0, 0xFFFF, 0xFFFF, 0, 0));
+  const int offset = kMachineTableDevices + kMachineDeviceSize;
+  EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
 }
 
@@ -354,6 +421,12 @@ class OzzyDriveTest : public ::testing::Test {
  protected:
   OzzyDriveTest() {
     host_.Register(std::make_unique<gb::MemoryFileProtocol>());
+  }
+
+  // Returns a context for an Ozzy whose host is `host_`.
+  gb::Context HostContext() {
+    return WithPowerCallback(
+        gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
   }
 
   // Makes a formatted image at `path`.
@@ -426,14 +499,14 @@ TEST_F(OzzyDriveTest, MachineTableWithSomeDrives) {
   settings.drives = {{.slots = 3}, {.slots = 255}};
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 5);
-  EXPECT_EQ(GetDeviceEntry(*ozzy, 2)[kMachineDeviceType],
+  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 6);
+  EXPECT_EQ(GetDeviceEntry(*ozzy, 3)[kMachineDeviceType],
             static_cast<uint16_t>(MachineDeviceType::kTimer));
-  EXPECT_THAT(GetDeviceEntry(*ozzy, 3),
-              ElementsAre(5, 16, 2, 0x01, 0xFFFF, 0xFFFF, 'A', 3));
   EXPECT_THAT(GetDeviceEntry(*ozzy, 4),
+              ElementsAre(5, 16, 2, 0x01, 0xFFFF, 0xFFFF, 'A', 3));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 5),
               ElementsAre(5, 19, 3, 0x01, 0xFFFF, 0xFFFF, 'B', 255));
-  const int offset = kMachineTableDevices + 5 * kMachineDeviceSize;
+  const int offset = kMachineTableDevices + 6 * kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
 }
@@ -444,16 +517,16 @@ TEST_F(OzzyDriveTest, MachineTableWithEveryDevice) {
   settings.drives.resize(kOzzyDriveCount);
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 8);
-  EXPECT_THAT(GetDeviceEntry(*ozzy, 4),
-              ElementsAre(5, 16, 2, 0x01, 0xFFFF, 0xFFFF, 'A', 4));
+  EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 9);
   EXPECT_THAT(GetDeviceEntry(*ozzy, 5),
-              ElementsAre(5, 19, 3, 0x01, 0xFFFF, 0xFFFF, 'B', 4));
+              ElementsAre(5, 16, 2, 0x01, 0xFFFF, 0xFFFF, 'A', 4));
   EXPECT_THAT(GetDeviceEntry(*ozzy, 6),
-              ElementsAre(5, 22, 4, 0x01, 0xFFFF, 0xFFFF, 'C', 4));
+              ElementsAre(5, 19, 3, 0x01, 0xFFFF, 0xFFFF, 'B', 4));
   EXPECT_THAT(GetDeviceEntry(*ozzy, 7),
+              ElementsAre(5, 22, 4, 0x01, 0xFFFF, 0xFFFF, 'C', 4));
+  EXPECT_THAT(GetDeviceEntry(*ozzy, 8),
               ElementsAre(5, 25, 5, 0x01, 0xFFFF, 0xFFFF, 'D', 4));
-  const int offset = kMachineTableDevices + 8 * kMachineDeviceSize;
+  const int offset = kMachineTableDevices + 9 * kMachineDeviceSize;
   EXPECT_THAT(GetTableWords(*ozzy, offset, kMachineTableSize - offset),
               Each(0));
 }
@@ -463,8 +536,7 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
   MakeImage("mem:/d.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/d.ozd"}};
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(
-      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, HostContext());
   ASSERT_NE(ozzy, nullptr);
 
   // Each control port shows whether its drive has a disk once it has read the
@@ -487,8 +559,7 @@ TEST_F(OzzyDriveTest, AConfigsImagesAreFromItsFolder) {
       "drives: [{ preset: 'floppy-1440k', image: 'disks/a.ozd' }]",
       "mem:/configs/work.ozzy");
   ASSERT_TRUE(settings.ok()) << settings.status();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(
-      *settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
+  std::unique_ptr<Ozzy> ozzy = CreateOzzy(*settings, HostContext());
   ASSERT_NE(ozzy, nullptr);
   EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
 }
@@ -497,8 +568,8 @@ TEST_F(OzzyDriveTest, MissingImage) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {.image = "mem:/b.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
-      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, HostContext());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kNotFound);
   EXPECT_EQ(ozzy.status().message(),
@@ -508,7 +579,8 @@ TEST_F(OzzyDriveTest, MissingImage) {
 TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
   OzzySettings settings;
   settings.drives = {{}, {}, {.image = "mem:/c.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, WithPowerCallback());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
   EXPECT_EQ(ozzy.status().message(),
@@ -518,8 +590,8 @@ TEST_F(OzzyDriveTest, ImageWithoutAFileSystem) {
 TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
   OzzySettings settings;
   settings.drives = {{}, {.slots = 0}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
-      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, HostContext());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Disk drive B: has 0 slots"));
 }
@@ -528,8 +600,8 @@ TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/a.ozd"}};
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(
-      settings, gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, HostContext());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().message(),
             "drive D: image mem:/a.ozd is also drive A's");
@@ -665,39 +737,6 @@ constexpr std::string_view kWriteLogProgram = R"---(
     .SEGMENT stack STACK
 )---";
 
-// Assembles `text` in the default instruction set, adding a test failure for
-// each error, loads it into `ozzy`, and resets core 0 to run it. Returns
-// whether it did.
-bool LoadOnCore0(Ozzy& ozzy, std::string_view text) {
-  InstructionError error;
-  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
-      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
-  if (syntax == nullptr) {
-    ADD_FAILURE() << error.message;
-    return false;
-  }
-  std::vector<gb::ParseError> errors;
-  std::unique_ptr<AsmProgram> program =
-      AssembleProgram(*syntax, std::string(text), &errors);
-  for (const gb::ParseError& parse_error : errors) {
-    ADD_FAILURE() << parse_error.FormatMessage();
-  }
-  if (program == nullptr) {
-    return false;
-  }
-  ProgramLoader loader(ozzy.GetProcessor());
-  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
-  if (handle == ProgramLoader::kInvalidHandle) {
-    ADD_FAILURE() << "The program doesn't load";
-    return false;
-  }
-  CpuCore* core = ozzy.GetProcessor()->GetCore(0);
-  std::unique_ptr<Lock> lock = core->RequestLock();
-  EXPECT_TRUE(lock->IsLocked());
-  core->Reset(*lock, loader.GetResetParams(handle));
-  return true;
-}
-
 TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
   MakeImage("mem:/a.ozd");
   OzzySettings settings;
@@ -742,10 +781,18 @@ TEST(OzzyTest, NoContext) {
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
 }
 
+TEST(OzzyTest, NoPowerRequestCallback) {
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(OzzySettings(), gb::Context());
+  ASSERT_FALSE(ozzy.ok());
+  EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
+}
+
 TEST(OzzyTest, InvalidSettings) {
   OzzySettings settings;
   settings.cores = 0;
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, WithPowerCallback());
   ASSERT_FALSE(ozzy.ok());
   EXPECT_EQ(ozzy.status().code(), absl::StatusCode::kInvalidArgument);
   EXPECT_EQ(ozzy.status().message(), "cores: must be 1 to 8");
@@ -754,19 +801,20 @@ TEST(OzzyTest, InvalidSettings) {
 TEST(OzzyTest, DeviceErrors) {
   OzzySettings settings;
   settings.screen->columns = 200;
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy = Ozzy::Create(settings);
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, WithPowerCallback());
   EXPECT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Screen Screen"));
 
   settings = OzzySettings();
   settings.teletype = OzzyTeletypeSettings{.baud = -1};
-  ozzy = Ozzy::Create(settings);
+  ozzy = Ozzy::Create(settings, WithPowerCallback());
   EXPECT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Teletype"));
 
   settings = OzzySettings();
   settings.timer->tick_hz = 0;
-  ozzy = Ozzy::Create(settings);
+  ozzy = Ozzy::Create(settings, WithPowerCallback());
   EXPECT_FALSE(ozzy.ok());
   EXPECT_THAT(ozzy.status().message(), HasSubstr("Timer Timer"));
 }

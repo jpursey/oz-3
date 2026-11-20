@@ -100,7 +100,10 @@ std::array<uint16_t, kMachineTableSize> GetMachineTable(
   entries = absl::MakeSpan(table).subspan(kMachineTableDevices);
   for (const std::shared_ptr<const DeviceFactory>& device : devices) {
     const DeviceConfig& device_config = device->GetConfig();
-    if (device_config.name == Ozzy::kScreenName) {
+    if (device_config.name == Ozzy::kPowerName) {
+      WriteDeviceEntry(MachineDeviceType::kPower, device_config, settings.cores,
+                       entries);
+    } else if (device_config.name == Ozzy::kScreenName) {
       WriteDeviceEntry(MachineDeviceType::kScreen, device_config,
                        settings.cores, entries);
       entries[kMachineDeviceData] =
@@ -169,6 +172,8 @@ absl::StatusOr<ProcessorConfig> GetProcessorConfig(
   for (int i = 0; i < bank_count; ++i) {
     config.SetMemoryBank(i, GetMemoryBankConfig(i, settings.banks[i]));
   }
+  config.AddDevice(std::make_shared<PowerControlFactory>(
+      Ozzy::kPowerName, PowerControlSettings{.port = kOzzyPowerPort}));
   if (settings.screen.has_value()) {
     absl::StatusOr<std::unique_ptr<ScreenFactory>> screen =
         ScreenFactory::Create(Ozzy::kScreenName,

@@ -61,6 +61,7 @@ set(oz3_ozzy_TEST_SOURCE
   console_text_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc
+  ozzy_testing.cc ozzy_testing.h
   terminal_keys_test.cc
   ${oz3_ozzy_internal_TEST_SOURCE}
 )
