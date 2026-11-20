@@ -72,17 +72,38 @@
         },
         // ozzy, debugged from Run and Debug, is built first and then runs in a
         // terminal of its own on the desktop, which gets every key, where VS
-        // Code's own terminal keeps the keys it has shortcuts for. Other
-        // programs debug from CMake Tools as usual.
+        // Code's own terminal keeps the keys it has shortcuts for. There is one
+        // configuration for the default Ozzy, and one for each config in
+        // configs/. Other programs debug from CMake Tools as usual.
         "launch": {
           "version": "0.2.0",
           "configurations": [
             {
-              "name": "ozzy (desktop terminal)",
+              "name": "ozzy",
               "type": "cppdbg",
               "request": "launch",
               "program": "${input:ozzyPath}",
               "args": [],
+              "cwd": "${workspaceFolder}",
+              "externalConsole": true,
+              "MIMode": "gdb"
+            },
+            {
+              "name": "ozzy: console.ozzy",
+              "type": "cppdbg",
+              "request": "launch",
+              "program": "${input:ozzyPath}",
+              "args": ["configs/console.ozzy"],
+              "cwd": "${workspaceFolder}",
+              "externalConsole": true,
+              "MIMode": "gdb"
+            },
+            {
+              "name": "ozzy: teletype.ozzy",
+              "type": "cppdbg",
+              "request": "launch",
+              "program": "${input:ozzyPath}",
+              "args": ["configs/teletype.ozzy"],
               "cwd": "${workspaceFolder}",
               "externalConsole": true,
               "MIMode": "gdb"
