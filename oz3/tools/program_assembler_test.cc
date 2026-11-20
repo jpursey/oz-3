@@ -1153,6 +1153,37 @@ TEST_F(ProgramAssemblerTest, AddressesInTheWrongSegment) {
                                     "segment has it")));
 }
 
+TEST_F(ProgramAssemblerTest, LabelsInDifferentSegments) {
+  // Combining labels or "$" in different segments is an error wherever it is,
+  // not just in an address. A label as a value, and a distance between labels
+  // in the same segment, are fine.
+  constexpr std::string_view kCombined =
+      "Labels or $ in different segments can't be combined";
+  EXPECT_THAT(
+      AssembleErrors(R"---(.STACK 4
+        .SEGMENT main CODE
+          PUSH.W table
+          PUSH.W table + 1 - start
+          PUSH.W table_end - table
+          PUSH.W table - start
+          .DW table, $ - table
+          .DW vars + table
+        start:
+        .CONST SIZE = table_end - vars
+        .SEGMENT data DATA
+        table:
+          .DW 1, 2, SIZE
+        table_end:
+        .SEGMENT extra EXTRA
+        vars:
+          .DS 1
+        .SEGMENT stack STACK
+      )---"),
+      ElementsAre(IsErrorAt(3, 27, kCombined), IsErrorAt(5, 23, kCombined),
+                  IsErrorAt(6, 23, kCombined), IsErrorAt(7, 19, kCombined),
+                  IsErrorAt(9, 32, kCombined)));
+}
+
 TEST_F(ProgramAssemblerTest, JumpTargetsInCode) {
   // A CODE value, or a relative one, is a target in the CODE segment, but a
   // register or plain number isn't checked.

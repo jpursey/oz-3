@@ -48,7 +48,8 @@ struct ExpressionResult {
   // label is an offset in its segment, and "$" in the statement's (see
   // ExpressionContext). Adding a number to one, or subtracting a number from
   // one, is an offset in the same segment. Any other arithmetic on one (such
-  // as subtracting two labels, for their distance) is just a number.
+  // as subtracting two labels, for their distance) is just a number, but
+  // combining offsets in two different segments is an error.
   int segment = -1;
 
   gb::ParseError error;
