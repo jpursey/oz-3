@@ -204,7 +204,7 @@ or a terminal on other platforms (see `posix_console.cc` below).
 - **What text can't show:** the left and right lines, redefined glyphs, the
   alternate character set (which is a copy of the first, until redefined),
   compact rows, and the exact blink timing. A graphical frontend would show
-  the pixels as they are (see *Graphical frontend* in the backlog).
+  the pixels as they are (see *Window app* in the backlog).
 - **Teletype:** for an Ozzy without a screen, it writes the teletype's output
   to the console as it comes, in the console's own buffer with wrapping, so
   the transcript stays after quitting, and a last line left unended is ended

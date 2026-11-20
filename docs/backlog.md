@@ -39,27 +39,73 @@ The OS, in OZ-3 assembly: the loader in the boot area, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
-## Changing disks in ozzy
+## Power port
+
+- **Layers:** core, devices, ozzy, apps, manual
+- **Size:** medium
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application, Power)
+
+Port 0 of every Ozzy is its power port, which programs write to shut it down
+or restart it, with the command in its first word and the exit code, a signed
+word, in its second, written together with `OUT.ID`: 1 shuts down, 2
+restarts, and the rest are reserved. The command takes effect at once, with no
+cycle run after the one that wrote it, so the device that holds the port needs
+a way to end `Processor::Execute` early, which runs a fixed count of cycles
+now. Powering off destroys the `Ozzy`, committing its drives, and restarting
+creates it again, so the host keeps the machine's state outside it: the
+settings, the disk in each drive, and whether it is on. In the terminal app, a
+restart restarts, and a shutdown leaves the machine off, saying so with the
+exit code, until the user quits (the *Panel* powers it on again). The manual's
+Ozzy Computer page gains the port in its wiring, and what the app does.
+
+## Panel
 
 - **Layers:** ozzy, apps, manual
 - **Size:** medium
-- **Feature workflow:** no
-- **Depends on:** *Ozzy drives*
-- **Background:** [ozzy-drives.md](worklog/ozzy-drives.md);
-  [disk_design.md](disk_design.md) (Open questions)
+- **Feature workflow:** yes
+- **Depends on:** *Power port*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application),
+  [ozzy-drives.md](worklog/ozzy-drives.md); [disk_design.md](disk_design.md)
+  (Open questions)
 
-The `ozzy` app puts the config's disks in their drives at power on, and they
-stay there until it quits. Changing them while it runs needs the console
-frontend to pick a drive and an image, or none to eject. Two ways were
-considered: a key chord (such as Ctrl+Alt+D) that pauses the Ozzy and opens a
-prompt line on the console's bottom row (`A: disks/work.ozd`, or `A:` to
-eject), which takes any image; or a list of images for each drive in the
-config, with Ctrl+Alt+A to D stepping a drive through them and then empty,
-which needs no typing and suits the teletype's line mode. The prompt (or the
-list) belongs in the ozzy library, tested against a fake `Console`, as the
-rest of the frontend is. Ejecting is a floppy pulled, as `DiskDrive` has it:
-what the file system hadn't committed is lost, and the OS commits with `CLOSE`
-and `FLUSH`.
+The host's controls for the machine, opened and closed with Ctrl+Alt+P, in the
+terminal app: `on`, `off`, `restart`, `insert` and `eject` a disk, `drives`,
+`help`, and `quit`. With a screen, it takes the whole console, with the
+machine's status, its messages, and a command line. Without one, it is a
+prompt among the teletype's lines, which holds back the teletype's output
+until the command is done. While it is open, keys go to it and the machine
+keeps running, and while the machine is off, it stays open. The commands, and
+what they do to the machine's state, are in the ozzy library, tested against a
+fake `Console`, so the window app can present them too. Paths are as typed at
+a shell, and a `config:` protocol in the file system is the config file's
+folder, which becomes the default for the config's own image paths. A disk
+inserted while the machine is on goes into the running drive and stays in the
+machine's state, so it is still there after a restart. Ejecting is a floppy
+pulled, as `DiskDrive` has it: what the file system hadn't committed is lost,
+and the OS commits with `CLOSE` and `FLUSH`. An image can't go into two drives,
+as in the config.
+
+## Headless ozzyterm
+
+- **Layers:** ozzy, apps, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Power port*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application,
+  `ozzyterm`)
+
+`--headless` runs an Ozzy in the terminal app with no terminal, for scripts and
+tests: `ozzyterm --headless test.ozzy < keys.txt > out.txt`. The standard input
+is typed keys (its key state made up from them, as a terminal's is), the
+teletype's output goes to the standard output, and a screen isn't shown. There
+is no panel, so a shutdown from the power port exits with its exit code, and a
+signal (such as SIGTERM) quits, committing the drives as quitting does. The end
+of the standard input ends nothing, as a program may run long after its input.
+Errors and `--stats` go to the standard error, so the output is only the
+teletype's. Until the *Window app* takes the name `ozzy`, it is
+`ozzy --headless`.
 
 ## Kitty keyboard protocol
 
@@ -83,22 +129,30 @@ back to taps elsewhere. Give it back when the console is destroyed (`CSI < u`).
 It adds no dependencies, only escape sequences, but needs trying in those
 terminals by hand.
 
-## Graphical frontend
+## Window app
 
-- **Layers:** ozzy, apps
-- **Size:** medium
+- **Layers:** ozzy, apps, manual
+- **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [ozzy-machine.md](worklog/ozzy-machine.md) (The `ozzy`
-  app); [console-devices.md](worklog/console-devices.md) (Pixels)
+- **Depends on:** *Panel*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application, `ozzy`);
+  [ozzy-machine.md](worklog/ozzy-machine.md) (The `ozzy` app);
+  [console-devices.md](worklog/console-devices.md) (Pixels)
 
-An Ozzy in a window of its own, drawing the screen's picture as its pixels
-are, through Game Bits' SDL and renderer: the pixels as an 8-bit texture with
-a three-color palette, each pixel twice as tall as it is wide. So it shows
-what the console frontend can't: the left and right lines, redefined glyphs,
-the alternate character set, compact rows, and the exact blink timing. Keys
-come from the window rather than the console, and the teletype's output needs
-somewhere to go in the window too.
+`ozzy`, an Ozzy in a window of its own, whatever devices it has, as a windowed
+program (`gb_add_win_executable`), so starting it from the desktop opens no
+console window. The terminal app is renamed `ozzyterm`. The window draws the
+screen's picture as its pixels are, through Game Bits' SDL and renderer: the
+pixels as an 8-bit texture with a three-color palette, each pixel twice as
+tall as it is wide. So it shows what the terminal can't: the left and right
+lines, redefined glyphs, the alternate character set, compact rows, and the
+exact blink timing. Without a screen, the teletype's lines have a space of
+their own in the window. Keys come from the window. The *Panel* opens over the
+picture with the same key, and menus run its commands; while the machine is
+off, the picture is dark, and a config file with errors opens the window with
+the machine off and the errors in the panel. Only `ozzy` links SDL and Vulkan,
+so it is built only where the Vulkan SDK is, and CI installs the SDK for it, as
+Game Bits' CI does with its `vulkan-sdk` action.
 
 ## Debugger (oz3dbg)
 
@@ -111,12 +165,43 @@ somewhere to go in the window too.
 
 The debugger for OZ-3 programs, as a library and a tool: stepping (through the
 `T` flag), breakpoints, watches, and source level debugging from `.oz3map`
-files. Ozzy integrates the library.
+files. Ozzy integrates the library: in the window app as windows of its own,
+and in the terminal app as commands in the panel.
 
 A program map works in segment offsets, so turning an address in a bank (such
 as a memory view's) into source needs where each segment was loaded.
 `ProgramLoader::LoadedProgram` only records each program bank's page spans, so
 it gains each segment's physical bank and start page.
+
+## Mouse
+
+- **Layers:** devices, ozzy, apps, manual
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application);
+  `oz3/ozzy/posix_console.cc`
+
+A mouse device, and the Ozzy wired to it, on ports from the ones left free
+(28 to 31 are together). It reports where the mouse is, its buttons, and its
+wheel, with an interrupt when they change. The window app moves it by the
+screen's pixels, and the terminal app by its cells, with the terminal's mouse
+reporting (SGR, `CSI ? 1006 h`) on POSIX systems and the console's mouse events
+on Windows, so programs work with either, more coarsely in a terminal.
+
+## Rendering styles and themes
+
+- **Layers:** ozzy, apps
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** *Window app*
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application, `ozzy`)
+
+Looks for the window app, chosen in its settings rather than the config file,
+as they are the host's and not the machine's: the screen's colors (such as a
+green, amber, or white phosphor), how its picture is drawn (sharp pixels, or a
+monitor's scanlines, glow, and curve), and themes for the app's own windows and
+panel.
 
 ## Case-sensitive programs
 
