@@ -52,16 +52,13 @@ void PowerControl::Execute() {
   }
   Port& port = GetPort(0);
   PortWords words;
-  const bool taken = words.Load(port, *lock_, Port::T | Port::S) != 0;
-  if (taken) {
+  if (words.Load(port, *lock_, Port::T | Port::S) != 0) {
     // Both words are cleared once taken, so a command written later as a word
     // (which leaves word 1 as it is) doesn't take this exit code.
     PortWords().Store(port, *lock_, 0);
-  }
-  lock_.reset();
-  if (taken) {
     Request(words.GetWord(0), words.GetWord(1));
   }
+  lock_.reset();
   Sleep();
 }
 
