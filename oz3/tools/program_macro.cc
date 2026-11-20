@@ -5,12 +5,87 @@
 
 #include "oz3/tools/program_macro.h"
 
-#include <algorithm>
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 
 namespace oz3 {
+
+namespace {
+
+bool IsLineEnd(const gb::Token& token) {
+  return token.GetType() == gb::kTokenLineBreak || token.IsEnd();
+}
+
+// Returns the origin of `column` of a macro body's `line`, in `scope`.
+SourceOrigin GetBodyOrigin(const ProgramMacro::Line& line, int column,
+                           std::string_view scope) {
+  SourceOrigin origin = {.location = line.location, .scope = scope};
+  origin.location.column += column;
+  return origin;
+}
+
+}  // namespace
+
+//==============================================================================
+// SourceText
+//==============================================================================
+
+SourceText::SourceText(std::string_view text, const SourceOrigin& origin) {
+  Append(text, origin);
+}
+
+void SourceText::Append(std::string_view text, const SourceOrigin& origin) {
+  AddPiece(static_cast<int>(text_.size()), origin);
+  text_.append(text);
+}
+
+void SourceText::Append(const SourceText& text) {
+  const int column = static_cast<int>(text_.size());
+  for (const Piece& piece : text.pieces_) {
+    AddPiece(column + piece.column, piece.origin);
+  }
+  text_.append(text.text_);
+}
+
+void SourceText::AddPiece(int column, const SourceOrigin& origin) {
+  if (!pieces_.empty() && pieces_.back().column == column) {
+    pieces_.back().origin = origin;
+  } else {
+    pieces_.push_back({.column = column, .origin = origin});
+  }
+}
+
+SourceOrigin SourceText::GetOrigin(int column) const {
+  DCHECK_GE(column, 0);
+  DCHECK(!pieces_.empty());
+
+  // The first piece is at column 0, so the piece at `column` is the one
+  // before the first piece after it.
+  const auto it = absl::c_upper_bound(
+      pieces_, column,
+      [](int column, const Piece& piece) { return column < piece.column; });
+  const Piece& piece = *(it - 1);
+  SourceOrigin origin = piece.origin;
+  origin.location.column += column - piece.column;
+  return origin;
+}
+
+SourceText SourceText::Substr(int column, int size) const {
+  DCHECK(column >= 0 && column <= static_cast<int>(text_.size()));
+  SourceText text;
+  text.text_ = text_.substr(column, size);
+  text.pieces_.push_back({.column = 0, .origin = GetOrigin(column)});
+  const int end = column + static_cast<int>(text.text_.size());
+  for (const Piece& piece : pieces_) {
+    if (piece.column > column && piece.column < end) {
+      text.pieces_.push_back(
+          {.column = piece.column - column, .origin = piece.origin});
+    }
+  }
+  return text;
+}
 
 //==============================================================================
 // ProgramMacro
@@ -22,15 +97,14 @@ ProgramMacro::ProgramMacro(std::string name,
 
 bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
                             gb::Token* error) {
+  gb::Token token = lexer.NextToken(content);
   const int line_index = lexer.GetCurrentLine(content);
   Line line = {.location = lexer.GetLineLocation(content, line_index)};
   int end = 0;
-  for (gb::Token token = lexer.NextToken(content);
-       token.GetType() != gb::kTokenLineBreak && !token.IsEnd();
-       token = lexer.NextToken(content)) {
+  for (; !IsLineEnd(token); token = lexer.NextToken(content)) {
     if (token.IsError()) {
       *error = token;
-      SkipLine(lexer, content, line_index);
+      lexer.NextLine(content);
       return false;
     }
     const int column = lexer.GetTokenLocation(token).column;
@@ -39,8 +113,7 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
     if (!token.IsIdent()) {
       continue;
     }
-    const auto it =
-        std::find(parameters_.begin(), parameters_.end(), token.GetString());
+    const auto it = absl::c_find(parameters_, token.GetString());
     if (it != parameters_.end()) {
       line.parameters.push_back(
           {.column = column,
@@ -48,19 +121,10 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
            .index = static_cast<int>(it - parameters_.begin())});
     }
   }
-  SkipLine(lexer, content, line_index);
   line.text =
       std::string(lexer.GetLineText(content, line_index).substr(0, end));
   lines_.push_back(std::move(line));
   return true;
-}
-
-void ProgramMacro::SkipLine(gb::Lexer& lexer, gb::LexerContentId content,
-                            int line_index) {
-  // The lexer stays on a line after its line break, until the next token.
-  if (lexer.GetCurrentLine(content) == line_index) {
-    lexer.NextLine(content);
-  }
 }
 
 //==============================================================================
@@ -71,40 +135,31 @@ std::vector<MacroArgSpan> ReadMacroArgs(gb::Lexer& lexer,
                                         gb::LexerContentId content) {
   std::vector<MacroArgSpan> args;
   gb::Token token = lexer.NextToken(content);
-  if (token.GetType() == gb::kTokenLineBreak || token.IsEnd()) {
+  if (IsLineEnd(token)) {
     return args;
   }
-  MacroArgSpan arg;
-  bool empty = true;
   int depth = 0;
-  for (;; token = lexer.NextToken(content)) {
-    const bool line_end =
-        token.GetType() == gb::kTokenLineBreak || token.IsEnd();
-    if (line_end || (depth == 0 && token.IsSymbol(','))) {
-      if (empty) {
-        arg = {.column = lexer.GetTokenLocation(token).column, .token = token};
+  while (true) {
+    // The token starts the argument, or for an empty one, ends it.
+    MacroArgSpan& arg = args.emplace_back(MacroArgSpan{
+        .column = lexer.GetTokenLocation(token).column, .token = token});
+    for (; !IsLineEnd(token) && !(depth == 0 && token.IsSymbol(','));
+         token = lexer.NextToken(content)) {
+      if (token.IsSymbol('(') || token.IsSymbol('[') || token.IsSymbol('{')) {
+        ++depth;
+      } else if ((token.IsSymbol(')') || token.IsSymbol(']') ||
+                  token.IsSymbol('}')) &&
+                 depth > 0) {
+        --depth;
       }
-      args.push_back(arg);
-      if (line_end) {
-        break;
-      }
-      empty = true;
-      continue;
+      arg.size = lexer.GetTokenLocation(token).column +
+                 static_cast<int>(lexer.GetTokenText(token).size()) -
+                 arg.column;
     }
-    if (token.IsSymbol('(') || token.IsSymbol('[') || token.IsSymbol('{')) {
-      ++depth;
-    } else if ((token.IsSymbol(')') || token.IsSymbol(']') ||
-                token.IsSymbol('}')) &&
-               depth > 0) {
-      --depth;
+    if (IsLineEnd(token)) {
+      break;
     }
-    const int column = lexer.GetTokenLocation(token).column;
-    const int end = column + static_cast<int>(lexer.GetTokenText(token).size());
-    if (empty) {
-      arg = {.column = column, .token = token};
-      empty = false;
-    }
-    arg.size = end - arg.column;
+    token = lexer.NextToken(content);
   }
   return args;
 }
@@ -113,79 +168,47 @@ std::vector<MacroArgSpan> ReadMacroArgs(gb::Lexer& lexer,
 // MacroExpansion
 //==============================================================================
 
-MacroExpansion::MacroExpansion(const ProgramMacro* macro,
+MacroExpansion::MacroExpansion(const ProgramMacro& macro,
                                absl::Span<const SourceText> args,
                                std::string scope, SourceOrigin use)
-    : macro_(macro), scope_(std::move(scope)), use_(std::move(use)) {
-  CHECK_EQ(args.size(), macro_->GetParameters().size());
-  for (const ProgramMacro::Line& body_line : macro_->GetLines()) {
+    : scope_(std::move(scope)), use_(std::move(use)) {
+  CHECK_EQ(args.size(), macro.GetParameters().size());
+  lines_.reserve(macro.GetLines().size());
+  for (const ProgramMacro::Line& body_line : macro.GetLines()) {
     SourceText& line = lines_.emplace_back();
+    const std::string_view body_text = body_line.text;
     int column = 0;
     for (const ProgramMacro::Line::Parameter& parameter :
          body_line.parameters) {
-      if (parameter.column > column) {
-        line.pieces.push_back({.column = static_cast<int>(line.text.size()),
-                               .origin = GetBodyOrigin(body_line, column)});
-        line.text.append(body_line.text, column, parameter.column - column);
-      }
-      const SourceText& arg = args[parameter.index];
-      const int arg_column = static_cast<int>(line.text.size());
-      for (const SourceText::Piece& piece : arg.pieces) {
-        line.pieces.push_back(
-            {.column = arg_column + piece.column, .origin = piece.origin});
-      }
-      line.text.append(arg.text);
+      line.Append(body_text.substr(column, parameter.column - column),
+                  GetBodyOrigin(body_line, column, scope_));
+      line.Append(args[parameter.index]);
       column = parameter.column + parameter.size;
     }
-    const int size = static_cast<int>(body_line.text.size());
-    if (column < size || line.pieces.empty()) {
-      line.pieces.push_back({.column = static_cast<int>(line.text.size()),
-                             .origin = GetBodyOrigin(body_line, column)});
-      line.text.append(body_line.text, column);
-    }
-    text_.append(line.text);
-    text_.push_back('\n');
+    line.Append(body_text.substr(column),
+                GetBodyOrigin(body_line, column, scope_));
   }
 }
 
-SourceOrigin MacroExpansion::GetBodyOrigin(const ProgramMacro::Line& line,
-                                           int column) const {
-  SourceOrigin origin = {.location = line.location, .scope = scope_};
-  origin.location.column += column;
-  return origin;
+std::string MacroExpansion::GetText() const {
+  std::string text;
+  for (const SourceText& line : lines_) {
+    text.append(line.GetText());
+    text.push_back('\n');
+  }
+  return text;
+}
+
+const SourceText& MacroExpansion::GetLine(int line) const {
+  CHECK(line >= 0 && line < static_cast<int>(lines_.size()));
+  return lines_[line];
 }
 
 SourceOrigin MacroExpansion::GetOrigin(int line, int column) const {
   if (line < 0 || line >= static_cast<int>(lines_.size())) {
     return use_;
   }
-  // Every line has a piece at column 0.
-  const std::vector<SourceText::Piece>& pieces = lines_[line].pieces;
-  int index = static_cast<int>(pieces.size()) - 1;
-  while (index > 0 && pieces[index].column > column) {
-    --index;
-  }
-  SourceOrigin origin = pieces[index].origin;
-  origin.location.column += std::max(column - pieces[index].column, 0);
-  return origin;
-}
-
-SourceText MacroExpansion::GetSourceText(int line, int column, int size) const {
-  SourceText text;
-  if (line < 0 || line >= static_cast<int>(lines_.size())) {
-    return text;
-  }
-  const std::string& line_text = lines_[line].text;
-  column = std::clamp(column, 0, static_cast<int>(line_text.size()));
-  text.text = line_text.substr(column, size);
-  text.pieces.push_back({.column = 0, .origin = GetOrigin(line, column)});
-  for (const SourceText::Piece& piece : lines_[line].pieces) {
-    if (piece.column > column && piece.column < column + size) {
-      text.pieces.push_back(
-          {.column = piece.column - column, .origin = piece.origin});
-    }
-  }
-  return text;
+  return lines_[line].GetOrigin(column);
 }
 
 }  // namespace oz3

@@ -276,12 +276,22 @@ struct SourceOrigin {
   std::string_view scope;      // The key prefix of its local labels.
 };
 
-// Text whose pieces each came from a place in a source file, such as a macro
-// argument.
-struct SourceText {
+// Text whose pieces each came from a place in a source file, such as a line
+// of a macro's expansion, or a macro argument.
+class SourceText final {
+ public:
   struct Piece { int column; SourceOrigin origin; };
-  std::string text;
-  std::vector<Piece> pieces;  // In column order, starting at column 0.
+
+  SourceText(std::string_view text, const SourceOrigin& origin);
+
+  const std::string& GetText() const;
+  absl::Span<const Piece> GetPieces() const;  // In column order, from 0.
+
+  void Append(std::string_view text, const SourceOrigin& origin);
+  void Append(const SourceText& text);
+
+  SourceOrigin GetOrigin(int column) const;
+  SourceText Substr(int column, int size) const;
 };
 
 // A macro defined with .MACRO: its name, parameters, and body.
@@ -320,17 +330,18 @@ class MacroExpansion final {
  public:
   // Expands `macro` with `args`, one for each parameter. `scope` is this
   // use's own scope ("WAITIN#2"), for the local labels the body writes.
-  MacroExpansion(const ProgramMacro* macro, absl::Span<const SourceText> args,
+  MacroExpansion(const ProgramMacro& macro, absl::Span<const SourceText> args,
                  std::string scope, SourceOrigin use);
 
   // The text, a line for each of the body's.
-  const std::string& GetText() const;
+  std::string GetText() const;
+
+  // Returns a line of the text with its origins, which an argument of a use
+  // in it is a Substr of.
+  const SourceText& GetLine(int line) const;
 
   // Returns where the text at `line` and `column` came from.
   SourceOrigin GetOrigin(int line, int column) const;
-
-  // Returns text of a line with its origins, as an argument of a use in it.
-  SourceText GetSourceText(int line, int column, int size) const;
 
   // Returns where the macro was used, in a file: the outermost use's line.
   const SourceOrigin& GetUse() const;
@@ -368,8 +379,8 @@ class MacroExpansion final {
 - **Uses** are found in `ReadInstruction`: a name with no extension that is a
   macro's is expanded, before any form is matched. `ReadMacroArgs` splits
   the arguments at each comma outside brackets, from the tokens after the
-  name. In a file, each is a `SourceText` of one piece, at its place in the
-  file; in an expansion, `GetSourceText` gives each its pieces' origins.
+  name. Each is a `Substr` of its line's `SourceText`: in a file, one piece
+  at the line's place, and in an expansion, `GetLine`.
 
 **Brittleness:** each expansion's origins must cover its whole text, and the
 assembler must look every expansion token up through them, rather than
@@ -485,10 +496,9 @@ Depends on: CL1, for tests that compare.
 
 Depends on: nothing.
 
-- `program_macro.h`: `ProgramMacro`, reading a body a line at a time with
-  `ReadLine`; `ReadMacroArgs`, splitting a use's arguments; and
-  `MacroExpansion`, with `GetSourceText` for an argument from an expansion's
-  line.
+- `program_macro.h`: `SourceText`, text with its origins; `ProgramMacro`,
+  reading a body a line at a time with `ReadLine`; `ReadMacroArgs`, splitting
+  a use's arguments; and `MacroExpansion`, a `SourceText` for each line.
 - Unused, so no visible change.
 
 **Verify**

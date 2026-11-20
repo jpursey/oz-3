@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "gb/parse/lexer.h"
@@ -22,6 +23,7 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::IsEmpty;
+using ::testing::Pair;
 using Parameter = ProgramMacro::Line::Parameter;
 using Piece = SourceText::Piece;
 
@@ -40,15 +42,16 @@ class ProgramMacroTest : public ::testing::Test {
     return content;
   }
 
-  // Returns a macro whose body is every line of `body`, in the file
-  // "macros.oza", which must read.
-  std::unique_ptr<ProgramMacro> ReadMacro(std::vector<std::string> parameters,
+  // Returns a macro whose body is every line of the file `filename`, holding
+  // `body`, which must read.
+  std::unique_ptr<ProgramMacro> ReadMacro(std::string_view filename,
+                                          std::vector<std::string> parameters,
                                           std::string_view body) {
     auto macro = std::make_unique<ProgramMacro>("M", std::move(parameters));
-    macros_ = AddFile("macros.oza", body);
-    for (int i = 0; i < lexer_->GetLineCount(macros_); ++i) {
+    const gb::LexerContentId content = AddFile(filename, body);
+    for (int i = 0; i < lexer_->GetLineCount(content); ++i) {
       gb::Token error;
-      EXPECT_TRUE(macro->ReadLine(*lexer_, macros_, &error))
+      EXPECT_TRUE(macro->ReadLine(*lexer_, content, &error))
           << error.GetString();
     }
     return macro;
@@ -66,18 +69,67 @@ class ProgramMacroTest : public ::testing::Test {
     return args;
   }
 
-  // Returns the location in `content` of `filename`.
-  static gb::LexerLocation At(gb::LexerContentId content,
-                              std::string_view filename, int line, int column) {
-    return {.id = content,
+  // Returns the location in the file `filename`, which was added.
+  gb::LexerLocation At(std::string_view filename, int line, int column) {
+    return {.id = lexer_->GetFileContentId(filename),
             .filename = std::string(filename),
             .line = line,
             .column = column};
   }
 
+  SourceOrigin Origin(std::string_view filename, int line, int column,
+                      std::string_view scope) {
+    return {.location = At(filename, line, column), .scope = scope};
+  }
+
   std::unique_ptr<gb::Lexer> lexer_;
-  gb::LexerContentId macros_ = gb::kNoLexerContent;
 };
+
+//==============================================================================
+// SourceText
+//==============================================================================
+
+TEST_F(ProgramMacroTest, SourceText) {
+  AddFile("a.oza", "");
+  AddFile("b.oza", "");
+  SourceText b("XY", Origin("b.oza", 4, 2, "B"));
+  b.Append("Z", Origin("b.oza", 9, 0, "B"));
+  SourceText text("abc", Origin("a.oza", 1, 5, "A"));
+  text.Append(b);
+  text.Append("", Origin("a.oza", 1, 9, "A"));
+  EXPECT_EQ(text.GetText(), "abcXYZ");
+  EXPECT_THAT(text.GetPieces(),
+              ElementsAre(Piece{0, Origin("a.oza", 1, 5, "A")},
+                          Piece{3, Origin("b.oza", 4, 2, "B")},
+                          Piece{5, Origin("b.oza", 9, 0, "B")},
+                          Piece{6, Origin("a.oza", 1, 9, "A")}));
+  EXPECT_EQ(text.GetOrigin(0), Origin("a.oza", 1, 5, "A"));
+  EXPECT_EQ(text.GetOrigin(2), Origin("a.oza", 1, 7, "A"));
+  EXPECT_EQ(text.GetOrigin(4), Origin("b.oza", 4, 3, "B"));
+  EXPECT_EQ(text.GetOrigin(6), Origin("a.oza", 1, 9, "A"));
+  EXPECT_EQ(text.GetOrigin(8), Origin("a.oza", 1, 11, "A"));
+
+  // Text appended where an empty piece is takes its place.
+  text.Append("!", Origin("a.oza", 2, 0, "A"));
+  EXPECT_EQ(text.GetPieces().back(), (Piece{6, Origin("a.oza", 2, 0, "A")}));
+
+  // A substring starts at its column's origin, and has the pieces after it.
+  SourceText sub = text.Substr(1, 3);
+  EXPECT_EQ(sub.GetText(), "bcX");
+  EXPECT_THAT(sub.GetPieces(),
+              ElementsAre(Piece{0, Origin("a.oza", 1, 6, "A")},
+                          Piece{2, Origin("b.oza", 4, 2, "B")}));
+  sub = text.Substr(4, 10);
+  EXPECT_EQ(sub.GetText(), "YZ!");
+  EXPECT_THAT(sub.GetPieces(),
+              ElementsAre(Piece{0, Origin("b.oza", 4, 3, "B")},
+                          Piece{1, Origin("b.oza", 9, 0, "B")},
+                          Piece{2, Origin("a.oza", 2, 0, "A")}));
+  sub = text.Substr(7, 0);
+  EXPECT_EQ(sub.GetText(), "");
+  EXPECT_THAT(sub.GetPieces(),
+              ElementsAre(Piece{0, Origin("a.oza", 2, 1, "A")}));
+}
 
 //==============================================================================
 // ProgramMacro
@@ -89,13 +141,13 @@ TEST_F(ProgramMacroTest, ParametersInALine) {
   // a string or a local label, or one that is only part of a word. The
   // comment isn't part of the text.
   std::unique_ptr<ProgramMacro> macro =
-      ReadMacro({"REG", "SIZE", "VALUE", "NAME"},
+      ReadMacro("macros.oza", {"REG", "SIZE", "VALUE", "NAME"},
                 "name:  ADD.size Reg, value+1 ; reg\n"
                 "  .DW 'reg', \"value\", @reg, regs, value\n");
   ASSERT_EQ(macro->GetLines().size(), 2);
   const ProgramMacro::Line& first = macro->GetLines()[0];
   EXPECT_EQ(first.text, "name:  ADD.size Reg, value+1");
-  EXPECT_EQ(first.location, At(macros_, "macros.oza", 0, 0));
+  EXPECT_EQ(first.location, At("macros.oza", 0, 0));
   EXPECT_THAT(first.parameters,
               ElementsAre(Parameter{.column = 0, .size = 4, .index = 3},
                           Parameter{.column = 11, .size = 4, .index = 1},
@@ -103,13 +155,13 @@ TEST_F(ProgramMacroTest, ParametersInALine) {
                           Parameter{.column = 21, .size = 5, .index = 2}));
   const ProgramMacro::Line& second = macro->GetLines()[1];
   EXPECT_EQ(second.text, "  .DW 'reg', \"value\", @reg, regs, value");
-  EXPECT_EQ(second.location, At(macros_, "macros.oza", 1, 0));
+  EXPECT_EQ(second.location, At("macros.oza", 1, 0));
   EXPECT_THAT(second.parameters,
               ElementsAre(Parameter{.column = 34, .size = 5, .index = 2}));
 }
 
 TEST_F(ProgramMacroTest, LinesWithNoParameters) {
-  std::unique_ptr<ProgramMacro> macro = ReadMacro({"REG"},
+  std::unique_ptr<ProgramMacro> macro = ReadMacro("macros.oza", {"REG"},
                                                   "  NOP   ; A comment.\n"
                                                   "; Only a comment.\n"
                                                   "\n"
@@ -165,20 +217,15 @@ TEST_F(ProgramMacroTest, EmptyArgs) {
   const gb::LexerContentId content = AddFile("args.oza", "M ,1,,2,\nNOP\n");
   lexer_->NextToken(content);
   const std::vector<MacroArgSpan> args = ReadMacroArgs(*lexer_, content);
+  std::vector<std::pair<int, int>> spans;
+  for (const MacroArgSpan& arg : args) {
+    spans.emplace_back(arg.column, arg.size);
+  }
+  EXPECT_THAT(spans, ElementsAre(Pair(2, 0), Pair(3, 1), Pair(5, 0), Pair(6, 1),
+                                 Pair(8, 0)));
   ASSERT_EQ(args.size(), 5);
-  EXPECT_EQ(args[0].column, 2);
-  EXPECT_EQ(args[0].size, 0);
   EXPECT_TRUE(args[0].token.IsSymbol(','));
-  EXPECT_EQ(args[1].column, 3);
-  EXPECT_EQ(args[1].size, 1);
   EXPECT_TRUE(args[1].token.IsInt(1));
-  EXPECT_EQ(args[2].column, 5);
-  EXPECT_EQ(args[2].size, 0);
-  EXPECT_TRUE(args[2].token.IsSymbol(','));
-  EXPECT_EQ(args[3].column, 6);
-  EXPECT_EQ(args[3].size, 1);
-  EXPECT_EQ(args[4].column, 8);
-  EXPECT_EQ(args[4].size, 0);
   EXPECT_EQ(args[4].token.GetType(), gb::kTokenLineBreak);
 
   // The lexer is past the line.
@@ -192,133 +239,118 @@ TEST_F(ProgramMacroTest, EmptyArgs) {
 TEST_F(ProgramMacroTest, Expansion) {
   // Each parameter is replaced by its argument's text as the caller wrote it,
   // and each piece of the text is where it came from.
-  std::unique_ptr<ProgramMacro> macro = ReadMacro({"PORT", "REG"},
+  std::unique_ptr<ProgramMacro> macro = ReadMacro("macros.oza", {"PORT", "REG"},
                                                   "@wait:  IN reg, port\n"
                                                   "        JZ reg, @wait\n"
                                                   "        NOP\n");
-  const gb::LexerContentId main = AddFile("main.oza", "");
-  const SourceOrigin use = {.location = At(main, "main.oza", 5, 2),
-                            .scope = "START"};
-  const SourceText port = {
-      .text = "KEYBOARD",
-      .pieces = {{.column = 0,
-                  .origin = {.location = At(main, "main.oza", 5, 9),
-                             .scope = "START"}}}};
-  const SourceText reg = {
-      .text = "r1",
-      .pieces = {{.column = 0,
-                  .origin = {.location = At(main, "main.oza", 5, 19),
-                             .scope = "START"}}}};
-  const MacroExpansion expansion(macro.get(), {port, reg}, "M#1", use);
-  EXPECT_EQ(&expansion.GetMacro(), macro.get());
-  EXPECT_EQ(expansion.GetScope(), "M#1");
+  AddFile("main.oza", "");
+  const SourceOrigin use = Origin("main.oza", 5, 2, "START");
+  const SourceText port("KEYBOARD", Origin("main.oza", 5, 9, "START"));
+  const SourceText reg("r1", Origin("main.oza", 5, 19, "START"));
+  const MacroExpansion expansion(*macro, {port, reg}, "M#1", use);
   EXPECT_EQ(expansion.GetUse(), use);
   EXPECT_EQ(expansion.GetText(),
             "@wait:  IN r1, KEYBOARD\n"
             "        JZ r1, @wait\n"
             "        NOP\n");
+  EXPECT_EQ(expansion.GetLine(1).GetText(), "        JZ r1, @wait");
 
   // The start, middle, and end of the body's pieces, in the use's scope.
-  const auto body = [&](int line, int column) {
-    return SourceOrigin{.location = At(macros_, "macros.oza", line, column),
-                        .scope = "M#1"};
-  };
-  EXPECT_EQ(expansion.GetOrigin(0, 0), body(0, 0));
-  EXPECT_EQ(expansion.GetOrigin(0, 10), body(0, 10));
-  EXPECT_EQ(expansion.GetOrigin(0, 13), body(0, 14));
-  EXPECT_EQ(expansion.GetOrigin(0, 14), body(0, 15));
-  EXPECT_EQ(expansion.GetOrigin(1, 13), body(1, 14));
-  EXPECT_EQ(expansion.GetOrigin(1, 19), body(1, 20));
-  EXPECT_EQ(expansion.GetOrigin(2, 8), body(2, 8));
+  EXPECT_EQ(expansion.GetOrigin(0, 0), Origin("macros.oza", 0, 0, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(0, 10), Origin("macros.oza", 0, 10, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(0, 13), Origin("macros.oza", 0, 14, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(0, 14), Origin("macros.oza", 0, 15, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(1, 13), Origin("macros.oza", 1, 14, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(1, 19), Origin("macros.oza", 1, 20, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(2, 8), Origin("macros.oza", 2, 8, "M#1"));
 
   // The start, middle, and end of the arguments, in the caller's scope.
-  const auto caller = [&](int column) {
-    return SourceOrigin{.location = At(main, "main.oza", 5, column),
-                        .scope = "START"};
-  };
-  EXPECT_EQ(expansion.GetOrigin(0, 11), caller(19));
-  EXPECT_EQ(expansion.GetOrigin(0, 12), caller(20));
-  EXPECT_EQ(expansion.GetOrigin(0, 15), caller(9));
-  EXPECT_EQ(expansion.GetOrigin(0, 18), caller(12));
-  EXPECT_EQ(expansion.GetOrigin(0, 22), caller(16));
-  EXPECT_EQ(expansion.GetOrigin(1, 11), caller(19));
-  EXPECT_EQ(expansion.GetOrigin(1, 12), caller(20));
+  EXPECT_EQ(expansion.GetOrigin(0, 11), Origin("main.oza", 5, 19, "START"));
+  EXPECT_EQ(expansion.GetOrigin(0, 12), Origin("main.oza", 5, 20, "START"));
+  EXPECT_EQ(expansion.GetOrigin(0, 15), Origin("main.oza", 5, 9, "START"));
+  EXPECT_EQ(expansion.GetOrigin(0, 18), Origin("main.oza", 5, 12, "START"));
+  EXPECT_EQ(expansion.GetOrigin(0, 22), Origin("main.oza", 5, 16, "START"));
+  EXPECT_EQ(expansion.GetOrigin(1, 11), Origin("main.oza", 5, 19, "START"));
+  EXPECT_EQ(expansion.GetOrigin(1, 12), Origin("main.oza", 5, 20, "START"));
 
-  // Past the end of a line, and of the text.
-  EXPECT_EQ(expansion.GetOrigin(0, 23), caller(17));
-  EXPECT_EQ(expansion.GetOrigin(2, 11), body(2, 11));
+  // Past the end of a line, which is past the end of the body's line, even
+  // when it ends with a parameter, and past the end of the text.
+  EXPECT_EQ(expansion.GetOrigin(0, 23), Origin("macros.oza", 0, 20, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(0, 25), Origin("macros.oza", 0, 22, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(2, 11), Origin("macros.oza", 2, 11, "M#1"));
   EXPECT_EQ(expansion.GetOrigin(3, 0), use);
 }
 
 TEST_F(ProgramMacroTest, ExpansionWithNoParameters) {
-  std::unique_ptr<ProgramMacro> macro = ReadMacro({}, "  NOP\n\n  HALT\n");
-  const SourceOrigin use = {.location = At(macros_, "macros.oza", 9, 0)};
-  const MacroExpansion expansion(macro.get(), {}, "M#1", use);
+  std::unique_ptr<ProgramMacro> macro =
+      ReadMacro("macros.oza", {}, "  NOP\n\n  HALT\n");
+  const SourceOrigin use = {.location = At("macros.oza", 9, 0)};
+  const MacroExpansion expansion(*macro, {}, "M#1", use);
   EXPECT_EQ(expansion.GetText(), "  NOP\n\n  HALT\n");
-  EXPECT_EQ(expansion.GetOrigin(1, 0),
-            (SourceOrigin{.location = At(macros_, "macros.oza", 1, 0),
-                          .scope = "M#1"}));
-  EXPECT_EQ(expansion.GetOrigin(2, 3),
-            (SourceOrigin{.location = At(macros_, "macros.oza", 2, 3),
-                          .scope = "M#1"}));
+  EXPECT_EQ(expansion.GetOrigin(1, 0), Origin("macros.oza", 1, 0, "M#1"));
+  EXPECT_EQ(expansion.GetOrigin(2, 3), Origin("macros.oza", 2, 3, "M#1"));
+}
+
+TEST_F(ProgramMacroTest, ExpansionWithEmptyArgs) {
+  // An empty argument has no piece of its own.
+  std::unique_ptr<ProgramMacro> macro =
+      ReadMacro("macros.oza", {"A", "B"}, "a b,a\n");
+  AddFile("main.oza", "");
+  const SourceText empty("", Origin("main.oza", 0, 2, "START"));
+  const SourceText x("X", Origin("main.oza", 0, 4, "START"));
+  const MacroExpansion expansion(*macro, {empty, x}, "M#1", {});
+  EXPECT_EQ(expansion.GetText(), " X,\n");
+  EXPECT_THAT(expansion.GetLine(0).GetPieces(),
+              ElementsAre(Piece{0, Origin("macros.oza", 0, 1, "M#1")},
+                          Piece{1, Origin("main.oza", 0, 4, "START")},
+                          Piece{2, Origin("macros.oza", 0, 3, "M#1")},
+                          Piece{3, Origin("macros.oza", 0, 5, "M#1")}));
 }
 
 TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
   // An argument from an expansion's line keeps that line's origins, so every
   // origin in an expansion of it is in a file.
-  std::unique_ptr<ProgramMacro> outer = ReadMacro({"X"}, "  INNER (x), 1\n");
-  const gb::LexerContentId outer_body = macros_;
-  std::unique_ptr<ProgramMacro> inner = ReadMacro({"V", "W"}, "  PUSH v\n");
-  const gb::LexerContentId inner_body = macros_;
-  const gb::LexerContentId main = AddFile("main.oza", "");
-  const SourceOrigin use = {.location = At(main, "main.oza", 3, 0),
-                            .scope = "START"};
-  const SourceText x = {
-      .text = "A + B",
-      .pieces = {{.column = 0,
-                  .origin = {.location = At(main, "main.oza", 3, 6),
-                             .scope = "START"}}}};
-  const MacroExpansion outer_expansion(outer.get(), {x}, "OUTER#1", use);
+  std::unique_ptr<ProgramMacro> outer =
+      ReadMacro("outer.oza", {"X"}, "  INNER (x), 1\n");
+  std::unique_ptr<ProgramMacro> inner =
+      ReadMacro("inner.oza", {"V", "W"}, "  PUSH v\n");
+  AddFile("main.oza", "");
+  const SourceOrigin use = Origin("main.oza", 3, 0, "START");
+  const SourceText x("A + B", Origin("main.oza", 3, 6, "START"));
+  const MacroExpansion outer_expansion(*outer, {x}, "OUTER#1", use);
   ASSERT_EQ(outer_expansion.GetText(), "  INNER (A + B), 1\n");
 
   // The use of INNER in the expansion, as the assembler reads it.
   const gb::LexerContentId outer_content =
       lexer_->AddContent(outer_expansion.GetText());
   lexer_->NextToken(outer_content);
-  const std::vector<MacroArgSpan> spans = ReadMacroArgs(*lexer_, outer_content);
-  ASSERT_EQ(spans.size(), 2);
   std::vector<SourceText> args;
-  for (const MacroArgSpan& span : spans) {
-    args.push_back(outer_expansion.GetSourceText(0, span.column, span.size));
+  for (const MacroArgSpan& span : ReadMacroArgs(*lexer_, outer_content)) {
+    args.push_back(outer_expansion.GetLine(0).Substr(span.column, span.size));
   }
-  const auto outer_at = [&](int column) {
-    return SourceOrigin{.location = At(outer_body, "macros.oza", 0, column),
-                        .scope = "OUTER#1"};
-  };
-  const auto caller = [&](int column) {
-    return SourceOrigin{.location = At(main, "main.oza", 3, column),
-                        .scope = "START"};
-  };
-  EXPECT_EQ(args[0].text, "(A + B)");
-  EXPECT_THAT(args[0].pieces,
-              ElementsAre(Piece{.column = 0, .origin = outer_at(8)},
-                          Piece{.column = 1, .origin = caller(6)},
-                          Piece{.column = 6, .origin = outer_at(10)}));
-  EXPECT_EQ(args[1].text, "1");
-  EXPECT_THAT(args[1].pieces,
-              ElementsAre(Piece{.column = 0, .origin = outer_at(13)}));
+  ASSERT_EQ(args.size(), 2);
+  EXPECT_EQ(args[0].GetText(), "(A + B)");
+  EXPECT_THAT(args[0].GetPieces(),
+              ElementsAre(Piece{0, Origin("outer.oza", 0, 8, "OUTER#1")},
+                          Piece{1, Origin("main.oza", 3, 6, "START")},
+                          Piece{6, Origin("outer.oza", 0, 10, "OUTER#1")}));
+  EXPECT_EQ(args[1].GetText(), "1");
+  EXPECT_THAT(args[1].GetPieces(),
+              ElementsAre(Piece{0, Origin("outer.oza", 0, 13, "OUTER#1")}));
 
-  const MacroExpansion inner_expansion(inner.get(), args, "INNER#2",
+  const MacroExpansion inner_expansion(*inner, args, "INNER#2",
                                        outer_expansion.GetUse());
   EXPECT_EQ(inner_expansion.GetText(), "  PUSH (A + B)\n");
   EXPECT_EQ(inner_expansion.GetUse(), use);
   EXPECT_EQ(inner_expansion.GetOrigin(0, 2),
-            (SourceOrigin{.location = At(inner_body, "macros.oza", 0, 2),
-                          .scope = "INNER#2"}));
-  EXPECT_EQ(inner_expansion.GetOrigin(0, 7), outer_at(8));
-  EXPECT_EQ(inner_expansion.GetOrigin(0, 8), caller(6));
-  EXPECT_EQ(inner_expansion.GetOrigin(0, 12), caller(10));
-  EXPECT_EQ(inner_expansion.GetOrigin(0, 13), outer_at(10));
+            Origin("inner.oza", 0, 2, "INNER#2"));
+  EXPECT_EQ(inner_expansion.GetOrigin(0, 7),
+            Origin("outer.oza", 0, 8, "OUTER#1"));
+  EXPECT_EQ(inner_expansion.GetOrigin(0, 8), Origin("main.oza", 3, 6, "START"));
+  EXPECT_EQ(inner_expansion.GetOrigin(0, 12),
+            Origin("main.oza", 3, 10, "START"));
+  EXPECT_EQ(inner_expansion.GetOrigin(0, 13),
+            Origin("outer.oza", 0, 10, "OUTER#1"));
 }
 
 }  // namespace

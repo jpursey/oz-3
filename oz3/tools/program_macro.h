@@ -18,7 +18,7 @@
 namespace oz3 {
 
 //==============================================================================
-// Macro text
+// SourceText
 //==============================================================================
 
 // Where a piece of text came from: a place in a source file, and the scope
@@ -27,25 +27,58 @@ struct SourceOrigin {
   gb::LexerLocation location;  // In a file's content, never an expansion's.
   std::string_view scope;      // The key prefix of its local labels.
 
-  auto operator<=>(const SourceOrigin&) const = default;
+  bool operator==(const SourceOrigin&) const = default;
 };
 
-// Text whose pieces each came from a place in a source file, such as a macro
-// argument.
-struct SourceText {
+// Text whose pieces each came from a place in a source file, such as a line
+// of a macro's expansion, or a macro argument.
+class SourceText final {
+ public:
   // A piece of the text, from `column` up to the next piece's: its first
   // character is at `origin`, and each one after it at the next column.
   struct Piece {
     int column = 0;
     SourceOrigin origin;
 
-    auto operator<=>(const Piece&) const = default;
+    bool operator==(const Piece&) const = default;
   };
 
-  std::string text;
+  // Creates empty text with no pieces, which has no origins until something
+  // is appended.
+  SourceText() = default;
 
-  // In column order, starting at column 0.
-  std::vector<Piece> pieces;
+  // Creates `text`, all from `origin`.
+  SourceText(std::string_view text, const SourceOrigin& origin);
+
+  const std::string& GetText() const { return text_; }
+
+  // Returns the pieces in column order, the first at column 0. A piece is
+  // never empty, apart from one at the end of the text.
+  absl::Span<const Piece> GetPieces() const { return pieces_; }
+
+  // Appends `text`, all from `origin`. Empty text still sets the origin of
+  // the end of the text, until something more is appended.
+  void Append(std::string_view text, const SourceOrigin& origin);
+
+  // Appends `text` with its pieces' origins.
+  void Append(const SourceText& text);
+
+  // Returns where the text at `column`, which must not be negative, came
+  // from. A column at or past the end is past the last piece's end. The
+  // text must have a piece.
+  SourceOrigin GetOrigin(int column) const;
+
+  // Returns `size` characters of the text from `column`, which must be in
+  // the text or at its end, with their origins. Its origins refer to the same
+  // scopes as this text's.
+  SourceText Substr(int column, int size) const;
+
+ private:
+  // Adds a piece at `column`, replacing an empty piece there.
+  void AddPiece(int column, const SourceOrigin& origin);
+
+  std::string text_;
+  std::vector<Piece> pieces_;
 };
 
 //==============================================================================
@@ -64,7 +97,7 @@ class ProgramMacro final {
       int size = 0;
       int index = 0;  // In the macro's parameters.
 
-      auto operator<=>(const Parameter&) const = default;
+      bool operator==(const Parameter&) const = default;
     };
 
     std::string text;
@@ -84,19 +117,15 @@ class ProgramMacro final {
   absl::Span<const std::string> GetParameters() const { return parameters_; }
   absl::Span<const Line> GetLines() const { return lines_; }
 
-  // Reads the line `lexer` is at the start of in `content`, which the program
-  // lexer reads, as the body's next line, and moves past it. An identifier
-  // that is a parameter's name is that parameter, but a name inside a string
-  // or a local label ('reg' or @reg) is not. Returns false, without adding
-  // the line, if a token on it can't be read, setting `error` to that token.
+  // Reads the next line `lexer` reads in `content`, which the program lexer
+  // reads, as the body's next line, and moves past it, as ReadMacroArgs does.
+  // An identifier that is a parameter's name is that parameter, but a name
+  // inside a string or a local label ('reg' or @reg) is not. Returns false,
+  // without adding the line, if a token on it can't be read, setting `error`
+  // to that token.
   bool ReadLine(gb::Lexer& lexer, gb::LexerContentId content, gb::Token* error);
 
  private:
-  // Moves `lexer` to the start of the line after `line_index`, if it is still
-  // on it.
-  static void SkipLine(gb::Lexer& lexer, gb::LexerContentId content,
-                       int line_index);
-
   std::string name_;
   std::vector<std::string> parameters_;
   std::vector<Line> lines_;
@@ -136,14 +165,14 @@ std::vector<MacroArgSpan> ReadMacroArgs(gb::Lexer& lexer,
 // body, in the use's own scope, and its pieces from arguments are where the
 // argument's text came from. Every origin is in a file, however deeply macros
 // use macros, as an argument from an expansion's line carries that line's
-// origins (see GetSourceText).
+// origins (see GetLine).
 class MacroExpansion final {
  public:
-  // Expands `macro`, which must outlive this, with `args`, one for each of
-  // its parameters. `scope` is this use's own scope ("WAITIN#2"), for the
-  // local labels its body writes, and `use` is the place in a file where it
-  // is used (for a use in another expansion, that one's use).
-  MacroExpansion(const ProgramMacro* macro, absl::Span<const SourceText> args,
+  // Expands `macro` with `args`, one for each of its parameters. `scope` is
+  // this use's own scope ("WAITIN#2"), for the local labels its body writes,
+  // and `use` is the place in a file where it is used (for a use in another
+  // expansion, that one's use).
+  MacroExpansion(const ProgramMacro& macro, absl::Span<const SourceText> args,
                  std::string scope, SourceOrigin use);
 
   // Its origins refer to its scope, so it stays where it is.
@@ -151,33 +180,26 @@ class MacroExpansion final {
   MacroExpansion& operator=(const MacroExpansion&) = delete;
   ~MacroExpansion() = default;
 
-  const ProgramMacro& GetMacro() const { return *macro_; }
-  std::string_view GetScope() const { return scope_; }
   const SourceOrigin& GetUse() const { return use_; }
 
   // Returns the text, with a line break after each line.
-  const std::string& GetText() const { return text_; }
+  std::string GetText() const;
+
+  // Returns line `line` of the text, which must be one of its lines, with
+  // where each piece of it came from. An argument of a use in this expansion
+  // is a Substr of it, and refers to this expansion's scope, so this must
+  // outlive the expansion it is an argument of.
+  const SourceText& GetLine(int line) const;
 
   // Returns where the text at `line` and `column` came from. A column past
-  // the end of its line is at the place after the line's last character, and
-  // a line past the last is at the use.
+  // the end of its line is past the end of the body's line, and a line past
+  // the last is at the use.
   SourceOrigin GetOrigin(int line, int column) const;
 
-  // Returns `size` characters of the text at `line` from `column`, with
-  // where each piece of it came from, as the argument of a use in this
-  // expansion. Its origins refer to this expansion's scope, so this must
-  // outlive the expansion it is an argument of.
-  SourceText GetSourceText(int line, int column, int size) const;
-
  private:
-  // Returns the origin of `column` of the body's `line`.
-  SourceOrigin GetBodyOrigin(const ProgramMacro::Line& line, int column) const;
-
-  const ProgramMacro* const macro_;
   const std::string scope_;
   const SourceOrigin use_;
   std::vector<SourceText> lines_;
-  std::string text_;
 };
 
 }  // namespace oz3
