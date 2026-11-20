@@ -79,7 +79,12 @@ that assembles today changes.
 - Comparisons work in every expression, not only in `.IF`. A value in an
   instruction still ends at the pattern's next literal: patterns already can't
   follow a value with `<` or `>`, and `=` and `!` on their own aren't
-  operators, so no pattern rule changes.
+  operators.
+- A program's lexer reads each of `<=`, `>=`, `==`, and `!=` as one symbol, as
+  it does `<<` and `>>`, so an instruction set's pattern can't write the two
+  symbols of one of them in a row (`"[$r] <= $v"`), as no program could match
+  it without a space between them. No pattern in the default instruction set
+  does.
 - Labels in different segments can't be compared, as they can't be combined
   with any other operator. A comparison's result is a number, never an offset.
 
@@ -240,6 +245,10 @@ unrelated to an instruction's macro argument.
   gains `<=`, `>=`, `==`, and `!=` as symbols.
 - A comparison's result is in no segment. Two offsets in different segments are
   an error, as for any other operator.
+- `SourcePattern::CheckValueEnds` becomes `ValidateParts`, which also rejects
+  two symbols in a row that join as one of the program lexer's symbols of two
+  characters, in each pattern and in each instruction form put together with a
+  macro code.
 
 ### Conditional assembly
 
@@ -381,8 +390,10 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 - [ ] `gb::Lexer::AddContent` has room for many expansions: every content's
   lines count against about a million lines in all, and a use adds its body's
   lines (CL4).
-- [ ] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
-  pattern of the default instruction set, or any test's, is read (CL1).
+- [x] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
+  pattern of the default instruction set, or any test's, is read (CL1): none
+  writes two of `<`, `>`, `=`, and `!` in a row. Another instruction set's
+  could, so a pattern now can't (see Comparisons).
 
 ## Open questions
 
@@ -400,21 +411,25 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 
 ## CLs
 
-### CL1 [ ] tools: comparisons in expressions
+### CL1 [x] tools: comparisons in expressions
 
 Depends on: nothing.
 
 - `expression.cc`: the comparison rules and their evaluation.
 - `program_lexer.cc`: the new symbols.
+- `source_pattern.cc`: `ValidateParts`, rejecting symbols that join.
 - Manual: Program Source's Expressions, with the new operators, and the
-  arithmetic's rules for them.
+  arithmetic's rules for them, and Instruction Set Source's rule for symbols
+  that join.
 
 **Verify**
 - Standard checks (see CLAUDE.md).
 - Unit tests: each operator true and false, as words and dwords; unsigned
   comparison of negative values; precedence against shifts, `&`, and each
   other; offsets in one segment compared, and in two segments an error; a
-  comparison in an instruction's value and in `.DW`.
+  comparison in an instruction's value and in `.DW`; each pair of symbols that
+  joins rejected in a pattern, with and without a space, and where a macro
+  code meets its instruction's pattern.
 - Manual pages updated.
 
 ### CL2 [ ] tools: conditional assembly

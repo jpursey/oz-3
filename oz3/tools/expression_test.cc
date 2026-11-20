@@ -294,6 +294,83 @@ TEST_F(ExpressionTest, ShiftsOfTheWidthOrMoreAreZero) {
   EXPECT_EQ(Value("-1 >> -1", kDword), 0);
 }
 
+TEST_F(ExpressionTest, Comparisons) {
+  for (Width width : {kWord, kDword}) {
+    EXPECT_EQ(Value("1 < 2", width), 1);
+    EXPECT_EQ(Value("2 < 2", width), 0);
+    EXPECT_EQ(Value("2 <= 2", width), 1);
+    EXPECT_EQ(Value("3 <= 2", width), 0);
+    EXPECT_EQ(Value("3 > 2", width), 1);
+    EXPECT_EQ(Value("2 > 2", width), 0);
+    EXPECT_EQ(Value("2 >= 2", width), 1);
+    EXPECT_EQ(Value("1 >= 2", width), 0);
+    EXPECT_EQ(Value("2 == 2", width), 1);
+    EXPECT_EQ(Value("1 == 2", width), 0);
+    EXPECT_EQ(Value("1 != 2", width), 1);
+    EXPECT_EQ(Value("2 != 2", width), 0);
+  }
+  EXPECT_EQ(Value("70000 > 65535", kDword), 1);
+  EXPECT_EQ(Value("10000h == 0", kDword), 0);
+}
+
+TEST_F(ExpressionTest, ComparisonsAreUnsignedInTheWidth) {
+  EXPECT_EQ(Value("-1 > 0"), 1);
+  EXPECT_EQ(Value("-1 > 0", kDword), 1);
+  EXPECT_EQ(Value("-2 < -1"), 1);
+  EXPECT_EQ(Value("-1 == 0FFFFh"), 1);
+  EXPECT_EQ(Value("-1 == 0FFFFh", kDword), 0);
+  EXPECT_EQ(Value("-1 == 0FFFFFFFFh", kDword), 1);
+  EXPECT_EQ(Value("65535 + 1 == 0"), 1);
+  EXPECT_EQ(Value("65535 + 1 == 0", kDword), 0);
+}
+
+TEST_F(ExpressionTest, ComparisonPrecedence) {
+  // Comparisons are below the shifts, and above '&', as in C, with equality
+  // below the others.
+  EXPECT_EQ(Value("1 << 2 < 5"), 1);
+  EXPECT_EQ(Value("1 < 2 << 2"), 1);
+  EXPECT_EQ(Value("16 >> 2 >= 4"), 1);
+  EXPECT_EQ(Value("1 + 1 == 2"), 1);
+  EXPECT_EQ(Value("2 == 1 + 1"), 1);
+  EXPECT_EQ(Value("2 & 3 == 3"), 0);
+  EXPECT_EQ(Value("3 == 3 & 2"), 0);
+  EXPECT_EQ(Value("1 == 1 & 2 == 2"), 1);
+  EXPECT_EQ(Value("1 == 1 | 2 == 3"), 1);
+  EXPECT_EQ(Value("1 == 2 ^ 2 == 2"), 1);
+  EXPECT_EQ(Value("1 < 2 == 1"), 1);
+  EXPECT_EQ(Value("1 == 1 < 2"), 1);
+  EXPECT_EQ(Value("2 == 2 < 2"), 0);
+  EXPECT_EQ(Value("!1 == 0"), 1);
+  EXPECT_EQ(Value("-1 > 0 == -1 >= 0"), 1);
+}
+
+TEST_F(ExpressionTest, ComparisonsLeftToRight) {
+  EXPECT_EQ(Value("3 > 2 > 1"), 0);
+  EXPECT_EQ(Value("1 < 2 < 3"), 1);
+  EXPECT_EQ(Value("2 == 2 == 1"), 1);
+  EXPECT_EQ(Value("2 != 3 != 1"), 0);
+}
+
+TEST_F(ExpressionTest, ComparisonsOfOffsets) {
+  // Offsets in one segment can be compared, and the result is a number.
+  context_.segment = 1;
+  context_.symbols["A"] = {.value = 10, .segment = 2};
+  context_.symbols["B"] = {.value = 14, .segment = 2};
+  context_.symbols["C"] = {.value = 3, .segment = 3};
+  EXPECT_EQ(Value("A < B"), 1);
+  EXPECT_EQ(Value("A == B - 4"), 1);
+  EXPECT_EQ(Value("A > 5"), 1);
+  EXPECT_EQ(Value("$ >= 0"), 1);
+  EXPECT_EQ(Segment("A < B"), -1);
+  EXPECT_EQ(Segment("A != 5"), -1);
+  EXPECT_EQ(Segment("A + (A == B)"), 2);
+  constexpr std::string_view kMessage =
+      "Labels or $ in different segments can't be combined";
+  EXPECT_EQ(Error("A < C"), absl::StrCat("2: ", kMessage));
+  EXPECT_EQ(Error("C == A"), absl::StrCat("2: ", kMessage));
+  EXPECT_EQ(Error("A >= $"), absl::StrCat("2: ", kMessage));
+}
+
 TEST_F(ExpressionTest, DivisionByZero) {
   EXPECT_EQ(Error("1 / 0"), "2: Division by zero");
   EXPECT_EQ(Error("1 % (2 - 2)"), "2: Division by zero");
@@ -509,7 +586,9 @@ TEST_F(ExpressionTest, GetToken) {
 }
 
 TEST_F(ExpressionTest, InvalidSyntax) {
-  for (std::string_view text : {"", "1 +", "* 2", "(1", "1)", "1 2", "$$"}) {
+  for (std::string_view text :
+       {"", "1 +", "* 2", "(1", "1)", "1 2", "$$", "1 < = 2", "1 = 2", "1 =< 2",
+        "1 ! 2", "<= 1", "1 <", "1 == == 2"}) {
     EXPECT_FALSE(Parse(text).has_value()) << text;
   }
 }

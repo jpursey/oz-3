@@ -388,6 +388,23 @@ TEST_F(ProgramAssemblerTest, LowAndHighWords) {
   EXPECT_EQ(Disassemble(words, 3), "PUSH.D 00000003h");
 }
 
+TEST_F(ProgramAssemblerTest, Comparisons) {
+  // A comparison is 1 or 0, in any expression.
+  EXPECT_THAT(AssembleWords(R"---(.STACK 1
+    .CONST CORES = 2
+    .DW CORES == 2, CORES != 2, CORES < 2, CORES <= 2, CORES > 1, CORES >= 3
+    .DD -1 == 0FFFFh, -1 == 0FFFFFFFFh
+  )---"),
+              ElementsAre(1, 0, 0, 1, 1, 0, 0, 0, 1, 0));
+  std::vector<uint16_t> words = AssembleWords(R"---(.STACK 1
+    .CONST CORES = 2
+    MVQ R1, CORES >= 2
+    PUSH.W (CORES == 1) + 5
+  )---");
+  EXPECT_EQ(Disassemble(words, 0), "MVQ R1, 1");
+  EXPECT_EQ(Disassemble(words, 1), "PUSH.W 0005h");
+}
+
 TEST_F(ProgramAssemblerTest, OffsetInConstant) {
   // $ is the offset of the statement, and in a constant, where it is defined.
   EXPECT_THAT(AssembleWords(R"---(.STACK 1

@@ -41,10 +41,11 @@ constexpr gb::Symbol kSymbols[] = {'(', ')', '[', ']', '{', '}', ',', '+',
                                    '!', '<', '>', '=', ':', '.', '?'};
 
 // The symbols above that a program's expression goes on past, as binary
-// operators. A program's lexer reads "<<" and ">>" as one symbol, so '<' and
-// '>' are taken as the shifts they could start.
+// operators.
 constexpr gb::Symbol kBinaryOperators[] = {'+', '-', '*', '/', '%',
                                            '&', '|', '^', '<', '>'};
+
+constexpr gb::Symbol kJoinedSymbols[] = {"<<", ">>", "<=", ">=", "==", "!="};
 
 // A placeholder: "$#" with its size, or "$" and a name, which is either one of
 // the built-in placeholders (IsPlaceholderName) or a value set. A ':' right
@@ -216,19 +217,35 @@ absl::StatusOr<SourcePattern> SourcePattern::ParseMacroCode(
 
 absl::Span<const gb::Symbol> SourcePattern::GetSymbols() { return kSymbols; }
 
-absl::Status SourcePattern::CheckValueEnds(std::string_view pattern,
-                                           absl::Span<const Part> parts) {
+absl::Span<const gb::Symbol> SourcePattern::GetJoinedSymbols() {
+  return kJoinedSymbols;
+}
+
+absl::Status SourcePattern::ValidateParts(std::string_view pattern,
+                                          absl::Span<const Part> parts) {
   for (int i = 0; i + 1 < static_cast<int>(parts.size()); ++i) {
     const Part& part = parts[i];
     const Part& next = parts[i + 1];
-    if (!part.IsValue() || next.literal_type != gb::kTokenSymbol) {
+    if (next.literal_type != gb::kTokenSymbol) {
       continue;
     }
-    const gb::Symbol op = std::get<gb::Symbol>(next.literal);
-    if (std::ranges::find(kBinaryOperators, op) != std::end(kBinaryOperators)) {
+    const gb::Symbol symbol = std::get<gb::Symbol>(next.literal);
+    if (part.IsValue() && std::ranges::find(kBinaryOperators, symbol) !=
+                              std::end(kBinaryOperators)) {
       return absl::InvalidArgumentError(absl::StrCat(
           pattern.substr(part.offset, part.size), " is followed by '",
-          op.GetString(), "', which would continue its expression"));
+          symbol.GetString(), "', which would continue its expression"));
+    }
+    if (part.literal_type != gb::kTokenSymbol) {
+      continue;
+    }
+    const gb::Symbol previous = std::get<gb::Symbol>(part.literal);
+    const gb::Symbol joined =
+        absl::StrCat(previous.GetString(), symbol.GetString());
+    if (std::ranges::find(kJoinedSymbols, joined) != std::end(kJoinedSymbols)) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "'", previous.GetString(), "' followed by '", symbol.GetString(),
+          "' is read as '", joined.GetString(), "' in a program"));
     }
   }
   return absl::OkStatus();
@@ -319,7 +336,7 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
   }
   absl::StrAppend(&pattern.text_, text.substr(text_pos));
   pattern.EndArg(arg_start);
-  if (absl::Status status = CheckValueEnds(pattern.text_, pattern.parts_);
+  if (absl::Status status = ValidateParts(pattern.text_, pattern.parts_);
       !status.ok()) {
     return status;
   }

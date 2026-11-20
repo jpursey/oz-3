@@ -828,6 +828,19 @@ TEST(InstructionSetSyntaxTest, InstructionValueFollowedByMacroCodeOperator) {
                                    HasSubstr("1 is followed by '+'")));
 }
 
+TEST(InstructionSetSyntaxTest, MacroCodeSymbolJoinsInstructionSymbol) {
+  // The pattern and code are fine on their own, but the form "[!=D($v)]" can't
+  // be written, as a program reads "!=" as one symbol.
+  TestDef def(kInstructionSet);
+  def.instructions[7].source = "[!$m]";
+  def.codes[0][3].source = "=D($v)";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "PEEK", def.GetCompiled());
+  EXPECT_THAT(error.message,
+              AllOf(HasSubstr("with macro code \"=D($v)\""),
+                    HasSubstr("'!' followed by '=' is read as '!='")));
+}
+
 //==============================================================================
 // Encoding and disassembly
 //==============================================================================
