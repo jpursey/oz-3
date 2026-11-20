@@ -84,6 +84,26 @@ std::vector<int64_t> GetCodeWordValues(const InstructionForm& form,
   return values;
 }
 
+// A directive of conditional assembly, by what it does.
+enum class Conditional { kNone, kIf, kElseIf, kElse, kEndIf };
+
+// Returns which directive of conditional assembly `name` is, if any.
+Conditional GetConditional(std::string_view name) {
+  if (name == "IF" || name == "IFDEF" || name == "IFNDEF") {
+    return Conditional::kIf;
+  }
+  if (name == "ELSEIF") {
+    return Conditional::kElseIf;
+  }
+  if (name == "ELSE") {
+    return Conditional::kElse;
+  }
+  if (name == "ENDIF") {
+    return Conditional::kEndIf;
+  }
+  return Conditional::kNone;
+}
+
 }  // namespace
 
 // Assembles one program, in two passes:
@@ -219,6 +239,29 @@ class ProgramAssembler final {
     uint16_t assign_mask = 0xFFFF;
   };
 
+  // Whether an open .IF has assembled one of its blocks yet. Before it has
+  // (kUnsatisfied), its next .ELSEIF's condition is evaluated. Once it has
+  // (kAssembling for that block's lines, then kSatisfied), its later blocks are
+  // skipped. An .IF in a skipped block, or after one of its conditional
+  // directives had an error (kDisabled), assembles none of its blocks, and its
+  // directives are read as in a skipped block.
+  enum class IfState { kUnsatisfied, kAssembling, kSatisfied, kDisabled };
+
+  // An .IF, .IFDEF, or .IFNDEF whose .ENDIF isn't read yet.
+  struct OpenIf {
+    gb::Token token;        // Its '.', for errors.
+    std::string_view name;  // Its directive's name ("IF").
+    IfState state = IfState::kUnsatisfied;
+    bool has_else = false;
+  };
+
+  // What SkipLine() found on a line that isn't assembled.
+  enum class SkippedLine {
+    kSkipped,  // The line is skipped, and the lexer is at the next one.
+    kRead,     // The line ends a block, so it is read, from its start.
+    kEnd,      // The content ended.
+  };
+
   // The context of a statement's expressions: its segment and offset, and the
   // scope of its local labels.
   class StatementContext final : public ExpressionContext {
@@ -298,6 +341,7 @@ class ProgramAssembler final {
   bool DefineConstant(const gb::Token& token, const gb::ParsedItem& value);
   bool CheckNotDefined(const gb::Token& token, std::string_view key,
                        std::string_view name);
+  bool IsDefined(std::string_view key) const;
 
   // Returns the value of `expression` as `width` in `context`, or reports its
   // error and returns nullopt. If `segment` isn't null, it is set to the
@@ -319,8 +363,28 @@ class ProgramAssembler final {
 
   // First pass.
   void ReadContent(gb::LexerContentId content);
-  void ReadLine(gb::LexerContentId content, const gb::ParsedItem& line);
+  void ReadLines(gb::LexerContentId content, std::vector<OpenIf>* ifs);
+  void ReadLine(gb::LexerContentId content, const gb::ParsedItem& line,
+                std::vector<OpenIf>* ifs);
+  void ReadInvalidLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadLabel(const gb::ParsedItem& label);
+
+  // Conditional assembly. Each content has its own open .IFs, `ifs`,
+  // innermost last. A line in a block that isn't assembled is skipped, with
+  // only its tokens up to a directive's name read, unless it is an .ELSEIF,
+  // .ELSE, or .ENDIF of the innermost .IF that isn't disabled, which is read
+  // as any other line.
+  //
+  // GetIfState() returns the state of an .IF from the condition of the block
+  // it is starting, which is nullopt if the condition had an error.
+  static IfState GetIfState(std::optional<bool> condition);
+  SkippedLine SkipLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
+  void ReadConditional(Conditional conditional, const gb::ParsedItem& directive,
+                       std::vector<OpenIf>* ifs);
+  void ReadInvalidConditional(Conditional conditional,
+                              const gb::ParsedItem& directive,
+                              std::vector<OpenIf>* ifs);
+  std::optional<bool> ReadCondition(const gb::ParsedItem& directive);
   void ReadDirective(const gb::ParsedItem& directive);
   void ReadInclude(const gb::ParsedItem& directive);
   void ReadConst(const gb::ParsedItem& directive);
@@ -705,11 +769,15 @@ bool ProgramAssembler::DefineConstant(const gb::Token& token,
 bool ProgramAssembler::CheckNotDefined(const gb::Token& token,
                                        std::string_view key,
                                        std::string_view name) {
-  if (labels_.contains(key) || constants_.contains(key)) {
+  if (IsDefined(key)) {
     Error(token, absl::StrCat(name, " is already defined"));
     return false;
   }
   return true;
+}
+
+bool ProgramAssembler::IsDefined(std::string_view key) const {
+  return labels_.contains(key) || constants_.contains(key);
 }
 
 std::optional<uint32_t> ProgramAssembler::Evaluate(
@@ -754,21 +822,41 @@ std::optional<int> ProgramAssembler::EvaluateInRange(const gb::ParsedItem& item,
 //------------------------------------------------------------------------------
 
 void ProgramAssembler::ReadContent(gb::LexerContentId content) {
+  // An .IF ends in the content it starts in.
+  std::vector<OpenIf> ifs;
+  ReadLines(content, &ifs);
+  for (int i = static_cast<int>(ifs.size()) - 1; i >= 0; --i) {
+    Error(ifs[i].token, absl::StrCat(".", ifs[i].name, " has no .ENDIF"));
+  }
+}
+
+void ProgramAssembler::ReadLines(gb::LexerContentId content,
+                                 std::vector<OpenIf>* ifs) {
   gb::Lexer& lexer = GetLexer();
   while (!stopped_) {
+    if (!ifs->empty() && ifs->back().state != IfState::kAssembling) {
+      const SkippedLine skipped = SkipLine(content, ifs);
+      if (skipped == SkippedLine::kEnd) {
+        return;
+      }
+      if (skipped == SkippedLine::kSkipped) {
+        continue;
+      }
+    }
     gb::ParseResult line = parser_->Parse(content, ProgramGrammar::kLineRule);
     if (!line.IsOk()) {
       // The lexer is left at the start of the line, so reading goes on at the
       // next.
       AddError(line.GetError());
       const int line_index = lexer.GetCurrentLine(content);
+      ReadInvalidLine(content, ifs);
       lexer.NextLine(content);
       if (lexer.GetCurrentLine(content) == line_index) {
         return;
       }
       continue;
     }
-    ReadLine(content, *line);
+    ReadLine(content, *line, ifs);
     if (line->GetToken("end").IsEnd()) {
       return;
     }
@@ -776,16 +864,47 @@ void ProgramAssembler::ReadContent(gb::LexerContentId content) {
 }
 
 void ProgramAssembler::ReadLine(gb::LexerContentId content,
-                                const gb::ParsedItem& line) {
-  if (const gb::ParsedItem* label = line.GetItem("label"); label != nullptr) {
+                                const gb::ParsedItem& line,
+                                std::vector<OpenIf>* ifs) {
+  const gb::ParsedItem* label = line.GetItem("label");
+  const gb::ParsedItem* directive = line.GetItem("directive");
+  if (directive != nullptr) {
+    const std::string_view name = directive->GetString("directive");
+    if (const Conditional conditional = GetConditional(name);
+        conditional != Conditional::kNone) {
+      if (label != nullptr) {
+        Error(label->GetToken(),
+              absl::StrCat(".", name, " can't have a label"));
+      }
+      ReadConditional(conditional, *directive, ifs);
+      return;
+    }
+  }
+  if (label != nullptr) {
     ReadLabel(*label);
   }
-  if (const gb::ParsedItem* directive = line.GetItem("directive");
-      directive != nullptr) {
+  if (directive != nullptr) {
     ReadDirective(*directive);
   } else if (const gb::ParsedItem* instruction = line.GetItem("instruction");
              instruction != nullptr) {
     ReadInstruction(content, *instruction);
+  }
+}
+
+void ProgramAssembler::ReadInvalidLine(gb::LexerContentId content,
+                                       std::vector<OpenIf>* ifs) {
+  // A line that doesn't parse is still read as far as a directive's name, for
+  // the directives the lines after it depend on.
+  gb::ParseResult line =
+      parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
+  if (!line.IsOk()) {
+    return;
+  }
+  const gb::ParsedItem* directive = line->GetItem("directive");
+  if (const Conditional conditional =
+          GetConditional(directive->GetString("directive"));
+      conditional != Conditional::kNone) {
+    ReadInvalidConditional(conditional, *directive, ifs);
   }
 }
 
@@ -1285,6 +1404,156 @@ void ProgramAssembler::SetPageCount(Segment& segment) {
                        " pass the end of the bank, at page ",
                        kMemoryBankPageCount));
   }
+}
+
+//------------------------------------------------------------------------------
+// Conditional assembly
+//------------------------------------------------------------------------------
+
+ProgramAssembler::IfState ProgramAssembler::GetIfState(
+    std::optional<bool> condition) {
+  if (!condition.has_value()) {
+    return IfState::kDisabled;
+  }
+  return *condition ? IfState::kAssembling : IfState::kUnsatisfied;
+}
+
+ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
+    gb::LexerContentId content, std::vector<OpenIf>* ifs) {
+  gb::Lexer& lexer = GetLexer();
+  const gb::Token start = lexer.NextToken(content, false);
+  if (start.IsEnd()) {
+    return SkippedLine::kEnd;
+  }
+
+  // A line that doesn't start with a directive leaves the lexer at its start.
+  gb::ParseResult line =
+      parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
+  const gb::ParsedItem* directive =
+      line.IsOk() ? line->GetItem("directive") : nullptr;
+  const std::string_view name =
+      directive != nullptr ? directive->GetString("directive") : "";
+  const Conditional conditional = GetConditional(name);
+  if (conditional != Conditional::kNone) {
+    OpenIf& open = ifs->back();
+    if (open.state != IfState::kDisabled && conditional != Conditional::kIf) {
+      lexer.SetNextToken(start);
+      return SkippedLine::kRead;
+    }
+    if (const gb::ParsedItem* label = line->GetItem("label");
+        label != nullptr) {
+      Error(label->GetToken(), absl::StrCat(".", name, " can't have a label"));
+    }
+
+    // A disabled .IF's directives are checked as any others, but it assembles
+    // none of its blocks.
+    if (conditional == Conditional::kElseIf ||
+        conditional == Conditional::kElse) {
+      if (open.has_else) {
+        Error(directive->GetToken(),
+              absl::StrCat(".", name, " can't come after .ELSE"));
+      }
+      open.has_else = open.has_else || conditional == Conditional::kElse;
+    } else if (conditional == Conditional::kIf) {
+      ifs->push_back({.token = directive->GetToken(),
+                      .name = name,
+                      .state = IfState::kDisabled});
+    } else if (conditional == Conditional::kEndIf) {
+      ifs->pop_back();
+    }
+  }
+  lexer.NextLine(content);
+  return SkippedLine::kSkipped;
+}
+
+void ProgramAssembler::ReadConditional(Conditional conditional,
+                                       const gb::ParsedItem& directive,
+                                       std::vector<OpenIf>* ifs) {
+  const std::string_view name = directive.GetString("directive");
+  const gb::Token token = directive.GetToken();
+  // An .IF assembles its first block if its condition is nonzero.
+  if (conditional == Conditional::kIf) {
+    ifs->push_back({.token = token,
+                    .name = name,
+                    .state = GetIfState(ReadCondition(directive))});
+    return;
+  }
+  if (ifs->empty()) {
+    Error(token, absl::StrCat(".", name, " has no .IF"));
+    return;
+  }
+
+  // A disabled .IF's directives are read by SkipLine() instead.
+  OpenIf& open = ifs->back();
+  DCHECK(open.state != IfState::kDisabled);
+  if (conditional == Conditional::kEndIf) {
+    ifs->pop_back();
+    return;
+  }
+
+  // The rest is an .ELSEIF or .ELSE, which starts the .IF's next block.
+  if (open.has_else) {
+    Error(token, absl::StrCat(".", name, " can't come after .ELSE"));
+    open.state = IfState::kDisabled;
+    return;
+  }
+  open.has_else = conditional == Conditional::kElse;
+
+  // Once the .IF has assembled a block (it is kAssembling or kSatisfied), its
+  // later blocks are skipped, and their conditions aren't read.
+  if (open.state != IfState::kUnsatisfied) {
+    open.state = IfState::kSatisfied;
+    return;
+  }
+
+  // Until then, an .ELSE's block is assembled, and an .ELSEIF's is if its
+  // condition is nonzero.
+  if (conditional == Conditional::kElse) {
+    open.state = IfState::kAssembling;
+    return;
+  }
+  open.state = GetIfState(ReadCondition(directive));
+}
+
+void ProgramAssembler::ReadInvalidConditional(Conditional conditional,
+                                              const gb::ParsedItem& directive,
+                                              std::vector<OpenIf>* ifs) {
+  // A conditional directive is still an .IF's start, block, or end if the rest
+  // of its line is invalid, so the lines after it are read as they would be,
+  // as for a condition with an error.
+  const std::string_view name = directive.GetString("directive");
+  if (conditional == Conditional::kIf) {
+    ifs->push_back({.token = directive.GetToken(),
+                    .name = name,
+                    .state = IfState::kDisabled});
+    return;
+  }
+  if (ifs->empty()) {
+    return;
+  }
+  if (conditional == Conditional::kEndIf) {
+    ifs->pop_back();
+    return;
+  }
+  OpenIf& open = ifs->back();
+  open.state = IfState::kDisabled;
+  open.has_else = open.has_else || conditional == Conditional::kElse;
+}
+
+std::optional<bool> ProgramAssembler::ReadCondition(
+    const gb::ParsedItem& directive) {
+  if (const gb::ParsedItem* condition = directive.GetItem("condition");
+      condition != nullptr) {
+    const std::optional<uint32_t> value = EvaluateNow(*condition);
+    if (!value.has_value()) {
+      return std::nullopt;
+    }
+    return *value != 0;
+  }
+
+  // .IFDEF or .IFNDEF, of a label or constant defined above.
+  const bool defined = IsDefined(directive.GetToken("name").GetString());
+  return directive.GetString("directive") == "IFDEF" ? defined : !defined;
 }
 
 //------------------------------------------------------------------------------

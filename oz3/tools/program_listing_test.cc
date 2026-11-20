@@ -154,6 +154,23 @@ TEST_F(ProgramListingTest, LabelsWithoutWords) {
             "BIG:10000                       end:\n");
 }
 
+TEST_F(ProgramListingTest, SkippedLines) {
+  // Lines conditional assembly skips are listed with no location or words.
+  EXPECT_EQ(List(".STACK 4\n"
+                 ".IF 0\n"
+                 "skipped: NOP\n"
+                 ".ELSE\n"
+                 "taken: NOP\n"
+                 ".ENDIF\n"),
+            "program\n"
+            "                           .STACK 4\n"
+            "                           .IF 0\n"
+            "                           skipped: NOP\n"
+            "                           .ELSE\n"
+            "0000  0000                 taken: NOP\n"
+            "                           .ENDIF\n");
+}
+
 TEST_F(ProgramListingTest, Files) {
   // Each file is listed, and a line included twice has a row for each time.
   // A listing file reads the files by the map's paths.

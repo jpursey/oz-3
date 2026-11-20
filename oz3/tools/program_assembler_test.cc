@@ -10,6 +10,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/log/check.h"
@@ -1623,6 +1625,335 @@ TEST_F(ProgramAssemblerTest, IncludeFromText) {
   EXPECT_THAT(AssembleErrors(".STACK 1\n.INCLUDE \"a.oza\"\n"),
               ElementsAre(IsErrorAt(
                   1, 9, "A program assembled from text can't include files")));
+}
+
+//==============================================================================
+// Conditional assembly
+//==============================================================================
+
+TEST_F(ProgramAssemblerTest, ConditionalBlocks) {
+  // At most one block is assembled: the first whose condition is nonzero, or
+  // the .ELSE.
+  for (auto [n, word] : {std::pair{1, 1}, {2, 2}, {3, 3}, {0, 4}}) {
+    EXPECT_THAT(AssembleWords(absl::StrCat(".STACK 1\n"
+                                           ".CONST N = ",
+                                           n,
+                                           "\n"
+                                           ".IF N == 1\n"
+                                           "  .DW 1\n"
+                                           ".ELSEIF N == 2\n"
+                                           "  .DW 2\n"
+                                           ".ELSEIF N >= 2\n"
+                                           "  .DW 3\n"
+                                           ".ELSE\n"
+                                           "  .DW 4\n"
+                                           ".ENDIF\n"
+                                           ".DW 5\n")),
+                ElementsAre(word, 5))
+        << n;
+  }
+
+  // .ELSEIF and .ELSE are optional, and any nonzero value is true.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".IF 0\n"
+                            "  .DW 1\n"
+                            ".ENDIF\n"
+                            ".IF 2 - 1\n"
+                            "  .DW 2\n"
+                            ".ENDIF\n"
+                            ".if -1\n"
+                            "  .DW 3\n"
+                            ".else\n"
+                            "  .DW 4\n"
+                            ".endif\n"),
+              ElementsAre(2, 3));
+}
+
+TEST_F(ProgramAssemblerTest, NestedConditionals) {
+  // Data is in whole units of two words, so each ends with a 0.
+  for (auto [a, b, words] :
+       {std::tuple{0, 0, std::vector<uint16_t>{6, 4, 9, 0}},
+        {0, 1, {5, 4, 9, 0}},
+        {1, 0, {1, 3, 9, 0}},
+        {1, 1, {1, 2, 9, 0}}}) {
+    EXPECT_EQ(AssembleWords(absl::StrCat(".STACK 1\n"
+                                         ".CONST A = ",
+                                         a,
+                                         "\n"
+                                         ".CONST B = ",
+                                         b,
+                                         "\n"
+                                         ".IF A\n"
+                                         "  .DW 1\n"
+                                         "  .IF B\n"
+                                         "    .DW 2\n"
+                                         "  .ELSE\n"
+                                         "    .DW 3\n"
+                                         "  .ENDIF\n"
+                                         ".ELSE\n"
+                                         "  .IF B\n"
+                                         "    .IF 1\n"
+                                         "      .DW 5\n"
+                                         "    .ENDIF\n"
+                                         "  .ELSEIF 1\n"
+                                         "    .DW 6\n"
+                                         "  .ELSE\n"
+                                         "    .DW 7\n"
+                                         "  .ENDIF\n"
+                                         "  .DW 4\n"
+                                         ".ENDIF\n"
+                                         ".DW 9\n")),
+              words)
+        << a << b;
+  }
+}
+
+TEST_F(ProgramAssemblerTest, SkippedLinesAreNotRead) {
+  // Lines that aren't assembled can hold anything, and an .ELSEIF after a
+  // block that is assembled isn't evaluated. A '.' with a space after it
+  // isn't a directive.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".IF 1\n"
+                            "  .DW 1\n"
+                            ".ELSEIF NOWHERE\n"
+                            "  Anything ( at \"all\n"
+                            "  .UNKNOWN 'x\n"
+                            "  NOP 1, 2, 3\n"
+                            "  label: label:\n"
+                            "  . ENDIF\n"
+                            "  ADD.W R1, R2 .ENDIF\n"
+                            ".ELSE\n"
+                            "  .IF ) more ( nonsense\n"
+                            "  .ELSEIF ]\n"
+                            "  .ELSE\n"
+                            "  .ENDIF\n"
+                            "  .DW 2\n"
+                            ".ENDIF\n"
+                            ".DW 3\n"),
+              ElementsAre(1, 3));
+
+  // A skipped block can end the content.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n.IF 0\nNOP"),
+              ElementsAre(IsErrorAt(1, 0, ".IF has no .ENDIF")));
+}
+
+TEST_F(ProgramAssemblerTest, IfdefAndIfndef) {
+  // Whether a label or constant is defined above.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".CONST A = 0\n"
+                            "start:\n"
+                            ".IFDEF A\n"
+                            "  .DW 1\n"
+                            ".ENDIF\n"
+                            ".IFDEF start\n"
+                            "  .DW 2\n"
+                            ".ENDIF\n"
+                            ".IFDEF LATER\n"
+                            "  .DW 3\n"
+                            ".ELSEIF 1\n"
+                            "  .DW 4\n"
+                            ".ENDIF\n"
+                            ".IFNDEF LATER\n"
+                            "  .DW 5\n"
+                            ".ENDIF\n"
+                            ".IFNDEF A\n"
+                            "  .DW 6\n"
+                            ".ELSE\n"
+                            "  .DW 7\n"
+                            ".ENDIF\n"
+                            ".CONST LATER = 1\n"),
+              ElementsAre(1, 2, 4, 5, 7, 0));
+}
+
+TEST_F(ProgramAssemblerTest, ConditionErrors) {
+  // A condition must be known as the .IF is read, as a word. One with an error
+  // assembles none of its blocks.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".CONST BIG = 70000\n"
+                             ".IF LATER\n"
+                             "  .DW 1\n"
+                             ".ELSE\n"
+                             "  .DW 2\n"
+                             "  FOO\n"
+                             ".ENDIF\n"
+                             ".IF 0\n"
+                             ".ELSEIF BIG\n"
+                             "  FOO\n"
+                             ".ELSE\n"
+                             "  FOO\n"
+                             ".ENDIF\n"
+                             ".IF 1 / 0\n"
+                             ".ENDIF\n"
+                             ".CONST LATER = 1\n"),
+              ElementsAre(IsErrorAt(2, 4, "LATER is not defined"),
+                          IsErrorAt(9, 8, "BIG can't be evaluated as a word"),
+                          IsErrorAt(14, 6, "Division by zero")));
+
+  // The .IF's later directives are then read as in a skipped block: their
+  // conditions aren't read, but their order is checked.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF LATER\n"
+                             ".ELSEIF ]\n"
+                             ".ELSE\n"
+                             "  FOO\n"
+                             ".ELSE\n"
+                             ".ENDIF\n"
+                             ".CONST LATER = 1\n"),
+              ElementsAre(IsErrorAt(1, 4, "LATER is not defined"),
+                          IsErrorAt(5, 0, ".ELSE can't come after .ELSE")));
+
+  // A dword constant is tested through its halves.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".CONST BIG = 70000\n"
+                            ".IF HIGH(BIG) != 0\n"
+                            "  .DW LOW(BIG)\n"
+                            ".ENDIF\n"),
+              ElementsAre(70000 - 65536, 0));
+}
+
+TEST_F(ProgramAssemblerTest, UnmatchedConditionals) {
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".ELSEIF 1\n"
+                             ".ELSE\n"
+                             ".ENDIF\n"
+                             ".IF 0\n"
+                             ".ELSE\n"
+                             ".ELSE\n"
+                             ".ELSEIF 1\n"
+                             "  NOP\n"
+                             ".ENDIF\n"
+                             ".IF 0\n"
+                             "  .IF 1\n"
+                             "  .ELSE\n"
+                             "  .ELSE\n"
+                             "  .ELSEIF 1\n"
+                             "  .ENDIF\n"
+                             ".ENDIF\n"
+                             ".IF 1\n"
+                             ".IFDEF X\n"
+                             ".IF 0\n"
+                             ".IFNDEF X\n"),
+              ElementsAre(IsErrorAt(1, 0, ".ELSEIF has no .IF"),
+                          IsErrorAt(2, 0, ".ELSE has no .IF"),
+                          IsErrorAt(3, 0, ".ENDIF has no .IF"),
+                          IsErrorAt(6, 0, ".ELSE can't come after .ELSE"),
+                          IsErrorAt(7, 0, ".ELSEIF can't come after .ELSE"),
+                          IsErrorAt(13, 2, ".ELSE can't come after .ELSE"),
+                          IsErrorAt(14, 2, ".ELSEIF can't come after .ELSE"),
+                          IsErrorAt(20, 0, ".IFNDEF has no .ENDIF"),
+                          IsErrorAt(19, 0, ".IF has no .ENDIF"),
+                          IsErrorAt(18, 0, ".IFDEF has no .ENDIF"),
+                          IsErrorAt(17, 0, ".IF has no .ENDIF")));
+}
+
+TEST_F(ProgramAssemblerTest, InvalidConditionals) {
+  // A conditional directive whose line is invalid still starts, carries on,
+  // or ends its .IF, as one whose condition has an error, so the lines after
+  // it are read as they would be.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF 0\n"
+                             ".ELSEIF 1 +\n"
+                             "  FOO\n"
+                             ".ELSE\n"
+                             "  FOO\n"
+                             ".ENDIF\n"
+                             ".IF 1\n"
+                             "  .IF 1 +\n"
+                             "    FOO\n"
+                             "  .ELSE\n"
+                             "    FOO\n"
+                             "  .ENDIF\n"
+                             ".ENDIF X\n"
+                             ".IFDEF 5\n"
+                             "  FOO\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(2, 11, ""), IsErrorAt(8, 9, ""),
+                          IsErrorAt(13, 7, ""), IsErrorAt(14, 7, "")));
+
+  // An invalid .ELSE is still the .IF's .ELSE.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF 0\n"
+                             ".ELSE X\n"
+                             ".ELSE\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(2, 6, ""),
+                          IsErrorAt(3, 0, ".ELSE can't come after .ELSE")));
+}
+
+TEST_F(ProgramAssemblerTest, ConditionalsEndInTheirFile) {
+  // An .IF ends in the file it starts in, so an included file can't end one,
+  // or leave one open.
+  ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza",
+                                     ".STACK 1\n"
+                                     ".IF 1\n"
+                                     ".INCLUDE \"a.oza\"\n"
+                                     ".ENDIF\n"
+                                     ".DW 2\n"));
+  ASSERT_TRUE(file_system_.WriteFile("mem:/a.oza",
+                                     ".ENDIF\n"
+                                     ".DW 1\n"
+                                     ".IF 0\n"));
+  std::vector<gb::ParseError> errors;
+  EXPECT_EQ(
+      AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza", &errors),
+      nullptr);
+  EXPECT_THAT(errors, ElementsAre(IsErrorAt(0, 0, ".ENDIF has no .IF"),
+                                  IsErrorAt(2, 0, ".IF has no .ENDIF")));
+  EXPECT_EQ(errors[0].GetLocation().filename, "mem:/a.oza");
+  EXPECT_EQ(errors[1].GetLocation().filename, "mem:/a.oza");
+}
+
+TEST_F(ProgramAssemblerTest, LabelsOnConditionals) {
+  // No conditional directive can have a label, in a block that is assembled
+  // or not, and the label isn't defined.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             "a: .IF 1\n"
+                             "b: .IF 0\n"
+                             "c: .IFDEF X\n"
+                             "@d: .IFNDEF X\n"
+                             "e: .ELSEIF 1\n"
+                             "f: .ELSE\n"
+                             "g: .ENDIF\n"
+                             "h: .ENDIF\n"
+                             "i: .ELSEIF 1\n"
+                             "j: .ELSE\n"
+                             "k: .ENDIF\n"
+                             ".ENDIF\n"
+                             ".IFDEF A\n"
+                             "  FOO\n"
+                             ".ENDIF\n"
+                             ".IFDEF C\n"
+                             "  FOO\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(1, 0, ".IF can't have a label"),
+                          IsErrorAt(2, 0, ".IF can't have a label"),
+                          IsErrorAt(3, 0, ".IFDEF can't have a label"),
+                          IsErrorAt(4, 0, ".IFNDEF can't have a label"),
+                          IsErrorAt(5, 0, ".ELSEIF can't have a label"),
+                          IsErrorAt(6, 0, ".ELSE can't have a label"),
+                          IsErrorAt(7, 0, ".ENDIF can't have a label"),
+                          IsErrorAt(8, 0, ".ENDIF can't have a label"),
+                          IsErrorAt(9, 0, ".ELSEIF can't have a label"),
+                          IsErrorAt(10, 0, ".ELSE can't have a label"),
+                          IsErrorAt(11, 0, ".ENDIF can't have a label")));
+}
+
+TEST_F(ProgramAssemblerTest, MapOfConditionals) {
+  // Lines that aren't assembled have no statements or labels.
+  const ProgramMap map = AssembleMap(
+      ".STACK 1\n"
+      ".IF 0\n"
+      "skipped: NOP\n"
+      ".ELSE\n"
+      "taken: NOP\n"
+      ".ENDIF\n");
+  EXPECT_THAT(map.GetStatements(),
+              ElementsAre(MapStatement{.segment = 0,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 4}}));
+  ASSERT_THAT(map.GetLabels(), SizeIs(1));
+  EXPECT_EQ(map.GetLabels()[0].name, "TAKEN");
 }
 
 TEST_F(ProgramAssemblerTest, MapOfTextProgram) {
