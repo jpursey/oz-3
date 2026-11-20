@@ -200,7 +200,7 @@ TEST(SourcePatternTest, WholeArgsAreOnlyAPlaceholder) {
 
 TEST(SourcePatternTest, Literals) {
   absl::StatusOr<SourcePattern> pattern = SourcePattern::ParseInstruction(
-      "SP, D[x_1] 3 2.5 'a' \"bc\" {-*/%~&|^!<>=:.?}", {});
+      "SP, D[x_1] 3 2.5 'a' \"bc\" {-*/%~&|^!<>:=.?}", {});
   ASSERT_TRUE(pattern.ok()) << pattern.status();
   auto parts = pattern->GetParts();
   ASSERT_EQ(parts.size(), 27);
@@ -220,7 +220,7 @@ TEST(SourcePatternTest, Literals) {
   EXPECT_EQ(parts[9].literal, gb::TokenValue(std::string("bc")));
   ExpectSymbol(parts[10], '{');
   int i = 11;
-  for (char symbol : std::string_view("-*/%~&|^!<>=:.?")) {
+  for (char symbol : std::string_view("-*/%~&|^!<>:=.?")) {
     ExpectSymbol(parts[i++], symbol);
   }
   ExpectSymbol(parts[26], '}');
