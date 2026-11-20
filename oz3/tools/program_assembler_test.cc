@@ -584,9 +584,9 @@ TEST_F(ProgramAssemblerTest, FixedSizeData) {
           IsErrorAt(2, 44, "passes the end of its field, at its SIZE of 1")));
 
   // A string with an error is only that error, and its field is the items
-  // after it.
-  EXPECT_THAT(AssembleErrors(".STACK 1\n.DW SIZE(2) \"\u0100\", 1, 2\n"),
-              ElementsAre(IsErrorAt(1, 12, "does not fit in a byte")));
+  // after it. U+0100 is "\xC4\x80" in UTF-8.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n.DW SIZE(2) \"\xC4\x80\", 1, 2\n"),
+              ElementsAre(IsErrorAt(1, 12, "U+0100 does not fit in a byte")));
 
   // In .DD, SIZE is in dwords.
   EXPECT_THAT(AssembleWords(".STACK 1\n.DD SIZE(2) 12345678h\n"),
