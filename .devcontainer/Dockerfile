@@ -7,7 +7,8 @@
 # a Linux build of OZ-3 and Game Bits needs, including the Vulkan SDK, whose
 # environment is set up for every process, as the SDK's setup-env.sh would, and
 # a desktop that leaves every key to its programs. It needs an x86_64 host, as
-# the SDK is only built for x86_64 Linux.
+# the SDK is only built for x86_64 Linux. Ubuntu 24.04 is pinned, as on CI, for
+# its clang 18: newer clang (21) has warnings that fail Game Bits' build.
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # The reference clang-format (see Format in CLAUDE.md), from PyPI, in a virtual
@@ -54,7 +55,7 @@ ENV CC=clang CXX=clang++ CXXFLAGS=-fstandalone-debug
 # too, which source bash.bashrc) sets it again.
 RUN env | grep -E '^(CC|CXX|CXXFLAGS|VULKAN_SDK|PATH|PKG_CONFIG_PATH|CMAKE_PREFIX_PATH)=' \
     | sed -E 's/^([^=]*)=(.*)$/export \1="\2"/' > /etc/devcontainer-build-env.sh \
-  && printf '\n%s\n' '[ -z "${VULKAN_SDK:-}" ] && . /etc/devcontainer-build-env.sh' >> /etc/bash.bashrc
+  && printf '\n%s\n' 'if [ -z "${VULKAN_SDK:-}" ]; then . /etc/devcontainer-build-env.sh; fi' >> /etc/bash.bashrc
 
 # The desktop's window manager settings, in place of desktop-lite's own, which it
 # only writes when there are none: its init with a dark style rather than a

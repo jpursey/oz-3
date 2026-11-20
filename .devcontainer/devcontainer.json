@@ -57,10 +57,14 @@
         "matepek.vscode-catch2-test-adapter"
       ],
       "settings": {
-        // The build directories CLAUDE.md uses on Linux. The image sets CC and
-        // CXX to clang.
+        // The build directories CLAUDE.md uses on Linux, with clang whichever
+        // kit is chosen.
         "cmake.generator": "Ninja",
         "cmake.buildDirectory": "${workspaceFolder}/out/build/linux-clang-${buildType}",
+        "cmake.configureSettings": {
+          "CMAKE_C_COMPILER": "clang",
+          "CMAKE_CXX_COMPILER": "clang++"
+        },
         // A program debugged from CMake Tools runs in a terminal of its own on
         // the desktop, which gets every key, where VS Code's own terminal
         // keeps the keys it has shortcuts for.

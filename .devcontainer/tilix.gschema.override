@@ -7,7 +7,7 @@ theme-variant = 'dark'
 # can't tell apart from Ctrl+C and Ctrl+V anyway. Everything else is in
 # Tilix's menus, from its header bar and a right click. These are all of
 # Tilix's shortcuts but those two; its accelerators-enabled setting would turn
-# off those two as well.
+# off those two as well. The terminal itself also pastes on Shift+Insert.
 [com.gexperts.Tilix.Keybindings]
 app-new-session = 'disabled'
 app-new-window = 'disabled'
