@@ -118,18 +118,6 @@ as a memory view's) into source needs where each segment was loaded.
 `ProgramLoader::LoadedProgram` only records each program bank's page spans, so
 it gains each segment's physical bank and start page.
 
-## Program macros and conditional assembly
-
-- **Layers:** tools, manual
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [assembler_design.md](assembler_design.md)
-
-Macros in program source (`.MACRO`), for the boilerplate the instruction set
-doesn't cover, and conditional assembly (`.IF`), such as for building one
-source for different hardware configurations.
-
 ## Case-sensitive programs
 
 - **Layers:** tools, manual
