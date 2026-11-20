@@ -447,9 +447,13 @@ with the command in one `OUT.ID`.
 | 1       | Shut down: power off, with the exit code                    |
 | 2       | Restart: power off and on again, ignoring the exit code     |
 
-Any other command is reserved, and does nothing. The command takes effect at
-once: no cycle runs after the one that wrote it. Its wiring is the same in
-every Ozzy, as every device's is, and a config file can't leave it out.
+Any other command is reserved, and does nothing. The port is the power control
+device's (see the manual's Power Control page), which only records the request,
+in the processor's context, where the app looks for it after each `Ozzy::Run`.
+So the machine runs on to the end of that run, and a program halts after
+writing the command. The first request stands until the app acts on it. The
+power control's wiring is the same in every Ozzy, as every device's is, and a
+config file can't leave it out.
 
 What powering off does is up to the app:
 - `ozzyterm --headless` exits, with the exit code as its own. Windows keeps

@@ -31,7 +31,9 @@ class BaseCoreTest : public testing::Test {
     int num_ports = 0;
     int64_t clock_hz = ProcessorConfig::kDefaultClockHz;
     std::vector<std::shared_ptr<const DeviceFactory>> devices;
-    gb::Context context;  // The processor's, for its devices.
+    // The processor's, for its devices. A test that reads what a device writes
+    // to it passes a context it keeps, by pointer.
+    Processor::Contract context = gb::Context();
   };
 
   struct RegisterValue {
