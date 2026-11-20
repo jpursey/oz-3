@@ -396,9 +396,7 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 - [x] Whether constants from the host are part of this feature, or a backlog
   item of their own: part of it, as CL5.
 - [x] Left out, for the backlog when the feature is done: repeating a block
-  (`.REPT`), and comparing a macro argument's text (`.IFIDN` and `.IFDIF`, as
-  MASM's `IFIDN` and `IFDIF`), such as for a sequence of its own when an
-  argument is `R7`.
+  (`.REPT`).
 
 ## CLs
 
