@@ -276,36 +276,51 @@ struct SourceOrigin {
   std::string_view scope;      // The key prefix of its local labels.
 };
 
+// Text whose pieces each came from a place in a source file, such as a macro
+// argument.
+struct SourceText {
+  struct Piece { int column; SourceOrigin origin; };
+  std::string text;
+  std::vector<Piece> pieces;  // In column order, starting at column 0.
+};
+
 // A macro defined with .MACRO: its name, parameters, and body.
 class ProgramMacro final {
  public:
   // A line of the body: its text, without its comment, and each place a
   // parameter is in it, by column and size.
   struct Line {
+    struct Parameter { int column; int size; int index; };
     std::string text;
     gb::LexerLocation location;
-    struct Parameter { int column; int size; int index; };
     std::vector<Parameter> parameters;
   };
 
-  ProgramMacro(gb::Token name, std::vector<std::string> parameters,
-               std::vector<Line> lines);
+  ProgramMacro(std::string name, std::vector<std::string> parameters);
 
   std::string_view GetName() const;
   absl::Span<const std::string> GetParameters() const;
   absl::Span<const Line> GetLines() const;
+
+  // Reads the line the lexer is at the start of as the body's next line, and
+  // moves past it. Returns false, setting `error`, if a token can't be read.
+  bool ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
+                gb::Token* error);
 };
+
+// Where a macro argument is in the line that uses the macro.
+struct MacroArgSpan { int column; int size; gb::Token token; };
+
+// Reads a use's arguments, from the lexer's next token to the end of the line.
+std::vector<MacroArgSpan> ReadMacroArgs(gb::Lexer& lexer,
+                                        gb::LexerContentId content);
 
 // The text of one use of a macro, with where each piece of it came from.
 class MacroExpansion final {
  public:
-  // An argument: its text, and where each piece of it came from, which is
-  // the caller's line's origins over its columns.
-  struct Arg { ... };
-
   // Expands `macro` with `args`, one for each parameter. `scope` is this
   // use's own scope ("WAITIN#2"), for the local labels the body writes.
-  MacroExpansion(const ProgramMacro* macro, absl::Span<const Arg> args,
+  MacroExpansion(const ProgramMacro* macro, absl::Span<const SourceText> args,
                  std::string scope, SourceOrigin use);
 
   // The text, a line for each of the body's.
@@ -313,6 +328,9 @@ class MacroExpansion final {
 
   // Returns where the text at `line` and `column` came from.
   SourceOrigin GetOrigin(int line, int column) const;
+
+  // Returns text of a line with its origins, as an argument of a use in it.
+  SourceText GetSourceText(int line, int column, int size) const;
 
   // Returns where the macro was used, in a file: the outermost use's line.
   const SourceOrigin& GetUse() const;
@@ -325,7 +343,7 @@ class MacroExpansion final {
   comment is dropped.
 - **An expansion is text,** built by copying each body line, with each
   parameter replaced by its argument's text. Each piece of the text keeps its
-  origin: a body piece is its place in the body, in the macro's scope; an
+  origin: a body piece is its place in the body, in the use's own scope; an
   argument piece is its place where the caller wrote it, and the caller's
   scope. An argument from a line that is itself in an expansion takes that
   line's origins, so every origin is in a file, however deeply macros use
@@ -348,8 +366,10 @@ class MacroExpansion final {
   an expansion to its outermost use's line. Nothing in the map, its file, or the
   listing changes: a line already can have several statements.
 - **Uses** are found in `ReadInstruction`: a name with no extension that is a
-  macro's is expanded, before any form is matched. The arguments are split at
-  each comma outside brackets, from the instruction's `$args`.
+  macro's is expanded, before any form is matched. `ReadMacroArgs` splits
+  the arguments at each comma outside brackets, from the tokens after the
+  name. In a file, each is a `SourceText` of one piece, at its place in the
+  file; in an expansion, `GetSourceText` gives each its pieces' origins.
 
 **Brittleness:** each expansion's origins must cover its whole text, and the
 assembler must look every expansion token up through them, rather than
@@ -390,7 +410,10 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   `SetNextToken` for the parser to read a directive that ends the block.
 - [ ] The instruction's `$args` items give each argument's first and last
   token, so its text and columns can be copied, or the arguments are better
-  read with a rule of their own (CL4).
+  read with a rule of their own (CL4). CL3 reads them a token at a time
+  instead, with `ReadMacroArgs`, as a line in the grammar has no rule for
+  text between commas; CL4 confirms the assembler can put the lexer back at
+  the name's next token to read them.
 - [ ] `gb::Lexer::AddContent` has room for many expansions: every content's
   lines count against about a million lines in all, and a use adds its body's
   lines (CL4).
@@ -458,11 +481,14 @@ Depends on: CL1, for tests that compare.
   lines in the listing.
 - Manual pages updated.
 
-### CL3 [ ] tools: macro text
+### CL3 [x] tools: macro text
 
 Depends on: nothing.
 
-- `program_macro.h`: `ProgramMacro` and `MacroExpansion`.
+- `program_macro.h`: `ProgramMacro`, reading a body a line at a time with
+  `ReadLine`; `ReadMacroArgs`, splitting a use's arguments; and
+  `MacroExpansion`, with `GetSourceText` for an argument from an expansion's
+  line.
 - Unused, so no visible change.
 
 **Verify**
@@ -471,7 +497,8 @@ Depends on: nothing.
   in strings or local labels; arguments with brackets, strings, and commas
   inside them; each piece's origin, for the body and for arguments, through
   two levels of expansion; columns at the start, middle, and end of a line,
-  and of a replaced parameter; a line with no parameters.
+  and of a replaced parameter; a line with no parameters; empty arguments;
+  a body line the lexer can't read.
 
 ### CL4 [ ] tools: macros
 
@@ -480,9 +507,9 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
 - `program_grammar.cc`: `.MACRO` and `.ENDM`.
 - `expression.h`: `ExpressionContext::GetSymbolValue` takes the symbol's token,
   and `ValueSetContext` passes it on.
-- `program_assembler.cc`: reading definitions, expanding uses in
-  `ReadInstruction`, local labels' scopes, errors' locations and uses, and
-  map locations.
+- `program_assembler.cc`: reading definitions with `ProgramMacro::ReadLine`,
+  expanding uses in `ReadInstruction` with `ReadMacroArgs`, local labels'
+  scopes, errors' locations and uses, and map locations.
 - `program_map.h`: the names of a use's own local labels.
 - Manual: Program Source's Macros, the directives table, and the listing's
   rows for a macro's use.
