@@ -397,7 +397,9 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   file that defines its constants and includes the shared source.
 - [ ] Left out, for the backlog when the feature is done: repeating a block
   (`.REPT`), defaults for macro arguments, joining a parameter to other text
-  (`table_&n`), and leaving a macro early (`.EXITM`).
+  (`table_&n`), leaving a macro early (`.EXITM`), and comparing a macro
+  argument's text (`.IFIDN` and `.IFDIF`, as MASM's `IFIDN` and `IFDIF`), such
+  as for a sequence of its own when an argument is `R7`.
 
 ## CLs
 
