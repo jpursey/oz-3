@@ -1,0 +1,11 @@
+[begin] (  Application Menu  )
+    [exec] (OZ-3 Terminal) { tilix -w "$(readlink -f ~/oz-3)" } <>
+    [exec] (Terminal) { tilix -w ~ } <>
+    [exec] (Text Editor) { mousepad } <>
+    [submenu] (System) {}
+        [exec] (Set Resolution) { tilix -t "Set Resolution" -e bash /usr/local/bin/set-resolution } <>
+        [exec] (Edit Application Menu) { mousepad ~/.fluxbox/menu } <>
+        [exec] (Top Processes) { tilix -t "Top" -e htop } <>
+    [end]
+    [config] (Configuration)
+[end]

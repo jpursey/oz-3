@@ -3,3 +3,7 @@
 
 # Program source that is embedded in a build has the same bytes everywhere.
 oz3/ozzy/boot_rom.oza eol=lf
+
+# The devcontainer's files are copied into its Linux image as they are, from a
+# Windows checkout too.
+.devcontainer/** text eol=lf
