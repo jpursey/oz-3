@@ -1724,8 +1724,8 @@ TEST_F(ProgramAssemblerTest, SkippedLinesAreNotRead) {
                             "  ADD.W R1, R2 .ENDIF\n"
                             ".ELSE\n"
                             "  .IF ) more ( nonsense\n"
-                            "  .ELSE\n"
                             "  .ELSEIF ]\n"
+                            "  .ELSE\n"
                             "  .ENDIF\n"
                             "  .DW 2\n"
                             ".ENDIF\n"
@@ -1809,6 +1809,13 @@ TEST_F(ProgramAssemblerTest, UnmatchedConditionals) {
                              ".ELSEIF 1\n"
                              "  NOP\n"
                              ".ENDIF\n"
+                             ".IF 0\n"
+                             "  .IF 1\n"
+                             "  .ELSE\n"
+                             "  .ELSE\n"
+                             "  .ELSEIF 1\n"
+                             "  .ENDIF\n"
+                             ".ENDIF\n"
                              ".IF 1\n"
                              ".IFDEF X\n"
                              ".IF 0\n"
@@ -1818,10 +1825,37 @@ TEST_F(ProgramAssemblerTest, UnmatchedConditionals) {
                           IsErrorAt(3, 0, ".ENDIF has no .IF"),
                           IsErrorAt(6, 0, ".ELSE can't come after .ELSE"),
                           IsErrorAt(7, 0, ".ELSEIF can't come after .ELSE"),
-                          IsErrorAt(13, 0, ".IFNDEF has no .ENDIF"),
-                          IsErrorAt(12, 0, ".IF has no .ENDIF"),
-                          IsErrorAt(11, 0, ".IFDEF has no .ENDIF"),
-                          IsErrorAt(10, 0, ".IF has no .ENDIF")));
+                          IsErrorAt(13, 2, ".ELSE can't come after .ELSE"),
+                          IsErrorAt(14, 2, ".ELSEIF can't come after .ELSE"),
+                          IsErrorAt(20, 0, ".IFNDEF has no .ENDIF"),
+                          IsErrorAt(19, 0, ".IF has no .ENDIF"),
+                          IsErrorAt(18, 0, ".IFDEF has no .ENDIF"),
+                          IsErrorAt(17, 0, ".IF has no .ENDIF")));
+}
+
+TEST_F(ProgramAssemblerTest, InvalidConditionals) {
+  // A conditional directive whose line is invalid still starts, carries on,
+  // or ends its .IF, as one whose condition has an error, so the lines after
+  // it are read as they would be.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF 0\n"
+                             ".ELSEIF 1 +\n"
+                             "  FOO\n"
+                             ".ELSE\n"
+                             "  FOO\n"
+                             ".ENDIF\n"
+                             ".IF 1\n"
+                             "  .IF 1 +\n"
+                             "    FOO\n"
+                             "  .ELSE\n"
+                             "    FOO\n"
+                             "  .ENDIF\n"
+                             ".ENDIF X\n"
+                             ".IFDEF 5\n"
+                             "  FOO\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(2, 11, ""), IsErrorAt(8, 9, ""),
+                          IsErrorAt(13, 7, ""), IsErrorAt(14, 7, "")));
 }
 
 TEST_F(ProgramAssemblerTest, ConditionalsEndInTheirFile) {

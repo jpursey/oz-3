@@ -375,6 +375,8 @@ class ProgramAssembler final {
   SkippedLine SkipLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadConditional(Conditional conditional, const gb::ParsedItem& directive,
                        std::vector<OpenIf>* ifs);
+  void ReadInvalidConditional(gb::LexerContentId content,
+                              std::vector<OpenIf>* ifs);
   std::optional<bool> ReadCondition(const gb::ParsedItem& directive);
   void ReadDirective(const gb::ParsedItem& directive);
   void ReadInclude(const gb::ParsedItem& directive);
@@ -840,6 +842,7 @@ void ProgramAssembler::ReadLines(gb::LexerContentId content,
       // next.
       AddError(line.GetError());
       const int line_index = lexer.GetCurrentLine(content);
+      ReadInvalidConditional(content, ifs);
       lexer.NextLine(content);
       if (lexer.GetCurrentLine(content) == line_index) {
         return;
@@ -1408,7 +1411,8 @@ ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
       directive != nullptr ? directive->GetString("directive") : "";
   const Conditional conditional = GetConditional(name);
   if (conditional != Conditional::kNone) {
-    if (ifs->back().state != IfState::kInSkippedBlock &&
+    OpenIf& open = ifs->back();
+    if (open.state != IfState::kInSkippedBlock &&
         conditional != Conditional::kIf) {
       lexer.SetNextToken(start);
       return SkippedLine::kRead;
@@ -1417,7 +1421,17 @@ ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
         label != nullptr) {
       Error(label->GetToken(), absl::StrCat(".", name, " can't have a label"));
     }
-    if (conditional == Conditional::kIf) {
+
+    // An .IF in a skipped block is checked as any other, but assembles none
+    // of its blocks.
+    if (conditional == Conditional::kElseIf ||
+        conditional == Conditional::kElse) {
+      if (open.has_else) {
+        Error(directive->GetToken(),
+              absl::StrCat(".", name, " can't come after .ELSE"));
+      }
+      open.has_else = open.has_else || conditional == Conditional::kElse;
+    } else if (conditional == Conditional::kIf) {
       ifs->push_back({.token = directive->GetToken(),
                       .name = name,
                       .state = IfState::kInSkippedBlock});
@@ -1463,6 +1477,40 @@ void ProgramAssembler::ReadConditional(Conditional conditional,
     open.state = GetIfState(ReadCondition(directive));
   }
   open.has_else = conditional == Conditional::kElse;
+}
+
+void ProgramAssembler::ReadInvalidConditional(gb::LexerContentId content,
+                                              std::vector<OpenIf>* ifs) {
+  // A conditional directive is still an .IF's start, block, or end if the rest
+  // of its line is invalid, so the lines after it are read as they would be,
+  // as for a condition with an error.
+  gb::ParseResult line =
+      parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
+  if (!line.IsOk()) {
+    return;
+  }
+  const gb::ParsedItem* directive = line->GetItem("directive");
+  const std::string_view name = directive->GetString("directive");
+  switch (GetConditional(name)) {
+    case Conditional::kNone:
+      return;
+    case Conditional::kIf:
+      ifs->push_back({.token = directive->GetToken(),
+                      .name = name,
+                      .state = IfState::kAfter});
+      return;
+    case Conditional::kElseIf:
+    case Conditional::kElse:
+      if (!ifs->empty()) {
+        ifs->back().state = IfState::kAfter;
+      }
+      return;
+    case Conditional::kEndIf:
+      if (!ifs->empty()) {
+        ifs->pop_back();
+      }
+      return;
+  }
 }
 
 std::optional<bool> ProgramAssembler::ReadCondition(
