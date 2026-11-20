@@ -1,47 +1,126 @@
+// A container that builds, runs, and debugs OZ-3 on Linux, such as a GitHub
+// Codespace, with Game Bits cloned beside it. It runs a desktop viewed in the
+// browser, through the forwarded "Desktop" port, where console programs such as
+// ozzy run in a terminal that gets every key, and graphical programs appear in
+// windows. See README.md.
 {
   "name": "OZ-3",
-
-  // Ubuntu 24.04, as CI pins: its clang is 18. Newer clang (21) has warnings
-  // that fail Game Bits' build.
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-
-  // Plain `cmake` calls pick clang without needing -DCMAKE_*_COMPILER.
-  // -fstandalone-debug lets gdb and lldb show std::string, which clang
-  // otherwise leaves to libstdc++'s debug symbols, not installed here. CMake
-  // reads CXXFLAGS only when it configures a new build tree.
-  "containerEnv": {
-    "CC": "clang",
-    "CXX": "clang++",
-    "CXXFLAGS": "-fstandalone-debug"
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".",
+    "args": {
+      // The version Game Bits' CI uses, its VULKAN_SDK_VERSION
+      // (.github/workflows/cmake.yml in Game Bits).
+      "VULKAN_SDK_VERSION": "1.4.363.1"
+    }
   },
-
-  // The reference clang-format (19.1.5, from PyPI) goes on PATH, after the
-  // system tools so its venv's python doesn't shadow the system one.
-  "remoteEnv": { "PATH": "${containerEnv:PATH}:/home/vscode/.venvs/clang-format/bin" },
-
-  // Runs once when the codespace is created (and again on a rebuild).
-  // Game Bits goes beside this repo as ../game-bits, where CMakeLists.txt finds
-  // it without GB_DIR.
-  "onCreateCommand": "sudo apt-get update && sudo apt-get install -y clang cmake ninja-build gdb python3-venv && if [ ! -d ../game-bits/.git ]; then sudo mkdir -p ../game-bits && sudo chown $(id -u):$(id -g) ../game-bits && git clone https://github.com/jpursey/game-bits ../game-bits; fi && git -C ../game-bits submodule update --init --recursive --depth 1 && python3 -m venv ~/.venvs/clang-format && ~/.venvs/clang-format/bin/pip install clang-format==19.1.5",
-
+  "features": {
+    // A light desktop on a VNC server, viewed in the browser through noVNC.
+    // Its password is "vscode".
+    "ghcr.io/devcontainers/features/desktop-lite:1": {}
+  },
+  "containerEnv": {
+    // The desktop's size and color depth. It needs 24-bit color, rather than
+    // desktop-lite's default of 16, as Mesa's Vulkan drivers can't present to
+    // a 16-bit window.
+    "VNC_RESOLUTION": "1920x1080x24"
+  },
+  "forwardPorts": [6080],
+  "portsAttributes": {
+    "6080": {
+      "label": "Desktop"
+    }
+  },
+  // Lets gdb run programs without address randomization, and attach to running
+  // ones (with sudo, where the kernel lets a process debug only its
+  // descendants).
+  "capAdd": ["SYS_PTRACE"],
+  "securityOpt": ["seccomp=unconfined"],
+  // A full build is about 430 steps, and graphical programs render on the CPU,
+  // both of which are too slow on 2 cores.
+  "hostRequirements": {
+    "cpus": 4
+  },
+  // Game Bits is cloned beside this repository as ../game-bits, where
+  // CMakeLists.txt finds it without GB_DIR, with its submodules at only their
+  // checked out commits. /workspaces belongs to root. This also runs when a
+  // Codespace prebuild is made, so a prebuilt Codespace starts with it.
+  "updateContentCommand": "if [ ! -d ../game-bits/.git ]; then sudo mkdir -p ../game-bits && sudo chown $(id -u):$(id -g) ../game-bits && git clone --filter=blob:none https://github.com/jpursey/game-bits ../game-bits; fi && git -C ../game-bits submodule update --init --depth 1 --jobs 8",
+  // The desktop menu's OZ-3 Terminal opens in the checkout, through this link.
+  "postCreateCommand": "ln -sfn \"${containerWorkspaceFolder}\" ~/oz-3",
+  // VS Code's settings in the container only, so they never change a local
+  // checkout's IDE setup.
   "customizations": {
     "vscode": {
-      // C++ TestMate lists each GoogleTest case in the Testing view, to run or
-      // debug on its own. CMake Tools only knows each test binary as a whole.
+      // CMake Tools builds, runs, debugs, and tests from the CMake panel and
+      // the status bar. C/C++ debugs with gdb. C++ TestMate lists each
+      // GoogleTest case in the Testing view, to run or debug on its own, where
+      // CMake Tools only knows each test binary as a whole.
       "extensions": [
         "ms-vscode.cpptools",
         "ms-vscode.cmake-tools",
         "matepek.vscode-catch2-test-adapter"
       ],
       "settings": {
+        // The build directories CLAUDE.md uses on Linux, with clang whichever
+        // kit is chosen.
         "cmake.generator": "Ninja",
         "cmake.buildDirectory": "${workspaceFolder}/out/build/linux-clang-${buildType}",
         "cmake.configureSettings": {
           "CMAKE_C_COMPILER": "clang",
           "CMAKE_CXX_COMPILER": "clang++"
         },
+        // ozzy, debugged from Run and Debug, is built first and then runs in a
+        // terminal of its own on the desktop, which gets every key, where VS
+        // Code's own terminal keeps the keys it has shortcuts for. There is one
+        // configuration for the default Ozzy, and one for each config in
+        // configs/. Other programs debug from CMake Tools as usual.
+        "launch": {
+          "version": "0.2.0",
+          "configurations": [
+            {
+              "name": "ozzy",
+              "type": "cppdbg",
+              "request": "launch",
+              "program": "${input:ozzyPath}",
+              "args": [],
+              "cwd": "${workspaceFolder}",
+              "externalConsole": true,
+              "MIMode": "gdb"
+            },
+            {
+              "name": "ozzy: console.ozzy",
+              "type": "cppdbg",
+              "request": "launch",
+              "program": "${input:ozzyPath}",
+              "args": ["configs/console.ozzy"],
+              "cwd": "${workspaceFolder}",
+              "externalConsole": true,
+              "MIMode": "gdb"
+            },
+            {
+              "name": "ozzy: teletype.ozzy",
+              "type": "cppdbg",
+              "request": "launch",
+              "program": "${input:ozzyPath}",
+              "args": ["configs/teletype.ozzy"],
+              "cwd": "${workspaceFolder}",
+              "externalConsole": true,
+              "MIMode": "gdb"
+            }
+          ],
+          "inputs": [
+            {
+              "id": "ozzyPath",
+              "type": "command",
+              "command": "cmake.launchTargetPath",
+              "args": { "targetName": "ozzy" }
+            }
+          ]
+        },
+        "terminal.external.linuxExec": "tilix",
         "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-        "C_Cpp.clang_format_path": "/home/vscode/.venvs/clang-format/bin/clang-format"
+        "C_Cpp.clang_format_path": "/usr/local/bin/clang-format"
       }
     }
   }

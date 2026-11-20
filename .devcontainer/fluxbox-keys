@@ -1,0 +1,17 @@
+# The desktop's window manager takes only the mouse, so every key reaches the
+# program that has the focus, such as ozzy. Windows are moved, resized, and
+# switched between with the mouse, from their title bars and the toolbar.
+OnDesktop Mouse1 :HideMenus
+OnDesktop Mouse2 :WorkspaceMenu
+OnDesktop Mouse3 :RootMenu
+OnToolbar Mouse4 :PrevWindow {static groups} (iconhidden=no)
+OnToolbar Mouse5 :NextWindow {static groups} (iconhidden=no)
+OnWindowBorder Move1 :StartMoving
+OnLeftGrip Move1 :StartResizing bottomleft
+OnRightGrip Move1 :StartResizing bottomright
+OnTitlebar Control Mouse1 :StartTabbing
+OnTitlebar Double Mouse1 :Shade
+OnTitlebar Mouse1 :MacroCmd {Raise} {Focus} {ActivateTab}
+OnTitlebar Move1 :StartMoving
+OnTitlebar Mouse2 :Lower
+OnTitlebar Mouse3 :WindowMenu
