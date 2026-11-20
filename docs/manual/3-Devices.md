@@ -4,13 +4,14 @@ A **device** is hardware outside the OZ-3 itself, such as a screen or a keyboard
 
 The ready-made devices are general purpose. Any OZ-3 processor can have them, with whatever wiring and settings suit it. The [Ozzy Computer](4-Ozzy-Computer.md) is one machine built from them, with its own fixed wiring.
 
-| Device                          | Ports        | Interrupts | Pages | What                                                                         |
-| ------------------------------- | ------------ | ---------- | ----- | ---------------------------------------------------------------------------- |
-| [Teletype](3.1-Teletype.md)     | 1            | none       | none  | A port that writes text to the host                                          |
-| [Keyboard](3.2-Keyboard.md)     | 1, 10, or 11 | 1 or none  | none  | A port of typed keys with an interrupt for each, ports of key state, or both |
-| [Screen](3.3-Screen.md)         | none         | 1          | 1     | A page of character cells and control words                                  |
-| [Timer](3.4-Timer.md)           | 2            | 1          | none  | A periodic interrupt, and a port of the cycle count, time, and date          |
-| [Disk Drive](3.5-Disk-Drive.md) | 3            | 1          | none  | A smart drive that a program asks for files by name, on disk images          |
+| Device                                | Ports        | Interrupts | Pages | What                                                                         |
+| ------------------------------------- | ------------ | ---------- | ----- | ---------------------------------------------------------------------------- |
+| [Teletype](3.1-Teletype.md)           | 1            | none       | none  | A port that writes text to the host                                          |
+| [Keyboard](3.2-Keyboard.md)           | 1, 10, or 11 | 1 or none  | none  | A port of typed keys with an interrupt for each, ports of key state, or both |
+| [Screen](3.3-Screen.md)               | none         | 1          | 1     | A page of character cells and control words                                  |
+| [Timer](3.4-Timer.md)                 | 2            | 1          | none  | A periodic interrupt, and a port of the cycle count, time, and date          |
+| [Disk Drive](3.5-Disk-Drive.md)       | 3            | 1          | none  | A smart drive that a program asks for files by name, on disk images          |
+| [Power Control](3.6-Power-Control.md) | 1            | none       | none  | A port that shuts the machine down, with an exit code, or restarts it        |
 
 ### Wiring and settings
 
@@ -20,6 +21,8 @@ The host application makes each device with its **wiring** and its **settings**:
 * **The settings** are how the device behaves: a screen's size, or a teletype's baud rate. Each device's page lists them, with their defaults.
 
 A device that needs something from the host application itself, rather than from its settings, gets it from the machine as a whole, so every device in the machine shares it. The only such thing is the host's **clock**, its date and time, which the [timer](3.4-Timer.md#the-clock-port) answers programs with and the [disk drive](3.5-Disk-Drive.md) stamps files with. In C++, it is a `HostClock` (see `oz3/core/date_time.h`) in the context the host creates the `Processor` with, and each device takes it from there. A host that gives none gives its local time, and one that gives an empty clock gives those devices no date.
+
+A device can also give something back to the host application through the machine. The only such thing is the [power control](3.6-Power-Control.md)'s request to shut down or restart: in C++, it calls a `PowerRequestCallback` (see `oz3/devices/power_control.h`) that the host puts in the same context, with a `PowerRequest`. The call comes while the processor runs, so the host notes the request then, and acts on it once the processor's run returns.
 
 A program learns how its machine's devices are wired from the machine itself, such as from the Ozzy's [machine table](4-Ozzy-Computer.md#the-machine-table).
 

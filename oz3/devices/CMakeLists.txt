@@ -7,12 +7,14 @@ set(oz3_devices_SOURCE
   disk_drive.cc disk_drive.h
   disk_drive_command.cc disk_drive_command.h
   keyboard.cc keyboard.h
+  power_control.cc power_control.h
   screen.cc screen.h
   screen_characters.cc screen_characters.h
   teletype.cc teletype.h
   timer.cc timer.h
 )
 set(oz3_devices_DEPS
+  absl::any_invocable
   absl::civil_time
   absl::int128
   absl::memory
@@ -34,6 +36,7 @@ set(oz3_devices_TEST_SOURCE
   device_program_test.h
   disk_drive_test.cc
   keyboard_test.cc
+  power_control_test.cc
   screen_characters_test.cc
   screen_test.cc
   teletype_test.cc
