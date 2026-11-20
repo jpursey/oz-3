@@ -1789,6 +1789,19 @@ TEST_F(ProgramAssemblerTest, ConditionErrors) {
                           IsErrorAt(9, 8, "BIG can't be evaluated as a word"),
                           IsErrorAt(14, 6, "Division by zero")));
 
+  // The .IF's later directives are then read as in a skipped block: their
+  // conditions aren't read, but their order is checked.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF LATER\n"
+                             ".ELSEIF ]\n"
+                             ".ELSE\n"
+                             "  FOO\n"
+                             ".ELSE\n"
+                             ".ENDIF\n"
+                             ".CONST LATER = 1\n"),
+              ElementsAre(IsErrorAt(1, 4, "LATER is not defined"),
+                          IsErrorAt(5, 0, ".ELSE can't come after .ELSE")));
+
   // A dword constant is tested through its halves.
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".CONST BIG = 70000\n"
@@ -1856,6 +1869,15 @@ TEST_F(ProgramAssemblerTest, InvalidConditionals) {
                              ".ENDIF\n"),
               ElementsAre(IsErrorAt(2, 11, ""), IsErrorAt(8, 9, ""),
                           IsErrorAt(13, 7, ""), IsErrorAt(14, 7, "")));
+
+  // An invalid .ELSE is still the .IF's .ELSE.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF 0\n"
+                             ".ELSE X\n"
+                             ".ELSE\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(2, 6, ""),
+                          IsErrorAt(3, 0, ".ELSE can't come after .ELSE")));
 }
 
 TEST_F(ProgramAssemblerTest, ConditionalsEndInTheirFile) {

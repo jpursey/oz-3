@@ -239,17 +239,19 @@ class ProgramAssembler final {
     uint16_t assign_mask = 0xFFFF;
   };
 
-  // Where an open .IF is: before the block it assembles, in it, or after it
-  // (or after an error, so no more of its blocks are assembled). An .IF in a
-  // block that is skipped assembles none of its blocks, and only pairs with
-  // its .ENDIF.
-  enum class IfState { kBefore, kAssembling, kAfter, kInSkippedBlock };
+  // Whether an open .IF has assembled one of its blocks yet. Before it has
+  // (kUnsatisfied), its next .ELSEIF's condition is evaluated. Once it has
+  // (kAssembling for that block's lines, then kSatisfied), its later blocks are
+  // skipped. An .IF in a skipped block, or after one of its conditional
+  // directives had an error (kDisabled), assembles none of its blocks, and its
+  // directives are read as in a skipped block.
+  enum class IfState { kUnsatisfied, kAssembling, kSatisfied, kDisabled };
 
   // An .IF, .IFDEF, or .IFNDEF whose .ENDIF isn't read yet.
   struct OpenIf {
     gb::Token token;        // Its '.', for errors.
     std::string_view name;  // Its directive's name ("IF").
-    IfState state = IfState::kBefore;
+    IfState state = IfState::kUnsatisfied;
     bool has_else = false;
   };
 
@@ -369,8 +371,8 @@ class ProgramAssembler final {
   // Conditional assembly. Each content has its own open .IFs, `ifs`,
   // innermost last. A line in a block that isn't assembled is skipped, with
   // only its tokens up to a directive's name read, unless it is an .ELSEIF,
-  // .ELSE, or .ENDIF of the innermost .IF that isn't in a skipped block, which
-  // is read as any other line.
+  // .ELSE, or .ENDIF of the innermost .IF that isn't disabled, which is read
+  // as any other line.
   static IfState GetIfState(std::optional<bool> condition);
   SkippedLine SkipLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadConditional(Conditional conditional, const gb::ParsedItem& directive,
@@ -1389,9 +1391,9 @@ void ProgramAssembler::SetPageCount(Segment& segment) {
 ProgramAssembler::IfState ProgramAssembler::GetIfState(
     std::optional<bool> condition) {
   if (!condition.has_value()) {
-    return IfState::kAfter;
+    return IfState::kDisabled;
   }
-  return *condition ? IfState::kAssembling : IfState::kBefore;
+  return *condition ? IfState::kAssembling : IfState::kUnsatisfied;
 }
 
 ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
@@ -1412,8 +1414,7 @@ ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
   const Conditional conditional = GetConditional(name);
   if (conditional != Conditional::kNone) {
     OpenIf& open = ifs->back();
-    if (open.state != IfState::kInSkippedBlock &&
-        conditional != Conditional::kIf) {
+    if (open.state != IfState::kDisabled && conditional != Conditional::kIf) {
       lexer.SetNextToken(start);
       return SkippedLine::kRead;
     }
@@ -1422,8 +1423,8 @@ ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
       Error(label->GetToken(), absl::StrCat(".", name, " can't have a label"));
     }
 
-    // An .IF in a skipped block is checked as any other, but assembles none
-    // of its blocks.
+    // A disabled .IF's directives are checked as any others, but it assembles
+    // none of its blocks.
     if (conditional == Conditional::kElseIf ||
         conditional == Conditional::kElse) {
       if (open.has_else) {
@@ -1434,7 +1435,7 @@ ProgramAssembler::SkippedLine ProgramAssembler::SkipLine(
     } else if (conditional == Conditional::kIf) {
       ifs->push_back({.token = directive->GetToken(),
                       .name = name,
-                      .state = IfState::kInSkippedBlock});
+                      .state = IfState::kDisabled});
     } else if (conditional == Conditional::kEndIf) {
       ifs->pop_back();
     }
@@ -1459,18 +1460,18 @@ void ProgramAssembler::ReadConditional(Conditional conditional,
     return;
   }
   OpenIf& open = ifs->back();
-  DCHECK(open.state != IfState::kInSkippedBlock);
+  DCHECK(open.state != IfState::kDisabled);
   if (conditional == Conditional::kEndIf) {
     ifs->pop_back();
     return;
   }
   if (open.has_else) {
     Error(token, absl::StrCat(".", name, " can't come after .ELSE"));
-    open.state = IfState::kAfter;
+    open.state = IfState::kDisabled;
     return;
   }
-  if (open.state != IfState::kBefore) {
-    open.state = IfState::kAfter;
+  if (open.state != IfState::kUnsatisfied) {
+    open.state = IfState::kSatisfied;
   } else if (conditional == Conditional::kElse) {
     open.state = IfState::kAssembling;
   } else {
@@ -1497,12 +1498,15 @@ void ProgramAssembler::ReadInvalidConditional(gb::LexerContentId content,
     case Conditional::kIf:
       ifs->push_back({.token = directive->GetToken(),
                       .name = name,
-                      .state = IfState::kAfter});
+                      .state = IfState::kDisabled});
       return;
     case Conditional::kElseIf:
     case Conditional::kElse:
       if (!ifs->empty()) {
-        ifs->back().state = IfState::kAfter;
+        OpenIf& open = ifs->back();
+        open.state = IfState::kDisabled;
+        open.has_else =
+            open.has_else || GetConditional(name) == Conditional::kElse;
       }
       return;
     case Conditional::kEndIf:
