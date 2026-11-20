@@ -868,16 +868,16 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
   DataStatement data = {.width = width};
   const int value_size = (width == ExpressionWidth::kWord ? 1 : 2);
   int64_t size = 0;
-  int64_t field_start = 0;
+  uint32_t field_count = 0;
   std::optional<int64_t> field_end;
   for (const gb::ParsedItem& item : directive.GetItems("items")) {
     if (const gb::ParsedItem* size_item = item.GetItem("size");
         size_item != nullptr) {
       EndDataField(field_end, &size, &data);
-      field_start = size;
       field_end.reset();
       if (const std::optional<uint32_t> count = EvaluateNow(*size_item);
           count.has_value()) {
+        field_count = *count;
         field_end = size + int64_t{*count} * value_size;
       }
     }
@@ -902,7 +902,7 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
     if (field_end.has_value() && start <= *field_end && size > *field_end) {
       Error(token, absl::StrCat("This passes the end of its field, at its "
                                 "SIZE of ",
-                                (*field_end - field_start) / value_size));
+                                field_count));
     }
   }
   EndDataField(field_end, &size, &data);
@@ -1418,14 +1418,15 @@ void ProgramAssembler::EncodeData(const Statement& statement,
                                   std::vector<uint16_t>& words) {
   const StatementContext context(this, statement.segment, statement.offset,
                                  statement.scope);
+  words.reserve(statement.size);
   for (const DataItem& item : data.items) {
     if (const auto* string_words = std::get_if<std::vector<uint16_t>>(&item);
         string_words != nullptr) {
       words.insert(words.end(), string_words->begin(), string_words->end());
     } else if (const auto* expression = std::get_if<Expression>(&item);
                expression != nullptr) {
-      // A value with an error is reported, and written as zero so the words
-      // after it stay in place.
+      // A value with an error is reported, and written as zero, so every item
+      // writes exactly its own words.
       const uint32_t value =
           Evaluate(*expression, data.width, context).value_or(0);
 
