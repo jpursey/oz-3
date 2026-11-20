@@ -59,6 +59,12 @@ constexpr std::string_view kRules = R"---(
     [$label=Label] [$directive=Directive | $instruction=Instruction]
         $end=EndOfLine;
   }
+  SkippedLine {
+    [$label=Label] $directive=SkippedDirective;
+  }
+  SkippedDirective {
+    '.' $directive=^%ident;
+  }
   Label {
     $name=%ident ':';
     $local_label=%local_label ':';

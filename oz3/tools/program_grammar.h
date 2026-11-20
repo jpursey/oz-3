@@ -118,6 +118,13 @@ class ProgramGrammar final {
   // "PAGES" '(' $pages ')', or "BANK" '(' $bank (%ident) ')'.
   static constexpr std::string_view kLineRule = "Line";
 
+  // kSkippedLineRule parses the start of a line that conditional assembly
+  // skips, if it starts with a directive: its optional $label, and its
+  // $directive, as for kLineRule, but with only the directive's name as its
+  // $directive (%ident), which may not be a directive at all. The rest of the
+  // line isn't read, and the lexer is left after the name.
+  static constexpr std::string_view kSkippedLineRule = "SkippedLine";
+
   // Creates the grammar for `syntax`, which must outlive it. Returns an error
   // if a pattern in `syntax` has literal text the program lexer can't read as
   // one token.
