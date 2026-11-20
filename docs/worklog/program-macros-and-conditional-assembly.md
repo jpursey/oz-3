@@ -306,7 +306,7 @@ class ProgramMacro final {
     std::vector<Parameter> parameters;
   };
 
-  ProgramMacro(std::string name, std::vector<std::string> parameters);
+  ProgramMacro(std::string_view name, std::vector<std::string> parameters);
 
   std::string_view GetName() const;
   absl::Span<const std::string> GetParameters() const;
@@ -322,8 +322,8 @@ class ProgramMacro final {
 struct MacroArgSpan { int column; int size; gb::Token token; };
 
 // Reads a use's arguments, from the lexer's next token to the end of the line.
-std::vector<MacroArgSpan> ReadMacroArgs(gb::Lexer& lexer,
-                                        gb::LexerContentId content);
+bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
+                   std::vector<MacroArgSpan>* args, gb::Token* error);
 
 // The text of one use of a macro, with where each piece of it came from.
 class MacroExpansion final {
@@ -331,7 +331,7 @@ class MacroExpansion final {
   // Expands `macro` with `args`, one for each parameter. `scope` is this
   // use's own scope ("WAITIN#2"), for the local labels the body writes.
   MacroExpansion(const ProgramMacro& macro, absl::Span<const SourceText> args,
-                 std::string scope, SourceOrigin use);
+                 std::string_view scope, SourceOrigin use);
 
   // The text, a line for each of the body's.
   std::string GetText() const;

@@ -57,13 +57,22 @@ class ProgramMacroTest : public ::testing::Test {
     return macro;
   }
 
+  // Returns the arguments `lexer_` reads next in `content`, which must read.
+  std::vector<MacroArgSpan> ReadArgSpans(gb::LexerContentId content) {
+    std::vector<MacroArgSpan> args;
+    gb::Token error;
+    EXPECT_TRUE(ReadMacroArgs(*lexer_, content, &args, &error))
+        << error.GetString();
+    return args;
+  }
+
   // Returns the text of each argument after the first token of `line`.
   std::vector<std::string> ReadArgs(std::string_view line) {
     const gb::LexerContentId content = AddFile("args.oza", line);
     lexer_->NextToken(content);
     std::vector<std::string> args;
     const std::string_view text = lexer_->GetLineText(content, 0);
-    for (const MacroArgSpan& arg : ReadMacroArgs(*lexer_, content)) {
+    for (const MacroArgSpan& arg : ReadArgSpans(content)) {
       args.emplace_back(text.substr(arg.column, arg.size));
     }
     return args;
@@ -193,6 +202,17 @@ TEST_F(ProgramMacroTest, LineThatCantBeRead) {
   EXPECT_EQ(macro.GetLines()[0].location.line, 1);
 }
 
+TEST_F(ProgramMacroTest, NoLineLeft) {
+  // At the end of the content, there is no line to read.
+  ProgramMacro macro("M", {});
+  const gb::LexerContentId content = AddFile("macros.oza", "  NOP");
+  gb::Token error;
+  EXPECT_TRUE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_FALSE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_TRUE(error.IsEnd());
+  EXPECT_EQ(macro.GetLines().size(), 1);
+}
+
 //==============================================================================
 // Macro arguments
 //==============================================================================
@@ -216,7 +236,7 @@ TEST_F(ProgramMacroTest, EmptyArgs) {
   // An empty argument is at the token after it.
   const gb::LexerContentId content = AddFile("args.oza", "M ,1,,2,\nNOP\n");
   lexer_->NextToken(content);
-  const std::vector<MacroArgSpan> args = ReadMacroArgs(*lexer_, content);
+  const std::vector<MacroArgSpan> args = ReadArgSpans(content);
   std::vector<std::pair<int, int>> spans;
   for (const MacroArgSpan& arg : args) {
     spans.emplace_back(arg.column, arg.size);
@@ -229,6 +249,33 @@ TEST_F(ProgramMacroTest, EmptyArgs) {
   EXPECT_EQ(args[4].token.GetType(), gb::kTokenLineBreak);
 
   // The lexer is past the line.
+  EXPECT_TRUE(lexer_->NextToken(content).IsIdent("NOP"));
+}
+
+TEST_F(ProgramMacroTest, EmptyLastArgBeforeAComment) {
+  // An empty last argument is after its comma, not at the line break, which
+  // is after the comment.
+  const gb::LexerContentId content = AddFile("args.oza", "M 1, ; Note.\n");
+  lexer_->NextToken(content);
+  const std::vector<MacroArgSpan> args = ReadArgSpans(content);
+  ASSERT_EQ(args.size(), 2);
+  EXPECT_EQ(args[1].column, 4);
+  EXPECT_EQ(args[1].size, 0);
+  EXPECT_EQ(args[1].token.GetType(), gb::kTokenLineBreak);
+}
+
+TEST_F(ProgramMacroTest, ArgThatCantBeRead) {
+  // A line with a token the lexer can't read has no arguments, and the lexer
+  // goes on to the next line.
+  const gb::LexerContentId content =
+      AddFile("args.oza", "M 1, 0FFFFFFFFFFFFFFFFFh, 2\nNOP\n");
+  lexer_->NextToken(content);
+  std::vector<MacroArgSpan> args;
+  gb::Token error;
+  EXPECT_FALSE(ReadMacroArgs(*lexer_, content, &args, &error));
+  EXPECT_TRUE(error.IsError());
+  EXPECT_EQ(lexer_->GetTokenLocation(error).column, 5);
+  EXPECT_THAT(args, IsEmpty());
   EXPECT_TRUE(lexer_->NextToken(content).IsIdent("NOP"));
 }
 
@@ -325,7 +372,7 @@ TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
       lexer_->AddContent(outer_expansion.GetText());
   lexer_->NextToken(outer_content);
   std::vector<SourceText> args;
-  for (const MacroArgSpan& span : ReadMacroArgs(*lexer_, outer_content)) {
+  for (const MacroArgSpan& span : ReadArgSpans(outer_content)) {
     args.push_back(outer_expansion.GetLine(0).Substr(span.column, span.size));
   }
   ASSERT_EQ(args.size(), 2);

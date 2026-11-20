@@ -60,7 +60,8 @@ class SourceText final {
   // the end of the text, until something more is appended.
   void Append(std::string_view text, const SourceOrigin& origin);
 
-  // Appends `text` with its pieces' origins.
+  // Appends `text`, which must be another SourceText, with its pieces'
+  // origins.
   void Append(const SourceText& text);
 
   // Returns where the text at `column`, which must not be negative, came
@@ -105,9 +106,10 @@ class ProgramMacro final {
     std::vector<Parameter> parameters;
   };
 
-  // Creates a macro with no lines yet. Its name and parameters are as the
-  // program lexer reads names, in upper case.
-  ProgramMacro(std::string name, std::vector<std::string> parameters);
+  // Creates a macro with no lines yet. Its name and parameters are
+  // identifiers, so not register names, as the program lexer reads them, in
+  // upper case.
+  ProgramMacro(std::string_view name, std::vector<std::string> parameters);
 
   ProgramMacro(const ProgramMacro&) = delete;
   ProgramMacro& operator=(const ProgramMacro&) = delete;
@@ -122,7 +124,8 @@ class ProgramMacro final {
   // An identifier that is a parameter's name is that parameter, but a name
   // inside a string or a local label ('reg' or @reg) is not. Returns false,
   // without adding the line, if a token on it can't be read, setting `error`
-  // to that token.
+  // to that token, or if `content` has no lines left, setting `error` to its
+  // end token.
   bool ReadLine(gb::Lexer& lexer, gb::LexerContentId content, gb::Token* error);
 
  private:
@@ -145,14 +148,17 @@ struct MacroArgSpan {
   gb::Token token;
 };
 
-// Reads a macro use's arguments, from the next token `lexer` reads in
-// `content`, which the program lexer reads, to the end of the line, which it
-// moves past. Each argument is the text between commas that aren't inside
-// brackets ('(', '[', or '{') or a string, so "D(table), (R1)" is two. A line
-// with nothing more on it has no arguments, and one with a comma has an
-// argument on each side of it, which may be empty.
-std::vector<MacroArgSpan> ReadMacroArgs(gb::Lexer& lexer,
-                                        gb::LexerContentId content);
+// Reads a macro use's arguments into `args`, from the next token `lexer`
+// reads in `content`, which the program lexer reads, to the end of the line,
+// which it moves past. Each argument is the text between commas that aren't
+// inside brackets ('(', '[', or '{') or a string, so "D(table), (R1)" is two.
+// The line's brackets must match, as the program grammar's instructions
+// require. A line with nothing more on it has no arguments, and one with a
+// comma has an argument on each side of it, which may be empty: before the
+// comma after it, or after the last comma. Returns false, with no arguments,
+// if a token on the line can't be read, setting `error` to that token.
+bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
+                   std::vector<MacroArgSpan>* args, gb::Token* error);
 
 //==============================================================================
 // MacroExpansion
@@ -173,7 +179,7 @@ class MacroExpansion final {
   // and `use` is the place in a file where it is used (for a use in another
   // expansion, that one's use).
   MacroExpansion(const ProgramMacro& macro, absl::Span<const SourceText> args,
-                 std::string scope, SourceOrigin use);
+                 std::string_view scope, SourceOrigin use);
 
   // Its origins refer to its scope, so it stays where it is.
   MacroExpansion(const MacroExpansion&) = delete;
