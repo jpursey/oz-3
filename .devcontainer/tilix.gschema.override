@@ -1,12 +1,13 @@
 # Tilix, the desktop's terminal, uses GTK's dark theme variant.
 [com.gexperts.Tilix.Settings]
 theme-variant = 'dark'
-menu-accelerator-enabled = false
 
 # Every key reaches the program in the terminal, such as ozzy, but for the
 # shortcuts to copy and paste, Ctrl+Shift+C and Ctrl+Shift+V, which a terminal
 # can't tell apart from Ctrl+C and Ctrl+V anyway. Everything else is in
-# Tilix's menus, from its header bar and a right click.
+# Tilix's menus, from its header bar and a right click. These are all of
+# Tilix's shortcuts but those two; its accelerators-enabled setting would turn
+# off those two as well.
 [com.gexperts.Tilix.Keybindings]
 app-new-session = 'disabled'
 app-new-window = 'disabled'

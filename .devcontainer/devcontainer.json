@@ -7,7 +7,7 @@
   "name": "OZ-3",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": "..",
+    "context": ".",
     "args": {
       // The version Game Bits' CI uses, its VULKAN_SDK_VERSION
       // (.github/workflows/cmake.yml in Game Bits).
@@ -37,11 +37,10 @@
   "capAdd": ["SYS_PTRACE"],
   "securityOpt": ["seccomp=unconfined"],
   // Game Bits is cloned beside this repository as ../game-bits, where
-  // CMakeLists.txt finds it without GB_DIR, with its submodules (blobless, so
-  // only the checked out commit's files are fetched). /workspaces belongs to
-  // root. This also runs when a Codespace prebuild is made, so a prebuilt
-  // Codespace starts with it.
-  "updateContentCommand": "if [ ! -d ../game-bits/.git ]; then sudo mkdir -p ../game-bits && sudo chown $(id -u):$(id -g) ../game-bits && git clone --filter=blob:none https://github.com/jpursey/game-bits ../game-bits; fi && git -C ../game-bits submodule update --init --jobs 8 --filter=blob:none",
+  // CMakeLists.txt finds it without GB_DIR, with its submodules at only their
+  // checked out commits. /workspaces belongs to root. This also runs when a
+  // Codespace prebuild is made, so a prebuilt Codespace starts with it.
+  "updateContentCommand": "if [ ! -d ../game-bits/.git ]; then sudo mkdir -p ../game-bits && sudo chown $(id -u):$(id -g) ../game-bits && git clone --filter=blob:none https://github.com/jpursey/game-bits ../game-bits; fi && git -C ../game-bits submodule update --init --depth 1 --jobs 8",
   // The desktop menu's OZ-3 Terminal opens in the checkout, through this link.
   "postCreateCommand": "ln -sfn \"${containerWorkspaceFolder}\" ~/oz-3",
   // VS Code's settings in the container only, so they never change a local
@@ -58,13 +57,10 @@
         "matepek.vscode-catch2-test-adapter"
       ],
       "settings": {
-        // The build directories CLAUDE.md uses on Linux, with clang.
+        // The build directories CLAUDE.md uses on Linux. The image sets CC and
+        // CXX to clang.
         "cmake.generator": "Ninja",
         "cmake.buildDirectory": "${workspaceFolder}/out/build/linux-clang-${buildType}",
-        "cmake.configureSettings": {
-          "CMAKE_C_COMPILER": "clang",
-          "CMAKE_CXX_COMPILER": "clang++"
-        },
         // A program debugged from CMake Tools runs in a terminal of its own on
         // the desktop, which gets every key, where VS Code's own terminal
         // keeps the keys it has shortcuts for.
