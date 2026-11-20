@@ -19,6 +19,7 @@
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_error.h"
 #include "gb/parse/parse_result.h"
+#include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 #include "oz3/tools/program_lexer.h"
 
@@ -36,7 +37,14 @@ constexpr std::string_view kParserRules = R"---(
     $args=ExpressionAnd ($ops='^' $args=ExpressionAnd)*;
   }
   ExpressionAnd {
-    $args=ExpressionShift ($ops='&' $args=ExpressionShift)*;
+    $args=ExpressionEqual ($ops='&' $args=ExpressionEqual)*;
+  }
+  ExpressionEqual {
+    $args=ExpressionCompare ($ops=('==' | '!=') $args=ExpressionCompare)*;
+  }
+  ExpressionCompare {
+    $args=ExpressionShift
+        ($ops=('<' | '<=' | '>' | '>=') $args=ExpressionShift)*;
   }
   ExpressionShift {
     $args=ExpressionSum ($ops=('<<' | '>>') $args=ExpressionSum)*;
@@ -111,7 +119,7 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
       const gb::Token op = ops[i - 1].GetToken();
       left = AddNode({.kind = NodeKind::kBinary,
                       .token = op,
-                      .op = op.GetSymbol().GetString()[0],
+                      .op = op.GetSymbol(),
                       .left = left,
                       .right = right});
     }
@@ -124,7 +132,7 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
     const gb::Token op = item.GetToken("op");
     return AddNode({.kind = NodeKind::kUnary,
                     .token = op,
-                    .op = op.GetSymbol().GetString()[0],
+                    .op = op.GetSymbol(),
                     .left = operand});
   }
 
@@ -218,13 +226,14 @@ ExpressionResult Expression::EvaluateUnary(ExpressionWidth width,
     return operand;
   }
   const uint64_t value = operand.value;
-  switch (node.op) {
-    case '-':
-      return Value(width, 0 - value);
-    case '~':
-      return Value(width, ~value);
-    case '!':
-      return Value(width, value == 0 ? 1 : 0);
+  if (node.op == '-') {
+    return Value(width, 0 - value);
+  }
+  if (node.op == '~') {
+    return Value(width, ~value);
+  }
+  if (node.op == '!') {
+    return Value(width, value == 0 ? 1 : 0);
   }
   return Error(node.token, "Internal error: unknown unary operator");
 }
@@ -246,39 +255,64 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
                  "Labels or $ in different segments can't be combined");
   }
 
-  // Both are the width's bits, so the product fits 64 bits.
+  // Both are the width's bits, so the product fits 64 bits, and comparing
+  // them is unsigned.
   const uint64_t a = left.value;
   const uint64_t b = right.value;
-  switch (node.op) {
-    // An offset plus or minus a number is still an offset in its segment, and
-    // anything else is just a number.
-    case '+':
-      return Value(width, a + b,
-                   left.segment < 0    ? right.segment
-                   : right.segment < 0 ? left.segment
-                                       : -1);
-    case '-':
-      return Value(width, a - b, right.segment < 0 ? left.segment : -1);
-    case '*':
-      return Value(width, a * b);
-    case '/':
-    case '%':
-      if (b == 0) {
-        return Error(node.token, "Division by zero");
-      }
-      return Value(width, node.op == '/' ? a / b : a % b);
-    case '&':
-      return Value(width, a & b);
-    case '|':
-      return Value(width, a | b);
-    case '^':
-      return Value(width, a ^ b);
-    case '<':
-    case '>':
-      if (b >= static_cast<uint64_t>(GetBits(width))) {
-        return Value(width, 0);
-      }
-      return Value(width, node.op == '<' ? a << b : a >> b);
+  const gb::Symbol op = node.op;
+
+  // An offset plus or minus a number is still an offset in its segment, and
+  // anything else is just a number.
+  if (op == '+') {
+    return Value(width, a + b,
+                 left.segment < 0    ? right.segment
+                 : right.segment < 0 ? left.segment
+                                     : -1);
+  }
+  if (op == '-') {
+    return Value(width, a - b, right.segment < 0 ? left.segment : -1);
+  }
+  if (op == '*') {
+    return Value(width, a * b);
+  }
+  if (op == '/' || op == '%') {
+    if (b == 0) {
+      return Error(node.token, "Division by zero");
+    }
+    return Value(width, op == '/' ? a / b : a % b);
+  }
+  if (op == "<<" || op == ">>") {
+    if (b >= static_cast<uint64_t>(GetBits(width))) {
+      return Value(width, 0);
+    }
+    return Value(width, op == "<<" ? a << b : a >> b);
+  }
+  if (op == '<') {
+    return Value(width, a < b ? 1 : 0);
+  }
+  if (op == "<=") {
+    return Value(width, a <= b ? 1 : 0);
+  }
+  if (op == '>') {
+    return Value(width, a > b ? 1 : 0);
+  }
+  if (op == ">=") {
+    return Value(width, a >= b ? 1 : 0);
+  }
+  if (op == "==") {
+    return Value(width, a == b ? 1 : 0);
+  }
+  if (op == "!=") {
+    return Value(width, a != b ? 1 : 0);
+  }
+  if (op == '&') {
+    return Value(width, a & b);
+  }
+  if (op == '^') {
+    return Value(width, a ^ b);
+  }
+  if (op == '|') {
+    return Value(width, a | b);
   }
   return Error(node.token, "Internal error: unknown binary operator");
 }

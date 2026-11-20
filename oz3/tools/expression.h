@@ -15,6 +15,7 @@
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_error.h"
 #include "gb/parse/parse_result.h"
+#include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 
 namespace oz3 {
@@ -88,7 +89,8 @@ class ExpressionContext {
 
 // An integer expression in program source: numbers, strings of one word,
 // symbols, and "$", with C's unary operators (-, ~, !), and binary operators
-// (*, /, %, +, -, <<, >>, &, ^, |) and their precedence, and parentheses.
+// (*, /, %, +, -, <<, >>, <, <=, >, >=, ==, !=, &, ^, |) and their precedence,
+// and parentheses.
 // LOW(x) and HIGH(x) are the low and high words of x, evaluated as a dword.
 // They are only functions where "(" follows them, so LOW and HIGH can still be
 // symbols.
@@ -96,9 +98,9 @@ class ExpressionContext {
 // An expression is parsed by a gb::Parser, with a grammar that includes
 // GetParserRules(), and evaluated in the width where it is used, as the
 // machine would: values are the width's bits, and arithmetic wraps. Division
-// is unsigned, and shifts are logical, giving 0 for a count of the width or
-// more. A number or symbol must fit the width, and division by zero is an
-// error.
+// and comparisons are unsigned, and shifts are logical, giving 0 for a count
+// of the width or more. A comparison is 1 if it holds, and 0 if not. A number
+// or symbol must fit the width, and division by zero is an error.
 class Expression final {
  public:
   // Returns the parser rules for an expression, as the rule "Expression", for
@@ -152,7 +154,7 @@ class Expression final {
   struct Node {
     NodeKind kind = NodeKind::kConstant;
     gb::Token token;  // The node's own token, for errors.
-    char op = 0;      // The operator: '<' and '>' are the shifts.
+    gb::Symbol op;    // The operator, for kUnary and kBinary.
     int left = -1;
     int right = -1;
     uint64_t value = 0;

@@ -31,8 +31,8 @@ namespace oz3 {
 namespace {
 
 // The symbols only expressions use, beyond those patterns can write: '$' for
-// the current offset, and the shifts.
-constexpr gb::Symbol kExpressionSymbols[] = {'$', "<<", ">>"};
+// the current offset.
+constexpr gb::Symbol kExpressionSymbols[] = {'$'};
 
 constexpr std::string_view kLineComments[] = {";"};
 

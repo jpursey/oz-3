@@ -44,7 +44,7 @@ int GetValueTypeBank(ValueType type);
 // Parsing checks the rules every pattern follows: its syntax, that each
 // placeholder is a valid one or names a value set, that only a $v or $m has a
 // value type, and a known one, how many code word arguments it has, and that
-// no value is followed by a binary operator (see CheckValueEnds()).
+// a program could write it (see ValidateParts()).
 class SourcePattern final {
  public:
   // One part of a pattern: literal text, or a placeholder.
@@ -111,14 +111,18 @@ class SourcePattern final {
   // pattern that writes it.
   static absl::Span<const gb::Symbol> GetSymbols();
 
-  // Returns an error if a value in `parts` (a $#, a value set, $v, $V, or a
-  // literal number) is followed by a binary operator, as no statement could
-  // match it: a program writes the value as an expression, which would go on
-  // past the operator. `pattern` is the text the parts' offsets are in.
-  // Parsing checks each pattern, and this checks patterns put together, such
-  // as an instruction's with a macro code's in place of its $m.
-  static absl::Status CheckValueEnds(std::string_view pattern,
-                                     absl::Span<const Part> parts);
+  // Returns an error if no statement could match `parts`, as a program's lexer
+  // and expressions would read it differently. A value (a $#, a value set, $v,
+  // $V, or a literal number) can't be followed by a binary operator, as a
+  // program writes the value as an expression, which would go on past the
+  // operator. A symbol can't be right before one it joins with to make
+  // another symbol (such as '!' before '='), as a program's lexer would read
+  // them as that symbol. `pattern` is the text the parts' offsets are in.
+  // Parsing validates each pattern, and this validates patterns put together,
+  // such as an instruction's with a macro code's in place of its $m, where
+  // symbols can meet.
+  static absl::Status ValidateParts(std::string_view pattern,
+                                    absl::Span<const Part> parts);
 
   SourcePattern(const SourcePattern&) = default;
   SourcePattern(SourcePattern&&) = default;

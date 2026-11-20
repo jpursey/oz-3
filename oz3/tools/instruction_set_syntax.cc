@@ -615,12 +615,12 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
   for (int i = first_form; i < static_cast<int>(syntax_->forms_.size()); ++i) {
     const InstructionForm& form = syntax_->forms_[i];
 
-    // Each pattern was checked as it was parsed, but a form's value can still
-    // be followed by an operator from the other pattern, where a macro code's
-    // value ends at the instruction's $m, or the instruction's value comes
-    // just before it.
+    // Each pattern was validated as it was parsed, but where a macro code's
+    // parts meet the instruction's, at its $m, a value can still be followed
+    // by an operator from the other, or a symbol be right before one it joins
+    // with.
     if (absl::Status status =
-            SourcePattern::CheckValueEnds(form.GetPattern(), form.GetParts());
+            SourcePattern::ValidateParts(form.GetPattern(), form.GetParts());
         !status.ok()) {
       return InstructionDefError(instruction, GetSourceName(form), ": ",
                                  status.message());
