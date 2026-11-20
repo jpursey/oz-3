@@ -39,11 +39,13 @@ TEST_F(InstructionTest, IN_RW) {
   const uint16_t ip6 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("IN.RW", CpuCore::R0, "(FP + $v)")).AddValue(-2);
   const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("IN.RW", CpuCore::R0, "S($v)")).AddValue(520);
+  state.code.AddValue(Encode("IN.RW", CpuCore::R0, "S($v:stack)"))
+      .AddValue(520);
   const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("IN.RW", CpuCore::R0, "D($v)")).AddValue(300);
+  state.code.AddValue(Encode("IN.RW", CpuCore::R0, "D($v:data)")).AddValue(300);
   const uint16_t ip9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("IN.RW", CpuCore::R0, "E($v)")).AddValue(400);
+  state.code.AddValue(Encode("IN.RW", CpuCore::R0, "E($v:extra)"))
+      .AddValue(400);
   const uint16_t ip10 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("IN.RW", CpuCore::R0, {"$r", CpuCore::R3}));
   const uint16_t ip11 = state.code.AddNopGetAddress();
@@ -156,11 +158,13 @@ TEST_F(InstructionTest, IN_RD) {
   const uint16_t ip6 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("IN.RD", CpuCore::R5, "[FP + $v]")).AddValue(-4);
   const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("IN.RD", CpuCore::R5, "S[$v]")).AddValue(520);
+  state.code.AddValue(Encode("IN.RD", CpuCore::R5, "S[$v:stack]"))
+      .AddValue(520);
   const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("IN.RD", CpuCore::R5, "D[$v]")).AddValue(300);
+  state.code.AddValue(Encode("IN.RD", CpuCore::R5, "D[$v:data]")).AddValue(300);
   const uint16_t ip9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("IN.RD", CpuCore::R5, "E[$v]")).AddValue(400);
+  state.code.AddValue(Encode("IN.RD", CpuCore::R5, "E[$v:extra]"))
+      .AddValue(400);
   const uint16_t ip10 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("IN.RD", CpuCore::R5, {"$R", 3}));
   const uint16_t ip11 = state.code.AddNopGetAddress();
@@ -273,11 +277,14 @@ TEST_F(InstructionTest, INS_RW) {
   const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RW", CpuCore::R0, "(FP + $v)")).AddValue(-2);
   const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "S($v)")).AddValue(520);
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "S($v:stack)"))
+      .AddValue(520);
   const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "D($v)")).AddValue(300);
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "D($v:data)"))
+      .AddValue(300);
   const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "E($v)")).AddValue(400);
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "E($v:extra)"))
+      .AddValue(400);
   const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RW", CpuCore::R0, {"$r", CpuCore::R1}));
   const uint16_t ip10 = state.code.AddNopGetAddress();
@@ -296,11 +303,14 @@ TEST_F(InstructionTest, INS_RW) {
   const uint16_t ip15 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RW", CpuCore::R0, "(FP + $v)")).AddValue(-2);
   const uint16_t ip16 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "S($v)")).AddValue(520);
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "S($v:stack)"))
+      .AddValue(520);
   const uint16_t ip17 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "D($v)")).AddValue(300);
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "D($v:data)"))
+      .AddValue(300);
   const uint16_t ip18 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "E($v)")).AddValue(400);
+  state.code.AddValue(Encode("INS.RW", CpuCore::R0, "E($v:extra)"))
+      .AddValue(400);
   const uint16_t ip19 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RW", CpuCore::R0, {"$r", CpuCore::R3}));
   const uint16_t ip20 = state.code.AddNopGetAddress();
@@ -459,11 +469,14 @@ TEST_F(InstructionTest, INS_RD) {
   const uint16_t ip5 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RD", CpuCore::R5, "[FP + $v]")).AddValue(-4);
   const uint16_t ip6 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "S[$v]")).AddValue(520);
+  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "S[$v:stack]"))
+      .AddValue(520);
   const uint16_t ip7 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "D[$v]")).AddValue(300);
+  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "D[$v:data]"))
+      .AddValue(300);
   const uint16_t ip8 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "E[$v]")).AddValue(400);
+  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "E[$v:extra]"))
+      .AddValue(400);
   const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RD", CpuCore::R5, {"$R", 0}));
   const uint16_t ip10 = state.code.AddNopGetAddress();
@@ -482,11 +495,14 @@ TEST_F(InstructionTest, INS_RD) {
   const uint16_t ip15 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RD", CpuCore::R5, "[FP + $v]")).AddValue(-4);
   const uint16_t ip16 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "S[$v]")).AddValue(520);
+  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "S[$v:stack]"))
+      .AddValue(520);
   const uint16_t ip17 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "D[$v]")).AddValue(300);
+  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "D[$v:data]"))
+      .AddValue(300);
   const uint16_t ip18 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "E[$v]")).AddValue(400);
+  state.code.AddValue(Encode("INS.RD", CpuCore::R5, "E[$v:extra]"))
+      .AddValue(400);
   const uint16_t ip19 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("INS.RD", CpuCore::R5, {"$R", 3}));
   const uint16_t ip20 = state.code.AddNopGetAddress();
@@ -1020,15 +1036,18 @@ TEST_F(InstructionTest, OUT_RW) {
   const uint16_t ip8 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("CLRF", CpuCore::S));
   const uint16_t setup9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUT.RW", CpuCore::R0, "S($v)")).AddValue(520);
+  state.code.AddValue(Encode("OUT.RW", CpuCore::R0, "S($v:stack)"))
+      .AddValue(520);
   const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("CLRF", CpuCore::S));
   const uint16_t setup10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUT.RW", CpuCore::R0, "D($v)")).AddValue(300);
+  state.code.AddValue(Encode("OUT.RW", CpuCore::R0, "D($v:data)"))
+      .AddValue(300);
   const uint16_t ip10 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("CLRF", CpuCore::S));
   const uint16_t setup11 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUT.RW", CpuCore::R0, "E($v)")).AddValue(400);
+  state.code.AddValue(Encode("OUT.RW", CpuCore::R0, "E($v:extra)"))
+      .AddValue(400);
   const uint16_t ip11 = state.code.AddNopGetAddress();
 
   EXPECT_EQ(CyclesUntilIp(ip1), 4);  // OUT.RW R0, R1
@@ -1170,15 +1189,18 @@ TEST_F(InstructionTest, OUT_RD) {
   const uint16_t ip8 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("CLRF", CpuCore::S));
   const uint16_t setup9 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUT.RD", CpuCore::R5, "S[$v]")).AddValue(520);
+  state.code.AddValue(Encode("OUT.RD", CpuCore::R5, "S[$v:stack]"))
+      .AddValue(520);
   const uint16_t ip9 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("CLRF", CpuCore::S));
   const uint16_t setup10 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUT.RD", CpuCore::R5, "D[$v]")).AddValue(300);
+  state.code.AddValue(Encode("OUT.RD", CpuCore::R5, "D[$v:data]"))
+      .AddValue(300);
   const uint16_t ip10 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("CLRF", CpuCore::S));
   const uint16_t setup11 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUT.RD", CpuCore::R5, "E[$v]")).AddValue(400);
+  state.code.AddValue(Encode("OUT.RD", CpuCore::R5, "E[$v:extra]"))
+      .AddValue(400);
   const uint16_t ip11 = state.code.AddNopGetAddress();
 
   EXPECT_EQ(CyclesUntilIp(ip1), 5);  // OUT.RD R5, D0
@@ -1322,17 +1344,23 @@ TEST_F(InstructionTest, OUTS_RW) {
   const uint16_t ip15 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "$v")).AddValue(8);
   const uint16_t ip16 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "S($v)")).AddValue(520);
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "S($v:stack)"))
+      .AddValue(520);
   const uint16_t ip17 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "S($v)")).AddValue(520);
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "S($v:stack)"))
+      .AddValue(520);
   const uint16_t ip18 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "D($v)")).AddValue(300);
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "D($v:data)"))
+      .AddValue(300);
   const uint16_t ip19 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "D($v)")).AddValue(300);
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "D($v:data)"))
+      .AddValue(300);
   const uint16_t ip20 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "E($v)")).AddValue(400);
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "E($v:extra)"))
+      .AddValue(400);
   const uint16_t ip21 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "E($v)")).AddValue(400);
+  state.code.AddValue(Encode("OUTS.RW", CpuCore::R0, "E($v:extra)"))
+      .AddValue(400);
   const uint16_t ip22 = state.code.AddNopGetAddress();
 
   EXPECT_EQ(CyclesUntilIp(ip1), 4);  // OUTS.RW R0, R1
@@ -1521,17 +1549,23 @@ TEST_F(InstructionTest, OUTS_RD) {
   const uint16_t ip15 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "$V")).AddValue32(0xF0010);
   const uint16_t ip16 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "S[$v]")).AddValue(520);
+  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "S[$v:stack]"))
+      .AddValue(520);
   const uint16_t ip17 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "S[$v]")).AddValue(520);
+  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "S[$v:stack]"))
+      .AddValue(520);
   const uint16_t ip18 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "D[$v]")).AddValue(300);
+  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "D[$v:data]"))
+      .AddValue(300);
   const uint16_t ip19 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "D[$v]")).AddValue(300);
+  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "D[$v:data]"))
+      .AddValue(300);
   const uint16_t ip20 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "E[$v]")).AddValue(400);
+  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "E[$v:extra]"))
+      .AddValue(400);
   const uint16_t ip21 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "E[$v]")).AddValue(400);
+  state.code.AddValue(Encode("OUTS.RD", CpuCore::R5, "E[$v:extra]"))
+      .AddValue(400);
   const uint16_t ip22 = state.code.AddNopGetAddress();
 
   EXPECT_EQ(CyclesUntilIp(ip1), 5);  // OUTS.RD R5, D0

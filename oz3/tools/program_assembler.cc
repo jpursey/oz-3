@@ -42,6 +42,7 @@
 #include "oz3/tools/program_grammar.h"
 #include "oz3/tools/program_lexer.h"
 #include "oz3/tools/program_map.h"
+#include "oz3/tools/source_pattern.h"
 
 namespace oz3 {
 
@@ -51,11 +52,6 @@ using ArgKind = InstructionForm::Arg::Kind;
 
 // The filename of a program assembled from text.
 constexpr std::string_view kTextFilename = "program";
-
-// The names of the four bank roles in .SEGMENT, by bank index (CpuCore::CODE
-// to CpuCore::EXTRA).
-constexpr std::array<std::string_view, 4> kRoleNames = {"CODE", "STACK", "DATA",
-                                                        "EXTRA"};
 
 // Returns a form as an error lists it ("ADD.W $r, $v").
 std::string GetFormText(const InstructionForm& form) {
@@ -121,10 +117,16 @@ class ProgramAssembler final {
     int64_t offset = 0;
   };
 
-  // A constant, whose value is its expression, evaluated with the offset
-  // ("$") and the scope of local labels where it is defined.
+  // A constant, whose value is its expression, evaluated with the segment and
+  // offset ("$") and the scope of local labels where it is defined.
+  //
+  // A constant defined before the first .SEGMENT is in the default program's
+  // segment until that .SEGMENT replaces it, and then in no segment (-1).
+  // Nothing can be written before it, so a "$" in it is then just the number 0,
+  // which is never checked as an address.
   struct Constant {
     gb::Token token;  // Its name where it is defined.
+    int segment = -1;
     int64_t offset = 0;
     std::string_view scope;
     Expression expression;
@@ -213,18 +215,22 @@ class ProgramAssembler final {
     uint16_t assign_mask = 0xFFFF;
   };
 
-  // The context of a statement's expressions: its offset, and the scope of
-  // its local labels.
+  // The context of a statement's expressions: its segment and offset, and the
+  // scope of its local labels.
   class StatementContext final : public ExpressionContext {
    public:
     // `assembler` must outlive this.
-    StatementContext(ProgramAssembler* assembler, int64_t offset,
+    StatementContext(ProgramAssembler* assembler, int segment, int64_t offset,
                      std::string_view scope)
-        : assembler_(assembler), offset_(offset), scope_(scope) {}
+        : assembler_(assembler),
+          segment_(segment),
+          offset_(offset),
+          scope_(scope) {}
 
     uint16_t GetOffset() const override {
       return static_cast<uint16_t>(offset_);
     }
+    int GetSegment() const override { return segment_; }
     std::optional<ExpressionResult> GetSymbolValue(
         std::string_view name, ExpressionWidth width) const override {
       return assembler_->GetSymbolValue(scope_, name, width);
@@ -232,6 +238,7 @@ class ProgramAssembler final {
 
    private:
     ProgramAssembler* const assembler_;
+    const int segment_;
     const int64_t offset_;
     const std::string_view scope_;
   };
@@ -289,10 +296,12 @@ class ProgramAssembler final {
                        std::string_view name);
 
   // Returns the value of `expression` as `width` in `context`, or reports its
-  // error and returns nullopt.
+  // error and returns nullopt. If `segment` isn't null, it is set to the
+  // segment the value is an offset in (see ExpressionResult::segment).
   std::optional<uint32_t> Evaluate(const Expression& expression,
                                    ExpressionWidth width,
-                                   const ExpressionContext& context);
+                                   const ExpressionContext& context,
+                                   int* segment = nullptr);
 
   // Returns the value of a first pass expression, which is a word evaluated
   // where the statement is.
@@ -364,6 +373,15 @@ class ProgramAssembler final {
                          std::vector<uint16_t>& words);
   void EncodeData(const Statement& statement, const DataStatement& data,
                   std::vector<uint16_t>& words);
+
+  // Returns the value of `expression`, an instruction's address from the base
+  // register of bank index `bank`, or reports its error and returns nullopt.
+  // An offset in a segment (a label) must be in the segment with the bank's
+  // role, and is made an address from the base register, which for the stack
+  // is at the end of the segment, or of an instance's words.
+  std::optional<uint32_t> EvaluateAddress(const Expression& expression,
+                                          int bank,
+                                          const ExpressionContext& context);
   std::unique_ptr<AsmProgram> BuildProgram();
   absl::StatusOr<BareProgram> BuildBareProgram(const Program& program) const;
   Program::Segment BuildSegment(int index) const;
@@ -429,13 +447,18 @@ class ProgramAssembler final {
 
   // The segment with each role, by bank index, or -1 for none.
   // The default program's segment has every role.
-  std::array<int, 4> roles_ = {0, 0, 0, 0};
+  std::array<int, CpuCore::kBankCount> roles_ = {0, 0, 0, 0};
 
   // The statements the second pass finishes, and the stack's size (.STACK)
   // and where it is given.
   std::vector<Statement> statements_;
   uint16_t stack_words_ = 0;
   std::optional<gb::Token> stack_token_;
+
+  // Why the default program can't be a bare program, if it can't for one of
+  // its statements: the first label in an address from BS or BE, which a bare
+  // program doesn't start where this program's offsets need them.
+  std::optional<std::string> bare_error_;
 
   // The number of instances (.INSTANCES), and where it is given.
   int instance_count_ = 1;
@@ -594,8 +617,9 @@ std::optional<ExpressionResult> ProgramAssembler::GetSymbolValue(
   auto label = name.starts_with('@') ? labels_.find(GetLabelKey(scope, name))
                                      : labels_.find(name);
   if (label != labels_.end()) {
-    return ExpressionResult{.value =
-                                static_cast<uint32_t>(label->second.offset)};
+    return ExpressionResult{
+        .value = static_cast<uint32_t>(label->second.offset),
+        .segment = label->second.segment};
   }
   auto it = constants_.find(name);
   if (it == constants_.end()) {
@@ -633,7 +657,8 @@ ExpressionResult ProgramAssembler::EvaluateConstant(Constant& constant,
   }
   constant.evaluating = true;
   ExpressionResult result = constant.expression.Evaluate(
-      width, StatementContext(this, constant.offset, constant.scope));
+      width, StatementContext(this, constant.segment, constant.offset,
+                              constant.scope));
   constant.evaluating = false;
 
   // A symbol not yet defined may be defined later, so that isn't kept.
@@ -664,6 +689,7 @@ bool ProgramAssembler::DefineConstant(const gb::Token& token,
   }
   constants_.try_emplace(
       name, Constant{.token = token,
+                     .segment = segment_,
                      .offset = GetSegment().reserved_size,
                      .scope = scope_,
                      .expression = Expression::Create(GetLexer(), value)});
@@ -682,19 +708,23 @@ bool ProgramAssembler::CheckNotDefined(const gb::Token& token,
 
 std::optional<uint32_t> ProgramAssembler::Evaluate(
     const Expression& expression, ExpressionWidth width,
-    const ExpressionContext& context) {
+    const ExpressionContext& context, int* segment) {
   ExpressionResult result = expression.Evaluate(width, context);
   if (result.kind != ExpressionResult::Kind::kValue) {
     AddError(std::move(result.error));
     return std::nullopt;
+  }
+  if (segment != nullptr) {
+    *segment = result.segment;
   }
   return result.value;
 }
 
 std::optional<uint32_t> ProgramAssembler::EvaluateNow(
     const gb::ParsedItem& item) {
-  return Evaluate(Expression::Create(GetLexer(), item), ExpressionWidth::kWord,
-                  StatementContext(this, GetSegment().reserved_size, scope_));
+  return Evaluate(
+      Expression::Create(GetLexer(), item), ExpressionWidth::kWord,
+      StatementContext(this, segment_, GetSegment().reserved_size, scope_));
 }
 
 std::optional<int> ProgramAssembler::EvaluateInRange(const gb::ParsedItem& item,
@@ -952,6 +982,14 @@ void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
     }
     segments_.clear();
     roles_.fill(-1);
+
+    // Only constants can be before the first .SEGMENT, and they are in no
+    // segment once the default program's is gone, even where a first pass
+    // value already used them.
+    for (auto& [name, constant] : constants_) {
+      constant.segment = -1;
+      constant.results = {};
+    }
   }
   segment_ = static_cast<int>(segments_.size());
   Segment& segment = segments_.emplace_back(Segment{.name = name});
@@ -999,9 +1037,8 @@ void ProgramAssembler::ReadSegment(const gb::ParsedItem& directive) {
 
 void ProgramAssembler::ReadSegmentRole(const gb::Token& role) {
   const std::string_view name = role.GetString();
-  const int index =
-      static_cast<int>(absl::c_find(kRoleNames, name) - kRoleNames.begin());
-  DCHECK_LT(index, static_cast<int>(kRoleNames.size()));
+  const int index = CpuCore::GetBankFromName(name);
+  DCHECK_GE(index, 0);
   const int other = roles_[index];
   if (other >= 0) {
     Error(role, absl::StrCat("The ", name, " role is already the segment ",
@@ -1017,8 +1054,8 @@ void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
   gb::ParseError error;
   if (!grammar_->MatchInstruction(
           *parser_, content, instruction,
-          StatementContext(this, GetSegment().reserved_size, scope_), matches,
-          error)) {
+          StatementContext(this, segment_, GetSegment().reserved_size, scope_),
+          matches, error)) {
     AddError(std::move(error));
     return;
   }
@@ -1270,7 +1307,8 @@ void ProgramAssembler::EncodeInstruction(
   // Registers and code word values are known from the first pass, and only $v
   // and $V are evaluated now.
   const InstructionForm& form = *instruction.form;
-  const StatementContext context(this, statement.offset, statement.scope);
+  const StatementContext context(this, statement.segment, statement.offset,
+                                 statement.scope);
   std::vector<int64_t> values = GetCodeWordValues(form, instruction.args);
   bool ok = true;
   for (int i = 0; i < static_cast<int>(instruction.args.size()); ++i) {
@@ -1278,11 +1316,13 @@ void ProgramAssembler::EncodeInstruction(
     if (kind != ArgKind::kWord && kind != ArgKind::kDword) {
       continue;
     }
+    const int bank = GetValueTypeBank(form.GetArgs()[i].value_type);
     const std::optional<uint32_t> value =
-        Evaluate(*instruction.args[i].value,
-                 kind == ArgKind::kWord ? ExpressionWidth::kWord
-                                        : ExpressionWidth::kDword,
-                 context);
+        bank >= 0 ? EvaluateAddress(*instruction.args[i].value, bank, context)
+                  : Evaluate(*instruction.args[i].value,
+                             kind == ArgKind::kWord ? ExpressionWidth::kWord
+                                                    : ExpressionWidth::kDword,
+                             context);
     ok = ok && value.has_value();
     values[i] = value.value_or(0);
   }
@@ -1292,10 +1332,67 @@ void ProgramAssembler::EncodeInstruction(
   }
 }
 
+std::optional<uint32_t> ProgramAssembler::EvaluateAddress(
+    const Expression& expression, int bank, const ExpressionContext& context) {
+  int segment = -1;
+  const std::optional<uint32_t> value =
+      Evaluate(expression, ExpressionWidth::kWord, context, &segment);
+  if (!value.has_value() || segment < 0) {
+    return value;
+  }
+
+  // The default program's one segment has every role, so a segment that
+  // doesn't have this one is a declared segment, with a name.
+  const int role_segment = roles_[bank];
+  if (segment != role_segment) {
+    const std::string_view bank_name = CpuCore::GetBankName(bank);
+    const std::string expected =
+        role_segment < 0
+            ? absl::StrCat("the segment with the ", bank_name,
+                           " role, and no segment has it")
+            : absl::StrCat(segments_[role_segment].name->GetString(),
+                           ", the segment with the ", bank_name, " role");
+    Error(
+        expression.GetToken(),
+        absl::StrCat("The address is in ", segments_[segment].name->GetString(),
+                     ", but must be in ", expected));
+    return std::nullopt;
+  }
+
+  // A bare program starts BC and BD at its start, as loading a program file
+  // does, but BS at the end of its stack words, which isn't on a page, and
+  // leaves BE as it is.
+  if (!segments_[role_segment].name.has_value() && !bare_error_.has_value() &&
+      (bank == CpuCore::STACK || bank == CpuCore::EXTRA)) {
+    const gb::LexerLocation location =
+        GetLexer().GetTokenLocation(expression.GetToken());
+    bare_error_ = absl::StrCat(
+        "The label at ", location.filename, "(", location.line + 1, ":",
+        location.column + 1, ") is in an address from ",
+        bank == CpuCore::STACK
+            ? "BS, which a bare program starts at the end of its stack "
+              "words, not its pages"
+            : "BE, which a bare program leaves as it is",
+        ", so it can't be a bare program");
+  }
+
+  // Only BS isn't at the start of its segment, or of an instance's words. It
+  // is the stack's offset (as the loader has it) down from the segment's end,
+  // which is the same distance past the start of every instance's words.
+  if (bank != CpuCore::STACK) {
+    return value;
+  }
+  const int64_t base =
+      int64_t{segments_[role_segment].page_count} * kMemoryBankPageSize -
+      GetInstanceOffset(CpuCore::STACK, 0);
+  return static_cast<uint16_t>(*value - base);
+}
+
 void ProgramAssembler::EncodeData(const Statement& statement,
                                   const DataStatement& data,
                                   std::vector<uint16_t>& words) {
-  const StatementContext context(this, statement.offset, statement.scope);
+  const StatementContext context(this, statement.segment, statement.offset,
+                                 statement.scope);
   for (const DataItem& item : data.items) {
     if (const auto* string_words = std::get_if<std::vector<uint16_t>>(&item);
         string_words != nullptr) {
@@ -1370,6 +1467,9 @@ absl::StatusOr<BareProgram> ProgramAssembler::BuildBareProgram(
   if (segment.name.has_value()) {
     return absl::FailedPreconditionError(
         "The program declares segments, so it can't be a bare program");
+  }
+  if (bare_error_.has_value()) {
+    return absl::FailedPreconditionError(*bare_error_);
   }
 
   // Its contents are the segment's words before its stack, rounded up to

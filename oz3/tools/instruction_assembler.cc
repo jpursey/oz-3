@@ -98,7 +98,6 @@ constexpr std::string_view kParserProgram = R"---(
 
   InstructionConfig {
     "opcode" ":" $opcode=%int;
-    $relative="relative";
     $distinct="distinct";
     "exclude_a" ":" $exclude_a=%ident;
     "exclude_b" ":" $exclude_b=%ident;
@@ -538,8 +537,6 @@ bool InstructionSetAssembler::AssembleInstruction(
     instruction_def.arg_macro_name = AddString(arg_macro_name);
   }
 
-  instruction_def.relative =
-      (parsed_instruction.GetItem("relative") != nullptr);
   instruction_def.distinct_args =
       (parsed_instruction.GetItem("distinct") != nullptr);
   return true;

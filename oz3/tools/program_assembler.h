@@ -37,7 +37,8 @@ class AsmProgram final {
 
   // Returns the program as a bare program, which is valid (see
   // ValidateBareProgram), or an error if it can't be one: if it declares
-  // segments, or its contents, rounded up to a multiple of
+  // segments, has a label in an address from BS or BE (which a bare program
+  // starts elsewhere), or its contents, rounded up to a multiple of
   // Program::Segment::Data::kAlignment, and its stack pass the end of a bank.
   const absl::StatusOr<BareProgram>& GetBareProgram() const {
     return bare_program_;

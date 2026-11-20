@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/check.h"
@@ -188,6 +189,12 @@ InstructionForm::Arg::Kind GetArgKind(const Part& part) {
   }
 }
 
+// Returns true if a pattern is just "$v", whose type a $m can give.
+bool IsJustValue(const SourcePattern& pattern) {
+  return pattern.GetParts().size() == 1 &&
+         pattern.GetParts()[0].kind == Part::Kind::kWord;
+}
+
 }  // namespace
 
 //==============================================================================
@@ -237,7 +244,7 @@ bool InstructionForm::Encode(absl::Span<const int64_t> values, uint16_t address,
           return fail("Value ", value, " does not fit in a word");
         }
         uint16_t word = static_cast<uint16_t>(value);
-        if (arg.relative) {
+        if (arg.value_type == ValueType::kRelative) {
           // The offset from the next instruction, wrapping as IP does.
           word -= static_cast<uint16_t>(address + size_);
         }
@@ -337,7 +344,7 @@ std::string InstructionForm::Disassemble(absl::Span<const uint16_t> words,
         break;
       case Arg::Kind::kWord: {
         uint16_t word = words[word_index++];
-        if (arg.relative) {
+        if (arg.value_type == ValueType::kRelative) {
           word += static_cast<uint16_t>(address + size_);
         }
         absl::StrAppend(&text, FormatHexNumber(word, 4));
@@ -429,13 +436,15 @@ class InstructionSetSyntaxBuilder final {
   bool CheckInstructionArgs(const InstructionDef& instruction,
                             const SourcePattern& pattern);
   bool CheckRegisterRules(const InstructionDef& instruction);
+  bool ValidateMacroValueType(const InstructionDef& instruction,
+                              const SourcePattern& pattern,
+                              const MacroSyntax& macro);
   bool CheckExcludedRegisters(const InstructionDef& instruction,
                               const Argument& arg, uint16_t excluded,
                               std::string_view arg_name);
   void AddForm(const InstructionDef& instruction, const SourcePattern& pattern,
                const MacroSyntax* macro, int code_index);
-  void AddPart(InstructionForm& form, const InstructionDef& instruction,
-               Part part, int shift);
+  void AddPart(InstructionForm& form, Part part, int shift);
   bool CheckSize(const InstructionForm& form,
                  const InstructionSet& instruction_set);
   void IndexForms();
@@ -595,12 +604,14 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
                                  "Unknown macro: ", instruction.arg_macro_name);
     }
     const MacroSyntax& macro = it->second;
+    if (!ValidateMacroValueType(instruction, *pattern, macro)) {
+      return false;
+    }
     for (int i = 0; i < static_cast<int>(macro.patterns.size()); ++i) {
       AddForm(instruction, *pattern, &macro, i);
     }
   }
 
-  bool has_relative_arg = false;
   for (int i = first_form; i < static_cast<int>(syntax_->forms_.size()); ++i) {
     const InstructionForm& form = syntax_->forms_[i];
 
@@ -617,14 +628,41 @@ bool InstructionSetSyntaxBuilder::AddInstruction(
     if (!CheckSize(form, instruction_set)) {
       return false;
     }
-    for (const InstructionForm::Arg& arg : form.args_) {
-      has_relative_arg = has_relative_arg || arg.relative;
-    }
   }
-  if (instruction.relative && !has_relative_arg) {
-    return InstructionDefError(instruction, "Relative instruction '",
-                               instruction.op_name,
-                               "' has no form where $v is a whole argument");
+  return true;
+}
+
+// A $m's value type is for its macro's codes that are just "$v", so the macro
+// must have one, and none of them can have a type of its own.
+bool InstructionSetSyntaxBuilder::ValidateMacroValueType(
+    const InstructionDef& instruction, const SourcePattern& pattern,
+    const MacroSyntax& macro) {
+  const auto parts = pattern.GetParts();
+  auto macro_part = absl::c_find_if(parts, [](const Part& part) {
+    return part.kind == Part::Kind::kArgument &&
+           part.arg.type == ArgType::kMacro;
+  });
+  if (macro_part->value_type == ValueType::kNumber) {
+    return true;
+  }
+  bool has_value_code = false;
+  for (int i = 0; i < static_cast<int>(macro.patterns.size()); ++i) {
+    if (!IsJustValue(macro.patterns[i])) {
+      continue;
+    }
+    if (macro.patterns[i].GetParts()[0].value_type != ValueType::kNumber) {
+      return InstructionDefError(
+          instruction, "Source \"", instruction.source,
+          "\" gives its $m a value type, but macro code \"",
+          macro.def->code[i].source, "\" of ", macro.def->name,
+          " has one of its own");
+    }
+    has_value_code = true;
+  }
+  if (!has_value_code) {
+    return InstructionDefError(instruction, "Source \"", instruction.source,
+                               "\" gives its $m a value type, but no code of ",
+                               macro.def->name, " is just \"$v\"");
   }
   return true;
 }
@@ -704,7 +742,7 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
   syntax_->forms_.push_back(InstructionForm());
   InstructionForm& form = syntax_->forms_.back();
   form.instruction_ = &instruction;
-  form.pattern_ = std::string(instruction.source);
+  form.pattern_ = std::string(pattern.GetText());
   form.size_ = 1 + pattern.GetValueWords();
 
   // Arguments in the code word are in the order of the instruction's
@@ -722,7 +760,7 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
     if (part.kind != Part::Kind::kArgument ||
         part.arg.type != ArgType::kMacro) {
       const bool is_code_word_arg = (part.kind == Part::Kind::kArgument);
-      AddPart(form, instruction, std::move(part), shift);
+      AddPart(form, std::move(part), shift);
 
       // The register rules are only for the instruction's own arguments, which
       // CheckRegisterRules checked are registers if they have any.
@@ -735,18 +773,26 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
       continue;
     }
 
-    // The macro code's source and parts take the place of the $m. Its parts
-    // are whole arguments of the form only if the $m is.
+    // The macro code's text and parts take the place of the $m. Its parts are
+    // whole arguments of the form only if the $m is, and a code that is just
+    // "$v" takes the $m's value type (ValidateMacroValueType checked it has
+    // none of its own if the $m has one).
     const MacroCodeDef& code = macro->def->code[code_index];
     const SourcePattern& code_pattern = macro->patterns[code_index];
+    const std::string_view code_text = code_pattern.GetText();
     form.macro_code_ = &code;
-    form.pattern_.replace(part.offset, part.size, code.source);
-    offset_change += static_cast<int>(code.source.size()) - part.size;
+    form.pattern_.replace(part.offset, part.size, code_text);
+    offset_change += static_cast<int>(code_text.size()) - part.size;
     form.size_ += code_pattern.GetValueWords();
+    const bool takes_type =
+        part.value_type != ValueType::kNumber && IsJustValue(code_pattern);
     for (Part code_part : code_pattern.GetParts()) {
       code_part.offset += part.offset;
       code_part.whole_arg = code_part.whole_arg && part.whole_arg;
-      AddPart(form, instruction, std::move(code_part), shift);
+      if (takes_type) {
+        code_part.value_type = part.value_type;
+      }
+      AddPart(form, std::move(code_part), shift);
     }
     code_word_args[arg_index - 1] = macro->def->Encode(code_index, 0);
     form.code_word_mask_ |= ((1 << code.prefix.size) - 1)
@@ -757,19 +803,16 @@ void InstructionSetSyntaxBuilder::AddForm(const InstructionDef& instruction,
 
 // Adds a part to a form, with its argument if it is a placeholder. A code word
 // argument's bits start at `shift`.
-void InstructionSetSyntaxBuilder::AddPart(InstructionForm& form,
-                                          const InstructionDef& instruction,
-                                          Part part, int shift) {
+void InstructionSetSyntaxBuilder::AddPart(InstructionForm& form, Part part,
+                                          int shift) {
   if (part.kind == Part::Kind::kArgument) {
     form.args_.push_back({.kind = GetArgKind(part),
                           .bits = part.arg.size,
                           .shift = shift,
                           .value_set = part.value_set});
   } else if (part.kind != Part::Kind::kLiteral) {
-    form.args_.push_back({.kind = GetArgKind(part),
-                          .relative = instruction.relative &&
-                                      part.kind == Part::Kind::kWord &&
-                                      part.whole_arg});
+    form.args_.push_back(
+        {.kind = GetArgKind(part), .value_type = part.value_type});
   }
   form.parts_.push_back(std::move(part));
 }

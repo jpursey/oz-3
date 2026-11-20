@@ -43,13 +43,10 @@ std::string LockName(int lock) {
     case -1:
       return "NONE";
     case CpuCore::CODE:
-      return "CODE";
     case CpuCore::STACK:
-      return "STACK";
     case CpuCore::DATA:
-      return "DATA";
     case CpuCore::EXTRA:
-      return "EXTRA";
+      return std::string(CpuCore::GetBankName(lock));
   }
   if (lock >= kFirstCoreLock) {
     return absl::StrCat("Core section ", lock - kFirstCoreLock + 1);
@@ -1270,15 +1267,8 @@ bool InstructionCompiler::CompileMicroArg(std::string_view arg_name,
       return Error("Argument not allowed");
     } break;
     case MicroArgType::kBank: {
-      if (arg_name == "CODE") {
-        arg = CpuCore::CODE;
-      } else if (arg_name == "STACK") {
-        arg = CpuCore::STACK;
-      } else if (arg_name == "DATA") {
-        arg = CpuCore::DATA;
-      } else if (arg_name == "EXTRA") {
-        arg = CpuCore::EXTRA;
-      } else {
+      arg = CpuCore::GetBankFromName(arg_name);
+      if (arg < 0) {
         return Error("Invalid bank: ", arg_name);
       }
       return true;

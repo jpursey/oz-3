@@ -140,9 +140,6 @@ void InstructionDefExporter::ExportInstruction(
   if (!instruction.source.empty()) {
     absl::StrAppend(&result_, ",\n     .source = \"", instruction.source, "\"");
   }
-  if (instruction.relative) {
-    absl::StrAppend(&result_, ",\n     .relative = true");
-  }
   ExportArgumentField("arg1", instruction.arg1);
   ExportArgumentField("arg2", instruction.arg2);
   if (instruction.arg1_excluded != 0) {

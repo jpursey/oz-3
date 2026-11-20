@@ -32,7 +32,7 @@ std::string Export(const InstructionSetDef& instruction_set) {
   return text;
 }
 
-TEST(InstructionDefExporterTest, ValueSetsAndRelativeInstructions) {
+TEST(InstructionDefExporterTest, ValueSets) {
   const NamedValueDef conditions[] = {{"Z", 4}, {"NZ", 0}};
   const NamedValueDef flags[] = {{"C", 4}};
   const ValueSetDef value_sets[] = {
@@ -42,8 +42,7 @@ TEST(InstructionDefExporterTest, ValueSetsAndRelativeInstructions) {
   const InstructionDef instructions[] = {
       {.op = 1,
        .op_name = "JR",
-       .source = "$Condition, $v",
-       .relative = true,
+       .source = "$Condition, $v:relative",
        .arg1 = {ArgType::kImmediate, 3},
        .code = "LD(C0);UL;"},
       {.op = 2,
@@ -75,8 +74,7 @@ constexpr oz3::ValueSetDef kTestValueSets[] = {
 constexpr oz3::InstructionDef kTestInstructions[] = {
     {.op = 1,
      .op_name = "JR",
-     .source = "$Condition, $v",
-     .relative = true,
+     .source = "$Condition, $v:relative",
      .arg1 = {oz3::ArgType::kImmediate, 3},
      .code = "LD(C0);UL;"},
     {.op = 2,
@@ -93,7 +91,7 @@ constexpr oz3::InstructionSetDef kTestInstructionSet = {
 )---");
 }
 
-TEST(InstructionDefExporterTest, NoValueSetsOrRelativeInstructions) {
+TEST(InstructionDefExporterTest, NoValueSets) {
   const InstructionDef instructions[] = {
       {.op = 0, .op_name = "NOP", .code = "UL;"},
   };
@@ -102,7 +100,6 @@ TEST(InstructionDefExporterTest, NoValueSetsOrRelativeInstructions) {
   EXPECT_THAT(text, Not(HasSubstr("NamedValueDef")));
   EXPECT_THAT(text, Not(HasSubstr("ValueSet")));
   EXPECT_THAT(text, Not(HasSubstr("value_sets")));
-  EXPECT_THAT(text, Not(HasSubstr("relative")));
   EXPECT_THAT(text, Not(HasSubstr("excluded")));
   EXPECT_THAT(text, Not(HasSubstr("distinct")));
 }

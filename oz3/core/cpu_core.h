@@ -206,6 +206,9 @@ class CpuCore final : public ExecutionComponent {
   static constexpr int DATA = 2;   // Data bank
   static constexpr int EXTRA = 3;  // Extra bank
 
+  // The number of banks, which are numbered from 0.
+  static constexpr int kBankCount = 4;
+
   // Register / memory bank association.
   static constexpr int kRegisterBankMap[] = {
       DATA, DATA,  DATA, DATA, EXTRA, EXTRA, STACK, STACK, CODE, STACK,
@@ -417,6 +420,14 @@ class CpuCore final : public ExecutionComponent {
   // virtual registers, or kInvalidReg if the name is not a valid 16-bit
   // register or virtual register name.
   static int GetVirtualWordRegFromName(std::string_view name);
+
+  // Returns the name of a bank (CODE, STACK, DATA, or EXTRA), as microcode
+  // writes it, or "invalid" if it is not a bank.
+  static std::string_view GetBankName(int bank);
+
+  // Returns the bank with a name as microcode writes it ("STACK" is STACK), or
+  // -1 if the name is not a bank's.
+  static int GetBankFromName(std::string_view name);
 
   // Returns true if the index is a 32-bit register index.
   static bool IsDwordReg(int reg) {

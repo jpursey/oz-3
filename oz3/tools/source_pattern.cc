@@ -12,17 +12,20 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "absl/base/no_destructor.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_split.h"
 #include "absl/types/span.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/parser.h"
 #include "gb/parse/parser_program.h"
 #include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_def.h"
 
 namespace oz3 {
@@ -44,12 +47,14 @@ constexpr gb::Symbol kBinaryOperators[] = {'+', '-', '*', '/', '%',
                                            '&', '|', '^', '<', '>'};
 
 // A placeholder: "$#" with its size, or "$" and a name, which is either one of
-// the built-in placeholders (IsPlaceholderName) or a value set. The capture is
-// the whole token, as a rewound token's value is its whole text.
+// the built-in placeholders (IsPlaceholderName) or a value set. A ':' right
+// after it starts its value type, so the type is part of the token, even if
+// it is missing or unknown, and never a literal ':'. The capture is the whole
+// token, as a rewound token's value is its whole text.
 constexpr gb::LexerConfig::UserToken kUserTokens[] = {
     {.name = "placeholder",
      .type = kTokenPlaceholder,
-     .regex = R"-((\$(?:#[1-8]|[a-zA-Z_]\w*)))-"},
+     .regex = R"-((\$(?:#[1-8]|[a-zA-Z_]\w*)(?::\w*)?))-"},
 };
 
 constexpr gb::LexerConfig kLexerConfig = {
@@ -135,7 +140,43 @@ std::optional<SourcePattern::Part> ParsePlaceholder(
   return part;
 }
 
+// Returns the value type `name` names, or nullopt if it names none.
+std::optional<ValueType> ParseValueType(std::string_view name) {
+  struct Name {
+    std::string_view name;
+    ValueType type;
+  };
+  static constexpr Name kNames[] = {
+      {"code", ValueType::kCode},         {"stack", ValueType::kStack},
+      {"data", ValueType::kData},         {"extra", ValueType::kExtra},
+      {"relative", ValueType::kRelative},
+  };
+  for (const Name& entry : kNames) {
+    if (entry.name == name) {
+      return entry.type;
+    }
+  }
+  return std::nullopt;
+}
+
 }  // namespace
+
+int GetValueTypeBank(ValueType type) {
+  switch (type) {
+    case ValueType::kNumber:
+      return -1;
+    case ValueType::kCode:
+    case ValueType::kRelative:
+      return CpuCore::CODE;
+    case ValueType::kStack:
+      return CpuCore::STACK;
+    case ValueType::kData:
+      return CpuCore::DATA;
+    case ValueType::kExtra:
+      return CpuCore::EXTRA;
+  }
+  return -1;
+}
 
 absl::StatusOr<SourcePattern> SourcePattern::ParseInstruction(
     std::string_view source, absl::Span<const ValueSetDef> value_sets) {
@@ -210,10 +251,13 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
   }
 
   // The parse checked the syntax, so every token is a part, in order. Token
-  // text is a view of the content's text, which gives each part's offset.
+  // text is a view of the content's text, which gives each part's offset. The
+  // pattern's text leaves out the value types, so the offsets after a type
+  // move back by its size.
   const std::string_view text = lexer.GetContentText(content);
   SourcePattern pattern;
   int arg_start = 0;
+  int text_pos = 0;
   lexer.RewindContent(content);
   for (gb::Token token = lexer.NextToken(content); !token.IsEnd();
        token = lexer.NextToken(content)) {
@@ -221,21 +265,49 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
       pattern.EndArg(arg_start);
       arg_start = static_cast<int>(pattern.parts_.size()) + 1;
     }
+    const std::string_view token_text = lexer.GetTokenText(token);
+    const int token_pos = static_cast<int>(token_text.data() - text.data());
+
+    // The part's text is the token's, without a value type.
+    std::string_view part_text = token_text;
     std::optional<Part> part;
     if (token.IsUser(kTokenPlaceholder)) {
-      part = ParsePlaceholder(token.GetString().substr(1), value_sets);
+      const std::vector<std::string_view> pieces =
+          absl::StrSplit(token_text, absl::MaxSplits(':', 1));
+      part_text = pieces[0];
+      part = ParsePlaceholder(part_text.substr(1), value_sets);
       if (!part.has_value()) {
-        return absl::InvalidArgumentError(absl::StrCat(
-            token.GetString(), " is not a placeholder or value set"));
+        return absl::InvalidArgumentError(
+            absl::StrCat(part_text, " is not a placeholder or value set"));
+      }
+      if (pieces.size() == 2) {
+        const bool can_have_type = part->kind == Part::Kind::kWord ||
+                                   (part->kind == Part::Kind::kArgument &&
+                                    part->arg.type == ArgType::kMacro);
+        if (!can_have_type) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              token_text, " has a value type, but only $v and $m can"));
+        }
+        const std::optional<ValueType> type = ParseValueType(pieces[1]);
+        if (!type.has_value()) {
+          return absl::InvalidArgumentError(absl::StrCat(
+              token_text,
+              " has an unknown value type (expected code, stack, data, extra, "
+              "or relative)"));
+        }
+        part->value_type = *type;
       }
     } else {
       part.emplace();
       part->literal_type = token.GetType();
       part->literal = token.GetValue();
     }
-    const std::string_view token_text = lexer.GetTokenText(token);
-    part->offset = static_cast<int>(token_text.data() - text.data());
-    part->size = static_cast<int>(token_text.size());
+    absl::StrAppend(&pattern.text_,
+                    text.substr(text_pos, token_pos - text_pos));
+    part->offset = static_cast<int>(pattern.text_.size());
+    part->size = static_cast<int>(part_text.size());
+    absl::StrAppend(&pattern.text_, part_text);
+    text_pos = token_pos + static_cast<int>(token_text.size());
     if (part->kind == Part::Kind::kArgument) {
       pattern.args_.push_back(part->arg);
     } else if (part->kind == Part::Kind::kWord) {
@@ -245,8 +317,9 @@ absl::StatusOr<SourcePattern> SourcePattern::Parse(
     }
     pattern.parts_.push_back(*std::move(part));
   }
+  absl::StrAppend(&pattern.text_, text.substr(text_pos));
   pattern.EndArg(arg_start);
-  if (absl::Status status = CheckValueEnds(source, pattern.parts_);
+  if (absl::Status status = CheckValueEnds(pattern.text_, pattern.parts_);
       !status.ok()) {
     return status;
   }

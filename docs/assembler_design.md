@@ -359,14 +359,14 @@ too, so they never change either.
   so a program can write `JC Z, @done` and `CLRF Z | C`, where `Z` is 4 in one
   and 1 in the other. It encodes exactly as `$#3` and `$#4` did.
 - **Relative values.** `JPR`, `JCR`, `JDR`, and `CALLR` add their value to `IP`,
-  which is past the instruction. An instruction marks itself relative
-  (`instruction(relative) JPR "$m"`), and then a `$v` that is a whole argument
-  is a target address, which the assembler encodes as its offset from the next
-  instruction. So `JPR @loop` jumps to `@loop`, as
+  which is past the instruction. Their `$m` has the `relative` value type
+  (`instruction JPR "$m:relative"`), which it gives to the `$v` of `GetWord`'s
+  `"$v"` code, so that value is a target address, which the assembler encodes
+  as its offset from the next instruction. So `JPR @loop` jumps to `@loop`, as
   `JP @loop` does. Its other forms are unchanged: `JPR D(table)` still reads
-  the offset from memory. Marking the instruction, rather than the `$v`, keeps
-  the relative instructions on `GetWord`, where marking the placeholder would
-  need a copy of `GetWord` with the same layout, kept in sync by hand.
+  the offset from memory. Typing the `$m`, rather than the code's `$v`, keeps
+  the relative instructions on `GetWord`, where typing the code would need a
+  copy of `GetWord` with the same layout, kept in sync by hand.
 - **Patterns can't contain `;` or `@`**, so that comments and local labels never
   collide with an instruction's syntax.
 - **A value can't be followed by a binary operator** (`+`, `-`, `*`, `/`, `%`,

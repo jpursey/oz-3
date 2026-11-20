@@ -45,13 +45,13 @@ macro(bits:5) GetWord:r {
   code:C2 "$v" {
     LD(C2); UL;
   }
-  code:C2 "S($v)" {
+  code:C2 "S($v:stack)" {
     LD(C2); UL; LK(STACK); ADR(C2); LD(C2); UL;
   }
-  code:C2 "D($v)" {
+  code:C2 "D($v:data)" {
     LD(C2); UL; LK(DATA); ADR(C2); LD(C2); UL;
   }
-  code:C2 "E($v)" {
+  code:C2 "E($v:extra)" {
     LD(C2); UL; LK(EXTRA); ADR(C2); LD(C2); UL;
   }
 }
@@ -85,13 +85,13 @@ macro(bits:5) GetDword:R {
   code:CD "$V" {
     LD(C0); LD(C1); UL;
   }
-  code:CD "S[$v]" {
+  code:CD "S[$v:stack]" {
     LD(C0); UL; LK(STACK); ADR(C0); LD(C0); LD(C1); UL;
   }
-  code:CD "D[$v]" {
+  code:CD "D[$v:data]" {
     LD(C0); UL; LK(DATA); ADR(C0); LD(C0); LD(C1); UL;
   }
-  code:CD "E[$v]" {
+  code:CD "E[$v:extra]" {
     LD(C0); UL; LK(EXTRA); ADR(C0); LD(C0); LD(C1); UL;
   }
 }
@@ -289,17 +289,17 @@ instruction WAIT "$r" {
 ################################################################################
 
 macro(bits:5) LoadWord(p) {
-  code "$r"         { UL; MOV(p,m); }
-  code "($r)"       { UL; LKR(m); ADR(m); LD(p); UL; }
-  code "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(p); UL; }
-  code "(SP)"       { UL; LK(STACK); ADR(SP); LD(p); UL; }
-  code "(SP + $v)"  { LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); LD(p); UL; }
-  code "(FP)"       { UL; LK(STACK); ADR(FP); LD(p); UL; }
-  code "(FP + $v)"  { LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); LD(p); UL; }
-  code "$v"         { LD(p); UL; }
-  code "S($v)"      { LD(C2); UL; LK(STACK); ADR(C2); LD(p); UL; }
-  code "D($v)"      { LD(C2); UL; LK(DATA); ADR(C2); LD(p); UL; }
-  code "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); LD(p); UL; }
+  code "$r"          { UL; MOV(p,m); }
+  code "($r)"        { UL; LKR(m); ADR(m); LD(p); UL; }
+  code "($r + $v)"   { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); LD(p); UL; }
+  code "(SP)"        { UL; LK(STACK); ADR(SP); LD(p); UL; }
+  code "(SP + $v)"   { LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); LD(p); UL; }
+  code "(FP)"        { UL; LK(STACK); ADR(FP); LD(p); UL; }
+  code "(FP + $v)"   { LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); LD(p); UL; }
+  code "$v"          { LD(p); UL; }
+  code "S($v:stack)" { LD(C2); UL; LK(STACK); ADR(C2); LD(p); UL; }
+  code "D($v:data)"  { LD(C2); UL; LK(DATA); ADR(C2); LD(p); UL; }
+  code "E($v:extra)" { LD(C2); UL; LK(EXTRA); ADR(C2); LD(p); UL; }
 }
 
 instruction MOV.LW "$r, $m" {
@@ -331,13 +331,13 @@ macro(bits:5) LoadDword(P) {
   code "$V" {
     LD(p0); LD(p1); UL;
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL; LK(STACK); ADR(C2); LD(p0); LD(p1); UL;
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL; LK(DATA); ADR(C2); LD(p0); LD(p1); UL;
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL; LK(EXTRA); ADR(C2); LD(p0); LD(p1); UL;
   }
 }
@@ -347,15 +347,15 @@ instruction MOV.LD "$R, $m" {
 }
 
 macro(bits:5) StoreWordRegister(p) {
-  code "($r)"       { UL; LKR(m); ADR(m); ST(p); UL; }
-  code "($r + $v)"  { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); ST(p); UL; }
-  code "(SP)"       { UL; LK(STACK); ADR(SP); ST(p); UL; }
-  code "(SP + $v)"  { LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(p); UL; }
-  code "(FP)"       { UL; LK(STACK); ADR(FP); ST(p); UL; }
-  code "(FP + $v)"  { LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(p); UL; }
-  code "S($v)"      { LD(C2); UL; LK(STACK); ADR(C2); ST(p); UL; }
-  code "D($v)"      { LD(C2); UL; LK(DATA); ADR(C2); ST(p); UL; }
-  code "E($v)"      { LD(C2); UL; LK(EXTRA); ADR(C2); ST(p); UL; }
+  code "($r)"        { UL; LKR(m); ADR(m); ST(p); UL; }
+  code "($r + $v)"   { LD(C2); UL; ADD(C2,m); LKR(m); ADR(C2); ST(p); UL; }
+  code "(SP)"        { UL; LK(STACK); ADR(SP); ST(p); UL; }
+  code "(SP + $v)"   { LD(C2); UL; ADD(C2,SP); LK(STACK); ADR(C2); ST(p); UL; }
+  code "(FP)"        { UL; LK(STACK); ADR(FP); ST(p); UL; }
+  code "(FP + $v)"   { LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(p); UL; }
+  code "S($v:stack)" { LD(C2); UL; LK(STACK); ADR(C2); ST(p); UL; }
+  code "D($v:data)"  { LD(C2); UL; LK(DATA); ADR(C2); ST(p); UL; }
+  code "E($v:extra)" { LD(C2); UL; LK(EXTRA); ADR(C2); ST(p); UL; }
 }
 
 instruction MOV.SWR "$m, $r" {
@@ -381,13 +381,13 @@ macro(bits:5) StoreWordValue {
   code "(FP + $v), $v" {
     LD(C2); LD(C1); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(C1); UL;
   }
-  code "S($v), $v" {
+  code "S($v:stack), $v" {
     LD(C2); LD(C1); UL; LK(STACK); ADR(C2); ST(C1); UL;
   }
-  code "D($v), $v" {
+  code "D($v:data), $v" {
     LD(C2); LD(C1); UL; LK(DATA); ADR(C2); ST(C1); UL;
   }
-  code "E($v), $v" {
+  code "E($v:extra), $v" {
     LD(C2); LD(C1); UL; LK(EXTRA); ADR(C2); ST(C1); UL;
   }
 }
@@ -415,13 +415,13 @@ macro(bits:5) StoreDwordRegister(P) {
   code "[FP + $v]" {
     LD(C2); UL; ADD(C2,FP); LK(STACK); ADR(C2); ST(p0); ST(p1); UL;
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL; LK(STACK); ADR(C2); ST(p0); ST(p1); UL;
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL; LK(DATA); ADR(C2); ST(p0); ST(p1); UL;
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL; LK(EXTRA); ADR(C2); ST(p0); ST(p1); UL;
   }
 }
@@ -455,15 +455,15 @@ macro(bits:5) StoreDwordValue {
     LD(C2); LD(C0); LD(C1); UL; ADD(C2,FP);
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "S[$v], $V" {
+  code "S[$v:stack], $V" {
     LD(C2); LD(C0); LD(C1); UL;
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "D[$v], $V" {
+  code "D[$v:data], $V" {
     LD(C2); LD(C0); LD(C1); UL;
     LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "E[$v], $V" {
+  code "E[$v:extra], $V" {
     LD(C2); LD(C0); LD(C1); UL;
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
   }
@@ -609,19 +609,19 @@ macro PopWord {
       ADD(C0,FP); ADR(C0); ST(C2);
     UL;
   }
-  code "S($v)" {
+  code "S($v:stack)" {
     LD(C0); UL;
     LK(STACK);
       ADR(SP); LD(C2); LAD(SP);
       ADR(C0); ST(C2);
     UL;
   }
-  code "D($v)" {
+  code "D($v:data)" {
     LD(C0); UL;
     LK(STACK); ADR(SP); LD(C2); LAD(SP); UL;
     LK(DATA); ADR(C0); ST(C2); UL;
   }
-  code "E($v)" {
+  code "E($v:extra)" {
     LD(C0); UL;
     LK(STACK); ADR(SP); LD(C2); LAD(SP); UL;
     LK(EXTRA); ADR(C0); ST(C2); UL;
@@ -675,19 +675,19 @@ macro PopDword {
       ADD(C2,FP); ADR(C2); ST(C0); ST(C1);
     UL;
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL;
     LK(STACK);
       ADR(SP); LD(C0); LD(C1); LAD(SP);
       ADR(C2); ST(C0); ST(C1);
     UL;
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL;
     LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(SP); UL;
     LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL;
     LK(STACK); ADR(SP); LD(C0); LD(C1); LAD(SP); UL;
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
@@ -743,15 +743,15 @@ macro SwapWord(p) {
     LD(C2); UL; ADD(C2,FP);
     MOV(C0,p); LK(STACK); ADR(C2); LD(p); STP(C0); UL;
   }
-  code "S($v)" {
+  code "S($v:stack)" {
     LD(C2); UL;
     MOV(C0,p); LK(STACK); ADR(C2); LD(p); STP(C0); UL;
   }
-  code "D($v)" {
+  code "D($v:data)" {
     LD(C2); UL;
     MOV(C0,p); LK(DATA); ADR(C2); LD(p); STP(C0); UL;
   }
-  code "E($v)" {
+  code "E($v:extra)" {
     LD(C2); UL;
     MOV(C0,p); LK(EXTRA); ADR(C2); LD(p); STP(C0); UL;
   }
@@ -797,17 +797,17 @@ macro SwapDword(P) {
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(STACK); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(DATA); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL;
     MOV(C0,p0); MOV(C1,p1);
     LK(EXTRA); ADR(C2); LD(p0); LD(p1); STP(C1); STP(C0); UL;
@@ -4002,7 +4002,7 @@ instruction(exclude_b:R7) CPDR "$r, ($r)" {
 ## Sets IP to the specified address.
 ################################################################################
 
-instruction JP "$m" {
+instruction JP "$m:code" {
   # The fetch phase may load straight into any register (see the microcode
   # reference), so the address goes straight into IP.
   $LoadWord(IP);
@@ -4022,7 +4022,7 @@ instruction JP "$m" {
 ## Adds the specified relative address to IP.
 ################################################################################
 
-instruction(relative) JPR "$m" {
+instruction JPR "$m:relative" {
   $GetWord;
   ADD(IP,r);
 }
@@ -4042,7 +4042,7 @@ instruction(relative) JPR "$m" {
 ## variant takes 2 more cycles when it jumps.
 ################################################################################
 
-instruction JC "$Condition, $m" {
+instruction JC "$Condition, $m:code" {
   $GetWord;
   JC(a,@jump);
   END;
@@ -4065,7 +4065,7 @@ instruction JC "$Condition, $m" {
 ## Each variant takes 2 more cycles when it jumps.
 ################################################################################
 
-instruction(relative) JCR "$Condition, $m" {
+instruction JCR "$Condition, $m:relative" {
   $GetWord;
   JC(a,@jump);
   END;
@@ -4093,7 +4093,7 @@ instruction(relative) JCR "$Condition, $m" {
 ## decremented value.
 ################################################################################
 
-instruction JD "$r, $m" {
+instruction JD "$r, $m:code" {
   $GetWord;
   JD(a,@jump);
   END;
@@ -4121,7 +4121,7 @@ instruction JD "$r, $m" {
 ## decremented value.
 ################################################################################
 
-instruction(relative) JDR "$r, $m" {
+instruction JDR "$r, $m:relative" {
   $GetWord;
   JD(a,@jump);
   END;
@@ -4143,7 +4143,7 @@ instruction(relative) JDR "$r, $m" {
 ## Pushes IP onto the stack and sets IP to the specified address.
 ################################################################################
 
-instruction CALL "$m" {
+instruction CALL "$m:code" {
   $GetWord;
   LK(STACK); ADR(SP); STP(IP); LAD(SP); UL;
   MOV(IP,r);
@@ -4163,7 +4163,7 @@ instruction CALL "$m" {
 ## Pushes IP onto the stack and adds the specified relative address to IP.
 ################################################################################
 
-instruction(relative) CALLR "$m" {
+instruction CALLR "$m:relative" {
   $GetWord;
   LK(STACK); ADR(SP); STP(IP); LAD(SP); UL;
   ADD(IP,r);
@@ -4463,17 +4463,17 @@ macro(bits:5) ReadPortWord(p) {
     PLK(p); PLD(S,C0); MSR(S,S); PUL;
     LK(STACK); ADR(C2); ST(C0); UL;
   }
-  code "S($v)" {
+  code "S($v:stack)" {
     LD(C2); UL;
     PLK(p); PLD(S,C0); MSR(S,S); PUL;
     LK(STACK); ADR(C2); ST(C0); UL;
   }
-  code "D($v)" {
+  code "D($v:data)" {
     LD(C2); UL;
     PLK(p); PLD(S,C0); MSR(S,S); PUL;
     LK(DATA); ADR(C2); ST(C0); UL;
   }
-  code "E($v)" {
+  code "E($v:extra)" {
     LD(C2); UL;
     PLK(p); PLD(S,C0); MSR(S,S); PUL;
     LK(EXTRA); ADR(C2); ST(C0); UL;
@@ -4524,17 +4524,17 @@ macro(bits:5) ReadPortDword(p) {
     PLK(p); PLD(A,C0); PLD(S,C1); MSR(S,S); PUL;
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL;
     PLK(p); PLD(A,C0); PLD(S,C1); MSR(S,S); PUL;
     LK(STACK); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL;
     PLK(p); PLD(A,C0); PLD(S,C1); MSR(S,S); PUL;
     LK(DATA); ADR(C2); ST(C0); ST(C1); UL;
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL;
     PLK(p); PLD(A,C0); PLD(S,C1); MSR(S,S); PUL;
     LK(EXTRA); ADR(C2); ST(C0); ST(C1); UL;
@@ -4631,7 +4631,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   @done:
     END;
   }
-  code "S($v)" {
+  code "S($v:stack)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
@@ -4639,7 +4639,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   @done:
     END;
   }
-  code "D($v)" {
+  code "D($v:data)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
@@ -4647,7 +4647,7 @@ macro(bits:5) ReadPortWordIfReady(p) {
   @done:
     END;
   }
-  code "E($v)" {
+  code "E($v:extra)" {
     LD(C2); UL;
     PLK(p); PLD(TS,C0); MSR(S,S); PUL;
     JC(NS,@done);
@@ -4722,7 +4722,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   @done:
     END;
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
@@ -4730,7 +4730,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   @done:
     END;
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
@@ -4738,7 +4738,7 @@ macro(bits:5) ReadPortDwordIfReady(p) {
   @done:
     END;
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL;
     PLK(p); PLD(TA,C0); PLD(TS,C1); MSR(S,S); PUL;
     JC(NS,@done);
@@ -4928,19 +4928,19 @@ macro(bits:5) WritePortWord(p) {
     PLK(p); PST(S,C0); PUL;
     MSS(S); MSR(_,S);
   }
-  code "S($v)" {
+  code "S($v:stack)" {
     LD(C2); UL;
     LK(STACK); ADR(C2); LD(C0); UL;
     PLK(p); PST(S,C0); PUL;
     MSS(S); MSR(_,S);
   }
-  code "D($v)" {
+  code "D($v:data)" {
     LD(C2); UL;
     LK(DATA); ADR(C2); LD(C0); UL;
     PLK(p); PST(S,C0); PUL;
     MSS(S); MSR(_,S);
   }
-  code "E($v)" {
+  code "E($v:extra)" {
     LD(C2); UL;
     LK(EXTRA); ADR(C2); LD(C0); UL;
     PLK(p); PST(S,C0); PUL;
@@ -5004,19 +5004,19 @@ macro(bits:5) WritePortDword(p) {
     PLK(p); PST(A,C0); PST(S,C1); PUL;
     MSS(S); MSR(_,S);
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL;
     LK(STACK); ADR(C2); LD(C0); LD(C1); UL;
     PLK(p); PST(A,C0); PST(S,C1); PUL;
     MSS(S); MSR(_,S);
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL;
     LK(DATA); ADR(C2); LD(C0); LD(C1); UL;
     PLK(p); PST(A,C0); PST(S,C1); PUL;
     MSS(S); MSR(_,S);
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL;
     LK(EXTRA); ADR(C2); LD(C0); LD(C1); UL;
     PLK(p); PST(A,C0); PST(S,C1); PUL;
@@ -5105,19 +5105,19 @@ macro(bits:5) WritePortWordIfReady(p) {
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
   }
-  code "S($v)" {
+  code "S($v:stack)" {
     LD(C2); UL;
     LK(STACK); ADR(C2); LD(C0); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
   }
-  code "D($v)" {
+  code "D($v:data)" {
     LD(C2); UL;
     LK(DATA); ADR(C2); LD(C0); UL;
     PLK(p); PST(TS,C0); PUL;
     MSX(S); MSR(S,S);
   }
-  code "E($v)" {
+  code "E($v:extra)" {
     LD(C2); UL;
     LK(EXTRA); ADR(C2); LD(C0); UL;
     PLK(p); PST(TS,C0); PUL;
@@ -5181,19 +5181,19 @@ macro(bits:5) WritePortDwordIfReady(p) {
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
   }
-  code "S[$v]" {
+  code "S[$v:stack]" {
     LD(C2); UL;
     LK(STACK); ADR(C2); LD(C0); LD(C1); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
   }
-  code "D[$v]" {
+  code "D[$v:data]" {
     LD(C2); UL;
     LK(DATA); ADR(C2); LD(C0); LD(C1); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;
     MSX(S); MSR(S,S);
   }
-  code "E[$v]" {
+  code "E[$v:extra]" {
     LD(C2); UL;
     LK(EXTRA); ADR(C2); LD(C0); LD(C1); UL;
     PLK(p); PST(TA,C0); PST(TS,C1); PUL;

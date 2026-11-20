@@ -11,7 +11,9 @@ declares). This added three things to instruction set source, in
   program writes `JC Z, @done` rather than `JC 4, @done`.
 - **Relative instructions:** an instruction marked relative, where a `$v` that
   is a whole argument is written in a program as a target address, which the
-  assembler encodes as its offset from the next instruction.
+  assembler encodes as its offset from the next instruction. These were later
+  replaced by value types, as `"$m:relative"` (see the manual's
+  [Value types](../manual/2.3-Instruction-Set-Source.md#value-types)).
 - **Pattern rules:** patterns don't allow `;` or `@`, which programs use for
   comments and local labels.
 

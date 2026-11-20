@@ -73,10 +73,13 @@ std::string_view GetName(ExpressionWidth width) {
   return width == ExpressionWidth::kWord ? "word" : "dword";
 }
 
-// Returns the value of a step, wrapped to the width's bits.
-ExpressionResult Value(ExpressionWidth width, uint64_t value) {
+// Returns the value of a step, wrapped to the width's bits, which is an offset
+// in `segment` (see ExpressionResult::segment).
+ExpressionResult Value(ExpressionWidth width, uint64_t value,
+                       int segment = -1) {
   return {.kind = ExpressionResult::Kind::kValue,
-          .value = static_cast<uint32_t>(value & GetMask(width))};
+          .value = static_cast<uint32_t>(value & GetMask(width)),
+          .segment = segment};
 }
 
 bool IsValue(const ExpressionResult& result) {
@@ -186,7 +189,7 @@ ExpressionResult Expression::EvaluateNode(ExpressionWidth width,
     case NodeKind::kSymbol:
       return EvaluateSymbol(width, context, node);
     case NodeKind::kOffset:
-      return Value(width, context.GetOffset());
+      return Value(width, context.GetOffset(), context.GetSegment());
     case NodeKind::kUnary:
       return EvaluateUnary(width, context, node);
     case NodeKind::kBinary:
@@ -229,10 +232,15 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
   const uint64_t a = left.value;
   const uint64_t b = right.value;
   switch (node.op) {
+    // An offset plus or minus a number is still an offset in its segment, and
+    // anything else is just a number.
     case '+':
-      return Value(width, a + b);
+      return Value(width, a + b,
+                   left.segment < 0    ? right.segment
+                   : right.segment < 0 ? left.segment
+                                       : -1);
     case '-':
-      return Value(width, a - b);
+      return Value(width, a - b, right.segment < 0 ? left.segment : -1);
     case '*':
       return Value(width, a * b);
     case '/':
@@ -269,7 +277,11 @@ ExpressionResult Expression::EvaluateSymbol(ExpressionWidth width,
     return undefined;
   }
   if (IsValue(*result)) {
-    return CheckValue(width, result->value, node.token);
+    ExpressionResult value = CheckValue(width, result->value, node.token);
+    if (IsValue(value)) {
+      value.segment = result->segment;
+    }
+    return value;
   }
 
   // An error without a location is the use's.

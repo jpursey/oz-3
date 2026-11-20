@@ -18,6 +18,7 @@
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
@@ -126,9 +127,9 @@ class AssembleFormTest : public InstructionTest {
         Code("(SP + 4)", "(SP + $v)", 0, {4}),
         Code("(FP)", "(FP)"),
         Code("(FP + -2)", "(FP + $v)", 0, {0xFFFE}),
-        Code("S(10)", "S($v)", 0, {10}),
-        Code("D(20h)", "D($v)", 0, {0x20}),
-        Code("E(0FFFFh)", "E($v)", 0, {0xFFFF}),
+        Code("S(10)", "S($v:stack)", 0, {10}),
+        Code("D(20h)", "D($v:data)", 0, {0x20}),
+        Code("E(0FFFFh)", "E($v:extra)", 0, {0xFFFF}),
     };
   }
   static std::vector<Operand> DwordAddresses() {
@@ -139,9 +140,9 @@ class AssembleFormTest : public InstructionTest {
         Code("[SP + 6]", "[SP + $v]", 0, {6}),
         Code("[FP]", "[FP]"),
         Code("[FP + -4]", "[FP + $v]", 0, {0xFFFC}),
-        Code("S[11]", "S[$v]", 0, {11}),
-        Code("D[30h]", "D[$v]", 0, {0x30}),
-        Code("E[0FFFEh]", "E[$v]", 0, {0xFFFE}),
+        Code("S[11]", "S[$v:stack]", 0, {11}),
+        Code("D[30h]", "D[$v:data]", 0, {0x30}),
+        Code("E[0FFFEh]", "E[$v:extra]", 0, {0xFFFE}),
     };
   }
 
@@ -308,9 +309,9 @@ TEST_F(AssembleFormTest, EveryForm) {
                Code("(SP + 4), 4", "(SP + $v), $v", 0, {4, 4}),
                Code("(FP), 5", "(FP), $v", 0, {5}),
                Code("(FP + -2), 6", "(FP + $v), $v", 0, {0xFFFE, 6}),
-               Code("S(10), 7", "S($v), $v", 0, {10, 7}),
-               Code("D(20h), 8", "D($v), $v", 0, {0x20, 8}),
-               Code("E(0FFFFh), 9", "E($v), $v", 0, {0xFFFF, 9}),
+               Code("S(10), 7", "S($v:stack), $v", 0, {10, 7}),
+               Code("D(20h), 8", "D($v:data), $v", 0, {0x20, 8}),
+               Code("E(0FFFFh), 9", "E($v:extra), $v", 0, {0xFFFF, 9}),
            });
   AddForms(
       "MOV.SDV",
@@ -321,9 +322,9 @@ TEST_F(AssembleFormTest, EveryForm) {
           Code("[SP + 6], 40004h", "[SP + $v], $V", 0, {6, 4, 4}),
           Code("[FP], 50005h", "[FP], $V", 0, {5, 5}),
           Code("[FP + -4], 60006h", "[FP + $v], $V", 0, {0xFFFC, 6, 6}),
-          Code("S[11], 70007h", "S[$v], $V", 0, {11, 7, 7}),
-          Code("D[30h], 80008h", "D[$v], $V", 0, {0x30, 8, 8}),
-          Code("E[0FFFEh], 90009h", "E[$v], $V", 0, {0xFFFE, 9, 9}),
+          Code("S[11], 70007h", "S[$v:stack], $V", 0, {11, 7, 7}),
+          Code("D[30h], 80008h", "D[$v:data], $V", 0, {0x30, 8, 8}),
+          Code("E[0FFFEh], 90009h", "E[$v:extra], $V", 0, {0xFFFE, 9, 9}),
       });
   AddForms("MOV.S", {
                         Code("R0, BC", "$r, BC", CpuCore::R0),
@@ -628,11 +629,16 @@ class AssembledProgramTest : public InstructionTest {
   // The most cycles a program may run before it must halt.
   static constexpr int kMaxCycles = 10000;
 
-  void SetUp() override { ASSERT_TRUE(Init({.num_ports = 2})); }
+  // The processor has `num_cores` cores.
+  explicit AssembledProgramTest(int num_cores = 1) : num_cores_(num_cores) {}
 
-  // Assembles `text`, which must assemble, loads it, and resets core 0 to run
-  // it. Returns whether it did.
-  bool Load(std::string_view text) {
+  void SetUp() override {
+    ASSERT_TRUE(Init({.num_cores = num_cores_, .num_ports = 2}));
+  }
+
+  // Assembles `text`, which must assemble, loads it, and resets cores 0 to
+  // `instances` - 1 to run it, each as that instance. Returns whether it did.
+  bool Load(std::string_view text, int instances = 1) {
     std::unique_ptr<AsmProgram> program =
         AssembleOrFail(*syntax_, std::string(text));
     if (program == nullptr) {
@@ -644,7 +650,9 @@ class AssembledProgramTest : public InstructionTest {
       ADD_FAILURE() << "The program doesn't load";
       return false;
     }
-    GetState().ResetCore(loader.GetResetParams(handle));
+    for (int i = 0; i < instances; ++i) {
+      GetState(i).ResetCore(loader.GetResetParams(handle, i));
+    }
     return true;
   }
 
@@ -663,6 +671,7 @@ class AssembledProgramTest : public InstructionTest {
   }
 
  private:
+  const int num_cores_;
   const std::unique_ptr<InstructionSetSyntax> syntax_ = CreateDefaultSyntax();
 };
 
@@ -756,6 +765,105 @@ TEST_F(AssembledProgramTest, StoresDwordInDataSegment) {
   EXPECT_EQ(data.GetValue(), 0xFFFF);
   EXPECT_EQ(data.GetValue32(), 3628800u);
   EXPECT_EQ(GetState().d2(), 3628800u);
+}
+
+TEST_F(AssembledProgramTest, AddressesLabelsInTheirSegments) {
+  // Each base register is at the start of its segment, apart from BS, which
+  // is at the end of the stack segment, below the stack's own words.
+  ASSERT_TRUE(Load(R"---(
+    .STACK 16
+
+    .SEGMENT main CODE
+        MOV S(counter), 7   ; MOV.SWV: the 7 is no address
+        PUSH.W 9
+        MOV R1, S(counter)
+        MOV R2, D(values + 1)
+        MOV E(result), R2
+        MOV R3, E(result)
+        HALT
+
+    .SEGMENT vars DATA
+    values:
+        .DW 1, 2
+
+    .SEGMENT out EXTRA
+        .DS 1
+    result:
+        .DS 1
+
+    .SEGMENT stack STACK
+        .DS 1
+    counter:
+        .DS 1
+  )---"));
+  ASSERT_TRUE(RunUntilHalt());
+  const CoreState& state = GetState();
+  EXPECT_EQ(state.r1, 7);
+  EXPECT_EQ(state.r2, 2);
+  EXPECT_EQ(state.r3, 2);
+
+  // The stack segment is one page, and BS is at its end.
+  MemAccessor memory = GetMemory();
+  memory.SetAddress(static_cast<uint16_t>(state.bs - kMemoryBankPageSize + 1));
+  EXPECT_EQ(memory.GetValue(), 7);
+  memory.SetAddress(static_cast<uint16_t>(state.bs - 1));
+  EXPECT_EQ(memory.GetValue(), 9);
+  memory.SetAddress(static_cast<uint16_t>(state.be + 1));
+  EXPECT_EQ(memory.GetValue(), 2);
+}
+
+// A program with two instances, run on two cores.
+class AssembledInstancesTest : public AssembledProgramTest {
+ protected:
+  AssembledInstancesTest() : AssembledProgramTest(2) {}
+};
+
+TEST_F(AssembledInstancesTest, AddressesLabelsInEachInstance) {
+  // Each instance's base registers are at its own words of a per instance
+  // segment, so the same labels address each instance's own words.
+  ASSERT_TRUE(Load(R"---(
+    .INSTANCES 2
+    .STACK 8
+
+    .SEGMENT main CODE
+        MOV S(counter), R0
+        MOV R1, S(counter)
+        MOV E(result), R1
+        MOV R2, E(result)
+        HALT
+
+    .SEGMENT vars EXTRA INSTANCE
+        .DS 1
+    result:
+        .DS 1
+
+    .SEGMENT stack STACK INSTANCE
+        .DS 1
+    counter:
+        .DS 1
+  )---",
+                   2));
+  GetState(0).SetRegisters({{CpuCore::R0, 10}});
+  GetState(1).SetRegisters({{CpuCore::R0, 20}});
+  ASSERT_TRUE(ExecuteUntilHalt(0));
+  ASSERT_TRUE(ExecuteUntilHalt(1));
+  EXPECT_NE(GetState(0).bs, GetState(1).bs);
+  EXPECT_NE(GetState(0).be, GetState(1).be);
+
+  // Each instance's stack words are its 2 words and its 8 words of stack, with
+  // BS at their end.
+  MemAccessor memory = GetMemory();
+  for (int i = 0; i < 2; ++i) {
+    SCOPED_TRACE(absl::StrCat("Instance ", i));
+    const CoreState& state = GetState(i);
+    const int value = (i + 1) * 10;
+    EXPECT_EQ(state.r1, value);
+    EXPECT_EQ(state.r2, value);
+    memory.SetAddress(static_cast<uint16_t>(state.bs - 10 + 1));
+    EXPECT_EQ(memory.GetValue(), value);
+    memory.SetAddress(static_cast<uint16_t>(state.be + 1));
+    EXPECT_EQ(memory.GetValue(), value);
+  }
 }
 
 TEST_F(AssembledProgramTest, HandlesInterrupt) {

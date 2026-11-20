@@ -19,6 +19,7 @@
 #include "gb/parse/token.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/tools/instruction_assembler.h"
@@ -53,7 +54,7 @@ constexpr std::string_view kInstructionSet = R"---(
     $GetWord; LK(STACK); ADR(SP); STP(r); LAD(SP); UL;
   }
   instruction(opcode:3) SETC "$Condition" { UL; }
-  instruction(opcode:4, relative) JPR "$m" { $GetWord; ADD(IP,r); }
+  instruction(opcode:4) JPR "$m:relative" { $GetWord; ADD(IP,r); }
   instruction(opcode:5) MOV.D "$R, $V" { LD(a0); LD(a1); UL; }
   instruction(opcode:6) MVQ "$r, $#5" { UL; MOV(a,C1); }
   instruction(opcode:7) PEEK "[$m]" { $GetWord; MOV(R0,r); }
@@ -118,12 +119,13 @@ std::vector<std::string_view> GetPatterns(
 }
 
 void ExpectArg(const InstructionForm::Arg& arg, Kind kind, int bits, int shift,
-               const ValueSetDef* value_set = nullptr, bool relative = false) {
+               const ValueSetDef* value_set = nullptr,
+               ValueType value_type = ValueType::kNumber) {
   EXPECT_EQ(arg.kind, kind);
   EXPECT_EQ(arg.bits, bits);
   EXPECT_EQ(arg.shift, shift);
   EXPECT_EQ(arg.value_set, value_set);
-  EXPECT_EQ(arg.relative, relative);
+  EXPECT_EQ(arg.value_type, value_type);
 }
 
 void ExpectForm(const InstructionForm& form, std::string_view pattern,
@@ -251,23 +253,67 @@ TEST(InstructionSetSyntaxTest, CodeWordArguments) {
   ExpectArg(forms[0]->GetArgs()[1], Kind::kDword, 0, 0);
 }
 
-TEST(InstructionSetSyntaxTest, RelativeValuesAreWholeArguments) {
+TEST(InstructionSetSyntaxTest, MacroValueTypeIsForValueCode) {
   TestDef def(kInstructionSet);
   auto syntax = InstructionSetSyntax::Create(def.GetDef());
   ASSERT_NE(syntax, nullptr);
   auto forms = syntax->GetForms("JPR");
   ASSERT_EQ(forms.size(), 4);
   ASSERT_EQ(forms[1]->GetArgs().size(), 2);
-  EXPECT_FALSE(forms[1]->GetArgs()[1].relative);  // ($r + $v)
+  EXPECT_EQ(forms[1]->GetArgs()[1].value_type, ValueType::kNumber);
+  ExpectForm(*forms[2], "$v", 0x0410, 0xFF1F, 2);
   ASSERT_EQ(forms[2]->GetArgs().size(), 1);
-  EXPECT_TRUE(forms[2]->GetArgs()[0].relative);  // $v
+  EXPECT_EQ(forms[2]->GetArgs()[0].value_type, ValueType::kRelative);
   ASSERT_EQ(forms[3]->GetArgs().size(), 1);
-  EXPECT_FALSE(forms[3]->GetArgs()[0].relative);  // D($v)
+  EXPECT_EQ(forms[3]->GetArgs()[0].value_type, ValueType::kNumber);
 
-  // ADD.W isn't relative, so neither is its $v.
+  // ADD.W's $m has no type, so neither does its $v.
   forms = syntax->GetForms("ADD.W");
   ASSERT_EQ(forms.size(), 4);
-  EXPECT_FALSE(forms[2]->GetArgs()[1].relative);
+  EXPECT_EQ(forms[2]->GetArgs()[1].value_type, ValueType::kNumber);
+}
+
+TEST(InstructionSetSyntaxTest, CodeValueTypes) {
+  // A code's types are its own, whatever instruction uses it. JPR's $m has no
+  // type here, so the "$v" code can have one.
+  TestDef def(kInstructionSet);
+  def.codes[0][1].source = "($r + $v:extra)";
+  def.codes[0][2].source = "$v:code";
+  def.codes[0][3].source = "D($v:data)";
+  def.instructions[4].source = "$m";
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("ADD.W");
+  ASSERT_EQ(forms.size(), 4);
+  EXPECT_EQ(forms[1]->GetPattern(), "$r, ($r + $v)");
+  ASSERT_EQ(forms[1]->GetArgs().size(), 3);
+  EXPECT_EQ(forms[1]->GetArgs()[0].value_type, ValueType::kNumber);
+  EXPECT_EQ(forms[1]->GetArgs()[2].value_type, ValueType::kExtra);
+  EXPECT_EQ(forms[2]->GetPattern(), "$r, $v");
+  ASSERT_EQ(forms[2]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[2]->GetArgs()[1].value_type, ValueType::kCode);
+  EXPECT_EQ(forms[3]->GetPattern(), "$r, D($v)");
+  ASSERT_EQ(forms[3]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[3]->GetArgs()[1].value_type, ValueType::kData);
+}
+
+TEST(InstructionSetSyntaxTest, InstructionValueTypes) {
+  // POKE's own $v has its type, and each code's $v has the code's.
+  TestDef def(absl::StrCat(kInstructionSet, R"---(
+    instruction(opcode:8) POKE "$v:data, $m" { LD(C0); $GetWord; MOV(R0,r); }
+  )---"));
+  def.codes[0][1].source = "($r + $v:extra)";
+  auto syntax = InstructionSetSyntax::Create(def.GetDef());
+  ASSERT_NE(syntax, nullptr);
+  auto forms = syntax->GetForms("POKE");
+  ASSERT_EQ(forms.size(), 4);
+  EXPECT_EQ(forms[1]->GetPattern(), "$v, ($r + $v)");
+  ASSERT_EQ(forms[1]->GetArgs().size(), 3);
+  EXPECT_EQ(forms[1]->GetArgs()[0].value_type, ValueType::kData);
+  EXPECT_EQ(forms[1]->GetArgs()[2].value_type, ValueType::kExtra);
+  ASSERT_EQ(forms[2]->GetArgs().size(), 2);
+  EXPECT_EQ(forms[2]->GetArgs()[0].value_type, ValueType::kData);
+  EXPECT_EQ(forms[2]->GetArgs()[1].value_type, ValueType::kNumber);  // $v
 }
 
 TEST(InstructionSetSyntaxTest, MacroCodeIsOnlyWholeIfMacroIs) {
@@ -535,6 +581,26 @@ TEST(InstructionSetSyntaxTest, MacroCodeSourceDisagreesWithArgument) {
   EXPECT_THAT(error.message, HasSubstr("doesn't match its argument"));
 }
 
+TEST(InstructionSetSyntaxTest, MacroCodeInvalidValueType) {
+  TestDef def(kInstructionSet);
+  def.codes[0][0].source = "$r:data";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kMacro, "GetWord");
+  EXPECT_EQ(error.macro_source_name, "$r:data");
+  EXPECT_THAT(error.message,
+              HasSubstr("$r:data has a value type, but only $v and $m can"));
+}
+
+TEST(InstructionSetSyntaxTest, InstructionInvalidValueType) {
+  TestDef def(kInstructionSet);
+  def.instructions[3].source = "$Condition:code";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "SETC");
+  EXPECT_THAT(error.message,
+              HasSubstr("$Condition:code has a value type, but only $v and $m "
+                        "can"));
+}
+
 TEST(InstructionSetSyntaxTest, MacroCodesWrittenTheSameWay) {
   // Each case changes one of GetWord's codes, and expects the error at
   // `error_code`, which is written the same way as `same_as` before it.
@@ -625,13 +691,25 @@ TEST(InstructionSetSyntaxTest, UnknownMacro) {
   EXPECT_THAT(error.message, HasSubstr("Unknown macro: GetWords"));
 }
 
-TEST(InstructionSetSyntaxTest, RelativeWithoutWholeValue) {
+TEST(InstructionSetSyntaxTest, MacroValueTypeWithoutValueCode) {
   TestDef def(kInstructionSet);
-  def.instructions[7].relative = true;
+  def.codes[0][2].source = "I($v)";
   InstructionError error =
-      ExpectError(def, InstructionError::Def::kInstruction, "PEEK");
+      ExpectError(def, InstructionError::Def::kInstruction, "JPR");
   EXPECT_THAT(error.message,
-              HasSubstr("has no form where $v is a whole argument"));
+              HasSubstr("Source \"$m:relative\" gives its $m a value type, "
+                        "but no code of GetWord is just \"$v\""));
+}
+
+TEST(InstructionSetSyntaxTest, MacroValueTypeOnTypedValueCode) {
+  TestDef def(kInstructionSet);
+  def.codes[0][2].source = "$v:code";
+  InstructionError error =
+      ExpectError(def, InstructionError::Def::kInstruction, "JPR");
+  EXPECT_THAT(error.message,
+              HasSubstr("Source \"$m:relative\" gives its $m a value type, "
+                        "but macro code \"$v:code\" of GetWord has one of "
+                        "its own"));
 }
 
 TEST(InstructionSetSyntaxTest, ExcludedRegistersOfArgumentThatIsNoRegister) {
@@ -770,7 +848,7 @@ constexpr std::string_view kEncodingSet = R"---(
   instruction(opcode:3) MOV.D "$R, $V" { LD(a0); LD(a1); UL; }
   instruction(opcode:4) CLRF "$Flags" { UL; }
   instruction(opcode:5) MVQ "$r, $#5" { UL; MOV(a,C1); }
-  instruction(opcode:6, relative) JPR "$v" { LD(C0); UL; ADD(IP,C0); }
+  instruction(opcode:6) JPR "$v:relative" { LD(C0); UL; ADD(IP,C0); }
   instruction(opcode:7) PUSH "$m" {
     $GetWord; LK(STACK); ADR(SP); STP(r); LAD(SP); UL;
   }

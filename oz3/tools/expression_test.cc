@@ -37,6 +37,7 @@ constexpr Width kDword = Width::kDword;
 class FakeContext : public ExpressionContext {
  public:
   uint16_t GetOffset() const override { return offset; }
+  int GetSegment() const override { return segment; }
 
   std::optional<ExpressionResult> GetSymbolValue(
       std::string_view name, ExpressionWidth width) const override {
@@ -49,6 +50,7 @@ class FakeContext : public ExpressionContext {
   }
 
   uint16_t offset = 0;
+  int segment = -1;
   absl::flat_hash_map<std::string, ExpressionResult> symbols;
   mutable std::vector<std::string> requests;
 };
@@ -97,6 +99,15 @@ class ExpressionTest : public ::testing::Test {
     EXPECT_EQ(result.kind, Kind::kValue)
         << text << ": " << result.error.FormatMessage();
     return result.value;
+  }
+
+  // Returns the segment the value of `text` is an offset in, which must have a
+  // value.
+  int Segment(std::string_view text) {
+    ExpressionResult result = Evaluate(text);
+    EXPECT_EQ(result.kind, Kind::kValue)
+        << text << ": " << result.error.FormatMessage();
+    return result.segment;
   }
 
   // Returns the error evaluating `text`, which must have one, as "column:
@@ -311,6 +322,37 @@ TEST_F(ExpressionTest, Symbols) {
   EXPECT_EQ(Value("loop + 1"), 11);
   EXPECT_EQ(Value("@next"), 20);
   EXPECT_EQ(Value("@Next - LOOP"), 10);
+}
+
+TEST_F(ExpressionTest, Segments) {
+  // A label is an offset in its segment, and so is "$" in the statement's.
+  context_.segment = 1;
+  context_.symbols["A"] = {.value = 10, .segment = 2};
+  context_.symbols["B"] = {.value = 14, .segment = 2};
+  context_.symbols["C"] = {.value = 3, .segment = 3};
+  context_.symbols["N"] = {.value = 4};
+  EXPECT_EQ(Segment("5"), -1);
+  EXPECT_EQ(Segment("N"), -1);
+  EXPECT_EQ(Segment("$"), 1);
+  EXPECT_EQ(Segment("A"), 2);
+  EXPECT_EQ(Segment("(A)"), 2);
+
+  // Adding or subtracting a number keeps the offset's segment.
+  EXPECT_EQ(Segment("A + 1"), 2);
+  EXPECT_EQ(Segment("N + A"), 2);
+  EXPECT_EQ(Segment("A - N"), 2);
+  EXPECT_EQ(Segment("A + N * 2 - 1"), 2);
+  EXPECT_EQ(Segment("$ + 2"), 1);
+
+  // Any other arithmetic on an offset is just a number.
+  EXPECT_EQ(Segment("B - A"), -1);
+  EXPECT_EQ(Segment("C - A"), -1);
+  EXPECT_EQ(Segment("A + C"), -1);
+  EXPECT_EQ(Segment("N - A"), -1);
+  EXPECT_EQ(Segment("-A"), -1);
+  EXPECT_EQ(Segment("A * 2"), -1);
+  EXPECT_EQ(Segment("A | 1"), -1);
+  EXPECT_EQ(Segment("B - A + C"), 3);
 }
 
 TEST_F(ExpressionTest, SymbolsAreAskedForInTheWidth) {

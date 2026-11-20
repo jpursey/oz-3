@@ -6,6 +6,7 @@
 #ifndef OZ3_TOOLS_SOURCE_PATTERN_H_
 #define OZ3_TOOLS_SOURCE_PATTERN_H_
 
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -18,14 +19,32 @@
 
 namespace oz3 {
 
+// What a program's value for a $v is, which says how the OZ-3 assembler checks
+// and encodes it. A pattern writes it right after the $v, as "$v:stack", or
+// after a $m, for a macro code that is just "$v" in its place (see
+// InstructionDef::source). It never changes the code word.
+enum class ValueType {
+  kNumber,    // No type: a number, encoded as written.
+  kCode,      // "code": an address from BC.
+  kStack,     // "stack": an address from BS.
+  kData,      // "data": an address from BD.
+  kExtra,     // "extra": an address from BE.
+  kRelative,  // "relative": a target address in CODE, encoded as its offset
+              // from the next instruction.
+};
+
+// Returns the bank (CpuCore::CODE, STACK, DATA, or EXTRA) a value of `type` is
+// an address in, or -1 for kNumber. A relative value's target is in CODE.
+int GetValueTypeBank(ValueType type);
+
 // A source pattern, parsed: how the arguments of an instruction, or of a macro
 // code, are written in a program (InstructionDef::source and
 // MacroCodeDef::source).
 //
 // Parsing checks the rules every pattern follows: its syntax, that each
-// placeholder is a valid one or names a value set, how many code word
-// arguments it has, and that no value is followed by a binary operator (see
-// CheckValueEnds()).
+// placeholder is a valid one or names a value set, that only a $v or $m has a
+// value type, and a known one, how many code word arguments it has, and that
+// no value is followed by a binary operator (see CheckValueEnds()).
 class SourcePattern final {
  public:
   // One part of a pattern: literal text, or a placeholder.
@@ -39,8 +58,8 @@ class SourcePattern final {
 
     Kind kind = Kind::kLiteral;
 
-    // Where the part is in the source text, as an offset and size in
-    // characters.
+    // Where the part is in the pattern's text (GetText()), as an offset and
+    // size in characters.
     int offset = 0;
     int size = 0;
 
@@ -57,6 +76,9 @@ class SourcePattern final {
     // For kArgument, the value set it names, if it is one. The set is one of
     // those passed when parsing.
     const ValueSetDef* value_set = nullptr;
+
+    // For a $v or $m, the value type the pattern gives it, if any.
+    ValueType value_type = ValueType::kNumber;
 
     // For a placeholder, whether it is all of one of the pattern's
     // comma-separated arguments, such as the "$v" in "$r, $v", but not in
@@ -104,6 +126,10 @@ class SourcePattern final {
   SourcePattern& operator=(SourcePattern&&) = default;
   ~SourcePattern() = default;
 
+  // Returns the pattern as a program writes it: its source, without the value
+  // types, which the parts' offsets are in.
+  std::string_view GetText() const { return text_; }
+
   // Returns the parts of the pattern, in order.
   absl::Span<const Part> GetParts() const { return parts_; }
 
@@ -124,6 +150,7 @@ class SourcePattern final {
   // its placeholder as a whole argument if it is the only part.
   void EndArg(int arg_start);
 
+  std::string text_;
   std::vector<Part> parts_;
   std::vector<Argument> args_;
   int value_words_ = 0;

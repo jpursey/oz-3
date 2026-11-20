@@ -58,10 +58,10 @@ class InstructionForm final {
     // For a code value, the value set that names its values, if it has one.
     const ValueSetDef* value_set = nullptr;
 
-    // For a $v, whether it is a target address, which is encoded as its offset
-    // from the next instruction. This is a $v that is a whole argument of a
-    // relative instruction.
-    bool relative = false;
+    // For a $v, its value type: the one its pattern gives it, or for the $v
+    // of a macro code that is just "$v", the one the instruction's $m gives
+    // it.
+    ValueType value_type = ValueType::kNumber;
 
     // For a register, the registers a program can't write for it (bit n for
     // register n), from the instruction's rules for its own arguments (see
