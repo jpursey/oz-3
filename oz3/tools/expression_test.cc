@@ -346,13 +346,32 @@ TEST_F(ExpressionTest, Segments) {
 
   // Any other arithmetic on an offset is just a number.
   EXPECT_EQ(Segment("B - A"), -1);
-  EXPECT_EQ(Segment("C - A"), -1);
-  EXPECT_EQ(Segment("A + C"), -1);
+  EXPECT_EQ(Segment("A + B"), -1);
   EXPECT_EQ(Segment("N - A"), -1);
   EXPECT_EQ(Segment("-A"), -1);
   EXPECT_EQ(Segment("A * 2"), -1);
   EXPECT_EQ(Segment("A | 1"), -1);
   EXPECT_EQ(Segment("B - A + C"), 3);
+  EXPECT_EQ(Segment("C - (B - A)"), 3);
+}
+
+TEST_F(ExpressionTest, OffsetsInDifferentSegmentsAreErrors) {
+  context_.segment = 1;
+  context_.symbols["A"] = {.value = 10, .segment = 2};
+  context_.symbols["B"] = {.value = 14, .segment = 2};
+  context_.symbols["C"] = {.value = 3, .segment = 3};
+  constexpr std::string_view kMessage =
+      "Labels or $ in different segments can't be combined";
+  EXPECT_EQ(Error("C - A"), absl::StrCat("2: ", kMessage));
+  EXPECT_EQ(Error("A + C"), absl::StrCat("2: ", kMessage));
+  EXPECT_EQ(Error("A - $"), absl::StrCat("2: ", kMessage));
+  EXPECT_EQ(Error("A * C"), absl::StrCat("2: ", kMessage));
+  EXPECT_EQ(Error("(A + 1) | (C + 1)"), absl::StrCat("8: ", kMessage));
+  EXPECT_EQ(Error("C + 1 - A"), absl::StrCat("6: ", kMessage));
+
+  // A distance between labels is a number, so is never an error.
+  EXPECT_EQ(Value("C + (B - A)"), 7);
+  EXPECT_EQ(Value("(B - A) * 2 + C"), 11);
 }
 
 TEST_F(ExpressionTest, SymbolsAreAskedForInTheWidth) {

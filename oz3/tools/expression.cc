@@ -228,6 +228,12 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
   if (!IsValue(right)) {
     return right;
   }
+  if (left.segment >= 0 && right.segment >= 0 &&
+      left.segment != right.segment) {
+    return Error(node.token,
+                 "Labels or $ in different segments can't be combined");
+  }
+
   // Both are the width's bits, so the product fits 64 bits.
   const uint64_t a = left.value;
   const uint64_t b = right.value;
