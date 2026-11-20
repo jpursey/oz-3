@@ -849,6 +849,26 @@ TEST(InstructionSetSyntaxTest, MacroCodeSymbolJoinsInstructionSymbol) {
       << no_error.message;
 }
 
+TEST(InstructionSetSyntaxTest, MacroCodeSymbolJoinsInstructionSymbolAfter) {
+  // Likewise where the code ends with a symbol and the instruction's follows
+  // its $m: the form "[D($v)<=]" can't be written.
+  TestDef def(kInstructionSet);
+  def.instructions[7].source = "[$m=]";
+  def.codes[0][3].source = "D($v)<";
+  InstructionError error = ExpectError(def, InstructionError::Def::kInstruction,
+                                       "PEEK", def.GetCompiled());
+  EXPECT_THAT(error.message,
+              AllOf(HasSubstr("with macro code \"D($v)<\""),
+                    HasSubstr("'<' right before '=' is read as '<='")));
+
+  def.instructions[7].source = "[$m =]";
+  InstructionError no_error;
+  EXPECT_NE(
+      InstructionSetSyntax::Create(def.GetDef(), def.GetCompiled(), &no_error),
+      nullptr)
+      << no_error.message;
+}
+
 //==============================================================================
 // Encoding and disassembly
 //==============================================================================
