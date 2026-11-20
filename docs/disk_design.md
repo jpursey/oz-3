@@ -167,7 +167,7 @@ A name is two separate packed fields, a 1–12 character name and a 0–4 charac
 - **Excluded:** `.`, `/`, `\`, spaces, and everything else. The dot exists only in display and in text a program parses.
 - **Padding** is zero bytes, and no zero byte may come before a character within a field.
 - **Order:** names sort by comparing their 16 bytes in order, which sorts by name and then extension. Since the first character of each pair is in the low byte, comparing the words themselves doesn't sort; code compares each word with `CMPT`, which swaps both words' bytes before comparing, so it is one instruction a word.
-- In assembly, a name field is two directives, `.DW SIZE(6) "HELLO"` then `.DW SIZE(2) "TXT"`, displayed as `HELLO.TXT`.
+- In assembly, a name field is `.DW SIZE(6) "HELLO", SIZE(2) "TXT"`, displayed as `HELLO.TXT`.
 
 A **pattern** is a name field that may also hold `?` and `*`, matched against each field separately, byte by byte:
 
@@ -719,6 +719,6 @@ The loader opens the `.oz3` file, reads its header with `READ`, then reads each 
 - [ ] Subdirectory commands, such as opening a directory entry as a directory handle, when the directory bit becomes real. Commands that take a name (`OPEN`, `CREATE`, `DELETE`, `RENAME`, and `ATTRIB`) could resolve it against a current directory, with a directory handle or a path as an option, so version 1 commands keep working unchanged.
 - [x] What the boot area holds: a system disk's loader, which *Booting from disk* adds (see [booting-from-disk.md](worklog/booting-from-disk.md)).
 - [x] How the `ozzy` app changes disks while it runs: a later item of its own, the backlog's *Changing disks in ozzy*. *Ozzy drives* attaches the config's images at power on only.
-- [ ] Assembler addition: allow `SIZE(n)` anywhere in a `.DW` list, applying until the next `SIZE`, so a name field fits in one directive.
+- [x] Assembler addition: allow `SIZE(n)` on any item of a `.DW` list, applying until the next `SIZE`, so a name field fits in one directive.
 - [ ] More file system buffers, if FAT thrashing shows up in practice: configurable counts of FAT and directory buffers, reused least recently used first. Several files growing at once in different FAT sectors currently force the single working FAT buffer to be written at each switch. Since the file system already orders its own writes, more buffers change nothing about correctness, only RAM.
 - [ ] A write-back mode for `DiskHardware`, as a performance feature. Write order only matters if the image is left partly written, so a write-back cache can merge repeated writes freely, as long as it always writes out everything it holds when the image is detached and when the app shuts down. Then the image always ends as exactly what the file system wrote, and only a host app crash, or another host process touching the image (already ruled out by contract), could leave it inconsistent. Merging repeated writes would also absorb FAT thrashing. Its time would be charged as the cache actually writes, on a timer or when it needs room.

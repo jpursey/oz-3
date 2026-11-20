@@ -15,6 +15,7 @@
 #include "absl/log/check.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_error.h"
 #include "gb/parse/parse_result.h"
@@ -280,26 +281,39 @@ TEST_F(ProgramGrammarTest, Directives) {
   line = ParseDirective(".dw 1, 'ab', x + 1");
   directive = line->GetItem("directive");
   EXPECT_EQ(directive->GetString("directive"), "DW");
-  EXPECT_EQ(directive->GetItems("items").size(), 3);
-  EXPECT_EQ(directive->GetItem("size"), nullptr);
+  absl::Span<const gb::ParsedItem> items = directive->GetItems("items");
+  ASSERT_EQ(items.size(), 3);
+  for (const gb::ParsedItem& item : items) {
+    EXPECT_EQ(item.GetItem("size"), nullptr);
+    EXPECT_NE(item.GetItem("value"), nullptr);
+  }
+
+  // Any item can have a SIZE.
+  line = ParseDirective(".DW SIZE(6) \"HELLO\", 0, size(2) \"TXT\"");
+  items = line->GetItem("directive")->GetItems("items");
+  ASSERT_EQ(items.size(), 3);
+  EXPECT_NE(items[0].GetItem("size"), nullptr);
+  EXPECT_EQ(items[1].GetItem("size"), nullptr);
+  EXPECT_NE(items[2].GetItem("size"), nullptr);
+  for (const gb::ParsedItem& item : items) {
+    EXPECT_NE(item.GetItem("value"), nullptr);
+  }
 
   // SIZE is only the size when '(' follows it, so it can still be a symbol.
-  line = ParseDirective(".DW size(8) \"A.TXT\", 0");
-  directive = line->GetItem("directive");
-  EXPECT_NE(directive->GetItem("size"), nullptr);
-  EXPECT_EQ(directive->GetItems("items").size(), 2);
-  line = ParseDirective(".DW SIZE, 1");
-  directive = line->GetItem("directive");
-  EXPECT_EQ(directive->GetItem("size"), nullptr);
-  EXPECT_EQ(directive->GetItems("items").size(), 2);
+  line = ParseDirective(".DW SIZE, 1, SIZE");
+  items = line->GetItem("directive")->GetItems("items");
+  ASSERT_EQ(items.size(), 3);
+  for (const gb::ParsedItem& item : items) {
+    EXPECT_EQ(item.GetItem("size"), nullptr);
+  }
 
-  line = ParseDirective(".DD 1, 2");
+  line = ParseDirective(".DD 1, SIZE(4) 2");
   directive = line->GetItem("directive");
   EXPECT_EQ(directive->GetString("directive"), "DD");
-  EXPECT_EQ(directive->GetItems("items").size(), 2);
-  EXPECT_EQ(directive->GetItem("size"), nullptr);
-  line = ParseDirective(".DD SIZE(4) 1");
-  EXPECT_NE(line->GetItem("directive")->GetItem("size"), nullptr);
+  items = directive->GetItems("items");
+  ASSERT_EQ(items.size(), 2);
+  EXPECT_EQ(items[0].GetItem("size"), nullptr);
+  EXPECT_NE(items[1].GetItem("size"), nullptr);
 
   for (auto [text, name] :
        {std::pair{".DS 10", "DS"}, {".INSTANCES 2", "INSTANCES"}}) {
@@ -338,6 +352,12 @@ TEST_F(ProgramGrammarTest, DirectiveErrors) {
   EXPECT_EQ(error.GetLocation().column, 3);
   error = ParseLineError(".DW SIZE(8)");
   EXPECT_EQ(error.GetLocation().column, 11);
+  error = ParseLineError(".DW 1, SIZE(2)");
+  EXPECT_EQ(error.GetLocation().column, 14);
+
+  // A comma separates every item, including one with a SIZE.
+  error = ParseLineError(".DW SIZE(6) \"HELLO\" SIZE(2) \"TXT\"");
+  EXPECT_EQ(error.GetLocation().column, 20);
   error = ParseLineError(".DS 1, 2");
   EXPECT_EQ(error.GetLocation().column, 5);
 
