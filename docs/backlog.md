@@ -50,15 +50,15 @@ the shell.
 Port 0 of every Ozzy is its power port, which programs write to shut it down or
 restart it, with the command in its first word and the exit code, a signed
 word, in its second, written together with `OUT.ID`: 1 shuts down, 2 restarts,
-and the rest are reserved. The power control device holds the port, and only
-records the request, as an output in the processor's context, which the host
-reads after each run. Powering off destroys the `Ozzy`, committing its drives,
-and restarting creates it again, so the host keeps the machine's state outside
-it: the settings, the disk in each drive, and whether it is on. In the terminal
-app, a restart restarts, and a shutdown leaves the machine off, saying so with
-the exit code, until the user quits (the *Panel* powers it on again). The
-manual's Ozzy Computer page gains the port in its wiring, and what the app
-does.
+and the rest are reserved. The power control device holds the port, and passes
+each request to a callback the host puts in the processor's context, from
+inside the run, so the host acts on it after the run. Powering off destroys the
+`Ozzy`, committing its drives, and restarting creates it again, so the host
+keeps the machine's state outside it: the settings, the disk in each drive, and
+whether it is on. In the terminal app, a restart restarts, and a shutdown
+leaves the machine off, saying so with the exit code, until the user quits (the
+*Panel* powers it on again). The manual's Ozzy Computer page gains the port in
+its wiring, and what the app does.
 
 ## Panel
 

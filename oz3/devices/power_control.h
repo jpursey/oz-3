@@ -10,6 +10,7 @@
 #include <memory>
 #include <string_view>
 
+#include "absl/functional/any_invocable.h"
 #include "gb/base/validated_context.h"
 #include "oz3/core/device.h"
 #include "oz3/core/device_config.h"
@@ -29,8 +30,8 @@ enum class PowerCommand : uint16_t {
   kRestart = 2,   // Power off and on again.
 };
 
-// A program's request to shut down or restart, which the power control records
-// in the processor's context for the host to act on.
+// A program's request to shut down or restart, which the power control passes
+// to the host.
 struct PowerRequest {
   bool operator==(const PowerRequest&) const = default;
 
@@ -40,6 +41,11 @@ struct PowerRequest {
   // none, so it is 0.
   int exit_code = 0;
 };
+
+// Called with each request a program makes, from inside Processor::Execute, so
+// it must not destroy the Processor or call into it to run it. The host decides
+// what to do with requests, and acts on them once Processor::Execute returns.
+using PowerRequestCallback = absl::AnyInvocable<void(PowerRequest)>;
 
 //==============================================================================
 // PowerControlSettings
@@ -92,32 +98,28 @@ class PowerControlFactory final : public DeviceFactory {
 // A program writes the command (see PowerCommand) to port word 0, and for a
 // shutdown, the exit code to word 1, as a signed word, together with OUT.ID,
 // which sets the status. The cycle after, the power control takes the words,
-// clears them and the status, and records the request in the processor's
-// context (see kConstraintPowerRequest). Any other command is reserved, and is
-// taken and does nothing.
+// clears them and the status, and passes the request to the host's callback
+// in the processor's context (see kConstraintPowerRequestCallback). Any other
+// command is reserved, and is taken and does nothing.
 //
-// The power control only records the request: the machine runs on until the
-// host acts on it, which it does between Processor::Execute calls. So a
-// program that shuts down halts after writing the port, or loops, rather than
-// expecting the next instruction not to run.
+// The power control passes on every request, however many a program makes.
+// The machine runs on until the host acts on them, which it does between
+// Processor::Execute calls. So a program that shuts down halts after writing
+// the port, or loops, rather than expecting the next instruction not to run.
 class PowerControl final : public Device {
  public:
   //----------------------------------------------------------------------------
   // Contract
   //----------------------------------------------------------------------------
 
-  // The request the power control records in the processor's context. The
-  // host creates the Processor with a context it can read (such as by pointer),
-  // and looks for a request between Processor::Execute calls with
-  // gb::Context::GetPtr<PowerRequest>(), which is null without one. (GetValue
-  // can't tell no request from a shutdown with exit code 0.) The request stays
-  // until the host clears it: the power control records the first one, and
-  // ignores the rest until then.
-  static GB_CONTEXT_CONSTRAINT(kConstraintPowerRequest, kOutOptional,
-                               PowerRequest);
+  // The host's callback for requests, which every processor with a power
+  // control must have in its context. As the callback is move-only, the host
+  // sets it with gb::Context::SetNew or SetOwned.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPowerRequestCallback, kInRequired,
+                               PowerRequestCallback);
 
-  // What the power control gives the processor's context: the request.
-  using Contract = gb::ContextContract<kConstraintPowerRequest>;
+  // What the power control takes from the processor's context: the callback.
+  using Contract = gb::ContextContract<kConstraintPowerRequestCallback>;
 
   //----------------------------------------------------------------------------
   // Construction / Destruction
@@ -142,11 +144,12 @@ class PowerControl final : public Device {
 
   PowerControl(DeviceConfig config, Contract contract);
 
-  // Records the request for `command` and `exit_code`, as written to the port,
-  // unless the command is reserved, or there is a request already.
-  void Record(uint16_t command, uint16_t exit_code);
+  // Passes the request for `command` and `exit_code`, as written to the port,
+  // to the host, unless the command is reserved.
+  void Request(uint16_t command, uint16_t exit_code);
 
   gb::ValidatedContext context_;
+  PowerRequestCallback* const callback_;  // In context_.
   std::unique_ptr<Lock> lock_;  // The port's lock, while it is requested.
 };
 

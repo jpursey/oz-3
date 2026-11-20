@@ -7,8 +7,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "gb/base/context.h"
+#include "gb/base/validated_context.h"
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/lockable.h"
 #include "oz3/core/port.h"
@@ -17,27 +20,24 @@
 namespace oz3 {
 namespace {
 
+using ::testing::ElementsAre;
+using ::testing::IsEmpty;
+
 // The processor port the power control is on.
 constexpr int kPort = 1;
 
 class PowerControlTest : public DeviceProgramTest {
  protected:
-  // Initializes a processor with a power control named "Power" on kPort, with
-  // host_context_ as its context. Returns whether it did.
+  // Initializes a processor with a power control named "Power" on kPort, whose
+  // callback adds each request to requests_. Returns whether it did.
   bool InitPowerControl() {
+    gb::Context context;
+    context.SetNew<PowerRequestCallback>(
+        [this](PowerRequest request) { requests_.push_back(request); });
     return Init({.num_ports = kPort + 1,
                  .devices = {std::make_shared<PowerControlFactory>(
                      "Power", PowerControlSettings{.port = kPort})},
-                 .context = host_context_});
-  }
-
-  // Returns whether the power control recorded a request.
-  bool HasRequest() const { return host_context_->Exists<PowerRequest>(); }
-
-  // Returns the request the power control recorded, which must exist.
-  PowerRequest GetRequest() const {
-    EXPECT_TRUE(HasRequest());
-    return host_context_->GetValue<PowerRequest>();
+                 .context = std::move(context)});
   }
 
   // Returns the words of the power control's port.
@@ -54,12 +54,11 @@ class PowerControlTest : public DeviceProgramTest {
     words.Store(GetPort(kPort), *lock, Port::S);
   }
 
-  // The processor's context, which the test reads the request from. It is
-  // shared, so it outlives the processor.
-  std::shared_ptr<gb::Context> host_context_ = std::make_shared<gb::Context>();
+  // The requests the power control passed to the callback, in order.
+  std::vector<PowerRequest> requests_;
 };
 
-TEST_F(PowerControlTest, ShutDownRecordsTheSignedExitCode) {
+TEST_F(PowerControlTest, ShutDownPassesTheSignedExitCode) {
   ASSERT_TRUE(InitPowerControl());
   ASSERT_TRUE(Load(R"---(
     .STACK 16
@@ -67,8 +66,9 @@ TEST_F(PowerControlTest, ShutDownRecordsTheSignedExitCode) {
         HALT
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
-  EXPECT_EQ(GetRequest(), (PowerRequest{.command = PowerCommand::kShutDown,
-                                        .exit_code = -1}));
+  EXPECT_THAT(requests_,
+              ElementsAre(PowerRequest{.command = PowerCommand::kShutDown,
+                                       .exit_code = -1}));
   EXPECT_EQ(GetPort(kPort).GetStatus(), 0);
   EXPECT_EQ(GetWords(), PortWords());
 }
@@ -81,8 +81,9 @@ TEST_F(PowerControlTest, RestartHasNoExitCode) {
         HALT
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
-  EXPECT_EQ(GetRequest(),
-            (PowerRequest{.command = PowerCommand::kRestart, .exit_code = 0}));
+  EXPECT_THAT(requests_,
+              ElementsAre(PowerRequest{.command = PowerCommand::kRestart,
+                                       .exit_code = 0}));
 }
 
 TEST_F(PowerControlTest, ReservedCommandsAreTakenAndIgnored) {
@@ -102,7 +103,7 @@ TEST_F(PowerControlTest, ReservedCommandsAreTakenAndIgnored) {
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
   EXPECT_EQ(GetState().r0, 0);
-  EXPECT_FALSE(HasRequest());
+  EXPECT_THAT(requests_, IsEmpty());
   EXPECT_EQ(GetPort(kPort).GetStatus(), 0);
   EXPECT_EQ(GetWords(), PortWords());
 }
@@ -117,39 +118,49 @@ TEST_F(PowerControlTest, WordWriteHasExitCodeZero) {
         HALT
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
-  EXPECT_EQ(GetRequest(),
-            (PowerRequest{.command = PowerCommand::kShutDown, .exit_code = 0}));
+  EXPECT_THAT(requests_,
+              ElementsAre(PowerRequest{.command = PowerCommand::kShutDown,
+                                       .exit_code = 0}));
 }
 
 TEST_F(PowerControlTest, TakesTheWriteTheCycleAfter) {
   ASSERT_TRUE(InitPowerControl());
   WritePort(PortWords::FromWords(1, 4));
-  EXPECT_FALSE(HasRequest());
+  EXPECT_THAT(requests_, IsEmpty());
   Execute(1);
-  EXPECT_EQ(GetRequest(),
-            (PowerRequest{.command = PowerCommand::kShutDown, .exit_code = 4}));
+  EXPECT_THAT(requests_,
+              ElementsAre(PowerRequest{.command = PowerCommand::kShutDown,
+                                       .exit_code = 4}));
   EXPECT_EQ(GetPort(kPort).GetStatus(), 0);
 }
 
-TEST_F(PowerControlTest, FirstRequestStandsUntilCleared) {
+TEST_F(PowerControlTest, PassesEveryRequest) {
   ASSERT_TRUE(InitPowerControl());
   ASSERT_TRUE(Load(R"---(
     .STACK 16
         OUT.ID 1, 00020001h    ; Shut down, with exit code 2
         NOP
-        OUT.ID 1, 00000002h    ; Restart, which is ignored
+        OUT.ID 1, 00000002h    ; Restart
+        NOP
+        OUT.ID 1, 00030001h    ; Shut down, with exit code 3
         HALT
   )---"));
   ASSERT_TRUE(ExecuteUntilHalt());
-  EXPECT_EQ(GetRequest(),
-            (PowerRequest{.command = PowerCommand::kShutDown, .exit_code = 2}));
-  EXPECT_EQ(GetPort(kPort).GetStatus(), 0);
+  EXPECT_THAT(
+      requests_,
+      ElementsAre(
+          PowerRequest{.command = PowerCommand::kShutDown, .exit_code = 2},
+          PowerRequest{.command = PowerCommand::kRestart, .exit_code = 0},
+          PowerRequest{.command = PowerCommand::kShutDown, .exit_code = 3}));
+}
 
-  host_context_->Clear<PowerRequest>();
-  WritePort(PortWords::FromWords(2, 0));
-  Execute(1);
-  EXPECT_EQ(GetRequest(),
-            (PowerRequest{.command = PowerCommand::kRestart, .exit_code = 0}));
+TEST_F(PowerControlTest, FactoryRequiresTheCallback) {
+  const PowerControlFactory factory("Power", {.port = kPort});
+  gb::Context context;
+  gb::ValidatedContext validated(&context, {});
+  EXPECT_EQ(factory.CreateDevice(validated), nullptr);
+  context.SetNew<PowerRequestCallback>([](PowerRequest) {});
+  EXPECT_NE(factory.CreateDevice(validated), nullptr);
 }
 
 }  // namespace
