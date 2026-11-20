@@ -374,6 +374,9 @@ class ProgramAssembler final {
   // only its tokens up to a directive's name read, unless it is an .ELSEIF,
   // .ELSE, or .ENDIF of the innermost .IF that isn't disabled, which is read
   // as any other line.
+  //
+  // GetIfState() returns the state of an .IF from the condition of the block
+  // it is starting, which is nullopt if the condition had an error.
   static IfState GetIfState(std::optional<bool> condition);
   SkippedLine SkipLine(gb::LexerContentId content, std::vector<OpenIf>* ifs);
   void ReadConditional(Conditional conditional, const gb::ParsedItem& directive,
@@ -1468,6 +1471,7 @@ void ProgramAssembler::ReadConditional(Conditional conditional,
                                        std::vector<OpenIf>* ifs) {
   const std::string_view name = directive.GetString("directive");
   const gb::Token token = directive.GetToken();
+  // An .IF assembles its first block if its condition is nonzero.
   if (conditional == Conditional::kIf) {
     ifs->push_back({.token = token,
                     .name = name,
@@ -1478,25 +1482,37 @@ void ProgramAssembler::ReadConditional(Conditional conditional,
     Error(token, absl::StrCat(".", name, " has no .IF"));
     return;
   }
+
+  // A disabled .IF's directives are read by SkipLine() instead.
   OpenIf& open = ifs->back();
   DCHECK(open.state != IfState::kDisabled);
   if (conditional == Conditional::kEndIf) {
     ifs->pop_back();
     return;
   }
+
+  // The rest is an .ELSEIF or .ELSE, which starts the .IF's next block.
   if (open.has_else) {
     Error(token, absl::StrCat(".", name, " can't come after .ELSE"));
     open.state = IfState::kDisabled;
     return;
   }
+  open.has_else = conditional == Conditional::kElse;
+
+  // Once the .IF has assembled a block (it is kAssembling or kSatisfied), its
+  // later blocks are skipped, and their conditions aren't read.
   if (open.state != IfState::kUnsatisfied) {
     open.state = IfState::kSatisfied;
-  } else if (conditional == Conditional::kElse) {
-    open.state = IfState::kAssembling;
-  } else {
-    open.state = GetIfState(ReadCondition(directive));
+    return;
   }
-  open.has_else = conditional == Conditional::kElse;
+
+  // Until then, an .ELSE's block is assembled, and an .ELSEIF's is if its
+  // condition is nonzero.
+  if (conditional == Conditional::kElse) {
+    open.state = IfState::kAssembling;
+    return;
+  }
+  open.state = GetIfState(ReadCondition(directive));
 }
 
 void ProgramAssembler::ReadInvalidConditional(Conditional conditional,
