@@ -494,17 +494,20 @@ opens as written.
 
 ### `ozzyterm`
 
-In a terminal, it is as the console frontend is now, with the panel in one of
-two forms:
-- **With a screen**, the console shows the screen's picture, and the panel
-  takes the whole console in its place: the machine's status at the top
-  (whether it is on, its clock rate and how well the host is keeping up, and
-  each drive's image), the panel's messages, and a command line at the bottom.
-- **Without a screen**, the console shows the teletype's lines, and the panel
-  is a line of its own among them, as telnet's escape is: Ctrl+Alt+P prints a
-  prompt, takes one command, and goes back to the teletype. What the teletype
-  prints meanwhile waits until the command is done, so the two never mix. An
-  Ozzy with neither a screen nor a teletype has the panel in this form.
+In a terminal, it always takes the whole console, whatever devices the Ozzy
+has, so how it is shown is chosen by the command line, never by the config:
+- **With a screen**, the console shows the screen's picture.
+- **Without a screen**, it shows the teletype view: the teletype's lines in a
+  view the size of the console, which the Ozzy doesn't know of. They wrap at
+  the console's width, scroll up from the bottom, and are drawn whole again on
+  a resize, as the picture is. With neither, it shows a message saying so.
+
+The panel takes the whole console in place of either: the machine's status at
+the top (whether it is on, its clock rate and how well the host is keeping up,
+and each drive's image), the panel's messages, and a command line at the
+bottom. The console is given back as it was found once `ozzyterm` quits, so
+the teletype's lines don't stay in the terminal; `--headless` is for a
+transcript.
 
 With **`--headless`**, it has no terminal, for running an Ozzy from a script
 or a test: `ozzyterm --headless test.ozzy < keys.txt > out.txt`. The standard

@@ -39,25 +39,74 @@ The OS, in OZ-3 assembly: the loader in the boot area, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
+## App structure
+
+- **Layers:** ozzy, apps
+- **Size:** medium
+- **Feature workflow:** yes
+- **Depends on:** nothing
+- **Background:** [ozzy_design.md](ozzy_design.md) (Host application);
+  `oz3/apps/ozzy_main.cc`; Game Bits' `gb/game/game.h`
+
+The terminal app has grown inside `ozzy_main.cc`, each piece added where it
+fit: reading the config, powering on and off, the frame loop and its pacing,
+waiting while the machine is off, and the stats. Give it a proper structure:
+an app class in the ozzy library, so it is tested against a fake `Console`,
+holding the three layers ozzy_design.md describes (the machine, the machine's
+state, and how it is presented), with `ozzy_main.cc` doing little more than
+starting it. Build it on Game Bits' `gb_game`, a new dependency: `Game`'s
+`Init`, `Update`, and `CleanUp` for the frame loop, its `Clock` so tests run
+frames without real time, its `Pilot` for scripted runs, and its
+`GameStateMachine` for the app's states (on, off, and the panel's) if they
+need one. Where `gb_game` doesn't fit, it gets an item in Game Bits' backlog
+rather than a workaround here, such as `Game::Run` taking the raw arguments
+while the apps parse theirs with `gb_cli`, and `--max-speed`, which runs the
+machine flat out between frames that are still drawn 60 times a second. The
+*Teletype view*, *Panel*, and *Headless ozzyterm* build on it, as the *Window
+app* does later.
+
+## Teletype view
+
+- **Layers:** ozzy, apps, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *App structure*
+- **Background:** [ozzy_design.md](ozzy_design.md) (`ozzyterm`);
+  `oz3/ozzy/console_display.h`
+
+The terminal app's console is chosen by its command line, rather than
+inferred from the Ozzy's devices: without `--headless`, it always takes the
+whole console, and only `--headless` writes lines as they come (see
+*Headless ozzyterm*). An Ozzy without a screen shows its teletype in a view
+the size of the console, which the Ozzy doesn't know of: the teletype's output
+wraps at the console's width, scrolls up from the bottom, and is drawn whole
+again on a resize, as the screen's picture is. An Ozzy with neither shows the
+message it does now. As the console no longer depends on the config, the app
+creates the Ozzy before taking the console over, so an Ozzy that fails to
+create never touches it. The shutdown message takes the view's place as it
+does the screen's, so `ShowOzzyShutDown` has one form. The teletype's lines no
+longer stay in the terminal once the app quits, as the console is given back
+as it was found; `--headless`'s standard output is the transcript instead. The
+manual's Ozzy Computer page changes to match.
+
 ## Panel
 
 - **Layers:** ozzy, apps, manual
 - **Size:** medium
 - **Feature workflow:** yes
-- **Depends on:** *Power port*
+- **Depends on:** *Teletype view*
 - **Background:** [ozzy_design.md](ozzy_design.md) (Host application),
   [ozzy-drives.md](worklog/ozzy-drives.md); [disk_design.md](disk_design.md)
   (Open questions)
 
 The host's controls for the machine, opened and closed with Ctrl+Alt+P, in the
 terminal app: `on`, `off`, `restart`, `insert` and `eject` a disk, `drives`,
-`help`, and `quit`. With a screen, it takes the whole console, with the
-machine's status, its messages, and a command line. Without one, it is a
-prompt among the teletype's lines, which holds back the teletype's output
-until the command is done. While it is open, keys go to it and the machine
-keeps running, and while the machine is off, it stays open. The commands, and
-what they do to the machine's state, are in the ozzy library, tested against a
-fake `Console`, so the window app can present them too. Paths are as typed at
+`help`, and `quit`. It takes the whole console, in place of the screen's
+picture or the teletype view, with the machine's status, its messages, and a
+command line. While it is open, keys go to it and the machine keeps running,
+and while the machine is off, it stays open. The commands, and what they do to
+the machine's state, are in the ozzy library, tested against a fake `Console`,
+so the window app can present them too. Paths are as typed at
 a shell, and a `config:` protocol in the file system is the config file's
 folder, which becomes the default for the config's own image paths. A disk
 inserted while the machine is on goes into the running drive and stays in the
@@ -71,7 +120,7 @@ as in the config.
 - **Layers:** ozzy, apps, manual
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Power port*
+- **Depends on:** *App structure*
 - **Background:** [ozzy_design.md](ozzy_design.md) (Host application,
   `ozzyterm`)
 
