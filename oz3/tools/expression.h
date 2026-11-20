@@ -89,6 +89,9 @@ class ExpressionContext {
 // An integer expression in program source: numbers, strings of one word,
 // symbols, and "$", with C's unary operators (-, ~, !), and binary operators
 // (*, /, %, +, -, <<, >>, &, ^, |) and their precedence, and parentheses.
+// LOW(x) and HIGH(x) are the low and high words of x, evaluated as a dword.
+// They are only functions where "(" follows them, so LOW and HIGH can still be
+// symbols.
 //
 // An expression is parsed by a gb::Parser, with a grammar that includes
 // GetParserRules(), and evaluated in the width where it is used, as the
@@ -140,6 +143,8 @@ class Expression final {
     kOffset,    // $
     kUnary,     // `op` applied to `left`.
     kBinary,    // `op` applied to `left` and `right`.
+    kLow,       // The low word of `left`, as a dword.
+    kHigh,      // The high word of `left`, as a dword.
   };
 
   // One step of the expression. Each node's operands come before it in
@@ -173,6 +178,9 @@ class Expression final {
   ExpressionResult EvaluateBinary(ExpressionWidth width,
                                   const ExpressionContext& context,
                                   const Node& node) const;
+  ExpressionResult EvaluateLowOrHigh(ExpressionWidth width,
+                                     const ExpressionContext& context,
+                                     const Node& node) const;
   ExpressionResult EvaluateSymbol(ExpressionWidth width,
                                   const ExpressionContext& context,
                                   const Node& node) const;

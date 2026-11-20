@@ -52,6 +52,7 @@ constexpr std::string_view kParserRules = R"---(
     $value=ExpressionValue;
   }
   ExpressionValue {
+    ($low="LOW" | $high="HIGH") '(' $operand=Expression ')';
     $number=%int;
     $string=%string;
     $name=(%ident | %local_label);
@@ -133,6 +134,14 @@ int Expression::AddNodes(const gb::ParsedItem& item) {
 }
 
 int Expression::AddValueNode(const gb::ParsedItem& item) {
+  if (const gb::ParsedItem* operand = item.GetItem("operand");
+      operand != nullptr) {
+    const int index = AddNodes(*operand);
+    return AddNode({.kind = item.GetItem("low") != nullptr ? NodeKind::kLow
+                                                           : NodeKind::kHigh,
+                    .token = item.GetToken(),
+                    .left = index});
+  }
   if (const gb::ParsedItem* group = item.GetItem("group"); group != nullptr) {
     const int index = AddNodes(*group);
     nodes_[index].bracketed = true;
@@ -194,6 +203,9 @@ ExpressionResult Expression::EvaluateNode(ExpressionWidth width,
       return EvaluateUnary(width, context, node);
     case NodeKind::kBinary:
       return EvaluateBinary(width, context, node);
+    case NodeKind::kLow:
+    case NodeKind::kHigh:
+      return EvaluateLowOrHigh(width, context, node);
   }
   return Error(node.token, "Internal error: unknown expression node");
 }
@@ -269,6 +281,18 @@ ExpressionResult Expression::EvaluateBinary(ExpressionWidth width,
       return Value(width, node.op == '<' ? a << b : a >> b);
   }
   return Error(node.token, "Internal error: unknown binary operator");
+}
+
+ExpressionResult Expression::EvaluateLowOrHigh(ExpressionWidth width,
+                                               const ExpressionContext& context,
+                                               const Node& node) const {
+  ExpressionResult operand =
+      EvaluateNode(ExpressionWidth::kDword, context, node.left);
+  if (!IsValue(operand)) {
+    return operand;
+  }
+  return Value(width, node.kind == NodeKind::kLow ? operand.value & 0xFFFF
+                                                  : operand.value >> 16);
 }
 
 ExpressionResult Expression::EvaluateSymbol(ExpressionWidth width,

@@ -72,8 +72,9 @@ std::unique_ptr<AsmProgram> AssembleProgram(
   where it is used as one** ("BIG can't be evaluated as a word: ..."), as the
   constant itself is fine. An error in a constant's own expression is reported
   once, where it is.
-- A dword's low or high word can't be written in a word (*Low and high words*
-  in the backlog).
+- **`LOW(x)` and `HIGH(x)`** are the low and high words of `x`, evaluated as a
+  dword, so either half of a dword can be written in a word. They are functions
+  only where `(` follows them, so they reserve no names.
 - **First pass values** (code word arguments, literal numbers in patterns, and
   the directives' values) can only use symbols defined above them. Using one
   that isn't is Expression's own error ("X is not defined"), whether or not X
