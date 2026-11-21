@@ -141,25 +141,21 @@ class MacroExpansion final {
   gb::LexerLocation GetLocation(int line, int column) const;
 
  private:
-  // A run of a line's text from `column` up to the next run's, copied from
+  // A run of the text from `offset` up to the next run's, copied from
   // `location` onward.
   struct Run {
-    int column = 0;
+    int offset = 0;
     gb::LexerLocation location;
-  };
-
-  // A line of the text: where it starts, and its runs, the first at column 0
-  // and the last at the end of the body's line.
-  struct Line {
-    int start = 0;
-    std::vector<Run> runs;
   };
 
   // Appends `text`, copied from `location` onward, to the last line.
   void Append(std::string_view text, gb::LexerLocation location);
 
   std::string text_;
-  std::vector<Line> lines_;
+
+  // The runs of each line, the first at its start, and the last the body after
+  // its last token replaced, which may be empty.
+  std::vector<std::vector<Run>> lines_;
 };
 
 }  // namespace oz3

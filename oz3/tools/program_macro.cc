@@ -24,13 +24,12 @@ bool IsLineEnd(const gb::Token& token) {
 // on the same line.
 std::string_view GetTokensText(const gb::Lexer& lexer, const gb::Token& first,
                                const gb::Token& last) {
-  const gb::LexerLocation begin = lexer.GetTokenLocation(first);
-  const gb::LexerLocation end = lexer.GetTokenLocation(last);
-  DCHECK(begin.id == end.id && begin.line == end.line);
-  const int size = end.column +
-                   static_cast<int>(lexer.GetTokenText(last).size()) -
-                   begin.column;
-  return lexer.GetLineText(begin.id, begin.line).substr(begin.column, size);
+  // Each token's text is in its line's text.
+  const std::string_view first_text = lexer.GetTokenText(first);
+  const std::string_view last_text = lexer.GetTokenText(last);
+  DCHECK(first_text.data() <= last_text.data());
+  return std::string_view(first_text.data(),
+                          last_text.data() + last_text.size());
 }
 
 // Returns `location`, moved right by `columns`.
@@ -76,9 +75,17 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
   if (IsLineEnd(token)) {
     return true;
   }
+  if (token.IsIdent() && FindParameter(token) < 0 &&
+      lexer.NextToken(content, /*advance=*/false).IsSymbol(':')) {
+    FailLine(lexer, content, token,
+             absl::StrCat("Macro ", name_, " can't define label ",
+                          lexer.GetTokenText(token),
+                          ", only local labels and its parameters"),
+             error);
+    return false;
+  }
   Line line = {.first = token};
-  for (int index = 0; !IsLineEnd(token);
-       ++index, token = lexer.NextToken(content)) {
+  for (; !IsLineEnd(token); token = lexer.NextToken(content)) {
     if (token.IsError()) {
       FailLine(lexer, content, token, token.GetString(), error);
       return false;
@@ -87,15 +94,6 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
       FailLine(lexer, content, token,
                absl::StrCat("Macro label ", lexer.GetTokenText(token),
                             " can only be written by a macro's expansion"),
-               error);
-      return false;
-    }
-    if (index == 1 && token.IsSymbol(':') && line.first.IsIdent() &&
-        FindParameter(line.first) < 0) {
-      FailLine(lexer, content, line.first,
-               absl::StrCat("Macro ", name_, " can't define label ",
-                            lexer.GetTokenText(line.first),
-                            ", only local labels and its parameters"),
                error);
       return false;
     }
@@ -118,16 +116,25 @@ bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
                    std::vector<MacroArg>* args, gb::ParseError* error) {
   args->clear();
   gb::Token token = lexer.NextToken(content);
+  if (IsLineEnd(token)) {
+    return true;
+  }
+  std::vector<MacroArg> read_args;
   gb::Token comma;  // The comma before the argument being read, if any.
-  int depth = 0;
-  while (!IsLineEnd(token) || !args->empty()) {
-    MacroArg arg = {.first = token, .last = token};
-    bool empty = true;
+  while (true) {
+    if (IsLineEnd(token) || token.IsSymbol(',')) {
+      // The token is the comma after the argument, or the end of the line
+      // after the last one's comma.
+      FailLine(lexer, content, IsLineEnd(token) ? comma : token,
+               "Macro argument is empty", error);
+      return false;
+    }
+    MacroArg arg = {.first = token};
+    int depth = 0;
     for (; !IsLineEnd(token) && !(depth == 0 && token.IsSymbol(','));
          token = lexer.NextToken(content)) {
       if (token.IsError()) {
         FailLine(lexer, content, token, token.GetString(), error);
-        args->clear();
         return false;
       }
       if (token.IsSymbol('(') || token.IsSymbol('[') || token.IsSymbol('{')) {
@@ -138,24 +145,15 @@ bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
         --depth;
       }
       arg.last = token;
-      empty = false;
     }
-    if (empty) {
-      // The token is the comma after the argument, or the end of the line
-      // after the last one's comma.
-      FailLine(lexer, content, IsLineEnd(token) ? comma : token,
-               "Macro argument is empty", error);
-      args->clear();
-      return false;
-    }
-    args->push_back(arg);
+    read_args.push_back(arg);
     if (IsLineEnd(token)) {
-      break;
+      *args = std::move(read_args);
+      return true;
     }
     comma = token;
     token = lexer.NextToken(content);
   }
-  return true;
 }
 
 //==============================================================================
@@ -171,7 +169,7 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
     const gb::LexerLocation start = lexer.GetTokenLocation(body_line.first);
     const std::string_view body =
         GetTokensText(lexer, body_line.first, body_line.last);
-    lines_.push_back({.start = static_cast<int>(text_.size())});
+    lines_.emplace_back();
     int column = 0;  // In `body`, after the last token replaced.
     for (const ProgramMacro::Replace& replace : body_line.replaces) {
       gb::LexerLocation location = lexer.GetTokenLocation(replace.token);
@@ -196,9 +194,8 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
 }
 
 void MacroExpansion::Append(std::string_view text, gb::LexerLocation location) {
-  Line& line = lines_.back();
-  line.runs.push_back({.column = static_cast<int>(text_.size()) - line.start,
-                       .location = std::move(location)});
+  lines_.back().push_back({.offset = static_cast<int>(text_.size()),
+                           .location = std::move(location)});
   text_.append(text);
 }
 
@@ -206,17 +203,16 @@ gb::LexerLocation MacroExpansion::GetLocation(int line, int column) const {
   CHECK(line >= 0 && line < GetLineCount());
   CHECK_GE(column, 0);
 
-  // Every line starts with a run at column 0, so the run at `column` is the
-  // one before the first run after it. That is the last of any runs at the
-  // same column, as the ones before it are empty.
-  const std::vector<Run>& runs = lines_[line].runs;
+  // Every line starts with a run, so the run at `column` is the one before
+  // the first run after it. That is the last of any runs at the same offset,
+  // as the ones before it are empty.
+  const std::vector<Run>& runs = lines_[line];
+  const int offset = runs.front().offset + column;
   const auto it = absl::c_upper_bound(
-      runs, column,
-      [](int column, const Run& run) { return column < run.column; });
+      runs, offset,
+      [](int offset, const Run& run) { return offset < run.offset; });
   const Run& run = *(it - 1);
-  gb::LexerLocation location = run.location;
-  location.column += column - run.column;
-  return location;
+  return GetColumn(run.location, offset - run.offset);
 }
 
 }  // namespace oz3

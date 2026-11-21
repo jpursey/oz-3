@@ -107,10 +107,11 @@ class ProgramMacroTest : public ::testing::Test {
     return texts;
   }
 
-  // Returns the error reading the arguments after the first token of `line`,
-  // in the file "error.oza", which must fail.
-  gb::ParseError ReadArgsError(std::string_view line) {
-    const gb::LexerContentId content = AddFile("error.oza", line);
+  // Returns the error reading the arguments after the first token of the file
+  // `filename`, holding `line`, which must fail.
+  gb::ParseError ReadArgsError(std::string_view filename,
+                               std::string_view line) {
+    const gb::LexerContentId content = AddFile(filename, line);
     lexer_->NextToken(content);
     std::vector<MacroArg> args;
     gb::ParseError error;
@@ -262,34 +263,29 @@ TEST_F(ProgramMacroTest, ArgsMovePastTheLine) {
 TEST_F(ProgramMacroTest, EmptyArgs) {
   // An empty argument is an error at the comma after it, or for the last
   // one, the comma before it, and the lexer goes on to the next line.
-  gb::ParseError error = ReadArgsError("M ,1\n");
-  EXPECT_EQ(error.GetLocation(), At("error.oza", 0, 2));
+  gb::ParseError error = ReadArgsError("first.oza", "M ,1\nNOP\n");
+  EXPECT_EQ(error.GetLocation(), At("first.oza", 0, 2));
   EXPECT_EQ(error.GetMessage(), "Macro argument is empty");
-}
+  EXPECT_TRUE(NextToken("first.oza").IsIdent("NOP"));
+  EXPECT_EQ(ReadArgsError("middle.oza", "M 1,,2\nNOP\n").GetLocation(),
+            At("middle.oza", 0, 4));
+  EXPECT_TRUE(NextToken("middle.oza").IsIdent("NOP"));
 
-TEST_F(ProgramMacroTest, EmptyArgBetweenCommas) {
-  EXPECT_EQ(ReadArgsError("M 1,,2\nNOP\n").GetLocation(),
-            At("error.oza", 0, 4));
-  EXPECT_TRUE(NextToken("error.oza").IsIdent("NOP"));
-}
-
-TEST_F(ProgramMacroTest, EmptyLastArg) {
-  // The comma is before the comment, which the line break is after.
-  EXPECT_EQ(ReadArgsError("M 1, ; Note.\nNOP\n").GetLocation(),
-            At("error.oza", 0, 3));
-  EXPECT_TRUE(NextToken("error.oza").IsIdent("NOP"));
-}
-
-TEST_F(ProgramMacroTest, EmptyLastArgAtTheEnd) {
-  EXPECT_EQ(ReadArgsError("M 1,").GetLocation(), At("error.oza", 0, 3));
-  EXPECT_TRUE(NextToken("error.oza").IsEnd());
+  // The last one's comma is before the comment, which the line break is
+  // after.
+  EXPECT_EQ(ReadArgsError("last.oza", "M 1, ; Note.\nNOP\n").GetLocation(),
+            At("last.oza", 0, 3));
+  EXPECT_TRUE(NextToken("last.oza").IsIdent("NOP"));
+  EXPECT_EQ(ReadArgsError("end.oza", "M 1,").GetLocation(),
+            At("end.oza", 0, 3));
+  EXPECT_TRUE(NextToken("end.oza").IsEnd());
 }
 
 TEST_F(ProgramMacroTest, ArgThatCantBeRead) {
   // A line with a token the lexer can't read has no arguments, and the lexer
   // goes on to the next line.
   const gb::ParseError error =
-      ReadArgsError("M 1, 0FFFFFFFFFFFFFFFFFh, 2\nNOP\n");
+      ReadArgsError("error.oza", "M 1, 0FFFFFFFFFFFFFFFFFh, 2\nNOP\n");
   EXPECT_EQ(error.GetLocation(), At("error.oza", 0, 5));
   EXPECT_FALSE(error.GetMessage().empty());
   EXPECT_TRUE(NextToken("error.oza").IsIdent("NOP"));

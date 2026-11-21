@@ -366,7 +366,9 @@ class MacroExpansion final {
   leaves it as it is, and it never changes the scope. A local label in an
   argument is copied as the caller wrote it, so it is in the scope the
   expansion is read in, which is the caller's. A macro label written in a file
-  or a body is an error.
+  or a body is an error: `ReadLine` finds one in a body, and the assembler
+  one in a file's line, including a use's arguments, which `ReadMacroArgs`
+  can't reject, as a renamed label is a valid argument in an expansion.
 - **Errors** are added through `AddError`, which already sees every one. One
   whose location is in an expansion's content is moved to where that text
   came from, following the chain to a file, and is followed by an error at
