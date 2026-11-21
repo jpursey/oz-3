@@ -303,10 +303,10 @@ class ProgramMacro final {
     std::vector<Replace> replaces;
   };
 
-  ProgramMacro(std::string_view name, std::vector<std::string> parameters);
+  ProgramMacro(gb::Token name, std::vector<gb::Token> parameters);
 
-  std::string_view GetName() const;
-  absl::Span<const std::string> GetParameters() const;
+  const gb::Token& GetName() const;
+  absl::Span<const gb::Token> GetParameters() const;
   absl::Span<const Line> GetLines() const;
 
   // Reads the lexer's next line as the body's next line, and moves past it.
@@ -316,17 +316,11 @@ class ProgramMacro final {
                 gb::ParseError* error);
 };
 
-// A macro argument: its first and last tokens, in the use's content.
+// A macro argument: its first and last tokens, on the use's line.
 struct MacroArg {
   gb::Token first;
   gb::Token last;
 };
-
-// Reads a use's arguments, from the lexer's next token to the end of the line.
-// Returns false, setting `error`, if a token can't be read or an argument is
-// empty.
-bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
-                   std::vector<MacroArg>* args, gb::ParseError* error);
 
 // The text of one use of a macro, and where each part of it came from.
 class MacroExpansion final {
@@ -369,8 +363,8 @@ class MacroExpansion final {
   argument is copied as the caller wrote it, so it is in the scope the
   expansion is read in, which is the caller's. A macro label written in a file
   or a body is an error: `ReadLine` finds one in a body, and the assembler
-  one in a file's line, including a use's arguments, which `ReadMacroArgs`
-  can't reject, as a renamed label is a valid argument in an expansion.
+  one in a file's line, including a use's arguments, which the grammar can't
+  reject, as a renamed label is a valid argument in an expansion.
 - **Errors** are added through `AddError`, which already sees every one. One
   whose location is in an expansion's content is moved to where that text
   came from, following the chain to a file, and is followed by an error at
@@ -379,8 +373,26 @@ class MacroExpansion final {
   an expansion to its outermost use's line. Nothing in the map, its file, or the
   listing changes: a line already can have several statements.
 - **Uses** are found in `ReadInstruction`: a name with no extension that is a
-  macro's is expanded, before any form is matched. `ReadMacroArgs` reads the
-  tokens after the name, split at each comma outside brackets.
+  macro's is expanded, before any form is matched. The line is parsed again
+  with the grammar's `MacroUse` rule, whose arguments are each one or more
+  tokens up to a comma outside brackets, read as `ArgToken` reads brackets,
+  with an empty one an error at the token after its comma. Each gives its
+  first token and its last, which is a `MacroArg`:
+
+  ```
+  MacroUse {
+    $name=%ident $args=MacroArg,* EndOfLine;
+  }
+  MacroArg {
+    $tokens=MacroArgToken+:"Macro argument is empty";
+  }
+  MacroArgToken {
+    $last=!(%linebreak | ',' | '(' | ')' | '[' | ']' | '{' | '}');
+    '(' ArgToken* $last=')';
+    '[' ArgToken* $last=']';
+    '{' ArgToken* $last='}';
+  }
+  ```
 
 **Brittleness:** the assembler must turn an expansion's tokens into locations
 through its expansion, rather than through the lexer's location. It does so
@@ -417,9 +429,9 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   skipped lines in CL2: a skipped line is lexed a token at a time, then the
   lexer goes on with `NextLine`, or puts its first token back with
   `SetNextToken` for the parser to read a directive that ends the block.
-- [ ] The assembler can put the lexer back at the token after a use's name, to
-  read its arguments with `ReadMacroArgs` (CL4). CL3 reads them a token at a
-  time, as a line in the grammar has no rule for text between commas.
+- [ ] The assembler can put the lexer back at the start of a use's line
+  (`gb::Lexer::RewindLine`), to parse it again with `MacroUse` (CL4), once
+  `Line` has parsed it as an instruction.
 - [ ] Whether an error's uses are errors of their own after it, or part of its
   message (CL4): each is a location, so separate errors let a tool jump to
   each one.
@@ -500,8 +512,8 @@ Depends on: nothing.
 
 - `program_lexer.h`: `kTokenMacroLabel`, a local label renamed for a use.
 - `program_macro.h`: `ProgramMacro`, reading a body a line at a time with
-  `ReadLine`; `ReadMacroArgs`, splitting a use's arguments; and
-  `MacroExpansion`, a use's text and where each part of it came from.
+  `ReadLine`; and `MacroExpansion`, a use's text and where each part of it
+  came from.
 - Unused, so no visible change.
 
 **Verify**
@@ -509,27 +521,29 @@ Depends on: nothing.
 - Unit tests: a macro label lexed; parameters replaced in each place a line
   can have them, and not in strings or local labels; lines with no tokens
   dropped; a label from a parameter, a label the body writes (an error), and a
-  macro label in a body (an error); arguments with brackets, strings, and
-  commas inside them; an empty argument, an error at its comma; local labels
-  renamed; each part's location, for the body, arguments, and renamed labels,
-  at the start, middle, and end of a line; a use inside an expansion, whose
-  locations are in the outer expansion's content; a body line or an argument
-  the lexer can't read.
+  macro label in a body (an error); local labels renamed; each part's
+  location, for the body, arguments, and renamed labels, at the start, middle,
+  and end of a line; a use inside an expansion, whose locations are in the
+  outer expansion's content; a body line the lexer can't read; an argument
+  that isn't a range on one line.
 
 ### CL4 [ ] tools: macros
 
 Depends on: CL3, and CL2 for tests with `.IF` in a body.
 
-- `program_grammar.cc`: `.MACRO` and `.ENDM`.
+- `program_grammar.cc`: `.MACRO` and `.ENDM`, and `MacroUse`, a use's
+  arguments.
 - `program_grammar.cc`: macro labels (`%macro_label`) as labels and in
   expressions.
 - `program_assembler.cc`: reading definitions with `ProgramMacro::ReadLine`;
-  expanding uses in `ReadInstruction` with `ReadMacroArgs`, read as content of
-  their own with a stack of the uses being expanded; a macro label written in
-  a file an error, and `GetLabelKey` leaving one as it is; a `.CONST` in a
-  body with a name that isn't a parameter an error at the definition; errors' locations
-  followed through expansions to a file, then an error at each use on the
-  stack; and map locations at the outermost use.
+  expanding uses in `ReadInstruction`, parsed with `MacroUse`, read as
+  content of their own with a stack of the uses being expanded; a macro label
+  written in a file an error, and `GetLabelKey` leaving one as it is; a
+  `.CONST` in a body with a name that isn't a parameter an error at the
+  definition; errors' locations followed through expansions to a file, then
+  an error at each use on the stack; and map locations at the outermost use.
+- `program_macro.cc`: a token range's text from `gb::Lexer`, if Game Bits
+  *Lexer text of a token range* is done, in place of `GetTokensText`.
 - `program_map.h`: the names of a use's own local labels.
 - Manual: Program Source's Macros, the directives table, and the listing's
   rows for a macro's use.
@@ -541,8 +555,10 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
   argument, where the macro has one of the same name; a label from a
   parameter; a label on a use; a macro using a macro, and using itself
   directly and through another, an error; `.IF` on a parameter in a body, and
-  one left open in a body; the wrong number of arguments, and an empty one; a
-  name that is an instruction's, defined twice, or used above its definition;
+  one left open in a body; arguments with brackets, strings, and commas
+  inside them; the wrong number of arguments, and an empty one; a parameter
+  named twice, an error at the second; a name that is an instruction's,
+  defined twice, or used above its definition;
   a missing `.ENDM`, an `.ENDM` with no `.MACRO`, and a `.MACRO` in a body; an
   `.INCLUDE` in a body; errors in a body and in an argument, at their origins
   with their uses, two levels deep; the map's statements, labels, and

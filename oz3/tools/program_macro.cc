@@ -20,20 +20,26 @@ bool IsLineEnd(const gb::Token& token) {
   return token.GetType() == gb::kTokenLineBreak || token.IsEnd();
 }
 
-// Returns the text from the start of `first` to the end of `last`, which are
-// on the same line.
+// Returns the text from the start of `first` to the end of `last`, or an empty
+// string if they aren't on the same line, with `first` no later than `last`.
 std::string_view GetTokensText(const gb::Lexer& lexer, const gb::Token& first,
                                const gb::Token& last) {
-  // Each token's text is in its line's text.
-  const std::string_view first_text = lexer.GetTokenText(first);
-  const std::string_view last_text = lexer.GetTokenText(last);
-  DCHECK(first_text.data() <= last_text.data());
-  return std::string_view(first_text.data(),
-                          last_text.data() + last_text.size());
+  const gb::LexerLocation first_location = lexer.GetTokenLocation(first);
+  const gb::LexerLocation last_location = lexer.GetTokenLocation(last);
+  if (first_location.id == gb::kNoLexerContent ||
+      first_location.id != last_location.id ||
+      first_location.line != last_location.line ||
+      first_location.column > last_location.column) {
+    return {};
+  }
+  const int end =
+      last_location.column + static_cast<int>(lexer.GetTokenText(last).size());
+  return lexer.GetLineText(first_location.id, first_location.line)
+      .substr(first_location.column, end - first_location.column);
 }
 
 // Returns `location`, moved right by `columns`.
-gb::LexerLocation GetColumn(gb::LexerLocation location, int columns) {
+gb::LexerLocation AdjustColumn(gb::LexerLocation location, int columns) {
   location.column += columns;
   return location;
 }
@@ -55,17 +61,20 @@ void FailLine(gb::Lexer& lexer, gb::LexerContentId content,
 // ProgramMacro
 //==============================================================================
 
-ProgramMacro::ProgramMacro(std::string_view name,
-                           std::vector<std::string> parameters)
+ProgramMacro::ProgramMacro(gb::Token name, std::vector<gb::Token> parameters)
     : name_(name), parameters_(std::move(parameters)) {}
 
 int ProgramMacro::FindParameter(const gb::Token& token) const {
   if (!token.IsIdent()) {
     return -1;
   }
-  const auto it = absl::c_find(parameters_, token.GetString());
-  return it == parameters_.end() ? -1
-                                 : static_cast<int>(it - parameters_.begin());
+  const int count = static_cast<int>(parameters_.size());
+  for (int i = 0; i < count; ++i) {
+    if (token.IsIdent(parameters_[i].GetString())) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
@@ -78,7 +87,7 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
   if (token.IsIdent() && FindParameter(token) < 0 &&
       lexer.NextToken(content, /*advance=*/false).IsSymbol(':')) {
     FailLine(lexer, content, token,
-             absl::StrCat("Macro ", name_, " can't define label ",
+             absl::StrCat("Macro ", name_.GetString(), " can't define label ",
                           lexer.GetTokenText(token),
                           ", only local labels and its parameters"),
              error);
@@ -109,54 +118,6 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
 }
 
 //==============================================================================
-// Macro arguments
-//==============================================================================
-
-bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
-                   std::vector<MacroArg>* args, gb::ParseError* error) {
-  args->clear();
-  gb::Token token = lexer.NextToken(content);
-  if (IsLineEnd(token)) {
-    return true;
-  }
-  std::vector<MacroArg> read_args;
-  gb::Token comma;  // The comma before the argument being read, if any.
-  while (true) {
-    if (IsLineEnd(token) || token.IsSymbol(',')) {
-      // The token is the comma after the argument, or the end of the line
-      // after the last one's comma.
-      FailLine(lexer, content, IsLineEnd(token) ? comma : token,
-               "Macro argument is empty", error);
-      return false;
-    }
-    MacroArg arg = {.first = token};
-    int depth = 0;
-    for (; !IsLineEnd(token) && !(depth == 0 && token.IsSymbol(','));
-         token = lexer.NextToken(content)) {
-      if (token.IsError()) {
-        FailLine(lexer, content, token, token.GetString(), error);
-        return false;
-      }
-      if (token.IsSymbol('(') || token.IsSymbol('[') || token.IsSymbol('{')) {
-        ++depth;
-      } else if ((token.IsSymbol(')') || token.IsSymbol(']') ||
-                  token.IsSymbol('}')) &&
-                 depth > 0) {
-        --depth;
-      }
-      arg.last = token;
-    }
-    read_args.push_back(arg);
-    if (IsLineEnd(token)) {
-      *args = std::move(read_args);
-      return true;
-    }
-    comma = token;
-    token = lexer.NextToken(content);
-  }
-}
-
-//==============================================================================
 // MacroExpansion
 //==============================================================================
 
@@ -175,11 +136,11 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
       gb::LexerLocation location = lexer.GetTokenLocation(replace.token);
       const int token_column = location.column - start.column;
       Append(body.substr(column, token_column - column),
-             GetColumn(start, column));
+             AdjustColumn(start, column));
       if (replace.parameter == ProgramMacro::Replace::kLocalLabel) {
-        Append(
-            absl::StrCat(macro.GetName(), "#", use, replace.token.GetString()),
-            std::move(location));
+        Append(absl::StrCat(macro.GetName().GetString(), "#", use,
+                            replace.token.GetString()),
+               std::move(location));
       } else {
         const MacroArg& arg = args[replace.parameter];
         Append(GetTokensText(lexer, arg.first, arg.last),
@@ -188,7 +149,7 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
       column = token_column +
                static_cast<int>(lexer.GetTokenText(replace.token).size());
     }
-    Append(body.substr(column), GetColumn(start, column));
+    Append(body.substr(column), AdjustColumn(start, column));
     text_.push_back('\n');
   }
 }
@@ -212,7 +173,7 @@ gb::LexerLocation MacroExpansion::GetLocation(int line, int column) const {
       runs, offset,
       [](int offset, const Run& run) { return offset < run.offset; });
   const Run& run = *(it - 1);
-  return GetColumn(run.location, offset - run.offset);
+  return AdjustColumn(run.location, offset - run.offset);
 }
 
 }  // namespace oz3

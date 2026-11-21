@@ -24,8 +24,8 @@ namespace oz3 {
 
 // A macro defined with .MACRO: its name, parameters, and body.
 //
-// The body is the tokens of its lines, in the content the macro is defined
-// in, so the lexer that read them must outlive the macro.
+// Each is tokens of the content the macro is defined in, so the lexer that
+// read them must outlive the macro.
 class ProgramMacro final {
  public:
   // A token in a line of the body that each use of the macro replaces: a
@@ -46,15 +46,15 @@ class ProgramMacro final {
   };
 
   // Creates a macro with no lines yet. Its name and parameters are
-  // identifiers, so not register names, as the program lexer reads them, in
-  // upper case.
-  ProgramMacro(std::string_view name, std::vector<std::string> parameters);
+  // identifier tokens, so not register names, as the program lexer reads
+  // them, in upper case.
+  ProgramMacro(gb::Token name, std::vector<gb::Token> parameters);
   ProgramMacro(const ProgramMacro&) = delete;
   ProgramMacro& operator=(const ProgramMacro&) = delete;
   ~ProgramMacro() = default;
 
-  std::string_view GetName() const { return name_; }
-  absl::Span<const std::string> GetParameters() const { return parameters_; }
+  const gb::Token& GetName() const { return name_; }
+  absl::Span<const gb::Token> GetParameters() const { return parameters_; }
   absl::Span<const Line> GetLines() const { return lines_; }
 
   // Reads the next line `lexer` reads in `content`, which the program lexer
@@ -74,38 +74,21 @@ class ProgramMacro final {
   // Returns the index of the parameter `token` names, or -1 if it isn't one.
   int FindParameter(const gb::Token& token) const;
 
-  std::string name_;
-  std::vector<std::string> parameters_;
+  gb::Token name_;
+  std::vector<gb::Token> parameters_;
   std::vector<Line> lines_;
 };
 
 //==============================================================================
-// Macro arguments
+// MacroExpansion
 //==============================================================================
 
-// A macro argument: its first and last tokens, in the content of the line that
-// uses the macro.
+// A macro argument: its first and last tokens, on the line that uses the
+// macro.
 struct MacroArg {
   gb::Token first;
   gb::Token last;
 };
-
-// Reads a macro use's arguments into `args`, from the next token `lexer` reads
-// in `content`, which the program lexer reads, to the end of the line, which
-// it moves past.
-//
-// Each argument is the tokens between commas that aren't inside brackets ('(',
-// '[', or '{'), so "D(table), (R1)" is two arguments. A line with nothing more
-// on it has no arguments, which is valid. Returns false, leaving `args` empty,
-// if a token on the line can't be read, or an argument is empty (at the comma
-// after it, or for the last one, the comma before it), setting `error` to say
-// so.
-bool ReadMacroArgs(gb::Lexer& lexer, gb::LexerContentId content,
-                   std::vector<MacroArg>* args, gb::ParseError* error);
-
-//==============================================================================
-// MacroExpansion
-//==============================================================================
 
 // The text of one use of a macro, and where each part of it came from.
 //

@@ -43,12 +43,39 @@ class ProgramMacroTest : public ::testing::Test {
     return content;
   }
 
-  // Returns a macro whose body is every line of the file `filename`, holding
-  // `body`, which must read.
+  // Returns the tokens `lexer_` reads next in `content`, to the end of the
+  // line.
+  std::vector<gb::Token> ReadTokens(gb::LexerContentId content) {
+    std::vector<gb::Token> tokens;
+    for (gb::Token token = lexer_->NextToken(content);
+         token.GetType() != gb::kTokenLineBreak && !token.IsEnd();
+         token = lexer_->NextToken(content)) {
+      tokens.push_back(token);
+    }
+    return tokens;
+  }
+
+  // Returns a macro with no lines, named and with the parameters as
+  // `definition` writes them, as in "M PORT, REG".
+  std::unique_ptr<ProgramMacro> CreateMacro(std::string_view definition) {
+    std::vector<gb::Token> tokens =
+        ReadTokens(lexer_->AddContent(std::string(definition)));
+    EXPECT_FALSE(tokens.empty());
+    std::vector<gb::Token> parameters;
+    for (int i = 1; i < static_cast<int>(tokens.size()); ++i) {
+      if (!tokens[i].IsSymbol(',')) {
+        parameters.push_back(tokens[i]);
+      }
+    }
+    return std::make_unique<ProgramMacro>(tokens[0], std::move(parameters));
+  }
+
+  // Returns a macro defined by `definition` (see CreateMacro), whose body is
+  // every line of the file `filename`, holding `body`, which must read.
   std::unique_ptr<ProgramMacro> ReadMacro(std::string_view filename,
-                                          std::vector<std::string> parameters,
+                                          std::string_view definition,
                                           std::string_view body) {
-    auto macro = std::make_unique<ProgramMacro>("M", std::move(parameters));
+    std::unique_ptr<ProgramMacro> macro = CreateMacro(definition);
     const gb::LexerContentId content = AddFile(filename, body);
     while (lexer_->GetCurrentLine(content) < lexer_->GetLineCount(content)) {
       gb::ParseError error;
@@ -87,44 +114,6 @@ class ProgramMacroTest : public ::testing::Test {
     return replaces;
   }
 
-  // Returns the arguments `lexer_` reads next in `content`, which must read.
-  std::vector<MacroArg> ReadArgs(gb::LexerContentId content) {
-    std::vector<MacroArg> args;
-    gb::ParseError error;
-    EXPECT_TRUE(ReadMacroArgs(*lexer_, content, &args, &error))
-        << error.FormatMessage();
-    return args;
-  }
-
-  // Returns the text of each argument after the first token of `line`.
-  std::vector<std::string_view> ReadArgTexts(std::string_view line) {
-    const gb::LexerContentId content = AddFile("args.oza", line);
-    lexer_->NextToken(content);
-    std::vector<std::string_view> texts;
-    for (const MacroArg& arg : ReadArgs(content)) {
-      texts.push_back(GetText(arg.first, arg.last));
-    }
-    return texts;
-  }
-
-  // Returns the error reading the arguments after the first token of the file
-  // `filename`, holding `line`, which must fail.
-  gb::ParseError ReadArgsError(std::string_view filename,
-                               std::string_view line) {
-    const gb::LexerContentId content = AddFile(filename, line);
-    lexer_->NextToken(content);
-    std::vector<MacroArg> args;
-    gb::ParseError error;
-    EXPECT_FALSE(ReadMacroArgs(*lexer_, content, &args, &error));
-    EXPECT_THAT(args, IsEmpty());
-    return error;
-  }
-
-  // Returns the next token in the file `filename`.
-  gb::Token NextToken(std::string_view filename) {
-    return lexer_->NextToken(lexer_->GetFileContentId(filename));
-  }
-
   // Returns the location in `content`.
   gb::LexerLocation At(gb::LexerContentId content, int line, int column) {
     gb::LexerLocation location = lexer_->GetLineLocation(content, line);
@@ -151,7 +140,7 @@ TEST_F(ProgramMacroTest, ReplacesInALine) {
   // local label is replaced too. A line is from its first token to its last,
   // so not its comment.
   std::unique_ptr<ProgramMacro> macro =
-      ReadMacro("macros.oza", {"REG", "SIZE", "VALUE", "NAME"},
+      ReadMacro("macros.oza", "M REG, SIZE, VALUE, NAME",
                 "name:  ADD.size Reg, value+1 ; reg\n"
                 "  .DW 'reg', \"value\", @reg, regs, value\n");
   EXPECT_THAT(GetLineTexts(*macro),
@@ -169,7 +158,7 @@ TEST_F(ProgramMacroTest, ReplacesInALine) {
 
 TEST_F(ProgramMacroTest, LinesWithNoTokens) {
   // A line with no tokens, or only a comment, adds no line.
-  std::unique_ptr<ProgramMacro> macro = ReadMacro("macros.oza", {"REG"},
+  std::unique_ptr<ProgramMacro> macro = ReadMacro("macros.oza", "M REG",
                                                   "  NOP   ; A comment.\n"
                                                   "; Only a comment.\n"
                                                   "\n"
@@ -185,7 +174,7 @@ TEST_F(ProgramMacroTest, LinesWithNoTokens) {
 
 TEST_F(ProgramMacroTest, Labels) {
   // A label at the start of a line must be a local label or a parameter.
-  ProgramMacro macro("M", {"NAME"});
+  std::unique_ptr<ProgramMacro> macro = CreateMacro("M NAME");
   const gb::LexerContentId content = AddFile("macros.oza",
                                              "  name :  NOP\n"
                                              "  loop: JP loop\n"
@@ -193,24 +182,24 @@ TEST_F(ProgramMacroTest, Labels) {
                                              "  WAIT#1@loop: NOP\n"
                                              "  JP WAIT#1@loop\n");
   gb::ParseError error;
-  EXPECT_TRUE(macro.ReadLine(*lexer_, content, &error));
-  EXPECT_FALSE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_TRUE(macro->ReadLine(*lexer_, content, &error));
+  EXPECT_FALSE(macro->ReadLine(*lexer_, content, &error));
   EXPECT_EQ(error.GetLocation(), At("macros.oza", 1, 2));
   EXPECT_EQ(error.GetMessage(),
             "Macro M can't define label loop, only local labels and its "
             "parameters");
-  EXPECT_TRUE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_TRUE(macro->ReadLine(*lexer_, content, &error));
 
   // A macro label is only written by an expansion.
-  EXPECT_FALSE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_FALSE(macro->ReadLine(*lexer_, content, &error));
   EXPECT_EQ(error.GetLocation(), At("macros.oza", 3, 2));
   EXPECT_EQ(error.GetMessage(),
             "Macro label WAIT#1@loop can only be written by a macro's "
             "expansion");
-  EXPECT_FALSE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_FALSE(macro->ReadLine(*lexer_, content, &error));
   EXPECT_EQ(error.GetLocation(), At("macros.oza", 4, 5));
 
-  EXPECT_THAT(GetLineTexts(macro),
+  EXPECT_THAT(GetLineTexts(*macro),
               ElementsAre("name :  NOP", "@loop: JP loop"));
   EXPECT_EQ(lexer_->GetCurrentLine(content), lexer_->GetLineCount(content));
 }
@@ -218,77 +207,16 @@ TEST_F(ProgramMacroTest, Labels) {
 TEST_F(ProgramMacroTest, LineThatCantBeRead) {
   // A line with a token the lexer can't read isn't added, and the lexer goes
   // on to the next line.
-  ProgramMacro macro("M", {"REG"});
+  std::unique_ptr<ProgramMacro> macro = CreateMacro("M REG");
   const gb::LexerContentId content = AddFile("macros.oza",
                                              "  NOP 0FFFFFFFFFFFFFFFFFh reg\n"
                                              "  PUSH reg\n");
   gb::ParseError error;
-  EXPECT_FALSE(macro.ReadLine(*lexer_, content, &error));
+  EXPECT_FALSE(macro->ReadLine(*lexer_, content, &error));
   EXPECT_EQ(error.GetLocation(), At("macros.oza", 0, 6));
   EXPECT_FALSE(error.GetMessage().empty());
-  EXPECT_TRUE(macro.ReadLine(*lexer_, content, &error));
-  EXPECT_THAT(GetLineTexts(macro), ElementsAre("PUSH reg"));
-}
-
-//==============================================================================
-// Macro arguments
-//==============================================================================
-
-TEST_F(ProgramMacroTest, Args) {
-  // Commas inside brackets or strings don't separate arguments.
-  EXPECT_THAT(
-      ReadArgTexts("M D(table), (R1), 'a,b', [1, 2], {x, y}, \"c\""),
-      ElementsAre("D(table)", "(R1)", "'a,b'", "[1, 2]", "{x, y}", "\"c\""));
-  EXPECT_THAT(ReadArgTexts("M ((1, 2), 3), 4"),
-              ElementsAre("((1, 2), 3)", "4"));
-
-  // An argument is from its first token to its last, so not the comment.
-  EXPECT_THAT(ReadArgTexts("M   1 +  2  ,x ; a, b"),
-              ElementsAre("1 +  2", "x"));
-  EXPECT_THAT(ReadArgTexts("M ADD.W R1, 2"), ElementsAre("ADD.W R1", "2"));
-  EXPECT_THAT(ReadArgTexts("M"), IsEmpty());
-  EXPECT_THAT(ReadArgTexts("M ; Nothing."), IsEmpty());
-}
-
-TEST_F(ProgramMacroTest, ArgsMovePastTheLine) {
-  const gb::LexerContentId content = AddFile("args.oza", "M 1, 2\nNOP\n");
-  lexer_->NextToken(content);
-  const std::vector<MacroArg> args = ReadArgs(content);
-  ASSERT_EQ(args.size(), 2);
-  EXPECT_TRUE(args[0].first.IsInt(1));
-  EXPECT_TRUE(args[1].last.IsInt(2));
-  EXPECT_TRUE(lexer_->NextToken(content).IsIdent("NOP"));
-}
-
-TEST_F(ProgramMacroTest, EmptyArgs) {
-  // An empty argument is an error at the comma after it, or for the last
-  // one, the comma before it, and the lexer goes on to the next line.
-  gb::ParseError error = ReadArgsError("first.oza", "M ,1\nNOP\n");
-  EXPECT_EQ(error.GetLocation(), At("first.oza", 0, 2));
-  EXPECT_EQ(error.GetMessage(), "Macro argument is empty");
-  EXPECT_TRUE(NextToken("first.oza").IsIdent("NOP"));
-  error = ReadArgsError("middle.oza", "M 1,,2\nNOP\n");
-  EXPECT_EQ(error.GetLocation(), At("middle.oza", 0, 4));
-  EXPECT_TRUE(NextToken("middle.oza").IsIdent("NOP"));
-
-  // The last one's comma is before the comment, which the line break is
-  // after.
-  error = ReadArgsError("last.oza", "M 1, ; Note.\nNOP\n");
-  EXPECT_EQ(error.GetLocation(), At("last.oza", 0, 3));
-  EXPECT_TRUE(NextToken("last.oza").IsIdent("NOP"));
-  error = ReadArgsError("end.oza", "M 1,");
-  EXPECT_EQ(error.GetLocation(), At("end.oza", 0, 3));
-  EXPECT_TRUE(NextToken("end.oza").IsEnd());
-}
-
-TEST_F(ProgramMacroTest, ArgThatCantBeRead) {
-  // A line with a token the lexer can't read has no arguments, and the lexer
-  // goes on to the next line.
-  const gb::ParseError error =
-      ReadArgsError("error.oza", "M 1, 0FFFFFFFFFFFFFFFFFh, 2\nNOP\n");
-  EXPECT_EQ(error.GetLocation(), At("error.oza", 0, 5));
-  EXPECT_FALSE(error.GetMessage().empty());
-  EXPECT_TRUE(NextToken("error.oza").IsIdent("NOP"));
+  EXPECT_TRUE(macro->ReadLine(*lexer_, content, &error));
+  EXPECT_THAT(GetLineTexts(*macro), ElementsAre("PUSH reg"));
 }
 
 //==============================================================================
@@ -300,14 +228,16 @@ TEST_F(ProgramMacroTest, Expansion) {
   // each local label is renamed for the use, and each part of the text is
   // where it came from.
   std::unique_ptr<ProgramMacro> macro =
-      ReadMacro("macros.oza", {"PORT", "REG"},
+      ReadMacro("macros.oza", "M PORT, REG",
                 "@wait:  IN reg, port   ; Read.\n"
                 "        JZ reg, @wait\n"
                 "\n"
                 "        NOP\n");
-  const gb::LexerContentId use = AddFile("main.oza", "  M KEYBOARD, r1\n");
-  lexer_->NextToken(use);
-  const MacroExpansion expansion(*lexer_, *macro, 2, ReadArgs(use));
+  const std::vector<gb::Token> use =
+      ReadTokens(AddFile("main.oza", "  M KEYBOARD, r1\n"));
+  ASSERT_EQ(use.size(), 4);
+  const MacroExpansion expansion(*lexer_, *macro, 2,
+                                 {{use[1], use[1]}, {use[3], use[3]}});
   EXPECT_EQ(expansion.GetText(),
             "M#2@WAIT:  IN r1, KEYBOARD\n"
             "JZ r1, M#2@WAIT\n"
@@ -341,7 +271,7 @@ TEST_F(ProgramMacroTest, Expansion) {
 
 TEST_F(ProgramMacroTest, ExpansionWithNoParameters) {
   std::unique_ptr<ProgramMacro> macro =
-      ReadMacro("macros.oza", {}, "  NOP\n\n  HALT\n");
+      ReadMacro("macros.oza", "M", "  NOP\n\n  HALT\n");
   const MacroExpansion expansion(*lexer_, *macro, 1, {});
   EXPECT_EQ(expansion.GetText(), "NOP\nHALT\n");
   EXPECT_EQ(expansion.GetLocation(1, 3), At("macros.oza", 2, 5));
@@ -351,10 +281,12 @@ TEST_F(ProgramMacroTest, ExpansionThatStartsWithAParameter) {
   // A parameter used as a label is replaced like any other, so the use names
   // the label.
   std::unique_ptr<ProgramMacro> macro =
-      ReadMacro("macros.oza", {"NAME", "X"}, "name: .DW x,x\n");
-  const gb::LexerContentId use = AddFile("main.oza", "M Table, 1 + 2\n");
-  lexer_->NextToken(use);
-  const MacroExpansion expansion(*lexer_, *macro, 1, ReadArgs(use));
+      ReadMacro("macros.oza", "M NAME, X", "name: .DW x,x\n");
+  const std::vector<gb::Token> use =
+      ReadTokens(AddFile("main.oza", "M Table, 1 + 2\n"));
+  ASSERT_EQ(use.size(), 6);
+  const MacroExpansion expansion(*lexer_, *macro, 1,
+                                 {{use[1], use[1]}, {use[3], use[5]}});
   EXPECT_EQ(expansion.GetText(), "Table: .DW 1 + 2,1 + 2\n");
   EXPECT_EQ(expansion.GetLocation(0, 0), At("main.oza", 0, 2));
   EXPECT_EQ(expansion.GetLocation(0, 5), At("macros.oza", 0, 4));
@@ -367,12 +299,13 @@ TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
   // their text in its own expansion is there. A label the outer expansion
   // renamed is an argument like any other.
   std::unique_ptr<ProgramMacro> outer =
-      ReadMacro("outer.oza", {"X"}, "@L: INNER (x), @L\n");
+      ReadMacro("outer.oza", "M X", "@L: INNER (x), @L\n");
   std::unique_ptr<ProgramMacro> inner =
-      ReadMacro("inner.oza", {"V", "W"}, "  PUSH v\n  JP w\n");
-  const gb::LexerContentId use = AddFile("main.oza", "OUTER A + B\n");
-  lexer_->NextToken(use);
-  const MacroExpansion outer_expansion(*lexer_, *outer, 1, ReadArgs(use));
+      ReadMacro("inner.oza", "INNER V, W", "  PUSH v\n  JP w\n");
+  const std::vector<gb::Token> use =
+      ReadTokens(AddFile("main.oza", "OUTER A + B\n"));
+  ASSERT_EQ(use.size(), 4);
+  const MacroExpansion outer_expansion(*lexer_, *outer, 1, {{use[1], use[3]}});
   ASSERT_EQ(outer_expansion.GetText(), "M#1@L: INNER (A + B), M#1@L\n");
   EXPECT_EQ(outer_expansion.GetLocation(0, 14), At("main.oza", 0, 6));
   EXPECT_EQ(outer_expansion.GetLocation(0, 22), At("outer.oza", 0, 15));
@@ -380,19 +313,35 @@ TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
   // The use of INNER in the expansion, as the assembler reads it.
   const gb::LexerContentId outer_content =
       lexer_->AddContent(outer_expansion.GetText());
-  EXPECT_EQ(lexer_->NextToken(outer_content).GetType(), kTokenMacroLabel);
-  EXPECT_TRUE(lexer_->NextToken(outer_content).IsSymbol(':'));
-  EXPECT_TRUE(lexer_->NextToken(outer_content).IsIdent("INNER"));
-  const std::vector<MacroArg> args = ReadArgs(outer_content);
-  ASSERT_EQ(args.size(), 2);
-  EXPECT_TRUE(args[1].first.IsUser(kTokenMacroLabel, "M#1@L"));
+  const std::vector<gb::Token> inner_use = ReadTokens(outer_content);
+  ASSERT_EQ(inner_use.size(), 10);
+  EXPECT_TRUE(inner_use[0].IsUser(kTokenMacroLabel, "M#1@L"));
+  EXPECT_TRUE(inner_use[2].IsIdent("INNER"));
+  EXPECT_TRUE(inner_use[9].IsUser(kTokenMacroLabel, "M#1@L"));
 
-  const MacroExpansion inner_expansion(*lexer_, *inner, 1, args);
+  const MacroExpansion inner_expansion(
+      *lexer_, *inner, 1,
+      {{inner_use[3], inner_use[7]}, {inner_use[9], inner_use[9]}});
   EXPECT_EQ(inner_expansion.GetText(), "PUSH (A + B)\nJP M#1@L\n");
   EXPECT_EQ(inner_expansion.GetLocation(0, 0), At("inner.oza", 0, 2));
   EXPECT_EQ(inner_expansion.GetLocation(0, 5), At(outer_content, 0, 13));
   EXPECT_EQ(inner_expansion.GetLocation(0, 7), At(outer_content, 0, 15));
   EXPECT_EQ(inner_expansion.GetLocation(1, 3), At(outer_content, 0, 22));
+}
+
+TEST_F(ProgramMacroTest, ExpansionWithArgsThatArentRanges) {
+  // An argument whose tokens aren't a range on one line has no text.
+  std::unique_ptr<ProgramMacro> macro =
+      ReadMacro("macros.oza", "M X, Y", "  PUSH x\n  POP y\n");
+  const std::vector<gb::Token> use =
+      ReadTokens(AddFile("main.oza", "M 1, 2\nNOP\n"));
+  ASSERT_EQ(use.size(), 4);
+  const gb::Token next_line =
+      lexer_->NextToken(lexer_->GetFileContentId("main.oza"));
+  ASSERT_TRUE(next_line.IsIdent("NOP"));
+  const MacroExpansion expansion(*lexer_, *macro, 1,
+                                 {{use[3], use[1]}, {use[1], next_line}});
+  EXPECT_EQ(expansion.GetText(), "PUSH \nPOP \n");
 }
 
 }  // namespace
