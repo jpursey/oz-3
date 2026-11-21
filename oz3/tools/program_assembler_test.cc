@@ -2244,6 +2244,35 @@ TEST_F(ProgramAssemblerTest, MacroDefinitionErrors) {
           IsErrorAt(11, 0, "Unknown instruction LATER")));
 }
 
+TEST_F(ProgramAssemblerTest, MacroErrorLimit) {
+  // An error's uses don't count toward the limit.
+  std::string text = ".STACK 1\n.MACRO M\nFOO\n.ENDM\n";
+  for (int i = 0; i < kMaxProgramErrors + 10; ++i) {
+    absl::StrAppend(&text, "M\n");
+  }
+  std::vector<gb::ParseError> errors = AssembleErrors(text);
+  ASSERT_THAT(errors, SizeIs(kMaxProgramErrors * 2 + 1));
+  EXPECT_THAT(errors[kMaxProgramErrors * 2 - 1],
+              IsErrorAt(kMaxProgramErrors + 3, 0, "In M"));
+  EXPECT_THAT(errors.back(),
+              IsErrorAt(kMaxProgramErrors + 3, 0, "Stopped after 100 errors"));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLineErrors) {
+  // A .MACRO whose line is an error still defines its name, so its uses
+  // aren't errors too, and a label on a stray .ENDM is still defined.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO M a, 5\n"
+                             "  FOO\n"
+                             ".ENDM\n"
+                             "M 1, 2\n"
+                             "M\n"
+                             "a: .ENDM\n"
+                             ".DW a\n"),
+              ElementsAre(IsErrorAt(1, 12, ""),
+                          IsErrorAt(6, 3, ".ENDM has no .MACRO")));
+}
+
 TEST_F(ProgramAssemblerTest, MacroBodyErrors) {
   // An error in a body is reported where it is defined, and its uses expand
   // to nothing.

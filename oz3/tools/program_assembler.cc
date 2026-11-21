@@ -355,8 +355,9 @@ class ProgramAssembler final {
 
   // Returns the key of a label's upper case name in `scope`: the name itself,
   // or for a local label, the scope's label, then the name. A name can't have
-  // an "@" in it, so a local label's own "@" separates the two, and no label's
-  // key is another's.
+  // an "@" in it, so a local label's own "@" separates the two. A macro's
+  // renamed local label ("WAITIN#2@WAIT") is its name, whose "#" no name has,
+  // so no label's key is another's.
   std::string GetLabelKey(std::string_view scope, std::string_view name) const;
 
   // Returns the value of the symbol with an upper case name, used in `scope`.
@@ -544,9 +545,11 @@ class ProgramAssembler final {
   absl::flat_hash_map<std::string_view, Macro> macros_;
   absl::flat_hash_map<gb::LexerContentId, Expansion> expansions_;
 
-  // Errors, and each one's formatted message, to report each error once.
+  // Errors, and each one's formatted message, to report each error once. An
+  // error's uses follow it in `errors_`, but only it counts, in `error_count_`.
   std::vector<gb::ParseError> errors_;
   absl::flat_hash_set<std::string> error_messages_;
+  int error_count_ = 0;
   bool stopped_ = false;
 
   // Labels by key (see GetLabelKey), and constants by name. A label and a
@@ -737,7 +740,7 @@ void ProgramAssembler::AddError(gb::ParseError error) {
     return;
   }
   absl::c_move(errors, std::back_inserter(errors_));
-  if (static_cast<int>(errors_.size()) >= kMaxProgramErrors) {
+  if (++error_count_ >= kMaxProgramErrors) {
     errors_.emplace_back(
         errors_.back().GetLocation(),
         absl::StrCat("Stopped after ", kMaxProgramErrors, " errors"));
@@ -987,6 +990,9 @@ void ProgramAssembler::ReadLine(gb::LexerContentId content,
     }
     if (name == "ENDM") {
       Error(directive->GetToken(), ".ENDM has no .MACRO");
+      if (label != nullptr) {
+        ReadLabel(*label);
+      }
       return;
     }
   }
@@ -1011,13 +1017,22 @@ bool ProgramAssembler::ReadInvalidLine(gb::LexerContentId content,
       line.IsOk() ? line->GetItem("directive") : nullptr;
   const std::string_view name =
       directive != nullptr ? directive->GetString("directive") : "";
+  const gb::Token next = lexer.NextToken(content, /*advance=*/false);
   lexer.NextLine(content);
   if (const Conditional conditional = GetConditional(name);
       conditional != Conditional::kNone) {
     ReadInvalidConditional(conditional, *directive, ifs);
   } else if (name == "MACRO") {
-    // A .MACRO is still a body's start, which isn't assembled.
+    // A .MACRO is still a body's start, which isn't assembled. A name it can
+    // have is still defined, as a macro whose uses are already errors here.
     ReadMacroBody(content, directive->GetToken(), nullptr);
+    if (next.IsIdent() && !expansions_.contains(content) &&
+        syntax_->GetForms(next.GetString()).empty()) {
+      macros_.try_emplace(next.GetString(),
+                          Macro{.macro = std::make_unique<ProgramMacro>(
+                                    next, std::vector<gb::Token>()),
+                                .valid = false});
+    }
   }
   return lexer.GetCurrentLine(content) != line_index;
 }
@@ -1258,7 +1273,12 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
                     .last = arg.GetItems("tokens").back().GetToken("last")});
   }
 
+  // An invalid macro's uses expand to nothing, as its error is already
+  // reported.
   Macro& macro = it->second;
+  if (!macro.valid) {
+    return true;
+  }
   const ProgramMacro* definition = macro.macro.get();
   const int arg_count = static_cast<int>(args.size());
   const int parameter_count =
@@ -1278,9 +1298,6 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
             absl::StrCat("Macro ", name.GetString(), " can't use itself"));
       return true;
     }
-  }
-  if (!macro.valid) {
-    return true;
   }
   auto expansion =
       std::make_unique<MacroExpansion>(lexer, *definition, ++macro.uses, args);
