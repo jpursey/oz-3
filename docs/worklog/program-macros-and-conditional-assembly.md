@@ -525,7 +525,7 @@ Depends on: nothing.
   location, for the body, arguments, and renamed labels, at the start, middle,
   and end of a line; a use inside an expansion, whose locations are in the
   outer expansion's content; a body line the lexer can't read; an argument
-  that isn't a range on one line.
+  whose last token is before its first.
 
 ### CL4 [ ] tools: macros
 

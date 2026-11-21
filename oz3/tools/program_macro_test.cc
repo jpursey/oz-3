@@ -329,19 +329,16 @@ TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
   EXPECT_EQ(inner_expansion.GetLocation(1, 3), At(outer_content, 0, 22));
 }
 
-TEST_F(ProgramMacroTest, ExpansionWithArgsThatArentRanges) {
-  // An argument whose tokens aren't a range on one line has no text.
+TEST_F(ProgramMacroTest, ExpansionWithArgOutOfOrder) {
+  // An argument whose last token is before its first has no text.
   std::unique_ptr<ProgramMacro> macro =
       ReadMacro("macros.oza", "M X, Y", "  PUSH x\n  POP y\n");
   const std::vector<gb::Token> use =
-      ReadTokens(AddFile("main.oza", "M 1, 2\nNOP\n"));
+      ReadTokens(AddFile("main.oza", "M 1, 2\n"));
   ASSERT_EQ(use.size(), 4);
-  const gb::Token next_line =
-      lexer_->NextToken(lexer_->GetFileContentId("main.oza"));
-  ASSERT_TRUE(next_line.IsIdent("NOP"));
   const MacroExpansion expansion(*lexer_, *macro, 1,
-                                 {{use[3], use[1]}, {use[1], next_line}});
-  EXPECT_EQ(expansion.GetText(), "PUSH \nPOP \n");
+                                 {{use[3], use[1]}, {use[1], use[3]}});
+  EXPECT_EQ(expansion.GetText(), "PUSH \nPOP 1, 2\n");
 }
 
 }  // namespace

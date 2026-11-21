@@ -21,21 +21,25 @@ bool IsLineEnd(const gb::Token& token) {
 }
 
 // Returns the text from the start of `first` to the end of `last`, or an empty
-// string if they aren't on the same line, with `first` no later than `last`.
+// string if either has no text, they are in different content, or `last` is
+// before `first`.
 std::string_view GetTokensText(const gb::Lexer& lexer, const gb::Token& first,
                                const gb::Token& last) {
+  const std::string_view first_text = lexer.GetTokenText(first);
+  const std::string_view last_text = lexer.GetTokenText(last);
   const gb::LexerLocation first_location = lexer.GetTokenLocation(first);
   const gb::LexerLocation last_location = lexer.GetTokenLocation(last);
-  if (first_location.id == gb::kNoLexerContent ||
+  if (first_text.empty() || last_text.empty() ||
       first_location.id != last_location.id ||
-      first_location.line != last_location.line ||
-      first_location.column > last_location.column) {
+      last_location.line < first_location.line ||
+      (last_location.line == first_location.line &&
+       last_location.column < first_location.column)) {
     return {};
   }
-  const int end =
-      last_location.column + static_cast<int>(lexer.GetTokenText(last).size());
-  return lexer.GetLineText(first_location.id, first_location.line)
-      .substr(first_location.column, end - first_location.column);
+
+  // A token's text is a view of its content's text, which is one string.
+  const char* const end = last_text.data() + last_text.size();
+  return std::string_view(first_text.data(), end - first_text.data());
 }
 
 // Returns `location`, moved right by `columns`.
