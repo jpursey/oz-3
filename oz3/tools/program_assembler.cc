@@ -24,6 +24,7 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
@@ -103,11 +104,6 @@ Conditional GetConditional(std::string_view name) {
     return Conditional::kEndIf;
   }
   return Conditional::kNone;
-}
-
-// Returns true if `token` ends a line: a line break, or the end of the content.
-bool IsLineEnd(const gb::Token& token) {
-  return token.GetType() == gb::kTokenLineBreak || token.IsEnd();
 }
 
 }  // namespace
@@ -270,10 +266,11 @@ class ProgramAssembler final {
     int uses = 0;
   };
 
-  // A use's expansion, which is read as content of its own, and the macro's
-  // name where it is used.
+  // A use's expansion, which is read as content of its own, the macro it
+  // expands, and the macro's name where it is used.
   struct Expansion {
     std::unique_ptr<MacroExpansion> text;
+    const ProgramMacro* macro = nullptr;
     gb::Token use;
   };
 
@@ -331,6 +328,9 @@ class ProgramAssembler final {
   // if it is in a macro's expansion, where that text was copied from,
   // followed through each expansion it is in to a file.
   gb::LexerLocation GetSourceLocation(gb::LexerLocation location) const;
+
+  // Returns the expansion read as `content`, or null if it isn't one.
+  const Expansion* FindExpansion(gb::LexerContentId content) const;
 
   // Returns the start of the main file, for errors in the program as a whole.
   gb::LexerLocation GetMainLocation() const;
@@ -539,11 +539,10 @@ class ProgramAssembler final {
   std::vector<std::string> file_paths_;
   absl::flat_hash_map<gb::LexerContentId, int> file_indices_;
 
-  // Macros by name, each expansion by its content, and the macros being
-  // expanded, from the outermost use in. A name is a view of its token.
+  // Macros by name, and each expansion by its content. A name is a view of its
+  // token.
   absl::flat_hash_map<std::string_view, Macro> macros_;
   absl::flat_hash_map<gb::LexerContentId, Expansion> expansions_;
-  std::vector<const ProgramMacro*> expanding_;
 
   // Errors, and each one's formatted message, to report each error once.
   std::vector<gb::ParseError> errors_;
@@ -721,12 +720,11 @@ void ProgramAssembler::AddError(gb::ParseError error) {
   gb::LexerContentId content = error.GetLocation().id;
   errors.emplace_back(GetSourceLocation(error.GetLocation()),
                       error.GetMessage());
-  for (auto it = expansions_.find(content); it != expansions_.end();
-       it = expansions_.find(content)) {
-    const gb::Token& use = it->second.use;
-    const gb::LexerLocation location = GetLexer().GetTokenLocation(use);
+  while (const Expansion* expansion = FindExpansion(content)) {
+    const gb::LexerLocation location =
+        GetLexer().GetTokenLocation(expansion->use);
     errors.emplace_back(GetSourceLocation(location),
-                        absl::StrCat("In ", use.GetString()));
+                        absl::StrCat("In ", expansion->use.GetString()));
     content = location.id;
   }
 
@@ -753,15 +751,20 @@ void ProgramAssembler::Error(const gb::Token& token, std::string_view message) {
 
 gb::LexerLocation ProgramAssembler::GetSourceLocation(
     gb::LexerLocation location) const {
-  for (auto it = expansions_.find(location.id); it != expansions_.end();
-       it = expansions_.find(location.id)) {
+  while (const Expansion* expansion = FindExpansion(location.id)) {
     // An error can be at the end of an expansion, past its last line.
-    const MacroExpansion& expansion = *it->second.text;
-    location = expansion.GetLocation(
-        std::clamp(location.line, 0, expansion.GetLineCount() - 1),
-        std::max(location.column, 0));
+    const MacroExpansion& text = *expansion->text;
+    location =
+        text.GetLocation(std::clamp(location.line, 0, text.GetLineCount() - 1),
+                         std::max(location.column, 0));
   }
   return location;
+}
+
+const ProgramAssembler::Expansion* ProgramAssembler::FindExpansion(
+    gb::LexerContentId content) const {
+  auto it = expansions_.find(content);
+  return it != expansions_.end() ? &it->second : nullptr;
 }
 
 gb::LexerLocation ProgramAssembler::GetMainLocation() const {
@@ -1022,11 +1025,18 @@ bool ProgramAssembler::ReadInvalidLine(gb::LexerContentId content,
 bool ProgramAssembler::ValidateNoMacroLabel(gb::LexerContentId content) {
   gb::Lexer& lexer = GetLexer();
   const gb::Token start = lexer.NextToken(content, /*advance=*/false);
+
+  // Only a macro label has a '#', apart from a comment.
+  if (!absl::StrContains(
+          lexer.GetLineText(content, lexer.GetTokenLocation(start).line),
+          '#')) {
+    return true;
+  }
   bool valid = true;
   for (gb::Token token = lexer.NextToken(content); !IsLineEnd(token);
        token = lexer.NextToken(content)) {
     if (token.GetType() == kTokenMacroLabel) {
-      Error(token, absl::StrCat("Macro label ", GetLexer().GetTokenText(token),
+      Error(token, absl::StrCat("Macro label ", lexer.GetTokenText(token),
                                 " can only be written by a macro's expansion"));
       valid = false;
       break;
@@ -1074,7 +1084,7 @@ void ProgramAssembler::ReadDirective(const gb::ParsedItem& directive) {
 
 void ProgramAssembler::ReadInclude(const gb::ParsedItem& directive) {
   const gb::Token token = directive.GetToken("path");
-  if (!expanding_.empty()) {
+  if (expansions_.contains(GetLexer().GetTokenLocation(token).id)) {
     Error(directive.GetToken(), "A macro's body can't include a file");
     return;
   }
@@ -1108,7 +1118,7 @@ void ProgramAssembler::ReadMacro(gb::LexerContentId content,
   // A body's .MACRO is an error where the body is defined, so one here is
   // only from an argument.
   const gb::Token token = directive.GetToken();
-  if (!expanding_.empty()) {
+  if (expansions_.contains(content)) {
     Error(token, ".MACRO can't be in a macro's body");
     return;
   }
@@ -1175,16 +1185,19 @@ bool ProgramAssembler::ReadMacroBody(gb::LexerContentId content,
       lexer.NextLine(content);
       return valid;
     }
-    if (name == "MACRO" || nested > 0) {
-      if (name == "MACRO") {
-        if (nested == 0) {
-          Error(directive->GetToken(), ".MACRO can't be in a macro's body");
-        }
-        ++nested;
-      } else if (name == "ENDM") {
+    if (name == "MACRO") {
+      if (nested == 0) {
+        Error(directive->GetToken(), ".MACRO can't be in a macro's body");
+      }
+      ++nested;
+      valid = false;
+      lexer.NextLine(content);
+      continue;
+    }
+    if (nested > 0) {
+      if (name == "ENDM") {
         --nested;
       }
-      valid = false;
       lexer.NextLine(content);
       continue;
     }
@@ -1196,7 +1209,8 @@ bool ProgramAssembler::ReadMacroBody(gb::LexerContentId content,
     // A constant's name is defined again at each use, so only a parameter can
     // name it. The lexer is after the directive's name.
     if (name == "CONST") {
-      if (const gb::Token constant = lexer.NextToken(content, false);
+      if (const gb::Token constant =
+              lexer.NextToken(content, /*advance=*/false);
           constant.IsIdent() && macro->FindParameter(constant) < 0) {
         Error(constant,
               absl::StrCat("Macro ", macro->GetName().GetString(),
@@ -1244,7 +1258,6 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
                     .last = arg.GetItems("tokens").back().GetToken("last")});
   }
 
-  // Reading the expansion can define macros, so `it` is only used before.
   Macro& macro = it->second;
   const ProgramMacro* definition = macro.macro.get();
   const int arg_count = static_cast<int>(args.size());
@@ -1257,9 +1270,14 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
                        ", not ", arg_count));
     return true;
   }
-  if (absl::c_linear_search(expanding_, definition)) {
-    Error(name, absl::StrCat("Macro ", name.GetString(), " can't use itself"));
-    return true;
+  for (const Expansion* expansion = FindExpansion(content);
+       expansion != nullptr;
+       expansion = FindExpansion(lexer.GetTokenLocation(expansion->use).id)) {
+    if (expansion->macro == definition) {
+      Error(name,
+            absl::StrCat("Macro ", name.GetString(), " can't use itself"));
+      return true;
+    }
   }
   if (!macro.valid) {
     return true;
@@ -1276,10 +1294,9 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
                              " has too many lines, or a line too long"));
     return true;
   }
-  expansions_[expansion_content] = {.text = std::move(expansion), .use = name};
-  expanding_.push_back(definition);
+  expansions_[expansion_content] = {
+      .text = std::move(expansion), .macro = definition, .use = name};
   ReadContent(expansion_content);
-  expanding_.pop_back();
   return true;
 }
 
@@ -1974,7 +1991,7 @@ std::optional<uint32_t> ProgramAssembler::EvaluateAddress(
   if (!segments_[role_segment].name.has_value() && !bare_error_.has_value() &&
       (bank == CpuCore::STACK || bank == CpuCore::EXTRA)) {
     const gb::LexerLocation location =
-        GetLexer().GetTokenLocation(expression.GetToken());
+        GetSourceLocation(GetLexer().GetTokenLocation(expression.GetToken()));
     bare_error_ = absl::StrCat(
         "The label at ", location.filename, "(", location.line + 1, ":",
         location.column + 1, ") is in an address from ",
@@ -2191,9 +2208,8 @@ ProgramMap ProgramAssembler::BuildMap() {
 ProgramMap::Location ProgramAssembler::GetMapLocation(
     const gb::Token& token) const {
   gb::LexerLocation location = GetLexer().GetTokenLocation(token);
-  for (auto it = expansions_.find(location.id); it != expansions_.end();
-       it = expansions_.find(location.id)) {
-    location = GetLexer().GetTokenLocation(it->second.use);
+  while (const Expansion* expansion = FindExpansion(location.id)) {
+    location = GetLexer().GetTokenLocation(expansion->use);
   }
 
   // Every token outside an expansion is in a content AddContent() added.

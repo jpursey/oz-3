@@ -16,10 +16,6 @@ namespace oz3 {
 
 namespace {
 
-bool IsLineEnd(const gb::Token& token) {
-  return token.GetType() == gb::kTokenLineBreak || token.IsEnd();
-}
-
 // Returns the text from the start of `first` to the end of `last`, or an empty
 // string if either has no text, they are in different content, or `last` is
 // before `first`.

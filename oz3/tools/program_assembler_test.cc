@@ -2065,7 +2065,7 @@ TEST_F(ProgramAssemblerTest, MacroIf) {
 
 TEST_F(ProgramAssemblerTest, MacroLocalLabels) {
   // Each use has its own local labels, which don't end the caller's scope.
-  const ProgramMap map = AssembleMap(
+  const std::string_view text =
       ".STACK 1\n"
       ".MACRO HERE\n"
       "  @here: .DW @here\n"
@@ -2074,7 +2074,8 @@ TEST_F(ProgramAssemblerTest, MacroLocalLabels) {
       "HERE\n"
       "@here: .DW @here\n"
       "HERE\n"
-      ".DW @here\n");
+      ".DW @here\n";
+  const ProgramMap map = AssembleMap(text);
   EXPECT_THAT(map.GetLabels(),
               ElementsAre(MapLabel{.name = "HERE#1@HERE",
                                    .segment = 0,
@@ -2092,16 +2093,7 @@ TEST_F(ProgramAssemblerTest, MacroLocalLabels) {
                                    .segment = 0,
                                    .offset = 2,
                                    .location = {.file = 0, .line = 7}}));
-  EXPECT_THAT(AssembleWords(".STACK 1\n"
-                            ".MACRO HERE\n"
-                            "  @here: .DW @here\n"
-                            ".ENDM\n"
-                            "start:\n"
-                            "HERE\n"
-                            "@here: .DW @here\n"
-                            "HERE\n"
-                            ".DW @here\n"),
-              ElementsAre(0, 1, 2, 1));
+  EXPECT_THAT(AssembleWords(text), ElementsAre(0, 1, 2, 1));
 }
 
 TEST_F(ProgramAssemblerTest, MacroCallerLocalLabel) {
@@ -2343,6 +2335,21 @@ TEST_F(ProgramAssemblerTest, MacroLabelsInSource) {
           IsErrorAt(11, 6,
                     "Macro label G#4@H can only be written by a macro's "
                     "expansion")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroBareProgramAddress) {
+  // A label in an address that keeps a program from being bare is reported
+  // where the macro's body wrote it.
+  std::unique_ptr<AsmProgram> program = AssembleAsmProgram(
+      ".STACK 4\n"
+      ".MACRO LOAD\n"
+      "LDA R1, S(value)\n"
+      ".ENDM\n"
+      "LOAD\n"
+      "value: .DS 1\n");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              HasSubstr("(3:11) is in an address from BS"));
 }
 
 TEST_F(ProgramAssemblerTest, MacroErrorsInUses) {

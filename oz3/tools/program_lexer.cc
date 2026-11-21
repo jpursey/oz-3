@@ -144,6 +144,10 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
   return words;
 }
 
+bool IsLineEnd(const gb::Token& token) {
+  return token.GetType() == gb::kTokenLineBreak || token.IsEnd();
+}
+
 std::string FormatHexNumber(uint32_t value, int digits) {
   std::string text = absl::StrFormat("%0*Xh", digits, value);
   if (text[0] >= 'A') {

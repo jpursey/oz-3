@@ -398,7 +398,8 @@ class MacroExpansion final {
 
 **Brittleness:** the assembler must turn an expansion's tokens into locations
 through its expansion, rather than through the lexer's location. It does so
-only in `AddError` and `GetMapLocation`, each through one helper, and
+only in `AddError`, `GetMapLocation`, and a bare program's error, each through
+one helper, and
 `MacroExpansion` builds its runs with its text, so they can't disagree.
 
 ### Constants from the host

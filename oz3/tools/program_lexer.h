@@ -51,6 +51,9 @@ static_assert(kTokenMacroLabel == gb::kTokenUser + 1);
 // - Comments from ';' to the end of the line, and line breaks as tokens.
 const gb::LexerConfig& GetProgramLexerConfig();
 
+// Returns true if `token` ends a line: a line break, or the end of the content.
+bool IsLineEnd(const gb::Token& token);
+
 // Returns the words of a string token that `lexer` read:
 // - 'Hello' is one character per word.
 // - "Hello" is two characters per word, the first in the low byte, and the
