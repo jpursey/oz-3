@@ -42,6 +42,10 @@ constexpr gb::LexerConfig::UserToken kUserTokens[] = {
      .type = kTokenLocalLabel,
      .regex = R"-((@[a-zA-Z_]\w*))-",
      .value_case = gb::LexerCase::kUpper},
+    {.name = "macro label",
+     .type = kTokenMacroLabel,
+     .regex = R"-(([a-zA-Z_]\w*#[0-9]+@[a-zA-Z_]\w*))-",
+     .value_case = gb::LexerCase::kUpper},
 };
 
 // The registers a program can name, which are the word registers R0 to SP,

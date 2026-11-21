@@ -22,10 +22,19 @@ namespace oz3 {
 // token turned to upper case, with the "@" ("@LOOP"), as an identifier's is.
 inline constexpr gb::TokenType kTokenLocalLabel = gb::kTokenUser + 0;
 
+// The token type of a local label that a macro's body writes, renamed for one
+// use of the macro, such as "WAITIN#2@WAIT": the macro's name, the use's
+// number, and the label. Its value is the whole token turned to upper case.
+// Only a macro's expansion writes one (see MacroExpansion).
+inline constexpr gb::TokenType kTokenMacroLabel = gb::kTokenUser + 1;
+
 // Declares the program lexer's user tokens for a parser program, as
-// %local_label. The number is the token type's offset from gb::kTokenUser.
-inline constexpr std::string_view kProgramParserTokens = "%local_label = 0;\n";
+// %local_label and %macro_label. The number is the token type's offset from
+// gb::kTokenUser.
+inline constexpr std::string_view kProgramParserTokens =
+    "%local_label = 0;\n%macro_label = 1;\n";
 static_assert(kTokenLocalLabel == gb::kTokenUser + 0);
+static_assert(kTokenMacroLabel == gb::kTokenUser + 1);
 
 // Returns the lexer configuration for program source:
 // - Decimal numbers, hex numbers with an "h" suffix that start with a digit
@@ -37,7 +46,8 @@ static_assert(kTokenLocalLabel == gb::kTokenUser + 0);
 //   R7, BC, BS, BD, BE, MB, IP, FP, SP, and D0 to D3) are keywords in any
 //   case, so they are never identifiers.
 // - Strings in single or double quotes, with a quote inside doubled.
-// - Local labels (kTokenLocalLabel), turned to upper case.
+// - Local labels (kTokenLocalLabel), and the local labels of a macro's use
+//   (kTokenMacroLabel), turned to upper case.
 // - Comments from ';' to the end of the line, and line breaks as tokens.
 const gb::LexerConfig& GetProgramLexerConfig();
 
