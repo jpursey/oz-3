@@ -136,7 +136,8 @@ that assembles today changes.
 **Defining:**
 - The lines between `.MACRO` and `.ENDM` are the macro's **body**, which isn't
   assembled where it is written, only where it is used. Its lines are read
-  only to find the `.ENDM`, and to report a token the lexer can't read.
+  only to find the `.ENDM`, and to report a token the lexer can't read or a
+  label the body can't define (see Labels in a body).
 - **The name** is a name (a C identifier), defined once, and global to the
   program, across include files, as symbols are. It can't be the name of an
   instruction, with or without an extension, as a statement means one thing:
@@ -180,11 +181,15 @@ that assembles today changes.
 - **A local label in an argument** is the caller's, as the caller wrote it, so
   `JZ R2, @done` jumps to the caller's `@done`, even if the macro has a
   `@done` of its own.
-- **A label the body writes,** or that an argument gives it, is defined as if
-  it were written where the macro is used: it is global, starts a scope for the
-  caller's local labels after it, and a second use defining it again is an
-  error. So a body defines a label from a parameter (`name:`) rather than
-  writing one.
+- **A label from a parameter** (`name:`) is the caller's, named by the
+  argument, and is defined as if it were written where the macro is used: it
+  is global, starts a scope for the caller's local labels after it (in the
+  rest of the use's arguments too), and a second use defining it again is an
+  error.
+- **A label the body writes itself** (`loop:`) is an error where the macro is
+  defined, as every use would define it again. So is a constant the body
+  defines with a name of its own (`.CONST LIMIT = 5`), rather than a
+  parameter's (`.CONST name = value`).
 
 **Where its words are:** a macro is used like an instruction, so everything a
 use defines and writes is at the line that uses it, in the map and the
@@ -193,9 +198,16 @@ with its location and words, as it does for a file included more than once.
 A debugger shows the line for every word the macro wrote.
 
 **Errors** inside a use are at the token at fault where it was written: in the
-body, or in the argument at the use. Each says where the macro was used, from
-the innermost use out: `macros.oza(5:8): PORTT is not defined (in WAITIN at
-main.oza(12:5))`.
+body, or in the argument at the use. Each is followed by where the macro was
+used, from the innermost use out, so an error two macros deep lists the place
+in the inner macro's body, the line in the outer macro's body that used it, and
+the line in the file that used the outer macro:
+
+```
+macros.oza(5:8): PORTT is not defined
+macros.oza(14:4): In WAITIN
+main.oza(12:5): In WAITALL
+```
 
 ### Constants from the host (manual's Program Source, Assembling a program and oz3asm)
 
@@ -266,97 +278,126 @@ unrelated to an instruction's macro argument.
 
 ### Macros
 
+A macro is token substitution: its body is token ranges in the content it was
+defined in, and a use replaces each parameter token with its argument's tokens'
+text. The assembler reads the result as it reads an included file.
+
 ```
 // oz3/tools/program_macro.h
 
-// Where a piece of text came from: a place in a source file, and the scope
-// its local labels are in.
-struct SourceOrigin {
-  gb::LexerLocation location;  // In a file's content, never an expansion's.
-  std::string_view scope;      // The key prefix of its local labels.
-};
-
-// A macro defined with .MACRO: its name, parameters, and body.
+// A macro defined with .MACRO: its name, parameters, and body, which are
+// tokens of the content it is defined in.
 class ProgramMacro final {
  public:
-  // A line of the body: its text, without its comment, and each place a
-  // parameter is in it, by column and size.
-  struct Line {
-    std::string text;
-    gb::LexerLocation location;
-    struct Parameter { int column; int size; int index; };
-    std::vector<Parameter> parameters;
+  // A token each use replaces: a parameter, or a local label.
+  struct Replace {
+    static constexpr int kLocalLabel = -1;
+    gb::Token token;
+    int parameter = kLocalLabel;
   };
 
-  ProgramMacro(gb::Token name, std::vector<std::string> parameters,
-               std::vector<Line> lines);
+  // A line of the body that has tokens.
+  struct Line {
+    gb::Token first;
+    gb::Token last;
+    std::vector<Replace> replaces;
+  };
 
-  std::string_view GetName() const;
-  absl::Span<const std::string> GetParameters() const;
+  ProgramMacro(gb::Token name, std::vector<gb::Token> parameters);
+
+  const gb::Token& GetName() const;
+  absl::Span<const gb::Token> GetParameters() const;
   absl::Span<const Line> GetLines() const;
+
+  // Reads the lexer's next line as the body's next line, and moves past it.
+  // A line with no tokens adds no line. Returns false, setting `error`, if a
+  // token can't be read, or the line defines a label the body can't.
+  bool ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
+                gb::ParseError* error);
 };
 
-// The text of one use of a macro, with where each piece of it came from.
+// A macro argument: its first and last tokens, on the use's line.
+struct MacroArg {
+  gb::Token first;
+  gb::Token last;
+};
+
+// The text of one use of a macro, and where each part of it came from.
 class MacroExpansion final {
  public:
-  // An argument: its text, and where each piece of it came from, which is
-  // the caller's line's origins over its columns.
-  struct Arg { ... };
+  // Expands use number `use` of `macro` with `args`, one for each parameter.
+  MacroExpansion(const gb::Lexer& lexer, const ProgramMacro& macro, int use,
+                 absl::Span<const MacroArg> args);
 
-  // Expands `macro` with `args`, one for each parameter. `scope` is this
-  // use's own scope ("WAITIN#2"), for the local labels the body writes.
-  MacroExpansion(const ProgramMacro* macro, absl::Span<const Arg> args,
-                 std::string scope, SourceOrigin use);
+  const std::string& GetText() const;  // A line for each of the body's.
+  int GetLineCount() const;
 
-  // The text, a line for each of the body's.
-  const std::string& GetText() const;
-
-  // Returns where the text at `line` and `column` came from.
-  SourceOrigin GetOrigin(int line, int column) const;
-
-  // Returns where the macro was used, in a file: the outermost use's line.
-  const SourceOrigin& GetUse() const;
+  // Returns where the text at `line` and `column` came from: in the body, or
+  // in an argument's content.
+  gb::LexerLocation GetLocation(int line, int column) const;
 };
 ```
 
 - **The body is lexed once,** when `.MACRO` is read, a line at a time with the
-  assembler's lexer, to find `.ENDM`, and each identifier that is a
-  parameter's name. Each line keeps its text up to its last token, so its
-  comment is dropped.
-- **An expansion is text,** built by copying each body line, with each
-  parameter replaced by its argument's text. Each piece of the text keeps its
-  origin: a body piece is its place in the body, in the macro's scope; an
-  argument piece is its place where the caller wrote it, and the caller's
-  scope. An argument from a line that is itself in an expansion takes that
-  line's origins, so every origin is in a file, however deeply macros use
-  macros, and is found without following a chain.
+  assembler's lexer, to find `.ENDM`. Each line with tokens keeps its first
+  and last token, and each token a use replaces: an identifier that is a
+  parameter's name, and every local label.
+- **An expansion is text:** each body line's text from its first token to its
+  last (so without its comment), with each parameter replaced by its
+  argument's text, and each local label renamed for the use (`@WAIT` in the
+  second use of `WAITIN` is `WAITIN#2@WAIT`). A run for each part of a line
+  says where it was copied from, which `GetLocation` reads.
+- **A use's arguments** are token ranges in the use's content, so in an
+  expansion's content for a use inside a macro. An expansion's locations are
+  in the body, or in that content, so a location in an expansion's content is
+  followed through it to the expansion that wrote it, and so on to a file.
 - **The assembler reads an expansion as content of its own:** it adds the text
-  to its lexer (`gb::Lexer::AddContent`) and reads it with `ReadContent`, as it
-  does an included file. Each expansion stays alive as long as the assembler,
-  as its tokens do. Lines don't change in number, so a token's line in the
-  expansion is its body line.
-- **Local labels** are keyed by scope, as now (`GetLabelKey`). A token in a
-  file is in the scope its statement is in, as now, and a token in an
-  expansion is in its origin's scope: the use's own for the body's, and the
-  caller's for an argument's. So `ExpressionContext::GetSymbolValue` gains the
-  symbol's token, which `StatementContext` looks up through the expansion
-  that has its content.
+  to its lexer (`gb::Lexer::AddContent`) and reads it with `ReadContent`, with
+  its own `.IF` stack, as it does an included file. Each expansion stays alive
+  as long as the assembler, as its tokens do. The assembler keeps a stack of
+  the macros being expanded, each with its use's location, which stops a macro
+  using itself, and which an error lists from the innermost use out.
+- **Local labels** need no scope of their own: a renamed label is a
+  `kTokenMacroLabel` token, whose name is already unique, so `GetLabelKey`
+  leaves it as it is, and it never changes the scope. A local label in an
+  argument is copied as the caller wrote it, so it is in the scope the
+  expansion is read in, which is the caller's. A macro label written in a file
+  or a body is an error: `ReadLine` finds one in a body, and the assembler
+  one in a file's line, including a use's arguments, which the grammar can't
+  reject, as a renamed label is a valid argument in an expansion.
 - **Errors** are added through `AddError`, which already sees every one. One
-  whose location is in an expansion's content is moved to its origin, and
-  gains each use it is in, from the innermost out.
+  whose location is in an expansion's content is moved to where that text
+  came from, following the chain to a file, and is followed by an error at
+  each use on the stack.
 - **The map** gets every location from `GetMapLocation`, which maps a token in
   an expansion to its outermost use's line. Nothing in the map, its file, or the
   listing changes: a line already can have several statements.
 - **Uses** are found in `ReadInstruction`: a name with no extension that is a
-  macro's is expanded, before any form is matched. The arguments are split at
-  each comma outside brackets, from the instruction's `$args`.
+  macro's is expanded, before any form is matched. The line is parsed again
+  with the grammar's `MacroUse` rule, whose arguments are each one or more
+  tokens up to a comma outside brackets, read as `ArgToken` reads brackets,
+  with an empty one an error at the token after its comma. Each gives its
+  first token and its last, which is a `MacroArg`:
 
-**Brittleness:** each expansion's origins must cover its whole text, and the
-assembler must look every expansion token up through them, rather than
-through the lexer's location. Both are kept in one place each:
-`MacroExpansion` builds the origins with the text, so they can't disagree, and
-the assembler turns tokens into locations only in `AddError`,
-`GetMapLocation`, and `StatementContext`, each through one helper.
+  ```
+  MacroUse {
+    $name=%ident $args=MacroArg,* EndOfLine;
+  }
+  MacroArg {
+    $tokens=MacroArgToken+:"Macro argument is empty";
+  }
+  MacroArgToken {
+    $last=!(%linebreak | ',' | '(' | ')' | '[' | ']' | '{' | '}');
+    '(' ArgToken* $last=')';
+    '[' ArgToken* $last=']';
+    '{' ArgToken* $last='}';
+  }
+  ```
+
+**Brittleness:** the assembler must turn an expansion's tokens into locations
+through its expansion, rather than through the lexer's location. It does so
+only in `AddError` and `GetMapLocation`, each through one helper, and
+`MacroExpansion` builds its runs with its text, so they can't disagree.
 
 ### Constants from the host
 
@@ -388,12 +429,19 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   skipped lines in CL2: a skipped line is lexed a token at a time, then the
   lexer goes on with `NextLine`, or puts its first token back with
   `SetNextToken` for the parser to read a directive that ends the block.
-- [ ] The instruction's `$args` items give each argument's first and last
-  token, so its text and columns can be copied, or the arguments are better
-  read with a rule of their own (CL4).
+- [ ] The assembler can put the lexer back at the start of a use's line
+  (`gb::Lexer::RewindLine`), to parse it again with `MacroUse` (CL4), once
+  `Line` has parsed it as an instruction.
+- [ ] Whether an error's uses are errors of their own after it, or part of its
+  message (CL4): each is a location, so separate errors let a tool jump to
+  each one.
 - [ ] `gb::Lexer::AddContent` has room for many expansions: every content's
   lines count against about a million lines in all, and a use adds its body's
   lines (CL4).
+- [ ] A line longer than the lexer's 4095 columns is an error (CL4): the
+  lexer keeps a token's column in 12 bits, and an expansion's line can be
+  much longer than any line written, as each argument is copied wherever its
+  parameter is.
 - [x] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
   pattern of the default instruction set, or any test's, is read (CL1): none
   writes two of `<`, `>`, `=`, and `!` in a row. Another instruction set's
@@ -458,31 +506,44 @@ Depends on: CL1, for tests that compare.
   lines in the listing.
 - Manual pages updated.
 
-### CL3 [ ] tools: macro text
+### CL3 [x] tools: macro text
 
 Depends on: nothing.
 
-- `program_macro.h`: `ProgramMacro` and `MacroExpansion`.
+- `program_lexer.h`: `kTokenMacroLabel`, a local label renamed for a use.
+- `program_macro.h`: `ProgramMacro`, reading a body a line at a time with
+  `ReadLine`; and `MacroExpansion`, a use's text and where each part of it
+  came from.
 - Unused, so no visible change.
 
 **Verify**
 - Standard checks.
-- Unit tests: parameters replaced in each place a line can have them, and not
-  in strings or local labels; arguments with brackets, strings, and commas
-  inside them; each piece's origin, for the body and for arguments, through
-  two levels of expansion; columns at the start, middle, and end of a line,
-  and of a replaced parameter; a line with no parameters.
+- Unit tests: a macro label lexed; parameters replaced in each place a line
+  can have them, and not in strings or local labels; lines with no tokens
+  dropped; a label from a parameter, a label the body writes (an error), and a
+  macro label in a body (an error); local labels renamed; each part's
+  location, for the body, arguments, and renamed labels, at the start, middle,
+  and end of a line; a use inside an expansion, whose locations are in the
+  outer expansion's content; a body line the lexer can't read; an argument
+  whose last token is before its first.
 
 ### CL4 [ ] tools: macros
 
 Depends on: CL3, and CL2 for tests with `.IF` in a body.
 
-- `program_grammar.cc`: `.MACRO` and `.ENDM`.
-- `expression.h`: `ExpressionContext::GetSymbolValue` takes the symbol's token,
-  and `ValueSetContext` passes it on.
-- `program_assembler.cc`: reading definitions, expanding uses in
-  `ReadInstruction`, local labels' scopes, errors' locations and uses, and
-  map locations.
+- `program_grammar.cc`: `.MACRO` and `.ENDM`, and `MacroUse`, a use's
+  arguments.
+- `program_grammar.cc`: macro labels (`%macro_label`) as labels and in
+  expressions.
+- `program_assembler.cc`: reading definitions with `ProgramMacro::ReadLine`;
+  expanding uses in `ReadInstruction`, parsed with `MacroUse`, read as
+  content of their own with a stack of the uses being expanded; a macro label
+  written in a file an error, and `GetLabelKey` leaving one as it is; a
+  `.CONST` in a body with a name that isn't a parameter an error at the
+  definition; errors' locations followed through expansions to a file, then
+  an error at each use on the stack; and map locations at the outermost use.
+- `program_macro.cc`: a token range's text from `gb::Lexer`, if Game Bits
+  *Lexer text of a token range* is done, in place of `GetTokensText`.
 - `program_map.h`: the names of a use's own local labels.
 - Manual: Program Source's Macros, the directives table, and the listing's
   rows for a macro's use.
@@ -494,8 +555,10 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
   argument, where the macro has one of the same name; a label from a
   parameter; a label on a use; a macro using a macro, and using itself
   directly and through another, an error; `.IF` on a parameter in a body, and
-  one left open in a body; the wrong number of arguments, and an empty one; a
-  name that is an instruction's, defined twice, or used above its definition;
+  one left open in a body; arguments with brackets, strings, and commas
+  inside them; the wrong number of arguments, and an empty one; a parameter
+  named twice, an error at the second; a name that is an instruction's,
+  defined twice, or used above its definition;
   a missing `.ENDM`, an `.ENDM` with no `.MACRO`, and a `.MACRO` in a body; an
   `.INCLUDE` in a body; errors in a body and in an argument, at their origins
   with their uses, two levels deep; the map's statements, labels, and

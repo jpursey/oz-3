@@ -19,6 +19,7 @@ set(oz3_tools_SOURCE
   program_lexer.h program_lexer.cc
   program_listing.h program_listing.cc
   program_loader.h program_loader.cc
+  program_macro.h program_macro.cc
   program_map.h program_map.cc
   program_map_chunks.h
   program_map_file.h program_map_file.cc
@@ -61,6 +62,7 @@ set(oz3_tools_TEST_SOURCE
   program_lexer_test.cc
   program_listing_test.cc
   program_loader_test.cc
+  program_macro_test.cc
   program_map_file_test.cc
   program_map_test.cc
   program_test.cc

@@ -154,6 +154,12 @@ TEST_F(ProgramLexerTest, LocalLabels) {
   EXPECT_EQ(lexer_->GetTokenText(token), "@loop");
 }
 
+TEST_F(ProgramLexerTest, MacroLabels) {
+  gb::Token token = LexOne("WaitIn#12@loop");
+  EXPECT_TRUE(token.IsUser(kTokenMacroLabel, "WAITIN#12@LOOP"));
+  EXPECT_EQ(lexer_->GetTokenText(token), "WaitIn#12@loop");
+}
+
 TEST_F(ProgramLexerTest, Strings) {
   gb::Token token = LexOne("'Hello'");
   EXPECT_TRUE(token.IsString("Hello"));
