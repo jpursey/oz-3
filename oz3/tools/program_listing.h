@@ -35,8 +35,9 @@ namespace oz3 {
 // writes more than four words carries on in rows with no source line, each at
 // the offset of its first word. A line that writes no words but defines a label
 // has the label's location, and any other line has neither a location nor
-// words. A file included more than once has a row for each statement a line
-// wrote, with the source line in only the first.
+// words. A file included more than once, or a line that uses a macro, has a
+// row for each statement a line wrote, with the source line in only the
+// first.
 //
 // Returns an error if `sources` isn't one text for each of the map's files, or
 // if the map doesn't fit the program and the sources: the map's segments aren't

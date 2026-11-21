@@ -67,7 +67,7 @@ constexpr std::string_view kRules = R"---(
   }
   Label {
     $name=%ident ':';
-    $local_label=%local_label ':';
+    $local_label=(%local_label | %macro_label) ':';
   }
   EndOfLine {
     %linebreak;
@@ -80,7 +80,8 @@ constexpr std::string_view kRules = R"---(
          <DirectiveInstances> | <DirectiveBank> |
          <DirectiveSegment> | <DirectiveIf> | <DirectiveIfdef> |
          <DirectiveIfndef> | <DirectiveElseif> | <DirectiveElse> |
-         <DirectiveEndif>):"Unknown directive";
+         <DirectiveEndif> | <DirectiveMacro> |
+         <DirectiveEndm>):"Unknown directive";
   }
   DirectiveInclude {
     $directive="INCLUDE" $path=%string;
@@ -130,6 +131,12 @@ constexpr std::string_view kRules = R"---(
   DirectiveEndif {
     $directive="ENDIF";
   }
+  DirectiveMacro {
+    $directive="MACRO" $name=%ident $parameters=%ident,*;
+  }
+  DirectiveEndm {
+    $directive="ENDM";
+  }
   SegmentAttribute {
     $role=("CODE" | "STACK" | "DATA" | "EXTRA");
     $rom="ROM";
@@ -146,6 +153,18 @@ constexpr std::string_view kRules = R"---(
     '(' ArgToken* ')';
     '[' ArgToken* ']';
     '{' ArgToken* '}';
+  }
+  MacroUse {
+    $name=%ident (EndOfLine | $args=MacroArg,+ EndOfLine);
+  }
+  MacroArg {
+    $tokens=MacroArgToken+:"Macro argument is empty";
+  }
+  MacroArgToken {
+    $last=!(%linebreak | ',' | '(' | ')' | '[' | ']' | '{' | '}');
+    '(' ArgToken* $last=')';
+    '[' ArgToken* $last=']';
+    '{' ArgToken* $last='}';
   }
 )---";
 

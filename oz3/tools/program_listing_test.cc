@@ -171,6 +171,28 @@ TEST_F(ProgramListingTest, SkippedLines) {
             "                           .ENDIF\n");
 }
 
+TEST_F(ProgramListingTest, Macros) {
+  // A line that uses a macro has a row for each statement it wrote, with the
+  // source line in only the first, and the body's lines have none.
+  EXPECT_EQ(List(".STACK 4\n"
+                 ".MACRO PAIR a, b\n"
+                 "  PUSH.W a\n"
+                 "  .DW b\n"
+                 ".ENDM\n"
+                 "start: PAIR 1, 2\n"
+                 "PAIR 3, 4\n"),
+            "program\n"
+            "                           .STACK 4\n"
+            "                           .MACRO PAIR a, b\n"
+            "                             PUSH.W a\n"
+            "                             .DW b\n"
+            "                           .ENDM\n"
+            "0000  0200 0001            start: PAIR 1, 2\n"
+            "0002  0002\n"
+            "0003  0200 0003            PAIR 3, 4\n"
+            "0005  0004\n");
+}
+
 TEST_F(ProgramListingTest, Files) {
   // Each file is listed, and a line included twice has a row for each time.
   // A listing file reads the files by the map's paths.

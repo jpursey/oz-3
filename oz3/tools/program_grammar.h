@@ -82,8 +82,8 @@ class ProgramGrammar final {
   // The rule for a line, which a program is parsed with a line at a time, so
   // that a line with an error doesn't stop the lines after it from being
   // read. A line's items are:
-  //   $label        Optional: $name (%ident) or $local_label (%local_label),
-  //                 then ':'.
+  //   $label        Optional: $name (%ident), or $local_label (%local_label
+  //                 or %macro_label), then ':'.
   //   $directive    Optional: '.', then with no space after it, a directive
   //                 (see below).
   //   $instruction  Optional, if there is no directive: $name (%ident), then
@@ -111,6 +111,9 @@ class ProgramGrammar final {
   //   ELSEIF     $condition
   //   ELSE       Nothing
   //   ENDIF      Nothing
+  //   MACRO      $name (%ident), then zero or more $parameters (%ident)
+  //              separated by commas
+  //   ENDM       Nothing
   // Each value ($value, $size, $count, $words, $mask, and $condition) is an
   // Expression.
   // Each segment attribute is one of $role ("CODE", "STACK", "DATA", or
@@ -124,6 +127,14 @@ class ProgramGrammar final {
   // $directive (%ident), which may not be a directive at all. The rest of the
   // line isn't read, and the lexer is left after the name.
   static constexpr std::string_view kSkippedLineRule = "SkippedLine";
+
+  // kMacroUseRule parses a line that uses a macro, from its $name (%ident) to
+  // the end of the line, with zero or more $args separated by commas. An
+  // argument is one or more tokens up to a comma or the end of the line, with
+  // brackets balanced, so a comma in brackets is part of it. Its first token
+  // is its own, and its last is the $last of its last $tokens. An empty
+  // argument is an error at the token after its comma.
+  static constexpr std::string_view kMacroUseRule = "MacroUse";
 
   // Creates the grammar for `syntax`, which must outlive it. Returns an error
   // if a pattern in `syntax` has literal text the program lexer can't read as

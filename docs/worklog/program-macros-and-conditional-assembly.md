@@ -377,11 +377,13 @@ class MacroExpansion final {
   with the grammar's `MacroUse` rule, whose arguments are each one or more
   tokens up to a comma outside brackets, read as `ArgToken` reads brackets,
   with an empty one an error at the token after its comma. Each gives its
-  first token and its last, which is a `MacroArg`:
+  first token and its last, which is a `MacroArg`. A use with no arguments is
+  its own alternative, so that a line such as `TWO , 2` is an empty argument,
+  rather than a use with none followed by stray tokens:
 
   ```
   MacroUse {
-    $name=%ident $args=MacroArg,* EndOfLine;
+    $name=%ident (EndOfLine | $args=MacroArg,+ EndOfLine);
   }
   MacroArg {
     $tokens=MacroArgToken+:"Macro argument is empty";
@@ -422,26 +424,33 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 
 ### To confirm
 
-- [ ] A body line's tokens can be lexed without disturbing the parser: the
+- [x] A body line's tokens can be lexed without disturbing the parser: the
   lexer is at the line after `.MACRO` once it is parsed, and reading the body
   a token at a time with `NextToken` then `NextLine` leaves it at the line
   after `.ENDM` (CL2 for skipped lines, CL4 for bodies). Confirmed for
   skipped lines in CL2: a skipped line is lexed a token at a time, then the
   lexer goes on with `NextLine`, or puts its first token back with
   `SetNextToken` for the parser to read a directive that ends the block.
-- [ ] The assembler can put the lexer back at the start of a use's line
+  Confirmed for bodies in CL4, which read each line the same way, peeking its
+  first token to put back for `ProgramMacro::ReadLine`.
+- [x] The assembler can put the lexer back at the start of a use's line
   (`gb::Lexer::RewindLine`), to parse it again with `MacroUse` (CL4), once
-  `Line` has parsed it as an instruction.
-- [ ] Whether an error's uses are errors of their own after it, or part of its
-  message (CL4): each is a location, so separate errors let a tool jump to
-  each one.
-- [ ] `gb::Lexer::AddContent` has room for many expansions: every content's
+  `Line` has parsed it as an instruction. No new lexer function is needed:
+  `SetNextToken` goes back to the use's name, and on to the token after the
+  line once `MacroUse` has parsed it.
+- [x] Whether an error's uses are errors of their own after it, or part of its
+  message (CL4): errors of their own ("In WAITIN"), as each is a location, so
+  a tool can jump to each one. An error and its uses are one entry when
+  dropping duplicates, so the same error in two uses is reported for each.
+- [x] `gb::Lexer::AddContent` has room for many expansions: every content's
   lines count against about a million lines in all, and a use adds its body's
-  lines (CL4).
-- [ ] A line longer than the lexer's 4095 columns is an error (CL4): the
+  lines (CL4). That is far more than a program is likely to need, and a use
+  that doesn't fit is an error at the use, as a line too long is.
+- [x] A line longer than the lexer's 4095 columns is an error (CL4): the
   lexer keeps a token's column in 12 bits, and an expansion's line can be
   much longer than any line written, as each argument is copied wherever its
-  parameter is.
+  parameter is. `AddContent` fails for such a line, which is an error at the
+  use: "This use of X has too many lines, or a line too long".
 - [x] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
   pattern of the default instruction set, or any test's, is read (CL1): none
   writes two of `<`, `>`, `=`, and `!` in a row. Another instruction set's
@@ -527,7 +536,7 @@ Depends on: nothing.
   outer expansion's content; a body line the lexer can't read; an argument
   whose last token is before its first.
 
-### CL4 [ ] tools: macros
+### CL4 [x] tools: macros
 
 Depends on: CL3, and CL2 for tests with `.IF` in a body.
 
@@ -543,7 +552,8 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
   definition; errors' locations followed through expansions to a file, then
   an error at each use on the stack; and map locations at the outermost use.
 - `program_macro.cc`: a token range's text from `gb::Lexer`, if Game Bits
-  *Lexer text of a token range* is done, in place of `GetTokensText`.
+  *Lexer text of a token range* is done, in place of `GetTokensText`. It
+  isn't yet, so `GetTokensText` stays.
 - `program_map.h`: the names of a use's own local labels.
 - Manual: Program Source's Macros, the directives table, and the listing's
   rows for a macro's use.

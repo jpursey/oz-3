@@ -70,10 +70,10 @@ class ProgramMacro final {
   bool ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
                 gb::ParseError* error);
 
- private:
   // Returns the index of the parameter `token` names, or -1 if it isn't one.
   int FindParameter(const gb::Token& token) const;
 
+ private:
   gb::Token name_;
   std::vector<gb::Token> parameters_;
   std::vector<Line> lines_;
