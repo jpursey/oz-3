@@ -267,17 +267,17 @@ TEST_F(ProgramMacroTest, EmptyArgs) {
   EXPECT_EQ(error.GetLocation(), At("first.oza", 0, 2));
   EXPECT_EQ(error.GetMessage(), "Macro argument is empty");
   EXPECT_TRUE(NextToken("first.oza").IsIdent("NOP"));
-  EXPECT_EQ(ReadArgsError("middle.oza", "M 1,,2\nNOP\n").GetLocation(),
-            At("middle.oza", 0, 4));
+  error = ReadArgsError("middle.oza", "M 1,,2\nNOP\n");
+  EXPECT_EQ(error.GetLocation(), At("middle.oza", 0, 4));
   EXPECT_TRUE(NextToken("middle.oza").IsIdent("NOP"));
 
   // The last one's comma is before the comment, which the line break is
   // after.
-  EXPECT_EQ(ReadArgsError("last.oza", "M 1, ; Note.\nNOP\n").GetLocation(),
-            At("last.oza", 0, 3));
+  error = ReadArgsError("last.oza", "M 1, ; Note.\nNOP\n");
+  EXPECT_EQ(error.GetLocation(), At("last.oza", 0, 3));
   EXPECT_TRUE(NextToken("last.oza").IsIdent("NOP"));
-  EXPECT_EQ(ReadArgsError("end.oza", "M 1,").GetLocation(),
-            At("end.oza", 0, 3));
+  error = ReadArgsError("end.oza", "M 1,");
+  EXPECT_EQ(error.GetLocation(), At("end.oza", 0, 3));
   EXPECT_TRUE(NextToken("end.oza").IsEnd());
 }
 
