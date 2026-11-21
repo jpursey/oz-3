@@ -187,7 +187,9 @@ that assembles today changes.
   rest of the use's arguments too), and a second use defining it again is an
   error.
 - **A label the body writes itself** (`loop:`) is an error where the macro is
-  defined, as every use would define it again.
+  defined, as every use would define it again. So is a constant the body
+  defines with a name of its own (`.CONST LIMIT = 5`), rather than a
+  parameter's (`.CONST name = value`).
 
 **Where its words are:** a macro is used like an instruction, so everything a
 use defines and writes is at the line that uses it, in the map and the
@@ -424,6 +426,10 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 - [ ] `gb::Lexer::AddContent` has room for many expansions: every content's
   lines count against about a million lines in all, and a use adds its body's
   lines (CL4).
+- [ ] A line longer than the lexer's 4095 columns is an error (CL4): the
+  lexer keeps a token's column in 12 bits, and an expansion's line can be
+  much longer than any line written, as each argument is copied wherever its
+  parameter is.
 - [x] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
   pattern of the default instruction set, or any test's, is read (CL1): none
   writes two of `<`, `>`, `=`, and `!` in a row. Another instruction set's
@@ -520,7 +526,8 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
 - `program_assembler.cc`: reading definitions with `ProgramMacro::ReadLine`;
   expanding uses in `ReadInstruction` with `ReadMacroArgs`, read as content of
   their own with a stack of the uses being expanded; a macro label written in
-  a file an error, and `GetLabelKey` leaving one as it is; errors' locations
+  a file an error, and `GetLabelKey` leaving one as it is; a `.CONST` in a
+  body with a name that isn't a parameter an error at the definition; errors' locations
   followed through expansions to a file, then an error at each use on the
   stack; and map locations at the outermost use.
 - `program_map.h`: the names of a use's own local labels.
