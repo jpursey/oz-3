@@ -44,6 +44,11 @@ set(oz3asm_DEPS
   oz3_tools
 )
 
+set(oz3asm_LIBS
+  absl::check
+  absl::log
+)
+
 gb_add_executable(oz3asm)
 
 set(oz3dsk_SOURCE

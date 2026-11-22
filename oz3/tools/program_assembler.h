@@ -6,12 +6,14 @@
 #ifndef OZ3_TOOLS_PROGRAM_ASSEMBLER_H_
 #define OZ3_TOOLS_PROGRAM_ASSEMBLER_H_
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/parse/parse_error.h"
 #include "oz3/tools/bare_program.h"
@@ -59,18 +61,46 @@ class AsmProgram final {
   ProgramMap map_;
 };
 
+// A constant the host gives a program, which the program sees as if it were
+// defined above its first line, so .IF and .IFDEF can test it. The name is
+// read as the source reads one, so it is case-insensitive.
+struct AsmConstant {
+  std::string name;
+  uint32_t value = 0;
+};
+
+// Returns the constant `text` gives, written as "NAME" or "NAME=value", with
+// the value a number as the source writes one (15, 0Fh, or 1111b), or 1 if
+// it is left out. Returns an error if the value isn't a number that fits a
+// dword. The name is only validated when the constant is assembled with.
+absl::StatusOr<AsmConstant> ParseAsmConstant(std::string_view text);
+
 // Assembles the program whose main source file is at `path`, for the
 // instruction set `syntax` describes, as the manual's Program Source page
 // describes. Returns null if the source has errors. If `errors` isn't null, it
 // is set to the errors, which are none if the program assembles.
+//
+// `constants` are the host's constants for the program (see AsmConstant).
+// Each must have a name, which isn't a register's, and that no other one has,
+// or the program isn't assembled, with an error for each that has no
+// location. A label or constant the program defines with one's name is an
+// error there.
 std::unique_ptr<AsmProgram> AssembleProgramFile(
     const InstructionSetSyntax& syntax, gb::FileSystem& file_system,
     std::string_view path, std::vector<gb::ParseError>* errors = nullptr);
+std::unique_ptr<AsmProgram> AssembleProgramFile(
+    const InstructionSetSyntax& syntax, gb::FileSystem& file_system,
+    std::string_view path, absl::Span<const AsmConstant> constants,
+    std::vector<gb::ParseError>* errors = nullptr);
 
 // Assembles a program from source text, as AssembleProgramFile does, except
 // that an .INCLUDE is an error. Errors are in the file "program".
 std::unique_ptr<AsmProgram> AssembleProgram(
     const InstructionSetSyntax& syntax, std::string text,
+    std::vector<gb::ParseError>* errors = nullptr);
+std::unique_ptr<AsmProgram> AssembleProgram(
+    const InstructionSetSyntax& syntax, std::string text,
+    absl::Span<const AsmConstant> constants,
     std::vector<gb::ParseError>* errors = nullptr);
 
 }  // namespace oz3

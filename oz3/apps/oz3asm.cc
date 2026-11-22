@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -68,6 +69,23 @@ const gb::CliFlag<bool> kListing = {
     .short_name = 'l',
     .help = "Writes the program's listing beside the program file (.oz3lst).",
 };
+const gb::CliValidator<std::string_view> kValidConstant = {
+    .validate =
+        [](const gb::ValidatedContext&, const std::string_view& value) {
+          return ParseAsmConstant(value).status();
+        },
+};
+const gb::CliFlag<std::string_view> kDefine = {
+    .name = "define",
+    .short_name = 'D',
+    .value_name = "name[=value]",
+    .help =
+        "Defines a constant for the program, as if above its first line, "
+        "with a value written as the source writes a number, or 1 if it is "
+        "left out.",
+    .repeated = true,
+    .validators = {&kValidConstant},
+};
 const gb::CliArg<std::string_view> kSourceFile = {
     .name = "source file",
     .help = "The program to assemble (.oza).",
@@ -90,7 +108,7 @@ const gb::CliCommand kProgram = {
         "Assembles a program, and writes its program file. Paths are "
         "written the operating system's way, absolute or relative to the "
         "current directory.",
-    .flags = {&kInstructionSet, &kBare, &kMap, &kListing},
+    .flags = {&kInstructionSet, &kDefine, &kBare, &kMap, &kListing},
     .args = {&kSourceFile, &kProgramFile},
     .constraints = {&gb::kConstraintCliFileSystem},
     .run = Run,
@@ -104,6 +122,7 @@ const gb::CliCommand kProgram = {
 // written are normalized (see gb::NormalizePath()).
 struct Options {
   std::string_view instruction_set_path;  // Empty for the default one.
+  std::vector<AsmConstant> constants;     // Defined for the program.
   bool bare = false;                      // Writes a bare program file.
   std::string source_path;
   std::string program_path;
@@ -115,6 +134,13 @@ struct Options {
 Options ReadOptions(const gb::CliCommandLine& command_line) {
   Options options;
   options.instruction_set_path = command_line.Get(kInstructionSet).value_or("");
+
+  // The flag's validator checks that each constant parses.
+  for (std::string_view define : command_line.GetAll(kDefine)) {
+    absl::StatusOr<AsmConstant> constant = ParseAsmConstant(define);
+    CHECK_OK(constant.status());
+    options.constants.push_back(*std::move(constant));
+  }
   options.bare = command_line.Get(kBare);
 
   // The validators of the source and program files check that their paths
@@ -229,8 +255,8 @@ bool Run(gb::ValidatedContext& context,
   }
 
   std::vector<gb::ParseError> errors;
-  std::unique_ptr<AsmProgram> program =
-      AssembleProgramFile(*syntax, *file_system, options.source_path, &errors);
+  std::unique_ptr<AsmProgram> program = AssembleProgramFile(
+      *syntax, *file_system, options.source_path, options.constants, &errors);
   if (program == nullptr) {
     for (const gb::ParseError& error : errors) {
       writer(gb::CliText::kError, error.FormatMessage());

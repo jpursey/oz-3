@@ -117,10 +117,14 @@ Conditional GetConditional(std::string_view name) {
 //    Then builds the program from each segment's words, and its map.
 class ProgramAssembler final {
  public:
-  // `syntax`, and `file_system` if it isn't null, must outlive this.
+  // `syntax`, and `file_system` if it isn't null, must outlive this. The
+  // program is given the host's `constants`.
   ProgramAssembler(const InstructionSetSyntax* syntax,
-                   gb::FileSystem* file_system)
-      : syntax_(syntax), file_system_(file_system) {}
+                   gb::FileSystem* file_system,
+                   absl::Span<const AsmConstant> constants)
+      : syntax_(syntax),
+        file_system_(file_system),
+        constants_given_(constants) {}
 
   // Assembles the program whose main file is at `path` in the file system, or
   // whose text is `text`, which can't include files. Returns null if there
@@ -334,8 +338,13 @@ class ProgramAssembler final {
   // Returns the start of the main file, for errors in the program as a whole.
   gb::LexerLocation GetMainLocation() const;
 
-  // Creates the parser, and returns false if it can't.
+  // Creates the parser, and defines the host's constants, or reports why it
+  // can't and returns false.
+  //
+  // DefineHostConstants() defines the host's constants, or reports each one
+  // that is invalid and returns false.
   bool Init();
+  bool DefineHostConstants();
 
   // Returns the content of a file, which is read once, and read again from
   // its start each time it is included, or reports an error at `location`
@@ -364,6 +373,9 @@ class ProgramAssembler final {
                                                  std::string_view name,
                                                  ExpressionWidth width);
   ExpressionResult EvaluateConstant(Constant& constant, ExpressionWidth width);
+  static ExpressionResult GetHostConstantValue(std::string_view name,
+                                               uint32_t value,
+                                               ExpressionWidth width);
 
   // Defines a label or constant at its name's `token`, with the upper case
   // `name`, and returns true, or reports an error and returns false if a
@@ -533,6 +545,7 @@ class ProgramAssembler final {
 
   const InstructionSetSyntax* const syntax_;
   gb::FileSystem* const file_system_;
+  const absl::Span<const AsmConstant> constants_given_;
   std::unique_ptr<ProgramGrammar> grammar_;
   std::unique_ptr<gb::Parser> parser_;
   gb::LexerContentId main_content_ = gb::kNoLexerContent;
@@ -560,10 +573,11 @@ class ProgramAssembler final {
   int error_count_ = 0;
   bool stopped_ = false;
 
-  // Labels by key (see GetLabelKey), and constants by name. A label and a
-  // constant can't have the same name.
+  // Labels by key (see GetLabelKey), constants by name, and the values of
+  // the host's constants by their upper case name. No two have the same name.
   absl::flat_hash_map<std::string, Label> labels_;
   absl::flat_hash_map<std::string, Constant> constants_;
+  absl::flat_hash_map<std::string, uint32_t> host_constants_;
 
   // The current scope of local labels: the name of the label that starts it,
   // or empty for the scope that starts the program. A scope is a view of its
@@ -646,7 +660,37 @@ bool ProgramAssembler::Init() {
   }
   grammar_ = *std::move(grammar);
   parser_ = gb::Parser::Create(grammar_->GetParserProgram());
-  return true;
+  return DefineHostConstants();
+}
+
+bool ProgramAssembler::DefineHostConstants() {
+  // Each name is read as source reads one, so it is in upper case, and a
+  // register is a keyword. It is valid if it is one name, and nothing else.
+  gb::Lexer& lexer = GetLexer();
+  bool valid = true;
+  for (const AsmConstant& constant : constants_given_) {
+    const gb::LexerContentId content = lexer.AddContent(constant.name);
+    const gb::Token token =
+        content != gb::kNoLexerContent ? lexer.NextToken(content) : gb::Token();
+    std::string error;
+    if ((!token.IsIdent() && token.GetType() != gb::kTokenKeyword) ||
+        lexer.GetTokenText(token).size() != constant.name.size()) {
+      error = absl::StrCat("The host's constant \"", constant.name,
+                           "\" isn't a name");
+    } else if (token.GetType() == gb::kTokenKeyword) {
+      error = absl::StrCat("The host's constant ", token.GetString(),
+                           " is a register");
+    } else if (!host_constants_.try_emplace(token.GetString(), constant.value)
+                    .second) {
+      error = absl::StrCat("The host's constant ", token.GetString(),
+                           " is given twice");
+    }
+    if (!error.empty()) {
+      AddError(gb::ParseError(error));
+      valid = false;
+    }
+  }
+  return valid;
 }
 
 gb::LexerContentId ProgramAssembler::LoadFile(
@@ -800,6 +844,9 @@ std::optional<ExpressionResult> ProgramAssembler::GetSymbolValue(
         .value = static_cast<uint32_t>(label->second.offset),
         .segment = label->second.segment};
   }
+  if (auto host = host_constants_.find(name); host != host_constants_.end()) {
+    return GetHostConstantValue(host->first, host->second, width);
+  }
   auto it = constants_.find(name);
   if (it == constants_.end()) {
     return std::nullopt;
@@ -818,6 +865,20 @@ std::optional<ExpressionResult> ProgramAssembler::GetSymbolValue(
         " can't be evaluated as a word: ", result.error.GetMessage()));
   }
   return result;
+}
+
+ExpressionResult ProgramAssembler::GetHostConstantValue(std::string_view name,
+                                                        uint32_t value,
+                                                        ExpressionWidth width) {
+  // As for a program's constant, one that doesn't fit a word is an error
+  // where it is used as one, without a location (see ExpressionContext).
+  if (width == ExpressionWidth::kWord && value > 0xFFFF) {
+    return {.kind = ExpressionResult::Kind::kError,
+            .error = gb::ParseError(
+                absl::StrCat(name, " can't be evaluated as a word: Value ",
+                             value, " does not fit in a word"))};
+  }
+  return {.value = value};
 }
 
 ExpressionResult ProgramAssembler::EvaluateConstant(Constant& constant,
@@ -878,6 +939,10 @@ bool ProgramAssembler::DefineConstant(const gb::Token& token,
 bool ProgramAssembler::CheckNotDefined(const gb::Token& token,
                                        std::string_view key,
                                        std::string_view name) {
+  if (host_constants_.contains(key)) {
+    Error(token, absl::StrCat(name, " is already defined by the host"));
+    return false;
+  }
   if (IsDefined(key)) {
     Error(token, absl::StrCat(name, " is already defined"));
     return false;
@@ -886,7 +951,8 @@ bool ProgramAssembler::CheckNotDefined(const gb::Token& token,
 }
 
 bool ProgramAssembler::IsDefined(std::string_view key) const {
-  return labels_.contains(key) || constants_.contains(key);
+  return labels_.contains(key) || constants_.contains(key) ||
+         host_constants_.contains(key);
 }
 
 std::optional<uint32_t> ProgramAssembler::Evaluate(
@@ -2285,16 +2351,59 @@ uint16_t ProgramAssembler::GetInstanceOffset(int bank, int instance) const {
 // AssembleProgramFile and AssembleProgram
 //==============================================================================
 
+absl::StatusOr<AsmConstant> ParseAsmConstant(std::string_view text) {
+  const std::string_view::size_type equals = text.find('=');
+  if (equals == std::string_view::npos) {
+    return AsmConstant{.name = std::string(text), .value = 1};
+  }
+
+  // The value is read as source reads a number, and must be nothing else.
+  AsmConstant constant = {.name = std::string(text.substr(0, equals))};
+  const std::string_view value = text.substr(equals + 1);
+  std::unique_ptr<gb::Lexer> lexer = gb::Lexer::Create(GetProgramLexerConfig());
+  CHECK(lexer != nullptr);
+  const gb::LexerContentId content = lexer->AddContent(std::string(value));
+  const gb::Token token =
+      content != gb::kNoLexerContent ? lexer->NextToken(content) : gb::Token();
+  if (!token.IsInt() || lexer->GetTokenText(token).size() != value.size()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "The value of ", constant.name, " isn't a number: \"", value, "\""));
+  }
+  if (token.GetInt() < 0 || token.GetInt() > 0xFFFFFFFF) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("The value of ", constant.name, " doesn't fit a dword"));
+  }
+  constant.value = static_cast<uint32_t>(token.GetInt());
+  return constant;
+}
+
 std::unique_ptr<AsmProgram> AssembleProgramFile(
     const InstructionSetSyntax& syntax, gb::FileSystem& file_system,
     std::string_view path, std::vector<gb::ParseError>* errors) {
-  return ProgramAssembler(&syntax, &file_system).AssembleFile(path, errors);
+  return AssembleProgramFile(syntax, file_system, path,
+                             absl::Span<const AsmConstant>(), errors);
+}
+
+std::unique_ptr<AsmProgram> AssembleProgramFile(
+    const InstructionSetSyntax& syntax, gb::FileSystem& file_system,
+    std::string_view path, absl::Span<const AsmConstant> constants,
+    std::vector<gb::ParseError>* errors) {
+  return ProgramAssembler(&syntax, &file_system, constants)
+      .AssembleFile(path, errors);
 }
 
 std::unique_ptr<AsmProgram> AssembleProgram(
     const InstructionSetSyntax& syntax, std::string text,
     std::vector<gb::ParseError>* errors) {
-  return ProgramAssembler(&syntax, nullptr)
+  return AssembleProgram(syntax, std::move(text),
+                         absl::Span<const AsmConstant>(), errors);
+}
+
+std::unique_ptr<AsmProgram> AssembleProgram(
+    const InstructionSetSyntax& syntax, std::string text,
+    absl::Span<const AsmConstant> constants,
+    std::vector<gb::ParseError>* errors) {
+  return ProgramAssembler(&syntax, nullptr, constants)
       .AssembleText(std::move(text), errors);
 }
 
