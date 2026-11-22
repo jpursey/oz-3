@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
-#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -69,11 +68,13 @@ const gb::CliFlag<bool> kListing = {
     .short_name = 'l',
     .help = "Writes the program's listing beside the program file (.oz3lst).",
 };
+absl::Status ValidateConstant(const gb::ValidatedContext& context,
+                              const std::string_view& value) {
+  return ParseAsmConstant(value).status();
+}
+
 const gb::CliValidator<std::string_view> kValidConstant = {
-    .validate =
-        [](const gb::ValidatedContext&, const std::string_view& value) {
-          return ParseAsmConstant(value).status();
-        },
+    .validate = ValidateConstant,
 };
 const gb::CliFlag<std::string_view> kDefine = {
     .name = "define",
@@ -137,9 +138,7 @@ Options ReadOptions(const gb::CliCommandLine& command_line) {
 
   // The flag's validator checks that each constant parses.
   for (std::string_view define : command_line.GetAll(kDefine)) {
-    absl::StatusOr<AsmConstant> constant = ParseAsmConstant(define);
-    CHECK_OK(constant.status());
-    options.constants.push_back(*std::move(constant));
+    options.constants.push_back(*ParseAsmConstant(define));
   }
   options.bare = command_line.Get(kBare);
 
