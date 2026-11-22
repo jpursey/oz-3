@@ -2321,21 +2321,40 @@ TEST_F(ProgramAssemblerTest, MacroDirectiveErrors) {
                   IsErrorAt(16, 0, ".MACRO has no .ENDM")));
 }
 
-TEST_F(ProgramAssemblerTest, MacroDirectiveFromArgument) {
-  // A body can't hold a .MACRO, but an argument can put one in its expansion,
-  // which is an error there.
+TEST_F(ProgramAssemblerTest, MacroArgDirectives) {
+  // An argument can't have a directive, so the invocation assembles nothing,
+  // but can have an instruction's extension, or a '.' in a string.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO M x\n"
+                     "  x\n"
+                     ".ENDM\n"
+                     ".MACRO IGNORE x, y\n"
+                     "  NOP\n"
+                     ".ENDM\n"
+                     "M .MACRO FOO\n"
+                     "M .ENDM\n"
+                     "M a: .CONST N = 1\n"
+                     "IGNORE 1,.DW 2\n"
+                     "IGNORE ADD.W R1, 'a.b'\n"
+                     "IGNORE ADD.size, 2\n"),
+      ElementsAre(
+          IsErrorAt(7, 2, "A macro's argument can't have a directive"),
+          IsErrorAt(8, 2, "A macro's argument can't have a directive"),
+          IsErrorAt(9, 5, "A macro's argument can't have a directive"),
+          IsErrorAt(10, 9, "A macro's argument can't have a directive")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroDirectiveFromParameter) {
+  // A parameter can name a directive in the body, so an argument can still
+  // make a .MACRO in its expansion, which is an error there.
   EXPECT_THAT(AssembleErrors(".STACK 1\n"
-                             ".MACRO M x\n"
-                             "  x\n"
+                             ".MACRO D x\n"
+                             "  .x FOO\n"
                              ".ENDM\n"
-                             "M .MACRO FOO\n"
-                             "M .ENDM\n"
-                             "FOO\n"),
-              ElementsAre(IsErrorAt(4, 2, ".MACRO can't be in a macro's body"),
-                          IsErrorAt(4, 0, "In M"),
-                          IsErrorAt(5, 2, ".ENDM has no .MACRO"),
-                          IsErrorAt(5, 0, "In M"),
-                          IsErrorAt(6, 0, "Unknown instruction FOO")));
+                             "D MACRO\n"),
+              ElementsAre(IsErrorAt(2, 2, ".MACRO can't be in a macro's body"),
+                          IsErrorAt(4, 0, "In D")));
 }
 
 TEST_F(ProgramAssemblerTest, MacroInclude) {

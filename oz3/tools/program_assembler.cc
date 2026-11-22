@@ -105,6 +105,15 @@ Conditional GetConditional(std::string_view name) {
   return Conditional::kNone;
 }
 
+// Returns true if `second` starts right where `first` ends, with no space
+// between them. Both must be on the same line, which `lexer` read.
+bool IsNextTo(const gb::Lexer& lexer, const gb::Token& first,
+              const gb::Token& second) {
+  return lexer.GetTokenLocation(first).column +
+             static_cast<int>(lexer.GetTokenText(first).size()) ==
+         lexer.GetTokenLocation(second).column;
+}
+
 }  // namespace
 
 // Assembles one program, in two passes:
@@ -446,8 +455,13 @@ class ProgramAssembler final {
 
   // Reads a line's instruction if it is a macro's invocation, by assembling
   // its expansion, and returns false if it isn't one.
+  //
+  // ValidateNoArgDirective() validates that no argument of the invocation
+  // whose name is `name` has a directive in it, reporting each one.
   bool ReadMacroInvocation(gb::LexerContentId content,
                            const gb::ParsedItem& instruction);
+  bool ValidateNoArgDirective(gb::LexerContentId content,
+                              const gb::Token& name);
   void ReadConst(const gb::ParsedItem& directive);
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
   void EndDataField(std::optional<int64_t> field_end, int64_t* size,
@@ -1136,8 +1150,9 @@ void ProgramAssembler::ReadInclude(const gb::ParsedItem& directive) {
 void ProgramAssembler::ReadMacro(gb::LexerContentId content,
                                  const gb::ParsedItem& directive) {
   // A body's .MACRO is an error where the body is defined (see
-  // ReadMacroBody()), so one in an expansion can only come from an argument,
-  // as in "M .MACRO X" for a macro whose body is its parameter.
+  // ReadMacroBody()), and an argument can't have a directive, so one in an
+  // expansion can only come from a parameter that names the directive, as in
+  // ".x FOO" invoked with MACRO.
   const gb::Token token = directive.GetToken();
   if (expansions_.contains(content)) {
     Error(token, ".MACRO can't be in a macro's body");
@@ -1280,6 +1295,9 @@ bool ProgramAssembler::ReadMacroInvocation(gb::LexerContentId content,
     AddError(invocation.GetError());
     return true;
   }
+  if (!ValidateNoArgDirective(content, name)) {
+    return true;
+  }
   std::vector<MacroArg> args;
   for (const gb::ParsedItem& arg : invocation->GetItems("args")) {
     args.push_back({.first = arg.GetToken(),
@@ -1329,6 +1347,31 @@ bool ProgramAssembler::ReadMacroInvocation(gb::LexerContentId content,
       .text = std::move(expansion), .macro = definition, .invocation = name};
   ReadContent(expansion_content);
   return true;
+}
+
+bool ProgramAssembler::ValidateNoArgDirective(gb::LexerContentId content,
+                                              const gb::Token& name) {
+  // A '.' with a name right after it is a directive, unless it is right after
+  // a name too, as an instruction's extension is ("ADD.W").
+  gb::Lexer& lexer = GetLexer();
+  const gb::Token next = lexer.NextToken(content, /*advance=*/false);
+  lexer.SetNextToken(name);
+  bool valid = true;
+  gb::Token previous = lexer.NextToken(content);
+  for (gb::Token token = lexer.NextToken(content); !IsLineEnd(token);
+       previous = token, token = lexer.NextToken(content)) {
+    if (!token.IsSymbol('.')) {
+      continue;
+    }
+    const gb::Token after = lexer.NextToken(content, /*advance=*/false);
+    if (after.IsIdent() && IsNextTo(lexer, token, after) &&
+        !(previous.IsIdent() && IsNextTo(lexer, previous, token))) {
+      Error(token, "A macro's argument can't have a directive");
+      valid = false;
+    }
+  }
+  lexer.SetNextToken(next);
+  return valid;
 }
 
 void ProgramAssembler::ReadConst(const gb::ParsedItem& directive) {
