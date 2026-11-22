@@ -128,13 +128,13 @@ class ProgramGrammar final {
   // line isn't read, and the lexer is left after the name.
   static constexpr std::string_view kSkippedLineRule = "SkippedLine";
 
-  // kMacroUseRule parses a line that uses a macro, from its $name (%ident) to
-  // the end of the line, with zero or more $args separated by commas. An
-  // argument is one or more tokens up to a comma or the end of the line, with
-  // brackets balanced, so a comma in brackets is part of it. Its first token
-  // is its own, and its last is the $last of its last $tokens. An empty
-  // argument is an error at the token after its comma.
-  static constexpr std::string_view kMacroUseRule = "MacroUse";
+  // kMacroInvocationRule parses a line that invokes a macro, from its $name
+  // (%ident) to the end of the line, with zero or more $args separated by
+  // commas. An argument is one or more tokens up to a comma or the end of the
+  // line, with brackets balanced, so a comma in brackets is part of it. Its
+  // first token is its own, and its last is the $last of its last $tokens. An
+  // empty argument is an error at the token after its comma.
+  static constexpr std::string_view kMacroInvocationRule = "MacroInvocation";
 
   // Creates the grammar for `syntax`, which must outlive it. Returns an error
   // if a pattern in `syntax` has literal text the program lexer can't read as

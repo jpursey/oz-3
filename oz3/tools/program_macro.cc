@@ -122,7 +122,7 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
 //==============================================================================
 
 MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
-                               const ProgramMacro& macro, int use,
+                               const ProgramMacro& macro, int invocation,
                                absl::Span<const MacroArg> args) {
   CHECK_EQ(args.size(), macro.GetParameters().size());
   lines_.reserve(macro.GetLines().size());
@@ -138,7 +138,7 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
       Append(body.substr(column, token_column - column),
              AdjustColumn(start, column));
       if (replace.parameter == ProgramMacro::Replace::kLocalLabel) {
-        Append(absl::StrCat(macro.GetName().GetString(), "#", use,
+        Append(absl::StrCat(macro.GetName().GetString(), "#", invocation,
                             replace.token.GetString()),
                std::move(location));
       } else {

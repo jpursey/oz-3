@@ -24,7 +24,6 @@
 #include "absl/memory/memory.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
@@ -257,21 +256,21 @@ class ProgramAssembler final {
     bool has_else = false;
   };
 
-  // A macro defined with .MACRO, and the number of times it is used, which
-  // numbers each use. A macro with an error in its definition is still
-  // defined, so its uses aren't errors too, but they expand to nothing.
+  // A macro defined with .MACRO, and the number of times it is invoked, which
+  // numbers each invocation. A macro with an error in its definition is still
+  // defined, so its invocations aren't errors too, but they expand to nothing.
   struct Macro {
     std::unique_ptr<ProgramMacro> macro;
     bool valid = true;
-    int uses = 0;
+    int invocations = 0;
   };
 
-  // A use's expansion, which is read as content of its own, the macro it
-  // expands, and the macro's name where it is used.
+  // An invocation's expansion, which is read as content of its own, the macro
+  // it expands, and the macro's name where it is invoked.
   struct Expansion {
     std::unique_ptr<MacroExpansion> text;
     const ProgramMacro* macro = nullptr;
-    gb::Token use;
+    gb::Token invocation;
   };
 
   // What SkipLine() found on a line that isn't assembled.
@@ -319,7 +318,7 @@ class ProgramAssembler final {
   // comes back at each use), and stops once there are kMaxProgramErrors.
   //
   // An error in a macro's expansion is at the text it was copied from, and is
-  // followed by an error at each use it is in ("In WAITIN"), from the
+  // followed by an error at each invocation it is in ("In WAITIN"), from the
   // innermost out.
   void AddError(gb::ParseError error);
   void Error(const gb::Token& token, std::string_view message);
@@ -433,15 +432,22 @@ class ProgramAssembler final {
   // Macros. ReadMacro() defines a macro from its .MACRO, and reads its body
   // to its .ENDM with ReadMacroBody(), which adds the body's lines to `macro`
   // and returns true, or reports each error and returns false. A null `macro`
-  // only skips the body. `token` is the .MACRO's, for errors.
+  // only skips the body, for a .MACRO whose line is an error. `token` is the
+  // .MACRO's, for errors.
   //
-  // ReadMacroUse() reads a line's instruction if it is a macro's use, by
-  // assembling its expansion, and returns false if it isn't one.
+  // ReadMacroLine() adds the body's line at `start`, whose directive's name is
+  // `directive_name` (or empty for none), to `macro`, and moves past it. It
+  // returns false, after reporting why, if the line can't be in the body.
   void ReadMacro(gb::LexerContentId content, const gb::ParsedItem& directive);
   bool ReadMacroBody(gb::LexerContentId content, const gb::Token& token,
                      ProgramMacro* macro);
-  bool ReadMacroUse(gb::LexerContentId content,
-                    const gb::ParsedItem& instruction);
+  bool ReadMacroLine(gb::LexerContentId content, const gb::Token& start,
+                     std::string_view directive_name, ProgramMacro* macro);
+
+  // Reads a line's instruction if it is a macro's invocation, by assembling
+  // its expansion, and returns false if it isn't one.
+  bool ReadMacroInvocation(gb::LexerContentId content,
+                           const gb::ParsedItem& instruction);
   void ReadConst(const gb::ParsedItem& directive);
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
   void EndDataField(std::optional<int64_t> field_end, int64_t* size,
@@ -513,7 +519,7 @@ class ProgramAssembler final {
   ProgramMap BuildMap();
 
   // Returns where `token` is, as the map has it, which for a token in a
-  // macro's expansion is the line of its outermost use.
+  // macro's expansion is the line of its outermost invocation.
   ProgramMap::Location GetMapLocation(const gb::Token& token) const;
 
   // Returns the segment with the role of bank index `bank`, as a Program has
@@ -546,7 +552,8 @@ class ProgramAssembler final {
   absl::flat_hash_map<gb::LexerContentId, Expansion> expansions_;
 
   // Errors, and each one's formatted message, to report each error once. An
-  // error's uses follow it in `errors_`, but only it counts, in `error_count_`.
+  // error's invocations follow it in `errors_`, but only it counts, in
+  // `error_count_`.
   std::vector<gb::ParseError> errors_;
   absl::flat_hash_set<std::string> error_messages_;
   int error_count_ = 0;
@@ -725,13 +732,13 @@ void ProgramAssembler::AddError(gb::ParseError error) {
                       error.GetMessage());
   while (const Expansion* expansion = FindExpansion(content)) {
     const gb::LexerLocation location =
-        GetLexer().GetTokenLocation(expansion->use);
+        GetLexer().GetTokenLocation(expansion->invocation);
     errors.emplace_back(GetSourceLocation(location),
-                        absl::StrCat("In ", expansion->use.GetString()));
+                        absl::StrCat("In ", expansion->invocation.GetString()));
     content = location.id;
   }
 
-  // An error is the same as another only with the same uses.
+  // An error is the same as another only with the same invocations.
   std::string key;
   for (const gb::ParseError& added : errors) {
     absl::StrAppend(&key, added.FormatMessage(), "\n");
@@ -1009,22 +1016,27 @@ void ProgramAssembler::ReadLine(gb::LexerContentId content,
 
 bool ProgramAssembler::ReadInvalidLine(gb::LexerContentId content,
                                        std::vector<OpenIf>* ifs) {
+  // A line that doesn't parse is still read as far as a directive's name, for
+  // the directives the lines after it depend on. A line that doesn't start
+  // with a directive doesn't parse as a skipped line either, and is only moved
+  // past, as is any other.
   gb::Lexer& lexer = GetLexer();
   const int line_index = lexer.GetCurrentLine(content);
   gb::ParseResult line =
       parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
   const gb::ParsedItem* directive =
       line.IsOk() ? line->GetItem("directive") : nullptr;
-  const std::string_view name =
+  const std::string_view directive_name =
       directive != nullptr ? directive->GetString("directive") : "";
   const gb::Token next = lexer.NextToken(content, /*advance=*/false);
   lexer.NextLine(content);
-  if (const Conditional conditional = GetConditional(name);
+  if (const Conditional conditional = GetConditional(directive_name);
       conditional != Conditional::kNone) {
     ReadInvalidConditional(conditional, *directive, ifs);
-  } else if (name == "MACRO") {
-    // A .MACRO is still a body's start, which isn't assembled. A name it can
-    // have is still defined, as a macro whose uses are already errors here.
+  } else if (directive_name == "MACRO") {
+    // A .MACRO is still a body's start, which isn't assembled. Its name, if
+    // it has one, is still defined, as an invalid macro, so its invocations
+    // aren't errors too.
     ReadMacroBody(content, directive->GetToken(), nullptr);
     if (next.IsIdent() && !expansions_.contains(content) &&
         syntax_->GetForms(next.GetString()).empty()) {
@@ -1040,13 +1052,6 @@ bool ProgramAssembler::ReadInvalidLine(gb::LexerContentId content,
 bool ProgramAssembler::ValidateNoMacroLabel(gb::LexerContentId content) {
   gb::Lexer& lexer = GetLexer();
   const gb::Token start = lexer.NextToken(content, /*advance=*/false);
-
-  // Only a macro label has a '#', apart from a comment.
-  if (!absl::StrContains(
-          lexer.GetLineText(content, lexer.GetTokenLocation(start).line),
-          '#')) {
-    return true;
-  }
   bool valid = true;
   for (gb::Token token = lexer.NextToken(content); !IsLineEnd(token);
        token = lexer.NextToken(content)) {
@@ -1130,8 +1135,9 @@ void ProgramAssembler::ReadInclude(const gb::ParsedItem& directive) {
 
 void ProgramAssembler::ReadMacro(gb::LexerContentId content,
                                  const gb::ParsedItem& directive) {
-  // A body's .MACRO is an error where the body is defined, so one here is
-  // only from an argument.
+  // A body's .MACRO is an error where the body is defined (see
+  // ReadMacroBody()), so one in an expansion can only come from an argument,
+  // as in "M .MACRO X" for a macro whose body is its parameter.
   const gb::Token token = directive.GetToken();
   if (expansions_.contains(content)) {
     Error(token, ".MACRO can't be in a macro's body");
@@ -1186,66 +1192,72 @@ bool ProgramAssembler::ReadMacroBody(gb::LexerContentId content,
       Error(token, ".MACRO has no .ENDM");
       return false;
     }
+
+    // A line that doesn't start with a directive doesn't parse as a skipped
+    // line, so it has no directive's name.
     gb::ParseResult line =
         parser_->Parse(content, ProgramGrammar::kSkippedLineRule);
     const gb::ParsedItem* directive =
         line.IsOk() ? line->GetItem("directive") : nullptr;
-    const std::string_view name =
+    const std::string_view directive_name =
         directive != nullptr ? directive->GetString("directive") : "";
-    if (name == "ENDM" && nested == 0) {
-      if (line->GetItem("label") != nullptr ||
-          !IsLineEnd(lexer.NextToken(content, /*advance=*/false))) {
-        Error(start, ".ENDM must be on a line of its own");
-      }
-      lexer.NextLine(content);
-      return valid;
-    }
-    if (name == "MACRO") {
+    if (directive_name == "MACRO") {
+      // Only the outermost .MACRO in the body is reported, as the ones in it
+      // are in the lines skipped for its error.
       if (nested == 0) {
         Error(directive->GetToken(), ".MACRO can't be in a macro's body");
       }
       ++nested;
       valid = false;
-      lexer.NextLine(content);
-      continue;
-    }
-    if (nested > 0) {
-      if (name == "ENDM") {
-        --nested;
-      }
-      lexer.NextLine(content);
-      continue;
-    }
-    if (macro == nullptr) {
-      lexer.NextLine(content);
-      continue;
-    }
-
-    // A constant's name is defined again at each use, so only a parameter can
-    // name it. The lexer is after the directive's name.
-    if (name == "CONST") {
-      if (const gb::Token constant =
-              lexer.NextToken(content, /*advance=*/false);
-          constant.IsIdent() && macro->FindParameter(constant) < 0) {
-        Error(constant,
-              absl::StrCat("Macro ", macro->GetName().GetString(),
-                           " can't define constant ", constant.GetString(),
-                           ", only its parameters"));
-        valid = false;
+    } else if (directive_name == "ENDM") {
+      if (nested == 0) {
+        if (line->GetItem("label") != nullptr ||
+            !IsLineEnd(lexer.NextToken(content, /*advance=*/false))) {
+          Error(start, ".ENDM must be on a line of its own");
+        }
         lexer.NextLine(content);
-        continue;
+        return valid;
       }
+      --nested;
+    } else if (nested == 0 && macro != nullptr) {
+      valid = ReadMacroLine(content, start, directive_name, macro) && valid;
+      continue;
     }
-    lexer.SetNextToken(start);
-    if (gb::ParseError error; !macro->ReadLine(lexer, content, &error)) {
-      AddError(std::move(error));
-      valid = false;
-    }
+    lexer.NextLine(content);
   }
 }
 
-bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
-                                    const gb::ParsedItem& instruction) {
+bool ProgramAssembler::ReadMacroLine(gb::LexerContentId content,
+                                     const gb::Token& start,
+                                     std::string_view directive_name,
+                                     ProgramMacro* macro) {
+  gb::Lexer& lexer = GetLexer();
+
+  // A constant's name is defined again at each invocation, so only a
+  // parameter can name it. The lexer is after the directive's name.
+  if (directive_name == "CONST") {
+    if (const gb::Token constant = lexer.NextToken(content, /*advance=*/false);
+        constant.IsIdent() && macro->FindParameter(constant) < 0) {
+      Error(constant,
+            absl::StrCat("Macro ", macro->GetName().GetString(),
+                         " can't define constant ", constant.GetString(),
+                         ", only its parameters"));
+      lexer.NextLine(content);
+      return false;
+    }
+  }
+
+  // ReadLine() validates the line's labels, and moves past it.
+  lexer.SetNextToken(start);
+  if (gb::ParseError error; !macro->ReadLine(lexer, content, &error)) {
+    AddError(std::move(error));
+    return false;
+  }
+  return true;
+}
+
+bool ProgramAssembler::ReadMacroInvocation(gb::LexerContentId content,
+                                           const gb::ParsedItem& instruction) {
   // A name with an extension is always an instruction's.
   if (instruction.GetItem("extension") != nullptr) {
     return false;
@@ -1256,24 +1268,25 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
     return false;
   }
 
-  // The line is parsed again for the use's arguments, and the lexer is put
-  // back after it.
+  // The line is parsed again for the invocation's arguments, and the lexer is
+  // put back after it.
   gb::Lexer& lexer = GetLexer();
   const gb::Token next = lexer.NextToken(content, /*advance=*/false);
   lexer.SetNextToken(name);
-  gb::ParseResult use = parser_->Parse(content, ProgramGrammar::kMacroUseRule);
+  gb::ParseResult invocation =
+      parser_->Parse(content, ProgramGrammar::kMacroInvocationRule);
   lexer.SetNextToken(next);
-  if (!use.IsOk()) {
-    AddError(use.GetError());
+  if (!invocation.IsOk()) {
+    AddError(invocation.GetError());
     return true;
   }
   std::vector<MacroArg> args;
-  for (const gb::ParsedItem& arg : use->GetItems("args")) {
+  for (const gb::ParsedItem& arg : invocation->GetItems("args")) {
     args.push_back({.first = arg.GetToken(),
                     .last = arg.GetItems("tokens").back().GetToken("last")});
   }
 
-  // An invalid macro's uses expand to nothing, as its error is already
+  // An invalid macro's invocations expand to nothing, as its error is already
   // reported.
   Macro& macro = it->second;
   if (!macro.valid) {
@@ -1292,27 +1305,28 @@ bool ProgramAssembler::ReadMacroUse(gb::LexerContentId content,
   }
   for (const Expansion* expansion = FindExpansion(content);
        expansion != nullptr;
-       expansion = FindExpansion(lexer.GetTokenLocation(expansion->use).id)) {
+       expansion =
+           FindExpansion(lexer.GetTokenLocation(expansion->invocation).id)) {
     if (expansion->macro == definition) {
       Error(name,
             absl::StrCat("Macro ", name.GetString(), " can't use itself"));
       return true;
     }
   }
-  auto expansion =
-      std::make_unique<MacroExpansion>(lexer, *definition, ++macro.uses, args);
+  auto expansion = std::make_unique<MacroExpansion>(lexer, *definition,
+                                                    ++macro.invocations, args);
   if (expansion->GetLineCount() == 0) {
     return true;
   }
   const gb::LexerContentId expansion_content =
       lexer.AddContent(expansion->GetText());
   if (expansion_content == gb::kNoLexerContent) {
-    Error(name, absl::StrCat("This use of ", name.GetString(),
+    Error(name, absl::StrCat("This invocation of ", name.GetString(),
                              " has too many lines, or a line too long"));
     return true;
   }
   expansions_[expansion_content] = {
-      .text = std::move(expansion), .macro = definition, .use = name};
+      .text = std::move(expansion), .macro = definition, .invocation = name};
   ReadContent(expansion_content);
   return true;
 }
@@ -1540,7 +1554,7 @@ void ProgramAssembler::ReadSegmentRole(const gb::Token& role) {
 
 void ProgramAssembler::ReadInstruction(gb::LexerContentId content,
                                        const gb::ParsedItem& instruction) {
-  if (ReadMacroUse(content, instruction)) {
+  if (ReadMacroInvocation(content, instruction)) {
     return;
   }
   std::vector<InstructionMatch> matches;
@@ -2226,7 +2240,7 @@ ProgramMap::Location ProgramAssembler::GetMapLocation(
     const gb::Token& token) const {
   gb::LexerLocation location = GetLexer().GetTokenLocation(token);
   while (const Expansion* expansion = FindExpansion(location.id)) {
-    location = GetLexer().GetTokenLocation(expansion->use);
+    location = GetLexer().GetTokenLocation(expansion->invocation);
   }
 
   // Every token outside an expansion is in a content AddContent() added.

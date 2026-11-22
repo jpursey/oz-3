@@ -201,18 +201,18 @@ class ProgramGrammarTest : public ::testing::Test {
     return matches_[0].args[index].reg;
   }
 
-  // Parses `text` as a macro's use, which must parse, and returns the text of
-  // each argument.
-  std::vector<std::string> ParseMacroUse(std::string_view text) {
+  // Parses `text` as a macro's invocation, which must parse, and returns the
+  // text of each argument.
+  std::vector<std::string> ParseMacroInvocation(std::string_view text) {
     SetText(text);
-    gb::ParseResult use =
-        parser_->Parse(content_, ProgramGrammar::kMacroUseRule);
-    if (!use.IsOk()) {
-      ADD_FAILURE() << text << ": " << use.GetError().FormatMessage();
+    gb::ParseResult invocation =
+        parser_->Parse(content_, ProgramGrammar::kMacroInvocationRule);
+    if (!invocation.IsOk()) {
+      ADD_FAILURE() << text << ": " << invocation.GetError().FormatMessage();
       return {};
     }
     std::vector<std::string> args;
-    for (const gb::ParsedItem& arg : use->GetItems("args")) {
+    for (const gb::ParsedItem& arg : invocation->GetItems("args")) {
       const std::string_view first = GetLexer().GetTokenText(arg.GetToken());
       const std::string_view last = GetLexer().GetTokenText(
           arg.GetItems("tokens").back().GetToken("last"));
@@ -521,17 +521,17 @@ TEST_F(ProgramGrammarTest, InstructionArgs) {
   EXPECT_EQ(ParseLineError("ADD R1, (5]").GetLocation().column, 10);
 }
 
-TEST_F(ProgramGrammarTest, MacroUse) {
+TEST_F(ProgramGrammarTest, MacroInvocation) {
   // Each argument is its tokens up to a comma outside brackets, from its first
   // to its last.
-  EXPECT_THAT(ParseMacroUse("WAITIN"), IsEmpty());
-  EXPECT_THAT(ParseMacroUse("WAITIN ; comment"), IsEmpty());
-  EXPECT_THAT(ParseMacroUse("WAITIN KEYBOARD, R1 ; comment"),
+  EXPECT_THAT(ParseMacroInvocation("WAITIN"), IsEmpty());
+  EXPECT_THAT(ParseMacroInvocation("WAITIN ; comment"), IsEmpty());
+  EXPECT_THAT(ParseMacroInvocation("WAITIN KEYBOARD, R1 ; comment"),
               ElementsAre("KEYBOARD", "R1"));
   EXPECT_THAT(
-      ParseMacroUse("M D(table), (R1), 'a,b', [1, 2], {x, (y, z)}"),
+      ParseMacroInvocation("M D(table), (R1), 'a,b', [1, 2], {x, (y, z)}"),
       ElementsAre("D(table)", "(R1)", "'a,b'", "[1, 2]", "{x, (y, z)}"));
-  EXPECT_THAT(ParseMacroUse("M ADD.W R1 + 2 , @loop"),
+  EXPECT_THAT(ParseMacroInvocation("M ADD.W R1 + 2 , @loop"),
               ElementsAre("ADD.W R1 + 2", "@loop"));
   EXPECT_TRUE(GetLexer().NextToken(content_, false).IsEnd());
 
@@ -540,16 +540,17 @@ TEST_F(ProgramGrammarTest, MacroUse) {
   for (auto [text, column] :
        {std::pair{"M 1,", 4}, {"M , 1", 2}, {"M 1, , 2", 5}}) {
     SetText(text);
-    gb::ParseResult use =
-        parser_->Parse(content_, ProgramGrammar::kMacroUseRule);
-    ASSERT_FALSE(use.IsOk()) << text;
-    EXPECT_THAT(use.GetError().GetMessage(),
+    gb::ParseResult invocation =
+        parser_->Parse(content_, ProgramGrammar::kMacroInvocationRule);
+    ASSERT_FALSE(invocation.IsOk()) << text;
+    EXPECT_THAT(invocation.GetError().GetMessage(),
                 HasSubstr("Macro argument is empty"))
         << text;
-    EXPECT_EQ(use.GetError().GetLocation().column, column) << text;
+    EXPECT_EQ(invocation.GetError().GetLocation().column, column) << text;
   }
   SetText("M (1, 2");
-  EXPECT_FALSE(parser_->Parse(content_, ProgramGrammar::kMacroUseRule).IsOk());
+  EXPECT_FALSE(
+      parser_->Parse(content_, ProgramGrammar::kMacroInvocationRule).IsOk());
 }
 
 TEST_F(ProgramGrammarTest, InstructionNames) {

@@ -374,15 +374,15 @@ class MacroExpansion final {
   listing changes: a line already can have several statements.
 - **Uses** are found in `ReadInstruction`: a name with no extension that is a
   macro's is expanded, before any form is matched. The line is parsed again
-  with the grammar's `MacroUse` rule, whose arguments are each one or more
-  tokens up to a comma outside brackets, read as `ArgToken` reads brackets,
-  with an empty one an error at the token after its comma. Each gives its
-  first token and its last, which is a `MacroArg`. A use with no arguments is
-  its own alternative, so that a line such as `TWO , 2` is an empty argument,
-  rather than a use with none followed by stray tokens:
+  with the grammar's `MacroInvocation` rule, whose arguments are each one or
+  more tokens up to a comma outside brackets, read as `ArgToken` reads
+  brackets, with an empty one an error at the token after its comma. Each
+  gives its first token and its last, which is a `MacroArg`. A use with no
+  arguments is its own alternative, so that a line such as `TWO , 2` is an
+  empty argument, rather than a use with none followed by stray tokens:
 
   ```
-  MacroUse {
+  MacroInvocation {
     $name=%ident (EndOfLine | $args=MacroArg,+ EndOfLine);
   }
   MacroArg {
@@ -435,10 +435,10 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   Confirmed for bodies in CL4, which read each line the same way, peeking its
   first token to put back for `ProgramMacro::ReadLine`.
 - [x] The assembler can put the lexer back at the start of a use's line
-  (`gb::Lexer::RewindLine`), to parse it again with `MacroUse` (CL4), once
-  `Line` has parsed it as an instruction. No new lexer function is needed:
+  (`gb::Lexer::RewindLine`), to parse it again with `MacroInvocation` (CL4),
+  once `Line` has parsed it as an instruction. No new lexer function is needed:
   `SetNextToken` goes back to the use's name, and on to the token after the
-  line once `MacroUse` has parsed it.
+  line once `MacroInvocation` has parsed it.
 - [x] Whether an error's uses are errors of their own after it, or part of its
   message (CL4): errors of their own ("In WAITIN"), as each is a location, so
   a tool can jump to each one. An error and its uses are one entry when
@@ -451,7 +451,7 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   lexer keeps a token's column in 12 bits, and an expansion's line can be
   much longer than any line written, as each argument is copied wherever its
   parameter is. `AddContent` fails for such a line, which is an error at the
-  use: "This use of X has too many lines, or a line too long".
+  use: "This invocation of X has too many lines, or a line too long".
 - [x] Adding `<=`, `>=`, `==`, and `!=` as symbols doesn't change how any
   pattern of the default instruction set, or any test's, is read (CL1): none
   writes two of `<`, `>`, `=`, and `!` in a row. Another instruction set's
@@ -541,12 +541,12 @@ Depends on: nothing.
 
 Depends on: CL3, and CL2 for tests with `.IF` in a body.
 
-- `program_grammar.cc`: `.MACRO` and `.ENDM`, and `MacroUse`, a use's
-  arguments.
+- `program_grammar.cc`: `.MACRO` and `.ENDM`, and `MacroInvocation`, a
+  use's arguments.
 - `program_grammar.cc`: macro labels (`%macro_label`) as labels and in
   expressions.
 - `program_assembler.cc`: reading definitions with `ProgramMacro::ReadLine`;
-  expanding uses in `ReadInstruction`, parsed with `MacroUse`, read as
+  expanding uses in `ReadInstruction`, parsed with `MacroInvocation`, read as
   content of their own with a stack of the uses being expanded; a macro label
   written in a file an error, and `GetLabelKey` leaving one as it is; a
   `.CONST` in a body with a name that isn't a parameter an error at the

@@ -2064,7 +2064,8 @@ TEST_F(ProgramAssemblerTest, MacroIf) {
 }
 
 TEST_F(ProgramAssemblerTest, MacroLocalLabels) {
-  // Each use has its own local labels, which don't end the caller's scope.
+  // Each invocation has its own local labels, which don't end the caller's
+  // scope.
   const std::string_view text =
       ".STACK 1\n"
       ".MACRO HERE\n"
@@ -2111,7 +2112,7 @@ TEST_F(ProgramAssemblerTest, MacroCallerLocalLabel) {
 
 TEST_F(ProgramAssemblerTest, MacroLabelFromParameter) {
   // A label from a parameter is the caller's, and starts a scope, which the
-  // rest of the use's arguments are in too.
+  // rest of the invocation's arguments are in too.
   const std::string_view text =
       ".STACK 1\n"
       ".MACRO ENTRY name, value\n"
@@ -2140,7 +2141,7 @@ TEST_F(ProgramAssemblerTest, MacroLabelFromParameter) {
                                    .offset = 3,
                                    .location = {.file = 0, .line = 7}}));
 
-  // A second use defining it again is an error in the argument.
+  // A second invocation defining it again is an error in the argument.
   EXPECT_THAT(AssembleErrors(".STACK 1\n"
                              ".MACRO ENTRY name\n"
                              "  name: NOP\n"
@@ -2151,8 +2152,8 @@ TEST_F(ProgramAssemblerTest, MacroLabelFromParameter) {
                           IsErrorAt(5, 0, "In ENTRY")));
 }
 
-TEST_F(ProgramAssemblerTest, MacroLabelOnUse) {
-  // A label on a use labels the macro's first statement.
+TEST_F(ProgramAssemblerTest, MacroLabelOnInvocation) {
+  // A label on an invocation labels the macro's first statement.
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".MACRO TWO\n"
                             "  .DW 1\n"
@@ -2245,7 +2246,7 @@ TEST_F(ProgramAssemblerTest, MacroDefinitionErrors) {
 }
 
 TEST_F(ProgramAssemblerTest, MacroErrorLimit) {
-  // An error's uses don't count toward the limit.
+  // An error's invocations don't count toward the limit.
   std::string text = ".STACK 1\n.MACRO M\nFOO\n.ENDM\n";
   for (int i = 0; i < kMaxProgramErrors + 10; ++i) {
     absl::StrAppend(&text, "M\n");
@@ -2259,7 +2260,7 @@ TEST_F(ProgramAssemblerTest, MacroErrorLimit) {
 }
 
 TEST_F(ProgramAssemblerTest, MacroLineErrors) {
-  // A .MACRO whose line is an error still defines its name, so its uses
+  // A .MACRO whose line is an error still defines its name, so its invocations
   // aren't errors too, and a label on a stray .ENDM is still defined.
   EXPECT_THAT(AssembleErrors(".STACK 1\n"
                              ".MACRO M a, 5\n"
@@ -2274,8 +2275,8 @@ TEST_F(ProgramAssemblerTest, MacroLineErrors) {
 }
 
 TEST_F(ProgramAssemblerTest, MacroBodyErrors) {
-  // An error in a body is reported where it is defined, and its uses expand
-  // to nothing.
+  // An error in a body is reported where it is defined, and its invocations
+  // expand to nothing.
   EXPECT_THAT(AssembleErrors(".STACK 1\n"
                              ".MACRO M\n"
                              "  loop: NOP\n"
@@ -2318,6 +2319,23 @@ TEST_F(ProgramAssemblerTest, MacroDirectiveErrors) {
                   IsErrorAt(11, 7, ""),
                   IsErrorAt(15, 0, "Unknown instruction B"),
                   IsErrorAt(16, 0, ".MACRO has no .ENDM")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroDirectiveFromArgument) {
+  // A body can't hold a .MACRO, but an argument can put one in its expansion,
+  // which is an error there.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO M x\n"
+                             "  x\n"
+                             ".ENDM\n"
+                             "M .MACRO FOO\n"
+                             "M .ENDM\n"
+                             "FOO\n"),
+              ElementsAre(IsErrorAt(4, 2, ".MACRO can't be in a macro's body"),
+                          IsErrorAt(4, 0, "In M"),
+                          IsErrorAt(5, 2, ".ENDM has no .MACRO"),
+                          IsErrorAt(5, 0, "In M"),
+                          IsErrorAt(6, 0, "Unknown instruction FOO")));
 }
 
 TEST_F(ProgramAssemblerTest, MacroInclude) {
@@ -2381,9 +2399,10 @@ TEST_F(ProgramAssemblerTest, MacroBareProgramAddress) {
               HasSubstr("(3:11) is in an address from BS"));
 }
 
-TEST_F(ProgramAssemblerTest, MacroErrorsInUses) {
-  // An error in a use is where its text was written, in a body or an
-  // argument, and is followed by each use it is in, from the innermost out.
+TEST_F(ProgramAssemblerTest, MacroErrorsInInvocations) {
+  // An error in an invocation is where its text was written, in a body or an
+  // argument, and is followed by each invocation it is in, from the innermost
+  // out.
   ASSERT_TRUE(file_system_.WriteFile("mem:/macros.oza",
                                      ".MACRO WAITIN port, reg\n"
                                      "  .DW reg\n"
@@ -2409,7 +2428,7 @@ TEST_F(ProgramAssemblerTest, MacroErrorsInUses) {
   EXPECT_EQ(errors[1].GetLocation().filename, "mem:/macros.oza");
   EXPECT_EQ(errors[2].GetLocation().filename, "mem:/main.oza");
 
-  // The second pass's errors are followed by their uses too.
+  // The second pass's errors are followed by their invocations too.
   ASSERT_TRUE(file_system_.WriteFile("mem:/macros.oza",
                                      ".MACRO WAITIN port, reg\n"
                                      "  .DW reg\n"
@@ -2433,8 +2452,8 @@ TEST_F(ProgramAssemblerTest, MacroErrorsInUses) {
   EXPECT_EQ(errors[3].GetLocation().filename, "mem:/macros.oza");
 }
 
-TEST_F(ProgramAssemblerTest, MacroErrorsAreReportedForEachUse) {
-  // The same error in two uses is reported for each.
+TEST_F(ProgramAssemblerTest, MacroErrorsAreReportedForEachInvocation) {
+  // The same error in two invocations is reported for each.
   EXPECT_THAT(AssembleErrors(".STACK 1\n"
                              ".MACRO M\n"
                              "  FOO\n"
@@ -2459,11 +2478,12 @@ TEST_F(ProgramAssemblerTest, MacroLineTooLong) {
                                   "LONG ",
                                   arg, "\n")),
       ElementsAre(IsErrorAt(
-          4, 0, "This use of LONG has too many lines, or a line too long")));
+          4, 0,
+          "This invocation of LONG has too many lines, or a line too long")));
 }
 
 TEST_F(ProgramAssemblerTest, MapOfMacros) {
-  // Everything a use defines and writes is at the line that uses it.
+  // Everything an invocation defines and writes is at the line that invokes it.
   const ProgramMap map = AssembleMap(
       ".STACK 1\n"
       ".MACRO INNER name\n"

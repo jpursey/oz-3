@@ -154,7 +154,7 @@ constexpr std::string_view kRules = R"---(
     '[' ArgToken* ']';
     '{' ArgToken* '}';
   }
-  MacroUse {
+  MacroInvocation {
     $name=%ident (EndOfLine | $args=MacroArg,+ EndOfLine);
   }
   MacroArg {

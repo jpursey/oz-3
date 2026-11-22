@@ -28,7 +28,7 @@ namespace oz3 {
 // read them must outlive the macro.
 class ProgramMacro final {
  public:
-  // A token in a line of the body that each use of the macro replaces: a
+  // A token in a line of the body that each invocation of the macro replaces: a
   // parameter's name, or a local label the body writes.
   struct Replace {
     static constexpr int kLocalLabel = -1;
@@ -38,7 +38,7 @@ class ProgramMacro final {
   };
 
   // A line of the body that has tokens: its first and last, and the ones each
-  // use replaces, in order.
+  // invocation replaces, in order.
   struct Line {
     gb::Token first;
     gb::Token last;
@@ -99,11 +99,11 @@ struct MacroArg {
 // first token to its last, so its comment is dropped.
 class MacroExpansion final {
  public:
-  // Expands `macro`, which `lexer` read, as its use number `use` (counting
-  // from 1), with `args`, one for each of its parameters, which `lexer` also
-  // read.
-  MacroExpansion(const gb::Lexer& lexer, const ProgramMacro& macro, int use,
-                 absl::Span<const MacroArg> args);
+  // Expands `macro`, which `lexer` read, as its invocation number
+  // `invocation` (counting from 1), with `args`, one for each of its
+  // parameters, which `lexer` also read.
+  MacroExpansion(const gb::Lexer& lexer, const ProgramMacro& macro,
+                 int invocation, absl::Span<const MacroArg> args);
   MacroExpansion(const MacroExpansion&) = delete;
   MacroExpansion& operator=(const MacroExpansion&) = delete;
   ~MacroExpansion() = default;
@@ -114,8 +114,8 @@ class MacroExpansion final {
   int GetLineCount() const { return static_cast<int>(lines_.size()); }
 
   // Returns where the text at `line` and `column` came from: in the macro's
-  // body, or in an argument, where the use wrote it. `line` must be from 0 to
-  // GetLineCount() - 1, and `column` must not be negative.
+  // body, or in an argument, where the invocation wrote it. `line` must be from
+  // 0 to GetLineCount() - 1, and `column` must not be negative.
   //
   // Each character of the text copied from the body or an argument is at the
   // place it was copied from, and a renamed local label starts at the label it
