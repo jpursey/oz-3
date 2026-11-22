@@ -76,7 +76,7 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
     } else if (const int parameter = FindParameter(token); parameter >= 0) {
       line.replaces.push_back({.token = token, .parameter = parameter});
       if (i + 1 < count && tokens[i + 1].IsSymbol('.') &&
-          IsNextTo(lexer, token, tokens[i + 1])) {
+          lexer.IsTokenAdjacent(tokens[i + 1])) {
         extended_[parameter] = true;
       }
     }
@@ -122,15 +122,14 @@ bool ProgramMacro::ValidateDirective(const gb::Lexer& lexer,
   const int count = static_cast<int>(tokens.size());
   const gb::Token& dot = tokens[index];
   if (index + 1 == count || !tokens[index + 1].IsIdent() ||
-      !IsNextTo(lexer, dot, tokens[index + 1])) {
+      !lexer.IsTokenAdjacent(tokens[index + 1])) {
     return true;
   }
   const gb::Token& name = tokens[index + 1];
 
   // A '.' right after a name is its extension ("ADD.W"). After a parameter,
   // its argument ends in a name (see IsExtended()), so it is one there too.
-  if (index > 0 && tokens[index - 1].IsIdent() &&
-      IsNextTo(lexer, tokens[index - 1], dot)) {
+  if (index > 0 && tokens[index - 1].IsIdent() && lexer.IsTokenAdjacent(dot)) {
     return true;
   }
   if (FindParameter(name) >= 0) {
