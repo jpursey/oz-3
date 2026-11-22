@@ -1391,8 +1391,8 @@ bool ProgramAssembler::ValidateNoArgDirective(gb::LexerContentId content,
       continue;
     }
     const gb::Token after = lexer.NextToken(content, /*advance=*/false);
-    if (after.IsIdent() && IsNextTo(lexer, token, after) &&
-        !(previous.IsIdent() && IsNextTo(lexer, previous, token))) {
+    if (after.IsIdent() && lexer.IsTokenAdjacent(after) &&
+        !(previous.IsIdent() && lexer.IsTokenAdjacent(token))) {
       Error(token, "A macro's argument can't have a directive");
       valid = false;
     }

@@ -565,9 +565,9 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
   a parameter, a parameter naming a directive, and `.MACRO`, `.ENDM`, and
   `.INCLUDE`. As an argument can't have a directive, an expansion's
   directives are all the body's, so the assembler checks none of them again.
-- `program_macro.cc`: a token range's text from `gb::Lexer`, if Game Bits
-  *Lexer text of a token range* is done, in place of `GetTokensText`. It
-  isn't yet, so `GetTokensText` stays.
+- `program_macro.cc`: a token range's text from `GetTokensText`, until Game
+  Bits *Lexer text of a token range* was done. It now comes from
+  `gb::Lexer::GetTokenRangeText`.
 - `program_map.h`: the names of a use's own local labels.
 - Manual: Program Source's Macros, the directives table, and the listing's
   rows for a macro's use.
