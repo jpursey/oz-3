@@ -26,7 +26,7 @@ using ::testing::ElementsAre;
 using ::testing::IsEmpty;
 using ::testing::Pair;
 
-constexpr int kLocalLabel = ProgramMacro::Replace::kLocalLabel;
+constexpr int kLabel = ProgramMacro::Replace::kLabel;
 
 class ProgramMacroTest : public ::testing::Test {
  protected:
@@ -116,6 +116,22 @@ class ProgramMacroTest : public ::testing::Test {
     return replaces;
   }
 
+  // Returns the text of each label in the macro's lines, and whether
+  // each use of the macro renames it.
+  std::vector<std::pair<std::string_view, bool>> GetLabels(
+      const ProgramMacro& macro) {
+    std::vector<std::pair<std::string_view, bool>> labels;
+    for (const ProgramMacro::Line& line : macro.GetLines()) {
+      for (const ProgramMacro::Replace& replace : line.replaces) {
+        if (replace.parameter == kLabel) {
+          labels.emplace_back(lexer_->GetTokenText(replace.token),
+                              macro.IsRenamed(replace));
+        }
+      }
+    }
+    return labels;
+  }
+
   // Returns the location in `content`.
   gb::LexerLocation At(gb::LexerContentId content, int line, int column) {
     gb::LexerLocation location = lexer_->GetLineLocation(content, line);
@@ -153,7 +169,7 @@ TEST_F(ProgramMacroTest, ReplacesInALine) {
               ElementsAre(Pair("name", 3), Pair("size", 1), Pair("Reg", 0),
                           Pair("value", 2)));
   EXPECT_THAT(GetReplaces(macro->GetLines()[1]),
-              ElementsAre(Pair("@reg", kLocalLabel), Pair("value", 2)));
+              ElementsAre(Pair("@reg", kLabel), Pair("value", 2)));
   EXPECT_EQ(lexer_->GetTokenLocation(macro->GetLines()[1].first),
             At("macros.oza", 1, 2));
 }
@@ -169,9 +185,8 @@ TEST_F(ProgramMacroTest, LinesWithNoTokens) {
   EXPECT_THAT(GetLineTexts(*macro), ElementsAre("NOP", "@loop: JP @loop"));
   ASSERT_EQ(macro->GetLines().size(), 2);
   EXPECT_THAT(GetReplaces(macro->GetLines()[0]), IsEmpty());
-  EXPECT_THAT(
-      GetReplaces(macro->GetLines()[1]),
-      ElementsAre(Pair("@loop", kLocalLabel), Pair("@loop", kLocalLabel)));
+  EXPECT_THAT(GetReplaces(macro->GetLines()[1]),
+              ElementsAre(Pair("@loop", kLabel), Pair("@loop", kLabel)));
 }
 
 TEST_F(ProgramMacroTest, Labels) {
@@ -240,33 +255,70 @@ TEST_F(ProgramMacroTest, Directives) {
 }
 
 TEST_F(ProgramMacroTest, RepeatLabels) {
-  // A repeated block's body can't define a label of any kind, as each
-  // repetition would define it again, but it can use them, and macro labels
-  // too, for a block in an expansion.
+  // A repeated block's body renames the local labels its lines start with,
+  // before or after they are used, and anywhere in it, including in a .REPT
+  // in it, but not those it doesn't define. It can't define any other label,
+  // as each repetition would define it again.
   std::unique_ptr<ProgramMacro> repeat =
       CreateMacro("REPT I", ProgramMacro::Kind::kRepeat);
-  const gb::LexerContentId content = AddFile("main.oza",
-                                             "  JP @loop, loop, M#1@loop\n"
-                                             "  loop: NOP\n"
-                                             "  @loop: NOP\n"
-                                             "  M#1@loop: NOP\n"
-                                             "  i: NOP\n");
+  const gb::LexerContentId content =
+      AddFile("main.oza",
+              "  JP @loop, @done\n"
+              "  @loop: NOP\n"
+              "  .REPT 2\n"
+              "    @inner: JP @inner, @loop, @done\n"
+              "  .ENDR\n"
+              "  loop: NOP\n"
+              "  i: NOP\n");
   gb::ParseError error;
-  EXPECT_TRUE(repeat->ReadLine(*lexer_, content, &error))
-      << error.FormatMessage();
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_TRUE(repeat->ReadLine(*lexer_, content, &error))
+        << error.FormatMessage();
+  }
   const std::pair<int, std::string_view> errors[] = {
-      {1, ".REPT can't define label loop"},
-      {2, ".REPT can't define label @loop"},
-      {3, ".REPT can't define label M#1@loop"},
-      {4, ".REPT can't define label i"},
+      {5, ".REPT can't define label loop, only local labels"},
+      {6, ".REPT can't define label i, only local labels"},
   };
   for (const auto& [line, message] : errors) {
     EXPECT_FALSE(repeat->ReadLine(*lexer_, content, &error)) << message;
     EXPECT_EQ(error.GetLocation(), At("main.oza", line, 2));
     EXPECT_EQ(error.GetMessage(), message);
   }
-  ASSERT_EQ(repeat->GetLines().size(), 1);
-  EXPECT_THAT(GetReplaces(repeat->GetLines()[0]), IsEmpty());
+  EXPECT_EQ(repeat->GetLines().size(), 5);
+  EXPECT_THAT(GetLabels(*repeat),
+              ElementsAre(Pair("@loop", true), Pair("@done", false),
+                          Pair("@loop", true), Pair("@inner", true),
+                          Pair("@inner", true), Pair("@loop", true),
+                          Pair("@done", false)));
+}
+
+TEST_F(ProgramMacroTest, RepeatMacroLabels) {
+  // A repeated block in an expansion renames the labels it defines, both the
+  // macro labels that are the expansion's renamed local labels, and the local
+  // labels its arguments wrote, but not the others.
+  std::unique_ptr<ProgramMacro> repeat =
+      ReadMacro("main.oza", "REPT",
+                "  M#1@top: JP M#1@top, M#1@end, @done\n"
+                "  @arg: NOP\n",
+                ProgramMacro::Kind::kRepeat);
+  EXPECT_THAT(GetLabels(*repeat),
+              ElementsAre(Pair("M#1@top", true), Pair("M#1@top", true),
+                          Pair("M#1@end", false), Pair("@done", false),
+                          Pair("@arg", true)));
+  const MacroExpansion expansion(*lexer_, *repeat, 2, {});
+  EXPECT_EQ(expansion.GetText(),
+            "REPT#2@TOP: JP REPT#2@TOP, M#1@end, @done\nREPT#2@ARG: NOP\n");
+}
+
+TEST_F(ProgramMacroTest, MacroRenamesRepeatLabels) {
+  // A macro's body renames every local label, including those a .REPT in it
+  // defines, which the .REPT then renames again.
+  std::unique_ptr<ProgramMacro> macro = ReadMacro("macros.oza", "M",
+                                                  "  .REPT 2\n"
+                                                  "    @x: JP @x, @y\n"
+                                                  "  .ENDR\n");
+  EXPECT_THAT(GetLabels(*macro), ElementsAre(Pair("@x", true), Pair("@x", true),
+                                             Pair("@y", true)));
 }
 
 TEST_F(ProgramMacroTest, RepeatDirectives) {
@@ -436,16 +488,19 @@ TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
 }
 
 TEST_F(ProgramMacroTest, RepeatExpansion) {
-  // A repeated block's local labels aren't renamed, and its index, with no
-  // location, is where the body names it.
-  std::unique_ptr<ProgramMacro> repeat =
-      ReadMacro("main.oza", "REPT I", "  JP @next\n  .DW i * 2, 'i'\n",
-                ProgramMacro::Kind::kRepeat);
+  // A repeated block renames only the local labels it defines, and its index,
+  // with no location, is where the body names it.
+  std::unique_ptr<ProgramMacro> repeat = ReadMacro(
+      "main.oza", "REPT I", "  JP @next, @done\n  @next: .DW i * 2, 'i'\n",
+      ProgramMacro::Kind::kRepeat);
   const MacroExpansion expansion(*lexer_, *repeat, 3, {{.text = "12"}});
-  EXPECT_EQ(expansion.GetText(), "JP @next\n.DW 12 * 2, 'i'\n");
-  EXPECT_EQ(expansion.GetLocation(1, 4), At("main.oza", 1, 6));
-  EXPECT_EQ(expansion.GetLocation(1, 5), At("main.oza", 1, 7));
-  EXPECT_EQ(expansion.GetLocation(1, 7), At("main.oza", 1, 8));
+  EXPECT_EQ(expansion.GetText(),
+            "JP REPT#3@NEXT, @done\nREPT#3@NEXT: .DW 12 * 2, 'i'\n");
+  EXPECT_EQ(expansion.GetLocation(1, 0), At("main.oza", 1, 2));
+  EXPECT_EQ(expansion.GetLocation(1, 11), At("main.oza", 1, 7));
+  EXPECT_EQ(expansion.GetLocation(1, 17), At("main.oza", 1, 13));
+  EXPECT_EQ(expansion.GetLocation(1, 18), At("main.oza", 1, 14));
+  EXPECT_EQ(expansion.GetLocation(1, 19), At("main.oza", 1, 14));
 }
 
 }  // namespace

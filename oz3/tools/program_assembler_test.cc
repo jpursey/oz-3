@@ -2572,8 +2572,25 @@ TEST_F(ProgramAssemblerTest, RepeatIf) {
 }
 
 TEST_F(ProgramAssemblerTest, RepeatLabels) {
-  // A body uses the labels where it is, and a macro invoked in it has its own
-  // local labels in each repetition.
+  // Each repetition has its own local labels that the body defines, and a
+  // .REPT in it its own in each of its repetitions. The body uses the other
+  // labels where it is, and a macro invoked in it has its own local labels in
+  // each repetition.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".REPT 2, i\n"
+                            "  .DW @after\n"
+                            "  @after: .DW @after, @done, i\n"
+                            ".ENDR\n"
+                            "@done: .DW @done\n"),
+              ElementsAre(1, 1, 8, 0, 5, 5, 8, 1, 8, 0));
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".REPT 2\n"
+                            "  @outer: .DW @outer\n"
+                            "  .REPT 2\n"
+                            "    @inner: .DW @inner, @outer\n"
+                            "  .ENDR\n"
+                            ".ENDR\n"),
+              ElementsAre(0, 1, 0, 3, 0, 5, 6, 5, 8, 5));
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".MACRO HERE\n"
                             "  @here: .DW @here\n"
@@ -2585,22 +2602,32 @@ TEST_F(ProgramAssemblerTest, RepeatLabels) {
                             ".ENDR\n"
                             "@done: .DW @done\n"),
               ElementsAre(6, 0, 2, 6, 0, 5, 6, 0));
-  EXPECT_THAT(AssembleErrors(".STACK 1\n"
-                             ".REPT 2\n"
-                             "  @loop: NOP\n"
-                             "  NOP\n"
-                             ".ENDR\n"
-                             ".REPT 1\n"
-                             "  JPR M#1@LOOP\n"
-                             ".ENDR\n"),
-              ElementsAre(IsErrorAt(2, 2, ".REPT can't define label @loop"),
-                          IsErrorAt(6, 6,
-                                    "Macro label M#1@LOOP can only be written "
-                                    "by a macro's expansion")));
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".REPT 2\n"
+                     "  loop: NOP\n"
+                     "  NOP\n"
+                     ".ENDR\n"
+                     ".REPT 1\n"
+                     "  JPR M#1@LOOP\n"
+                     ".ENDR\n"
+                     ".MACRO rept\n"
+                     ".ENDM\n"),
+      ElementsAre(
+          IsErrorAt(2, 2, ".REPT can't define label loop, only local labels"),
+          IsErrorAt(6, 6,
+                    "Macro label M#1@LOOP can only be written by a macro's "
+                    "expansion"),
+          IsErrorAt(8, 7,
+                    "Macro REPT can't be defined, as REPT names the local "
+                    "labels of a .REPT")));
 }
 
 TEST_F(ProgramAssemblerTest, RepeatInMacro) {
-  // A body in a macro's body has the macro's parameters and local labels.
+  // A body in a macro's body has the macro's parameters and local labels, and
+  // its own local labels, which are each repetition's. A local label in an
+  // argument is still the caller's, even with the name of the body's own,
+  // unless the body defines it with a parameter.
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".MACRO FILL n, value\n"
                             "  @top: .REPT n, i\n"
@@ -2610,15 +2637,32 @@ TEST_F(ProgramAssemblerTest, RepeatInMacro) {
                             "FILL 2, 10\n"
                             "FILL 1, 20\n"),
               ElementsAre(10, 0, 11, 0, 20, 4));
-  EXPECT_THAT(AssembleErrors(".STACK 1\n"
-                             ".MACRO M\n"
-                             "  .REPT 2\n"
-                             "    @x: NOP\n"
-                             "  .ENDR\n"
-                             ".ENDM\n"
-                             "M\n"),
-              ElementsAre(IsErrorAt(3, 4, ".REPT can't define label M#1@X"),
-                          IsErrorAt(6, 0, "In M")));
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO M\n"
+                            "  @top: .REPT 2\n"
+                            "    @x: .DW @x, @top\n"
+                            "  .ENDR\n"
+                            ".ENDM\n"
+                            "M\n"
+                            "M\n"),
+              ElementsAre(0, 0, 2, 0, 4, 4, 6, 4));
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            "@done: .DW 7, 8\n"
+                            ".MACRO M target\n"
+                            "  .REPT 2\n"
+                            "    @done: .DW @done, target\n"
+                            "  .ENDR\n"
+                            ".ENDM\n"
+                            "M @done\n"),
+              ElementsAre(7, 8, 2, 0, 4, 0));
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO M name\n"
+                            "  .REPT 2\n"
+                            "    name: .DW name\n"
+                            "  .ENDR\n"
+                            ".ENDM\n"
+                            "M @x\n"),
+              ElementsAre(0, 1));
 }
 
 TEST_F(ProgramAssemblerTest, RepeatErrors) {
@@ -2720,6 +2764,32 @@ TEST_F(ProgramAssemblerTest, MapOfMacros) {
                                       .word_value = 2,
                                       .dword_value = 2,
                                       .location = {.file = 0, .line = 11}}));
+}
+
+TEST_F(ProgramAssemblerTest, MapOfRepeats) {
+  // A repetition's local labels are named for it, counting the repetitions of
+  // every .REPT, and are at the .REPT's line.
+  const ProgramMap map = AssembleMap(
+      ".STACK 1\n"
+      ".REPT 2\n"
+      "  @x: .DW 1\n"
+      ".ENDR\n"
+      ".REPT 1\n"
+      "  @x: .DW 2\n"
+      ".ENDR\n");
+  EXPECT_THAT(map.GetLabels(),
+              ElementsAre(MapLabel{.name = "REPT#1@X",
+                                   .segment = 0,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 1}},
+                          MapLabel{.name = "REPT#2@X",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 1}},
+                          MapLabel{.name = "REPT#3@X",
+                                   .segment = 0,
+                                   .offset = 2,
+                                   .location = {.file = 0, .line = 4}}));
 }
 
 TEST_F(ProgramAssemblerTest, MapOfTextProgram) {

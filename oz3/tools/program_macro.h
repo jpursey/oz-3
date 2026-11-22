@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"
 #include "absl/types/span.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/parse_error.h"
@@ -41,13 +42,15 @@ class ProgramMacro final {
   // ".REPT's body".
   static std::string_view GetBodyName(Kind kind);
 
-  // A token in a line of the body that each invocation of the macro replaces: a
-  // parameter's name, or a local label a macro's body writes.
+  // A token in a line of the body that each invocation of the macro may
+  // replace: a parameter's name, which it always replaces, or a label, which
+  // it replaces if IsRenamed(). A label is a local label, or in a repeated
+  // block, also a macro label.
   struct Replace {
-    static constexpr int kLocalLabel = -1;
+    static constexpr int kLabel = -1;
 
     gb::Token token;
-    int parameter = kLocalLabel;  // Its index in the parameters, if it is one.
+    int parameter = kLabel;  // Its index in the parameters, if it is one.
   };
 
   // A line of the body that has tokens: its first and last, and the ones each
@@ -77,15 +80,14 @@ class ProgramMacro final {
   // caller looks for the line that ends the body first.
   //
   // An identifier that is a parameter's name is that parameter, but one
-  // inside a string or a local label ('reg' or @reg) is not. Every local label
-  // in a macro's body is the body's own, and every one in a repeated block's
-  // is the one it names where the block is. A macro label is read as any
-  // other token, so a caller validates that only an expansion writes one.
+  // inside a string or a local label ('reg' or @reg) is not. Which labels are
+  // the body's own is up to IsRenamed(). A macro label is read as any other
+  // token, so a caller validates that only an expansion writes one.
   // Returns false, without adding the line, and sets `error` to say why, if
   // the line can't be in the body:
   // - A token on it can't be read.
-  // - In a macro's body, it starts with a label that is neither a local label
-  //   nor a parameter, and in a repeated block's, it starts with any label.
+  // - It starts with a label that isn't one of the body's (see Replace), or
+  //   in a macro's body, a parameter.
   // - It has a directive (a '.' with a name right after it, other than an
   //   extension right after a name) that is named by a parameter, defines a
   //   constant that isn't a parameter, or is a .MACRO, .ENDM, or .INCLUDE.
@@ -97,6 +99,18 @@ class ProgramMacro final {
   // in a name, or the '.' could start a directive the body didn't write, as in
   // "x:.DW". `parameter` must be an index in GetParameters().
   bool IsExtended(int parameter) const { return extended_[parameter]; }
+
+  // Returns true if each invocation renames the label of `replace`, a label's
+  // replace in one of GetLines(), as the body's own (see MacroExpansion).
+  //
+  // A macro's body renames every local label. A repeated block's body renames
+  // the labels its lines start with, anywhere in it, including in a .REPT in
+  // it, which then renames them again as its own. It doesn't rename any other,
+  // which is the label where the block is. A repeated block in an expansion
+  // has the expansion's local labels, renamed as macro labels, and renames
+  // those it defines as well. A local label an argument wrote is renamed only
+  // if the block defines it.
+  bool IsRenamed(const Replace& replace) const;
 
   // Returns the index of the parameter `token` names, or -1 if it isn't one.
   int FindParameter(const gb::Token& token) const;
@@ -112,6 +126,9 @@ class ProgramMacro final {
                          absl::Span<const gb::Token> tokens, int index,
                          gb::ParseError* error) const;
 
+  // Returns true if `token` is a label of the body (see Replace).
+  bool IsLabel(const gb::Token& token) const;
+
   // Returns how an error names the macro or block: "Macro <name>" or ".REPT".
   std::string GetErrorName() const;
 
@@ -120,6 +137,7 @@ class ProgramMacro final {
   std::vector<gb::Token> parameters_;
   std::vector<bool> extended_;  // For each parameter, IsExtended().
   std::vector<Line> lines_;
+  absl::flat_hash_set<std::string_view> labels_;  // Those its lines start with.
 };
 
 //==============================================================================
@@ -137,15 +155,17 @@ struct MacroArg {
 // The text of one use of a macro, and where each part of it came from.
 //
 // The text has a line for each of the body's lines. Each parameter is
-// replaced by its argument's text, and each local label a macro's body writes
-// is renamed for this use (@WAIT in the second use of WAITIN is WAITIN#2@WAIT,
-// a kTokenMacroLabel). The rest of the line is copied from the body, from its
-// first token to its last, so its comment is dropped.
+// replaced by its argument's text, and each local label that is the body's
+// own (see ProgramMacro::IsRenamed()) is renamed for this use (@WAIT in the
+// second use of WAITIN is WAITIN#2@WAIT, a kTokenMacroLabel). The rest of the
+// line is copied from the body, from its first token to its last, so its
+// comment is dropped.
 class MacroExpansion final {
  public:
   // Expands `macro`, which `lexer` read, as its invocation number
   // `invocation` (counting from 1), with `args`, one for each of its
-  // parameters.
+  // parameters. The number names its renamed local labels, so it is different
+  // for every use of a macro of the same name.
   MacroExpansion(const gb::Lexer& lexer, const ProgramMacro& macro,
                  int invocation, absl::Span<const MacroArg> args);
   MacroExpansion(const MacroExpansion&) = delete;

@@ -579,9 +579,11 @@ class ProgramAssembler final {
   absl::flat_hash_map<gb::LexerContentId, int> file_indices_;
 
   // Macros by name, each repeated block, and each expansion by its content. A
-  // name is a view of its token.
+  // name is a view of its token. Repetitions are numbered across every
+  // repeated block, as their renamed local labels are all named REPT.
   absl::flat_hash_map<std::string_view, Macro> macros_;
   std::vector<std::unique_ptr<ProgramMacro>> repeats_;
+  int repetitions_ = 0;
   absl::flat_hash_map<gb::LexerContentId, Expansion> expansions_;
 
   // Errors, and each one's formatted message, to report each error once. An
@@ -1252,6 +1254,11 @@ void ProgramAssembler::ReadMacro(gb::LexerContentId content,
     Error(name, absl::StrCat("Macro ", name.GetString(),
                              " can't have an instruction's name"));
     define = false;
+  } else if (name.IsIdent("REPT")) {
+    Error(name,
+          "Macro REPT can't be defined, as REPT names the local labels "
+          "of a .REPT");
+    define = false;
   } else if (macros_.contains(name.GetString())) {
     Error(name,
           absl::StrCat("Macro ", name.GetString(), " is already defined"));
@@ -1296,9 +1303,9 @@ void ProgramAssembler::ReadRepeat(gb::LexerContentId content,
     if (!args.empty()) {
       args[0].text = number;
     }
-    if (!ReadExpansion(
-            std::make_unique<MacroExpansion>(GetLexer(), *repeat, i + 1, args),
-            repeat, token, ".REPT")) {
+    if (!ReadExpansion(std::make_unique<MacroExpansion>(GetLexer(), *repeat,
+                                                        ++repetitions_, args),
+                       repeat, token, ".REPT")) {
       Error(token, "This .REPT has too many lines, or a line too long");
       return;
     }
@@ -1374,7 +1381,8 @@ bool ProgramAssembler::ReadBodyLine(gb::LexerContentId content,
                                     const gb::Token& start,
                                     ProgramMacro* macro) {
   // Only an expansion writes a macro label, so a body in a file can't have
-  // one, but a repeated block in an expansion uses the expansion's.
+  // one, but a repeated block in an expansion uses and defines the
+  // expansion's.
   // ReadLine() validates the rest of what the line can have, such as its
   // labels and directives.
   gb::Lexer& lexer = GetLexer();

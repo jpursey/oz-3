@@ -5,6 +5,7 @@
 
 #include "oz3/tools/program_macro.h"
 
+#include <string_view>
 #include <utility>
 
 #include "absl/algorithm/container.h"
@@ -75,9 +76,12 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
   }
   Line line = {.first = tokens.front(), .last = tokens.back()};
   const int count = static_cast<int>(tokens.size());
+  if (count >= 2 && IsLabel(tokens[0]) && tokens[1].IsSymbol(':')) {
+    labels_.insert(tokens[0].GetString());
+  }
   for (int i = 0; i < count; ++i) {
     const gb::Token& token = tokens[i];
-    if (token.GetType() == kTokenLocalLabel && kind_ == Kind::kMacro) {
+    if (IsLabel(token)) {
       line.replaces.push_back({.token = token});
     } else if (const int parameter = FindParameter(token); parameter >= 0) {
       line.replaces.push_back({.token = token, .parameter = parameter});
@@ -91,14 +95,26 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
   return true;
 }
 
+bool ProgramMacro::IsLabel(const gb::Token& token) const {
+  return token.GetType() == kTokenLocalLabel ||
+         (kind_ == Kind::kRepeat && token.GetType() == kTokenMacroLabel);
+}
+
+bool ProgramMacro::IsRenamed(const Replace& replace) const {
+  DCHECK_EQ(replace.parameter, Replace::kLabel);
+  return kind_ == Kind::kMacro || labels_.contains(replace.token.GetString());
+}
+
 bool ProgramMacro::ValidateLine(const gb::Lexer& lexer,
                                 absl::Span<const gb::Token> tokens,
                                 gb::ParseError* error) const {
   const int count = static_cast<int>(tokens.size());
   if (count >= 2 && tokens[1].IsSymbol(':')) {
-    // A macro's body defines its own local labels, and the labels its
-    // parameters name, but each repetition of a block would define any label
-    // again.
+    // A body defines its own local labels, and a macro's the labels its
+    // parameters name, but each invocation or repetition would define any
+    // other label again. A repeated block in an expansion defines the macro
+    // labels it starts with, as they are the local labels of the body it is
+    // in, renamed.
     const gb::Token& label = tokens[0];
     if (kind_ == Kind::kMacro && label.IsIdent() && FindParameter(label) < 0) {
       return Fail(lexer, label,
@@ -107,13 +123,12 @@ bool ProgramMacro::ValidateLine(const gb::Lexer& lexer,
                                ", only local labels and its parameters"),
                   error);
     }
-    if (kind_ == Kind::kRepeat &&
-        (label.IsIdent() || label.GetType() == kTokenLocalLabel ||
-         label.GetType() == kTokenMacroLabel)) {
-      return Fail(lexer, label,
-                  absl::StrCat(GetErrorName(), " can't define label ",
-                               lexer.GetTokenText(label)),
-                  error);
+    if (kind_ == Kind::kRepeat && label.IsIdent()) {
+      return Fail(
+          lexer, label,
+          absl::StrCat(GetErrorName(), " can't define label ",
+                       lexer.GetTokenText(label), ", only local labels"),
+          error);
     }
   }
   for (int i = 0; i < count; ++i) {
@@ -207,13 +222,19 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
     lines_.emplace_back();
     int column = 0;  // In `body`, after the last token replaced.
     for (const ProgramMacro::Replace& replace : body_line.replaces) {
+      const bool label = (replace.parameter == ProgramMacro::Replace::kLabel);
+      if (label && !macro.IsRenamed(replace)) {
+        continue;
+      }
       gb::LexerLocation location = lexer.GetTokenLocation(replace.token);
       const int token_column = location.column - start.column;
       Append(body.substr(column, token_column - column),
              AdjustColumn(start, column));
-      if (replace.parameter == ProgramMacro::Replace::kLocalLabel) {
+      if (label) {
+        // A macro label is renamed by its local label, after its '@'.
+        const std::string_view text = replace.token.GetString();
         Append(absl::StrCat(macro.GetName().GetString(), "#", invocation,
-                            replace.token.GetString()),
+                            text.substr(text.find('@'))),
                std::move(location));
       } else {
         const MacroArg& arg = args[replace.parameter];
