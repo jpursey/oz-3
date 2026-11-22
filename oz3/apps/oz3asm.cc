@@ -68,6 +68,7 @@ const gb::CliFlag<bool> kListing = {
     .short_name = 'l',
     .help = "Writes the program's listing beside the program file (.oz3lst).",
 };
+
 absl::Status ValidateConstant(const gb::ValidatedContext& context,
                               const std::string_view& value) {
   return ParseAsmConstant(value).status();

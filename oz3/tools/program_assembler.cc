@@ -373,6 +373,11 @@ class ProgramAssembler final {
                                                  ExpressionWidth width);
   ExpressionResult EvaluateConstant(Constant& constant, ExpressionWidth width);
 
+  // Returns the error of using the constant `name` as a word, when it only
+  // fits a dword, for the reason in `message`.
+  static ExpressionResult GetWordError(std::string_view name,
+                                       std::string_view message);
+
   // Defines a label or constant at its name's `token`, with the upper case
   // `name`, and returns true, or reports an error and returns false if a
   // label or constant already has the name.
@@ -845,31 +850,31 @@ std::optional<ExpressionResult> ProgramAssembler::GetSymbolValue(
   // A constant with a value that can't be evaluated as a word, only as a
   // dword, is an error where it is used as one, without a location (see
   // ExpressionContext).
-  ExpressionResult result;
-  bool only_dword = false;
   if (auto it = constants_.find(name); it != constants_.end()) {
-    result = EvaluateConstant(it->second, width);
-    only_dword = (width == ExpressionWidth::kWord &&
-                  result.kind == ExpressionResult::Kind::kError &&
-                  EvaluateConstant(it->second, ExpressionWidth::kDword).kind ==
-                      ExpressionResult::Kind::kValue);
-  } else if (auto host = host_constants_.find(name);
-             host != host_constants_.end()) {
-    if (width == ExpressionWidth::kWord && host->second > 0xFFFF) {
-      return ExpressionResult{.kind = ExpressionResult::Kind::kError,
-                              .error = gb::ParseError(absl::StrCat(
-                                  name, " can't be evaluated as a word: Value ",
-                                  host->second, " does not fit in a word"))};
+    ExpressionResult result = EvaluateConstant(it->second, width);
+    if (width == ExpressionWidth::kWord &&
+        result.kind == ExpressionResult::Kind::kError &&
+        EvaluateConstant(it->second, ExpressionWidth::kDword).kind ==
+            ExpressionResult::Kind::kValue) {
+      return GetWordError(name, result.error.GetMessage());
     }
-    return ExpressionResult{.value = host->second};
-  } else {
-    return std::nullopt;
+    return result;
   }
-  if (only_dword) {
-    result.error = gb::ParseError(absl::StrCat(
-        name, " can't be evaluated as a word: ", result.error.GetMessage()));
+  if (auto it = host_constants_.find(name); it != host_constants_.end()) {
+    if (width == ExpressionWidth::kWord && it->second > 0xFFFF) {
+      return GetWordError(
+          name, absl::StrCat("Value ", it->second, " does not fit in a word"));
+    }
+    return ExpressionResult{.value = it->second};
   }
-  return result;
+  return std::nullopt;
+}
+
+ExpressionResult ProgramAssembler::GetWordError(std::string_view name,
+                                                std::string_view message) {
+  return {.kind = ExpressionResult::Kind::kError,
+          .error = gb::ParseError(
+              absl::StrCat(name, " can't be evaluated as a word: ", message))};
 }
 
 ExpressionResult ProgramAssembler::EvaluateConstant(Constant& constant,
