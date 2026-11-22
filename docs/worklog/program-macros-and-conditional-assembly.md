@@ -223,8 +223,8 @@ oz3asm -D SCREEN -D CORES=2 main.oza
   It is given once for each constant, as Game Bits' command line now repeats
   flags (`CliFlag::repeated`, read with `CliCommandLine::GetAll()`).
 - A name the program defines again is an error at the program's definition. A
-  name that isn't a name, is a register, or is given twice, is an error before
-  assembling.
+  name that isn't a name, is reserved (a register), or is given twice, is an
+  error before assembling.
 - They aren't in the map, as no source line defines them.
 
 ## Design
@@ -427,7 +427,7 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 - `ParseAsmConstant` reads `NAME` or `NAME=value`, for `oz3asm -D` and any
   other host, lexing the value as the source does. The assembler validates
   the names, lexing each with the program's lexer, so a name is read just as
-  the source reads one, and a register is its keyword.
+  the source reads one, and a reserved word (a register) is its keyword.
 
 ### To confirm
 

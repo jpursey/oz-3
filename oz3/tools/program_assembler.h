@@ -81,10 +81,10 @@ absl::StatusOr<AsmConstant> ParseAsmConstant(std::string_view text);
 // is set to the errors, which are none if the program assembles.
 //
 // `constants` are the host's constants for the program (see AsmConstant).
-// Each must have a name, which isn't a register's, and that no other one has,
-// or the program isn't assembled, with an error for each that has no
-// location. A label or constant the program defines with one's name is an
-// error there.
+// Each must have a name, which isn't reserved (as a register's is), and that
+// no other one has, or the program isn't assembled, with an error for each
+// that has no location. A label or constant the program defines with one's
+// name is an error there.
 std::unique_ptr<AsmProgram> AssembleProgramFile(
     const InstructionSetSyntax& syntax, gb::FileSystem& file_system,
     std::string_view path, std::vector<gb::ParseError>* errors = nullptr);

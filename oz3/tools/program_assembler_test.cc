@@ -2853,7 +2853,7 @@ TEST_F(ProgramAssemblerTest, HostConstantDefinedAgain) {
 }
 
 TEST_F(ProgramAssemblerTest, InvalidHostConstants) {
-  // A host's constant must be a name, not a register's, given once, or the
+  // A host's constant must be a name, not a reserved one, given once, or the
   // program isn't assembled. The errors have no location.
   constants_ = {{.name = "1X"}, {.name = "r1"}, {.name = "A B"},
                 {.name = ""},   {.name = "@a"}, {.name = "A;"},
@@ -2861,13 +2861,13 @@ TEST_F(ProgramAssemblerTest, InvalidHostConstants) {
   EXPECT_THAT(
       AssembleErrors(".STACK 1\n"),
       ElementsAre(IsErrorAt(-1, -1, "The host's constant \"1X\" isn't a name"),
-                  IsErrorAt(-1, -1, "The host's constant R1 is a register"),
+                  IsErrorAt(-1, -1, "The host's constant R1 is reserved"),
                   IsErrorAt(-1, -1, "The host's constant \"A B\" isn't a name"),
                   IsErrorAt(-1, -1, "The host's constant \"\" isn't a name"),
                   IsErrorAt(-1, -1, "The host's constant \"@a\" isn't a name"),
                   IsErrorAt(-1, -1, "The host's constant \"A;\" isn't a name"),
                   IsErrorAt(-1, -1, "The host's constant X is given twice"),
-                  IsErrorAt(-1, -1, "The host's constant D0 is a register")));
+                  IsErrorAt(-1, -1, "The host's constant D0 is reserved")));
 }
 
 TEST_F(ProgramAssemblerTest, ParseAsmConstant) {

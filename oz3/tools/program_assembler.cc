@@ -668,13 +668,13 @@ bool ProgramAssembler::Init(absl::Span<const AsmConstant> constants) {
 bool ProgramAssembler::DefineHostConstants(
     absl::Span<const AsmConstant> constants) {
   // Each name is read as one token of source, so it is in upper case, and a
-  // register is a keyword.
+  // reserved word (a register) is a keyword.
   bool valid = true;
   for (const AsmConstant& constant : constants) {
     const gb::Token token = GetLexer().ParseTokenText(constant.name);
     if (token.GetType() == gb::kTokenKeyword) {
-      AddError(gb::ParseError(absl::StrCat(
-          "The host's constant ", token.GetString(), " is a register")));
+      AddError(gb::ParseError(absl::StrCat("The host's constant ",
+                                           token.GetString(), " is reserved")));
       valid = false;
       continue;
     }
