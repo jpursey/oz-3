@@ -223,8 +223,8 @@ oz3asm -D SCREEN -D CORES=2 main.oza
   It is given once for each constant, as Game Bits' command line now repeats
   flags (`CliFlag::repeated`, read with `CliCommandLine::GetAll()`).
 - A name the program defines again is an error at the program's definition. A
-  name that isn't a name, is a register, or is given twice, is an error before
-  assembling.
+  name that isn't a name, is reserved (a register), or is given twice, is an
+  error before assembling.
 - They aren't in the map, as no source line defines them.
 
 ## Design
@@ -420,8 +420,14 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
 
 - The existing overloads stay, with no constants. `AssembleProgram` gains the
   same overload.
-- A host constant is a `Constant` with a value and no expression, so
-  `GetSymbolValue` and `.IFDEF` see it as any other.
+- The assembler keeps the host's constants apart from the program's, by name
+  with their values, which `GetSymbolValue`, `IsDefined` (for `.IFDEF`), and
+  `CheckNotDefined` read too. So they are never in the map, and have no
+  token or expression.
+- `ParseAsmConstant` reads `NAME` or `NAME=value`, for `oz3asm -D` and any
+  other host, lexing the value as the source does. The assembler validates
+  the names, lexing each with the program's lexer, so a name is read just as
+  the source reads one, and a reserved word (a register) is its keyword.
 
 ### To confirm
 
@@ -583,19 +589,22 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
   constants at the use's line, and the listing of a use.
 - Manual pages updated.
 
-### CL5 [ ] tools, apps: constants from the host
+### CL5 [x] tools, apps: constants from the host
 
 Depends on: CL2, for tests with `.IFDEF`, and Game Bits *Repeated command line
 flags*, which is done.
 
-- `program_assembler.h`: `AsmConstant`, and the overloads that take them.
-- `oz3asm`: `-D`/`--define`, a repeated flag.
+- `program_assembler.h`: `AsmConstant`, the overloads that take them, and
+  `ParseAsmConstant`.
+- `oz3asm`: `-D`/`--define`, a repeated flag, validated with
+  `ParseAsmConstant`.
 - Manual: Program Source's Assembling a program, and oz3asm.
 
 **Verify**
 - Standard checks.
 - Unit tests: a host constant in an expression, `.IF`, and `.IFDEF`; one
   defined again by the program, an error there; an invalid name, a register,
-  and a name given twice, errors; not in the map.
+  and a name given twice, errors; not in the map; `ParseAsmConstant`'s
+  values, and its errors for a value that isn't a number or a dword.
 - By hand, left for the user: `oz3asm -D` on a program with `.IF`s, as `oz3asm`
   has no tests of its own.

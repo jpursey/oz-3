@@ -113,7 +113,7 @@ class ProgramAssemblerTest : public ::testing::Test {
   std::unique_ptr<AsmProgram> AssembleAsmProgram(std::string_view text) {
     std::vector<gb::ParseError> errors;
     std::unique_ptr<AsmProgram> program =
-        AssembleProgram(*syntax_, std::string(text), &errors);
+        AssembleProgram(*syntax_, std::string(text), constants_, &errors);
     for (const gb::ParseError& error : errors) {
       ADD_FAILURE() << error.FormatMessage();
     }
@@ -139,7 +139,8 @@ class ProgramAssemblerTest : public ::testing::Test {
   // Assembles `text`, which must not assemble, and returns its errors.
   std::vector<gb::ParseError> AssembleErrors(std::string_view text) {
     std::vector<gb::ParseError> errors;
-    EXPECT_EQ(AssembleProgram(*syntax_, std::string(text), &errors), nullptr)
+    EXPECT_EQ(AssembleProgram(*syntax_, std::string(text), constants_, &errors),
+              nullptr)
         << text;
     EXPECT_THAT(errors, Not(IsEmpty())) << text;
     return errors;
@@ -197,6 +198,7 @@ class ProgramAssemblerTest : public ::testing::Test {
   std::unique_ptr<AsmInstructionSet> asm_set_;
   std::unique_ptr<InstructionSetSyntax> syntax_;
   gb::FileSystem file_system_;
+  std::vector<AsmConstant> constants_;  // The host's, for each Assemble.
 };
 
 TEST_F(ProgramAssemblerTest, DefaultProgram) {
@@ -2779,6 +2781,125 @@ TEST_F(ProgramAssemblerTest, MapIncludes) {
                                       .word_value = 5,
                                       .dword_value = 5,
                                       .location = {.file = 1, .line = 1}}));
+}
+
+//==============================================================================
+// Constants from the host
+//==============================================================================
+
+TEST_F(ProgramAssemblerTest, HostConstants) {
+  // The host's constants are defined above the program's first line, with
+  // names read as the source reads them, so .IF and .IFDEF can test them.
+  // They aren't in the map, as no line defines them.
+  constants_ = {{.name = "debug", .value = 1},
+                {.name = "SIZE", .value = 3},
+                {.name = "BIG", .value = 0x12345}};
+  constexpr std::string_view kText =
+      ".STACK 1\n"
+      ".IFDEF DEBUG\n"
+      "  .DW 1\n"
+      ".ENDIF\n"
+      ".IFNDEF RELEASE\n"
+      "  .DW 2\n"
+      ".ENDIF\n"
+      ".IF SIZE > 2\n"
+      "  .DW size\n"
+      ".ENDIF\n"
+      ".DD BIG\n"
+      ".DW LOW(BIG), HIGH(BIG)\n";
+  EXPECT_THAT(AssembleWords(kText),
+              ElementsAre(1, 2, 3, 0x2345, 1, 0x2345, 1, 0));
+  EXPECT_THAT(AssembleMap(kText).GetConstants(), IsEmpty());
+
+  // A program file is given them too.
+  ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza", kText));
+  std::vector<gb::ParseError> errors;
+  std::unique_ptr<AsmProgram> program = AssembleProgramFile(
+      *syntax_, file_system_, "mem:/main.oza", constants_, &errors);
+  EXPECT_THAT(errors, IsEmpty());
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetProgram().segments[0].data,
+              ElementsAre(Program::Segment::Data{
+                  .offset = 0, .data = {1, 2, 3, 0x2345, 1, 0x2345, 1, 0}}));
+}
+
+TEST_F(ProgramAssemblerTest, HostConstantAsWord) {
+  // A host's constant that doesn't fit a word is an error where it is used as
+  // one, in the first pass or the second.
+  constants_ = {{.name = "BIG", .value = 0x10000}};
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".DD BIG\n"
+                             ".DW BIG\n"),
+              ElementsAre(IsErrorAt(2, 4,
+                                    "BIG can't be evaluated as a word: Value "
+                                    "65536 does not fit in a word")));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".IF BIG\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(1, 4,
+                                    "BIG can't be evaluated as a word: Value "
+                                    "65536 does not fit in a word")));
+}
+
+TEST_F(ProgramAssemblerTest, HostConstantDefinedAgain) {
+  // A label or constant with a host's constant's name is an error where the
+  // program defines it.
+  constants_ = {{.name = "A", .value = 1}, {.name = "B", .value = 2}};
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".CONST a = 2\n"
+                             "B: NOP\n"),
+              ElementsAre(IsErrorAt(1, 7, "A is already defined by the host"),
+                          IsErrorAt(2, 0, "B is already defined by the host")));
+}
+
+TEST_F(ProgramAssemblerTest, InvalidHostConstants) {
+  // A host's constant must be a name, not a reserved one, given once, or the
+  // program isn't assembled. The errors have no location.
+  constants_ = {{.name = "1X"}, {.name = "r1"}, {.name = "A B"},
+                {.name = ""},   {.name = "@a"}, {.name = "A;"},
+                {.name = "x"},  {.name = "X"},  {.name = "D0"}};
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"),
+      ElementsAre(IsErrorAt(-1, -1, "The host's constant \"1X\" isn't a name"),
+                  IsErrorAt(-1, -1, "The host's constant R1 is reserved"),
+                  IsErrorAt(-1, -1, "The host's constant \"A B\" isn't a name"),
+                  IsErrorAt(-1, -1, "The host's constant \"\" isn't a name"),
+                  IsErrorAt(-1, -1, "The host's constant \"@a\" isn't a name"),
+                  IsErrorAt(-1, -1, "The host's constant \"A;\" isn't a name"),
+                  IsErrorAt(-1, -1, "The host's constant X is given twice"),
+                  IsErrorAt(-1, -1, "The host's constant D0 is reserved")));
+}
+
+TEST_F(ProgramAssemblerTest, ParseAsmConstant) {
+  // A name alone is 1, and a value is a number as the source writes one.
+  struct Parsed {
+    std::string_view text;
+    std::string_view name;
+    uint32_t value;
+  };
+  for (const Parsed& parsed :
+       {Parsed{"DEBUG", "DEBUG", 1}, Parsed{"cores=2", "cores", 2},
+        Parsed{"M=0Fh", "M", 15}, Parsed{"B=1111b", "B", 15},
+        Parsed{"X=0", "X", 0}, Parsed{"BIG=0FFFFFFFFh", "BIG", 0xFFFFFFFF},
+        Parsed{"=5", "", 5}}) {
+    absl::StatusOr<AsmConstant> constant = ParseAsmConstant(parsed.text);
+    ASSERT_TRUE(constant.ok()) << parsed.text << ": " << constant.status();
+    EXPECT_EQ(constant->name, parsed.name) << parsed.text;
+    EXPECT_EQ(constant->value, parsed.value) << parsed.text;
+  }
+
+  // The name is validated by the assembler, but the value must be a number
+  // that fits a dword.
+  for (std::string_view text :
+       {"A=", "A=x", "A=1 2", "A= 1", "A='a'", "A=1=2", "A=-1"}) {
+    absl::StatusOr<AsmConstant> constant = ParseAsmConstant(text);
+    ASSERT_FALSE(constant.ok()) << text;
+    EXPECT_THAT(constant.status().message(), HasSubstr("isn't a number"))
+        << text;
+  }
+  absl::StatusOr<AsmConstant> constant = ParseAsmConstant("A=100000000h");
+  ASSERT_FALSE(constant.ok());
+  EXPECT_EQ(constant.status().message(), "The value of A doesn't fit a dword");
 }
 
 }  // namespace

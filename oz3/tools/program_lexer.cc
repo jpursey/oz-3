@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <iterator>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,6 +22,7 @@
 #include "gb/base/unicode.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/lexer_config.h"
+#include "gb/parse/lexer_program.h"
 #include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
 #include "oz3/core/cpu_core.h"
@@ -108,6 +110,12 @@ struct ProgramLexerConfig {
 const gb::LexerConfig& GetProgramLexerConfig() {
   static const absl::NoDestructor<ProgramLexerConfig> config;
   return config->config;
+}
+
+std::shared_ptr<const gb::LexerProgram> GetProgramLexerProgram() {
+  static const absl::NoDestructor<std::shared_ptr<const gb::LexerProgram>>
+      program(gb::LexerProgram::Create(GetProgramLexerConfig()));
+  return *program;
 }
 
 absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,

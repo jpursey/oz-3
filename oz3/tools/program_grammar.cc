@@ -15,7 +15,6 @@
 #include <variant>
 #include <vector>
 
-#include "absl/base/no_destructor.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/log/check.h"
 #include "absl/memory/memory.h"
@@ -172,12 +171,6 @@ constexpr std::string_view kRules = R"---(
 // the registers that many bits can hold.
 constexpr int kMaxWordRegBits = 4;
 constexpr int kMaxDwordRegBits = 2;
-
-std::shared_ptr<const gb::LexerProgram> GetLexerProgram() {
-  static const absl::NoDestructor<std::shared_ptr<const gb::LexerProgram>>
-      program(gb::LexerProgram::Create(GetProgramLexerConfig()));
-  return *program;
-}
 
 // Returns `text` as a token literal in a parser program, whose strings decode
 // backslash escapes, and hex escapes for any other character.
@@ -386,7 +379,7 @@ absl::StatusOr<std::unique_ptr<ProgramGrammar>> ProgramGrammar::Create(
 
   std::string error;
   grammar->program_ =
-      gb::ParserProgram::Create(GetLexerProgram(), text, &error);
+      gb::ParserProgram::Create(GetProgramLexerProgram(), text, &error);
   if (grammar->program_ == nullptr) {
     return absl::InvalidArgumentError(
         absl::StrCat("Invalid program grammar: ", error));

@@ -7,6 +7,7 @@
 #define OZ3_TOOLS_PROGRAM_LEXER_H_
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "absl/status/statusor.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/lexer_config.h"
+#include "gb/parse/lexer_program.h"
 #include "gb/parse/token.h"
 
 namespace oz3 {
@@ -50,6 +52,10 @@ static_assert(kTokenMacroLabel == gb::kTokenUser + 1);
 //   (kTokenMacroLabel), turned to upper case.
 // - Comments from ';' to the end of the line, and line breaks as tokens.
 const gb::LexerConfig& GetProgramLexerConfig();
+
+// Returns the program lexer's configuration compiled once, to create each
+// lexer for program source from.
+std::shared_ptr<const gb::LexerProgram> GetProgramLexerProgram();
 
 // Returns true if `token` ends a line: a line break, or the end of the content.
 bool IsLineEnd(const gb::Token& token);
