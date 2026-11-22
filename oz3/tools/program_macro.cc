@@ -16,28 +16,6 @@ namespace oz3 {
 
 namespace {
 
-// Returns the text from the start of `first` to the end of `last`, or an empty
-// string if either has no text, they are in different content, or `last` is
-// before `first`.
-std::string_view GetTokensText(const gb::Lexer& lexer, const gb::Token& first,
-                               const gb::Token& last) {
-  const std::string_view first_text = lexer.GetTokenText(first);
-  const std::string_view last_text = lexer.GetTokenText(last);
-  const gb::LexerLocation first_location = lexer.GetTokenLocation(first);
-  const gb::LexerLocation last_location = lexer.GetTokenLocation(last);
-  if (first_text.empty() || last_text.empty() ||
-      first_location.id != last_location.id ||
-      last_location.line < first_location.line ||
-      (last_location.line == first_location.line &&
-       last_location.column < first_location.column)) {
-    return {};
-  }
-
-  // A token's text is a view of its content's text, which is one string.
-  const char* const end = last_text.data() + last_text.size();
-  return std::string_view(first_text.data(), end - first_text.data());
-}
-
 // Returns `location`, moved right by `columns`.
 gb::LexerLocation AdjustColumn(gb::LexerLocation location, int columns) {
   location.column += columns;
@@ -198,7 +176,7 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
   for (const ProgramMacro::Line& body_line : macro.GetLines()) {
     const gb::LexerLocation start = lexer.GetTokenLocation(body_line.first);
     const std::string_view body =
-        GetTokensText(lexer, body_line.first, body_line.last);
+        lexer.GetTokenRangeText(body_line.first, body_line.last);
     lines_.emplace_back();
     int column = 0;  // In `body`, after the last token replaced.
     for (const ProgramMacro::Replace& replace : body_line.replaces) {
@@ -212,7 +190,7 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
                std::move(location));
       } else {
         const MacroArg& arg = args[replace.parameter];
-        Append(GetTokensText(lexer, arg.first, arg.last),
+        Append(lexer.GetTokenRangeText(arg.first, arg.last),
                lexer.GetTokenLocation(arg.first));
       }
       column = token_column +
