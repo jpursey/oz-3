@@ -201,7 +201,47 @@ TEST_F(ProgramMacroTest, Labels) {
 
   EXPECT_THAT(GetLineTexts(*macro),
               ElementsAre("name :  NOP", "@loop: JP loop"));
-  EXPECT_EQ(lexer_->GetCurrentLine(content), lexer_->GetLineCount(content));
+  EXPECT_TRUE(lexer_->NextToken(content, /*advance=*/false).IsEnd());
+}
+
+TEST_F(ProgramMacroTest, Directives) {
+  // A directive can't be named by a parameter, define a constant that isn't
+  // one, or define a macro or include a file. An extension right after a name
+  // isn't a directive, even after a parameter.
+  std::unique_ptr<ProgramMacro> macro = CreateMacro("M OP, SIZE, X");
+  const gb::LexerContentId content = AddFile("macros.oza",
+                                             "  .DW x\n"
+                                             "  .CONST x = 1\n"
+                                             "  op.size 1\n"
+                                             "  ADD.size R1, 1\n"
+                                             "  x: .DD 1\n"
+                                             "  .size 1\n"
+                                             "  .CONST LIMIT = 5\n"
+                                             "  x .MACRO N\n"
+                                             "  x .ENDM\n"
+                                             "  @l: .INCLUDE 'a.oza'\n");
+  gb::ParseError error;
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_TRUE(macro->ReadLine(*lexer_, content, &error))
+        << error.FormatMessage();
+  }
+  const std::pair<std::pair<int, int>, std::string_view> errors[] = {
+      {{5, 3}, "Macro M can't name a directive with its parameter SIZE"},
+      {{6, 9}, "Macro M can't define constant LIMIT, only its parameters"},
+      {{7, 4}, ".MACRO can't be in a macro's body"},
+      {{8, 4}, ".ENDM must be on a line of its own"},
+      {{9, 6}, "A macro's body can't include a file"},
+  };
+  for (const auto& [location, message] : errors) {
+    EXPECT_FALSE(macro->ReadLine(*lexer_, content, &error)) << message;
+    EXPECT_EQ(error.GetLocation(),
+              At("macros.oza", location.first, location.second));
+    EXPECT_EQ(error.GetMessage(), message);
+  }
+  EXPECT_EQ(macro->GetLines().size(), 5);
+  EXPECT_TRUE(macro->IsExtended(0));
+  EXPECT_FALSE(macro->IsExtended(1));
+  EXPECT_FALSE(macro->IsExtended(2));
 }
 
 TEST_F(ProgramMacroTest, LineThatCantBeRead) {

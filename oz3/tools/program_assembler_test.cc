@@ -2345,27 +2345,37 @@ TEST_F(ProgramAssemblerTest, MacroArgDirectives) {
           IsErrorAt(10, 9, "A macro's argument can't have a directive")));
 }
 
-TEST_F(ProgramAssemblerTest, MacroDirectiveFromParameter) {
-  // A parameter can name a directive in the body, so an argument can still
-  // make a .MACRO in its expansion, which is an error there.
-  EXPECT_THAT(AssembleErrors(".STACK 1\n"
-                             ".MACRO D x\n"
-                             "  .x FOO\n"
-                             ".ENDM\n"
-                             "D MACRO\n"),
-              ElementsAre(IsErrorAt(2, 2, ".MACRO can't be in a macro's body"),
-                          IsErrorAt(4, 0, "In D")));
-}
-
-TEST_F(ProgramAssemblerTest, MacroInclude) {
+TEST_F(ProgramAssemblerTest, MacroBodyDirectives) {
+  // A directive the body can't have is an error where it is defined, so its
+  // invocations assemble nothing. A parameter the body writes an extension
+  // after needs an argument that ends in a name, so the '.' can't start a
+  // directive.
   EXPECT_THAT(
       AssembleErrors(".STACK 1\n"
+                     ".MACRO D x\n"
+                     "  .x FOO\n"
+                     ".ENDM\n"
                      ".MACRO INC\n"
                      "  .INCLUDE \"a.oza\"\n"
                      ".ENDM\n"
-                     "INC\n"),
-      ElementsAre(IsErrorAt(2, 2, "A macro's body can't include a file"),
-                  IsErrorAt(4, 0, "In INC")));
+                     ".MACRO OPW op\n"
+                     "  op.W 5\n"
+                     ".ENDM\n"
+                     "D MACRO\n"
+                     "INC\n"
+                     "OPW PUSH\n"
+                     "OPW a:\n"
+                     "OPW (R1)\n"),
+      ElementsAre(
+          IsErrorAt(2, 3,
+                    "Macro D can't name a directive with its parameter X"),
+          IsErrorAt(5, 2, "A macro's body can't include a file"),
+          IsErrorAt(13, 5,
+                    "Macro OPW writes an extension after OP, so its argument "
+                    "must end in a name"),
+          IsErrorAt(14, 7,
+                    "Macro OPW writes an extension after OP, so its argument "
+                    "must end in a name")));
 }
 
 TEST_F(ProgramAssemblerTest, MacroLabelsInSource) {

@@ -549,11 +549,16 @@ Depends on: CL3, and CL2 for tests with `.IF` in a body.
   expanding uses in `ReadInstruction`, parsed with `MacroInvocation`, read as
   content of their own with a stack of the uses being expanded; a macro label
   written in a file an error, and `GetLabelKey` leaving one as it is; a
-  `.CONST` in a body with a name that isn't a parameter an error at the
-  definition; a directive in an argument an error at the invocation, other
-  than an instruction's extension (`ADD.W`); errors' locations followed
-  through expansions to a file, then
-  an error at each use on the stack; and map locations at the outermost use.
+  directive in an argument an error at the invocation, other than an
+  instruction's extension (`ADD.W`), as is an argument that doesn't end in a
+  name for a parameter the body writes an extension after (`op.W`); errors'
+  locations followed through expansions to a file, then an error at each use
+  on the stack; and map locations at the outermost use.
+- `program_macro.cc`: every check of what a body's line can have, in
+  `ReadLine`, at the definition: its labels, a `.CONST` with a name that isn't
+  a parameter, a parameter naming a directive, and `.MACRO`, `.ENDM`, and
+  `.INCLUDE`. As an argument can't have a directive, an expansion's
+  directives are all the body's, so the assembler checks none of them again.
 - `program_macro.cc`: a token range's text from `gb::Lexer`, if Game Bits
   *Lexer text of a token range* is done, in place of `GetTokensText`. It
   isn't yet, so `GetTokensText` stays.

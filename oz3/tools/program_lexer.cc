@@ -148,6 +148,13 @@ bool IsLineEnd(const gb::Token& token) {
   return token.GetType() == gb::kTokenLineBreak || token.IsEnd();
 }
 
+bool IsNextTo(const gb::Lexer& lexer, const gb::Token& first,
+              const gb::Token& second) {
+  return lexer.GetTokenLocation(first).column +
+             static_cast<int>(lexer.GetTokenText(first).size()) ==
+         lexer.GetTokenLocation(second).column;
+}
+
 std::string FormatHexNumber(uint32_t value, int digits) {
   std::string text = absl::StrFormat("%0*Xh", digits, value);
   if (text[0] >= 'A') {

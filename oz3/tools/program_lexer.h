@@ -54,6 +54,11 @@ const gb::LexerConfig& GetProgramLexerConfig();
 // Returns true if `token` ends a line: a line break, or the end of the content.
 bool IsLineEnd(const gb::Token& token);
 
+// Returns true if `second` starts right where `first` ends, with no space
+// between them. Both must be on the same line, which `lexer` read.
+bool IsNextTo(const gb::Lexer& lexer, const gb::Token& first,
+              const gb::Token& second);
+
 // Returns the words of a string token that `lexer` read:
 // - 'Hello' is one character per word.
 // - "Hello" is two characters per word, the first in the low byte, and the

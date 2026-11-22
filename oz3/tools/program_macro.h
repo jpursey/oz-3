@@ -64,18 +64,39 @@ class ProgramMacro final {
   //
   // An identifier that is a parameter's name is that parameter, but one
   // inside a string or a local label ('reg' or @reg) is not. Every local label
-  // is the body's own. Returns false, without adding the line, if a token on
-  // it can't be read, or it starts with a label that is neither a local label
-  // nor a parameter, setting `error` to say so.
+  // is the body's own. Returns false, without adding the line, and sets
+  // `error` to say why, if the line can't be in the body:
+  // - A token on it can't be read, or is a macro label.
+  // - It starts with a label that is neither a local label nor a parameter.
+  // - It has a directive (a '.' with a name right after it, other than an
+  //   extension right after a name) that is named by a parameter, defines a
+  //   constant that isn't a parameter, or is a .MACRO, .ENDM, or .INCLUDE.
   bool ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
                 gb::ParseError* error);
+
+  // Returns true if the body writes a '.' right after `parameter`, as the name
+  // of an instruction with an extension ("op.W"). Its argument must then end
+  // in a name, or the '.' could start a directive the body didn't write, as in
+  // "x:.DW". `parameter` must be an index in GetParameters().
+  bool IsExtended(int parameter) const { return extended_[parameter]; }
 
   // Returns the index of the parameter `token` names, or -1 if it isn't one.
   int FindParameter(const gb::Token& token) const;
 
  private:
+  // Validates that a line with `tokens`, which `lexer` read, can be in the
+  // body, as ReadLine() describes, or sets `error` and returns false.
+  // ValidateDirective() validates the directive, if any, that the '.' at
+  // `tokens[index]` starts.
+  bool ValidateLine(const gb::Lexer& lexer, absl::Span<const gb::Token> tokens,
+                    gb::ParseError* error) const;
+  bool ValidateDirective(const gb::Lexer& lexer,
+                         absl::Span<const gb::Token> tokens, int index,
+                         gb::ParseError* error) const;
+
   gb::Token name_;
   std::vector<gb::Token> parameters_;
+  std::vector<bool> extended_;  // For each parameter, IsExtended().
   std::vector<Line> lines_;
 };
 
