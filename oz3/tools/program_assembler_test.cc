@@ -2618,9 +2618,7 @@ TEST_F(ProgramAssemblerTest, RepeatLabels) {
           IsErrorAt(6, 6,
                     "Macro label M#1@LOOP can only be written by a macro's "
                     "expansion"),
-          IsErrorAt(8, 7,
-                    "Macro REPT can't be defined, as REPT names the local "
-                    "labels of a .REPT")));
+          IsErrorAt(8, 7, "REPT is not a valid macro name")));
 }
 
 TEST_F(ProgramAssemblerTest, RepeatInMacro) {

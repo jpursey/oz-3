@@ -1255,9 +1255,7 @@ void ProgramAssembler::ReadMacro(gb::LexerContentId content,
                              " can't have an instruction's name"));
     define = false;
   } else if (name.IsIdent("REPT")) {
-    Error(name,
-          "Macro REPT can't be defined, as REPT names the local labels "
-          "of a .REPT");
+    Error(name, "REPT is not a valid macro name");
     define = false;
   } else if (macros_.contains(name.GetString())) {
     Error(name,
@@ -1296,12 +1294,12 @@ void ProgramAssembler::ReadRepeat(gb::LexerContentId content,
       !count.has_value() || repeat->GetLines().empty()) {
     return;
   }
-  // The index, if there is one, is each repetition's number.
-  std::vector<MacroArg> args(repeat->GetParameters().size());
   for (int i = 0; i < static_cast<int>(*count) && !stopped_; ++i) {
+    // The index, if there is one, is the repetition's number.
     const std::string number = absl::StrCat(i);
-    if (!args.empty()) {
-      args[0].text = number;
+    std::vector<MacroArg> args;
+    if (!repeat->GetParameters().empty()) {
+      args.push_back({.text = number});
     }
     if (!ReadExpansion(std::make_unique<MacroExpansion>(GetLexer(), *repeat,
                                                         ++repetitions_, args),
@@ -1319,7 +1317,9 @@ bool ProgramAssembler::ReadMacroBody(gb::LexerContentId content,
   // A .MACRO in the body is an error, and its lines are skipped to its own
   // .ENDM, so the .ENDM after that still ends a macro's body. A .REPT in a
   // repeated block's body is the start of a body in it, so the .ENDR that
-  // ends it doesn't end this one.
+  // ends it doesn't end this one. A macro's body ends at its first .ENDM,
+  // whatever .REPTs it has, which are matched to their .ENDRs where the macro
+  // is invoked.
   const bool repeat = (kind == ProgramMacro::Kind::kRepeat);
   const std::string_view end = repeat ? "ENDR" : "ENDM";
   gb::Lexer& lexer = GetLexer();
@@ -1363,10 +1363,12 @@ bool ProgramAssembler::ReadMacroBody(gb::LexerContentId content,
       lexer.NextLine(content);
       return valid;
     } else {
-      if (repeat && directive_name == "REPT") {
-        ++repeats;
-      } else if (repeat && directive_name == "ENDR") {
-        --repeats;
+      if (repeat) {
+        if (directive_name == "REPT") {
+          ++repeats;
+        } else if (directive_name == "ENDR") {
+          --repeats;
+        }
       }
       if (macro != nullptr) {
         valid = ReadBodyLine(content, start, macro) && valid;
