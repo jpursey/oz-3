@@ -421,6 +421,27 @@ TEST_F(ProgramGrammarTest, MacroDirectives) {
   EXPECT_EQ(ParseLineError(".ENDM M").GetLocation().column, 6);
 }
 
+TEST_F(ProgramGrammarTest, RepeatDirectives) {
+  gb::ParseResult line = ParseDirective(".REPT 2 * 4, i");
+  const gb::ParsedItem* directive = line->GetItem("directive");
+  EXPECT_EQ(directive->GetString("directive"), "REPT");
+  EXPECT_NE(directive->GetItem("count"), nullptr);
+  EXPECT_EQ(directive->GetString("index"), "I");
+
+  line = ParseDirective(".rept 3");
+  directive = line->GetItem("directive");
+  EXPECT_NE(directive->GetItem("count"), nullptr);
+  EXPECT_EQ(directive->GetItem("index"), nullptr);
+  line = ParseDirective(".ENDR ; done");
+  EXPECT_EQ(line->GetItem("directive")->GetString("directive"), "ENDR");
+
+  EXPECT_EQ(ParseLineError(".REPT").GetLocation().column, 5);
+  EXPECT_EQ(ParseLineError(".REPT 3,").GetLocation().column, 8);
+  EXPECT_EQ(ParseLineError(".REPT 3, R1").GetLocation().column, 9);
+  EXPECT_EQ(ParseLineError(".REPT 3, i, j").GetLocation().column, 10);
+  EXPECT_EQ(ParseLineError(".ENDR 1").GetLocation().column, 6);
+}
+
 TEST_F(ProgramGrammarTest, MacroLabels) {
   // A macro's renamed local label is a label, and a symbol in an expression.
   gb::ParseResult line = ParseLine("WAITIN#2@WAIT: .DW wait#1@x + 1");

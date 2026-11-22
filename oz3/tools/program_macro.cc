@@ -5,6 +5,7 @@
 
 #include "oz3/tools/program_macro.h"
 
+#include <string_view>
 #include <utility>
 
 #include "absl/algorithm/container.h"
@@ -35,8 +36,14 @@ bool Fail(const gb::Lexer& lexer, const gb::Token& token,
 // ProgramMacro
 //==============================================================================
 
-ProgramMacro::ProgramMacro(gb::Token name, std::vector<gb::Token> parameters)
-    : name_(name),
+std::string_view ProgramMacro::GetBodyName(Kind kind) {
+  return kind == Kind::kMacro ? "macro's body" : ".REPT's body";
+}
+
+ProgramMacro::ProgramMacro(gb::Token name, std::vector<gb::Token> parameters,
+                           Kind kind)
+    : kind_(kind),
+      name_(name),
       parameters_(std::move(parameters)),
       extended_(parameters_.size(), false) {}
 
@@ -69,9 +76,12 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
   }
   Line line = {.first = tokens.front(), .last = tokens.back()};
   const int count = static_cast<int>(tokens.size());
+  if (count >= 2 && IsLabel(tokens[0]) && tokens[1].IsSymbol(':')) {
+    labels_.insert(tokens[0].GetString());
+  }
   for (int i = 0; i < count; ++i) {
     const gb::Token& token = tokens[i];
-    if (token.GetType() == kTokenLocalLabel) {
+    if (IsLabel(token)) {
       line.replaces.push_back({.token = token});
     } else if (const int parameter = FindParameter(token); parameter >= 0) {
       line.replaces.push_back({.token = token, .parameter = parameter});
@@ -85,29 +95,46 @@ bool ProgramMacro::ReadLine(gb::Lexer& lexer, gb::LexerContentId content,
   return true;
 }
 
+bool ProgramMacro::IsLabel(const gb::Token& token) const {
+  return token.GetType() == kTokenLocalLabel ||
+         (kind_ == Kind::kRepeat && token.GetType() == kTokenMacroLabel);
+}
+
+bool ProgramMacro::IsRenamed(const Replace& replace) const {
+  DCHECK_EQ(replace.parameter, Replace::kLabel);
+  return kind_ == Kind::kMacro || labels_.contains(replace.token.GetString());
+}
+
 bool ProgramMacro::ValidateLine(const gb::Lexer& lexer,
                                 absl::Span<const gb::Token> tokens,
                                 gb::ParseError* error) const {
   const int count = static_cast<int>(tokens.size());
-  if (count >= 2 && tokens[0].IsIdent() && FindParameter(tokens[0]) < 0 &&
-      tokens[1].IsSymbol(':')) {
-    return Fail(
-        lexer, tokens[0],
-        absl::StrCat("Macro ", name_.GetString(), " can't define label ",
-                     lexer.GetTokenText(tokens[0]),
-                     ", only local labels and its parameters"),
-        error);
+  if (count >= 2 && tokens[1].IsSymbol(':')) {
+    // A body defines its own local labels, and a macro's the labels its
+    // parameters name, but each invocation or repetition would define any
+    // other label again. A repeated block in an expansion defines the macro
+    // labels it starts with, as they are the local labels of the body it is
+    // in, renamed.
+    const gb::Token& label = tokens[0];
+    if (kind_ == Kind::kMacro && label.IsIdent() && FindParameter(label) < 0) {
+      return Fail(lexer, label,
+                  absl::StrCat(GetErrorName(), " can't define label ",
+                               lexer.GetTokenText(label),
+                               ", only local labels and its parameters"),
+                  error);
+    }
+    if (kind_ == Kind::kRepeat && label.IsIdent()) {
+      return Fail(
+          lexer, label,
+          absl::StrCat(GetErrorName(), " can't define label ",
+                       lexer.GetTokenText(label), ", only local labels"),
+          error);
+    }
   }
   for (int i = 0; i < count; ++i) {
     const gb::Token& token = tokens[i];
     if (token.IsError()) {
       return Fail(lexer, token, token.GetString(), error);
-    }
-    if (token.GetType() == kTokenMacroLabel) {
-      return Fail(lexer, token,
-                  absl::StrCat("Macro label ", lexer.GetTokenText(token),
-                               " can only be written by a macro's expansion"),
-                  error);
     }
     if (token.IsSymbol('.') && !ValidateDirective(lexer, tokens, i, error)) {
       return false;
@@ -132,35 +159,51 @@ bool ProgramMacro::ValidateDirective(const gb::Lexer& lexer,
   if (index > 0 && tokens[index - 1].IsIdent() && lexer.IsTokenAdjacent(dot)) {
     return true;
   }
+  const bool macro = (kind_ == Kind::kMacro);
   if (FindParameter(name) >= 0) {
-    return Fail(lexer, name,
-                absl::StrCat("Macro ", name_.GetString(),
-                             " can't name a directive with its parameter ",
-                             name.GetString()),
-                error);
+    return Fail(
+        lexer, name,
+        absl::StrCat(GetErrorName(), " can't name a directive with its ",
+                     macro ? "parameter " : "index ", name.GetString()),
+        error);
   }
   const std::string_view directive = name.GetString();
   if (directive == "MACRO") {
-    return Fail(lexer, dot, ".MACRO can't be in a macro's body", error);
+    return Fail(lexer, dot,
+                absl::StrCat(".MACRO can't be in a ", GetBodyName(kind_)),
+                error);
   }
   if (directive == "ENDM") {
-    return Fail(lexer, dot, ".ENDM must be on a line of its own", error);
+    return Fail(lexer, dot,
+                macro
+                    ? ".ENDM must be on a line of its own"
+                    : absl::StrCat(".ENDM can't be in a ", GetBodyName(kind_)),
+                error);
   }
   if (directive == "INCLUDE") {
-    return Fail(lexer, dot, "A macro's body can't include a file", error);
+    return Fail(lexer, dot,
+                absl::StrCat("A ", GetBodyName(kind_), " can't include a file"),
+                error);
   }
 
   // A constant's name is defined again at each invocation, so only a
-  // parameter can name it.
+  // parameter can name it. A repeated block's index is a number, so nothing
+  // can.
   if (directive == "CONST" && index + 2 < count &&
-      tokens[index + 2].IsIdent() && FindParameter(tokens[index + 2]) < 0) {
-    return Fail(
-        lexer, tokens[index + 2],
-        absl::StrCat("Macro ", name_.GetString(), " can't define constant ",
-                     tokens[index + 2].GetString(), ", only its parameters"),
-        error);
+      tokens[index + 2].IsIdent() &&
+      (!macro || FindParameter(tokens[index + 2]) < 0)) {
+    return Fail(lexer, tokens[index + 2],
+                absl::StrCat(GetErrorName(), " can't define constant ",
+                             tokens[index + 2].GetString(),
+                             macro ? ", only its parameters" : ""),
+                error);
   }
   return true;
+}
+
+std::string ProgramMacro::GetErrorName() const {
+  return kind_ == Kind::kMacro ? absl::StrCat("Macro ", name_.GetString())
+                               : absl::StrCat(".", name_.GetString());
 }
 
 //==============================================================================
@@ -179,18 +222,23 @@ MacroExpansion::MacroExpansion(const gb::Lexer& lexer,
     lines_.emplace_back();
     int column = 0;  // In `body`, after the last token replaced.
     for (const ProgramMacro::Replace& replace : body_line.replaces) {
+      const bool label = (replace.parameter == ProgramMacro::Replace::kLabel);
+      if (label && !macro.IsRenamed(replace)) {
+        continue;
+      }
       gb::LexerLocation location = lexer.GetTokenLocation(replace.token);
       const int token_column = location.column - start.column;
       Append(body.substr(column, token_column - column),
              AdjustColumn(start, column));
-      if (replace.parameter == ProgramMacro::Replace::kLocalLabel) {
+      if (label) {
+        // A macro label is renamed by its local label, after its '@'.
+        const std::string_view text = replace.token.GetString();
         Append(absl::StrCat(macro.GetName().GetString(), "#", invocation,
-                            replace.token.GetString()),
+                            text.substr(text.find('@'))),
                std::move(location));
       } else {
         const MacroArg& arg = args[replace.parameter];
-        Append(lexer.GetTokenRangeText(arg.first, arg.last),
-               lexer.GetTokenLocation(arg.first));
+        Append(arg.text, arg.location.value_or(location));
       }
       column = token_column +
                static_cast<int>(lexer.GetTokenText(replace.token).size());

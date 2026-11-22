@@ -79,8 +79,8 @@ constexpr std::string_view kRules = R"---(
          <DirectiveInstances> | <DirectiveBank> |
          <DirectiveSegment> | <DirectiveIf> | <DirectiveIfdef> |
          <DirectiveIfndef> | <DirectiveElseif> | <DirectiveElse> |
-         <DirectiveEndif> | <DirectiveMacro> |
-         <DirectiveEndm>):"Unknown directive";
+         <DirectiveEndif> | <DirectiveMacro> | <DirectiveEndm> |
+         <DirectiveRept> | <DirectiveEndr>):"Unknown directive";
   }
   DirectiveInclude {
     $directive="INCLUDE" $path=%string;
@@ -135,6 +135,12 @@ constexpr std::string_view kRules = R"---(
   }
   DirectiveEndm {
     $directive="ENDM";
+  }
+  DirectiveRept {
+    $directive="REPT" $count=Expression [',' $index=%ident];
+  }
+  DirectiveEndr {
+    $directive="ENDR";
   }
   SegmentAttribute {
     $role=("CODE" | "STACK" | "DATA" | "EXTRA");
