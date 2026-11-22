@@ -6,6 +6,7 @@
 #ifndef OZ3_TOOLS_PROGRAM_MACRO_H_
 #define OZ3_TOOLS_PROGRAM_MACRO_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,14 +23,26 @@ namespace oz3 {
 // ProgramMacro
 //==============================================================================
 
-// A macro defined with .MACRO: its name, parameters, and body.
+// A macro defined with .MACRO, or a block repeated with .REPT: its name,
+// parameters, and body.
 //
 // Each is tokens of the content the macro is defined in, so the lexer that
 // read them must outlive the macro.
 class ProgramMacro final {
  public:
+  // What the body is. A repeated block's name is its .REPT's directive name,
+  // and its parameter, if it has one, is its index.
+  enum class Kind {
+    kMacro,
+    kRepeat,
+  };
+
+  // Returns how an error names the body of a `kind`: "macro's body" or
+  // ".REPT's body".
+  static std::string_view GetBodyName(Kind kind);
+
   // A token in a line of the body that each invocation of the macro replaces: a
-  // parameter's name, or a local label the body writes.
+  // parameter's name, or a local label a macro's body writes.
   struct Replace {
     static constexpr int kLocalLabel = -1;
 
@@ -45,14 +58,15 @@ class ProgramMacro final {
     std::vector<Replace> replaces;
   };
 
-  // Creates a macro with no lines yet. Its name and parameters are
+  // Creates a macro of `kind` with no lines yet. Its name and parameters are
   // identifier tokens, so not register names, as the program lexer reads
   // them, in upper case.
-  ProgramMacro(gb::Token name, std::vector<gb::Token> parameters);
+  ProgramMacro(gb::Token name, std::vector<gb::Token> parameters, Kind kind);
   ProgramMacro(const ProgramMacro&) = delete;
   ProgramMacro& operator=(const ProgramMacro&) = delete;
   ~ProgramMacro() = default;
 
+  Kind GetKind() const { return kind_; }
   const gb::Token& GetName() const { return name_; }
   absl::Span<const gb::Token> GetParameters() const { return parameters_; }
   absl::Span<const Line> GetLines() const { return lines_; }
@@ -64,10 +78,14 @@ class ProgramMacro final {
   //
   // An identifier that is a parameter's name is that parameter, but one
   // inside a string or a local label ('reg' or @reg) is not. Every local label
-  // is the body's own. Returns false, without adding the line, and sets
-  // `error` to say why, if the line can't be in the body:
-  // - A token on it can't be read, or is a macro label.
-  // - It starts with a label that is neither a local label nor a parameter.
+  // in a macro's body is the body's own, and every one in a repeated block's
+  // is the one it names where the block is. A macro label is read as any
+  // other token, so a caller validates that only an expansion writes one.
+  // Returns false, without adding the line, and sets `error` to say why, if
+  // the line can't be in the body:
+  // - A token on it can't be read.
+  // - In a macro's body, it starts with a label that is neither a local label
+  //   nor a parameter, and in a repeated block's, it starts with any label.
   // - It has a directive (a '.' with a name right after it, other than an
   //   extension right after a name) that is named by a parameter, defines a
   //   constant that isn't a parameter, or is a .MACRO, .ENDM, or .INCLUDE.
@@ -94,6 +112,10 @@ class ProgramMacro final {
                          absl::Span<const gb::Token> tokens, int index,
                          gb::ParseError* error) const;
 
+  // Returns how an error names the macro or block: "Macro <name>" or ".REPT".
+  std::string GetErrorName() const;
+
+  const Kind kind_;
   gb::Token name_;
   std::vector<gb::Token> parameters_;
   std::vector<bool> extended_;  // For each parameter, IsExtended().
@@ -104,25 +126,26 @@ class ProgramMacro final {
 // MacroExpansion
 //==============================================================================
 
-// A macro argument: its first and last tokens, on the line that uses the
-// macro.
+// A macro argument: its text, and where it was written, which is on the line
+// that uses the macro. Text with no location, such as a repeated block's index,
+// is where the body names its parameter.
 struct MacroArg {
-  gb::Token first;
-  gb::Token last;
+  std::string_view text;
+  std::optional<gb::LexerLocation> location;
 };
 
 // The text of one use of a macro, and where each part of it came from.
 //
 // The text has a line for each of the body's lines. Each parameter is
-// replaced by its argument's text, and each local label the body writes is
-// renamed for this use (@WAIT in the second use of WAITIN is WAITIN#2@WAIT,
+// replaced by its argument's text, and each local label a macro's body writes
+// is renamed for this use (@WAIT in the second use of WAITIN is WAITIN#2@WAIT,
 // a kTokenMacroLabel). The rest of the line is copied from the body, from its
 // first token to its last, so its comment is dropped.
 class MacroExpansion final {
  public:
   // Expands `macro`, which `lexer` read, as its invocation number
   // `invocation` (counting from 1), with `args`, one for each of its
-  // parameters, which `lexer` also read.
+  // parameters.
   MacroExpansion(const gb::Lexer& lexer, const ProgramMacro& macro,
                  int invocation, absl::Span<const MacroArg> args);
   MacroExpansion(const MacroExpansion&) = delete;

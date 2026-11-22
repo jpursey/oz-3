@@ -193,6 +193,21 @@ TEST_F(ProgramListingTest, Macros) {
             "0005  0004\n");
 }
 
+TEST_F(ProgramListingTest, Repeats) {
+  // A .REPT's line has a row for each statement its repetitions wrote, and the
+  // body's lines have none.
+  EXPECT_EQ(List(".STACK 4\n"
+                 ".REPT 2, i\n"
+                 "  .DW i\n"
+                 ".ENDR\n"),
+            "program\n"
+            "                           .STACK 4\n"
+            "0000  0000                 .REPT 2, i\n"
+            "0001  0001\n"
+            "                             .DW i\n"
+            "                           .ENDR\n");
+}
+
 TEST_F(ProgramListingTest, Files) {
   // Each file is listed, and a line included twice has a row for each time.
   // A listing file reads the files by the map's paths.

@@ -2382,7 +2382,7 @@ TEST_F(ProgramAssemblerTest, MacroBodyDirectives) {
 
 TEST_F(ProgramAssemblerTest, MacroLabelsInSource) {
   // Only an expansion writes a macro label, so one in a file or a body is an
-  // error.
+  // error, unless a token before it can't be read, which is the error.
   EXPECT_THAT(
       AssembleErrors(".STACK 1\n"
                      ".DW A#1@B\n"
@@ -2396,7 +2396,10 @@ TEST_F(ProgramAssemblerTest, MacroLabelsInSource) {
                      ".ENDM\n"
                      ".IF 1\n"
                      "  .DW G#4@H\n"
-                     ".ENDIF\n"),
+                     ".ENDIF\n"
+                     ".MACRO WORSE\n"
+                     "  .DW 0FFFFFFFFFFFFFFFFFh, I#5@J\n"
+                     ".ENDM\n"),
       ElementsAre(
           IsErrorAt(1, 4,
                     "Macro label A#1@B can only be written by a macro's "
@@ -2412,7 +2415,8 @@ TEST_F(ProgramAssemblerTest, MacroLabelsInSource) {
                     "expansion"),
           IsErrorAt(11, 6,
                     "Macro label G#4@H can only be written by a macro's "
-                    "expansion")));
+                    "expansion"),
+          IsErrorAt(14, 6, "Invalid integer")));
 }
 
 TEST_F(ProgramAssemblerTest, MacroBareProgramAddress) {
@@ -2511,6 +2515,163 @@ TEST_F(ProgramAssemblerTest, MacroLineTooLong) {
       ElementsAre(IsErrorAt(
           4, 0,
           "This invocation of LONG has too many lines, or a line too long")));
+}
+
+TEST_F(ProgramAssemblerTest, Repeat) {
+  // A block is assembled its count of times where it is written, with its
+  // index replaced by each repetition's number from 0. A label on the .REPT
+  // labels its first statement.
+  EXPECT_THAT(
+      AssembleWords(".STACK 1\n"
+                    ".CONST N = 3\n"
+                    ".REPT N  ; Three times.\n"
+                    "  .DW 1\n"
+                    "\n"
+                    "  .DW 2\n"
+                    ".ENDR\n"
+                    "squares: .rept 4, i\n"
+                    "  .DW i * i, 'i'\n"
+                    ".endr\n"
+                    ".REPT 0\n"
+                    "  .DW 5\n"
+                    ".ENDR\n"
+                    ".REPT 2\n"
+                    ".ENDR\n"
+                    ".DW squares\n"),
+      ElementsAre(1, 2, 1, 2, 1, 2, 0, 'i', 1, 'i', 4, 'i', 9, 'i', 6, 0));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatNested) {
+  // A .REPT in a body is repeated in each repetition, and its .ENDR doesn't
+  // end the body it is in.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".REPT 2, y\n"
+                            "  .REPT 3, x\n"
+                            "    .DW y * 10 + x\n"
+                            "  .ENDR\n"
+                            "  .DW 99\n"
+                            ".ENDR\n"),
+              ElementsAre(0, 1, 2, 99, 10, 11, 12, 99));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatIf) {
+  // A body can test its index, and an .IF it leaves open is an error.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".REPT 4, i\n"
+                            "  .IF i & 1\n"
+                            "    .DW i\n"
+                            "  .ENDIF\n"
+                            ".ENDR\n"),
+              ElementsAre(1, 3));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".REPT 2\n"
+                             "  .IF 1\n"
+                             ".ENDR\n"),
+              ElementsAre(IsErrorAt(2, 2, ".IF has no .ENDIF"),
+                          IsErrorAt(1, 0, "In .REPT")));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatLabels) {
+  // A body uses the labels where it is, and a macro invoked in it has its own
+  // local labels in each repetition.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO HERE\n"
+                            "  @here: .DW @here\n"
+                            ".ENDM\n"
+                            "start:\n"
+                            ".REPT 2\n"
+                            "  .DW @done, start\n"
+                            "  HERE\n"
+                            ".ENDR\n"
+                            "@done: .DW @done\n"),
+              ElementsAre(6, 0, 2, 6, 0, 5, 6, 0));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".REPT 2\n"
+                             "  @loop: NOP\n"
+                             "  NOP\n"
+                             ".ENDR\n"
+                             ".REPT 1\n"
+                             "  JPR M#1@LOOP\n"
+                             ".ENDR\n"),
+              ElementsAre(IsErrorAt(2, 2, ".REPT can't define label @loop"),
+                          IsErrorAt(6, 6,
+                                    "Macro label M#1@LOOP can only be written "
+                                    "by a macro's expansion")));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatInMacro) {
+  // A body in a macro's body has the macro's parameters and local labels.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO FILL n, value\n"
+                            "  @top: .REPT n, i\n"
+                            "    .DW value + i, @top\n"
+                            "  .ENDR\n"
+                            ".ENDM\n"
+                            "FILL 2, 10\n"
+                            "FILL 1, 20\n"),
+              ElementsAre(10, 0, 11, 0, 20, 4));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO M\n"
+                             "  .REPT 2\n"
+                             "    @x: NOP\n"
+                             "  .ENDR\n"
+                             ".ENDM\n"
+                             "M\n"),
+              ElementsAre(IsErrorAt(3, 4, ".REPT can't define label M#1@X"),
+                          IsErrorAt(6, 0, "In M")));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatErrors) {
+  // An error in a body is reported once, followed by the .REPT, and a body
+  // with an error where it is written, or a .REPT whose count or line is an
+  // error, assembles nothing.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".REPT 3\n"
+                     "  FOO\n"
+                     ".ENDR\n"
+                     ".REPT LATER\n"
+                     "  FOO\n"
+                     ".ENDR\n"
+                     ".REPT\n"
+                     "  FOO\n"
+                     ".ENDR\n"
+                     ".REPT 2\n"
+                     "  .MACRO M\n"
+                     "    .ENDR\n"
+                     "  .ENDM\n"
+                     "  FOO\n"
+                     ".ENDR\n"
+                     ".REPT 2\n"
+                     "  .ENDM\n"
+                     ".ENDR 1\n"
+                     "x: .ENDR\n"
+                     ".CONST LATER = 1\n"),
+      ElementsAre(IsErrorAt(2, 2, "Unknown instruction FOO"),
+                  IsErrorAt(1, 0, "In .REPT"),
+                  IsErrorAt(4, 6, "LATER is not defined"), IsErrorAt(7, 5, ""),
+                  IsErrorAt(11, 2, ".MACRO can't be in a .REPT's body"),
+                  IsErrorAt(17, 2, ".ENDM can't be in a .REPT's body"),
+                  IsErrorAt(18, 0, ".ENDR must be on a line of its own"),
+                  IsErrorAt(19, 3, ".ENDR has no .REPT")));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".REPT 2\n"
+                             "  NOP\n"),
+              ElementsAre(IsErrorAt(1, 0, ".REPT has no .ENDR")));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatLineTooLong) {
+  // A repetition's line can be longer than its body's, with its index's
+  // number in place of its name, which the lexer can't read. The repetitions
+  // before it are still assembled.
+  std::string text = ".STACK 1\n.REPT 11, i\n.DW i";
+  for (int i = 1; i < 1400; ++i) {
+    absl::StrAppend(&text, ",i");
+  }
+  absl::StrAppend(&text, "\n.ENDR\n");
+  EXPECT_THAT(AssembleErrors(text),
+              ElementsAre(IsErrorAt(
+                  1, 0, "This .REPT has too many lines, or a line too long")));
 }
 
 TEST_F(ProgramAssemblerTest, MapOfMacros) {

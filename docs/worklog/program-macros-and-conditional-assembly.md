@@ -474,8 +474,8 @@ std::unique_ptr<AsmProgram> AssembleProgramFile(
   read close to `.IFDEF` and need an `.ELSEIFD` too.
 - [x] Whether constants from the host are part of this feature, or a backlog
   item of their own: part of it, as CL5.
-- [x] Left out, for the backlog when the feature is done: repeating a block
-  (`.REPT`).
+- [x] Left out of the plan, and done after CL5 as a change of its own:
+  repeating a block (`.REPT`).
 
 ## CLs
 

@@ -114,6 +114,8 @@ class ProgramGrammar final {
   //   MACRO      $name (%ident), then zero or more $parameters (%ident)
   //              separated by commas
   //   ENDM       Nothing
+  //   REPT       $count, then optionally ',' $index (%ident)
+  //   ENDR       Nothing
   // Each value ($value, $size, $count, $words, $mask, and $condition) is an
   // Expression.
   // Each segment attribute is one of $role ("CODE", "STACK", "DATA", or
