@@ -2186,8 +2186,8 @@ TEST_F(ProgramAssemblerTest, MacroConstants) {
                             "parameters")));
 }
 
-TEST_F(ProgramAssemblerTest, MacroUsingMacros) {
-  // A macro can use another, but not itself, directly or through another.
+TEST_F(ProgramAssemblerTest, MacroInvokingMacros) {
+  // A macro can invoke another, but not itself, directly or through another.
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".MACRO INNER x\n"
                             "  .DW x\n"
@@ -2210,9 +2210,9 @@ TEST_F(ProgramAssemblerTest, MacroUsingMacros) {
                              "  A\n"
                              ".ENDM\n"
                              "A\n"),
-              ElementsAre(IsErrorAt(2, 2, "Macro SELF can't use itself"),
+              ElementsAre(IsErrorAt(2, 2, "Macro SELF can't invoke itself"),
                           IsErrorAt(4, 0, "In SELF"),
-                          IsErrorAt(9, 2, "Macro A can't use itself"),
+                          IsErrorAt(9, 2, "Macro A can't invoke itself"),
                           IsErrorAt(6, 2, "In B"), IsErrorAt(11, 0, "In A")));
 }
 

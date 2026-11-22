@@ -1309,7 +1309,7 @@ bool ProgramAssembler::ReadMacroInvocation(gb::LexerContentId content,
            FindExpansion(lexer.GetTokenLocation(expansion->invocation).id)) {
     if (expansion->macro == definition) {
       Error(name,
-            absl::StrCat("Macro ", name.GetString(), " can't use itself"));
+            absl::StrCat("Macro ", name.GetString(), " can't invoke itself"));
       return true;
     }
   }
