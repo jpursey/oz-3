@@ -63,7 +63,7 @@ constexpr std::string_view kParserRules = R"---(
     ($low="LOW" | $high="HIGH") '(' $operand=Expression ')';
     $number=%int;
     $string=%string;
-    $name=(%ident | %local_label);
+    $name=(%ident | %local_label | %macro_label);
     $offset='$';
     '(' $group=Expression ')';
   }

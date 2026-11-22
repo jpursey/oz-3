@@ -72,8 +72,9 @@ class ExpressionContext {
   virtual int GetSegment() const = 0;
 
   // Returns the value of the symbol `name`, used where a value of `width` is:
-  // an upper case name ("LOOP"), or an upper case local label with its "@"
-  // ("@LOOP"), and the segment it is an offset in, if it is a label (see
+  // an upper case name ("LOOP"), an upper case local label with its "@"
+  // ("@LOOP"), or a macro's renamed local label ("WAITIN#2@WAIT"), and the
+  // segment it is an offset in, if it is a label (see
   // ExpressionResult::segment). Returns nullopt if there is no such symbol
   // (yet), which the expression reports as kUndefined. Any result is the
   // expression's, so a symbol with its own expression (a constant) returns that

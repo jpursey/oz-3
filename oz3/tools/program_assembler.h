@@ -22,7 +22,8 @@
 namespace oz3 {
 
 // The most errors a pass of the assembler reports. It stops after this many,
-// with a last error saying so.
+// with a last error saying so. An error in a macro's use counts once, with the
+// errors at its uses that follow it.
 inline constexpr int kMaxProgramErrors = 100;
 
 // An assembled program, and its map.

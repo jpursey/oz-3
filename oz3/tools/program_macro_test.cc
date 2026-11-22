@@ -201,7 +201,47 @@ TEST_F(ProgramMacroTest, Labels) {
 
   EXPECT_THAT(GetLineTexts(*macro),
               ElementsAre("name :  NOP", "@loop: JP loop"));
-  EXPECT_EQ(lexer_->GetCurrentLine(content), lexer_->GetLineCount(content));
+  EXPECT_TRUE(lexer_->NextToken(content, /*advance=*/false).IsEnd());
+}
+
+TEST_F(ProgramMacroTest, Directives) {
+  // A directive can't be named by a parameter, define a constant that isn't
+  // one, or define a macro or include a file. An extension right after a name
+  // isn't a directive, even after a parameter.
+  std::unique_ptr<ProgramMacro> macro = CreateMacro("M OP, SIZE, X");
+  const gb::LexerContentId content = AddFile("macros.oza",
+                                             "  .DW x\n"
+                                             "  .CONST x = 1\n"
+                                             "  op.size 1\n"
+                                             "  ADD.size R1, 1\n"
+                                             "  x: .DD 1\n"
+                                             "  .size 1\n"
+                                             "  .CONST LIMIT = 5\n"
+                                             "  x .MACRO N\n"
+                                             "  x .ENDM\n"
+                                             "  @l: .INCLUDE 'a.oza'\n");
+  gb::ParseError error;
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_TRUE(macro->ReadLine(*lexer_, content, &error))
+        << error.FormatMessage();
+  }
+  const std::pair<std::pair<int, int>, std::string_view> errors[] = {
+      {{5, 3}, "Macro M can't name a directive with its parameter SIZE"},
+      {{6, 9}, "Macro M can't define constant LIMIT, only its parameters"},
+      {{7, 4}, ".MACRO can't be in a macro's body"},
+      {{8, 4}, ".ENDM must be on a line of its own"},
+      {{9, 6}, "A macro's body can't include a file"},
+  };
+  for (const auto& [location, message] : errors) {
+    EXPECT_FALSE(macro->ReadLine(*lexer_, content, &error)) << message;
+    EXPECT_EQ(error.GetLocation(),
+              At("macros.oza", location.first, location.second));
+    EXPECT_EQ(error.GetMessage(), message);
+  }
+  EXPECT_EQ(macro->GetLines().size(), 5);
+  EXPECT_TRUE(macro->IsExtended(0));
+  EXPECT_FALSE(macro->IsExtended(1));
+  EXPECT_FALSE(macro->IsExtended(2));
 }
 
 TEST_F(ProgramMacroTest, LineThatCantBeRead) {
@@ -224,20 +264,21 @@ TEST_F(ProgramMacroTest, LineThatCantBeRead) {
 //==============================================================================
 
 TEST_F(ProgramMacroTest, Expansion) {
-  // Each parameter is replaced by its argument's text as the use wrote it,
-  // each local label is renamed for the use, and each part of the text is
-  // where it came from.
+  // Each parameter is replaced by its argument's text as the invocation wrote
+  // it, each local label is renamed for the invocation, and each part of the
+  // text is where it came from.
   std::unique_ptr<ProgramMacro> macro =
       ReadMacro("macros.oza", "M PORT, REG",
                 "@wait:  IN reg, port   ; Read.\n"
                 "        JZ reg, @wait\n"
                 "\n"
                 "        NOP\n");
-  const std::vector<gb::Token> use =
+  const std::vector<gb::Token> invocation =
       ReadTokens(AddFile("main.oza", "  M KEYBOARD, r1\n"));
-  ASSERT_EQ(use.size(), 4);
-  const MacroExpansion expansion(*lexer_, *macro, 2,
-                                 {{use[1], use[1]}, {use[3], use[3]}});
+  ASSERT_EQ(invocation.size(), 4);
+  const MacroExpansion expansion(
+      *lexer_, *macro, 2,
+      {{invocation[1], invocation[1]}, {invocation[3], invocation[3]}});
   EXPECT_EQ(expansion.GetText(),
             "M#2@WAIT:  IN r1, KEYBOARD\n"
             "JZ r1, M#2@WAIT\n"
@@ -254,7 +295,8 @@ TEST_F(ProgramMacroTest, Expansion) {
   EXPECT_EQ(expansion.GetLocation(1, 7), At("macros.oza", 1, 16));
   EXPECT_EQ(expansion.GetLocation(2, 0), At("macros.oza", 3, 8));
 
-  // The start, middle, and end of the arguments, where the use wrote them.
+  // The start, middle, and end of the arguments, where the invocation wrote
+  // them.
   EXPECT_EQ(expansion.GetLocation(0, 14), At("main.oza", 0, 14));
   EXPECT_EQ(expansion.GetLocation(0, 15), At("main.oza", 0, 15));
   EXPECT_EQ(expansion.GetLocation(0, 18), At("main.oza", 0, 4));
@@ -278,15 +320,16 @@ TEST_F(ProgramMacroTest, ExpansionWithNoParameters) {
 }
 
 TEST_F(ProgramMacroTest, ExpansionThatStartsWithAParameter) {
-  // A parameter used as a label is replaced like any other, so the use names
-  // the label.
+  // A parameter used as a label is replaced like any other, so the invocation
+  // names the label.
   std::unique_ptr<ProgramMacro> macro =
       ReadMacro("macros.oza", "M NAME, X", "name: .DW x,x\n");
-  const std::vector<gb::Token> use =
+  const std::vector<gb::Token> invocation =
       ReadTokens(AddFile("main.oza", "M Table, 1 + 2\n"));
-  ASSERT_EQ(use.size(), 6);
-  const MacroExpansion expansion(*lexer_, *macro, 1,
-                                 {{use[1], use[1]}, {use[3], use[5]}});
+  ASSERT_EQ(invocation.size(), 6);
+  const MacroExpansion expansion(
+      *lexer_, *macro, 1,
+      {{invocation[1], invocation[1]}, {invocation[3], invocation[5]}});
   EXPECT_EQ(expansion.GetText(), "Table: .DW 1 + 2,1 + 2\n");
   EXPECT_EQ(expansion.GetLocation(0, 0), At("main.oza", 0, 2));
   EXPECT_EQ(expansion.GetLocation(0, 5), At("macros.oza", 0, 4));
@@ -295,22 +338,23 @@ TEST_F(ProgramMacroTest, ExpansionThatStartsWithAParameter) {
 }
 
 TEST_F(ProgramMacroTest, ExpansionInAnExpansion) {
-  // A use in an expansion has its arguments in the expansion's content, so
-  // their text in its own expansion is there. A label the outer expansion
+  // An invocation in an expansion has its arguments in the expansion's content,
+  // so their text in its own expansion is there. A label the outer expansion
   // renamed is an argument like any other.
   std::unique_ptr<ProgramMacro> outer =
       ReadMacro("outer.oza", "M X", "@L: INNER (x), @L\n");
   std::unique_ptr<ProgramMacro> inner =
       ReadMacro("inner.oza", "INNER V, W", "  PUSH v\n  JP w\n");
-  const std::vector<gb::Token> use =
+  const std::vector<gb::Token> invocation =
       ReadTokens(AddFile("main.oza", "OUTER A + B\n"));
-  ASSERT_EQ(use.size(), 4);
-  const MacroExpansion outer_expansion(*lexer_, *outer, 1, {{use[1], use[3]}});
+  ASSERT_EQ(invocation.size(), 4);
+  const MacroExpansion outer_expansion(*lexer_, *outer, 1,
+                                       {{invocation[1], invocation[3]}});
   ASSERT_EQ(outer_expansion.GetText(), "M#1@L: INNER (A + B), M#1@L\n");
   EXPECT_EQ(outer_expansion.GetLocation(0, 14), At("main.oza", 0, 6));
   EXPECT_EQ(outer_expansion.GetLocation(0, 22), At("outer.oza", 0, 15));
 
-  // The use of INNER in the expansion, as the assembler reads it.
+  // The invocation of INNER in the expansion, as the assembler reads it.
   const gb::LexerContentId outer_content =
       lexer_->AddContent(outer_expansion.GetText());
   const std::vector<gb::Token> inner_use = ReadTokens(outer_content);
@@ -333,11 +377,12 @@ TEST_F(ProgramMacroTest, ExpansionWithArgOutOfOrder) {
   // An argument whose last token is before its first has no text.
   std::unique_ptr<ProgramMacro> macro =
       ReadMacro("macros.oza", "M X, Y", "  PUSH x\n  POP y\n");
-  const std::vector<gb::Token> use =
+  const std::vector<gb::Token> invocation =
       ReadTokens(AddFile("main.oza", "M 1, 2\n"));
-  ASSERT_EQ(use.size(), 4);
-  const MacroExpansion expansion(*lexer_, *macro, 1,
-                                 {{use[3], use[1]}, {use[1], use[3]}});
+  ASSERT_EQ(invocation.size(), 4);
+  const MacroExpansion expansion(
+      *lexer_, *macro, 1,
+      {{invocation[3], invocation[1]}, {invocation[1], invocation[3]}});
   EXPECT_EQ(expansion.GetText(), "PUSH \nPOP 1, 2\n");
 }
 

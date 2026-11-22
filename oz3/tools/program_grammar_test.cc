@@ -35,6 +35,7 @@ using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
+using ::testing::SizeIs;
 using ::testing::UnorderedElementsAre;
 
 constexpr std::string_view kInstructionSet = R"---(
@@ -198,6 +199,26 @@ class ProgramGrammarTest : public ::testing::Test {
     CHECK_EQ(matches_.size(), 1);
     EXPECT_FALSE(matches_[0].args[index].value.has_value());
     return matches_[0].args[index].reg;
+  }
+
+  // Parses `text` as a macro's invocation, which must parse, and returns the
+  // text of each argument.
+  std::vector<std::string> ParseMacroInvocation(std::string_view text) {
+    SetText(text);
+    gb::ParseResult invocation =
+        parser_->Parse(content_, ProgramGrammar::kMacroInvocationRule);
+    if (!invocation.IsOk()) {
+      ADD_FAILURE() << text << ": " << invocation.GetError().FormatMessage();
+      return {};
+    }
+    std::vector<std::string> args;
+    for (const gb::ParsedItem& arg : invocation->GetItems("args")) {
+      const std::string_view first = GetLexer().GetTokenText(arg.GetToken());
+      const std::string_view last = GetLexer().GetTokenText(
+          arg.GetItems("tokens").back().GetToken("last"));
+      args.emplace_back(first.data(), last.data() + last.size());
+    }
+    return args;
   }
 
   // Returns the text of the lexer's next token, which is empty at the end.
@@ -375,6 +396,46 @@ TEST_F(ProgramGrammarTest, ConditionalDirectives) {
   EXPECT_EQ(ParseLineError(".ENDIF X").GetLocation().column, 7);
 }
 
+TEST_F(ProgramGrammarTest, MacroDirectives) {
+  gb::ParseResult line = ParseDirective(".MACRO WAITIN port, reg");
+  const gb::ParsedItem* directive = line->GetItem("directive");
+  EXPECT_EQ(directive->GetString("directive"), "MACRO");
+  EXPECT_EQ(directive->GetString("name"), "WAITIN");
+  const absl::Span<const gb::ParsedItem> parameters =
+      directive->GetItems("parameters");
+  ASSERT_THAT(parameters, SizeIs(2));
+  EXPECT_EQ(parameters[0].GetToken().GetString(), "PORT");
+  EXPECT_EQ(parameters[1].GetToken().GetString(), "REG");
+
+  line = ParseDirective(".macro nothing");
+  directive = line->GetItem("directive");
+  EXPECT_EQ(directive->GetString("name"), "NOTHING");
+  EXPECT_THAT(directive->GetItems("parameters"), IsEmpty());
+  line = ParseDirective(".ENDM ; done");
+  EXPECT_EQ(line->GetItem("directive")->GetString("directive"), "ENDM");
+
+  EXPECT_EQ(ParseLineError(".MACRO").GetLocation().column, 6);
+  EXPECT_EQ(ParseLineError(".MACRO 5").GetLocation().column, 7);
+  EXPECT_EQ(ParseLineError(".MACRO M a,").GetLocation().column, 11);
+  EXPECT_EQ(ParseLineError(".MACRO M R1").GetLocation().column, 9);
+  EXPECT_EQ(ParseLineError(".ENDM M").GetLocation().column, 6);
+}
+
+TEST_F(ProgramGrammarTest, MacroLabels) {
+  // A macro's renamed local label is a label, and a symbol in an expression.
+  gb::ParseResult line = ParseLine("WAITIN#2@WAIT: .DW wait#1@x + 1");
+  ASSERT_TRUE(line.IsOk());
+  EXPECT_EQ(line->GetItem("label")->GetString("local_label"), "WAITIN#2@WAIT");
+  context_.symbols["WAIT#1@X"] = 5;
+  const gb::ParsedItem* directive = line->GetItem("directive");
+  ExpressionResult result =
+      Expression::Create(GetLexer(),
+                         *directive->GetItems("items")[0].GetItem("value"))
+          .Evaluate(ExpressionWidth::kWord, context_);
+  EXPECT_EQ(result.kind, ExpressionResult::Kind::kValue);
+  EXPECT_EQ(result.value, 6);
+}
+
 TEST_F(ProgramGrammarTest, DirectiveErrors) {
   // The error is the one that gets furthest into the line.
   gb::ParseError error = ParseLineError(".CONST size 5");
@@ -458,6 +519,38 @@ TEST_F(ProgramGrammarTest, InstructionArgs) {
   EXPECT_EQ(ParseLineError("ADD R1, (5").GetLocation().column, 10);
   EXPECT_EQ(ParseLineError("ADD R1, 5)").GetLocation().column, 9);
   EXPECT_EQ(ParseLineError("ADD R1, (5]").GetLocation().column, 10);
+}
+
+TEST_F(ProgramGrammarTest, MacroInvocation) {
+  // Each argument is its tokens up to a comma outside brackets, from its first
+  // to its last.
+  EXPECT_THAT(ParseMacroInvocation("WAITIN"), IsEmpty());
+  EXPECT_THAT(ParseMacroInvocation("WAITIN ; comment"), IsEmpty());
+  EXPECT_THAT(ParseMacroInvocation("WAITIN KEYBOARD, R1 ; comment"),
+              ElementsAre("KEYBOARD", "R1"));
+  EXPECT_THAT(
+      ParseMacroInvocation("M D(table), (R1), 'a,b', [1, 2], {x, (y, z)}"),
+      ElementsAre("D(table)", "(R1)", "'a,b'", "[1, 2]", "{x, (y, z)}"));
+  EXPECT_THAT(ParseMacroInvocation("M ADD.W R1 + 2 , @loop"),
+              ElementsAre("ADD.W R1 + 2", "@loop"));
+  EXPECT_TRUE(GetLexer().NextToken(content_, false).IsEnd());
+
+  // An empty argument is an error at the token after its comma, or at the
+  // start of the arguments.
+  for (auto [text, column] :
+       {std::pair{"M 1,", 4}, {"M , 1", 2}, {"M 1, , 2", 5}}) {
+    SetText(text);
+    gb::ParseResult invocation =
+        parser_->Parse(content_, ProgramGrammar::kMacroInvocationRule);
+    ASSERT_FALSE(invocation.IsOk()) << text;
+    EXPECT_THAT(invocation.GetError().GetMessage(),
+                HasSubstr("Macro argument is empty"))
+        << text;
+    EXPECT_EQ(invocation.GetError().GetLocation().column, column) << text;
+  }
+  SetText("M (1, 2");
+  EXPECT_FALSE(
+      parser_->Parse(content_, ProgramGrammar::kMacroInvocationRule).IsOk());
 }
 
 TEST_F(ProgramGrammarTest, InstructionNames) {

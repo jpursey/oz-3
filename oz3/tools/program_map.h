@@ -44,7 +44,9 @@ class ProgramMap final {
 
   // A label or local label, whose value is its offset in its segment. A local
   // label's name is its scope's label and then its own ("START@LOOP"), or only
-  // its own before the program's first label ("@LOOP").
+  // its own before the program's first label ("@LOOP"). A local label a macro's
+  // body writes is named for its use instead, as the macro's name, the use's
+  // number, and its own ("WAITIN#2@WAIT" in the second use of WAITIN).
   struct Label {
     std::string name;
     int segment = 0;    // An index into GetSegments().

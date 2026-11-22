@@ -1956,6 +1956,609 @@ TEST_F(ProgramAssemblerTest, MapOfConditionals) {
   EXPECT_EQ(map.GetLabels()[0].name, "TAKEN");
 }
 
+//==============================================================================
+// Macros
+//==============================================================================
+
+TEST_F(ProgramAssemblerTest, MacroWithoutParameters) {
+  // A macro's body is assembled where it is used, and not where it is
+  // defined.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO TWO\n"
+                            "  .DW 1  ; One.\n"
+                            "\n"
+                            "  .DW 2\n"
+                            ".ENDM\n"
+                            "TWO\n"
+                            ".DW 3\n"
+                            "two  ; Again.\n"),
+              ElementsAre(1, 2, 3, 1, 2, 0));
+}
+
+TEST_F(ProgramAssemblerTest, MacroWithParameters) {
+  // Each parameter is replaced by its argument's text, in expressions and in
+  // instruction names and extensions, but not in strings or local labels.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO PAIR a, b\n"
+                            "  .DW a, b + 1, 'a'\n"
+                            ".ENDM\n"
+                            "PAIR 1, 2\n"
+                            "pair 3 * 2, 'A'\n"),
+              ElementsAre(1, 3, 'a', 6, 'A' + 1, 'a'));
+  EXPECT_EQ(AssembleWords(".STACK 1\n"
+                          ".MACRO PUSHN op, size, value\n"
+                          "  op.size value\n"
+                          ".ENDM\n"
+                          "PUSHN PUSH, W, 5\n"
+                          "PUSHN PUSH, D, 10000h\n"),
+            AssembleWords(".STACK 1\n"
+                          "PUSH.W 5\n"
+                          "PUSH.D 10000h\n"));
+}
+
+TEST_F(ProgramAssemblerTest, MacroArguments) {
+  // An argument is the text between commas, and a comma in brackets or a
+  // string is part of it.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO ONE x\n"
+                            "  .DW x\n"
+                            ".ENDM\n"
+                            "ONE 'a,b'\n"
+                            "ONE (1 + 2) * 3\n"
+                            ".MACRO IGNORE x\n"
+                            "  .IFDEF NOTHING\n"
+                            "    .DW x\n"
+                            "  .ENDIF\n"
+                            ".ENDM\n"
+                            "IGNORE (1, 2)\n"
+                            "IGNORE [1, (2, 3)]\n"
+                            "IGNORE {1, 2}\n"
+                            ".DW 4\n"),
+              ElementsAre('a', ',', 'b', 9, 4, 0));
+}
+
+TEST_F(ProgramAssemblerTest, MacroArgumentErrors) {
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO TWO a, b\n"
+                     "  .DW a, b\n"
+                     ".ENDM\n"
+                     ".MACRO NONE\n"
+                     ".ENDM\n"
+                     "TWO 1\n"
+                     "TWO 1, 2, 3\n"
+                     "NONE 1\n"
+                     "TWO 1,\n"
+                     "TWO , 2\n"
+                     "TWO 1,,2\n"),
+      ElementsAre(IsErrorAt(6, 0, "Macro TWO takes 2 arguments, not 1"),
+                  IsErrorAt(7, 0, "Macro TWO takes 2 arguments, not 3"),
+                  IsErrorAt(8, 0, "Macro NONE takes 0 arguments, not 1"),
+                  IsErrorAt(9, 6, "Macro argument is empty"),
+                  IsErrorAt(10, 4, "Macro argument is empty"),
+                  IsErrorAt(11, 6, "Macro argument is empty")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroIf) {
+  // A body can test its parameters, and an .IF it leaves open is an error.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO PICK n\n"
+                            "  .IF n == 1\n"
+                            "    .DW 10\n"
+                            "  .ELSE\n"
+                            "    .DW 20\n"
+                            "  .ENDIF\n"
+                            ".ENDM\n"
+                            "PICK 1\n"
+                            "PICK 2\n"),
+              ElementsAre(10, 20));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO OPEN\n"
+                             "  .IF 1\n"
+                             ".ENDM\n"
+                             ".IF 1\n"
+                             "OPEN\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(2, 2, ".IF has no .ENDIF"),
+                          IsErrorAt(5, 0, "In OPEN")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLocalLabels) {
+  // Each invocation has its own local labels, which don't end the caller's
+  // scope.
+  const std::string_view text =
+      ".STACK 1\n"
+      ".MACRO HERE\n"
+      "  @here: .DW @here\n"
+      ".ENDM\n"
+      "start:\n"
+      "HERE\n"
+      "@here: .DW @here\n"
+      "HERE\n"
+      ".DW @here\n";
+  const ProgramMap map = AssembleMap(text);
+  EXPECT_THAT(map.GetLabels(),
+              ElementsAre(MapLabel{.name = "HERE#1@HERE",
+                                   .segment = 0,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 5}},
+                          MapLabel{.name = "START",
+                                   .segment = 0,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 4}},
+                          MapLabel{.name = "START@HERE",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 6}},
+                          MapLabel{.name = "HERE#2@HERE",
+                                   .segment = 0,
+                                   .offset = 2,
+                                   .location = {.file = 0, .line = 7}}));
+  EXPECT_THAT(AssembleWords(text), ElementsAre(0, 1, 2, 1));
+}
+
+TEST_F(ProgramAssemblerTest, MacroCallerLocalLabel) {
+  // A local label in an argument is the caller's, even where the macro has
+  // one of the same name.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO JUMP target\n"
+                            "  @done: .DW target, @done\n"
+                            ".ENDM\n"
+                            "start:\n"
+                            "JUMP @done\n"
+                            "@done: .DW @done\n"),
+              ElementsAre(2, 0, 2, 0));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLabelFromParameter) {
+  // A label from a parameter is the caller's, and starts a scope, which the
+  // rest of the invocation's arguments are in too.
+  const std::string_view text =
+      ".STACK 1\n"
+      ".MACRO ENTRY name, value\n"
+      "  name: .DW value\n"
+      ".ENDM\n"
+      "ENTRY FIRST, 1\n"
+      "@a: .DW @a\n"
+      "ENTRY SECOND, @a\n"
+      "@a: .DW 3\n";
+  EXPECT_THAT(AssembleWords(text), ElementsAre(1, 1, 3, 3));
+  EXPECT_THAT(AssembleMap(text).GetLabels(),
+              ElementsAre(MapLabel{.name = "FIRST",
+                                   .segment = 0,
+                                   .offset = 0,
+                                   .location = {.file = 0, .line = 4}},
+                          MapLabel{.name = "FIRST@A",
+                                   .segment = 0,
+                                   .offset = 1,
+                                   .location = {.file = 0, .line = 5}},
+                          MapLabel{.name = "SECOND",
+                                   .segment = 0,
+                                   .offset = 2,
+                                   .location = {.file = 0, .line = 6}},
+                          MapLabel{.name = "SECOND@A",
+                                   .segment = 0,
+                                   .offset = 3,
+                                   .location = {.file = 0, .line = 7}}));
+
+  // A second invocation defining it again is an error in the argument.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO ENTRY name\n"
+                             "  name: NOP\n"
+                             ".ENDM\n"
+                             "ENTRY FIRST\n"
+                             "ENTRY FIRST\n"),
+              ElementsAre(IsErrorAt(5, 6, "FIRST is already defined"),
+                          IsErrorAt(5, 0, "In ENTRY")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLabelOnInvocation) {
+  // A label on an invocation labels the macro's first statement.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO TWO\n"
+                            "  .DW 1\n"
+                            "  .DW 2\n"
+                            ".ENDM\n"
+                            "NOP\n"
+                            "here: TWO\n"
+                            ".DW here\n"),
+              ElementsAre(0, 1, 2, 1));
+}
+
+TEST_F(ProgramAssemblerTest, MacroConstants) {
+  // A body can define a constant named by a parameter, but not one of its
+  // own.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO DEFINE name, value\n"
+                            "  .CONST name = value\n"
+                            ".ENDM\n"
+                            "DEFINE A, 5\n"
+                            ".DW A\n"),
+              ElementsAre(5, 0));
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO LIMIT\n"
+                     "  .CONST MAX = 5\n"
+                     ".ENDM\n"
+                     "LIMIT\n"),
+      ElementsAre(IsErrorAt(2, 9,
+                            "Macro LIMIT can't define constant MAX, only its "
+                            "parameters")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroInvokingMacros) {
+  // A macro can invoke another, but not itself, directly or through another.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".MACRO INNER x\n"
+                            "  .DW x\n"
+                            ".ENDM\n"
+                            ".MACRO OUTER x\n"
+                            "  INNER x\n"
+                            "  INNER x + 1\n"
+                            ".ENDM\n"
+                            "OUTER 5\n"),
+              ElementsAre(5, 6));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO SELF\n"
+                             "  SELF\n"
+                             ".ENDM\n"
+                             "SELF\n"
+                             ".MACRO A\n"
+                             "  B\n"
+                             ".ENDM\n"
+                             ".MACRO B\n"
+                             "  A\n"
+                             ".ENDM\n"
+                             "A\n"),
+              ElementsAre(IsErrorAt(2, 2, "Macro SELF can't invoke itself"),
+                          IsErrorAt(4, 0, "In SELF"),
+                          IsErrorAt(9, 2, "Macro A can't invoke itself"),
+                          IsErrorAt(6, 2, "In B"), IsErrorAt(11, 0, "In A")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroDefinitionErrors) {
+  // A macro that can't be defined still has its body read to its .ENDM, so
+  // the body isn't assembled.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO M a, b, a\n"
+                     ".ENDM\n"
+                     ".MACRO PUSH\n"
+                     "  FOO\n"
+                     ".ENDM\n"
+                     ".MACRO nop\n"
+                     ".ENDM\n"
+                     ".MACRO M\n"
+                     "  FOO\n"
+                     ".ENDM\n"
+                     "LATER\n"
+                     ".MACRO LATER\n"
+                     ".ENDM\n"
+                     "PUSH.W 1\n"
+                     "NOP\n"
+                     "LATER\n"),
+      ElementsAre(
+          IsErrorAt(1, 15, "Macro M already has the parameter A"),
+          IsErrorAt(3, 7, "Macro PUSH can't have an instruction's name"),
+          IsErrorAt(6, 7, "Macro NOP can't have an instruction's name"),
+          IsErrorAt(8, 7, "Macro M is already defined"),
+          IsErrorAt(11, 0, "Unknown instruction LATER")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroErrorLimit) {
+  // An error's invocations don't count toward the limit.
+  std::string text = ".STACK 1\n.MACRO M\nFOO\n.ENDM\n";
+  for (int i = 0; i < kMaxProgramErrors + 10; ++i) {
+    absl::StrAppend(&text, "M\n");
+  }
+  std::vector<gb::ParseError> errors = AssembleErrors(text);
+  ASSERT_THAT(errors, SizeIs(kMaxProgramErrors * 2 + 1));
+  EXPECT_THAT(errors[kMaxProgramErrors * 2 - 1],
+              IsErrorAt(kMaxProgramErrors + 3, 0, "In M"));
+  EXPECT_THAT(errors.back(),
+              IsErrorAt(kMaxProgramErrors + 3, 0, "Stopped after 100 errors"));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLineErrors) {
+  // A .MACRO whose line is an error still defines its name, so its invocations
+  // aren't errors too, and a label on a stray .ENDM is still defined.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO M a, 5\n"
+                             "  FOO\n"
+                             ".ENDM\n"
+                             "M 1, 2\n"
+                             "M\n"
+                             "a: .ENDM\n"
+                             ".DW a\n"),
+              ElementsAre(IsErrorAt(1, 12, ""),
+                          IsErrorAt(6, 3, ".ENDM has no .MACRO")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroBodyErrors) {
+  // An error in a body is reported where it is defined, and its invocations
+  // expand to nothing.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO M\n"
+                             "  loop: NOP\n"
+                             "  NOP\n"
+                             ".ENDM\n"
+                             "M\n"
+                             "M\n"),
+              ElementsAre(IsErrorAt(
+                  2, 2,
+                  "Macro M can't define label loop, only local labels and its "
+                  "parameters")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroDirectiveErrors) {
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".ENDM\n"
+                     "a: .ENDM\n"
+                     "b: .MACRO A\n"
+                     "  .MACRO B\n"
+                     "    .DW 1\n"
+                     "  .ENDM\n"
+                     "  .DW 2\n"
+                     ".ENDM 5\n"
+                     ".MACRO C\n"
+                     "c: .ENDM\n"
+                     ".MACRO 5\n"
+                     "  FOO\n"
+                     ".ENDM\n"
+                     "A\n"
+                     "B\n"
+                     ".MACRO D\n"
+                     "  NOP\n"),
+      ElementsAre(IsErrorAt(1, 0, ".ENDM has no .MACRO"),
+                  IsErrorAt(2, 3, ".ENDM has no .MACRO"),
+                  IsErrorAt(3, 0, ".MACRO can't have a label"),
+                  IsErrorAt(4, 2, ".MACRO can't be in a macro's body"),
+                  IsErrorAt(8, 0, ".ENDM must be on a line of its own"),
+                  IsErrorAt(10, 0, ".ENDM must be on a line of its own"),
+                  IsErrorAt(11, 7, ""),
+                  IsErrorAt(15, 0, "Unknown instruction B"),
+                  IsErrorAt(16, 0, ".MACRO has no .ENDM")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroArgDirectives) {
+  // An argument can't have a directive, so the invocation assembles nothing,
+  // but can have an instruction's extension, or a '.' in a string.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO M x\n"
+                     "  x\n"
+                     ".ENDM\n"
+                     ".MACRO IGNORE x, y\n"
+                     "  NOP\n"
+                     ".ENDM\n"
+                     "M .MACRO FOO\n"
+                     "M .ENDM\n"
+                     "M a: .CONST N = 1\n"
+                     "IGNORE 1,.DW 2\n"
+                     "IGNORE ADD.W R1, 'a.b'\n"
+                     "IGNORE ADD.size, 2\n"),
+      ElementsAre(
+          IsErrorAt(7, 2, "A macro's argument can't have a directive"),
+          IsErrorAt(8, 2, "A macro's argument can't have a directive"),
+          IsErrorAt(9, 5, "A macro's argument can't have a directive"),
+          IsErrorAt(10, 9, "A macro's argument can't have a directive")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroBodyDirectives) {
+  // A directive the body can't have is an error where it is defined, so its
+  // invocations assemble nothing. A parameter the body writes an extension
+  // after needs an argument that ends in a name, so the '.' can't start a
+  // directive.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO D x\n"
+                     "  .x FOO\n"
+                     ".ENDM\n"
+                     ".MACRO INC\n"
+                     "  .INCLUDE \"a.oza\"\n"
+                     ".ENDM\n"
+                     ".MACRO OPW op\n"
+                     "  op.W 5\n"
+                     ".ENDM\n"
+                     "D MACRO\n"
+                     "INC\n"
+                     "OPW PUSH\n"
+                     "OPW a:\n"
+                     "OPW (R1)\n"),
+      ElementsAre(
+          IsErrorAt(2, 3,
+                    "Macro D can't name a directive with its parameter X"),
+          IsErrorAt(5, 2, "A macro's body can't include a file"),
+          IsErrorAt(13, 5,
+                    "Macro OPW writes an extension after OP, so its argument "
+                    "must end in a name"),
+          IsErrorAt(14, 7,
+                    "Macro OPW writes an extension after OP, so its argument "
+                    "must end in a name")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLabelsInSource) {
+  // Only an expansion writes a macro label, so one in a file or a body is an
+  // error.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".DW A#1@B\n"
+                     "A#1@B: NOP\n"
+                     ".MACRO ONE x\n"
+                     "  .DW x\n"
+                     ".ENDM\n"
+                     "ONE C#2@D\n"
+                     ".MACRO BAD\n"
+                     "  .DW E#3@F\n"
+                     ".ENDM\n"
+                     ".IF 1\n"
+                     "  .DW G#4@H\n"
+                     ".ENDIF\n"),
+      ElementsAre(
+          IsErrorAt(1, 4,
+                    "Macro label A#1@B can only be written by a macro's "
+                    "expansion"),
+          IsErrorAt(2, 0,
+                    "Macro label A#1@B can only be written by a macro's "
+                    "expansion"),
+          IsErrorAt(6, 4,
+                    "Macro label C#2@D can only be written by a macro's "
+                    "expansion"),
+          IsErrorAt(8, 6,
+                    "Macro label E#3@F can only be written by a macro's "
+                    "expansion"),
+          IsErrorAt(11, 6,
+                    "Macro label G#4@H can only be written by a macro's "
+                    "expansion")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroBareProgramAddress) {
+  // A label in an address that keeps a program from being bare is reported
+  // where the macro's body wrote it.
+  std::unique_ptr<AsmProgram> program = AssembleAsmProgram(
+      ".STACK 4\n"
+      ".MACRO LOAD\n"
+      "LDA R1, S(value)\n"
+      ".ENDM\n"
+      "LOAD\n"
+      "value: .DS 1\n");
+  ASSERT_NE(program, nullptr);
+  EXPECT_THAT(program->GetBareProgram().status().message(),
+              HasSubstr("(3:11) is in an address from BS"));
+}
+
+TEST_F(ProgramAssemblerTest, MacroErrorsInInvocations) {
+  // An error in an invocation is where its text was written, in a body or an
+  // argument, and is followed by each invocation it is in, from the innermost
+  // out.
+  ASSERT_TRUE(file_system_.WriteFile("mem:/macros.oza",
+                                     ".MACRO WAITIN port, reg\n"
+                                     "  .DW reg\n"
+                                     "  .DW PORTT\n"
+                                     "  FOO port\n"
+                                     ".ENDM\n"
+                                     ".MACRO WAITALL reg\n"
+                                     "  NOP\n"
+                                     "  WAITIN 1, reg\n"
+                                     ".ENDM\n"));
+  ASSERT_TRUE(file_system_.WriteFile("mem:/main.oza",
+                                     ".STACK 1\n"
+                                     ".INCLUDE \"macros.oza\"\n"
+                                     "WAITALL UNDEFINED\n"));
+  std::vector<gb::ParseError> errors;
+  EXPECT_EQ(
+      AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza", &errors),
+      nullptr);
+  ASSERT_THAT(errors, ElementsAre(IsErrorAt(3, 2, "Unknown instruction FOO"),
+                                  IsErrorAt(7, 2, "In WAITIN"),
+                                  IsErrorAt(2, 0, "In WAITALL")));
+  EXPECT_EQ(errors[0].GetLocation().filename, "mem:/macros.oza");
+  EXPECT_EQ(errors[1].GetLocation().filename, "mem:/macros.oza");
+  EXPECT_EQ(errors[2].GetLocation().filename, "mem:/main.oza");
+
+  // The second pass's errors are followed by their invocations too.
+  ASSERT_TRUE(file_system_.WriteFile("mem:/macros.oza",
+                                     ".MACRO WAITIN port, reg\n"
+                                     "  .DW reg\n"
+                                     "  .DW PORTT\n"
+                                     ".ENDM\n"
+                                     ".MACRO WAITALL reg\n"
+                                     "  NOP\n"
+                                     "  WAITIN 1, reg\n"
+                                     ".ENDM\n"));
+  EXPECT_EQ(
+      AssembleProgramFile(*syntax_, file_system_, "mem:/main.oza", &errors),
+      nullptr);
+  ASSERT_THAT(
+      errors,
+      ElementsAre(IsErrorAt(2, 8, "UNDEFINED is not defined"),
+                  IsErrorAt(6, 2, "In WAITIN"), IsErrorAt(2, 0, "In WAITALL"),
+                  IsErrorAt(2, 6, "PORTT is not defined"),
+                  IsErrorAt(6, 2, "In WAITIN"), IsErrorAt(2, 0, "In WAITALL")));
+  EXPECT_EQ(errors[0].GetLocation().filename, "mem:/main.oza");
+  EXPECT_EQ(errors[1].GetLocation().filename, "mem:/macros.oza");
+  EXPECT_EQ(errors[3].GetLocation().filename, "mem:/macros.oza");
+}
+
+TEST_F(ProgramAssemblerTest, MacroErrorsAreReportedForEachInvocation) {
+  // The same error in two invocations is reported for each.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".MACRO M\n"
+                             "  FOO\n"
+                             ".ENDM\n"
+                             "M\n"
+                             "M\n"),
+              ElementsAre(IsErrorAt(2, 2, "Unknown instruction FOO"),
+                          IsErrorAt(4, 0, "In M"),
+                          IsErrorAt(2, 2, "Unknown instruction FOO"),
+                          IsErrorAt(5, 0, "In M")));
+}
+
+TEST_F(ProgramAssemblerTest, MacroLineTooLong) {
+  // An expansion's line can be longer than any line written, which the lexer
+  // can't read.
+  const std::string arg(1000, 'X');
+  EXPECT_THAT(
+      AssembleErrors(absl::StrCat(".STACK 1\n"
+                                  ".MACRO LONG x\n"
+                                  "  .DW x, x, x, x, x\n"
+                                  ".ENDM\n"
+                                  "LONG ",
+                                  arg, "\n")),
+      ElementsAre(IsErrorAt(
+          4, 0,
+          "This invocation of LONG has too many lines, or a line too long")));
+}
+
+TEST_F(ProgramAssemblerTest, MapOfMacros) {
+  // Everything an invocation defines and writes is at the line that invokes it.
+  const ProgramMap map = AssembleMap(
+      ".STACK 1\n"
+      ".MACRO INNER name\n"
+      "  NOP\n"
+      "  name: .DW 1\n"
+      ".ENDM\n"
+      ".MACRO OUTER c\n"
+      "  .CONST c = 2\n"
+      "  INNER LABEL\n"
+      "  @x: .DW 3\n"
+      ".ENDM\n"
+      "NOP\n"
+      "OUTER C\n");
+  EXPECT_THAT(map.GetStatements(),
+              ElementsAre(MapStatement{.segment = 0,
+                                       .offset = 0,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 10}},
+                          MapStatement{.segment = 0,
+                                       .offset = 1,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 11}},
+                          MapStatement{.segment = 0,
+                                       .offset = 2,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 11}},
+                          MapStatement{.segment = 0,
+                                       .offset = 3,
+                                       .size = 1,
+                                       .location = {.file = 0, .line = 11}}));
+  EXPECT_THAT(map.GetLabels(),
+              ElementsAre(MapLabel{.name = "LABEL",
+                                   .segment = 0,
+                                   .offset = 2,
+                                   .location = {.file = 0, .line = 11}},
+                          MapLabel{.name = "OUTER#1@X",
+                                   .segment = 0,
+                                   .offset = 3,
+                                   .location = {.file = 0, .line = 11}}));
+  EXPECT_THAT(map.GetConstants(),
+              ElementsAre(MapConstant{.name = "C",
+                                      .word_value = 2,
+                                      .dword_value = 2,
+                                      .location = {.file = 0, .line = 11}}));
+}
+
 TEST_F(ProgramAssemblerTest, MapOfTextProgram) {
   // A program from text has one file, and the default program's one segment,
   // which has no name.
