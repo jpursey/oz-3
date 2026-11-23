@@ -17,6 +17,7 @@
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/base/unicode.h"
@@ -122,11 +123,15 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
                                                      const gb::Token& token) {
   const std::string_view token_text = lexer.GetTokenText(token);
   DCHECK(token.IsString() && !token_text.empty());
-  std::string_view text = token.GetString();
+  const std::string_view text = token.GetString();
 
   // The lexer has already decoded the string, so only its text says which
   // quotes it was in.
-  const bool packed = (token_text.front() == '"');
+  return GetTextWords(text, token_text.front() == '"');
+}
+
+absl::StatusOr<std::vector<uint16_t>> GetTextWords(std::string_view text,
+                                                   bool packed) {
   const char32_t max_code_point = (packed ? 0xFF : 0xFFFF);
   std::vector<uint16_t> words;
   bool low = true;
@@ -150,6 +155,37 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
     low = !low;
   }
   return words;
+}
+
+std::string GetSourceText(std::string_view text) {
+  std::string result;
+  bool space = false;
+  while (!text.empty()) {
+    const char ch = text.front();
+    if (ch == ' ' || ch == '\t') {
+      space = !result.empty();
+      text.remove_prefix(1);
+      continue;
+    }
+    if (space) {
+      result.push_back(' ');
+      space = false;
+    }
+    if (ch != '\'' && ch != '"') {
+      result.push_back(absl::ascii_toupper(static_cast<unsigned char>(ch)));
+      text.remove_prefix(1);
+      continue;
+    }
+
+    // A string is copied up to its closing quote. A doubled quote inside it
+    // closes it and opens it again, so it is copied as it is.
+    const std::string_view::size_type end = text.find(ch, 1);
+    const std::string_view string =
+        text.substr(0, end == std::string_view::npos ? text.size() : end + 1);
+    result.append(string);
+    text.remove_prefix(string.size());
+  }
+  return result;
 }
 
 bool IsLineEnd(const gb::Token& token) {

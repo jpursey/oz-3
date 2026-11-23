@@ -70,6 +70,17 @@ bool IsLineEnd(const gb::Token& token);
 absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
                                                      const gb::Token& token);
 
+// Returns the words of `text`, as a string's are (see GetStringWords): one
+// character per word, or two if `packed`.
+absl::StatusOr<std::vector<uint16_t>> GetTextWords(std::string_view text,
+                                                   bool packed);
+
+// Returns program source `text` as the assembler sees it, for STR: letters
+// outside strings in upper case, as names are read, and each run of spaces
+// and tabs as one space, with none at either end. A string keeps its text as
+// it is written, quotes and doubled quotes included.
+std::string GetSourceText(std::string_view text);
+
 // Returns `value` as a program writes a hex number with `digits` digits, with
 // an "h" suffix and a leading 0 if the first digit is a letter, so it isn't a
 // name ("0FFFFh").

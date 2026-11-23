@@ -484,6 +484,10 @@ class ProgramAssembler final {
   void ReadData(const gb::ParsedItem& directive, ExpressionWidth width);
   void EndDataField(std::optional<int64_t> field_end, int64_t* size,
                     DataStatement* data);
+
+  // Returns the words of a "SourceText" item, STR(...) or PSTR(...).
+  absl::StatusOr<std::vector<uint16_t>> GetSourceTextWords(
+      const gb::ParsedItem& text);
   void ReadStorage(const gb::ParsedItem& directive);
   void ReadStack(const gb::ParsedItem& directive);
   void ReadInstances(const gb::ParsedItem& directive);
@@ -1561,13 +1565,15 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
       }
     }
 
-    Expression expression =
-        Expression::Create(GetLexer(), *item.GetItem("value"));
-    const gb::Token token = expression.GetToken();
     const int64_t start = size;
-    if (width == ExpressionWidth::kWord && expression.IsString()) {
-      absl::StatusOr<std::vector<uint16_t>> words =
-          GetStringWords(GetLexer(), token);
+    gb::Token token;
+    if (const gb::ParsedItem* text = item.GetItem("text"); text != nullptr) {
+      token = text->GetToken();
+      if (width != ExpressionWidth::kWord) {
+        Error(token, "STR and PSTR are only in .DW");
+        continue;
+      }
+      absl::StatusOr<std::vector<uint16_t>> words = GetSourceTextWords(*text);
       if (!words.ok()) {
         Error(token, words.status().message());
         continue;
@@ -1575,8 +1581,22 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
       size += static_cast<int64_t>(words->size());
       data.items.emplace_back(*std::move(words));
     } else {
-      size += value_size;
-      data.items.emplace_back(std::move(expression));
+      Expression expression =
+          Expression::Create(GetLexer(), *item.GetItem("value"));
+      token = expression.GetToken();
+      if (width == ExpressionWidth::kWord && expression.IsString()) {
+        absl::StatusOr<std::vector<uint16_t>> words =
+            GetStringWords(GetLexer(), token);
+        if (!words.ok()) {
+          Error(token, words.status().message());
+          continue;
+        }
+        size += static_cast<int64_t>(words->size());
+        data.items.emplace_back(*std::move(words));
+      } else {
+        size += value_size;
+        data.items.emplace_back(std::move(expression));
+      }
     }
     if (field_end.has_value() && start <= *field_end && size > *field_end) {
       Error(token, absl::StrCat("This passes the end of its field, at its "
@@ -1586,6 +1606,16 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
   }
   EndDataField(field_end, &size, &data);
   Write(size, directive.GetToken(), std::move(data));
+}
+
+absl::StatusOr<std::vector<uint16_t>> ProgramAssembler::GetSourceTextWords(
+    const gb::ParsedItem& text) {
+  // The text is between the parentheses, which the range includes.
+  std::string_view range = GetLexer().GetTokenRangeText(text.GetToken("open"),
+                                                        text.GetToken("close"));
+  range.remove_prefix(1);
+  range.remove_suffix(1);
+  return GetTextWords(GetSourceText(range), text.GetItem("pstr") != nullptr);
 }
 
 void ProgramAssembler::EndDataField(std::optional<int64_t> field_end,

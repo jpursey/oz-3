@@ -275,6 +275,47 @@ TEST_F(ProgramLexerTest, InvalidUtf8IsNotAString) {
   }
 }
 
+TEST(TextWordsTest, OneOrTwoPerWord) {
+  EXPECT_THAT(*GetTextWords("Hi!", false), ElementsAre('H', 'i', '!'));
+  EXPECT_THAT(*GetTextWords("Hi!", true), ElementsAre(0x6948, 0x0021));
+  EXPECT_THAT(*GetTextWords("", false), IsEmpty());
+  EXPECT_THAT(*GetTextWords("", true), IsEmpty());
+}
+
+TEST(TextWordsTest, CharactersThatDontFit) {
+  // U+20AC (three bytes in UTF-8).
+  EXPECT_THAT(*GetTextWords("\xE2\x82\xAC", false), ElementsAre(0x20AC));
+  absl::StatusOr<std::vector<uint16_t>> words =
+      GetTextWords("\xE2\x82\xAC", true);
+  ASSERT_FALSE(words.ok());
+  EXPECT_THAT(words.status().message(),
+              HasSubstr("U+20AC does not fit in a byte"));
+  words = GetTextWords("\xFF", false);
+  ASSERT_FALSE(words.ok());
+  EXPECT_THAT(words.status().message(), HasSubstr("not valid UTF-8"));
+}
+
+TEST(SourceTextTest, UpperCase) {
+  EXPECT_EQ(GetSourceText("screen"), "SCREEN");
+  EXPECT_EQ(GetSourceText("r1 + 0ffh"), "R1 + 0FFH");
+  EXPECT_EQ(GetSourceText("@loop"), "@LOOP");
+}
+
+TEST(SourceTextTest, Spaces) {
+  EXPECT_EQ(GetSourceText(""), "");
+  EXPECT_EQ(GetSourceText("  \t "), "");
+  EXPECT_EQ(GetSourceText("  a \t +\t\tb  "), "A + B");
+  EXPECT_EQ(GetSourceText("D(x),(r1)"), "D(X),(R1)");
+}
+
+TEST(SourceTextTest, Strings) {
+  EXPECT_EQ(GetSourceText("'Hello  there' + x"), "'Hello  there' + X");
+  EXPECT_EQ(GetSourceText("\"a\tb\""), "\"a\tb\"");
+  EXPECT_EQ(GetSourceText("'It''s' x"), "'It''s' X");
+  EXPECT_EQ(GetSourceText("\"it's\" x"), "\"it's\" X");
+  EXPECT_EQ(GetSourceText("'open  x"), "'open  x");
+}
+
 TEST(FormatHexNumberTest, Digits) {
   EXPECT_EQ(FormatHexNumber(0, 4), "0000h");
   EXPECT_EQ(FormatHexNumber(0x1234, 4), "1234h");
