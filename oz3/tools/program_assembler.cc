@@ -399,9 +399,11 @@ class ProgramAssembler final {
                                    const ExpressionContext& context,
                                    int* segment = nullptr);
 
-  // Returns the value of a first pass expression, which is a word evaluated
-  // where the statement is.
-  std::optional<uint32_t> EvaluateNow(const gb::ParsedItem& item);
+  // Returns the value of a first pass expression, which is a word, or a value
+  // of `width`, evaluated where the statement is.
+  std::optional<uint32_t> EvaluateNow(
+      const gb::ParsedItem& item,
+      ExpressionWidth width = ExpressionWidth::kWord);
 
   // Returns the value of a first pass expression (see EvaluateNow), or reports
   // an error and returns nullopt if it has none, or if it isn't from `min` to
@@ -485,9 +487,12 @@ class ProgramAssembler final {
   void EndDataField(std::optional<int64_t> field_end, int64_t* size,
                     DataStatement* data);
 
-  // Returns the words of a "SourceText" item, STR(...) or PSTR(...).
+  // Returns the text of a "SourceText" item, STR(...) or PSTR(...), and its
+  // words.
+  std::string GetSourceText(const gb::ParsedItem& text);
   absl::StatusOr<std::vector<uint16_t>> GetSourceTextWords(
       const gb::ParsedItem& text);
+  void ReadError(const gb::ParsedItem& directive);
   void ReadStorage(const gb::ParsedItem& directive);
   void ReadStack(const gb::ParsedItem& directive);
   void ReadInstances(const gb::ParsedItem& directive);
@@ -991,9 +996,9 @@ std::optional<uint32_t> ProgramAssembler::Evaluate(
 }
 
 std::optional<uint32_t> ProgramAssembler::EvaluateNow(
-    const gb::ParsedItem& item) {
+    const gb::ParsedItem& item, ExpressionWidth width) {
   return Evaluate(
-      Expression::Create(GetLexer(), item), ExpressionWidth::kWord,
+      Expression::Create(GetLexer(), item), width,
       StatementContext(this, segment_, GetSegment().reserved_size, scope_));
 }
 
@@ -1198,6 +1203,8 @@ void ProgramAssembler::ReadDirective(const gb::ParsedItem& directive) {
     ReadBank(directive);
   } else if (name == "SEGMENT") {
     ReadSegment(directive);
+  } else if (name == "ERROR") {
+    ReadError(directive);
   } else {
     DCHECK_EQ(name, "INSTANCES");
     ReadInstances(directive);
@@ -1608,14 +1615,58 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
   Write(size, directive.GetToken(), std::move(data));
 }
 
-absl::StatusOr<std::vector<uint16_t>> ProgramAssembler::GetSourceTextWords(
-    const gb::ParsedItem& text) {
+std::string ProgramAssembler::GetSourceText(const gb::ParsedItem& text) {
   // The text is between the parentheses, which the range includes.
   std::string_view range = GetLexer().GetTokenRangeText(text.GetToken("open"),
                                                         text.GetToken("close"));
   range.remove_prefix(1);
   range.remove_suffix(1);
-  return GetTextWords(GetSourceText(range), text.GetItem("pstr") != nullptr);
+  return oz3::GetSourceText(range);
+}
+
+absl::StatusOr<std::vector<uint16_t>> ProgramAssembler::GetSourceTextWords(
+    const gb::ParsedItem& text) {
+  return GetTextWords(GetSourceText(text), text.GetItem("pstr") != nullptr);
+}
+
+void ProgramAssembler::ReadError(const gb::ParsedItem& directive) {
+  // The message joins the items' text. An item with an error is reported in
+  // its place, with no message.
+  std::string message;
+  for (const gb::ParsedItem& item : directive.GetItems("items")) {
+    if (const gb::ParsedItem* text = item.GetItem("text"); text != nullptr) {
+      absl::StrAppend(&message, GetSourceText(*text));
+      continue;
+    }
+    if (const gb::ParsedItem* number = item.GetItem("number");
+        number != nullptr) {
+      const std::optional<uint32_t> value =
+          EvaluateNow(*number, ExpressionWidth::kDword);
+      if (!value.has_value()) {
+        return;
+      }
+      if (item.GetItem("hex") != nullptr) {
+        absl::StrAppend(&message,
+                        FormatHexNumber(*value, *value > 0xFFFF ? 8 : 4));
+      } else {
+        absl::StrAppend(&message, *value);
+      }
+      continue;
+    }
+    const gb::ParsedItem& value_item = *item.GetItem("value");
+    const gb::Token token = value_item.GetToken();
+    if (Expression::Create(GetLexer(), value_item).IsString()) {
+      absl::StrAppend(&message, token.GetString());
+      continue;
+    }
+    const std::optional<uint32_t> value =
+        EvaluateNow(value_item, ExpressionWidth::kDword);
+    if (!value.has_value()) {
+      return;
+    }
+    absl::StrAppend(&message, *value);
+  }
+  Error(directive.GetToken(), message);
 }
 
 void ProgramAssembler::EndDataField(std::optional<int64_t> field_end,

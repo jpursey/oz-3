@@ -633,6 +633,57 @@ TEST_F(ProgramAssemblerTest, SourceTextErrors) {
                           IsErrorAt(4, 12, "Expected ')'")));
 }
 
+TEST_F(ProgramAssemblerTest, ErrorDirective) {
+  // .ERROR's message joins its items: strings' text, numbers in decimal, or
+  // in hex with HEX, and STR's text.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".CONST TABLE = 0F00h\n"
+                     ".ERROR 'At ', HEX(TABLE), \" by \", 3 + 4, ' words'\n"
+                     "  .ERROR DEC(70000), ' ', HEX(70000), ' ', HEX(0A0h)\n"
+                     ".ERROR STR(a  +  b), ' is', '', ' ''x'''\n"),
+      ElementsAre(IsErrorAt(2, 0, "At 0F00h by 7 words"),
+                  IsErrorAt(3, 2, "70000 00011170h 00A0h"),
+                  IsErrorAt(4, 0, "A + B is 'x'")));
+
+  // HEX and DEC can still be symbols.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".CONST HEX = 1\n"
+                             ".CONST DEC = 2\n"
+                             ".ERROR HEX + DEC\n"),
+              ElementsAre(IsErrorAt(3, 0, "3")));
+}
+
+TEST_F(ProgramAssemblerTest, ErrorDirectiveInIf) {
+  // An .ERROR that isn't assembled is never read.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".DW 1\n"
+                            ".IF $ > 1\n"
+                            "  .ERROR 'Too big: ', $, \" \", LATER\n"
+                            ".ENDIF\n"
+                            ".CONST LATER = 1\n"),
+              ElementsAre(1, 0));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".DW 1, 2\n"
+                             ".IF $ > 1\n"
+                             "  .ERROR 'Too big: ', $\n"
+                             ".ENDIF\n"),
+              ElementsAre(IsErrorAt(3, 2, "Too big: 2")));
+}
+
+TEST_F(ProgramAssemblerTest, ErrorDirectiveItemErrors) {
+  // An item with an error is reported in place of the message, and each item
+  // must be known as the .ERROR is read.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".ERROR 'A', LATER, 'B'\n"
+                             ".ERROR HEX(1 / 0)\n"
+                             ".ERROR 'AB' + 1\n"
+                             ".CONST LATER = 1\n"),
+              ElementsAre(IsErrorAt(1, 12, "LATER is not defined"),
+                          IsErrorAt(2, 13, "Division by zero"),
+                          IsErrorAt(3, 7, "must be one word")));
+}
+
 TEST_F(ProgramAssemblerTest, FixedSizeData) {
   // SIZE pads .DW's items with zeros, and items that fill it exactly have
   // none.
@@ -2096,6 +2147,24 @@ TEST_F(ProgramAssemblerTest, MacroSourceText) {
                             "ENTRY one\n"
                             "TEXT (1  +  2)  *  3\n"),
               ElementsAreArray(SegmentWords(expected)));
+}
+
+TEST_F(ProgramAssemblerTest, MacroErrorDirective) {
+  // A macro can reject an argument, naming it, and its error is followed by
+  // the invocation's.
+  EXPECT_THAT(
+      AssembleErrors(".STACK 1\n"
+                     ".MACRO LIMIT count\n"
+                     "  .IF count > 8\n"
+                     "    .ERROR STR(count), ' must be at most 8, not ', "
+                     "count\n"
+                     "  .ENDIF\n"
+                     "  .DW count\n"
+                     ".ENDM\n"
+                     "LIMIT 4\n"
+                     "LIMIT 2  *  5\n"),
+      ElementsAre(IsErrorAt(3, 4, "2 * 5 must be at most 8, not 10"),
+                  IsErrorAt(8, 0, "In LIMIT")));
 }
 
 TEST_F(ProgramAssemblerTest, MacroArgumentErrors) {
