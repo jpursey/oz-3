@@ -94,14 +94,17 @@ is locked.
 - `TSTP.I` becomes `"$v"`: `LD(C0); UL; PLK(C0); PLD(_,C1); MSR(S,S); PUL;`,
   5 cycles.
 - `default_instruction_set_test.cc` pins it: `kPinnedFingerprint` changes for
-  this one instruction, and the comment beside it says why.
+  this one instruction. The commit says why, as a comment describes the code as
+  it is, not its history.
 
 ### To confirm
 
 - That the cycle count of `TSTP.I` with a word operand is 5, as `IN.IW` is one
-  more than `IN.RW` (CL2).
+  more than `IN.RW` (CL2). Confirmed: `TSTP_I` times it at 5.
 - That nothing else in the tree decodes `TSTP.I`'s port from its code word,
-  such as a disassembler or listing (CL2).
+  such as a disassembler or listing (CL2). Confirmed: only the `.izm`, the
+  `.inc`, and the instruction set tests name `TSTP.I`, and the assembler and
+  listings work from the instruction's source pattern.
 
 ## CLs
 
@@ -130,7 +133,7 @@ Depends on: nothing.
   only two words through `PLD` and `PST`, which the port tests cover.)
 - Manual pages updated.
 
-### CL2 [ ] instruction_sets: TSTP.I takes a word
+### CL2 [x] instruction_sets: TSTP.I takes a word
 
 Depends on: CL1, for its mailbox test.
 
@@ -141,7 +144,10 @@ Depends on: CL1, for its mailbox test.
 - `instruction_test_port.cc`: `TSTP.I` tests for the new encoding and 5
   cycles, and a test that sends between two cores with `OUTS.IW` and `INS.IW`
   on mailbox port numbers, and waits with `TSTP.I`.
-- Manual: `TSTP` in `2.2-Default-Instruction-Set.md` (`<port>`, 5 cycles).
+- `default_instruction_set_assemble_test.cc`: `TSTP.I` assembles with a
+  mailbox port number, which needs the word.
+- Manual: `TSTP` in `2.2-Default-Instruction-Set.md` (`<port>`, 5 cycles),
+  already written with the spec.
 
 **Verify**
 - Standard checks.

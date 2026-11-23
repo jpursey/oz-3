@@ -496,7 +496,7 @@ TEST_F(AssembleFormTest, EveryForm) {
     AddForm(absl::StrCat(op, ".ID"), {Word(34), DwordRegAt(CpuCore::R2)});
   }
   AddForm("TSTP.R", {Reg(CpuCore::R3)});
-  AddForm("TSTP.I", {Number(200)});
+  AddForm("TSTP.I", {Word(kMailboxSendPort + 1)});
 
   //----------------------------------------------------------------------------
   // Cores
