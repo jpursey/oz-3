@@ -340,43 +340,65 @@ the loader starts with, and
 
 ### Calls
 
-A program calls the OS with a **call block** in its own memory: the function,
-its arguments, and room for its results. It writes the block's address to its
-[mailbox](manual/2-Specifications.md#mailboxes) to core 0 (port 100h) with
-`OUTS`, raises the call interrupt on core 0 with `INTC.I`, and `WAIT`s. Every
-core calls with the same port and interrupt, whichever core it is, and one
-interrupt line serves every core, rather than using up one of the 32 lines for
-each. A core makes one call at a time, so its mailbox is empty when it calls.
+A program calls the OS with a dword in its
+[mailbox](manual/2-Specifications.md#mailboxes) to core 0 (port 100h): a
+**command** word, and the address of a **call block**, for a command that has
+one. It writes them with `OUTS.ID`, and then raises the call interrupt on core
+0 with `INTC.I`. Every core calls with the same port and interrupt, whichever
+core it is, and one interrupt line serves every core, rather than using up one
+of the 32 lines for each.
+- **Command:** the function, in the low word. Its high bit, **wake**, asks the
+  OS to `WAKE` the caller when the call is done.
+- **Call block:** the call's parameters, and room for its results, always in
+  the caller's `DATA` bank. A command whose parameters fit in the command word,
+  or that has none, ignores the address.
 
 The OS's handler finds who called by which mailboxes are full: on core 0, port
 `108h + n` is the mailbox from core `n`. It goes through every core's mailbox
-in turn, taking each call it finds with `INS`, which empties the mailbox, and
-reads the call block from the caller's `DATA` bank (which it knows, as it
-started the program). It does the work, writes the results into the block, and
-resumes the caller with `WAKE`. It keeps going round the mailboxes until a
-whole pass finds none full, and only then returns from the interrupt, so calls
-that come in while it works are handled in the same interrupt. Calls that take
-time (a disk read, a key) are queued to finish when the device's interrupt
-comes in, so the handler moves on, and other programs keep running.
+in turn, taking each call it finds with `INS.ID`, which empties the mailbox,
+and reads the call block from the caller's `DATA` bank (which it knows, as it
+started the program). It keeps going round the mailboxes until a whole pass
+finds none full, and only then returns from the interrupt, so calls that come
+in while it works are handled in the same interrupt. Calls that take time (a
+disk read, a key) are queued to finish when the device's interrupt comes in,
+so the handler moves on, and other programs keep running.
+
+When a call is done, the OS writes its results into the call block, and then
+signals the caller through the **return mailbox**, its mailbox to the caller
+(port `100h + n` on core 0, which the caller reads as port 108h): a completion
+word, such as a status. Then, if the command asked for it, it `WAKE`s the
+caller. A core makes one call at a time, taking its completion before making
+the next, so both of its mailboxes are empty when it calls, and the OS can
+always write the completion.
+
+So a caller can wait for a call in two ways:
+- **Wait:** set wake, `WAIT`, and then take the completion with `INS` from
+  port 108h. If there is none yet, the `WAIT` ended early (from a stray
+  `WAKE`), so it `WAIT`s again.
+- **Poll:** leave wake clear, and go on working, checking port 108h with
+  `TSTP` or `INS` now and then. This suits a program with work to do while a
+  call takes time, such as a game reading a file.
 
 Calls made at once raise the interrupt once, as a raise while it is pending is
 a duplicate, but the handler still finds each of them in its mailbox. A call
 made after the handler's last pass, but before it returns, raises the interrupt
 again, so it is handled next. And a raise for a call the handler has already
-taken runs the handler once more, finding nothing. A program on core 0 calls
-the same way, through core 0's mailbox to itself, with `INTC.I SELF`. The
-handler's `WAKE SELF` ends its `WAIT`, or sets `N` if the interrupt came
-before the `WAIT`, as below.
+taken runs the handler once more, finding nothing.
 
-A call block also suits calls a register couldn't carry, such as a packed
-file name or a line of text.
+A program on core 0 calls the same way, with `INTC.I SELF`, but its call and
+its completion share core 0's mailbox to itself, both port 100h and port 108h.
+That works because the handler takes the call right after the `INTC`, before
+the program can look for the completion, so a program on core 0 calls with
+interrupts enabled. The handler's `WAKE SELF` ends its `WAIT`, or sets `N` if
+the interrupt came before the `WAIT`, as below.
+
+A call block suits calls a register couldn't carry, such as a packed file name
+or a line of text.
 
 Between a program's `INTC` and its `WAIT` the OS could answer first. The
 `WAKE` then finds no `WAIT` to end, so it sets the program's core's notify flag
 (`N`), and the `WAIT` ends at once. A program clears `N` with `CLRN` before it
-starts calling, as it can't count on `N` being clear when it starts. A `WAIT`
-also ends early from a stray `WAKE`, so the program checks the result in the
-call block, and `WAIT`s again if the call hasn't finished.
+starts calling, as it can't count on `N` being clear when it starts.
 
 The calls, as a sketch:
 - **Console:** write a character, write a packed string, read a key, read a
