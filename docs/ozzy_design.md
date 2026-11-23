@@ -110,7 +110,7 @@ first):
 | -         | 2     | Teletype (when there is no screen) |
 | 2-5       | 16-27 | Disk drives `A:` to `D:`, 3 each   |
 | 6         | -     | Screen refresh                     |
-| 24-31     | 32-39 | OS calls from cores 0 to 7         |
+| 24        | -     | OS calls from every core           |
 
 A device's interrupt goes to the cores its line is connected to, which is the
 OS core by default (every core, for the screen's refresh). A program that
@@ -118,7 +118,9 @@ wants a device's interrupts directly (a game reading the keyboard, say) can be
 connected too, and sets its own handler.
 
 The manual's Ozzy Computer page has the wiring as built, which moved from this
-sketch, and port 0 is the power port (see [Power](#power)).
+sketch, and port 0 is the power port (see [Power](#power)). OS calls need no
+ports of their own, as they come through the cores'
+[mailboxes](manual/2-Specifications.md#mailboxes) (see [Calls](#calls)).
 
 ### Machine table
 
@@ -340,13 +342,31 @@ the loader starts with, and
 
 A program calls the OS with a **call block** in its own memory: the function,
 its arguments, and room for its results. It writes the block's address to its
-core's **call port**, raises its core's call interrupt on core 0 with `INTC`,
-and `WAIT`s. The OS's handler reads the address from the port, and the block
-from the program's `DATA` bank (which it knows, as it started the program).
-It does the work, writes the results into the block, and resumes the caller
-with `WAKE`. Calls that take time (a disk read, a key) let the OS go back to
-sleep, and answer when the device's interrupt comes in, so other programs keep
-running.
+[mailbox](manual/2-Specifications.md#mailboxes) to core 0 (port 100h) with
+`OUTS`, raises the call interrupt on core 0 with `INTC.I`, and `WAIT`s. Every
+core calls with the same port and interrupt, whichever core it is, and one
+interrupt line serves every core, rather than using up one of the 32 lines for
+each. A core makes one call at a time, so its mailbox is empty when it calls.
+
+The OS's handler finds who called by which mailboxes are full: on core 0, port
+`108h + n` is the mailbox from core `n`. It goes through every core's mailbox
+in turn, taking each call it finds with `INS`, which empties the mailbox, and
+reads the call block from the caller's `DATA` bank (which it knows, as it
+started the program). It does the work, writes the results into the block, and
+resumes the caller with `WAKE`. It keeps going round the mailboxes until a
+whole pass finds none full, and only then returns from the interrupt, so calls
+that come in while it works are handled in the same interrupt. Calls that take
+time (a disk read, a key) are queued to finish when the device's interrupt
+comes in, so the handler moves on, and other programs keep running.
+
+Calls made at once raise the interrupt once, as a raise while it is pending is
+a duplicate, but the handler still finds each of them in its mailbox. A call
+made after the handler's last pass, but before it returns, raises the interrupt
+again, so it is handled next. And a raise for a call the handler has already
+taken runs the handler once more, finding nothing. A program on core 0 calls
+the same way, through core 0's mailbox to itself, with `INTC.I SELF`. The
+handler's `WAKE SELF` ends its `WAIT`, or sets `N` if the interrupt came
+before the `WAIT`, as below.
 
 A call block also suits calls a register couldn't carry, such as a packed
 file name or a line of text.
@@ -561,15 +581,6 @@ assembled system code is checked in.
 | Drive and disk         | drive (the device), disk (its folder)     | `MemoryBank`                                                    | both, as they were     |
 | Host controls          | panel, front panel, monitor               | `Console`, the console devices, a ROM monitor on the machine    | panel                  |
 | Terminal app           | `ozzyterm`, `ozzycon`, `ozzyw` (window)   | `Console`; `w` reads as Windows                                 | `ozzyterm`             |
-
-## To confirm
-
-- Which interrupts OS calls raise, settled in the *Ozzy OS* item. Either each
-  core has its own call interrupt (24 to 31), which a program computes from
-  its core number in `R0` at start and raises with `INTC.R`, or every core
-  raises one fixed call interrupt with `INTC.I`, and the OS checks every call
-  port for requests. With one interrupt, two calls at once merge into one
-  interrupt, but checking the ports still finds both.
 
 ## Getting there
 

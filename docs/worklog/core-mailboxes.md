@@ -48,8 +48,9 @@ cheaply. Its opcode, `0x90`, is unchanged.
 ### Names
 
 - **Mailbox:** a port joining two cores. It doesn't collide with anything in
-  the code. The Ozzy design's **call port** (`docs/ozzy_design.md`) is a
-  planned OS convention, which could be built on a mailbox to core 0.
+  the code. The Ozzy OS's calls come through each core's mailbox to core 0,
+  on one interrupt line (see Calls in `docs/ozzy_design.md`), which replaces
+  the design's earlier per-core **call port** and call interrupt.
 - **Port number:** what a core names a port by (0 to FFFFh), as against a port
   *index* in the processor's `PortBank`, which hosts and devices use.
 

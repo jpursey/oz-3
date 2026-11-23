@@ -31,7 +31,7 @@ Each item carries:
 - **Layers:** ozzy, manual
 - **Size:** large
 - **Feature workflow:** yes
-- **Depends on:** *Booting from disk*
+- **Depends on:** *Booting from disk*, *Core mailboxes*
 - **Background:** [ozzy_design.md](ozzy_design.md) (The Ozzy OS),
   [booting-from-disk.md](worklog/booting-from-disk.md)
 
