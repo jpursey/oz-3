@@ -95,7 +95,16 @@ constexpr std::string_view kRules = R"---(
     $directive="DD" $items=DataItem,+;
   }
   DataItem {
-    ["SIZE" '(' $size=Expression ')'] $value=Expression;
+    ["SIZE" '(' $size=Expression ')'] ($text=SourceText | $value=Expression);
+  }
+  SourceText {
+    $kind=("STR" | "PSTR") '(' <SourceToken>* ')';
+  }
+  SourceToken {
+    $token=!(%linebreak | '(' | ')' | '[' | ']' | '{' | '}');
+    $token='(' <SourceToken>* $token=')';
+    $token='[' <SourceToken>* $token=']';
+    $token='{' <SourceToken>* $token='}';
   }
   DirectiveDs {
     $directive="DS" $count=Expression;

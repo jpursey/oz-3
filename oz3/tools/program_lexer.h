@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/lexer_config.h"
 #include "gb/parse/lexer_program.h"
@@ -69,6 +70,17 @@ bool IsLineEnd(const gb::Token& token);
 // valid UTF-8.
 absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
                                                      const gb::Token& token);
+
+// Returns the words of `text`, as a string's are (see GetStringWords): one
+// character per word, or two if `packed`.
+absl::StatusOr<std::vector<uint16_t>> GetTextWords(std::string_view text,
+                                                   bool packed);
+
+// Returns the text of `tokens`, which `lexer` read in order from one line, for
+// STR: each token's text as written, joined with one space where the source
+// has any space between them, and none where they touch.
+std::string GetSourceText(const gb::Lexer& lexer,
+                          absl::Span<const gb::Token> tokens);
 
 // Returns `value` as a program writes a hex number with `digits` digits, with
 // an "h" suffix and a leading 0 if the first digit is a letter, so it isn't a

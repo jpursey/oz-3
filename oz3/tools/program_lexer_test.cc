@@ -67,6 +67,12 @@ class ProgramLexerTest : public ::testing::Test {
     return GetStringWords(*lexer_, token);
   }
 
+  // Returns the source text of every token in `text`, as STR writes it.
+  std::string SourceText(std::string_view text) {
+    const std::vector<gb::Token> tokens = Lex(text);
+    return GetSourceText(*lexer_, tokens);
+  }
+
   std::unique_ptr<gb::Lexer> lexer_;
 };
 
@@ -273,6 +279,45 @@ TEST_F(ProgramLexerTest, InvalidUtf8IsNotAString) {
   for (const gb::Token& token : Lex("'\xFF'")) {
     EXPECT_FALSE(token.IsString());
   }
+}
+
+TEST(TextWordsTest, OneOrTwoPerWord) {
+  EXPECT_THAT(*GetTextWords("Hi!", false), ElementsAre('H', 'i', '!'));
+  EXPECT_THAT(*GetTextWords("Hi!", true), ElementsAre(0x6948, 0x0021));
+  EXPECT_THAT(*GetTextWords("", false), IsEmpty());
+  EXPECT_THAT(*GetTextWords("", true), IsEmpty());
+}
+
+TEST(TextWordsTest, CharactersThatDontFit) {
+  // U+20AC (three bytes in UTF-8).
+  EXPECT_THAT(*GetTextWords("\xE2\x82\xAC", false), ElementsAre(0x20AC));
+  absl::StatusOr<std::vector<uint16_t>> words =
+      GetTextWords("\xE2\x82\xAC", true);
+  ASSERT_FALSE(words.ok());
+  EXPECT_THAT(words.status().message(),
+              HasSubstr("U+20AC does not fit in a byte"));
+  words = GetTextWords("\xFF", false);
+  ASSERT_FALSE(words.ok());
+  EXPECT_THAT(words.status().message(), HasSubstr("not valid UTF-8"));
+}
+
+TEST_F(ProgramLexerTest, SourceTextIsAsWritten) {
+  EXPECT_EQ(SourceText("screen"), "screen");
+  EXPECT_EQ(SourceText("r1 + 0ffh"), "r1 + 0ffh");
+  EXPECT_EQ(SourceText("@Loop"), "@Loop");
+}
+
+TEST_F(ProgramLexerTest, SourceTextSpaces) {
+  EXPECT_EQ(SourceText("  a \t +\t\tb  "), "a + b");
+  EXPECT_EQ(SourceText("D(x),(r1)"), "D(x),(r1)");
+  EXPECT_EQ(GetSourceText(*lexer_, {}), "");
+}
+
+TEST_F(ProgramLexerTest, SourceTextStrings) {
+  EXPECT_EQ(SourceText("'Hello  there' + x"), "'Hello  there' + x");
+  EXPECT_EQ(SourceText("\"a\tb\""), "\"a\tb\"");
+  EXPECT_EQ(SourceText("'It''s' x"), "'It''s' x");
+  EXPECT_EQ(SourceText("\"it's\" x"), "\"it's\" x");
 }
 
 TEST(FormatHexNumberTest, Digits) {

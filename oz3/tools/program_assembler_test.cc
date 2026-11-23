@@ -6,6 +6,7 @@
 #include "oz3/tools/program_assembler.h"
 
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/match.h"
@@ -42,6 +44,7 @@ namespace {
 
 using ::testing::AllOf;
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::Not;
@@ -572,6 +575,62 @@ TEST_F(ProgramAssemblerTest, Strings) {
       ElementsAre(
           IsErrorAt(1, 5, "A string in an expression must be one word"),
           IsErrorAt(2, 4, "A string in an expression must be one word")));
+}
+
+// Returns the words of `text`, one character per word, as STR writes it.
+std::vector<uint16_t> CharWords(std::string_view text) {
+  return std::vector<uint16_t>(text.begin(), text.end());
+}
+
+// Returns `words` as a segment's words, with the 0 a program writes after an
+// odd count of them.
+std::vector<uint16_t> SegmentWords(std::vector<uint16_t> words) {
+  if (words.size() % 2 != 0) {
+    words.push_back(0);
+  }
+  return words;
+}
+
+TEST_F(ProgramAssemblerTest, SourceText) {
+  // STR is the text of its tokens as written, with one space where the source
+  // has any between them, one character per word, and PSTR is the same text
+  // packed.
+  std::vector<uint16_t> expected;
+  for (std::string_view text : {"screen", "a + 1", "'It''s' x", "d(x), [r1]"}) {
+    absl::c_copy(CharWords(text), std::back_inserter(expected));
+  }
+  expected.insert(expected.end(), {0x6261, 0x0063, 0x6261});
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".DW STR(screen), STR(  a  +\t1 )\n"
+                            ".DW STR('It''s' x), STR(d(x), [r1]), STR()\n"
+                            ".DW PSTR(abc), PSTR(ab), PSTR()\n"),
+              ElementsAreArray(SegmentWords(expected)));
+
+  // Its words are in a SIZE's field, as a string's are.
+  EXPECT_THAT(AssembleWords(".STACK 1\n.DW SIZE(4) STR(ab), SIZE(1) PSTR(a)\n"),
+              ElementsAre('a', 'b', 0, 0, 'a', 0));
+  EXPECT_THAT(AssembleErrors(".STACK 1\n.DW SIZE(1) STR(ab)\n"),
+              ElementsAre(IsErrorAt(
+                  1, 12, "passes the end of its field, at its SIZE of 1")));
+
+  // STR and PSTR can still be symbols.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".CONST STR = 5\n"
+                            ".CONST PSTR = 6\n"
+                            ".DW STR, PSTR + 1\n"),
+              ElementsAre(5, 7));
+}
+
+TEST_F(ProgramAssemblerTest, SourceTextErrors) {
+  // U+20AC is "\xE2\x82\xAC" in UTF-8.
+  EXPECT_THAT(AssembleErrors(".STACK 1\n"
+                             ".DD STR(a)\n"
+                             ".DW PSTR('\xE2\x82\xAC')\n"
+                             ".DW STR('\xE2\x82\xAC')\n"
+                             ".DW 1, STR(a\n"),
+              ElementsAre(IsErrorAt(1, 4, "STR and PSTR are only in .DW"),
+                          IsErrorAt(2, 4, "U+20AC does not fit in a byte"),
+                          IsErrorAt(4, 12, "Expected ')'")));
 }
 
 TEST_F(ProgramAssemblerTest, FixedSizeData) {
@@ -2019,6 +2078,26 @@ TEST_F(ProgramAssemblerTest, MacroArguments) {
               ElementsAre('a', ',', 'b', 9, 4, 0));
 }
 
+TEST_F(ProgramAssemblerTest, MacroSourceText) {
+  // STR of a parameter is its argument's text, with spaces collapsed, and of
+  // anything else, its own.
+  std::vector<uint16_t> expected = {'o', 'n', 'e', 1};
+  absl::c_copy(CharWords("(1 + 2) * 3"), std::back_inserter(expected));
+  absl::c_copy(CharWords("x"), std::back_inserter(expected));
+  expected.push_back(9);
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".CONST ONE = 1\n"
+                            ".MACRO ENTRY name\n"
+                            "  .DW SIZE(4) STR(name), name\n"
+                            ".ENDM\n"
+                            ".MACRO TEXT value\n"
+                            "  .DW STR(value), STR(x), value\n"
+                            ".ENDM\n"
+                            "ENTRY one\n"
+                            "TEXT (1  +  2)  *  3\n"),
+              ElementsAreArray(SegmentWords(expected)));
+}
+
 TEST_F(ProgramAssemblerTest, MacroArgumentErrors) {
   EXPECT_THAT(
       AssembleErrors(".STACK 1\n"
@@ -2539,6 +2618,18 @@ TEST_F(ProgramAssemblerTest, Repeat) {
                     ".ENDR\n"
                     ".DW squares\n"),
       ElementsAre(1, 2, 1, 2, 1, 2, 0, 'i', 1, 'i', 4, 'i', 9, 'i', 6, 0));
+}
+
+TEST_F(ProgramAssemblerTest, RepeatSourceText) {
+  // STR of the index is the repetition's number.
+  EXPECT_THAT(AssembleWords(".STACK 1\n"
+                            ".REPT 11, i\n"
+                            "  .IF i == 0 | i == 10\n"
+                            "    .DW STR(i), STR(i + 1)\n"
+                            "  .ENDIF\n"
+                            ".ENDR\n"),
+              ElementsAre('0', '0', ' ', '+', ' ', '1', '1', '0', '1', '0', ' ',
+                          '+', ' ', '1'));
 }
 
 TEST_F(ProgramAssemblerTest, RepeatNested) {

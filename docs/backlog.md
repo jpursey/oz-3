@@ -231,52 +231,12 @@ green, amber, or white phosphor), how its picture is drawn (sharp pixels, or a
 monitor's scanlines, glow, and curve), and themes for the app's own windows and
 panel.
 
-## Strings from source text
-
-- **Layers:** tools, manual
-- **Size:** small
-- **Feature workflow:** no
-- **Depends on:** nothing
-- **Background:** the manual's Program Source page (Values, Directives,
-  Macros, Repeated blocks);
-  [program-macros-and-conditional-assembly.md](worklog/program-macros-and-conditional-assembly.md)
-
-`STR(x)` and `PSTR(x)`, strings made from the text of `x` as written, without
-evaluating it, like `#x` in a C macro. They are strings in `.DW`: `STR(x)`
-written as words, as `'...'` is, and `PSTR(x)` packed, as `"..."` is. A
-parameter is never replaced inside a string, so this is how a macro gets an
-argument's text into one. For example, a macro can write a table entry with
-its argument's name:
-
-```
-.MACRO ENTRY name
-    .DW SIZE(8) STR(name)
-    .DW name
-.ENDM
-```
-
-What the text is:
-- **A macro's parameter** is the argument's text, and **a `.REPT`'s index**
-  is the repetition's number, in decimal.
-- **Anything else** is the text as the assembler sees it, with names in upper
-  case, so `STR(screen)` is `SCREEN` where `screen` is no parameter or index.
-- **Spaces:** each run of spaces is one space, and there are none at either
-  end.
-- `STR` and `PSTR` only mean this where `(` follows them, as with `LOW` and
-  `HIGH`, so they can still be symbols.
-
-Nice to have: `STR` of a constant's name could be the text of the expression
-that defined it, so `.CONST LIMIT = 4 * 2` makes `STR(LIMIT)` `4 * 2`.
-
-`STR(x)` is also an item of an `.ERROR`'s message, which *Errors from
-program source* adds.
-
 ## Errors from program source
 
 - **Layers:** tools, manual
 - **Size:** small
 - **Feature workflow:** no
-- **Depends on:** *Strings from source text*
+- **Depends on:** nothing
 - **Background:** the manual's Program Source page (Conditional assembly,
   Macros, Errors);
   [program-macros-and-conditional-assembly.md](worklog/program-macros-and-conditional-assembly.md)
@@ -299,7 +259,7 @@ The message joins its items in order, with nothing added between them:
 - An expression is its value, unsigned and in decimal, as its own text.
 - `HEX(x)` is its value in hex, written as the source writes it (`0F00h`).
   `DEC(x)` is decimal, the same as the expression written on its own.
-- `STR(x)` is the text of `x` as written (see *Strings from source text*),
+- `STR(x)` is the text of `x` as written, as in `.DW` (see the manual),
   so a macro can name what it was given:
   `.ERROR STR(count), ' must be at most 8'`. `PSTR(x)` is the same, as
   packing doesn't matter in a message.
@@ -316,6 +276,22 @@ expressions but not in its strings, so
 - whether a dword item needs `LOW` and `HIGH`, as an `.IF`'s condition does,
   or is printed whole;
 - the number of hex digits.
+
+## Constants' text in STR
+
+- **Layers:** tools, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** the manual's Program Source page (`STR` and `PSTR` in
+  Directives, Macros)
+
+`STR` of a constant's name could be the text of the expression that defined
+it, so `.CONST LIMIT = 4 * 2` makes `STR(LIMIT)` `4 * 2`. In a macro, a
+parameter's argument must still win: `ENTRY LIMIT`, with `.DW STR(name)` in
+the body, writes `LIMIT`, not `4 * 2`. Parameters are replaced as text before
+the body is read, so the expansion has to say which text came from an
+argument (`MacroExpansion` knows where each run of its text came from).
 
 ## Case-sensitive programs
 
