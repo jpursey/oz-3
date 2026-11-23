@@ -17,7 +17,7 @@
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/ascii.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/types/span.h"
 #include "gb/base/unicode.h"
@@ -161,15 +161,9 @@ std::string GetSourceText(const gb::Lexer& lexer,
                           absl::Span<const gb::Token> tokens) {
   std::string result;
   for (const gb::Token& token : tokens) {
-    if (!result.empty() && !lexer.IsTokenAdjacent(token)) {
-      result.push_back(' ');
-    }
-    const std::string_view text = lexer.GetTokenText(token);
-    if (token.IsString()) {
-      result.append(text);
-    } else {
-      result.append(absl::AsciiStrToUpper(text));
-    }
+    absl::StrAppend(&result,
+                    !result.empty() && !lexer.IsTokenAdjacent(token) ? " " : "",
+                    lexer.GetTokenText(token));
   }
   return result;
 }

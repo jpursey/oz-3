@@ -99,13 +99,13 @@ constexpr std::string_view kRules = R"---(
     ["SIZE" '(' $size=Expression ')'] ($text=SourceText | $value=Expression);
   }
   SourceText {
-    ($str="STR" | $pstr="PSTR") '(' $tokens=SourceToken* ')';
+    $kind=("STR" | "PSTR") '(' <SourceToken>* ')';
   }
   SourceToken {
     $token=!(%linebreak | '(' | ')' | '[' | ']' | '{' | '}');
-    $token='(' $tokens=SourceToken* $last=')';
-    $token='[' $tokens=SourceToken* $last=']';
-    $token='{' $tokens=SourceToken* $last='}';
+    $token='(' <SourceToken>* $token=')';
+    $token='[' <SourceToken>* $token=']';
+    $token='{' <SourceToken>* $token='}';
   }
   DirectiveDs {
     $directive="DS" $count=Expression;

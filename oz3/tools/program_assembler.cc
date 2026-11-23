@@ -105,19 +105,6 @@ Conditional GetConditional(std::string_view name) {
   return Conditional::kNone;
 }
 
-// Adds the tokens of a "SourceText" or "SourceToken" item's tokens to
-// `tokens`, in order, with each bracket's tokens between it and its pair.
-void AddSourceTokens(const gb::ParsedItem& item,
-                     std::vector<gb::Token>* tokens) {
-  for (const gb::ParsedItem& token : item.GetItems("tokens")) {
-    tokens->push_back(token.GetToken("token"));
-    AddSourceTokens(token, tokens);
-    if (const gb::Token last = token.GetToken("last"); !last.IsNone()) {
-      tokens->push_back(last);
-    }
-  }
-}
-
 }  // namespace
 
 // Assembles one program, in two passes:
@@ -1630,13 +1617,16 @@ void ProgramAssembler::ReadData(const gb::ParsedItem& directive,
 
 std::string ProgramAssembler::GetSourceText(const gb::ParsedItem& text) {
   std::vector<gb::Token> tokens;
-  AddSourceTokens(text, &tokens);
+  for (const gb::ParsedItem& token : text.GetItems("token")) {
+    tokens.push_back(token.GetToken());
+  }
   return oz3::GetSourceText(GetLexer(), tokens);
 }
 
 absl::StatusOr<std::vector<uint16_t>> ProgramAssembler::GetSourceTextWords(
     const gb::ParsedItem& text) {
-  return GetTextWords(GetSourceText(text), text.GetItem("pstr") != nullptr);
+  return GetTextWords(GetSourceText(text),
+                      text.GetToken("kind").IsIdent("PSTR"));
 }
 
 void ProgramAssembler::ReadError(const gb::ParsedItem& directive) {

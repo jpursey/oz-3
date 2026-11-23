@@ -301,23 +301,23 @@ TEST(TextWordsTest, CharactersThatDontFit) {
   EXPECT_THAT(words.status().message(), HasSubstr("not valid UTF-8"));
 }
 
-TEST_F(ProgramLexerTest, SourceTextIsUpperCase) {
-  EXPECT_EQ(SourceText("screen"), "SCREEN");
-  EXPECT_EQ(SourceText("r1 + 0ffh"), "R1 + 0FFH");
-  EXPECT_EQ(SourceText("@loop"), "@LOOP");
+TEST_F(ProgramLexerTest, SourceTextIsAsWritten) {
+  EXPECT_EQ(SourceText("screen"), "screen");
+  EXPECT_EQ(SourceText("r1 + 0ffh"), "r1 + 0ffh");
+  EXPECT_EQ(SourceText("@Loop"), "@Loop");
 }
 
 TEST_F(ProgramLexerTest, SourceTextSpaces) {
-  EXPECT_EQ(SourceText("  a \t +\t\tb  "), "A + B");
-  EXPECT_EQ(SourceText("D(x),(r1)"), "D(X),(R1)");
+  EXPECT_EQ(SourceText("  a \t +\t\tb  "), "a + b");
+  EXPECT_EQ(SourceText("D(x),(r1)"), "D(x),(r1)");
   EXPECT_EQ(GetSourceText(*lexer_, {}), "");
 }
 
 TEST_F(ProgramLexerTest, SourceTextStrings) {
-  EXPECT_EQ(SourceText("'Hello  there' + x"), "'Hello  there' + X");
+  EXPECT_EQ(SourceText("'Hello  there' + x"), "'Hello  there' + x");
   EXPECT_EQ(SourceText("\"a\tb\""), "\"a\tb\"");
-  EXPECT_EQ(SourceText("'It''s' x"), "'It''s' X");
-  EXPECT_EQ(SourceText("\"it's\" x"), "\"it's\" X");
+  EXPECT_EQ(SourceText("'It''s' x"), "'It''s' x");
+  EXPECT_EQ(SourceText("\"it's\" x"), "\"it's\" x");
 }
 
 TEST(FormatHexNumberTest, Digits) {

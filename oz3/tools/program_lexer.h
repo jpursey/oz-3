@@ -76,11 +76,9 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
 absl::StatusOr<std::vector<uint16_t>> GetTextWords(std::string_view text,
                                                    bool packed);
 
-// Returns the text of `tokens`, which `lexer` read in order from one line, as
-// the assembler sees it, for STR: each token's text, in upper case as names
-// are read, except for a string, which is as written, quotes included. Tokens
-// are joined with one space where the source has any space or comment between
-// them, and none where they touch.
+// Returns the text of `tokens`, which `lexer` read in order from one line, for
+// STR: each token's text as written, joined with one space where the source
+// has any space between them, and none where they touch.
 std::string GetSourceText(const gb::Lexer& lexer,
                           absl::Span<const gb::Token> tokens);
 
