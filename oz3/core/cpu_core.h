@@ -16,6 +16,7 @@
 #include "oz3/core/execution_component.h"
 #include "oz3/core/instruction_set.h"
 #include "oz3/core/microcode.h"
+#include "oz3/core/port.h"
 
 namespace oz3 {
 
@@ -386,7 +387,9 @@ class CpuCore final : public ExecutionComponent {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  explicit CpuCore(const CpuCoreConfig& config);
+  // Constructs core `core_index` of its processor, which decides which
+  // mailboxes it reaches on its mailbox port numbers (see kMailboxSendPort).
+  CpuCore(const CpuCoreConfig& config, int core_index);
   CpuCore(const CpuCore&) = delete;
   CpuCore& operator=(const CpuCore&) = delete;
   ~CpuCore();
@@ -548,6 +551,11 @@ class CpuCore final : public ExecutionComponent {
 
   void InitBanks();
 
+  // Requests a lock on the port that `port_number` names for this core,
+  // setting lock_ and locked_port_, or leaves them null if the number names no
+  // port the processor has.
+  void LockPortNumber(uint16_t port_number);
+
   // State handlers
   void Idle();
   void Waiting();
@@ -560,8 +568,9 @@ class CpuCore final : public ExecutionComponent {
   void RunInstruction();
   void RunInstructionLoop();
 
-  // Owning processor.
+  // Owning processor, and this core's index in it.
   Processor* processor_ = nullptr;
+  const int core_index_;
 
   // Current execution state.
   State state_ = State::kIdle;
@@ -595,7 +604,7 @@ class CpuCore final : public ExecutionComponent {
   // Lock for a dependent resource the CpuCore requires.
   std::unique_ptr<Lock> lock_;
   int locked_bank_ = -1;         // Current locked bank index.
-  int locked_port_ = -1;         // Current locked port index.
+  Port* locked_port_ = nullptr;  // Current locked port.
   CpuCore* locked_core_ = this;  // Current locked core.
 
   // Microcode implementation

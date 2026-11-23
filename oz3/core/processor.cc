@@ -23,7 +23,9 @@
 namespace oz3 {
 
 Processor::Processor(const ProcessorConfig& config, Contract contract)
-    : ports_(config.GetPortCount()), clock_hz_(config.GetClockHz()) {
+    : ports_(config.GetPortCount()),
+      mailboxes_(kMaxCores * kMaxCores),
+      clock_hz_(config.GetClockHz()) {
   DCHECK_OK(config.Validate());
   gb::ValidatedContext context(std::move(contract));
   CHECK(context.IsValid()) << "The processor has no context";
@@ -56,7 +58,7 @@ Processor::Processor(const ProcessorConfig& config, Contract contract)
     banks_[i]->AttachProcessor({}, this);
   }
   for (const CpuCoreConfig& core_config : config.GetCpuCoreConfigs()) {
-    cores_[num_cores_] = std::make_unique<CpuCore>(core_config);
+    cores_[num_cores_] = std::make_unique<CpuCore>(core_config, num_cores_);
     cores_[num_cores_]->AttachProcessor({}, this);
     cores_[num_cores_]->AttachClock({}, &cycles_);
     ++num_cores_;

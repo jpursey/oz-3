@@ -233,7 +233,9 @@ int CpuCore::GetVirtualDwordRegFromName(std::string_view name) {
   return kInvalidReg;
 }
 
-CpuCore::CpuCore(const CpuCoreConfig& config) {
+CpuCore::CpuCore(const CpuCoreConfig& config, int core_index)
+    : core_index_(core_index) {
+  DCHECK(core_index >= 0 && core_index < kMaxCores);
   instructions_ = config.GetInstructions();
   DCHECK(instructions_ != nullptr);
 }
@@ -243,6 +245,29 @@ CpuCore::~CpuCore() = default;
 void CpuCore::AttachProcessor(CoreInternal, Processor* processor) {
   processor_ = processor;
   InitBanks();
+}
+
+void CpuCore::LockPortNumber(uint16_t port_number) {
+  if (port_number < processor_->GetNumPorts()) {
+    lock_ = processor_->LockPort(port_number);
+    locked_port_ = &processor_->GetPort(port_number);
+    return;
+  }
+
+  // The mailboxes are kMaxCores to send, and then kMaxCores to receive.
+  const int mailbox = port_number - kMailboxSendPort;
+  if (mailbox < 0 || mailbox >= 2 * kMaxCores) {
+    return;
+  }
+  const int other_core = mailbox % kMaxCores;
+  if (other_core >= processor_->GetNumCores()) {
+    return;
+  }
+  const bool receive = mailbox >= kMaxCores;
+  const int from_core = receive ? other_core : core_index_;
+  const int to_core = receive ? core_index_ : other_core;
+  lock_ = processor_->LockMailbox(from_core, to_core);
+  locked_port_ = &processor_->GetMailbox(from_core, to_core);
 }
 
 void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
@@ -979,14 +1004,12 @@ void CpuCore::RunInstructionLoop() {
           --mip_;
           return;
         }
-        DCHECK(lock_ == nullptr && locked_port_ == -1);
+        DCHECK(lock_ == nullptr && locked_port_ == nullptr);
         OZ3_INIT_REG1;
-        locked_port_ = r_[reg1];
-        if (locked_port_ >= processor_->GetNumPorts()) {
-          locked_port_ = -1;
+        LockPortNumber(r_[reg1]);
+        if (locked_port_ == nullptr) {
           break;
         }
-        lock_ = processor_->LockPort(locked_port_);
         if (!lock_->IsLocked()) {
           return;
         }
@@ -996,40 +1019,36 @@ void CpuCore::RunInstructionLoop() {
           --mip_;
           return;
         }
-        if (locked_port_ == -1) {
+        if (locked_port_ == nullptr) {
           break;
         }
         DCHECK(lock_ != nullptr);
         lock_ = nullptr;
-        locked_port_ = -1;
+        locked_port_ = nullptr;
       } break;
       case kMicro_PLD: {
         exec_cycles_ += kCpuCoreCycles_PLD;
-        if (locked_port_ == -1) {
+        if (locked_port_ == nullptr) {
           // A missing port is never ready to read.
           mst_ &= ~S;
           break;
         }
-        DCHECK(lock_ != nullptr && locked_port_ >= 0 &&
-               locked_port_ < processor_->GetNumPorts());
+        DCHECK(lock_ != nullptr);
         OZ3_INIT_REG2;
-        Port& port = processor_->GetPort(locked_port_);
         mst_ = (mst_ & ~S) |
-               (port.LoadWord(*lock_, code.arg1, r_[reg2]) << SShift);
+               (locked_port_->LoadWord(*lock_, code.arg1, r_[reg2]) << SShift);
       } break;
       case kMicro_PST: {
         exec_cycles_ += kCpuCoreCycles_PST;
-        if (locked_port_ == -1) {
+        if (locked_port_ == nullptr) {
           // A missing port is never ready to write.
           mst_ |= S;
           break;
         }
-        DCHECK(lock_ != nullptr && locked_port_ >= 0 &&
-               locked_port_ < processor_->GetNumPorts());
+        DCHECK(lock_ != nullptr);
         OZ3_INIT_REG2;
-        Port& port = processor_->GetPort(locked_port_);
         mst_ = (mst_ & ~S) |
-               (port.StoreWord(*lock_, code.arg1, r_[reg2]) << SShift);
+               (locked_port_->StoreWord(*lock_, code.arg1, r_[reg2]) << SShift);
       } break;
       case kMicro_CLK: {
         if (exec_cycles_ > 0) {
@@ -1061,7 +1080,7 @@ void CpuCore::RunInstructionLoop() {
         }
         DCHECK(lock_ != nullptr || locked_core_ == this ||
                locked_core_ == nullptr);
-        DCHECK(locked_bank_ == -1 && locked_port_ == -1);
+        DCHECK(locked_bank_ == -1 && locked_port_ == nullptr);
         lock_ = nullptr;
         locked_core_ = this;
       } break;

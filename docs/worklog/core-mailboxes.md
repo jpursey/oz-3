@@ -79,12 +79,15 @@ std::unique_ptr<Lock> LockMailbox(int from_core, int to_core);
   `Port*` (null for none), so `PLD` and `PST` don't resolve it again.
 - The resolving is a private helper beside `PLK`, the one place port numbers
   are turned into ports.
+- A core didn't know its own index before, so `CpuCore` takes it at
+  construction, from `Processor`, which knows it.
 
 **Brittleness:** the mailbox's index depends on which core runs the
 microcode, not just the number, so a core that resolved a port number on
 another core's behalf would get the wrong mailbox. Only `PLK` resolves port
-numbers, always for the running core, and the controlled core (`CLK`) has no
-effect on it. A test covers a `PLK` while another core is locked.
+numbers, always for the running core. The controlled core (`CLK`) can't affect
+it, as a core holds one lock at a time, so `PLK` never runs while another core
+is locked.
 
 ### Default instruction set (instruction_sets)
 
@@ -102,13 +105,14 @@ effect on it. A test covers a `PLK` while another core is locked.
 
 ## CLs
 
-### CL1 [ ] core: mailboxes
+### CL1 [x] core: mailboxes
 
 Depends on: nothing.
 
 - `Processor`: the mailbox `PortBank`, `GetMailbox`, and `LockMailbox`.
 - `CpuCore`: `PLK` resolves port numbers into the processor's ports and the
-  running core's mailboxes. `locked_port_` becomes a `Port*`.
+  running core's mailboxes. `locked_port_` becomes a `Port*`. The core takes
+  its index at construction.
 - Manual: Mailboxes in `2-Specifications.md`, `PLK` in `2.1-Microcode.md`, the
   port numbers and the `<port>` operand in `2.2-Default-Instruction-Set.md`
   (the instructions reach the mailboxes already, through `.IW`, `.ID`, and the
@@ -116,14 +120,14 @@ Depends on: nothing.
 
 **Verify**
 - Standard checks (see CLAUDE.md).
-- `cpu_core_test.cc`: a word and a dword sent from one core and received on
-  another, on each side's own port numbers. The same port number on two cores
-  is two mailboxes. A core's mailbox to itself. Mailboxes to and from a core
-  the processor doesn't have, and port numbers 110h and FFFFh, are never
-  ready. A mailbox works with no configured ports. Two cores' locks on one
-  mailbox queue, and locks on different mailboxes don't. `PLK` while another
-  core is locked with `CLK` still names the running core's mailboxes.
-- `processor_test.cc`: `GetMailbox` sees what a core sent.
+- `cpu_core_test.cc`: a word sent from one core and received on another, on
+  each side's own port numbers, as `GetMailbox` sees it. The same port number
+  on two cores is two mailboxes. A core's mailbox to itself. Mailboxes to and
+  from a core the processor doesn't have, and port numbers past the mailboxes,
+  are never ready. Mailboxes work with no configured ports. A locked mailbox
+  blocks a core that wants it, but not one that wants another mailbox, and
+  blocks both of its cores, each on its own port number for it. (Dwords are
+  only two words through `PLD` and `PST`, which the port tests cover.)
 - Manual pages updated.
 
 ### CL2 [ ] instruction_sets: TSTP.I takes a word

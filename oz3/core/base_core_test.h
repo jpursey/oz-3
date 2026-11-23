@@ -249,6 +249,18 @@ class BaseCoreTest : public testing::Test {
     return processor_->LockPort(port_index);
   }
 
+  // Returns the mailbox from core `from_core` to core `to_core`.
+  Port& GetMailbox(int from_core, int to_core) {
+    CheckMailbox(from_core, to_core);
+    return processor_->GetMailbox(from_core, to_core);
+  }
+
+  // Locks the mailbox from core `from_core` to core `to_core`.
+  std::unique_ptr<Lock> LockMailbox(int from_core, int to_core) {
+    CheckMailbox(from_core, to_core);
+    return processor_->LockMailbox(from_core, to_core);
+  }
+
   // Encodes an instruction based on the instruction set.
   uint16_t Encode(uint8_t op, Arg a = {}, Arg b = {});
   uint16_t Encode(std::string_view op_name, Arg a = {}, Arg b = {});
@@ -308,6 +320,11 @@ class BaseCoreTest : public testing::Test {
 
  private:
   uint16_t DoEncode(const InstructionDef& instruction, Arg a, Arg b);
+
+  void CheckMailbox(int from_core, int to_core) const {
+    CHECK(from_core >= 0 && from_core < processor_->GetNumCores());
+    CHECK(to_core >= 0 && to_core < processor_->GetNumCores());
+  }
 
   const InstructionSetDef def_;
   std::shared_ptr<const InstructionSet> instruction_set_;
