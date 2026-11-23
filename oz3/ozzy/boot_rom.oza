@@ -129,17 +129,33 @@
 ; Variables, at S(n), in the order start pushes them
 ;-------------------------------------------------------------------------------
 
+; The port of a device the Ozzy doesn't have.
+.CONST NONE = 0FFFFh
+
 .CONST V_COLUMNS = -1    ; The screen's columns, or 0 without a screen
 .CONST V_ROWS = -2       ; The screen's rows
 .CONST V_COLUMN = -3     ; Where the next character goes on the screen
 .CONST V_ROW = -4
-.CONST V_TELETYPE = -5   ; The teletype's port, or 0FFFFh without one
+.CONST V_TELETYPE = -5   ; The teletype's port, or NONE without one
 .CONST V_KEYBOARD = -6   ; 1 with a keyboard, or 0 without one
-.CONST V_DRIVE = -7      ; The boot drive's command port, or 0FFFFh without it
+.CONST V_DRIVE = -7      ; The boot drive's command port, or NONE without it
 .CONST V_BOX_RIGHT = -8  ; The box's last column
 
 ; The words of each unit's text, for the clock rate.
 .CONST UNIT_SIZE = 5
+
+;-------------------------------------------------------------------------------
+; Macros
+;-------------------------------------------------------------------------------
+
+; Repeats a port instruction until the port takes or gives its word, which sets
+; S: op is the instruction, such as OUTS.RW or INS, and port and value its
+; arguments.
+.MACRO RETRY op, port, value
+@retry:
+    op port, value
+    JC NS, @retry
+.ENDM
 
 ;-------------------------------------------------------------------------------
 ; Segments
@@ -156,9 +172,9 @@ start:
     PUSH.W 0        ; V_ROWS
     PUSH.W 0        ; V_COLUMN
     PUSH.W 0        ; V_ROW
-    PUSH.W 0FFFFh   ; V_TELETYPE
+    PUSH.W NONE     ; V_TELETYPE
     PUSH.W 0        ; V_KEYBOARD
-    PUSH.W 0FFFFh   ; V_DRIVE
+    PUSH.W NONE     ; V_DRIVE
     PUSH.W 0        ; V_BOX_RIGHT
     CALL find_devices
     CALL clear_screen
@@ -545,7 +561,7 @@ boot:
     CALL show_status
     MOV R1, no_drive_text
     MOV R0, S(V_DRIVE)
-    CMP R0, 0FFFFh
+    CMP R0, NONE
     JC Z, @failed
     CALL read_boot_area
     MOV R1, no_disk_text
@@ -616,15 +632,11 @@ read_boot_area:
     PUSH R7
     MOV R1, R0
     ADQ R1, DRIVE_CONTROL
-@reset:
-    OUTS.RW R1, DRIVE_RESET
-    JC NS, @reset
+    RETRY OUTS.RW, R1, DRIVE_RESET
 @resetting:
     TSTP R1
     JC S, @resetting
-@command:
-    OUTS.RW R0, READ_BOOT
-    JC NS, @command
+    RETRY OUTS.RW, R0, READ_BOOT
 
     ; The drive has taken the command word once the phase is past arguments.
 @accepting:
@@ -640,9 +652,7 @@ read_boot_area:
     ADQ R3, DRIVE_DATA
     MOV R6, LOADER
     MOV R7, BOOT_AREA_DWORDS
-@data:
-    INR R3, [R6]
-    JC NS, @data
+    RETRY INR, R3, [R6]
     CALL read_status
 
 @done:
@@ -658,8 +668,7 @@ read_boot_area:
 ;-------------------------------------------------------------------------------
 
 read_status:
-    INS R0, R2
-    JC NS, read_status
+    RETRY INS, R0, R2
     RET
 
 ;-------------------------------------------------------------------------------
@@ -793,11 +802,9 @@ put_char:
 
 @teletype:
     MOV R1, S(V_TELETYPE)
-    CMP R1, 0FFFFh
+    CMP R1, NONE
     JC Z, @done
-@write:
-    OUTS R1, R0
-    JC NS, @write
+    RETRY OUTS, R1, R0
 
 @done:
     POP R4
