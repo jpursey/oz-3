@@ -5227,6 +5227,42 @@ TEST_F(CpuCoreTest, LockMailboxBlocksCpuCore) {
   ExecuteUntilHalt();
 }
 
+// A mailbox's one lock blocks both of its cores, each on its own port number
+// for it: core 0 sending to core 1, and core 1 receiving from core 0.
+TEST_F(CpuCoreTest, LockedMailboxBlocksBothOfItsCores) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  MemAccessor mem0 = GetMemory(0);
+  MemAccessor mem1 = GetMemory(1);
+
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(kMailboxSendPort + 1);
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(42);
+  mem0.AddValue(Encode(kTestOp_PST, Port::T | Port::S, CpuCore::R0));
+  const uint16_t blocked_ip0 = mem0.GetAddress();
+  mem0.AddValue(Encode(kTestOp_HALT));
+  mem1.AddValue(Encode(kTestOp_LV, CpuCore::R7))
+      .AddValue(kMailboxReceivePort + 0);
+  mem1.AddValue(Encode(kTestOp_PLD, Port::T | Port::S, CpuCore::R1));
+  const uint16_t blocked_ip1 = mem1.GetAddress();
+  mem1.AddValue(Encode(kTestOp_HALT));
+
+  auto lock = LockMailbox(0, 1);
+  ASSERT_TRUE(lock->IsLocked());
+  state0.ResetCore();
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
+  ASSERT_TRUE(ExecuteUntilIp(0, blocked_ip0));
+  ASSERT_TRUE(ExecuteUntilIp(1, blocked_ip1));
+  Execute(10);
+  EXPECT_EQ(state0.ip, blocked_ip0);
+  EXPECT_EQ(state1.ip, blocked_ip1);
+  EXPECT_EQ(GetMailbox(0, 1).GetStatus(), 0);
+
+  lock.reset();
+  ExecuteUntilHalt(0);
+  ExecuteUntilHalt(1);
+}
+
 TEST_F(CpuCoreTest, SelfCoreOp) {
   ASSERT_TRUE(Init());
   CoreState& state = GetState();

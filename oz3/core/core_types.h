@@ -72,6 +72,8 @@ inline constexpr int kMaxPorts = 256;
 // mailbox to core n, and kMailboxReceivePort + n its mailbox from core n.
 inline constexpr uint16_t kMailboxSendPort = 0x100;
 inline constexpr uint16_t kMailboxReceivePort = kMailboxSendPort + kMaxCores;
+static_assert(kMaxPorts <= kMailboxSendPort,
+              "Port numbers overlap mailbox port numbers");
 
 //------------------------------------------------------------------------------
 // CpuCore constants

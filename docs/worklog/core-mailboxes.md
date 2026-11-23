@@ -80,7 +80,7 @@ std::unique_ptr<Lock> LockMailbox(int from_core, int to_core);
 - The resolving is a private helper beside `PLK`, the one place port numbers
   are turned into ports.
 - A core didn't know its own index before, so `CpuCore` takes it at
-  construction (from `Processor`, which knows it), with `GetIndex` to read it.
+  construction, from `Processor`, which knows it.
 
 **Brittleness:** the mailbox's index depends on which core runs the
 microcode, not just the number, so a core that resolved a port number on
@@ -105,7 +105,7 @@ is locked.
 
 ## CLs
 
-### CL1 [~] core: mailboxes
+### CL1 [x] core: mailboxes
 
 Depends on: nothing.
 
@@ -125,8 +125,9 @@ Depends on: nothing.
   on two cores is two mailboxes. A core's mailbox to itself. Mailboxes to and
   from a core the processor doesn't have, and port numbers past the mailboxes,
   are never ready. Mailboxes work with no configured ports. A locked mailbox
-  blocks a core that wants it, but not one that wants another mailbox. (Dwords
-  are only two words through `PLD` and `PST`, which the port tests cover.)
+  blocks a core that wants it, but not one that wants another mailbox, and
+  blocks both of its cores, each on its own port number for it. (Dwords are
+  only two words through `PLD` and `PST`, which the port tests cover.)
 - Manual pages updated.
 
 ### CL2 [ ] instruction_sets: TSTP.I takes a word
