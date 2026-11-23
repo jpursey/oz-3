@@ -20,6 +20,8 @@ This is a CMake project, starting at the root. The directory structure is as fol
                    (see below)
   docs/         -- Design docs, feature plans (worklog/), and the backlog
   docs/manual/  -- The manual, which holds the specification (see Manual)
+  editors/      -- Editor support for OZ-3's source files: editors/vscode is a
+                   VS Code extension highlighting .oza and .izm files
   configs/      -- Ozzy configs (.ozzy) for common machines, to run with ozzy.
                    oz3_ozzy_test embeds and reads each one, so a new config
                    gets a test there too.

@@ -1,0 +1,255 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "OZ-3 Program",
+  "scopeName": "source.oz3.program",
+  "comment": "OZ-3 program source, as docs/manual/2.5-Program-Source.md describes it.",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#label-line"
+    },
+    {
+      "include": "#statement"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "match": ";.*$",
+      "name": "comment.line.semicolon.oz3"
+    },
+    "label-line": {
+      "begin": "^\\s*(@[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)(:)",
+      "beginCaptures": {
+        "1": {
+          "name": "entity.name.label.oz3"
+        },
+        "2": {
+          "name": "punctuation.separator.label.oz3"
+        }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#statement-after-label"
+        },
+        {
+          "include": "#operands"
+        }
+      ]
+    },
+    "statement": {
+      "patterns": [
+        {
+          "include": "#directive-line"
+        },
+        {
+          "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)(?:(\\.)([A-Za-z_][A-Za-z0-9_]*))?\\b(?!:)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.instruction.oz3"
+            },
+            "2": {
+              "name": "punctuation.separator.extension.oz3"
+            },
+            "3": {
+              "name": "keyword.other.instruction.extension.oz3"
+            }
+          }
+        },
+        {
+          "include": "#operands"
+        }
+      ]
+    },
+    "statement-after-label": {
+      "patterns": [
+        {
+          "include": "#directive"
+        },
+        {
+          "match": "\\G\\s*([A-Za-z_][A-Za-z0-9_]*)(?:(\\.)([A-Za-z_][A-Za-z0-9_]*))?\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.instruction.oz3"
+            },
+            "2": {
+              "name": "punctuation.separator.extension.oz3"
+            },
+            "3": {
+              "name": "keyword.other.instruction.extension.oz3"
+            }
+          }
+        }
+      ]
+    },
+    "directive-line": {
+      "patterns": [
+        {
+          "match": "^\\s*(\\.(?i:CONST))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.directive.oz3"
+            },
+            "2": {
+              "name": "entity.name.constant.oz3"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(\\.(?i:MACRO))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.directive.macro.oz3"
+            },
+            "2": {
+              "name": "entity.name.function.macro.oz3"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(\\.(?i:SEGMENT|BANK))\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.directive.oz3"
+            },
+            "2": {
+              "name": "entity.name.section.oz3"
+            }
+          }
+        },
+        {
+          "include": "#directive"
+        }
+      ]
+    },
+    "directive": {
+      "patterns": [
+        {
+          "match": "\\.(?i:IF|IFDEF|IFNDEF|ELSEIF|ELSE|ENDIF|REPT|ENDR)\\b",
+          "name": "keyword.control.directive.oz3"
+        },
+        {
+          "match": "\\.(?i:MACRO|ENDM)\\b",
+          "name": "keyword.directive.macro.oz3"
+        },
+        {
+          "match": "\\.(?i:INCLUDE|CONST|DW|DD|DS|STACK|SEGMENT|BANK|INSTANCES)\\b",
+          "name": "keyword.directive.oz3"
+        },
+        {
+          "match": "(?<![A-Za-z0-9_])\\.[A-Za-z_][A-Za-z0-9_]*",
+          "name": "invalid.illegal.directive.oz3"
+        }
+      ]
+    },
+    "operands": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#string-words"
+        },
+        {
+          "include": "#string-packed"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "match": "\\b(?i:R[0-7]|D[0-3]|BC|BS|BD|BE|MB|IP|FP|SP)\\b",
+          "name": "variable.language.register.oz3"
+        },
+        {
+          "match": "\\b(?i:CODE|STACK|DATA|EXTRA|ROM|INSTANCE)\\b",
+          "name": "storage.modifier.segment.oz3"
+        },
+        {
+          "match": "\\b((?i:BANK))\\s*(\\()\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.segment.oz3"
+            },
+            "3": {
+              "name": "entity.name.section.oz3"
+            }
+          }
+        },
+        {
+          "match": "\\b(?i:PAGES|PAGE|BANK)(?=\\s*\\()",
+          "name": "storage.modifier.segment.oz3"
+        },
+        {
+          "match": "\\b(?i:LOW|HIGH|SIZE)(?=\\s*\\()",
+          "name": "support.function.builtin.oz3"
+        },
+        {
+          "match": "\\b(?i:[SDE])(?=\\s*[(\\[])",
+          "name": "support.function.address.oz3"
+        },
+        {
+          "match": "@[A-Za-z_][A-Za-z0-9_]*",
+          "name": "variable.other.label.local.oz3"
+        },
+        {
+          "match": "\\$",
+          "name": "variable.language.offset.oz3"
+        },
+        {
+          "match": "<<|>>|<=|>=|==|!=|[-+*/%&|^~!<>=?]",
+          "name": "keyword.operator.oz3"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.oz3"
+        },
+        {
+          "include": "#directive"
+        }
+      ]
+    },
+    "number": {
+      "patterns": [
+        {
+          "match": "\\b[0-9][0-9A-Fa-f]*[hH]\\b",
+          "name": "constant.numeric.hex.oz3"
+        },
+        {
+          "match": "\\b[01]+[bB]\\b",
+          "name": "constant.numeric.binary.oz3"
+        },
+        {
+          "match": "\\b[0-9]+\\b",
+          "name": "constant.numeric.decimal.oz3"
+        }
+      ]
+    },
+    "string-words": {
+      "name": "string.quoted.single.oz3",
+      "begin": "'",
+      "end": "'(?!')",
+      "patterns": [
+        {
+          "match": "''",
+          "name": "constant.character.escape.oz3"
+        }
+      ]
+    },
+    "string-packed": {
+      "name": "string.quoted.double.oz3",
+      "begin": "\\\"",
+      "end": "\\\"(?!\\\")",
+      "patterns": [
+        {
+          "match": "\\\"\\\"",
+          "name": "constant.character.escape.oz3"
+        }
+      ]
+    }
+  }
+}
