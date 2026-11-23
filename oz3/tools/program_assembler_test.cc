@@ -592,14 +592,14 @@ std::vector<uint16_t> SegmentWords(std::vector<uint16_t> words) {
 }
 
 TEST_F(ProgramAssemblerTest, SourceText) {
-  // STR is its text as the assembler sees it, with letters outside strings
-  // in upper case and spaces collapsed, one character per word, and PSTR is
-  // the same text packed.
+  // STR is the text of its tokens as written, with one space where the source
+  // has any between them, one character per word, and PSTR is the same text
+  // packed.
   std::vector<uint16_t> expected;
-  for (std::string_view text : {"SCREEN", "A + 1", "'It''s' X", "D(X), [R1]"}) {
+  for (std::string_view text : {"screen", "a + 1", "'It''s' x", "d(x), [r1]"}) {
     absl::c_copy(CharWords(text), std::back_inserter(expected));
   }
-  expected.insert(expected.end(), {0x4241, 0x0043, 0x4241});
+  expected.insert(expected.end(), {0x6261, 0x0063, 0x6261});
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".DW STR(screen), STR(  a  +\t1 )\n"
                             ".DW STR('It''s' x), STR(d(x), [r1]), STR()\n"
@@ -608,7 +608,7 @@ TEST_F(ProgramAssemblerTest, SourceText) {
 
   // Its words are in a SIZE's field, as a string's are.
   EXPECT_THAT(AssembleWords(".STACK 1\n.DW SIZE(4) STR(ab), SIZE(1) PSTR(a)\n"),
-              ElementsAre('A', 'B', 0, 0, 'A', 0));
+              ElementsAre('a', 'b', 0, 0, 'a', 0));
   EXPECT_THAT(AssembleErrors(".STACK 1\n.DW SIZE(1) STR(ab)\n"),
               ElementsAre(IsErrorAt(
                   1, 12, "passes the end of its field, at its SIZE of 1")));
@@ -2081,9 +2081,9 @@ TEST_F(ProgramAssemblerTest, MacroArguments) {
 TEST_F(ProgramAssemblerTest, MacroSourceText) {
   // STR of a parameter is its argument's text, with spaces collapsed, and of
   // anything else, its own.
-  std::vector<uint16_t> expected = {'O', 'N', 'E', 1};
+  std::vector<uint16_t> expected = {'o', 'n', 'e', 1};
   absl::c_copy(CharWords("(1 + 2) * 3"), std::back_inserter(expected));
-  absl::c_copy(CharWords("X"), std::back_inserter(expected));
+  absl::c_copy(CharWords("x"), std::back_inserter(expected));
   expected.push_back(9);
   EXPECT_THAT(AssembleWords(".STACK 1\n"
                             ".CONST ONE = 1\n"
