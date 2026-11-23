@@ -231,6 +231,92 @@ green, amber, or white phosphor), how its picture is drawn (sharp pixels, or a
 monitor's scanlines, glow, and curve), and themes for the app's own windows and
 panel.
 
+## Strings from source text
+
+- **Layers:** tools, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** the manual's Program Source page (Values, Directives,
+  Macros, Repeated blocks);
+  [program-macros-and-conditional-assembly.md](worklog/program-macros-and-conditional-assembly.md)
+
+`STR(x)` and `PSTR(x)`, strings made from the text of `x` as written, without
+evaluating it, like `#x` in a C macro. They are strings in `.DW`: `STR(x)`
+written as words, as `'...'` is, and `PSTR(x)` packed, as `"..."` is. A
+parameter is never replaced inside a string, so this is how a macro gets an
+argument's text into one. For example, a macro can write a table entry with
+its argument's name:
+
+```
+.MACRO ENTRY name
+    .DW SIZE(8) STR(name)
+    .DW name
+.ENDM
+```
+
+What the text is:
+- **A macro's parameter** is the argument's text, and **a `.REPT`'s index**
+  is the repetition's number, in decimal.
+- **Anything else** is the text as the assembler sees it, with names in upper
+  case, so `STR(screen)` is `SCREEN` where `screen` is no parameter or index.
+- **Spaces:** each run of spaces is one space, and there are none at either
+  end.
+- `STR` and `PSTR` only mean this where `(` follows them, as with `LOW` and
+  `HIGH`, so they can still be symbols.
+
+Nice to have: `STR` of a constant's name could be the text of the expression
+that defined it, so `.CONST LIMIT = 4 * 2` makes `STR(LIMIT)` `4 * 2`.
+
+`STR(x)` is also an item of an `.ERROR`'s message, which *Errors from
+program source* adds.
+
+## Errors from program source
+
+- **Layers:** tools, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** *Strings from source text*
+- **Background:** the manual's Program Source page (Conditional assembly,
+  Macros, Errors);
+  [program-macros-and-conditional-assembly.md](worklog/program-macros-and-conditional-assembly.md)
+
+An `.ERROR` directive, which fails the assembly with an error at its line, so
+a program checks what it assumes as it is built. It is used in an `.IF`. A
+macro can then reject arguments it can't use, and a program can check its own
+layout. For example, the boot ROM could check that its code ends before the
+machine table, rather than `boot_rom.cc` checking that after it assembles:
+
+```
+.IF $ > TABLE
+    .ERROR 'The code reaches the machine table at ', HEX(TABLE), ' by ', $ - TABLE, ' words'
+.ENDIF
+```
+
+The message joins its items in order, with nothing added between them:
+- A string is its text, whether it is written as words (`'...'`) or packed
+  (`"..."`).
+- An expression is its value, unsigned and in decimal, as its own text.
+- `HEX(x)` is its value in hex, written as the source writes it (`0F00h`).
+  `DEC(x)` is decimal, the same as the expression written on its own.
+- `STR(x)` is the text of `x` as written (see *Strings from source text*),
+  so a macro can name what it was given:
+  `.ERROR STR(count), ' must be at most 8'`. `PSTR(x)` is the same, as
+  packing doesn't matter in a message.
+- `HEX` and `DEC` only mean this where `(` follows them, as with `LOW` and
+  `HIGH`, so they can still be symbols.
+
+As with an `.IF`'s condition, each item must be known when the `.ERROR` is
+read. An `.ERROR` that isn't assembled is never read. One in a macro or a
+`.REPT` is followed by the "In ..." errors of the invocations it is in, like
+any other error in a body. A macro's parameters are replaced in its
+expressions but not in its strings, so
+`'COUNT must be at most 8, not ', count` gives the argument's value, and
+`STR(count)` its text. Still to decide:
+- whether a dword item needs `LOW` and `HIGH`, as an `.IF`'s condition does,
+  or is printed whole;
+- the number of hex digits.
+
 ## Case-sensitive programs
 
 - **Layers:** tools, manual
