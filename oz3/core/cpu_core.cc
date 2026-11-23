@@ -233,8 +233,9 @@ int CpuCore::GetVirtualDwordRegFromName(std::string_view name) {
   return kInvalidReg;
 }
 
-CpuCore::CpuCore(const CpuCoreConfig& config, int index) : index_(index) {
-  DCHECK(index >= 0 && index < kMaxCores);
+CpuCore::CpuCore(const CpuCoreConfig& config, int core_index)
+    : core_index_(core_index) {
+  DCHECK(core_index >= 0 && core_index < kMaxCores);
   instructions_ = config.GetInstructions();
   DCHECK(instructions_ != nullptr);
 }
@@ -263,8 +264,8 @@ void CpuCore::LockPortNumber(uint16_t port_number) {
     return;
   }
   const bool receive = mailbox >= kMaxCores;
-  const int from_core = receive ? other_core : index_;
-  const int to_core = receive ? index_ : other_core;
+  const int from_core = receive ? other_core : core_index_;
+  const int to_core = receive ? core_index_ : other_core;
   lock_ = processor_->LockMailbox(from_core, to_core);
   locked_port_ = &processor_->GetMailbox(from_core, to_core);
 }

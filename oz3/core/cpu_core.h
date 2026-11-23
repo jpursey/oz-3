@@ -387,9 +387,9 @@ class CpuCore final : public ExecutionComponent {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Constructs the core that is `index` in its processor, which decides which
+  // Constructs core `core_index` of its processor, which decides which
   // mailboxes it reaches on its mailbox port numbers (see kMailboxSendPort).
-  CpuCore(const CpuCoreConfig& config, int index);
+  CpuCore(const CpuCoreConfig& config, int core_index);
   CpuCore(const CpuCore&) = delete;
   CpuCore& operator=(const CpuCore&) = delete;
   ~CpuCore();
@@ -570,7 +570,7 @@ class CpuCore final : public ExecutionComponent {
 
   // Owning processor, and this core's index in it.
   Processor* processor_ = nullptr;
-  const int index_;
+  const int core_index_;
 
   // Current execution state.
   State state_ = State::kIdle;
