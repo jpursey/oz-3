@@ -5101,10 +5101,10 @@ TEST_F(CpuCoreTest, MailboxSendsToAnotherCore) {
   state0.ResetCore();
   ExecuteUntilHalt(0);
   EXPECT_EQ(state0.st & CpuCore::S, 0);  // The mailbox was empty
-  Port& mailbox = GetProcessor().GetMailbox(0, 1);
+  Port& mailbox = GetMailbox(0, 1);
   EXPECT_EQ(mailbox.GetValue(0), 42);
   EXPECT_EQ(mailbox.GetStatus(), 1);
-  EXPECT_EQ(GetProcessor().GetMailbox(1, 0).GetStatus(), 0);
+  EXPECT_EQ(GetMailbox(1, 0).GetStatus(), 0);
 
   state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
   ExecuteUntilHalt(1);
@@ -5140,9 +5140,9 @@ TEST_F(CpuCoreTest, MailboxPortNumbersAreFromEachCoresSide) {
   state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
   ExecuteUntilHalt(1);
 
-  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetValue(0), 10);
-  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetStatus(), 1);
-  Port& own_mailbox = GetProcessor().GetMailbox(1, 1);
+  EXPECT_EQ(GetMailbox(0, 1).GetValue(0), 10);
+  EXPECT_EQ(GetMailbox(0, 1).GetStatus(), 1);
+  Port& own_mailbox = GetMailbox(1, 1);
   EXPECT_EQ(own_mailbox.GetValue(0), 11);
   EXPECT_EQ(own_mailbox.GetStatus(), 0);
   EXPECT_EQ(state1.r1, 11);
@@ -5157,34 +5157,35 @@ TEST_F(CpuCoreTest, MissingMailboxesAreNeverReady) {
   CoreState& state = GetState();
   state.ResetCore();
 
-  const std::vector<uint16_t> missing_ports = {
-      0,
-      0xFF,
-      kMailboxSendPort + 2,
-      kMailboxSendPort + 7,
-      kMailboxReceivePort + 2,
-      kMailboxReceivePort + 7,
-      kMailboxReceivePort + kMaxCores,
-      0x1FF,
-      0x200,
-      0xFFFF,
+  struct MissingPort {
+    uint16_t port;
+    uint16_t load_ip = 0;
+    uint16_t store_ip = 0;
   };
-  std::vector<uint16_t> load_ips;
-  std::vector<uint16_t> store_ips;
-  for (uint16_t port : missing_ports) {
-    state.code.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(port);
+  std::vector<MissingPort> missing_ports = {
+      {kMailboxSendPort + 2},
+      {kMailboxSendPort + 7},
+      {kMailboxReceivePort + 2},
+      {kMailboxReceivePort + 7},
+      {kMailboxReceivePort + kMaxCores},
+      {0x1FF},
+      {0x200},
+      {0xFFFF},
+  };
+  for (MissingPort& missing : missing_ports) {
+    state.code.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(missing.port);
     state.code.AddValue(Encode(kTestOp_PLD, Port::S, CpuCore::R0));
-    load_ips.push_back(state.code.AddNopGetAddress());
+    missing.load_ip = state.code.AddNopGetAddress();
     state.code.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
-    store_ips.push_back(state.code.AddNopGetAddress());
+    missing.store_ip = state.code.AddNopGetAddress();
   }
   state.code.AddValue(Encode(kTestOp_HALT));
 
-  for (int i = 0; i < static_cast<int>(missing_ports.size()); ++i) {
-    ASSERT_TRUE(ExecuteUntilIp(load_ips[i]));
-    EXPECT_EQ(state.st & CpuCore::S, 0) << "Port " << missing_ports[i];
-    ASSERT_TRUE(ExecuteUntilIp(store_ips[i]));
-    EXPECT_EQ(state.st & CpuCore::S, CpuCore::S) << "Port " << missing_ports[i];
+  for (const MissingPort& missing : missing_ports) {
+    ASSERT_TRUE(ExecuteUntilIp(missing.load_ip));
+    EXPECT_EQ(state.st & CpuCore::S, 0) << "Port " << missing.port;
+    ASSERT_TRUE(ExecuteUntilIp(missing.store_ip));
+    EXPECT_EQ(state.st & CpuCore::S, CpuCore::S) << "Port " << missing.port;
   }
   ExecuteUntilHalt();
 }
@@ -5208,21 +5209,21 @@ TEST_F(CpuCoreTest, LockMailboxBlocksCpuCore) {
   const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode(kTestOp_HALT));
 
-  auto lock = GetProcessor().LockMailbox(0, 1);
+  auto lock = LockMailbox(0, 1);
   ASSERT_TRUE(lock->IsLocked());
 
   ASSERT_TRUE(ExecuteUntilIp(ip1));
-  EXPECT_EQ(GetProcessor().GetMailbox(0, 0).GetValue(0), 42);
+  EXPECT_EQ(GetMailbox(0, 0).GetValue(0), 42);
 
   ASSERT_TRUE(ExecuteUntilIp(blocked_ip));
   Execute(10);
   EXPECT_EQ(state.ip, blocked_ip);
-  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetStatus(), 0);
+  EXPECT_EQ(GetMailbox(0, 1).GetStatus(), 0);
 
   lock.reset();
   ASSERT_TRUE(ExecuteUntilIp(ip2));
-  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetValue(0), 42);
-  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetStatus(), 1);
+  EXPECT_EQ(GetMailbox(0, 1).GetValue(0), 42);
+  EXPECT_EQ(GetMailbox(0, 1).GetStatus(), 1);
   ExecuteUntilHalt();
 }
 

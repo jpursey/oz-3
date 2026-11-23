@@ -464,9 +464,6 @@ class CpuCore final : public ExecutionComponent {
 
   State GetState() { return state_; }
 
-  // Returns the core's index in its processor.
-  int GetIndex() const { return index_; }
-
   // Returns the registers of the CPU core.
   //
   // If the core is ahead of the Processor, this may not be simulation accurate.
@@ -554,10 +551,10 @@ class CpuCore final : public ExecutionComponent {
 
   void InitBanks();
 
-  // Requests a lock on the port that `port_number` names for this core, and
-  // returns it, or null if the number names no port the processor has. The
-  // lock is held in lock_.
-  Port* LockPortNumber(uint16_t port_number);
+  // Requests a lock on the port that `port_number` names for this core,
+  // setting lock_ and locked_port_, or leaves them null if the number names no
+  // port the processor has.
+  void LockPortNumber(uint16_t port_number);
 
   // State handlers
   void Idle();

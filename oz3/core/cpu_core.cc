@@ -246,25 +246,27 @@ void CpuCore::AttachProcessor(CoreInternal, Processor* processor) {
   InitBanks();
 }
 
-Port* CpuCore::LockPortNumber(uint16_t port_number) {
+void CpuCore::LockPortNumber(uint16_t port_number) {
   if (port_number < processor_->GetNumPorts()) {
     lock_ = processor_->LockPort(port_number);
-    return &processor_->GetPort(port_number);
+    locked_port_ = &processor_->GetPort(port_number);
+    return;
   }
-  if (port_number < kMailboxSendPort ||
-      port_number >= kMailboxReceivePort + kMaxCores) {
-    return nullptr;
+
+  // The mailboxes are kMaxCores to send, and then kMaxCores to receive.
+  const int mailbox = port_number - kMailboxSendPort;
+  if (mailbox < 0 || mailbox >= 2 * kMaxCores) {
+    return;
   }
-  const bool receive = port_number >= kMailboxReceivePort;
-  const int other_core =
-      port_number - (receive ? kMailboxReceivePort : kMailboxSendPort);
+  const int other_core = mailbox % kMaxCores;
   if (other_core >= processor_->GetNumCores()) {
-    return nullptr;
+    return;
   }
+  const bool receive = mailbox >= kMaxCores;
   const int from_core = receive ? other_core : index_;
   const int to_core = receive ? index_ : other_core;
   lock_ = processor_->LockMailbox(from_core, to_core);
-  return &processor_->GetMailbox(from_core, to_core);
+  locked_port_ = &processor_->GetMailbox(from_core, to_core);
 }
 
 void CpuCore::Reset(const Lock& lock, const ResetParams& params) {
@@ -1003,7 +1005,7 @@ void CpuCore::RunInstructionLoop() {
         }
         DCHECK(lock_ == nullptr && locked_port_ == nullptr);
         OZ3_INIT_REG1;
-        locked_port_ = LockPortNumber(r_[reg1]);
+        LockPortNumber(r_[reg1]);
         if (locked_port_ == nullptr) {
           break;
         }
