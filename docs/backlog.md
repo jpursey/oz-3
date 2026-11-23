@@ -261,7 +261,9 @@ The message joins its items in order, with nothing added between them:
   `DEC(x)` is decimal, the same as the expression written on its own.
 - `STR(x)` is the text of `x` as written, without evaluating it, like `#x`
   in a C macro. In a macro, `x` is usually a parameter, so `STR(x)` is the
-  argument's text, and in a `.REPT`, `STR(i)` is the index's number. A
+  argument's text, and in a `.REPT`, `STR(i)` is the index's number. Names
+  are as the assembler sees them, in upper case, so `STR(screen)` is
+  `SCREEN`. A
   parameter is never replaced inside a string, so this is how its text gets
   into one.
 - `HEX`, `DEC`, and `STR` only mean this where `(` follows them, as with
@@ -288,9 +290,7 @@ expressions but not in its strings, so
 - whether a dword item needs `LOW` and `HIGH`, as an `.IF`'s condition does,
   or is printed whole;
 - the number of hex digits;
-- what `STR` makes of the case of names, which are turned to upper case as
-  they are read (see *Case-sensitive programs*), and of spaces inside an
-  argument.
+- what `STR` makes of spaces inside an argument.
 
 ## Case-sensitive programs
 
