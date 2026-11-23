@@ -259,17 +259,38 @@ The message joins its items in order, with nothing added between them:
 - An expression is its value, unsigned and in decimal, as its own text.
 - `HEX(x)` is its value in hex, written as the source writes it (`0F00h`).
   `DEC(x)` is decimal, the same as the expression written on its own.
-  `HEX` and `DEC` only mean this where `(` follows them, as with `LOW` and
-  `HIGH`, so they can still be symbols.
+- `STR(x)` is the text of `x` as written, without evaluating it, like `#x`
+  in a C macro. In a macro, `x` is usually a parameter, so `STR(x)` is the
+  argument's text, and in a `.REPT`, `STR(i)` is the index's number. A
+  parameter is never replaced inside a string, so this is how its text gets
+  into one.
+- `HEX`, `DEC`, and `STR` only mean this where `(` follows them, as with
+  `LOW` and `HIGH`, so they can still be symbols.
+
+`STR(x)` is also a string in `.DW`, written as words, as `'...'` is, and
+`PSTR(x)` is the same text packed, as `"..."` is. For example, a macro can
+write a table entry with its argument's name:
+
+```
+.MACRO ENTRY name
+    .DW SIZE(8) STR(name)
+    .DW name
+.ENDM
+```
 
 As with an `.IF`'s condition, each item must be known when the `.ERROR` is
 read. An `.ERROR` that isn't assembled is never read. One in a macro or a
 `.REPT` is followed by the "In ..." errors of the invocations it is in, like
 any other error in a body. A macro's parameters are replaced in its
-expressions but not in its strings, so `'COUNT must be at most 8, not ', count`
-names the argument's value. Still to decide: whether a dword item needs
-`LOW` and `HIGH`, as an `.IF`'s condition does, or is printed whole, and the
-number of hex digits.
+expressions but not in its strings, so
+`'COUNT must be at most 8, not ', count` gives the argument's value, and
+`STR(count), ' must be at most 8'` gives its text. Still to decide:
+- whether a dword item needs `LOW` and `HIGH`, as an `.IF`'s condition does,
+  or is printed whole;
+- the number of hex digits;
+- what `STR` makes of the case of names, which are turned to upper case as
+  they are read (see *Case-sensitive programs*), and of spaces inside an
+  argument.
 
 ## Case-sensitive programs
 
