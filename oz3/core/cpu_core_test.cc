@@ -5203,8 +5203,8 @@ TEST_F(CpuCoreTest, LockMailboxBlocksCpuCore) {
   const uint16_t ip1 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode(kTestOp_LV, CpuCore::R7))
       .AddValue(kMailboxSendPort + 1);
-  const uint16_t blocked_ip = state.code.GetAddress();
   state.code.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
+  const uint16_t blocked_ip = state.code.GetAddress();
   const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode(kTestOp_HALT));
 
