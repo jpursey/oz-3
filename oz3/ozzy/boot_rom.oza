@@ -981,6 +981,11 @@ count_ram:
     POP R0
     RET
 
+; The code and its strings must end before the machine table.
+.IF $ > TABLE
+    .ERROR 'The boot ROM reaches the machine table at ', HEX(TABLE), ' by ', $ - TABLE, ' words'
+.ENDIF
+
 ;-------------------------------------------------------------------------------
 ; The stack, with the variables at its top
 ;-------------------------------------------------------------------------------
