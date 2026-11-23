@@ -4415,12 +4415,12 @@ instruction INT "$m" {
 ## Variants:
 ##    IN.RW <reg>,    <reg>              (4 cycles)
 ##    IN.RW <reg>,    <word-address>     (6-8 cycles)
-##    IN.IW <0..255>, <reg>              (5 cycles)
-##    IN.IW <0..255>, <word-address>     (7-9 cycles)
+##    IN.IW <port>,   <reg>              (5 cycles)
+##    IN.IW <port>,   <word-address>     (7-9 cycles)
 ##    IN.RD <reg>,    <dreg>             (5 cycles)
 ##    IN.RD <reg>,    <dword-address>    (8-10 cycles)
-##    IN.ID <0..255>, <dreg>             (6 cycles)
-##    IN.ID <0..255>, <dword-address>    (9-11 cycles)
+##    IN.ID <port>,   <dreg>             (6 cycles)
+##    IN.ID <port>,   <dword-address>    (9-11 cycles)
 ##
 ## Unconditionally reads from the specified port and writes to the specified
 ## register or memory address. "S" flag is set if a new word was read, otherwise
@@ -4559,12 +4559,12 @@ instruction IN.ID "$v, $m" {
 ## Variants:
 ##    INS.RW <reg>,    <reg>              (4 cycles)
 ##    INS.RW <reg>,    <word-address>     (5-8 cycles)
-##    INS.IW <0..255>, <reg>              (5 cycles)
-##    INS.IW <0..255>, <word-address>     (6-9 cycles)
+##    INS.IW <port>,   <reg>              (5 cycles)
+##    INS.IW <port>,   <word-address>     (6-9 cycles)
 ##    INS.RD <reg>,    <dreg>             (5 cycles)
 ##    INS.RD <reg>,    <dword-address>    (6-10 cycles)
-##    INS.ID <0..255>, <dreg>             (6 cycles)
-##    INS.ID <0..255>, <dword-address>    (7-11 cycles)
+##    INS.ID <port>,   <dreg>             (6 cycles)
+##    INS.ID <port>,   <dword-address>    (7-11 cycles)
 ##
 ## Reads from the specified port if the port status is set and writes to the
 ## specified register or memory address. "S" flag is set if a word was read,
@@ -4765,9 +4765,9 @@ instruction INS.ID "$v, $m" {
 ##
 ## Variants:
 ##    INR.RW <reg>,    (<reg>)         (8 cycles per word)
-##    INR.IW <0..255>, (<reg>)         (9 cycles per word)
+##    INR.IW <port>,   (<reg>)         (9 cycles per word)
 ##    INR.RD <reg>,    [<reg>]         (10 cycles per dword)
-##    INR.ID <0..255>, [<reg>]         (11 cycles per dword)
+##    INR.ID <port>,   [<reg>]         (11 cycles per dword)
 ##
 ## Reads up to R7 words (or dwords) from the port, storing them at the address
 ## in the address register (in the memory bank that register implies), and
@@ -4868,15 +4868,15 @@ instruction(exclude_a:R7) INR.ID "$v, [$r]" {
 ##    OUT.RW <reg>,    <reg>              (4 cycles)
 ##    OUT.RW <reg>,    <integer>          (5 cycles)
 ##    OUT.RW <reg>,    <word-address>     (6-8 cycles)
-##    OUT.IW <0..255>, <reg>              (5 cycles)
-##    OUT.IW <0..255>, <integer>          (6 cycles)
-##    OUT.IW <0..255>, <word-address>     (7-9 cycles)
+##    OUT.IW <port>,   <reg>              (5 cycles)
+##    OUT.IW <port>,   <integer>          (6 cycles)
+##    OUT.IW <port>,   <word-address>     (7-9 cycles)
 ##    OUT.RD <reg>,    <dreg>             (5 cycles)
 ##    OUT.RD <reg>,    <integer>          (7 cycles)
 ##    OUT.RD <reg>,    <dword-address>    (8-10 cycles)
-##    OUT.ID <0..255>, <dreg>             (6 cycles)
-##    OUT.ID <0..255>, <integer>          (8 cycles)
-##    OUT.ID <0..255>, <dword-address>    (9-11 cycles)
+##    OUT.ID <port>,   <dreg>             (6 cycles)
+##    OUT.ID <port>,   <integer>          (8 cycles)
+##    OUT.ID <port>,   <dword-address>    (9-11 cycles)
 ##
 ## Unconditionally writes the specified value to the specified port.
 ################################################################################
@@ -5043,15 +5043,15 @@ instruction OUT.ID "$v, $m" {
 ##    OUTS.RW <reg>,    <reg>              (4 cycles)
 ##    OUTS.RW <reg>,    <integer>          (5 cycles)
 ##    OUTS.RW <reg>,    <word-address>     (6-8 cycles)
-##    OUTS.IW <0..255>, <reg>              (5 cycles)
-##    OUTS.IW <0..255>, <integer>          (6 cycles)
-##    OUTS.IW <0..255>, <word-address>     (7-9 cycles)
+##    OUTS.IW <port>,   <reg>              (5 cycles)
+##    OUTS.IW <port>,   <integer>          (6 cycles)
+##    OUTS.IW <port>,   <word-address>     (7-9 cycles)
 ##    OUTS.RD <reg>,    <dreg>             (5 cycles)
 ##    OUTS.RD <reg>,    <integer>          (7 cycles)
 ##    OUTS.RD <reg>,    <dword-address>    (8-10 cycles)
-##    OUTS.ID <0..255>, <dreg>             (6 cycles)
-##    OUTS.ID <0..255>, <integer>          (8 cycles)
-##    OUTS.ID <0..255>, <dword-address>    (9-11 cycles)
+##    OUTS.ID <port>,   <dreg>             (6 cycles)
+##    OUTS.ID <port>,   <integer>          (8 cycles)
+##    OUTS.ID <port>,   <dword-address>    (9-11 cycles)
 ##
 ## Writes the specified value to the specified port if the port status is not
 ## set. Sets the "S" flag if a value was written. It takes the same cycles
@@ -5218,9 +5218,9 @@ instruction OUTS.ID "$v, $m" {
 ##
 ## Variants:
 ##    OUTR.RW <reg>,    (<reg>)        (8 cycles per word)
-##    OUTR.IW <0..255>, (<reg>)        (9 cycles per word)
+##    OUTR.IW <port>,   (<reg>)        (9 cycles per word)
 ##    OUTR.RD <reg>,    [<reg>]        (10 cycles per dword)
-##    OUTR.ID <0..255>, [<reg>]        (11 cycles per dword)
+##    OUTR.ID <port>,   [<reg>]        (11 cycles per dword)
 ##
 ## Writes up to R7 words (or dwords) to the port, loading them from the address
 ## in the address register (in the memory bank that register implies), and
@@ -5547,16 +5547,18 @@ instruction CLRN {
 ################################################################################
 ## TSTP <port>
 ##
-## Cycles: 4
+## Cycles: 4-5
 ## ZSCO: -X--
 ##
 ## Variants:
 ##    TSTP.R <reg>        (4 cycles)
-##    TSTP.I <0..255>     (4 cycles)
+##    TSTP.I <port>       (5 cycles)
 ##
 ## Tests the specified port's status, without reading or changing the port. "S"
 ## flag is set if the port's status is set, otherwise it is cleared (always
-## cleared if the port does not exist). TSTP.I holds the port in the code word.
+## cleared if the port does not exist). TSTP.I takes the port in the word after
+## the code word, like the other port instructions, so it reaches every port
+## number, including the core's mailboxes.
 ################################################################################
 
 instruction TSTP.R "$r" {
@@ -5564,7 +5566,8 @@ instruction TSTP.R "$r" {
   PLK(a); PLD(_,C0); MSR(S,S); PUL;  # The word loaded into C0 is discarded
 }
 
-instruction TSTP.I "$#8" {
+instruction TSTP.I "$v" {
+  LD(C0);
   UL;
   PLK(C0); PLD(_,C1); MSR(S,S); PUL;  # As TSTP.R, with the port in C0
 }

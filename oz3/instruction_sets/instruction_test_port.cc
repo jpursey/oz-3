@@ -4,6 +4,7 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include "gmock/gmock.h"
+#include "oz3/core/core_types.h"
 #include "oz3/instruction_sets/instruction_test.h"
 
 namespace oz3 {
@@ -2092,25 +2093,59 @@ TEST_F(InstructionTest, TSTP_I) {
   auto& state = GetState();
   state.SetRegisters({{CpuCore::ST, ZC}});
 
-  state.code.AddValue(Encode("TSTP.I", 1));
+  state.code.AddValue(Encode("TSTP.I")).AddValue(1);
   const uint16_t ip1 = state.code.AddNopGetAddress();
-  state.code.AddValue(Encode("TSTP.I", 1));
+  state.code.AddValue(Encode("TSTP.I")).AddValue(1);
   const uint16_t ip2 = state.code.AddNopGetAddress();
   state.code.AddValue(Encode("SETF", CpuCore::S));
-  state.code.AddValue(Encode("TSTP.I", 2));
+  state.code.AddValue(Encode("TSTP.I")).AddValue(2);
   const uint16_t ip3 = state.code.AddNopGetAddress();
 
   WritePort(1, 42);
-  EXPECT_EQ(CyclesUntilIp(ip1), 4);  // TSTP.I 1
+  EXPECT_EQ(CyclesUntilIp(ip1), 5);  // TSTP.I 1
   EXPECT_EQ(state.st, ZSC);
   EXPECT_EQ(GetPort(1).GetStatus(), 1);
 
   ReadPort(1);
-  EXPECT_EQ(CyclesUntilIp(ip2), 4);  // TSTP.I 1
+  EXPECT_EQ(CyclesUntilIp(ip2), 5);  // TSTP.I 1
   EXPECT_EQ(state.st, ZC);
 
   ASSERT_TRUE(ExecuteUntilIp(ip3));  // SETF S; TSTP.I 2
   EXPECT_EQ(state.st, ZC);
+}
+
+// Core 0 sends a word to core 1 through their mailbox, each on its own port
+// number for it, and waits with TSTP.I for core 1 to take it.
+TEST_F(InstructionTest, MailboxBetweenCores) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  auto& state0 = GetState(0);
+  auto& state1 = GetState(1);
+  state0.ResetCore({.mask = CpuCore::ResetParams::ALL});
+  state0.SetRegisters({{CpuCore::R0, 42}});
+  state0.code.AddValue(Encode("OUTS.IW", {"$r", CpuCore::R0}))
+      .AddValue(kMailboxSendPort + 1);
+  state0.code.AddValue(Encode("TSTP.I")).AddValue(kMailboxSendPort + 1);
+  const uint16_t sent_ip = state0.code.AddNopGetAddress();
+  state0.code.AddValue(Encode("TSTP.I")).AddValue(kMailboxSendPort + 1);
+  const uint16_t taken_ip = state0.code.AddNopGetAddress();
+  GetMemory(1)
+      .AddValue(Encode("INS.IW", {"$r", CpuCore::R1}))
+      .AddValue(kMailboxReceivePort + 0)
+      .AddValue(Encode("HALT"));
+
+  // The word waits in the mailbox until core 1 takes it.
+  ASSERT_TRUE(ExecuteUntilIp(sent_ip));
+  EXPECT_EQ(state0.st & CpuCore::S, CpuCore::S);
+  EXPECT_EQ(GetMailbox(0, 1).GetValue(0), 42);
+
+  state1.ResetCore({.mask = CpuCore::ResetParams::ALL,
+                    .mb = CpuCore::Banks().SetCode(1).ToWord()});
+  ASSERT_TRUE(ExecuteUntilHalt(1));
+  EXPECT_EQ(state1.r1, 42);
+  EXPECT_EQ(state1.st & CpuCore::S, CpuCore::S);
+
+  ASSERT_TRUE(ExecuteUntilIp(taken_ip));
+  EXPECT_EQ(state0.st & CpuCore::S, 0);
 }
 
 // The tests above time the ends of every variant but these, which take a port
