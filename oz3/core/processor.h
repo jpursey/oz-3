@@ -88,6 +88,17 @@ class Processor final {
   // The index must be in the range [0, GetNumPorts()-1].
   std::unique_ptr<Lock> LockPort(int port_index);
 
+  // Returns the mailbox from core `from_core` to core `to_core`: a port that
+  // only those two cores reach, on port numbers of their own (see
+  // kMailboxSendPort). A core may send to itself, so the cores may be the same.
+  //
+  // Both cores must be in the range [0, GetNumCores()-1].
+  Port& GetMailbox(int from_core, int to_core);
+
+  // Locks the mailbox from core `from_core` to core `to_core`, as for
+  // GetMailbox.
+  std::unique_ptr<Lock> LockMailbox(int from_core, int to_core);
+
   // Returns the device with the specified name, or null if this processor has
   // none.
   Device* GetDevice(std::string_view name);
@@ -138,6 +149,10 @@ class Processor final {
 
   uint8_t DoRaiseInterrupt(int interrupt, uint8_t cores, bool shared);
 
+  // Returns the index in mailboxes_ of the mailbox from `from_core` to
+  // `to_core`.
+  int GetMailboxIndex(int from_core, int to_core) const;
+
   // The devices are declared first, so they are destroyed after everything
   // they use.
   std::vector<std::unique_ptr<Device>> devices_;
@@ -146,6 +161,10 @@ class Processor final {
   gb::Array<std::unique_ptr<CpuCore>, kMaxCores> cores_;
   int num_cores_ = 0;
   PortBank ports_;
+
+  // A mailbox for every pair of cores a processor can have, whether it has
+  // them or not, so a mailbox's index doesn't depend on the core count.
+  PortBank mailboxes_;
 
   const int64_t clock_hz_;
   Cycles cycles_ = 0;
@@ -185,6 +204,21 @@ inline Port& Processor::GetPort(int port_index) {
 inline std::unique_ptr<Lock> Processor::LockPort(int port_index) {
   DCHECK(port_index >= 0 && port_index < ports_.GetCount());
   return ports_.LockPort(port_index);
+}
+
+inline int Processor::GetMailboxIndex(int from_core, int to_core) const {
+  DCHECK(from_core >= 0 && from_core < num_cores_);
+  DCHECK(to_core >= 0 && to_core < num_cores_);
+  return from_core * kMaxCores + to_core;
+}
+
+inline Port& Processor::GetMailbox(int from_core, int to_core) {
+  return mailboxes_.GetPort(GetMailboxIndex(from_core, to_core));
+}
+
+inline std::unique_ptr<Lock> Processor::LockMailbox(int from_core,
+                                                    int to_core) {
+  return mailboxes_.LockPort(GetMailboxIndex(from_core, to_core));
 }
 
 inline Cycles Processor::GetCycles() const { return cycles_; }

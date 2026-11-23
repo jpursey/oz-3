@@ -68,6 +68,11 @@ inline constexpr uint8_t kAllCores = static_cast<uint8_t>((1 << kMaxCores) - 1);
 // The maximum number of ports that can be managed by a single Processor.
 inline constexpr int kMaxPorts = 256;
 
+// The port numbers a core reaches its mailboxes on: kMailboxSendPort + n is its
+// mailbox to core n, and kMailboxReceivePort + n its mailbox from core n.
+inline constexpr uint16_t kMailboxSendPort = 0x100;
+inline constexpr uint16_t kMailboxReceivePort = 0x108;
+
 //------------------------------------------------------------------------------
 // CpuCore constants
 //------------------------------------------------------------------------------

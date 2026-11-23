@@ -5,6 +5,8 @@
 
 #include "oz3/core/cpu_core.h"
 
+#include <vector>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest-spi.h"
 #include "gtest/gtest.h"
@@ -845,7 +847,7 @@ TEST(CpuCoreBankTest, BankNames) {
 }
 
 TEST_F(CpuCoreTest, CpuCoreInitialState) {
-  CpuCore core(CpuCoreConfig{GetMicroTestInstructionSet()});
+  CpuCore core(CpuCoreConfig{GetMicroTestInstructionSet()}, 0);
 
   EXPECT_EQ(core.GetState(), CpuCore::State::kIdle);
 
@@ -5076,6 +5078,152 @@ TEST_F(CpuCoreTest, LockPortBlocksCpuCore) {
 
   ExecuteUntilHalt();
   EXPECT_EQ(state.ip, end_ip);
+}
+
+// Core 0 sends on its port to core 1, and core 1 receives on its port from
+// core 0, which are different port numbers for the same mailbox.
+TEST_F(CpuCoreTest, MailboxSendsToAnotherCore) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  MemAccessor mem0 = GetMemory(0);
+  MemAccessor mem1 = GetMemory(1);
+
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(kMailboxSendPort + 1);
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(42);
+  mem0.AddValue(Encode(kTestOp_PST, Port::T | Port::S, CpuCore::R0));
+  mem0.AddValue(Encode(kTestOp_HALT));
+  mem1.AddValue(Encode(kTestOp_LV, CpuCore::R7))
+      .AddValue(kMailboxReceivePort + 0);
+  mem1.AddValue(Encode(kTestOp_PLD, Port::T | Port::S, CpuCore::R0));
+  mem1.AddValue(Encode(kTestOp_HALT));
+
+  state0.ResetCore();
+  ExecuteUntilHalt(0);
+  EXPECT_EQ(state0.st & CpuCore::S, 0);  // The mailbox was empty
+  Port& mailbox = GetProcessor().GetMailbox(0, 1);
+  EXPECT_EQ(mailbox.GetValue(0), 42);
+  EXPECT_EQ(mailbox.GetStatus(), 1);
+  EXPECT_EQ(GetProcessor().GetMailbox(1, 0).GetStatus(), 0);
+
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
+  ExecuteUntilHalt(1);
+  EXPECT_EQ(state1.r0, 42);
+  EXPECT_EQ(state1.st & CpuCore::S, CpuCore::S);  // The mailbox was full
+  EXPECT_EQ(mailbox.GetStatus(), 0);
+}
+
+// The same port number is a different mailbox on each core: core 0's port to
+// core 1 is the mailbox from core 0 to core 1, but core 1's is the mailbox from
+// core 1 to itself, which it receives from on its port from core 1.
+TEST_F(CpuCoreTest, MailboxPortNumbersAreFromEachCoresSide) {
+  ASSERT_TRUE(Init({.num_cores = 2, .num_memory_banks = 2}));
+  CoreState& state0 = GetState(0);
+  CoreState& state1 = GetState(1);
+  MemAccessor mem0 = GetMemory(0);
+  MemAccessor mem1 = GetMemory(1);
+
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(kMailboxSendPort + 1);
+  mem0.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(10);
+  mem0.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
+  mem0.AddValue(Encode(kTestOp_HALT));
+  mem1.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(kMailboxSendPort + 1);
+  mem1.AddValue(Encode(kTestOp_LV, CpuCore::R0)).AddValue(11);
+  mem1.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
+  mem1.AddValue(Encode(kTestOp_LV, CpuCore::R7))
+      .AddValue(kMailboxReceivePort + 1);
+  mem1.AddValue(Encode(kTestOp_PLD, Port::T | Port::S, CpuCore::R1));
+  mem1.AddValue(Encode(kTestOp_HALT));
+
+  state0.ResetCore();
+  ExecuteUntilHalt(0);
+  state1.ResetCore({.mb = CpuCore::Banks().SetCode(1).ToWord()});
+  ExecuteUntilHalt(1);
+
+  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetValue(0), 10);
+  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetStatus(), 1);
+  Port& own_mailbox = GetProcessor().GetMailbox(1, 1);
+  EXPECT_EQ(own_mailbox.GetValue(0), 11);
+  EXPECT_EQ(own_mailbox.GetStatus(), 0);
+  EXPECT_EQ(state1.r1, 11);
+  EXPECT_EQ(state1.st & CpuCore::S, CpuCore::S);
+}
+
+// Mailboxes to and from cores the processor doesn't have, and port numbers
+// past the mailboxes, are never ready, like any port that doesn't exist.
+// Mailboxes don't need configured ports, so this processor has none.
+TEST_F(CpuCoreTest, MissingMailboxesAreNeverReady) {
+  ASSERT_TRUE(Init({.num_cores = 2}));
+  CoreState& state = GetState();
+  state.ResetCore();
+
+  const std::vector<uint16_t> missing_ports = {
+      0,
+      0xFF,
+      kMailboxSendPort + 2,
+      kMailboxSendPort + 7,
+      kMailboxReceivePort + 2,
+      kMailboxReceivePort + 7,
+      kMailboxReceivePort + kMaxCores,
+      0x1FF,
+      0x200,
+      0xFFFF,
+  };
+  std::vector<uint16_t> load_ips;
+  std::vector<uint16_t> store_ips;
+  for (uint16_t port : missing_ports) {
+    state.code.AddValue(Encode(kTestOp_LV, CpuCore::R7)).AddValue(port);
+    state.code.AddValue(Encode(kTestOp_PLD, Port::S, CpuCore::R0));
+    load_ips.push_back(state.code.AddNopGetAddress());
+    state.code.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
+    store_ips.push_back(state.code.AddNopGetAddress());
+  }
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  for (int i = 0; i < static_cast<int>(missing_ports.size()); ++i) {
+    ASSERT_TRUE(ExecuteUntilIp(load_ips[i]));
+    EXPECT_EQ(state.st & CpuCore::S, 0) << "Port " << missing_ports[i];
+    ASSERT_TRUE(ExecuteUntilIp(store_ips[i]));
+    EXPECT_EQ(state.st & CpuCore::S, CpuCore::S) << "Port " << missing_ports[i];
+  }
+  ExecuteUntilHalt();
+}
+
+// A mailbox has its own lock, which blocks a core that wants it, but not one
+// that wants another mailbox.
+TEST_F(CpuCoreTest, LockMailboxBlocksCpuCore) {
+  ASSERT_TRUE(Init({.num_cores = 2}));
+  CoreState& state = GetState();
+  state.ResetCore();
+  state.SetRegisters({{CpuCore::R0, 42}});
+
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R7))
+      .AddValue(kMailboxSendPort);
+  state.code.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode(kTestOp_LV, CpuCore::R7))
+      .AddValue(kMailboxSendPort + 1);
+  const uint16_t blocked_ip = state.code.GetAddress();
+  state.code.AddValue(Encode(kTestOp_PST, Port::S, CpuCore::R0));
+  const uint16_t ip2 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode(kTestOp_HALT));
+
+  auto lock = GetProcessor().LockMailbox(0, 1);
+  ASSERT_TRUE(lock->IsLocked());
+
+  ASSERT_TRUE(ExecuteUntilIp(ip1));
+  EXPECT_EQ(GetProcessor().GetMailbox(0, 0).GetValue(0), 42);
+
+  ASSERT_TRUE(ExecuteUntilIp(blocked_ip));
+  Execute(10);
+  EXPECT_EQ(state.ip, blocked_ip);
+  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetStatus(), 0);
+
+  lock.reset();
+  ASSERT_TRUE(ExecuteUntilIp(ip2));
+  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetValue(0), 42);
+  EXPECT_EQ(GetProcessor().GetMailbox(0, 1).GetStatus(), 1);
+  ExecuteUntilHalt();
 }
 
 TEST_F(CpuCoreTest, SelfCoreOp) {
