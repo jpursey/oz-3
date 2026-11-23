@@ -39,6 +39,8 @@ The format is like JSON, without the braces around the whole file: keys needn't 
 | `devices`  | see below | The devices, each a map with a `type` and its own settings |
 | `drives`   | none      | The disk drives, `A:` first, up to 4 (see below)           |
 
+The cores' [mailboxes](2-Specifications.md#mailboxes) are as well as the `ports`, so every Ozzy has them, one from each core to each core.
+
 #### Banks
 
 `banks` is a list of the Ozzy's banks, from bank 0. Each is a map with one key, `ram`: its RAM pages, as a mask with bit `n` for page `n`, as the read and write masks state pages (see [Specifications](2-Specifications.md#overview)). In hexadecimal, each digit is four pages. A bank with no `ram` has none. The default is one bank, `{ ram: 0x7FFE }`.

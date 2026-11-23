@@ -110,7 +110,7 @@ first):
 | -         | 2     | Teletype (when there is no screen) |
 | 2-5       | 16-27 | Disk drives `A:` to `D:`, 3 each   |
 | 6         | -     | Screen refresh                     |
-| 24-31     | 32-39 | OS calls from cores 0 to 7         |
+| 24        | -     | OS calls from every core           |
 
 A device's interrupt goes to the cores its line is connected to, which is the
 OS core by default (every core, for the screen's refresh). A program that
@@ -118,7 +118,9 @@ wants a device's interrupts directly (a game reading the keyboard, say) can be
 connected too, and sets its own handler.
 
 The manual's Ozzy Computer page has the wiring as built, which moved from this
-sketch, and port 0 is the power port (see [Power](#power)).
+sketch, and port 0 is the power port (see [Power](#power)). OS calls need no
+ports of their own, as they come through the cores'
+[mailboxes](manual/2-Specifications.md#mailboxes) (see [Calls](#calls)).
 
 ### Machine table
 
@@ -338,25 +340,70 @@ the loader starts with, and
 
 ### Calls
 
-A program calls the OS with a **call block** in its own memory: the function,
-its arguments, and room for its results. It writes the block's address to its
-core's **call port**, raises its core's call interrupt on core 0 with `INTC`,
-and `WAIT`s. The OS's handler reads the address from the port, and the block
-from the program's `DATA` bank (which it knows, as it started the program).
-It does the work, writes the results into the block, and resumes the caller
-with `WAKE`. Calls that take time (a disk read, a key) let the OS go back to
-sleep, and answer when the device's interrupt comes in, so other programs keep
-running.
+A program calls the OS with a dword in its
+[mailbox](manual/2-Specifications.md#mailboxes) to core 0 (port 100h): a
+**command** word, and the address of a **call block**, for a command that has
+one. It writes them with `OUTS.ID`, and then raises the call interrupt on core
+0 with `INTC.I 0`, always with its interrupts enabled (see below). Every core
+calls with the same code, whichever core it is, and one interrupt line serves
+every core, rather than using up one of the 32 lines for each.
+- **Command:** the function, in the low word. Its high bit, **wake**, asks the
+  OS to `WAKE` the caller when the call is done.
+- **Call block:** the call's parameters, and room for its results, always in
+  the caller's `DATA` bank. A command whose parameters fit in the command word,
+  or that has none, ignores the address.
 
-A call block also suits calls a register couldn't carry, such as a packed
-file name or a line of text.
+The OS's handler finds who called by which mailboxes are full: on core 0, port
+`108h + n` is the mailbox from core `n`. It goes through every core's mailbox
+in turn, taking each call it finds with `INS.ID`, which empties the mailbox,
+and reads the call block from the caller's `DATA` bank (which it knows, as it
+started the program). It keeps going round the mailboxes until a whole pass
+finds none full, and only then returns from the interrupt, so calls that come
+in while it works are handled in the same interrupt. Calls that take time (a
+disk read, a key) are queued to finish when the device's interrupt comes in,
+so the handler moves on, and other programs keep running.
+
+When a call is done, the OS writes its results into the call block, and then
+signals the caller through the **return mailbox**, its mailbox to the caller
+(port `100h + n` on core 0, which the caller reads as port 108h): a completion
+word, such as a status. Then, if the command asked for it, it `WAKE`s the
+caller. A core makes one call at a time, taking its completion before making
+the next, so both of its mailboxes are empty when it calls, and the OS can
+always write the completion.
+
+So a caller can wait for a call in two ways:
+- **Wait:** set wake, `WAIT`, and then take the completion with `INS` from
+  port 108h. If there is none yet, the `WAIT` ended early (from a stray
+  `WAKE`), so it `WAIT`s again.
+- **Poll:** leave wake clear, and go on working, checking port 108h with
+  `TSTP` or `INS` now and then. This suits a program with work to do while a
+  call takes time, such as a game reading a file.
+
+Calls made at once raise the interrupt once, as a raise while it is pending is
+a duplicate, but the handler still finds each of them in its mailbox. A call
+made after the handler's last pass, but before it returns, raises the interrupt
+again, so it is handled next. And a raise for a call the handler has already
+taken runs the handler once more, finding nothing.
+
+A program makes calls with its interrupts enabled. A program on core 0, which
+the OS runs on, sends its call and gets its completion through the same
+mailbox, its mailbox to itself (both port 100h and port 108h), and its
+`INTC.I 0` interrupts its own core. With interrupts enabled, the call
+interrupt is handled right after the `INTC`, before the program's next
+instruction, so the handler has taken the call before the program can look for
+the completion, and port 108h holds only the completion, never the call. So
+the same code works on every core, and a program never needs to know which
+core it runs on. A program that calls from its own interrupt handler enables
+interrupts first (`EI`). The handler's `WAKE` of core 0 ends the program's
+`WAIT`, or sets `N` if the interrupt came before the `WAIT`, as below.
+
+A call block suits calls a register couldn't carry, such as a packed file name
+or a line of text.
 
 Between a program's `INTC` and its `WAIT` the OS could answer first. The
 `WAKE` then finds no `WAIT` to end, so it sets the program's core's notify flag
 (`N`), and the `WAIT` ends at once. A program clears `N` with `CLRN` before it
-starts calling, as it can't count on `N` being clear when it starts. A `WAIT`
-also ends early from a stray `WAKE`, so the program checks the result in the
-call block, and `WAIT`s again if the call hasn't finished.
+starts calling, as it can't count on `N` being clear when it starts.
 
 The calls, as a sketch:
 - **Console:** write a character, write a packed string, read a key, read a
@@ -561,15 +608,6 @@ assembled system code is checked in.
 | Drive and disk         | drive (the device), disk (its folder)     | `MemoryBank`                                                    | both, as they were     |
 | Host controls          | panel, front panel, monitor               | `Console`, the console devices, a ROM monitor on the machine    | panel                  |
 | Terminal app           | `ozzyterm`, `ozzycon`, `ozzyw` (window)   | `Console`; `w` reads as Windows                                 | `ozzyterm`             |
-
-## To confirm
-
-- Which interrupts OS calls raise, settled in the *Ozzy OS* item. Either each
-  core has its own call interrupt (24 to 31), which a program computes from
-  its core number in `R0` at start and raises with `INTC.R`, or every core
-  raises one fixed call interrupt with `INTC.I`, and the OS checks every call
-  port for requests. With one interrupt, two calls at once merge into one
-  interrupt, but checking the ports still finds both.
 
 ## Getting there
 
