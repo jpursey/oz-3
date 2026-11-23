@@ -344,9 +344,9 @@ A program calls the OS with a dword in its
 [mailbox](manual/2-Specifications.md#mailboxes) to core 0 (port 100h): a
 **command** word, and the address of a **call block**, for a command that has
 one. It writes them with `OUTS.ID`, and then raises the call interrupt on core
-0 with `INTC.I`. Every core calls with the same port and interrupt, whichever
-core it is, and one interrupt line serves every core, rather than using up one
-of the 32 lines for each.
+0 with `INTC.I 0`, always with its interrupts enabled (see below). Every core
+calls with the same code, whichever core it is, and one interrupt line serves
+every core, rather than using up one of the 32 lines for each.
 - **Command:** the function, in the low word. Its high bit, **wake**, asks the
   OS to `WAKE` the caller when the call is done.
 - **Call block:** the call's parameters, and room for its results, always in
@@ -385,12 +385,17 @@ made after the handler's last pass, but before it returns, raises the interrupt
 again, so it is handled next. And a raise for a call the handler has already
 taken runs the handler once more, finding nothing.
 
-A program on core 0 calls the same way, with `INTC.I SELF`, but its call and
-its completion share core 0's mailbox to itself, both port 100h and port 108h.
-That works because the handler takes the call right after the `INTC`, before
-the program can look for the completion, so a program on core 0 calls with
-interrupts enabled. The handler's `WAKE SELF` ends its `WAIT`, or sets `N` if
-the interrupt came before the `WAIT`, as below.
+A program makes calls with its interrupts enabled. A program on core 0, which
+the OS runs on, sends its call and gets its completion through the same
+mailbox, its mailbox to itself (both port 100h and port 108h), and its
+`INTC.I 0` interrupts its own core. With interrupts enabled, the call
+interrupt is handled right after the `INTC`, before the program's next
+instruction, so the handler has taken the call before the program can look for
+the completion, and port 108h holds only the completion, never the call. So
+the same code works on every core, and a program never needs to know which
+core it runs on. A program that calls from its own interrupt handler enables
+interrupts first (`EI`). The handler's `WAKE` of core 0 ends the program's
+`WAIT`, or sets `N` if the interrupt came before the `WAIT`, as below.
 
 A call block suits calls a register couldn't carry, such as a packed file name
 or a line of text.
