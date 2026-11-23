@@ -157,7 +157,7 @@ constexpr std::string_view kRules = R"---(
   }
   ErrorItem {
     $text=SourceText;
-    ($hex="HEX" | $dec="DEC") '(' $number=Expression ')';
+    $format=("SIGNED" | "HEX" | "WORD" | "DWORD") '(' $number=Expression ')';
     $value=Expression;
   }
   SegmentAttribute {

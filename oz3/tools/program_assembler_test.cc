@@ -634,24 +634,32 @@ TEST_F(ProgramAssemblerTest, SourceTextErrors) {
 }
 
 TEST_F(ProgramAssemblerTest, ErrorDirective) {
-  // .ERROR's message joins its items: strings' text, numbers in decimal, or
-  // in hex with HEX, and STR's text.
+  // .ERROR's message joins its items: strings' text, numbers in unsigned
+  // decimal, or signed with SIGNED, or in hex with HEX, WORD, or DWORD, and
+  // STR's text.
   EXPECT_THAT(
-      AssembleErrors(".STACK 1\n"
-                     ".CONST TABLE = 0F00h\n"
-                     ".ERROR 'At ', HEX(TABLE), \" by \", 3 + 4, ' words'\n"
-                     "  .ERROR DEC(70000), ' ', HEX(70000), ' ', HEX(0A0h)\n"
-                     ".ERROR STR(a  +  b), ' is', '', ' ''x'''\n"),
+      AssembleErrors(
+          ".STACK 1\n"
+          ".CONST TABLE = 0F00h\n"
+          ".ERROR 'At ', HEX(TABLE), \" by \", 3 + 4, ' words'\n"
+          "  .ERROR 70000, ' ', HEX(70000), ' ', HEX(0A0h)\n"
+          ".ERROR STR(a  +  b), ' is', '', ' ''x'''\n"
+          ".ERROR 0 - 2, ' ', SIGNED(0 - 2), ' ', SIGNED(5)\n"
+          ".ERROR WORD(0A0h), ' ', WORD(12345678h), ' ', DWORD(0A0h)\n"),
       ElementsAre(IsErrorAt(2, 0, "At 0F00h by 7 words"),
                   IsErrorAt(3, 2, "70000 00011170h 00A0h"),
-                  IsErrorAt(4, 0, "a + b is 'x'")));
+                  IsErrorAt(4, 0, "a + b is 'x'"),
+                  IsErrorAt(5, 0, "4294967294 -2 5"),
+                  IsErrorAt(6, 0, "00A0h 5678h 000000A0h")));
 
-  // HEX and DEC can still be symbols.
+  // SIGNED, HEX, WORD, and DWORD can still be symbols.
   EXPECT_THAT(AssembleErrors(".STACK 1\n"
-                             ".CONST HEX = 1\n"
-                             ".CONST DEC = 2\n"
-                             ".ERROR HEX + DEC\n"),
-              ElementsAre(IsErrorAt(3, 0, "3")));
+                             ".CONST SIGNED = 1\n"
+                             ".CONST HEX = 2\n"
+                             ".CONST WORD = 3\n"
+                             ".CONST DWORD = 4\n"
+                             ".ERROR SIGNED + HEX + WORD + DWORD\n"),
+              ElementsAre(IsErrorAt(5, 0, "10")));
 }
 
 TEST_F(ProgramAssemblerTest, ErrorDirectiveInIf) {

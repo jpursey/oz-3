@@ -1645,11 +1645,16 @@ void ProgramAssembler::ReadError(const gb::ParsedItem& directive) {
       if (!value.has_value()) {
         return;
       }
-      if (item.GetItem("hex") != nullptr) {
+      const gb::Token format = item.GetToken("format");
+      if (format.IsIdent("SIGNED")) {
+        absl::StrAppend(&message, static_cast<int32_t>(*value));
+      } else if (format.IsIdent("HEX")) {
         absl::StrAppend(&message,
                         FormatHexNumber(*value, *value > 0xFFFF ? 8 : 4));
+      } else if (format.IsIdent("WORD")) {
+        absl::StrAppend(&message, FormatHexNumber(*value & 0xFFFF, 4));
       } else {
-        absl::StrAppend(&message, *value);
+        absl::StrAppend(&message, FormatHexNumber(*value, 8));
       }
       continue;
     }
