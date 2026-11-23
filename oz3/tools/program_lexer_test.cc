@@ -67,6 +67,12 @@ class ProgramLexerTest : public ::testing::Test {
     return GetStringWords(*lexer_, token);
   }
 
+  // Returns the source text of every token in `text`, as STR writes it.
+  std::string SourceText(std::string_view text) {
+    const std::vector<gb::Token> tokens = Lex(text);
+    return GetSourceText(*lexer_, tokens);
+  }
+
   std::unique_ptr<gb::Lexer> lexer_;
 };
 
@@ -295,25 +301,23 @@ TEST(TextWordsTest, CharactersThatDontFit) {
   EXPECT_THAT(words.status().message(), HasSubstr("not valid UTF-8"));
 }
 
-TEST(SourceTextTest, UpperCase) {
-  EXPECT_EQ(GetSourceText("screen"), "SCREEN");
-  EXPECT_EQ(GetSourceText("r1 + 0ffh"), "R1 + 0FFH");
-  EXPECT_EQ(GetSourceText("@loop"), "@LOOP");
+TEST_F(ProgramLexerTest, SourceTextIsUpperCase) {
+  EXPECT_EQ(SourceText("screen"), "SCREEN");
+  EXPECT_EQ(SourceText("r1 + 0ffh"), "R1 + 0FFH");
+  EXPECT_EQ(SourceText("@loop"), "@LOOP");
 }
 
-TEST(SourceTextTest, Spaces) {
-  EXPECT_EQ(GetSourceText(""), "");
-  EXPECT_EQ(GetSourceText("  \t "), "");
-  EXPECT_EQ(GetSourceText("  a \t +\t\tb  "), "A + B");
-  EXPECT_EQ(GetSourceText("D(x),(r1)"), "D(X),(R1)");
+TEST_F(ProgramLexerTest, SourceTextSpaces) {
+  EXPECT_EQ(SourceText("  a \t +\t\tb  "), "A + B");
+  EXPECT_EQ(SourceText("D(x),(r1)"), "D(X),(R1)");
+  EXPECT_EQ(GetSourceText(*lexer_, {}), "");
 }
 
-TEST(SourceTextTest, Strings) {
-  EXPECT_EQ(GetSourceText("'Hello  there' + x"), "'Hello  there' + X");
-  EXPECT_EQ(GetSourceText("\"a\tb\""), "\"a\tb\"");
-  EXPECT_EQ(GetSourceText("'It''s' x"), "'It''s' X");
-  EXPECT_EQ(GetSourceText("\"it's\" x"), "\"it's\" X");
-  EXPECT_EQ(GetSourceText("'open  x"), "'open  x");
+TEST_F(ProgramLexerTest, SourceTextStrings) {
+  EXPECT_EQ(SourceText("'Hello  there' + x"), "'Hello  there' + X");
+  EXPECT_EQ(SourceText("\"a\tb\""), "\"a\tb\"");
+  EXPECT_EQ(SourceText("'It''s' x"), "'It''s' X");
+  EXPECT_EQ(SourceText("\"it's\" x"), "\"it's\" X");
 }
 
 TEST(FormatHexNumberTest, Digits) {

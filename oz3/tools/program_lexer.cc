@@ -157,33 +157,19 @@ absl::StatusOr<std::vector<uint16_t>> GetTextWords(std::string_view text,
   return words;
 }
 
-std::string GetSourceText(std::string_view text) {
+std::string GetSourceText(const gb::Lexer& lexer,
+                          absl::Span<const gb::Token> tokens) {
   std::string result;
-  bool space = false;
-  while (!text.empty()) {
-    const char ch = text.front();
-    if (ch == ' ' || ch == '\t') {
-      space = !result.empty();
-      text.remove_prefix(1);
-      continue;
-    }
-    if (space) {
+  for (const gb::Token& token : tokens) {
+    if (!result.empty() && !lexer.IsTokenAdjacent(token)) {
       result.push_back(' ');
-      space = false;
     }
-    if (ch != '\'' && ch != '"') {
-      result.push_back(absl::ascii_toupper(static_cast<unsigned char>(ch)));
-      text.remove_prefix(1);
-      continue;
+    const std::string_view text = lexer.GetTokenText(token);
+    if (token.IsString()) {
+      result.append(text);
+    } else {
+      result.append(absl::AsciiStrToUpper(text));
     }
-
-    // A string is copied up to its closing quote. A doubled quote inside it
-    // closes it and opens it again, so it is copied as it is.
-    const std::string_view::size_type end = text.find(ch, 1);
-    const std::string_view string =
-        text.substr(0, end == std::string_view::npos ? text.size() : end + 1);
-    result.append(string);
-    text.remove_prefix(string.size());
   }
   return result;
 }

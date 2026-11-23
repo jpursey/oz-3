@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
 #include "gb/parse/lexer.h"
 #include "gb/parse/lexer_config.h"
 #include "gb/parse/lexer_program.h"
@@ -75,11 +76,13 @@ absl::StatusOr<std::vector<uint16_t>> GetStringWords(const gb::Lexer& lexer,
 absl::StatusOr<std::vector<uint16_t>> GetTextWords(std::string_view text,
                                                    bool packed);
 
-// Returns program source `text` as the assembler sees it, for STR: letters
-// outside strings in upper case, as names are read, and each run of spaces
-// and tabs as one space, with none at either end. A string keeps its text as
-// it is written, quotes and doubled quotes included.
-std::string GetSourceText(std::string_view text);
+// Returns the text of `tokens`, which `lexer` read in order from one line, as
+// the assembler sees it, for STR: each token's text, in upper case as names
+// are read, except for a string, which is as written, quotes included. Tokens
+// are joined with one space where the source has any space or comment between
+// them, and none where they touch.
+std::string GetSourceText(const gb::Lexer& lexer,
+                          absl::Span<const gb::Token> tokens);
 
 // Returns `value` as a program writes a hex number with `digits` digits, with
 // an "h" suffix and a leading 0 if the first digit is a letter, so it isn't a
