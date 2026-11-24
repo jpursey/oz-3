@@ -156,6 +156,7 @@ Every change is checked as follows:
 - New and changed behavior has unit tests.
 - A change to the default instruction set's `.izm` regenerates the `.inc` (see Default instruction set), and `git diff` of the `.inc` shows only what the change meant to change, with no existing opcode or code word changed.
 - A change to behavior the manual specifies updates the manual to match (see Manual).
+- A change to the syntax of program source or instruction set source updates the VS Code grammars to match (see Editor grammars).
 
 ## Manual
 
@@ -163,6 +164,14 @@ The specification lives in the manual, `docs/manual/`, whose `README.md` lists i
 - A change to specified behavior (the hardware model, microcode, the default instruction set, or tools the manual documents) updates the manual's pages in the same change, so the user reviews both together.
 - Pages are numbered by section (`3-Devices.md`, `3.1-Teletype.md`), so they sort in order. Each starts with a `#` title, and a new page is added to the contents in `README.md`, and to its section's own list if it has one.
 - Pages link to each other by file name (`[History](1-History.md)`, `[CMPT](2.2-Default-Instruction-Set.md#cmpt)`), and to the rest of the repository by relative path.
+
+## Editor grammars
+
+The VS Code extension in `editors/vscode` highlights program source (`.oza`) and instruction set source (`.izm`) with TextMate grammars, `syntaxes/oza.tmLanguage.json` and `syntaxes/izm.tmLanguage.json`. They are written by hand, and nothing checks them against the code, so a change to either syntax updates them in the same change, as it does the manual. Instruction names aren't in them (the first word of a `.oza` statement is shown as an instruction, whatever it is), so a new instruction needs no change. What they do name:
+- `.oza`: the directives (from `program_grammar.cc`), the number and string formats, the registers, the address forms `S()`, `D()`, and `E()`, `LOW`, `HIGH`, and `SIZE`, and the segment attributes.
+- `.izm`: the `instruction`, `macro`, `values`, and `code` definitions and their options, the placeholders and value types of a source, the microcode operations (from `GetMicrocodeDefs()` in `microcode.cc`), and the microcode's registers, banks, status flags, conditions, and port modes.
+
+The extension's `README.md` says how to install it and see the scopes it gives a token. A devcontainer installs it from the checkout each time VS Code attaches, so a change shows there on the next attach.
 
 ## Build system
 

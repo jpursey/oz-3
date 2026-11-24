@@ -63,3 +63,7 @@ The grammars are TextMate grammars, in `syntaxes/`. Developer: Inspect Editor
 Tokens and Scopes shows the scopes a token is given. Scope names follow VS
 Code's conventions (`keyword.other.instruction`, `variable.language.register`,
 and so on), so every color theme colors them.
+
+The grammars are written by hand, and nothing checks them against the
+assembler, so a change to either language's syntax updates them too (see Editor
+grammars in [CLAUDE.md](../../CLAUDE.md)).
