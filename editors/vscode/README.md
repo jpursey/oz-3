@@ -7,7 +7,8 @@ Syntax highlighting for the OZ-3's two source languages:
   It highlights comments, labels and local labels, instructions and their
   extensions, directives (`.CONST`, `.SEGMENT`, `.IF`, `.MACRO`, `.REPT`, and
   the rest), registers, numbers (`15`, `0Fh`, `1111b`), both kinds of string,
-  the address forms `S()`, `D()`, and `E()`, `LOW()`, `HIGH()`, `SIZE()`,
+  the address forms `S()`, `D()`, and `E()`, the functions `LOW()`, `HIGH()`,
+  `SIZE()`, `STR()`, `PSTR()`, `SIGNED()`, `HEX()`, `WORD()`, and `DWORD()`,
   segment attributes, `$`, and operators. A directive the assembler doesn't
   have is shown as an error.
 - **OZ-3 Instruction Set** (`.izm`): instruction set source, as the manual's
@@ -63,3 +64,7 @@ The grammars are TextMate grammars, in `syntaxes/`. Developer: Inspect Editor
 Tokens and Scopes shows the scopes a token is given. Scope names follow VS
 Code's conventions (`keyword.other.instruction`, `variable.language.register`,
 and so on), so every color theme colors them.
+
+The grammars are written by hand, and nothing checks them against the
+assembler, so a change to either language's syntax updates them too (see Editor
+grammars in [CLAUDE.md](../../CLAUDE.md)).
