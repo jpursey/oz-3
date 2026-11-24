@@ -1,0 +1,68 @@
+; Copyright (c) 2026 John Pursey
+;
+; Use of this source code is governed by an MIT-style License that can be found
+; in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+;===============================================================================
+; The Ozzy dwfault boot loader
+;
+; This is the default loader which is put on a newly formatted disk by default
+; with the OZOS operating system. It also can be used to manually format a disk
+; on a host machine with the oz3dsk tool.
+;
+; All this does is look for the first .SYS file on the disk (usually OZOS.SYS)
+; and loads it if it is a bare executable file, otherwise it displays an error
+; and restarts the boot ROM. 
+;===============================================================================
+
+;-------------------------------------------------------------------------------
+; The machine table (see oz3/ozzy/machine_table.h)
+;-------------------------------------------------------------------------------
+
+.CONST TABLE = 0F00h
+.CONST TABLE_DEVICES = TABLE + 6
+.CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
+
+; A device entry.
+.CONST DEVICE_TYPE   = 0
+.CONST DEVICE_PORT   = 1
+.CONST DEVICE_BANK   = 4
+.CONST DEVICE_PAGE   = 5
+.CONST DEVICE_COLS   = 6   ; A screen's
+.CONST DEVICE_ROWS   = 7   ; A screen's
+.CONST DEVICE_LETTER = 6   ; A drive's
+.CONST DEVICE_SIZE   = 8   ; A drive's
+
+; Device types.
+.CONST SCREEN = 1
+.CONST TELETYPE = 3
+.CONST DRIVE = 5
+
+;-------------------------------------------------------------------------------
+; The screen's control words and cell attributes (see the manual's Screen page)
+;-------------------------------------------------------------------------------
+
+.CONST SCREEN_CURSOR_COL = 0FF5h
+.CONST SCREEN_CURSOR_ROW = 0FF6h
+
+;-------------------------------------------------------------------------------
+; The disk drive (see the manual's Disk Drive page)
+;-------------------------------------------------------------------------------
+
+; The drive's ports, from its command port.
+.CONST DRIVE_DATA = 1
+.CONST DRIVE_CONTROL = 2
+
+; The control port: the reset request, and the state word's phase.
+.CONST DRIVE_RESET = 1
+.CONST DRIVE_PHASE = 0Fh
+.CONST PHASE_WORKING = 2
+
+; READ BOOT's command word, and the statuses the boot ROM names.
+.CONST READ_BOOT = 4400h
+.CONST NO_DISK = 20h
+.CONST UNFORMATTED = 23h
+
+; The drive it boots from, by letter and number.
+.CONST BOOT_LETTER = 'A'
+.CONST BOOT_DRIVE = 0
