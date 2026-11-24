@@ -16,6 +16,13 @@
 ;===============================================================================
 
 ;-------------------------------------------------------------------------------
+; The stack, with the variables at its top
+;-------------------------------------------------------------------------------
+
+.CONST STACK_SIZE = 10h
+.STACK STACK_SIZE
+
+;-------------------------------------------------------------------------------
 ; The machine table (see oz3/ozzy/machine_table.h)
 ;-------------------------------------------------------------------------------
 
@@ -66,3 +73,16 @@
 ; The drive it boots from, by letter and number.
 .CONST BOOT_LETTER = 'A'
 .CONST BOOT_DRIVE = 0
+
+;-------------------------------------------------------------------------------
+; Program End, including reservation for stack and total size validation
+;-------------------------------------------------------------------------------
+
+.CONST STACK_SIZE = 10h
+.STACK STACK_SIZE
+
+.CONST LOADER_MAX_SIZE = 224
+.CONST LOADER_END = $ + STACK_SIZE
+.IF LOADER_END > LOADER_MAX_SIZE
+    .ERROR "Loader is " LOADER_END " words, exceeding " LOADER_MAX_SIZE " max words."
+.ENDIF
