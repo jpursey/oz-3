@@ -168,7 +168,7 @@ The specification lives in the manual, `docs/manual/`, whose `README.md` lists i
 ## Editor grammars
 
 The VS Code extension in `editors/vscode` highlights program source (`.oza`) and instruction set source (`.izm`) with TextMate grammars, `syntaxes/oza.tmLanguage.json` and `syntaxes/izm.tmLanguage.json`. They are written by hand, and nothing checks them against the code, so a change to either syntax updates them in the same change, as it does the manual. Instruction names aren't in them (the first word of a `.oza` statement is shown as an instruction, whatever it is), so a new instruction needs no change. What they do name:
-- `.oza`: the directives (from `program_grammar.cc`), the number and string formats, the registers, the address forms `S()`, `D()`, and `E()`, `LOW`, `HIGH`, and `SIZE`, and the segment attributes.
+- `.oza`: the directives (from `program_grammar.cc`), the number and string formats, the registers, the address forms `S()`, `D()`, and `E()`, the functions in expressions and directives (`SIZE`, `STR`, `PSTR`, `SIGNED`, `HEX`, `WORD`, and `DWORD` from `program_grammar.cc`, and `LOW` and `HIGH` from `expression.cc`), and the segment attributes.
 - `.izm`: the `instruction`, `macro`, `values`, and `code` definitions and their options, the placeholders and value types of a source, the microcode operations (from `GetMicrocodeDefs()` in `microcode.cc`), and the microcode's registers, banks, status flags, conditions, and port modes.
 
 The extension's `README.md` says how to install it and see the scopes it gives a token. A devcontainer installs it from the checkout each time VS Code attaches, so a change shows there on the next attach.

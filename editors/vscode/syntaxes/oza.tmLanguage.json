@@ -138,7 +138,7 @@
           "name": "keyword.directive.macro.oz3"
         },
         {
-          "match": "\\.(?i:INCLUDE|CONST|DW|DD|DS|STACK|SEGMENT|BANK|INSTANCES)\\b",
+          "match": "\\.(?i:INCLUDE|CONST|DW|DD|DS|STACK|SEGMENT|BANK|INSTANCES|ERROR)\\b",
           "name": "keyword.directive.oz3"
         },
         {
@@ -185,7 +185,7 @@
           "name": "storage.modifier.segment.oz3"
         },
         {
-          "match": "\\b(?i:LOW|HIGH|SIZE)(?=\\s*\\()",
+          "match": "\\b(?i:LOW|HIGH|SIZE|STR|PSTR|SIGNED|HEX|WORD|DWORD)(?=\\s*\\()",
           "name": "support.function.builtin.oz3"
         },
         {
