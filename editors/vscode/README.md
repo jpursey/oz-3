@@ -28,7 +28,12 @@ blocks.
 
 ## Installing
 
-The extension is just these files, with nothing to build. Either:
+In the [devcontainer](../../.devcontainer), such as a GitHub Codespace, it is
+installed already: each time VS Code attaches, the container packages it from
+the checkout and installs it, so a change to it arrives on the next attach. If
+the extension doesn't show in a new container, run Developer: Reload Window.
+
+Elsewhere, the extension is just these files, with nothing to build. Either:
 
 - **Link it into VS Code's extensions.** On Windows, from the repository root
   in PowerShell (a junction needs no admin rights):
@@ -45,9 +50,12 @@ The extension is just these files, with nothing to build. Either:
 
   Then restart VS Code. Changes to the grammars show after Developer: Reload
   Window.
-- **Or package it** with `npx @vscode/vsce package` in this directory, which
-  writes `oz3-languages-0.1.0.vsix`, and install that with Extensions: Install
-  from VSIX.
+- **Or package it** with `python3 editors/vscode/package_vsix.py` from the
+  repository root, which needs nothing but Python and writes
+  `out/oz3-languages.vsix`, and install that with
+  `code --install-extension out/oz3-languages.vsix --force`, or Extensions:
+  Install from VSIX. `npx @vscode/vsce package` in this directory makes one
+  too, with Node.
 
 ## Changing it
 
