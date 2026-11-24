@@ -1,0 +1,57 @@
+{
+  "name": "oz3-languages",
+  "displayName": "OZ-3 Languages",
+  "description": "Syntax highlighting for OZ-3 program source (.oza) and instruction set source (.izm).",
+  "version": "0.1.0",
+  "publisher": "oz3",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jpursey/oz-3",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "oz3-program",
+        "aliases": [
+          "OZ-3 Program",
+          "oza"
+        ],
+        "extensions": [
+          ".oza"
+        ],
+        "configuration": "./language-configuration-oza.json"
+      },
+      {
+        "id": "oz3-instruction-set",
+        "aliases": [
+          "OZ-3 Instruction Set",
+          "izm"
+        ],
+        "extensions": [
+          ".izm"
+        ],
+        "configuration": "./language-configuration-izm.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "oz3-program",
+        "scopeName": "source.oz3.program",
+        "path": "./syntaxes/oza.tmLanguage.json"
+      },
+      {
+        "language": "oz3-instruction-set",
+        "scopeName": "source.oz3.instruction-set",
+        "path": "./syntaxes/izm.tmLanguage.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,336 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "OZ-3 Instruction Set",
+  "scopeName": "source.oz3.instruction-set",
+  "comment": "OZ-3 instruction set source, as docs/manual/2.3-Instruction-Set-Source.md and 2.1-Microcode.md describe it.",
+  "patterns": [
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#values"
+    },
+    {
+      "include": "#instruction"
+    },
+    {
+      "include": "#macro"
+    },
+    {
+      "include": "#code"
+    },
+    {
+      "include": "#microcode"
+    }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.oz3"
+    },
+    "options": {
+      "begin": "\\G\\s*\\(",
+      "end": "\\)",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.options.begin.oz3"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.options.end.oz3"
+        }
+      },
+      "patterns": [
+        {
+          "match": "\\b(opcode|bits|exclude_a|exclude_b)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.option.oz3"
+            },
+            "2": {
+              "name": "punctuation.separator.option.oz3"
+            }
+          }
+        },
+        {
+          "match": "\\b(distinct|flags)\\b",
+          "name": "storage.modifier.option.oz3"
+        },
+        {
+          "include": "#register"
+        },
+        {
+          "include": "#number"
+        }
+      ]
+    },
+    "instruction": {
+      "begin": "\\b(instruction)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.instruction.oz3"
+        }
+      },
+      "end": "(?=\\{)|(?=#)",
+      "patterns": [
+        {
+          "include": "#options"
+        },
+        {
+          "match": "([A-Za-z_][A-Za-z0-9_]*)(?:(\\.)([A-Za-z_][A-Za-z0-9_]*))?",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.instruction.oz3"
+            },
+            "2": {
+              "name": "punctuation.separator.extension.oz3"
+            },
+            "3": {
+              "name": "entity.name.function.instruction.oz3"
+            }
+          }
+        },
+        {
+          "include": "#source"
+        }
+      ]
+    },
+    "macro": {
+      "begin": "\\b(macro)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.macro.oz3"
+        }
+      },
+      "end": "(?=\\{)|(?=#)",
+      "patterns": [
+        {
+          "include": "#options"
+        },
+        {
+          "match": "([A-Za-z_][A-Za-z0-9_]*)(?:\\s*(\\()\\s*([pP])\\s*(\\)))?(?:\\s*(:)\\s*([rR]))?",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.macro.oz3"
+            },
+            "3": {
+              "name": "variable.parameter.oz3"
+            },
+            "5": {
+              "name": "punctuation.separator.oz3"
+            },
+            "6": {
+              "name": "variable.language.register.oz3"
+            }
+          }
+        }
+      ]
+    },
+    "values": {
+      "begin": "\\b(values)\\b",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.declaration.values.oz3"
+        }
+      },
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#options"
+        },
+        {
+          "begin": "\\{",
+          "end": "(?=\\})",
+          "patterns": [
+            {
+              "include": "#comment"
+            },
+            {
+              "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(=)",
+              "captures": {
+                "1": {
+                  "name": "variable.other.enummember.oz3"
+                },
+                "2": {
+                  "name": "keyword.operator.assignment.oz3"
+                }
+              }
+            },
+            {
+              "include": "#number"
+            }
+          ]
+        },
+        {
+          "match": "[A-Za-z_][A-Za-z0-9_]*",
+          "name": "entity.name.type.values.oz3"
+        }
+      ]
+    },
+    "code": {
+      "match": "\\b(code)\\b(?:\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*))?",
+      "captures": {
+        "1": {
+          "name": "keyword.declaration.code.oz3"
+        },
+        "2": {
+          "name": "punctuation.separator.oz3"
+        },
+        "3": {
+          "name": "variable.language.register.oz3"
+        }
+      }
+    },
+    "source": {
+      "name": "string.quoted.double.source.oz3",
+      "begin": "\\\"",
+      "end": "\\\"",
+      "patterns": [
+        {
+          "match": "(\\$(?:#[1-8]|[A-Za-z_][A-Za-z0-9_]*))(?:(:)(code|stack|data|extra|relative)\\b)?",
+          "captures": {
+            "1": {
+              "name": "variable.parameter.placeholder.oz3"
+            },
+            "2": {
+              "name": "punctuation.separator.type.oz3"
+            },
+            "3": {
+              "name": "storage.type.value.oz3"
+            }
+          }
+        },
+        {
+          "match": "\\b(?i:R[0-7]|D[0-3]|BC|BS|BD|BE|MB|IP|FP|SP)\\b",
+          "name": "variable.language.register.oz3"
+        }
+      ]
+    },
+    "microcode": {
+      "patterns": [
+        {
+          "include": "#source"
+        },
+        {
+          "match": "(@[A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
+          "captures": {
+            "1": {
+              "name": "entity.name.label.oz3"
+            },
+            "2": {
+              "name": "punctuation.separator.label.oz3"
+            }
+          }
+        },
+        {
+          "match": "@[A-Za-z_][A-Za-z0-9_]*",
+          "name": "variable.other.label.oz3"
+        },
+        {
+          "match": "\\$[A-Za-z_][A-Za-z0-9_]*",
+          "name": "entity.name.function.macro.call.oz3"
+        },
+        {
+          "begin": "\\b(MSC|MSS|MSX|MSM|MSR)\\s*(\\()",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.other.microcode.oz3"
+            }
+          },
+          "end": "\\)",
+          "patterns": [
+            {
+              "match": "\\b[ZSCOI_]+\\b(?!\\s*:)",
+              "name": "constant.language.flags.oz3"
+            },
+            {
+              "include": "#register"
+            }
+          ]
+        },
+        {
+          "match": "\\b(JC)\\s*\\(\\s*(N?[ZSCO])\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.microcode.oz3"
+            },
+            "2": {
+              "name": "constant.language.condition.oz3"
+            }
+          }
+        },
+        {
+          "match": "\\b(PLD|PST)\\s*\\(\\s*([TSA_]+)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.microcode.oz3"
+            },
+            "2": {
+              "name": "constant.language.port-mode.oz3"
+            }
+          }
+        },
+        {
+          "match": "\\b(?:MSC|MSS|MSX|MSM|MSR|WAIT|LK|LKR|ADR|LAD|LD|ST|STP|MOVI|MOV|MVBI|MVB|MVNI|MVN|ADDI|ADD|ADC|SUB|SBC|NEG|TST|CMPI|CMP|MSKI|MSK|NOT|AND|OR|XOR|SL|SR|SRA|RL|RR|RLC|RRC|JP|JC|JD|INT|ILD|IST|PLK|PLD|PST|CLK|CBK|CLD|CST)(?=\\s*\\()",
+          "name": "keyword.other.microcode.oz3"
+        },
+        {
+          "match": "\\b(?:HALT|UL|IRT|PUL|CUL|CRUN|END)\\b",
+          "name": "keyword.other.microcode.oz3"
+        },
+        {
+          "match": "\\b(?:CODE|STACK|DATA|EXTRA)\\b",
+          "name": "constant.language.bank.oz3"
+        },
+        {
+          "include": "#register"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "match": "[-+]",
+          "name": "keyword.operator.oz3"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.terminator.oz3"
+        }
+      ]
+    },
+    "register": {
+      "match": "\\b(?:R[0-7]|D[0-3]|BC|BS|BD|BE|MB|IP|FP|SP|ST|C[0-2]|[abmpr][01]?|[iABMPR])(?:(:)([HL]|[0-3]))?\\b",
+      "captures": {
+        "0": {
+          "name": "variable.language.register.oz3"
+        },
+        "1": {
+          "name": "punctuation.separator.oz3"
+        },
+        "2": {
+          "name": "constant.numeric.part.oz3"
+        }
+      }
+    },
+    "number": {
+      "patterns": [
+        {
+          "match": "\\b0[xX][0-9A-Fa-f]+\\b",
+          "name": "constant.numeric.hex.oz3"
+        },
+        {
+          "match": "\\b0[bB][01]+\\b",
+          "name": "constant.numeric.binary.oz3"
+        },
+        {
+          "match": "\\b[0-9]+\\b",
+          "name": "constant.numeric.decimal.oz3"
+        }
+      ]
+    }
+  }
+}
