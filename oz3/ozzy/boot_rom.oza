@@ -579,11 +579,8 @@ boot:
     MOV R2, S(SIGNATURE + 1)
     CMP R2, SIGNATURE_HIGH
     JC NZ, @failed
-
-    ; The new line ends the status's line on the teletype.
-    MOV R1, ready_text
-    CALL show_status
     CALL new_line
+    CALL place_cursor
     JP start_loader
 
 @disk_error:
@@ -604,8 +601,6 @@ boot:
 
 loading_text:
     .DW 'Loading...', 0
-ready_text:
-    .DW 'Ready', 0
 no_drive_text:
     .DW 'ERROR: No drive A:', 0
 no_disk_text:
@@ -689,39 +684,27 @@ start_loader:
     CALL discard_keys
     EI
     DI
-    CALL find_stack_bank
+    ; Get the stack bank from MB
+    MOV R3, MB
+    AND R3, 00F0h
+    ; Copy to the code bank
     MOV R2, R3
-    SHL R2, 4
+    SHR R2, 4
     OR R3, R2
-    SHL R2, 4
+    ; Copy to the data bank (extra stays on bank 0 for ROM)
+    SHL R2, 8
     OR R3, R2
+    ; BC, BD, and BS are all set to the stack's page. BE is set to page 0
     MOV R5, BS
     MOV R4, R5
     SUB R4, PAGE_SIZE
     MOV R6, R4
     MVQ R7, 0
+    ; Pass the boot drive's command port and drive number to the loader
     MOV R0, S(V_DRIVE)
     MVQ R1, BOOT_DRIVE
+    ; Start the loader with the specified banks and stack
     RST SELF, CODE | STACK | DATA | EXTRA
-
-;-------------------------------------------------------------------------------
-; find_stack_bank: Sets R3 to the stack's bank, which is the lowest that has
-; RAM, as the Ozzy places the stack there.
-;-------------------------------------------------------------------------------
-
-find_stack_bank:
-    PUSH R1
-    MVQ R3, 0
-    MOV R1, TABLE_BANK_ENTRIES + BANK_RAM
-@bank:
-    TST (R1)
-    JC NZ, @done
-    ADQ R3, 1
-    ADQ R1, BANK_SIZE
-    JP @bank
-@done:
-    POP R1
-    RET
 
 ;-------------------------------------------------------------------------------
 ; discard_keys: Throws away the keys typed while booting, so they neither count

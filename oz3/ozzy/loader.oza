@@ -1,0 +1,302 @@
+; Copyright (c) 2026 John Pursey
+;
+; Use of this source code is governed by an MIT-style License that can be found
+; in the LICENSE file or at https://opensource.org/licenses/MIT.
+
+;===============================================================================
+; The Ozzy dwfault boot loader
+;
+; This is the default loader which is put on a newly formatted disk by default
+; with the OZOS operating system. It also can be used to manually format a disk
+; on a host machine with the oz3dsk tool.
+;
+; All this does is look for the first .SYS file on the disk (usually OZOS.SYS)
+; and loads it if it is a bare executable file, otherwise it displays an error
+; and restarts the boot ROM. 
+;===============================================================================
+
+;-------------------------------------------------------------------------------
+; The stack, with the variables at its top
+;
+; The actual stack size specified here doesn't matter as the loader is not
+; loaded like a program and is given an entire bank of memory for its stack.
+;-------------------------------------------------------------------------------
+
+.STACK 0
+
+;-------------------------------------------------------------------------------
+; The machine table (see oz3/ozzy/machine_table.h)
+;-------------------------------------------------------------------------------
+
+.CONST TABLE = 0F00h
+.CONST TABLE_DEVICES = TABLE + 6
+.CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
+.const TABLE_DEVICE_ENTRY_SIZE = 8
+.const TABLE_CORE_HZ = TABLE + 1
+
+; A device entry fields
+.CONST DEVICE_FIELD_TYPE   = 0
+.CONST DEVICE_FIELD_PORT   = 1
+
+; Device types.
+.CONST SCREEN = 1
+.CONST TELETYPE = 3
+.CONST POWER = 6
+
+; The power control's restart command
+.CONST POWER_RESTART = 2
+
+;-------------------------------------------------------------------------------
+; The screen's control words and cell attributes (see the manual's Screen page)
+;-------------------------------------------------------------------------------
+
+.CONST SCREEN_START = 0F000h
+.CONST SCREEN_STRIDE = SCREEN_START + 0FF0h
+.CONST SCREEN_CURSOR_COL = SCREEN_START + 0FF5h
+.CONST SCREEN_CURSOR_ROW = SCREEN_START + 0FF6h
+
+;-------------------------------------------------------------------------------
+; The disk drive (see the manual's Disk Drive page)
+;-------------------------------------------------------------------------------
+
+; The drive's ports, from its command port.
+.CONST DRIVE_PORT_DATA = 1
+.CONST DRIVE_PORT_CONTROL = 2
+
+; Drive commands
+.CONST DRIVE_CMD_OPEN        = 01000h
+.CONST DRIVE_CMD_READ_PACKED = 02200h
+.CONST DRIVE_CMD_CLOSE       = 01300h
+
+; Drive control
+.CONST DRIVE_CTRL_RESET = 1
+.CONST DRIVE_CTRL_PHASE_MASK = 0Fh
+.CONST DRIVE_CTRL_PHASE_WORKING = 2
+
+;-------------------------------------------------------------------------------
+; Macros
+;-------------------------------------------------------------------------------
+
+; Repeats a port instruction until the port takes or gives its word, which sets
+; S: op is the instruction, such as OUTS.RW or INS, and port and value its
+; arguments.
+.MACRO DoPort op, port, value
+@retry:
+    op port, value
+    JC NS, @retry
+.ENDM
+
+;-------------------------------------------------------------------------------
+; Initialize arguments and variables
+;
+; The loader is not loaded into cleared memory, so we must explicitly clear its variables.
+; variables to clear.
+;-------------------------------------------------------------------------------
+
+    ; First store arguments
+    MOV D(a_drive), R0
+clear_variables:
+    MOV R0, 0
+    MOV R1, v_start
+    MOV R7, NUM_VARIABLES
+@clear_loop:
+    MOV (R1), R0
+    ADQ R1, 1
+    JDR R7, @clear_loop
+  
+;-------------------------------------------------------------------------------
+; Scan the hardware table for devices
+;-------------------------------------------------------------------------------
+
+find_devices:
+    MOV D(v_power), -1
+    MOV D(v_teletype), -1
+    ; R2 is the number of device entries
+    MOV R2, E(TABLE_DEVICES)
+    TST R2
+    JC Z, @done
+    MOV R4, TABLE_DEVICE_ENTRIES
+@check_screen:
+    MOV R0, (R4 + DEVICE_FIELD_TYPE)
+    CMP R0, SCREEN
+    JC NZ, @check_teletype
+    MOV R1, E(SCREEN_CURSOR_ROW)
+    MUL R1, E(SCREEN_STRIDE)
+    ADD R1, SCREEN_START
+    ADD R1, E(SCREEN_CURSOR_COL)
+    MOV D(v_screen), R1
+    JPR @next
+@check_teletype:
+    CMP R0, TELETYPE
+    JC NZ, @check_power
+    MOV R1, (R4 + DEVICE_FIELD_PORT)
+    MOV D(v_teletype), R1
+    JPR @next
+@check_power:
+    CMP R0, POWER
+    JC NZ, @next
+    MOV R1, (R4 + DEVICE_FIELD_PORT)
+    MOV D(v_power), R1
+    JPR @next
+@next:
+    ADQ R4, TABLE_DEVICE_ENTRY_SIZE
+    JD R2, @check_screen
+@done:
+
+;-------------------------------------------------------------------------------
+; Open the OS file and load its header
+;-------------------------------------------------------------------------------
+
+open_os_file:
+    ; Open the OS file
+    MOV R6, D(a_drive)
+    DoPort OUTS.RW, R6, DRIVE_CMD_OPEN
+    ; The name is 8 words, sent as 4 dwords
+    MOV R0, system_filename
+    MOV R7, 4
+@next_arg:
+    DoPort OUTS, R6, [R0]
+    ADQ R0, 2
+    JD R7, @next_arg
+
+    ; Wait for the drive to take the last word (phase working or later),
+    ; before reading the accept status
+    ADQ R6, DRIVE_PORT_CONTROL
+@wait_for_accept:
+    IN R6, R0
+    AND R0, DRIVE_CTRL_PHASE_MASK
+    CMP R0, DRIVE_CTRL_PHASE_WORKING
+    JC C, @wait_for_accept
+
+@read_accept_status:
+    SBQ R6, DRIVE_PORT_CONTROL
+    DoPort INS.RW, R6, R0
+    TST R0
+    JC Z, read_os_header
+    MOV R0, load_failed
+    JP on_failure
+
+ read_os_header:
+    MOV R0, load_failed
+    JP on_failure
+    ; TODO: Read the OS header from the file into memory
+    HALT
+
+;-------------------------------------------------------------------------------
+; Prints an error, waits for a delay, and then reboots the system.
+;
+; Args:
+;   R0 - Address of the error message to print
+;-------------------------------------------------------------------------------
+
+on_failure:
+    MOV R1, D(v_teletype)
+    CMP R1, -1
+    JC NZ, print_teletype
+    TST D(v_screen)
+    JC NZ, print_screen
+    JP delayed_reboot
+
+print_teletype:
+    MOV R1, D(v_teletype)
+@print_loop:
+    DoPort OUTS, R1, (R0)
+    ADQ R0, 1
+    TST (R0)
+    JC NZ, @print_loop
+    DoPort OUTS.RW, R1, 0A0Dh  ; /r/n as a packed string
+    JP delayed_reboot
+
+print_screen:
+    MOV R4, D(v_screen)
+@print_loop:
+    ; Low byte character
+    MOV R1, (R0)
+    AND R1, 0FFh  ; Mask to 8 bits
+    JC Z, delayed_reboot
+    MOV (R4), R1
+    ADQ R4, 1
+    ; High byte character
+    MOV R1, (R0)
+    SHR R1, 8
+    JC Z, delayed_reboot
+    MOV (R4), R1
+    ADQ R4, 1
+    ; Move to the next character in the source string
+    ADQ R0, 1
+    JP @print_loop
+
+delayed_reboot:
+    MOV R1, D(v_power)
+    CMP R1, -1
+    JC NZ, @wait
+    ; Literally nothing we can do at this point, so just stop
+    HALT
+@wait:
+    MOV D0, E[TABLE_CORE_HZ]
+    MUL D0, 3           ; D0 = cycles in 3 seconds (R1:R0)
+@loop:
+    TST R1              ; a word or less left?
+    JCR Z, @last
+    MOV R2, 0FFFFh
+    WAIT R2             ; R2 = cycles it ran over
+    SUB D0, 0FFFFh      ; take off the chunk...
+    SUB R0, R2          ; ...and the overrun
+    SBC R1, 0
+    JCR C, @done        ; overran past the end
+    JPR @loop
+@last:
+    WAIT R0             ; the rest (0-3 still takes 3)
+@done:
+    MOV R0, D(v_power)
+    DoPort OUTS.RW, R0, POWER_RESTART  ; Restart, then halt until it does
+    HALT
+
+;-------------------------------------------------------------------------------
+; Constant data
+;-------------------------------------------------------------------------------
+
+system_filename:
+    .DW SIZE(6) "OZOS", SIZE(2) "SYS"
+load_failed:
+    .DW "Load failed", 0
+
+;-------------------------------------------------------------------------------
+; Program End, including reservation for stack and total size validation
+;-------------------------------------------------------------------------------
+
+; The end of the loader code, used for size validation
+.CONST LOADER_END = $
+;.CONST LOADER_MAX_SIZE = 100
+.CONST LOADER_MAX_SIZE = 222
+.IF LOADER_END > LOADER_MAX_SIZE
+    .ERROR "Loader is ", LOADER_END, " words, exceeding ", LOADER_MAX_SIZE, " max words."
+.ENDIF
+
+.DS LOADER_MAX_SIZE - $
+.DW "BOOT" 
+
+;-------------------------------------------------------------------------------
+; Loader arguments
+;-------------------------------------------------------------------------------
+
+; Port for the drive the loader was loaded from
+.const a_drive = $ 
+
+;-------------------------------------------------------------------------------
+; Variables
+;-------------------------------------------------------------------------------
+
+; Start of the variable area
+.const v_start = $ + 1
+
+; File handle for the OS file
+.const v_file = $ + 1
+; Port for the power device, or -1 if not present
+.const v_power = $ + 2
+; Port for the teletype device, or -1 if not present
+.const v_teletype = $ + 3
+; Address of the next screen character to update, or zero if there is no screen
+.const v_screen = $ + 4
+
+.CONST NUM_VARIABLES = v_screen - v_start + 1

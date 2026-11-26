@@ -365,7 +365,6 @@ void ExpectLoaderRan(Ozzy& ozzy, int bank, int page) {
   EXPECT_EQ(picture.cells[1], 0);
   EXPECT_EQ(GetRowText(picture, 0).substr(2), kVersion.substr(1));
   EXPECT_EQ(GetRowText(picture, kPromptRow), kPrompt);
-  EXPECT_EQ(GetRowText(picture, kStatusRow), kReady);
   EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kOff);
 }
 
@@ -944,7 +943,7 @@ TEST_F(BootRomTest, Teletype) {
     ozzy->GetDrive('A')->AttachImage(MakeSystemImage());
     PressEnter(*ozzy);
     EXPECT_EQ(ozzy->GetTeletype()->TakeOutput(),
-              absl::StrCat("\r\nLoading...\r\n", kReady, "\r\n"));
+              absl::StrCat("\r\nLoading...\r\n"));
     ExpectLoaderRan(*ozzy, 0, 1);
   }
 }

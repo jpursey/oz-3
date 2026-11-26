@@ -480,6 +480,8 @@ macro MoveSReg {
   code "$r, BE" { UL; MOV(m,BE); }
   code "$r, FP" { UL; MOV(m,FP); }
   code "$r, SP" { UL; MOV(m,SP); }
+  code "$r, MB" { UL; MOV(m,MB); }
+  code "$r, IP" { UL; MOV(m,IP); }
   code "BC, $r" { UL; MOV(BC,m); }
   code "BS, $r" { UL; MOV(BS,m); }
   code "BD, $r" { UL; MOV(BD,m); }
