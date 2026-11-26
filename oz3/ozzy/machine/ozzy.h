@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_OZZY_OZZY_H_
-#define OZ3_OZZY_OZZY_H_
+#ifndef OZ3_OZZY_MACHINE_OZZY_H_
+#define OZ3_OZZY_MACHINE_OZZY_H_
 
 #include <array>
 #include <memory>
@@ -23,7 +23,7 @@
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
 #include "oz3/devices/timer.h"
-#include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
 
 namespace oz3 {
 
@@ -153,4 +153,4 @@ class Ozzy final {
 
 }  // namespace oz3
 
-#endif  // OZ3_OZZY_OZZY_H_
+#endif  // OZ3_OZZY_MACHINE_OZZY_H_

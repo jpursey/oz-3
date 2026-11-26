@@ -380,7 +380,7 @@ struct OzzyAppStats {
 
 ## CLs
 
-### CL1 [ ] ozzy, apps: Split oz3/ozzy into libraries
+### CL1 [x] ozzy, apps: Split oz3/ozzy into libraries
 
 Depends on: nothing.
 

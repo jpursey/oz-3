@@ -293,11 +293,11 @@ The boot ROM's stack is in page 1 of bank 0, which is always RAM, and ends at 12
 * The boot ROM's variables are the first 9 words it pushes, at the top of the stack (11F7h to 11FFh), and its stack is below them, above the loader.
 * The rest of RAM the boot ROM leaves alone, so all of it from 1200h is free for what the loader loads.
 
-The boot ROM's source is `oz3/ozzy/boot_rom.oza`, written for the [default instruction set](2.2-Default-Instruction-Set.md), which `oz3asm` assembles for a listing (see [Program Source](2.5-Program-Source.md#oz3asm)).
+The boot ROM's source is `oz3/ozzy/machine/boot_rom.oza`, written for the [default instruction set](2.2-Default-Instruction-Set.md), which `oz3asm` assembles for a listing (see [Program Source](2.5-Program-Source.md#oz3asm)).
 
 #### The default loader
 
-The default loader, `oz3/ozzy/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts just after itself and the boot ROM's stack, in bank 0: from 1200h, through as many of the pages after page 1 as its contents and stack fill. If those pages aren't all RAM in the [machine table](#the-machine-table), or it would pass the end of bank 0, the loader puts it at 0 in the first of banks 1 to 15 whose pages are RAM from page 0 to where it ends. Either way, its contents and stack are at most FFFFh words, as the header says them in a word.
+The default loader, `oz3/ozzy/machine/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts just after itself and the boot ROM's stack, in bank 0: from 1200h, through as many of the pages after page 1 as its contents and stack fill. If those pages aren't all RAM in the [machine table](#the-machine-table), or it would pass the end of bank 0, the loader puts it at 0 in the first of banks 1 to 15 whose pages are RAM from page 0 to where it ends. Either way, its contents and stack are at most FFFFh words, as the header says them in a word.
 
 The loader opens the file, reads all of it with one `READ PACKED`, sending each data block's words straight to where they go as they arrive, and closes it (see [Disk Drive](3.5-Disk-Drive.md)). It writes the blocks with `EXTRA` set to where the operating system goes. Then it starts it as a bare program at its first word, `b` (1200h in bank 0, or 0 in another bank), with `RST SELF, CODE | STACK | DATA | EXTRA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
 

@@ -79,7 +79,8 @@ set(ozzy_DEPS
   gb_file
   oz3_core
   oz3_devices
-  oz3_ozzy
+  oz3_ozzy_machine
+  oz3_ozzy_term
 )
 
 gb_add_executable(ozzy)

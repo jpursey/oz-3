@@ -30,10 +30,10 @@
 #include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/power_control.h"
-#include "oz3/ozzy/console.h"
-#include "oz3/ozzy/console_display.h"
-#include "oz3/ozzy/ozzy.h"
-#include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
+#include "oz3/ozzy/term/console.h"
+#include "oz3/ozzy/term/console_display.h"
 
 namespace oz3 {
 namespace {

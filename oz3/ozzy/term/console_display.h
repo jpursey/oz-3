@@ -3,16 +3,16 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_OZZY_CONSOLE_DISPLAY_H_
-#define OZ3_OZZY_CONSOLE_DISPLAY_H_
+#ifndef OZ3_OZZY_TERM_CONSOLE_DISPLAY_H_
+#define OZ3_OZZY_TERM_CONSOLE_DISPLAY_H_
 
 #include <cstdint>
 
 #include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
-#include "oz3/ozzy/console.h"
-#include "oz3/ozzy/ozzy.h"
-#include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
+#include "oz3/ozzy/term/console.h"
 
 namespace oz3 {
 
@@ -85,4 +85,4 @@ class ConsoleDisplay final {
 
 }  // namespace oz3
 
-#endif  // OZ3_OZZY_CONSOLE_DISPLAY_H_
+#endif  // OZ3_OZZY_TERM_CONSOLE_DISPLAY_H_

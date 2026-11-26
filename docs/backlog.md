@@ -46,7 +46,7 @@ the shell.
 - **Feature workflow:** no
 - **Depends on:** *App structure*
 - **Background:** [ozzy_design.md](ozzy_design.md) (`ozzyterm`);
-  `oz3/ozzy/console_display.h`
+  `oz3/ozzy/term/console_display.h`
 
 The terminal app's console is chosen by its command line, rather than
 inferred from the Ozzy's devices: without `--headless`, it always takes the
@@ -115,7 +115,7 @@ teletype's. Until the *Window app* takes the name `ozzy`, it is
 - **Size:** medium
 - **Feature workflow:** no
 - **Depends on:** nothing
-- **Background:** `oz3/ozzy/posix_console.cc`;
+- **Background:** `oz3/ozzy/term/posix_console.cc`;
   https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 
 In a terminal, `ozzy` only sees what is typed, so the keyboard's key state is
@@ -182,7 +182,7 @@ it gains each segment's physical bank and start page.
 - **Feature workflow:** yes
 - **Depends on:** nothing
 - **Background:** [ozzy_design.md](ozzy_design.md) (Host application);
-  `oz3/ozzy/posix_console.cc`
+  `oz3/ozzy/term/posix_console.cc`
 
 A mouse device, and the Ozzy wired to it, on ports from the ones left free
 (28 to 31 are together). It reports where the mouse is, its buttons, and its
@@ -269,7 +269,7 @@ which readers of version 1 reject.
 - **Depends on:** Game Bits *Canonical local paths*
 - **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, `Run()` in
   `oz3/apps/oz3ism.cc`, and `ValidateOzzySettings()` in
-  `oz3/ozzy/ozzy_settings.cc`
+  `oz3/ozzy/machine/ozzy_settings.cc`
 
 `oz3asm` won't write a file that is the source or another file it writes, nor
 `oz3ism` one that is its input, but they only compare the paths as normalized

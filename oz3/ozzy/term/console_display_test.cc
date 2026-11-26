@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/console_display.h"
+#include "oz3/ozzy/term/console_display.h"
 
 #include <cstdint>
 #include <memory>
@@ -20,11 +20,11 @@
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/screen.h"
-#include "oz3/ozzy/console.h"
-#include "oz3/ozzy/console_text.h"
-#include "oz3/ozzy/ozzy.h"
-#include "oz3/ozzy/ozzy_settings.h"
-#include "oz3/ozzy/ozzy_testing.h"
+#include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
+#include "oz3/ozzy/machine/ozzy_testing.h"
+#include "oz3/ozzy/term/console.h"
+#include "oz3/ozzy/term/console_text.h"
 
 namespace oz3 {
 namespace {

@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/win_console.h"
+#include "oz3/ozzy/term/win_console.h"
 
 #include <atomic>
 #include <cstdint>
@@ -21,7 +21,7 @@
 #include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/console.h"
+#include "oz3/ozzy/term/console.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
 #define WIN32_LEAN_AND_MEAN
