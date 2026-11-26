@@ -541,6 +541,29 @@ TEST_F(InstructionTest, MOV_S_StackAndFramePointers) {
   EXPECT_EQ(state.fp, 100);
 }
 
+TEST_F(InstructionTest, MOV_S_ReadOnlyRegs) {
+  ASSERT_TRUE(Init({.num_memory_banks = 4}));
+  auto& state = GetState();
+  uint16_t expected_mb = CpuCore::Banks::Default()
+                             .SetCode(0)
+                             .SetStack(1)
+                             .SetData(2)
+                             .SetExtra(3)
+                             .ToWord();
+  state.ResetCore({.mb = expected_mb});
+
+  state.code.AddValue(Encode("MOV.S", {"$r, IP", CpuCore::R0}));
+  state.code.AddValue(Encode("MOV.S", {"$r, MB", CpuCore::R1}));
+  const uint16_t ip1 = state.code.AddNopGetAddress();
+  state.code.AddValue(Encode("HALT"));
+
+  // MOV.S R0, IP
+  // MOV.S R1, MB
+  EXPECT_EQ(CyclesUntilIp(ip1), 8);
+  EXPECT_EQ(state.r0, 1);
+  EXPECT_EQ(state.r1, expected_mb);
+}
+
 TEST_F(InstructionTest, MOV_Cycles) {
   ASSERT_TRUE(InitAndReset());
   RunCycleCases({
