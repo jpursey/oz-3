@@ -39,32 +39,6 @@ The OS, in OZ-3 assembly: the loader in the boot area, the calls, the program
 loader, running programs in the foreground and in parallel on other cores, and
 the shell.
 
-## App structure
-
-- **Layers:** ozzy, apps
-- **Size:** medium
-- **Feature workflow:** yes
-- **Depends on:** nothing
-- **Background:** [ozzy_design.md](ozzy_design.md) (Host application);
-  `oz3/apps/ozzy_main.cc`; Game Bits' `gb/game/game.h`
-
-The terminal app has grown inside `ozzy_main.cc`, each piece added where it
-fit: reading the config, powering on and off, the frame loop and its pacing,
-waiting while the machine is off, and the stats. Give it a proper structure:
-an app class in the ozzy library, so it is tested against a fake `Console`,
-holding the three layers ozzy_design.md describes (the machine, the machine's
-state, and how it is presented), with `ozzy_main.cc` doing little more than
-starting it. Build it on Game Bits' `gb_game`, a new dependency: `Game`'s
-`Init`, `Update`, and `CleanUp` for the frame loop, its `Clock` so tests run
-frames without real time, its `Pilot` for scripted runs, and its
-`GameStateMachine` for the app's states (on, off, and the panel's) if they
-need one. Where `gb_game` doesn't fit, it gets an item in Game Bits' backlog
-rather than a workaround here, such as `Game::Run` taking the raw arguments
-while the apps parse theirs with `gb_cli`, and `--max-speed`, which runs the
-machine flat out between frames that are still drawn 60 times a second. The
-*Teletype view*, *Panel*, and *Headless ozzyterm* build on it, as the *Window
-app* does later.
-
 ## Teletype view
 
 - **Layers:** ozzy, apps, manual
