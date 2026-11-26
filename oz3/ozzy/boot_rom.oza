@@ -580,6 +580,7 @@ boot:
     CMP R2, SIGNATURE_HIGH
     JC NZ, @failed
     CALL new_line
+    CALL place_cursor
     JP start_loader
 
 @disk_error:
@@ -600,8 +601,6 @@ boot:
 
 loading_text:
     .DW 'Loading...', 0
-ready_text:
-    .DW 'Ready', 0
 no_drive_text:
     .DW 'ERROR: No drive A:', 0
 no_disk_text:
