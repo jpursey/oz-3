@@ -32,7 +32,7 @@
 .CONST TABLE_DEVICES = TABLE + 6
 .CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
 .const TABLE_DEVICE_ENTRY_SIZE = 8
-.const TABLE_CORE_HZ = 1
+.const TABLE_CORE_HZ = TABLE + 1
 
 ; A device entry fields
 .CONST DEVICE_FIELD_TYPE   = 0
@@ -42,6 +42,9 @@
 .CONST SCREEN = 1
 .CONST TELETYPE = 3
 .CONST POWER = 6
+
+; The power control's restart command
+.CONST POWER_RESTART = 2
 
 ;-------------------------------------------------------------------------------
 ; The screen's control words and cell attributes (see the manual's Screen page)
@@ -68,7 +71,7 @@
 ; Drive control
 .CONST DRIVE_CTRL_RESET = 1
 .CONST DRIVE_CTRL_PHASE_MASK = 0Fh
-.CONST DRIVE_CTRL_PHASE_SENDING = 2
+.CONST DRIVE_CTRL_PHASE_WORKING = 2
 
 ;-------------------------------------------------------------------------------
 ; Macros
@@ -118,7 +121,7 @@ find_devices:
     CMP R0, SCREEN
     JC NZ, @check_teletype
     MOV R1, E(SCREEN_CURSOR_ROW)
-    MUL R1, SCREEN_STRIDE
+    MUL R1, E(SCREEN_STRIDE)
     ADD R1, SCREEN_START
     ADD R1, E(SCREEN_CURSOR_COL)
     MOV D(v_screen), R1
@@ -148,20 +151,22 @@ open_os_file:
     ; Open the OS file
     MOV R6, D(a_drive)
     DoPort OUTS.RW, R6, DRIVE_CMD_OPEN
+    ; The name is 8 words, sent as 4 dwords
     MOV R0, system_filename
-    MOV R7, 6
+    MOV R7, 4
 @next_arg:
     DoPort OUTS, R6, [R0]
     ADQ R0, 2
     JD R7, @next_arg
 
-    ; Check the accept status
+    ; Wait for the drive to take the last word (phase working or later),
+    ; before reading the accept status
     ADQ R6, DRIVE_PORT_CONTROL
 @wait_for_accept:
     IN R6, R0
     AND R0, DRIVE_CTRL_PHASE_MASK
-    CMP R0, DRIVE_CTRL_PHASE_SENDING
-    JC NZ, @wait_for_accept
+    CMP R0, DRIVE_CTRL_PHASE_WORKING
+    JC C, @wait_for_accept
 
 @read_accept_status:
     SBQ R6, DRIVE_PORT_CONTROL
@@ -185,7 +190,8 @@ open_os_file:
 ;-------------------------------------------------------------------------------
 
 on_failure:
-    TST D(v_teletype)
+    MOV R1, D(v_teletype)
+    CMP R1, -1
     JC NZ, print_teletype
     TST D(v_screen)
     JC NZ, print_screen
@@ -221,7 +227,8 @@ print_screen:
     JP @print_loop
 
 delayed_reboot:
-    TST D(v_power)
+    MOV R1, D(v_power)
+    CMP R1, -1
     JC NZ, @wait
     ; Literally nothing we can do at this point, so just stop
     HALT
@@ -242,7 +249,7 @@ delayed_reboot:
     WAIT R0             ; the rest (0-3 still takes 3)
 @done:
     MOV R0, D(v_power)
-    DoPort OUTS.RW, R0, 0  ; Signal power device before halting
+    DoPort OUTS.RW, R0, POWER_RESTART  ; Restart, then halt until it does
     HALT
 
 ;-------------------------------------------------------------------------------
@@ -250,7 +257,7 @@ delayed_reboot:
 ;-------------------------------------------------------------------------------
 
 system_filename:
-    .DW SIZE(6) "OZOS", SIZE(4) "SYS"
+    .DW SIZE(6) "OZOS", SIZE(2) "SYS"
 load_failed:
     .DW "Load failed", 0
 
