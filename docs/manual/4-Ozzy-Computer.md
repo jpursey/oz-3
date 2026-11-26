@@ -235,7 +235,6 @@ ERROR: No disk in drive A:
 
 Press Enter to Boot...
 Loading...
-Ready
 ```
 
 #### Waiting for Enter
@@ -246,7 +245,7 @@ Interrupts are enabled only while it waits. The boot ROM sets no handler for any
 
 #### Booting
 
-On Enter, the boot ROM hides the cursor and shows `Loading...`. Then it reads the boot area of the disk in `A:` (see [Superblock](3.5-Disk-Drive.md#superblock)) with `READ BOOT` to 1000h to 10DFh of bank 0, just below its stack, and checks that its last two words are the **boot signature**, `"BOOT"` packed: 4F42h, 544Fh. If they are, it shows `Ready` and starts the code in the boot area, the **loader** (see [The loader](#the-loader)). If anything fails, it shows why and waits for Enter again:
+On Enter, the boot ROM hides the cursor and shows `Loading...`. Then it reads the boot area of the disk in `A:` (see [Superblock](3.5-Disk-Drive.md#superblock)) with `READ BOOT` to 1000h to 10DFh of bank 0, just below its stack, and checks that its last two words are the **boot signature**, `"BOOT"` packed: 4F42h, 544Fh. If they are, it starts the code in the boot area, the **loader** (see [The loader](#the-loader)). If anything fails, it shows why and waits for Enter again:
 
 | Why                                     | Status                       |
 | --------------------------------------- | ---------------------------- |
