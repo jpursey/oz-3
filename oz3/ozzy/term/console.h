@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_OZZY_CONSOLE_H_
-#define OZ3_OZZY_CONSOLE_H_
+#ifndef OZ3_OZZY_TERM_CONSOLE_H_
+#define OZ3_OZZY_TERM_CONSOLE_H_
 
 #include <cstdint>
 #include <memory>
@@ -115,4 +115,4 @@ class Console {
 
 }  // namespace oz3
 
-#endif  // OZ3_OZZY_CONSOLE_H_
+#endif  // OZ3_OZZY_TERM_CONSOLE_H_

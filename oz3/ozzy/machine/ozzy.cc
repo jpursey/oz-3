@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/ozzy.h"
+#include "oz3/ozzy/machine/ozzy.h"
 
 #include <array>
 #include <bit>
@@ -31,8 +31,8 @@
 #include "oz3/core/processor_config.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
-#include "oz3/ozzy/boot_rom.h"
-#include "oz3/ozzy/machine_table.h"
+#include "oz3/ozzy/machine/boot_rom.h"
+#include "oz3/ozzy/machine/machine_table.h"
 #include "oz3/tools/program_loader.h"
 
 namespace oz3 {

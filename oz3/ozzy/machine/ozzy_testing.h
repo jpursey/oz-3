@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_OZZY_OZZY_TESTING_H_
-#define OZ3_OZZY_OZZY_TESTING_H_
+#ifndef OZ3_OZZY_MACHINE_OZZY_TESTING_H_
+#define OZ3_OZZY_MACHINE_OZZY_TESTING_H_
 
 #include <cstdint>
 #include <map>
@@ -18,9 +18,9 @@
 #include "oz3/devices/power_control.h"
 #include "oz3/devices/screen.h"
 #include "oz3/disk/disk_superblock.h"
-#include "oz3/ozzy/boot_rom.h"
-#include "oz3/ozzy/ozzy.h"
-#include "oz3/ozzy/ozzy_settings.h"
+#include "oz3/ozzy/machine/boot_rom.h"
+#include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/tools/program_assembler.h"
 #include "oz3/tools/program_map.h"
 
@@ -94,4 +94,4 @@ std::string GetRowText(const ScreenPicture& picture, int row);
 
 }  // namespace oz3
 
-#endif  // OZ3_OZZY_OZZY_TESTING_H_
+#endif  // OZ3_OZZY_MACHINE_OZZY_TESTING_H_

@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/boot_rom.h"
+#include "oz3/ozzy/machine/boot_rom.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -38,10 +38,10 @@
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
-#include "oz3/ozzy/machine_table.h"
-#include "oz3/ozzy/ozzy.h"
-#include "oz3/ozzy/ozzy_settings.h"
-#include "oz3/ozzy/ozzy_testing.h"
+#include "oz3/ozzy/machine/machine_table.h"
+#include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
+#include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/tools/program_assembler.h"
 
 namespace oz3 {

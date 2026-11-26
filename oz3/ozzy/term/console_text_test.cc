@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/console_text.h"
+#include "oz3/ozzy/term/console_text.h"
 
 #include <cstdint>
 #include <optional>

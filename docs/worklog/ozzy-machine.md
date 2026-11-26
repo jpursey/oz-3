@@ -259,21 +259,23 @@ host's; the console devices are always named by their own names.
 
 ### ozzy: the library
 
-- `oz3/ozzy/`, the `oz3_ozzy` library. It links `oz3_core`, `oz3_tools` (to
-  assemble the boot ROM), `oz3_instruction_sets`, `oz3_devices`, and Game
-  Bits' `gb_config`. It comes after `devices` in the dependency order, and
-  before `apps`, as CLAUDE.md already says.
+- `oz3/ozzy/machine/`, the `oz3_ozzy_machine` library, holds the machine,
+  and `oz3/ozzy/term/`, the `oz3_ozzy_term` library, the console frontend
+  (see [app-structure.md](app-structure.md)). The machine links `oz3_core`,
+  `oz3_tools` (to assemble the boot ROM), `oz3_instruction_sets`,
+  `oz3_devices`, and Game Bits' `gb_config`. Both come after `devices` in the
+  dependency order, and before `apps`, as CLAUDE.md says.
 - **Target names:** every library's target has the `oz3_` prefix and every
-  executable's doesn't (`oz3_tools` and `oz3asm`), so the library is
-  `oz3_ozzy` (with `oz3_ozzy_test`, and `oz3_ozzy.lib`), and the app is
-  `ozzy` (`bin/ozzy.exe`). No two targets or outputs share a name, and the
-  source files don't either: the library's are `oz3/ozzy/*`, and the app's
-  is `oz3/apps/ozzy_main.cc` (not `ozzy.cc`, which would read as the source
-  of `ozzy.h`, and which clang-format takes as such).
-- It holds the console frontend's pieces too (`console_text`, and the
-  `Console` interface with its `win_` implementation), rather than the app,
-  as executables have no tests. A host that embeds Ozzy doesn't call them,
-  and as a static library, doesn't link them.
+  executable's doesn't (`oz3_tools` and `oz3asm`), so the libraries are
+  `oz3_ozzy_machine` and `oz3_ozzy_term` (with their `_test`s), and the app
+  is `ozzy` (`bin/ozzy.exe`). No two targets or outputs share a name, and
+  the source files don't either: the libraries' are under `oz3/ozzy/`, and
+  the app's is `oz3/apps/ozzy_main.cc` (not `ozzy.cc`, which would read as
+  the source of `ozzy.h`, and which clang-format takes as such).
+- The console frontend's pieces (`console_text`, and the `Console` interface
+  with its `win_` implementation) are in `oz3_ozzy_term` rather than the app,
+  as executables have no tests. A host that embeds Ozzy links only
+  `oz3_ozzy_machine`.
 
 ### ozzy: OzzySettings
 
@@ -570,7 +572,7 @@ app's loop checks.
 
 ### apps: ozzy
 
-- `oz3/apps/ozzy_main.cc`, the `ozzy` executable, linking `oz3_ozzy`,
+- `oz3/apps/ozzy_main.cc`, the `ozzy` executable, linking `oz3_ozzy_term`,
   `gb_cli` for its flags, and `gb_file` to read the config.
 - It reads the settings, turns off the screen's `draw_pixels`, as the console
   shows the cells as text, creates the Ozzy, then the `Console` in

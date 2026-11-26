@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/boot_rom.h"
+#include "oz3/ozzy/machine/boot_rom.h"
 
 #include <memory>
 #include <string>
@@ -14,7 +14,7 @@
 #include "gb/parse/parse_error.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
-#include "oz3/ozzy/boot_rom_source.h"
+#include "oz3/ozzy/machine/boot_rom_source.h"
 #include "oz3/tools/instruction_set_syntax.h"
 
 namespace oz3 {

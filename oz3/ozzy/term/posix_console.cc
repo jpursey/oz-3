@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/posix_console.h"
+#include "oz3/ozzy/term/posix_console.h"
 
 #include <signal.h>
 #include <sys/ioctl.h>
@@ -25,8 +25,8 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/console.h"
-#include "oz3/ozzy/terminal_keys.h"
+#include "oz3/ozzy/term/console.h"
+#include "oz3/ozzy/term/terminal_keys.h"
 
 namespace oz3 {
 

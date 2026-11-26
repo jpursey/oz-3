@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/ozzy.h"
+#include "oz3/ozzy/machine/ozzy.h"
 
 #include <cstdint>
 #include <memory>
@@ -43,9 +43,9 @@
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
-#include "oz3/ozzy/machine_table.h"
-#include "oz3/ozzy/ozzy_settings.h"
-#include "oz3/ozzy/ozzy_testing.h"
+#include "oz3/ozzy/machine/machine_table.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
+#include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/tools/program_assembler.h"
 #include "oz3/tools/program_loader.h"
 

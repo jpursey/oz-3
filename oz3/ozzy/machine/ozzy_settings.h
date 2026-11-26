@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_OZZY_OZZY_SETTINGS_H_
-#define OZ3_OZZY_OZZY_SETTINGS_H_
+#ifndef OZ3_OZZY_MACHINE_OZZY_SETTINGS_H_
+#define OZ3_OZZY_MACHINE_OZZY_SETTINGS_H_
 
 #include <cstdint>
 #include <optional>
@@ -220,4 +220,4 @@ absl::StatusOr<OzzySettings> ReadOzzySettings(std::string text,
 
 }  // namespace oz3
 
-#endif  // OZ3_OZZY_OZZY_SETTINGS_H_
+#endif  // OZ3_OZZY_MACHINE_OZZY_SETTINGS_H_

@@ -23,20 +23,21 @@ This is a CMake project, starting at the root. The directory structure is as fol
   editors/      -- Editor support for OZ-3's source files: editors/vscode is a
                    VS Code extension highlighting .oza and .izm files
   configs/      -- Ozzy configs (.ozzy) for common machines, to run with ozzy.
-                   oz3_ozzy_test embeds and reads each one, so a new config
-                   gets a test there too.
+                   oz3_ozzy_machine_test embeds and reads each one, so a new
+                   config gets a test there too.
   bin/          -- Compiled binary files used by compilation or execution
   out/          -- Generated output from building locally. This is transient
                    and can get deleted at any time.
 ```
 
-Libraries depend strictly in the order `core` → `disk` → `tools` → `instruction_sets` → `devices` → `ozzy`, and `apps` comes last (each may use the ones before it, and `core` uses nothing in OZ-3):
+Libraries depend strictly in the order `core` → `disk` → `tools` → `instruction_sets` → `devices` → `ozzy/machine` → `ozzy/term`, and `apps` comes last (each may use the ones before it, and `core` uses nothing in OZ-3):
 - `core` (`oz3_core`): The runtime. `Processor` simulates a whole OZ-3 machine: its `CpuCore`s, `MemoryBank`s, and `Port`s, configured by `ProcessorConfig`. Shared resources are `Lockable`, and every access to one goes through a simulated lock. An `InstructionSet` is compiled from an `InstructionSetDef` (instructions and macros written in microcode) by the instruction compiler. Core has no instruction set of its own: every `CpuCoreConfig` is given one. `oz3_core_testing` holds `BaseCoreTest`, the test fixture for running cores, which other libraries' tests share. `DateTime` is the machine's four-word date and time, which the timer answers with and the disk stamps files with.
 - `disk` (`oz3_disk`): The one implementation of the disk format in `docs/disk_design.md` (see `docs/worklog/disk-library.md`). `DiskImage` is an image file of sectors behind a header, and results are `DiskStatus`, the drive's status codes. It uses only `core` in OZ-3, for `DateTime`, and is its own library so that `tools` can use it as well as the drive device.
 - `tools` (`oz3_tools`): Libraries and tools for working with the OZ-3 that a host application can use on its own: `InstructionAssembler` (instruction set source files to an `InstructionSetDef`), `InstructionDefExporter` (an `InstructionSetDef` to C++), and `ProgramLoader` (loading a `Program` into a `Processor`'s memory). The program assembler (`AssembleProgramFile`) turns program source into a `Program` and its `ProgramMap`, which program files, map files, and listings are written from.
 - `instruction_sets` (`oz3_instruction_sets`): Ready-made instruction sets, currently the default one (see Default instruction set). It links only `core`.
 - `devices` (`oz3_devices`): Ready-made devices for a `ProcessorConfig`, currently the teletype, the keyboard, and the screen (the console devices Ozzy is built from; see `docs/worklog/console-devices.md`), the timer, the disk drive (`DiskDrive`, on the disk library; see `docs/worklog/disk-drive-device.md`), and the power control (`PowerControl`), which passes each request a program makes to shut down or restart to the host, through a `PowerRequestCallback` the host puts in the processor's context. Each is a `Device` and its `DeviceFactory`, configured by a name and one `<Device>Settings` struct holding its wiring and behavior, with rates in real time that it turns into cycles with the processor's clock rate (a factory whose settings can be invalid is made by a static `Create`). A host finds a device with `Processor::GetDevice` and casts it to the type it named. It links only `core` and `disk`; its tests also link `tools` and `instruction_sets`, to run programs against the devices with `DeviceProgramTest`, and `oz3_disk_testing`, to fail disk images.
-- `ozzy` (`oz3_ozzy`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs. It also holds the console frontend the `ozzy` app is built from (`ConsoleDisplay`, `DrawConsoleText`, and the `Console` interface, implemented per platform; see Linux), so it is tested.
+- `ozzy/machine` (`oz3_ozzy_machine`): The Ozzy computer, a whole virtual machine built from the other libraries (see `docs/worklog/ozzy-machine.md`). `Ozzy` is one, created from `OzzySettings`, which `ReadOzzySettings` reads from a `.ozzy` config file (Game Bits' text config), and its machine table (`machine_table.h`) describes its hardware to the programs it runs. A host that embeds an Ozzy links only this. `oz3_ozzy_testing` holds the test support for running programs on an Ozzy, which `ozzy/term`'s tests share.
+- `ozzy/term` (`oz3_ozzy_term`): The console frontend the `ozzy` app is built from (`ConsoleDisplay`, `DrawConsoleText`, and the `Console` interface, implemented per platform; see Linux), in a library so it is tested.
 - `apps`: Every executable, and no libraries. `oz3ism` is the command line instruction set assembler, `oz3asm` the command line program assembler, `oz3dsk` the command line disk image tool, and `ozzy` (`ozzy_main.cc`) runs an Ozzy in the console. Each links only what it needs: `oz3asm` links `instruction_sets` for its default instruction set, `oz3ism` doesn't (see Default instruction set), and `oz3dsk` links only `disk` and `tools`.
 
 ### Default instruction set
@@ -95,7 +96,7 @@ OZ-3 code (everything under `oz3/`) compiles with warnings as errors (`/WX` on M
 
 ### Test
 
-Tests are GoogleTest binaries registered with ctest, one per library (`oz3_core_test`, `oz3_tools_test`, `oz3_instruction_sets_test`, `oz3_devices_test`, `oz3_ozzy_test`).
+Tests are GoogleTest binaries registered with ctest, one per library (`oz3_core_test`, `oz3_tools_test`, `oz3_instruction_sets_test`, `oz3_devices_test`, `oz3_ozzy_machine_test`, `oz3_ozzy_term_test`).
 
 ```
 ctest --test-dir out/build/x64-Debug --output-on-failure

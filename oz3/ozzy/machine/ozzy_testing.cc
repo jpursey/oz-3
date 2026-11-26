@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/ozzy_testing.h"
+#include "oz3/ozzy/machine/ozzy_testing.h"
 
 #include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
