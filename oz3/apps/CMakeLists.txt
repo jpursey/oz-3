@@ -84,4 +84,8 @@ set(ozzy_DEPS
   oz3_ozzy_term
 )
 
+set(ozzy_LIBS
+  absl::check
+)
+
 gb_add_executable(ozzy)

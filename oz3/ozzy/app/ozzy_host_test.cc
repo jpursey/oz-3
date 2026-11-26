@@ -36,9 +36,6 @@ using ::testing::Optional;
 // The path of the image the drive tests give drive A:.
 constexpr std::string_view kImagePath = "mem:/a.ozd";
 
-// The most runs of a millisecond a program is given to halt.
-constexpr int kMaxRuns = 10'000;
-
 // Tests of a host, with a file system in memory as its host's, which outlives
 // every host a test makes.
 class OzzyHostTest : public ::testing::Test {
@@ -75,12 +72,9 @@ class OzzyHostTest : public ::testing::Test {
     return host;
   }
 
-  // Runs `host` until core 0 halts, failing the test if it doesn't.
-  void RunUntilHalted(OzzyHost& host) {
-    for (int run = 0; run < kMaxRuns && !IsHalted(*host.GetOzzy()); ++run) {
-      host.Run(absl::Milliseconds(1));
-    }
-    ASSERT_TRUE(IsHalted(*host.GetOzzy()));
+  // Runs `host`'s Ozzy until kWriteLogProgram halts, expecting it to succeed.
+  void RunTheLogProgram(OzzyHost& host) {
+    ASSERT_TRUE(RunUntilCore0Halts(*host.GetOzzy()));
     EXPECT_EQ(GetRegisters(*host.GetOzzy())[CpuCore::R5], 0);
   }
 
@@ -227,7 +221,7 @@ TEST_F(OzzyHostTest, OnlyTheFirstRequestInARun) {
 TEST_F(OzzyHostTest, PowerOffCommitsTheDrives) {
   std::unique_ptr<OzzyHost> host = CreateHostWritingTheLog();
   ASSERT_NE(host, nullptr);
-  RunUntilHalted(*host);
+  RunTheLogProgram(*host);
   host->PowerOff();
   ExpectTheLog();
 }
@@ -235,7 +229,7 @@ TEST_F(OzzyHostTest, PowerOffCommitsTheDrives) {
 TEST_F(OzzyHostTest, DestroyingTheHostWhileOnCommitsTheDrives) {
   std::unique_ptr<OzzyHost> host = CreateHostWritingTheLog();
   ASSERT_NE(host, nullptr);
-  RunUntilHalted(*host);
+  RunTheLogProgram(*host);
   host.reset();
   ExpectTheLog();
 }
@@ -243,7 +237,7 @@ TEST_F(OzzyHostTest, DestroyingTheHostWhileOnCommitsTheDrives) {
 TEST_F(OzzyHostTest, PowerOnAfterPowerOffStartsAgain) {
   std::unique_ptr<OzzyHost> host = CreateHostWritingTheLog();
   ASSERT_NE(host, nullptr);
-  RunUntilHalted(*host);
+  RunTheLogProgram(*host);
   host->PowerOff();
   ASSERT_TRUE(host->PowerOn().ok());
 

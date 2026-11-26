@@ -55,7 +55,6 @@ void OzzyHost::PowerOff() { ozzy_.reset(); }
 
 OzzyHost::RunResult OzzyHost::Run(absl::Duration time) {
   CHECK(ozzy_ != nullptr) << "The Ozzy is off";
-  power_request_.reset();
   RunResult result;
   result.cycles = ozzy_->Run(time);
   result.power_request = std::exchange(power_request_, std::nullopt);

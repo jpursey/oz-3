@@ -13,6 +13,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
+#include "absl/time/time.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/parse/parse_error.h"
@@ -191,6 +192,14 @@ CpuCore::Registers GetRegisters(Ozzy& ozzy) {
 
 bool IsHalted(Ozzy& ozzy) {
   return ozzy.GetProcessor()->GetCore(0)->GetState() == CpuCore::State::kIdle;
+}
+
+bool RunUntilCore0Halts(Ozzy& ozzy) {
+  for (int run = 0; run < 10'000 && !IsHalted(ozzy); ++run) {
+    ozzy.Run(absl::Milliseconds(1));
+  }
+  EXPECT_TRUE(IsHalted(ozzy)) << "Core 0 didn't halt";
+  return IsHalted(ozzy);
 }
 
 std::string GetRowText(const ScreenPicture& picture, int row) {

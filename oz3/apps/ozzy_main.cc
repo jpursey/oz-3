@@ -11,6 +11,7 @@
 #include <string_view>
 #include <utility>
 
+#include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -28,7 +29,6 @@
 #include "gb/file/file_system.h"
 #include "gb/file/path.h"
 #include "oz3/core/core_types.h"
-#include "oz3/core/processor.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/power_control.h"
 #include "oz3/ozzy/app/ozzy_host.h"
@@ -136,6 +136,15 @@ struct RunStats {
   Cycles cycles = 0;
 };
 
+// Runs `host`'s Ozzy for `time`, adding the cycles to `stats`, and returns
+// the program's request to power off, if it made one.
+std::optional<PowerRequest> RunOnce(OzzyHost& host, absl::Duration time,
+                                    RunStats* stats) {
+  const OzzyHost::RunResult result = host.Run(time);
+  stats->cycles += result.cycles;
+  return result.power_request;
+}
+
 // Runs `host`'s Ozzy, which is on, in `console` until the user quits or a
 // program asks to power off, each frame for the time since the last, or with
 // `max_speed_run_time`, in runs of that time until the next frame. Returns the
@@ -147,7 +156,6 @@ std::optional<PowerRequest> RunOzzy(
   Keyboard* const keyboard = ozzy->GetKeyboard();
   ConsoleDisplay display(*ozzy, console);
   std::optional<PowerRequest> power_request;
-  const Cycles start_cycles = ozzy->GetProcessor()->GetCycles();
   const absl::Time start_time = absl::Now();
   absl::Time last_time = start_time;
   absl::Time next_frame = last_time;
@@ -169,12 +177,12 @@ std::optional<PowerRequest> RunOzzy(
     absl::Time now = absl::Now();
     if (max_speed_run_time.has_value()) {
       while (now < next_frame && !power_request.has_value()) {
-        power_request = host.Run(*max_speed_run_time).power_request;
+        power_request = RunOnce(host, *max_speed_run_time, stats);
         now = absl::Now();
       }
     } else {
       power_request =
-          host.Run(std::min(now - last_time, kMaxRunTime)).power_request;
+          RunOnce(host, std::min(now - last_time, kMaxRunTime), stats);
     }
     if (power_request.has_value()) {
       // The Ozzy is about to power off, so this frame isn't shown.
@@ -195,7 +203,6 @@ std::optional<PowerRequest> RunOzzy(
     }
   }
   stats->time += absl::Now() - start_time;
-  stats->cycles += ozzy->GetProcessor()->GetCycles() - start_cycles;
   return power_request;
 }
 
@@ -249,12 +256,10 @@ bool Run(gb::ValidatedContext& context,
   // with it, as the context has no clock of its own (see kConstraintHostClock).
   // It is the host's time, so when the Ozzy can't keep up with its clock rate
   // (or runs at max speed), it drifts from the timer's ticks and milliseconds.
+  // The command's context is valid, so the host is always created.
   std::unique_ptr<OzzyHost> host =
       OzzyHost::Create(*std::move(settings), context);
-  if (host == nullptr) {
-    writer(gb::CliText::kError, "Failed to create the Ozzy's host");
-    return false;
-  }
+  CHECK(host != nullptr);
 
   // The console shows every power on, as its mode comes from the settings.
   const ConsoleMode mode = GetOzzyConsoleMode(host->GetSettings());

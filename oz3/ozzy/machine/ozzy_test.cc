@@ -38,16 +38,10 @@
 #include "oz3/devices/power_control.h"
 #include "oz3/devices/timer.h"
 #include "oz3/disk/disk_dir_entry.h"
-#include "oz3/disk/disk_file_system.h"
-#include "oz3/disk/disk_filename.h"
-#include "oz3/disk/disk_image.h"
-#include "oz3/disk/disk_label.h"
-#include "oz3/disk/disk_status.h"
 #include "oz3/ozzy/machine/machine_table.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/tools/program_assembler.h"
-#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 namespace {
@@ -536,15 +530,8 @@ TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
 
   // The program runs on core 0 in place of the boot ROM.
   ASSERT_TRUE(LoadOnCore0(*ozzy, kWriteLogProgram));
-  CpuCore* core = ozzy->GetProcessor()->GetCore(0);
-  for (int step = 0; step < 10'000 && core->GetState() != CpuCore::State::kIdle;
-       ++step) {
-    ozzy->Run(absl::Milliseconds(1));
-  }
-  ASSERT_EQ(core->GetState(), CpuCore::State::kIdle);
-  CpuCore::Registers registers;
-  core->GetRegisters(registers);
-  EXPECT_EQ(registers[CpuCore::R5], 0);
+  ASSERT_TRUE(RunUntilCore0Halts(*ozzy));
+  EXPECT_EQ(GetRegisters(*ozzy)[CpuCore::R5], 0);
 
   // The file isn't closed, so its words are still in the drive.
   ozzy.reset();

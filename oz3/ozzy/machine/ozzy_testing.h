@@ -242,6 +242,10 @@ CpuCore::Registers GetRegisters(Ozzy& ozzy);
 // Returns whether core 0 has halted.
 bool IsHalted(Ozzy& ozzy);
 
+// Runs `ozzy` a millisecond at a time until core 0 halts, for at most 10
+// seconds, adding a test failure if it doesn't. Returns whether it halted.
+bool RunUntilCore0Halts(Ozzy& ozzy);
+
 // Returns the text of row `row` of `picture`, without its cells' attributes,
 // and without the spaces at its end.
 std::string GetRowText(const ScreenPicture& picture, int row);
