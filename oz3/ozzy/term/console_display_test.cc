@@ -25,35 +25,13 @@
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/console_text.h"
+#include "oz3/ozzy/term/fake_console.h"
 
 namespace oz3 {
 namespace {
 
 using ::testing::HasSubstr;
 using ::testing::Not;
-
-// The size of the default Ozzy's screen.
-const ConsoleSize kScreenSize = {.columns = ScreenSettings().columns,
-                                 .rows = ScreenSettings().rows};
-
-// A console that keeps what is written to it, which is the size of the default
-// Ozzy's screen unless it is set.
-class FakeConsole final : public Console {
- public:
-  // Returns what was written since the last call.
-  std::string TakeText() { return std::exchange(text_, {}); }
-
-  void SetSize(ConsoleSize size) { size_ = size; }
-
-  void Write(std::string_view text) override { absl::StrAppend(&text_, text); }
-  ConsoleSize GetSize() override { return size_; }
-  ConsoleKeys TakeKeys() override { return {}; }
-  bool IsQuitRequested() const override { return false; }
-
- private:
-  std::string text_;
-  ConsoleSize size_ = kScreenSize;
-};
 
 // Long enough for the boot ROM to show its banner.
 constexpr absl::Duration kBootTime = absl::Seconds(1);
@@ -137,16 +115,17 @@ TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  console.SetSize({.columns = kScreenSize.columns - 1, .rows = 30});
+  console.SetSize({.columns = kDefaultScreenSize.columns - 1, .rows = 30});
   ConsoleDisplay display(*ozzy, console);
   ozzy->Run(kBootTime);
   display.Update();
   const std::string text = console.TakeText();
-  EXPECT_THAT(text, HasSubstr(absl::StrCat("The console is ",
-                                           kScreenSize.columns - 1, " by 30")));
-  EXPECT_THAT(text,
-              HasSubstr(absl::StrCat("the screen is ", kScreenSize.columns,
-                                     " by ", kScreenSize.rows)));
+  EXPECT_THAT(
+      text, HasSubstr(absl::StrCat("The console is ",
+                                   kDefaultScreenSize.columns - 1, " by 30")));
+  EXPECT_THAT(
+      text, HasSubstr(absl::StrCat("the screen is ", kDefaultScreenSize.columns,
+                                   " by ", kDefaultScreenSize.rows)));
   EXPECT_THAT(text, Not(HasSubstr(kVersion)));
 
   // The message isn't drawn again, and the picture isn't drawn, as it changes.
@@ -162,13 +141,13 @@ TEST(ConsoleDisplayTest, MessageWhileTooShort) {
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  console.SetSize({.columns = 100, .rows = kScreenSize.rows - 1});
+  console.SetSize({.columns = 100, .rows = kDefaultScreenSize.rows - 1});
   ConsoleDisplay display(*ozzy, console);
   ozzy->Run(kBootTime);
   display.Update();
-  EXPECT_THAT(
-      console.TakeText(),
-      HasSubstr(absl::StrCat("The console is 100 by ", kScreenSize.rows - 1)));
+  EXPECT_THAT(console.TakeText(),
+              HasSubstr(absl::StrCat("The console is 100 by ",
+                                     kDefaultScreenSize.rows - 1)));
 }
 
 TEST(ConsoleDisplayTest, MessageRedrawnWhenTheConsoleResizes) {
@@ -200,7 +179,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeOnceTheConsoleFits) {
   console.SetSize({.columns = 40, .rows = 20});
   display.Update();
   console.TakeText();
-  console.SetSize(kScreenSize);
+  console.SetSize(kDefaultScreenSize);
   display.Update();
   EXPECT_EQ(console.TakeText(),
             DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
@@ -220,8 +199,8 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeWhenTheConsoleResizes) {
   display.Update();
   console.TakeText();
 
-  console.SetSize(
-      {.columns = kScreenSize.columns + 1, .rows = kScreenSize.rows});
+  console.SetSize({.columns = kDefaultScreenSize.columns + 1,
+                   .rows = kDefaultScreenSize.rows});
   display.Update();
   EXPECT_EQ(console.TakeText(),
             DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));

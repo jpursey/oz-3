@@ -25,6 +25,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/terminal_keys.h"
 
@@ -88,7 +89,7 @@ class PosixConsole final : public Console {
 
   void Write(std::string_view text) override;
   ConsoleSize GetSize() override;
-  ConsoleKeys TakeKeys() override;
+  FrontendKeys TakeKeys() override;
   bool IsQuitRequested() const override { return g_quit_requested; }
 
  private:
@@ -252,7 +253,7 @@ ConsoleSize PosixConsole::GetSize() {
   return size_;
 }
 
-ConsoleKeys PosixConsole::TakeKeys() {
+FrontendKeys PosixConsole::TakeKeys() {
   std::string input;
   char buffer[256];
   while (true) {
@@ -267,7 +268,7 @@ ConsoleKeys PosixConsole::TakeKeys() {
   }
 
   // Every key with a code is tapped, the keys that quit too.
-  ConsoleKeys keys;
+  FrontendKeys keys;
   for (const uint16_t key : key_reader_.ReadKeys(input)) {
     AddKeyTap(key, keys.changes);
     if (IsQuitKey(key)) {

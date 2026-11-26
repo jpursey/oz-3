@@ -4,6 +4,7 @@
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 set(oz3_ozzy_app_SOURCE
+  frontend.h
   ozzy_host.cc ozzy_host.h
 )
 set(oz3_ozzy_app_DEPS
@@ -12,6 +13,7 @@ set(oz3_ozzy_app_DEPS
   absl::statusor
   absl::time
   gb_base
+  gb_cli
   oz3_core
   oz3_devices
   oz3_ozzy_machine

@@ -425,16 +425,20 @@ Depends on: CL1.
   code, and its restart; only the first request in a run is returned; a
   power off commits a drive's image, and so does destroying the host while on.
 
-### CL3 [ ] ozzy/app, ozzy/term, apps: Frontend, and the console's
+### CL3 [x] ozzy/app, ozzy/term, apps: Frontend, and the console's
 
 Depends on: CL2.
 
 - `oz3_ozzy_app`: `frontend.h`, with `Frontend`, `FrontendKeys`, and
-  `KeyChange` (moved from `console.h`), and `FrontendFactory`.
+  `KeyChange` (moved from `console.h`), and `FrontendFactory`, with only
+  `Create`, as nothing needs `GetProgram` until `OzzyApp`. It gains `gb_cli`,
+  for the command line `Create` reads.
 - `oz3_ozzy_term`: `ConsoleFrontend` and `ConsoleFrontendFactory`. `Console`
-  returns `FrontendKeys` in place of `ConsoleKeys`.
-- `ozzy_main.cc` shows the Ozzy through a `ConsoleFrontend`, in place of its
-  own `ConsoleDisplay` and `ShowOzzyShutDown`.
+  returns `FrontendKeys` in place of `ConsoleKeys`. The fake console moves to
+  `fake_console.h`, for the term library's tests.
+- `ozzy_main.cc` shows the Ozzy through a `ConsoleFrontend`, which it creates
+  with a `ConsoleFrontendFactory`, in place of its own `Console`,
+  `ConsoleDisplay`, and `ShowOzzyShutDown`.
 
 **Verify**
 - Standard checks.
@@ -450,6 +454,7 @@ Depends on: CL3.
 
 - `oz3_ozzy_app`: `ozzy_app.h`/`.cc`, with `OzzyApp` and `OzzyAppStats`, and
   the fake frontend for its tests. It gains `gb_game` and `gb_cli`.
+- `oz3_ozzy_app`: `FrontendFactory` gains `GetProgram`.
 - `oz3_ozzy_term`: the factory's command line, moved from `ozzy_main.cc`,
   without `--max-speed`.
 - `ozzy_main.cc` is only `main`, as above.

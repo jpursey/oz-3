@@ -24,6 +24,7 @@ endif()
 set(oz3_ozzy_term_SOURCE
   console.h
   console_display.cc console_display.h
+  console_frontend.cc console_frontend.h
   console_text.cc console_text.h
   terminal_keys.cc terminal_keys.h
   ${oz3_ozzy_term_internal_SOURCE}
@@ -36,8 +37,10 @@ set(oz3_ozzy_term_DEPS
   absl::strings
   absl::time
   gb_base
+  gb_cli
   oz3_core
   oz3_devices
+  oz3_ozzy_app
   oz3_ozzy_machine
 )
 set(oz3_ozzy_term_LIBS
@@ -45,7 +48,9 @@ set(oz3_ozzy_term_LIBS
 )
 set(oz3_ozzy_term_TEST_SOURCE
   console_display_test.cc
+  console_frontend_test.cc
   console_text_test.cc
+  fake_console.h
   terminal_keys_test.cc
   ${oz3_ozzy_term_internal_TEST_SOURCE}
 )
