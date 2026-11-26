@@ -25,15 +25,20 @@ The *Teletype view*, *Panel*, and *Headless ozzyterm* build on this, as the
 
 ## Behavior
 
-There is no change in what the `ozzy` app does, apart from two small
-differences in pacing that come from `gb::Game`'s loop:
+Each frame runs the Ozzy for exactly the time that passed since the last, as
+`gb::Game` gives it, at most 100 ms as now, so a host that falls behind slows
+the Ozzy rather than racing to catch up. What the `ozzy` app does is otherwise
+unchanged, apart from:
+- **`--max-speed` is gone.** It ran the Ozzy faster than real time, as many
+  cycles as fit in each frame, which is the one thing that doesn't fit
+  `gb::Game`'s model of running the time that passed, and nothing needs it.
+  Its use was measuring the host's top speed with `--stats`; raising a
+  config's `clock_hz` until `--stats` shows the Ozzy falling behind does much
+  the same. The manual's Ozzy Computer page, and ozzy_design.md (Pacing),
+  change to match.
 - A frame that ends more than a millisecond late starts the next at once, as
-  now, but one that ends less than a millisecond late is absorbed into the next
-  frame, rather than starting it at once.
-- With `--max-speed`, a frame runs the Ozzy for 1/60 s of host time and then
-  draws, so a frame is 1/60 s plus the draw, rather than 1/60 s in all. The
-  draw is usually well under a millisecond in a terminal, so this is a few
-  percent fewer frames a second at most.
+  now, but one that ends less than a millisecond late is absorbed into the
+  next frame, rather than starting it at once, as `gb::Game`'s loop does.
 
 ## Design
 
@@ -116,13 +121,6 @@ pointers would not do, as a new Ozzy can be at the old one's address.
 ### ConsoleApp (ozzy)
 
 ```
-struct ConsoleAppOptions {
-  OzzySettings settings;
-
-  // Runs the Ozzy as fast as the host can between frames (--max-speed).
-  bool max_speed = false;
-};
-
 // How an Ozzy ran, from its first power on, through each restart, to its last
 // power off (what --stats writes).
 struct ConsoleAppStats {
@@ -140,7 +138,7 @@ class ConsoleApp final : public gb::Game {
  public:
   // `console` and `file_system` must outlive the app. The console is in the
   // mode GetOzzyConsoleMode gives for the settings.
-  ConsoleApp(ConsoleAppOptions options, Console* console,
+  ConsoleApp(OzzySettings settings, Console* console,
              gb::FileSystem* file_system);
 
   // The error that stopped the app, if Run returned false: the Ozzy failed
@@ -165,9 +163,7 @@ class ConsoleApp final : public gb::Game {
   cells), creates the `OzzyHost`, and powers it on. `CleanUp` powers it off.
 - Each `Update`, while the Ozzy is on: takes the console's keys to the
   keyboard (and drops them without one), runs the Ozzy for the frame's
-  `delta_time`, at most 100 ms, and updates the display. With `max_speed`, it
-  runs the Ozzy in runs of 10,000 cycles until 1/60 s after the frame
-  started, by the game's clock. A power request stops the frame without
+  `delta_time`, at most 100 ms, and updates the display. A power request stops the frame without
   drawing it: a restart powers off and on, and a shutdown powers off and shows
   `ShowOzzyShutDown`. While the Ozzy is off, it only drops keys. Every frame
   returns false once the console's quit is requested, and the app keeps the
@@ -183,10 +179,10 @@ class ConsoleApp final : public gb::Game {
   it requests after a number of frames (`TakeKeys` calls), so a test's
   `Run` ends.
 
-**Brittleness:** with `max_speed`, `Update` runs until the clock reaches its
-deadline, so a `FakeClock` must advance on its own (`SetAutoAdvance`), or the
-frame never ends. `gb::Game`'s loop needs the same of a fake clock for its own
-waits, so the tests set it once in their fixture.
+**Brittleness:** `gb::Game`'s loop waits for each frame by sleeping to within a
+millisecond of it and then reading the clock until it is due, so a
+`FakeClock` must advance on its own (`SetAutoAdvance`), or the loop never
+gets there. The tests set it once in their fixture.
 
 ### ozzy_main.cc (apps)
 
@@ -222,12 +218,15 @@ Depends on: nothing.
 
 Depends on: CL1.
 
-- `console_app.h`/`.cc`: `ConsoleApp`, `ConsoleAppOptions`,
-  `ConsoleAppStats`, and `FormatConsoleAppStats`, as above. `oz3_ozzy` gains
+- `console_app.h`/`.cc`: `ConsoleApp`, `ConsoleAppStats`, and
+  `FormatConsoleAppStats`, as above. `oz3_ozzy` gains
   `gb_game`.
 - `ozzy_settings.h`/`.cc`: `ReadOzzySettingsFile`.
 - `ozzy_testing.h`/`.cc`: `FakeConsole`, moved from `console_display_test.cc`.
-- `ozzy_main.cc` is left with the command line, as above.
+- `ozzy_main.cc` is left with the command line, as above, without
+  `--max-speed`.
+- The manual's Ozzy Computer page and ozzy_design.md (Pacing) drop
+  `--max-speed`.
 - The backlog's *Teletype view*, *Panel*, and *Headless ozzyterm* are
   updated to name `OzzyHost` and `ConsoleApp` where they describe the code.
 
@@ -235,8 +234,7 @@ Depends on: CL1.
 - Standard checks.
 - `console_app_test.cc`, with a `FakeConsole` and a `gb::FakeClock`: the boot
   ROM's banner is drawn; typed keys reach the keyboard; a frame runs the
-  Ozzy for its time, at most 100 ms; `max_speed` runs it for 1/60 s of clock
-  time a frame; a program's restart starts it again, with a new display, and a
+  Ozzy for its time, at most 100 ms; a program's restart starts it again, with a new display, and a
   shutdown shows the message and keeps the app running, off, until quit; a
   power on that fails stops the app with the error; the stats count frames,
   time, and cycles across a restart.
@@ -244,5 +242,5 @@ Depends on: CL1.
 - `ReadOzzySettingsFile`: a file that reads, one that doesn't exist, and one
   with errors.
 - By hand (left for the user): `ozzy` with `configs/console.ozzy` and
-  `configs/teletype.ozzy`, with and without `--max-speed` and `--stats`, and
+  `configs/teletype.ozzy`, with and without `--stats`, and
   a program's restart and shutdown, look as they did.
