@@ -292,6 +292,20 @@ The boot ROM's stack is the first page of RAM in the lowest bank that has any: p
 
 The boot ROM's source is `oz3/ozzy/boot_rom.oza`, written for the [default instruction set](2.2-Default-Instruction-Set.md), which `oz3asm` assembles for a listing (see [Program Source](2.5-Program-Source.md#oz3asm)).
 
+#### The default loader
+
+The default loader, `oz3/ozzy/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts in the pages just after its own, in the same bank: from 2000h by default. It needs as many whole pages as its contents and stack fill, and every one of them must be RAM in the [machine table](#the-machine-table), up to the end of the bank.
+
+The loader opens the file, reads all of it with one `READ PACKED`, sending each data block's words straight to where they go as they arrive, and closes it (see [Disk Drive](3.5-Disk-Drive.md)). Then it starts the operating system as a bare program at its first page, `b`, with `RST SELF, CODE | STACK | DATA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
+
+* `CODE`, `STACK`, and `DATA` are the loader's bank. `BC` and `BD` are `b`, and `BS` is `b` plus its contents and stack words, with `IP` and `SP` 0.
+* `EXTRA` is still bank 0 at base 0, so the machine table is at `E(F00h)`.
+* `R0` and `R1` are the boot drive's command port and number, as the loader was given them.
+* `R2` is the pages of its bank the operating system is in, a bit for each (bit 0 for page 0), so that it doesn't put programs over itself. Every other RAM page is free, including the loader's own, which `R2` leaves out.
+* Interrupts are disabled with no handlers set, and the notify flag is set, as `RST` of `CODE` leaves them.
+
+If the file isn't there, isn't a bare program, doesn't fit, or can't be read, the loader shows `ERROR: Can't load OZOS.SYS` on the teletype if the machine table has one, and on the screen's status row, replacing `Loading...`. Then it waits for a key, and restarts the Ozzy with the power control (see [Power Control](3.6-Power-Control.md)).
+
 ### Running Ozzy
 
 `ozzy` runs an Ozzy in the console (the Windows console, or a terminal on Linux and other POSIX systems), from its config file, or the default Ozzy without one:
