@@ -402,7 +402,7 @@ Depends on: nothing.
   CMake changed.
 - CI, as the Windows console's files move too.
 
-### CL2 [ ] ozzy/app, apps: OzzyHost, the machine's state
+### CL2 [x] ozzy/app, apps: OzzyHost, the machine's state
 
 Depends on: CL1.
 

@@ -3,6 +3,8 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-# The Ozzy machine, and the console frontend the ozzy app is built from.
+# The Ozzy machine, what the apps share, and the console frontend the ozzy app
+# is built from.
 add_subdirectory(machine)
+add_subdirectory(app)
 add_subdirectory(term)
