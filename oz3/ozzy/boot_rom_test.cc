@@ -15,7 +15,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -23,13 +22,11 @@
 #include "absl/types/span.h"
 #include "gb/base/context.h"
 #include "gb/file/file_system.h"
-#include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/date_time.h"
-#include "oz3/core/instruction_compiler.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
 #include "oz3/devices/disk_drive_command.h"
@@ -41,21 +38,14 @@
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
 #include "oz3/ozzy/ozzy_testing.h"
-#include "oz3/tools/bare_program.h"
-#include "oz3/tools/instruction_set_syntax.h"
-#include "oz3/tools/program.h"
 #include "oz3/tools/program_assembler.h"
-#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 namespace {
-
-using ::testing::IsEmpty;
 
 //==============================================================================
 // Constants
@@ -119,14 +109,7 @@ letter:
 // Expects the boot ROM's source to have each of `expected`'s constants, with
 // its value.
 void ExpectSourceConstants(std::map<std::string_view, uint32_t> expected) {
-  for (const ProgramMap::Constant& constant :
-       GetBootRom().GetMap().GetConstants()) {
-    if (auto it = expected.find(constant.name); it != expected.end()) {
-      EXPECT_EQ(constant.dword_value, it->second) << it->first;
-      expected.erase(it);
-    }
-  }
-  EXPECT_THAT(expected, IsEmpty());
+  oz3::ExpectSourceConstants(GetBootRom().GetMap(), std::move(expected));
 }
 
 // Returns core 0's state.
@@ -134,20 +117,9 @@ CpuCore::State GetState(Ozzy& ozzy) {
   return ozzy.GetProcessor()->GetCore(0)->GetState();
 }
 
-// Returns whether core 0 has halted, as it does without a keyboard, or as the
-// test loader does.
-bool IsHalted(Ozzy& ozzy) { return GetState(ozzy) == CpuCore::State::kIdle; }
-
 // Returns whether core 0 is waiting for Enter, or has halted.
 bool IsSettled(Ozzy& ozzy) {
   return IsHalted(ozzy) || GetState(ozzy) == CpuCore::State::kWaiting;
-}
-
-// Returns core 0's registers.
-CpuCore::Registers GetRegisters(Ozzy& ozzy) {
-  CpuCore::Registers registers;
-  ozzy.GetProcessor()->GetCore(0)->GetRegisters(registers);
-  return registers;
 }
 
 // Runs `ozzy` until core 0 is waiting for Enter or halts, and long enough after
@@ -177,18 +149,6 @@ void PressKeys(Ozzy& ozzy, absl::Span<const uint16_t> keys) {
 
 // Presses Enter, and settles `ozzy`.
 void PressEnter(Ozzy& ozzy) { PressKeys(ozzy, {kKeyEnter}); }
-
-// Returns the text of row `row` of `picture`, without its cells' attributes,
-// and without the spaces at its end.
-std::string GetRowText(const ScreenPicture& picture, int row) {
-  std::string text;
-  for (int column = 0; column < picture.columns; ++column) {
-    text.push_back(
-        static_cast<char>(picture.cells[row * picture.columns + column]));
-  }
-  text.erase(text.find_last_not_of(' ') + 1);
-  return text;
-}
 
 // Returns the rows the boot ROM shows on the default screen, for an Ozzy with
 // `hardware` and `drives`, and `status`. The banner's lines start a column in.
@@ -277,55 +237,19 @@ DiskSuperblock::BootArea GetBlankBootArea() {
   return DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0);
 }
 
-// Returns the test loader in its boot area, assembled.
-DiskSuperblock::BootArea AssembleLoaderBootArea() {
-  const int screen = kOzzyScreenPage * kMemoryBankPageSize;
-  const std::string source = absl::StrFormat(
-      kLoaderSource, screen, kOzzyKeyboardPort, screen + 1,
-      DiskSuperblock::kBootAreaWords - static_cast<int>(kBootSignature.size()));
-  InstructionError error;
-  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
-      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
-  EXPECT_NE(syntax, nullptr) << error.message;
-  std::vector<gb::ParseError> errors;
-  std::unique_ptr<AsmProgram> program =
-      AssembleProgram(*syntax, source, &errors);
-  EXPECT_NE(program, nullptr);
-  for (const gb::ParseError& parse_error : errors) {
-    ADD_FAILURE() << parse_error.FormatMessage();
-  }
-  DiskSuperblock::BootArea boot_area = GetBlankBootArea();
-  if (program == nullptr) {
-    return boot_area;
-  }
-  const absl::StatusOr<BareProgram>& bare = program->GetBareProgram();
-  EXPECT_TRUE(bare.ok()) << bare.status();
-  if (!bare.ok()) {
-    return boot_area;
-  }
-  EXPECT_EQ(bare->contents_words, DiskSuperblock::kBootAreaWords);
-  for (const Program::Segment::Data& data : bare->data) {
-    absl::c_copy(data.data, boot_area.begin() + data.offset);
-  }
-  return boot_area;
-}
-
 // Returns the test loader in its boot area, assembled once, as it never
 // changes.
 const DiskSuperblock::BootArea& GetLoaderBootArea() {
-  static const DiskSuperblock::BootArea* const s_boot_area =
-      new DiskSuperblock::BootArea(AssembleLoaderBootArea());
+  static const DiskSuperblock::BootArea* const s_boot_area = [] {
+    const int screen = kOzzyScreenPage * kMemoryBankPageSize;
+    std::unique_ptr<AsmProgram> program = AssembleTestProgram(
+        absl::StrFormat(kLoaderSource, screen, kOzzyKeyboardPort, screen + 1,
+                        DiskSuperblock::kBootAreaWords -
+                            static_cast<int>(kBootSignature.size())));
+    return new DiskSuperblock::BootArea(
+        program != nullptr ? GetBootArea(*program) : GetBlankBootArea());
+  }();
   return *s_boot_area;
-}
-
-// Returns the settings of the default Ozzy with a teletype at `baud` in place
-// of the screen.
-OzzySettings GetTeletypeSettings(int baud) {
-  OzzySettings settings;
-  settings.screen.reset();
-  settings.teletype = OzzyTeletypeSettings();
-  settings.teletype->baud = baud;
-  return settings;
 }
 
 // Expects the test loader to have run and halted, with the banks of the stack

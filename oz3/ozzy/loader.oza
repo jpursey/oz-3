@@ -111,9 +111,7 @@
     MOV R0, os_name
     MVQ R7, 4               ; The name is 8 words, sent as 4 dwords
     CALL command
-    JC NZ, failed
-    CALL read_word          ; The completion's status
-    JC NZ, failed
+    CALL read_status        ; The completion's
     CALL read_word          ; The handle
     MOV R3, R1
 
@@ -125,7 +123,6 @@
     OR R1, DRIVE_CMD_READ_PACKED
     MVQ R7, 1
     CALL command
-    JC NZ, failed
     CALL read_word          ; n, which is the whole file
     SBQ R6, DRIVE_CONTROL - DRIVE_DATA
 
@@ -148,6 +145,7 @@
     ; R1 has a bit for each page needed, from bit 0
     MOV R0, D(header + 2)   ; Contents
     ADD R0, D(header + 3)   ; Stack (a full bank wraps to 0)
+    PUSH R0                 ; The OS's size, for BS
     SBQ R0, 1
     SHR R0, 12              ; Pages needed - 1
     MVQ R1, 2
@@ -193,21 +191,17 @@
     JPR @next
 @loaded:
     ADQ R6, DRIVE_CONTROL - DRIVE_DATA
-    CALL read_word          ; The completion's status
-    JC NZ, failed
+    CALL read_status        ; The completion's
     CALL read_word          ; The dwords read
 
 ;-------------------------------------------------------------------------------
-; Close the file
+; Close the file. It has no arguments, and R7 is already 0, as INR leaves it.
 ;-------------------------------------------------------------------------------
 
     MOV R1, R3
     OR R1, DRIVE_CMD_CLOSE
-    MVQ R7, 0
     CALL command
-    JC NZ, failed
-    CALL read_word          ; The completion's status
-    JC NZ, failed
+    CALL read_status        ; The completion's
 
 ;-------------------------------------------------------------------------------
 ; Starting the OS
@@ -225,20 +219,29 @@
 
     MOV R0, R5
     POP R2
+    POP R5
     POP R1
     MOV R4, BD
     ADD R4, PAGE_SIZE
     MOV R6, R4
-    MOV R5, R4
-    ADD R5, D(header + 2)
-    ADD R5, D(header + 3)
+    ADD R5, R4
     MOV R3, MB
     RST SELF, CODE | STACK | DATA
 
 ;-------------------------------------------------------------------------------
+; read_word: Reads the next word from the drive's command port into R1, and
+; sets Z if it is 0, as an OK status is.
+;-------------------------------------------------------------------------------
+
+read_word:
+    INS R5, R1
+    JC NS, read_word
+    TST R1
+    RET
+
+;-------------------------------------------------------------------------------
 ; command: Sends the command word R1, then R7 dwords of arguments from R0, and
-; reads the accept status into R1, as read_word does. R0 is left past the
-; arguments.
+; reads the accept status, as read_status does. R0 is left past the arguments.
 ;-------------------------------------------------------------------------------
 
 command:
@@ -256,18 +259,18 @@ command:
     IN R6, R4
     AND R4, DRIVE_PHASE_TAKEN
     JC Z, @taken
-    ; Fall through to read_word
+    ; Fall through to read_status
 
 ;-------------------------------------------------------------------------------
-; read_word: Reads the next word from the drive's command port into R1, and
-; sets Z if it is 0, as an OK status is.
+; read_status: Reads the next word, a status, into R1, as read_word does, and
+; returns if it is OK, or else fails. (Failing leaves the return address on
+; the stack, which doesn't matter as the Ozzy restarts.)
 ;-------------------------------------------------------------------------------
 
-read_word:
-    INS R5, R1
-    JC NS, read_word
-    TST R1
-    RET
+read_status:
+    CALL read_word
+    RETC Z
+    ; Fall through to failed
 
 ;-------------------------------------------------------------------------------
 ; failed: Shows the error on the teletype and the screen, waits for a key, and
@@ -275,7 +278,8 @@ read_word:
 ;-------------------------------------------------------------------------------
 
 failed:
-    ; Write it to the teletype, if there is one
+    ; Write it to the teletype, if the machine table has one: the table says
+    ; whether there is one, and the teletype is always on TELETYPE_PORT
     MOV R4, TABLE_DEVICE_ENTRIES
     MOV R7, E(TABLE_DEVICES)  ; At least 1, as the power control is there
 @device:

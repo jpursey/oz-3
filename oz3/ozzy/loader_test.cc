@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -12,22 +13,20 @@
 #include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/time/time.h"
 #include "gb/file/file_system.h"
-#include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/date_time.h"
-#include "oz3/core/instruction_compiler.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/processor.h"
 #include "oz3/devices/disk_drive.h"
+#include "oz3/devices/disk_drive_command.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/power_control.h"
 #include "oz3/devices/screen.h"
@@ -39,12 +38,12 @@
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/ozzy/boot_rom.h"
 #include "oz3/ozzy/loader_source.h"
+#include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
-#include "oz3/tools/bare_program.h"
-#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/ozzy/ozzy_testing.h"
 #include "oz3/tools/program_assembler.h"
 #include "oz3/tools/program_file.h"
 
@@ -59,7 +58,7 @@ namespace {
 constexpr std::string_view kError = "ERROR: Can't load OZOS.SYS";
 
 // The boot ROM's status row on the screen, where the error replaces
-// "Loading...".
+// "Loading..." (SourceKnowsTheBootRom checks the loader agrees).
 constexpr int kStatusRow = 7;
 
 // The sectors of the images the tests make.
@@ -90,74 +89,48 @@ constexpr int kOsWords = 4;
 // Helpers
 //==============================================================================
 
-// Returns `source` assembled as a bare program.
-BareProgram AssembleBare(std::string_view source) {
-  InstructionError error;
-  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
-      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
-  EXPECT_NE(syntax, nullptr) << error.message;
-  if (syntax == nullptr) {
-    return {};
-  }
-  std::vector<gb::ParseError> errors;
-  std::unique_ptr<AsmProgram> program =
-      AssembleProgram(*syntax, std::string(source), &errors);
-  for (const gb::ParseError& parse_error : errors) {
-    ADD_FAILURE() << parse_error.FormatMessage();
-  }
-  if (program == nullptr) {
-    return {};
-  }
-  const absl::StatusOr<BareProgram>& bare = program->GetBareProgram();
-  EXPECT_TRUE(bare.ok()) << bare.status();
-  return bare.ok() ? *bare : BareProgram();
+// Returns the loader, assembled once, as it never changes. Null if it doesn't
+// assemble.
+const AsmProgram* GetLoader() {
+  static const AsmProgram* const s_loader =
+      AssembleTestProgram(kLoaderSource.GetText()).release();
+  return s_loader;
 }
 
-// Returns the loader in its boot area, assembled once, as it never changes.
+// Returns the loader in its boot area, made once.
 const DiskSuperblock::BootArea& GetLoaderBootArea() {
-  static const DiskSuperblock::BootArea* const s_boot_area = [] {
-    const BareProgram loader = AssembleBare(kLoaderSource.GetText());
-    EXPECT_EQ(loader.contents_words, DiskSuperblock::kBootAreaWords);
-    auto* boot_area =
-        new DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0);
-    for (const Program::Segment::Data& data : loader.data) {
-      absl::c_copy(data.data, boot_area->begin() + data.offset);
-    }
-    return boot_area;
-  }();
+  static const DiskSuperblock::BootArea* const s_boot_area =
+      new DiskSuperblock::BootArea(
+          GetLoader() != nullptr
+              ? GetBootArea(*GetLoader())
+              : DiskSuperblock::BootArea(DiskSuperblock::kBootAreaWords, 0));
   return *s_boot_area;
+}
+
+// Expects the loader's source to have each of `expected`'s constants, with its
+// value.
+void ExpectSourceConstants(std::map<std::string_view, uint32_t> expected) {
+  ASSERT_NE(GetLoader(), nullptr);
+  oz3::ExpectSourceConstants(GetLoader()->GetMap(), std::move(expected));
 }
 
 // Returns the words of the test OS's file, with `gap` and `stack` words.
 std::vector<uint16_t> GetOsFile(int gap, int stack) {
-  absl::StatusOr<std::vector<uint16_t>> words = WriteBareProgramWords(
-      AssembleBare(absl::StrFormat(kOsSource, stack, gap)));
+  std::unique_ptr<AsmProgram> program =
+      AssembleTestProgram(absl::StrFormat(kOsSource, stack, gap));
+  if (program == nullptr || !program->GetBareProgram().ok()) {
+    ADD_FAILURE() << "The test OS isn't a bare program";
+    return {};
+  }
+  absl::StatusOr<std::vector<uint16_t>> words =
+      WriteBareProgramWords(*program->GetBareProgram());
   EXPECT_TRUE(words.ok()) << words.status();
   return words.ok() ? *std::move(words) : std::vector<uint16_t>();
 }
 
-// Returns core 0's registers.
-CpuCore::Registers GetRegisters(Ozzy& ozzy) {
-  CpuCore::Registers registers;
-  ozzy.GetProcessor()->GetCore(0)->GetRegisters(registers);
-  return registers;
-}
-
-// Returns whether core 0 has halted, as the test OS does.
-bool IsHalted(Ozzy& ozzy) {
-  return ozzy.GetProcessor()->GetCore(0)->GetState() == CpuCore::State::kIdle;
-}
-
-// Returns the text of row `row` of the screen, without the spaces at its end.
-std::string GetRowText(Ozzy& ozzy, int row) {
-  const ScreenPicture& picture = ozzy.GetScreen()->GetPicture();
-  std::string text;
-  for (int column = 0; column < picture.columns; ++column) {
-    text.push_back(
-        static_cast<char>(picture.cells[row * picture.columns + column]));
-  }
-  text.erase(text.find_last_not_of(' ') + 1);
-  return text;
+// Returns the text of the screen's status row.
+std::string GetStatusText(Ozzy& ozzy) {
+  return GetRowText(ozzy.GetScreen()->GetPicture(), kStatusRow);
 }
 
 // Expects the test OS, with `gap` and `stack` words, to have been started by
@@ -236,19 +209,14 @@ class LoaderTest : public ::testing::Test {
     return file_system.DetachImage();
   }
 
-  // Returns an Ozzy for `settings`, with drive A: added if it has none, with
-  // `image` in A:, which has run until the boot ROM waits for Enter, and then
-  // been sent Enter. Null if the Ozzy can't be created.
+  // Returns an Ozzy for `settings`, with drive A: added, with `image` in A:,
+  // which has run until the boot ROM waits for Enter, and then been sent
+  // Enter. Null if the Ozzy can't be created.
   std::unique_ptr<Ozzy> Boot(OzzySettings settings,
                              std::unique_ptr<DiskImage> image) {
-    if (settings.drives.empty()) {
-      settings.drives.resize(1);
-    }
-    gb::Context context;
-    context.SetNew<PowerRequestCallback>(
-        [this](PowerRequest request) { requests_.push_back(request); });
+    settings.drives.resize(1);
     absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-        Ozzy::Create(settings, std::move(context));
+        Ozzy::Create(settings, WithPowerCallback({}, &requests_));
     EXPECT_TRUE(ozzy.ok()) << ozzy.status();
     if (!ozzy.ok()) {
       return nullptr;
@@ -282,10 +250,8 @@ class LoaderTest : public ::testing::Test {
   // pressed, and not before.
   void ExpectError(Ozzy& ozzy) {
     if (ozzy.GetScreen() != nullptr) {
-      RunUntil(ozzy, [](Ozzy& ozzy) {
-        return GetRowText(ozzy, kStatusRow) == kError;
-      });
-    } else {
+      RunUntil(ozzy, [](Ozzy& ozzy) { return GetStatusText(ozzy) == kError; });
+    } else if (ozzy.GetTeletype() != nullptr) {
       std::string output;
       RunUntil(ozzy, [&output](Ozzy& ozzy) {
         output += ozzy.GetTeletype()->TakeOutput();
@@ -295,7 +261,7 @@ class LoaderTest : public ::testing::Test {
                               "Press Enter to Boot...\r\nLoading...\r\n",
                               kError, "\r\n")));
     }
-    ozzy.Run(absl::Milliseconds(100));
+    ozzy.Run(4 * kScreenRefreshTime);
     EXPECT_FALSE(IsHalted(ozzy));
     EXPECT_THAT(requests_, ::testing::IsEmpty());
 
@@ -317,10 +283,73 @@ class LoaderTest : public ::testing::Test {
 
 TEST_F(LoaderTest, FillsTheBootArea) {
   // It assembles to the whole boot area, ending with the boot signature.
+  ASSERT_NE(GetLoader(), nullptr);
+  ASSERT_TRUE(GetLoader()->GetBareProgram().ok());
+  EXPECT_EQ(GetLoader()->GetBareProgram()->contents_words,
+            DiskSuperblock::kBootAreaWords);
   const DiskSuperblock::BootArea& boot_area = GetLoaderBootArea();
-  ASSERT_EQ(boot_area.size(), DiskSuperblock::kBootAreaWords);
-  EXPECT_EQ(boot_area[DiskSuperblock::kBootAreaWords - 2], 0x4F42);
-  EXPECT_EQ(boot_area[DiskSuperblock::kBootAreaWords - 1], 0x544F);
+  EXPECT_EQ(boot_area[DiskSuperblock::kBootAreaWords - 2], kBootSignature[0]);
+  EXPECT_EQ(boot_area[DiskSuperblock::kBootAreaWords - 1], kBootSignature[1]);
+}
+
+TEST_F(LoaderTest, SourceKnowsTheMachineTable) {
+  ExpectSourceConstants({
+      {"TABLE", kMachineTableAddress},
+      {"TABLE_DEVICES", kMachineTableAddress + kMachineHeaderDevices},
+      {"TABLE_BANK_ENTRIES", kMachineTableAddress + kMachineTableBanks},
+      {"TABLE_DEVICE_ENTRIES", kMachineTableAddress + kMachineTableDevices},
+      {"BANK_RAM", kMachineBankRam},
+      {"BANK_SIZE", kMachineBankSize},
+      {"DEVICE_SIZE", kMachineDeviceSize},
+      {"TELETYPE", static_cast<uint32_t>(MachineDeviceType::kTeletype)},
+  });
+  EXPECT_EQ(kMachineDeviceType, 0);
+}
+
+TEST_F(LoaderTest, SourceKnowsTheDevices) {
+  ExpectSourceConstants({
+      {"POWER_PORT", kOzzyPowerPort},
+      {"POWER_RESTART", static_cast<uint32_t>(PowerCommand::kRestart)},
+      {"KEYBOARD_PORT", kOzzyKeyboardPort},
+      {"TELETYPE_PORT", kOzzyTeletypePort},
+      {"SCREEN_START", kOzzyScreenPage * kMemoryBankPageSize},
+      {"SCREEN_COLUMNS",
+       kOzzyScreenPage * kMemoryBankPageSize + ScreenMemory::kColumnsAddress},
+  });
+}
+
+TEST_F(LoaderTest, SourceKnowsTheBootRom) {
+  // It shows its error where the boot ROM shows its status.
+  oz3::ExpectSourceConstants(GetBootRom().GetMap(),
+                             {{"STATUS_ROW", kStatusRow}});
+  ExpectSourceConstants({{"STATUS_ROW", kStatusRow}});
+}
+
+TEST_F(LoaderTest, SourceKnowsTheDiskDrive) {
+  ExpectSourceConstants({
+      {"DRIVE_DATA", DiskDrive::kDataPort - DiskDrive::kCommandPort},
+      {"DRIVE_CONTROL", DiskDrive::kControlPort - DiskDrive::kCommandPort},
+      {"DRIVE_CMD_OPEN", static_cast<uint32_t>(DiskDriveCommand::kOpen)
+                             << DiskDrive::kCommandShift},
+      {"DRIVE_CMD_CLOSE", static_cast<uint32_t>(DiskDriveCommand::kClose)
+                              << DiskDrive::kCommandShift},
+      {"DRIVE_CMD_READ_PACKED",
+       static_cast<uint32_t>(DiskDriveCommand::kReadPacked)
+           << DiskDrive::kCommandShift},
+      {"DRIVE_PHASE", DiskDrive::kPhaseMask},
+      {"DRIVE_PHASE_TAKEN",
+       DiskDrive::kPhaseMask &
+           ~(static_cast<uint32_t>(DiskDrivePhase::kIdle) |
+             static_cast<uint32_t>(DiskDrivePhase::kArguments))},
+  });
+}
+
+TEST_F(LoaderTest, SourceKnowsBarePrograms) {
+  ExpectSourceConstants({
+      {"BARE_ID", (static_cast<uint32_t>(kBareProgramFileVersion) << 16) |
+                      kBareProgramFileId},
+      {"PAGE_SIZE", kMemoryBankPageSize},
+  });
 }
 
 //==============================================================================
@@ -328,8 +357,8 @@ TEST_F(LoaderTest, FillsTheBootArea) {
 //==============================================================================
 
 TEST_F(LoaderTest, StartsTheOs) {
-  // The OS goes in the pages after the loader's, page 1 of bank 0, and its
-  // gap spans pages.
+  // The OS goes in the pages after the loader's page (page 1 of bank 0), and
+  // its gap spans pages.
   std::unique_ptr<Ozzy> ozzy =
       Boot(OzzySettings(), MakeImage(GetOsFile(0x3000, 0x20)));
   ASSERT_NE(ozzy, nullptr);
@@ -371,11 +400,8 @@ TEST_F(LoaderTest, InAnotherBank) {
 TEST_F(LoaderTest, Teletype) {
   // The OS loads the same at 9600 baud, with nothing on the teletype from the
   // loader.
-  OzzySettings settings;
-  settings.screen.reset();
-  settings.teletype = OzzyTeletypeSettings();
-  settings.teletype->baud = 9600;
-  std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeImage(GetOsFile(0, 0)));
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(GetTeletypeSettings(9600), MakeImage(GetOsFile(0, 0)));
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
   ExpectOsRan(*ozzy, 0, 2, 0, 0);
@@ -395,14 +421,17 @@ TEST_F(LoaderTest, NoOsFile) {
 
 TEST_F(LoaderTest, NotABareProgram) {
   // A program file's header, and a bare program file of another version.
-  for (uint16_t version : {1, 2}) {
-    SCOPED_TRACE(version);
+  const std::vector<uint16_t> bare_file = GetOsFile(0, 0);
+  ASSERT_FALSE(bare_file.empty());
+  for (auto [id, version] :
+       {std::pair{kProgramFileId, kProgramFileVersion},
+        std::pair{kBareProgramFileId,
+                  static_cast<uint16_t>(kBareProgramFileVersion + 1)}}) {
+    SCOPED_TRACE(absl::StrFormat("%04X version %d", id, version));
     requests_.clear();
-    std::vector<uint16_t> os_file = GetOsFile(0, 0);
+    std::vector<uint16_t> os_file = bare_file;
+    os_file[0] = id;
     os_file[1] = version;
-    if (version == 1) {
-      os_file[0] = 0x5A4F;
-    }
     std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(os_file));
     ASSERT_NE(ozzy, nullptr);
     ExpectError(*ozzy);
@@ -430,9 +459,7 @@ TEST_F(LoaderTest, NotRam) {
 
 TEST_F(LoaderTest, NotRamAtTheEndOfTheBank) {
   // With the loader on page 15, there is no page after it.
-  OzzySettings settings;
-  settings.screen.reset();
-  settings.teletype = OzzyTeletypeSettings();
+  OzzySettings settings = GetTeletypeSettings(0);
   settings.banks = {0x8000};
   std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeImage(GetOsFile(0, 0)));
   ASSERT_NE(ozzy, nullptr);
@@ -443,11 +470,8 @@ TEST_F(LoaderTest, TeletypeError) {
   for (int baud : {0, 9600}) {
     SCOPED_TRACE(baud);
     requests_.clear();
-    OzzySettings settings;
-    settings.screen.reset();
-    settings.teletype = OzzyTeletypeSettings();
-    settings.teletype->baud = baud;
-    std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeImage(std::nullopt));
+    std::unique_ptr<Ozzy> ozzy =
+        Boot(GetTeletypeSettings(baud), MakeImage(std::nullopt));
     ASSERT_NE(ozzy, nullptr);
     ExpectError(*ozzy);
   }
@@ -459,38 +483,31 @@ TEST_F(LoaderTest, NoScreenOrTeletype) {
   settings.screen.reset();
   std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeImage(std::nullopt));
   ASSERT_NE(ozzy, nullptr);
-  ozzy->Run(absl::Milliseconds(100));
-  EXPECT_FALSE(IsHalted(*ozzy));
-  EXPECT_TRUE(ozzy->GetKeyboard()->TypeKey('x'));
-  RunUntilHalted(*ozzy);
-  EXPECT_THAT(requests_, ::testing::ElementsAre(
-                             PowerRequest{.command = PowerCommand::kRestart}));
+  ExpectError(*ozzy);
 }
 
 TEST_F(LoaderTest, DiskErrors) {
-  // A read that fails at any point fails the load, never hanging: from the
-  // directory to the OS file's last sector. Enough reads loads it.
-  bool loaded = false;
+  // A read that fails at any point fails the load with the error, never
+  // hanging: from the directory to the OS file's last sector. Enough reads
+  // loads it. (NoOsFile checks the restart that follows the error.)
+  const std::vector<uint16_t> os_file = GetOsFile(0x2000, 0);
   int reads = 0;
-  for (; !loaded; ++reads) {
+  for (;; ++reads) {
     SCOPED_TRACE(reads);
     ASSERT_LT(reads, 50);
-    requests_.clear();
     protocol_->SetLimits({});
-    std::unique_ptr<DiskImage> image = MakeImage(GetOsFile(0x2000, 0));
-    std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), std::move(image));
+    std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(os_file));
     ASSERT_NE(ozzy, nullptr);
     protocol_->SetLimits({.reads = reads});
     RunUntil(*ozzy, [](Ozzy& ozzy) {
-      return IsHalted(ozzy) || GetRowText(ozzy, kStatusRow) == kError;
+      return IsHalted(ozzy) || GetStatusText(ozzy) == kError;
     });
     if (IsHalted(*ozzy)) {
       ExpectOsRan(*ozzy, 0, 2, 0x2000, 0);
-      loaded = true;
-    } else {
-      ExpectError(*ozzy);
+      break;
     }
   }
+
   // The directory, and the OS file's sectors, each failed in turn.
   EXPECT_GT(reads, 3);
 }
