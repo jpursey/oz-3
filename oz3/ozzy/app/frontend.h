@@ -55,10 +55,11 @@ class Frontend {
   // Ozzy is shown, between its runs.
   virtual void Update() = 0;
 
-  // The Ozzy is about to power off, so the frontend lets go of it. With
-  // `exit_code`, the program shut it down, which is shown until the next
-  // PowerOn. Without one, it is about to power on again, or the app is
-  // quitting.
+  // The Ozzy shown is about to power off, so the frontend shows what changed
+  // since the last Update, such as what a program wrote before it shut down,
+  // then lets go of it. With `exit_code`, the program shut it down, which is
+  // shown until the next PowerOn. Without one, it is about to power on again,
+  // or the app is quitting.
   virtual void PowerOff(std::optional<int> exit_code) = 0;
 
  protected:

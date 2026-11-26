@@ -25,8 +25,10 @@ namespace oz3 {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::EndsWith;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
+using ::testing::StartsWith;
 
 // Tests of a frontend over a fake console, which the test keeps a pointer to.
 class ConsoleFrontendTest : public ::testing::Test {
@@ -54,26 +56,31 @@ TEST_F(ConsoleFrontendTest, ScreenDrawnAfterARun) {
   EXPECT_THAT(text, HasSubstr(kBootVersion));
 }
 
-TEST_F(ConsoleFrontendTest, PowerOffWithAnExitCodeShowsTheShutDown) {
-  CreateFrontend(ConsoleMode::kLines);
-  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(GetTeletypeSettings(9600));
-  ASSERT_NE(ozzy, nullptr);
-  frontend_->PowerOn(ozzy.get());
-  frontend_->PowerOff(7);
-
-  FakeConsole expected(ConsoleMode::kLines);
-  ShowOzzyShutDown(expected, 7);
-  EXPECT_EQ(console_->TakeText(), expected.TakeText());
-}
-
-TEST_F(ConsoleFrontendTest, PowerOffWithoutAnExitCodeShowsNothing) {
+TEST_F(ConsoleFrontendTest, PowerOffShowsTheLastChanges) {
   CreateFrontend();
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   frontend_->PowerOn(ozzy.get());
   ozzy->Run(kBootTime);
   frontend_->PowerOff(std::nullopt);
-  EXPECT_EQ(console_->TakeText(), "");
+  EXPECT_EQ(console_->TakeText(),
+            DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
+}
+
+TEST_F(ConsoleFrontendTest, PowerOffWithAnExitCodeShowsTheShutDown) {
+  CreateFrontend(ConsoleMode::kLines);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(GetTeletypeSettings(9600));
+  ASSERT_NE(ozzy, nullptr);
+  frontend_->PowerOn(ozzy.get());
+  ozzy->Run(kBootTime);
+  frontend_->PowerOff(7);
+
+  // The teletype's last output is shown before the shutdown.
+  FakeConsole expected(ConsoleMode::kLines);
+  ShowOzzyShutDown(expected, 7);
+  const std::string text = console_->TakeText();
+  EXPECT_THAT(text, StartsWith(kBootVersion));
+  EXPECT_THAT(text, EndsWith(expected.TakeText()));
 }
 
 TEST_F(ConsoleFrontendTest, NextPowerOnDrawsTheNewOzzyWhole) {

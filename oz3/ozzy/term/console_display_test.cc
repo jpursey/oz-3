@@ -53,7 +53,7 @@ TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefresh) {
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   display.Update();
   EXPECT_EQ(console.TakeText(), "");
 }
@@ -62,7 +62,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeFirst) {
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   const std::string text = console.TakeText();
@@ -74,7 +74,7 @@ TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -98,7 +98,7 @@ TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
   console.SetSize({.columns = kDefaultScreenSize.columns - 1, .rows = 30});
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   const std::string text = console.TakeText();
@@ -124,7 +124,7 @@ TEST(ConsoleDisplayTest, MessageWhileTooShort) {
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
   console.SetSize({.columns = 100, .rows = kDefaultScreenSize.rows - 1});
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   EXPECT_THAT(console.TakeText(),
@@ -137,7 +137,7 @@ TEST(ConsoleDisplayTest, MessageRedrawnWhenTheConsoleResizes) {
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
   console.SetSize({.columns = 40, .rows = 20});
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -151,7 +151,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeOnceTheConsoleFits) {
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -176,7 +176,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeWhenTheConsoleResizes) {
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -195,7 +195,7 @@ TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefreshInASmallConsole) {
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
   console.SetSize({.columns = 40, .rows = 20});
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   display.Update();
   EXPECT_EQ(console.TakeText(), "");
 }
@@ -203,8 +203,8 @@ TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefreshInASmallConsole) {
 TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(TeletypeOnlySettings());
   ASSERT_NE(ozzy, nullptr);
-  FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  FakeConsole console(ConsoleMode::kLines);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   EXPECT_THAT(console.TakeText(), HasSubstr(kBootVersion));
@@ -236,8 +236,8 @@ TEST(ConsoleDisplayTest, NeitherScreenNorTeletype) {
   settings.screen.reset();
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  FakeConsole console(ConsoleMode::kLines);
+  ConsoleDisplay display(ozzy.get(), &console);
   EXPECT_EQ(console.TakeText(),
             "This Ozzy has neither a screen nor a teletype.\r\n");
   ozzy->Run(kBootTime);

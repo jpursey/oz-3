@@ -32,8 +32,9 @@ bool ConsoleFrontend::IsQuitRequested() const {
 }
 
 void ConsoleFrontend::PowerOn(Ozzy* ozzy) {
+  CHECK(ozzy != nullptr);
   CHECK(display_ == nullptr) << "An Ozzy is already shown";
-  display_ = std::make_unique<ConsoleDisplay>(*ozzy, *console_);
+  display_ = std::make_unique<ConsoleDisplay>(ozzy, console_.get());
 }
 
 void ConsoleFrontend::Update() {
@@ -42,6 +43,8 @@ void ConsoleFrontend::Update() {
 }
 
 void ConsoleFrontend::PowerOff(std::optional<int> exit_code) {
+  CHECK(display_ != nullptr) << "No Ozzy is shown";
+  display_->Update();
   display_.reset();
   if (exit_code.has_value()) {
     ShowOzzyShutDown(*console_, *exit_code);

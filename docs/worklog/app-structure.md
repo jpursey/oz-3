@@ -371,11 +371,13 @@ struct OzzyAppStats {
 
 - `ConsoleFrontend` is a `Frontend` over a `Console`: `TakeKeys` and
   `IsQuitRequested` are the console's, `PowerOn` makes a `ConsoleDisplay` of
-  the Ozzy, `Update` updates it, and `PowerOff` destroys it, and with an exit
-  code, calls `ShowOzzyShutDown`. `Update` is only called while an Ozzy is
-  shown.
+  the Ozzy, `Update` updates it, and `PowerOff` updates it once more, so what
+  a program wrote just before shutting down is shown, then destroys it, and
+  with an exit code, calls `ShowOzzyShutDown`. `Update` and `PowerOff` are only
+  called while an Ozzy is shown.
 - A `Console` knows the mode it was created in (`GetMode`), so the frontend
-  and `ShowOzzyShutDown` take it from the console rather than being told it.
+  and `ShowOzzyShutDown` take it from the console rather than being told it,
+  and `ConsoleDisplay` checks it is the Ozzy's.
 - `ConsoleFrontendFactory` creates the console in the mode the settings give
   (`GetOzzyConsoleMode`), and gives `ozzyterm`'s command line, which is
   `ozzy`'s now, without `--max-speed`.
@@ -448,9 +450,10 @@ Depends on: CL2.
 **Verify**
 - Standard checks.
 - `console_frontend_test.cc`, with the fake console: the screen drawn after a
-  run and `Update`; `PowerOff` with an exit code shows the shutdown message,
-  in the console's mode, and without one shows nothing; a second `PowerOn`
-  draws the new Ozzy's screen whole; keys and quit are the console's.
+  run and `Update`; `PowerOff` shows what changed since the last `Update`, and
+  with an exit code, then the shutdown message, in the console's mode; a
+  second `PowerOn` draws the new Ozzy's screen whole; keys and quit are the
+  console's.
 - `posix_console_test.cc`: a console's mode is the one it was created in.
 
 ### CL4 [ ] ozzy/app, ozzy/term, apps, manual: OzzyApp on gb::Game
