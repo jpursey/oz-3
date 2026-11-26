@@ -25,7 +25,7 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/terminal_keys.h"
 
@@ -86,6 +86,9 @@ class PosixConsole final : public Console {
   //----------------------------------------------------------------------------
   // Console implementation
   //----------------------------------------------------------------------------
+
+  // Only Create returns a console, once it has taken over.
+  ConsoleMode GetMode() const override { return *mode_; }
 
   void Write(std::string_view text) override;
   ConsoleSize GetSize() override;

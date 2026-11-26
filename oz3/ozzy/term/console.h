@@ -12,7 +12,7 @@
 
 #include "absl/status/statusor.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 
 namespace oz3 {
 
@@ -72,6 +72,9 @@ class Console {
   //----------------------------------------------------------------------------
   // Console interface
   //----------------------------------------------------------------------------
+
+  // Returns the mode the console shows text in, as it was created with.
+  virtual ConsoleMode GetMode() const = 0;
 
   // Writes `text`, which is UTF-8 and may hold virtual terminal sequences.
   virtual void Write(std::string_view text) = 0;

@@ -6,35 +6,16 @@
 #ifndef OZ3_OZZY_APP_FRONTEND_H_
 #define OZ3_OZZY_APP_FRONTEND_H_
 
-#include <cstdint>
 #include <memory>
 #include <optional>
-#include <vector>
 
 #include "absl/status/statusor.h"
 #include "gb/cli/cli_command_line.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 
 namespace oz3 {
-
-//==============================================================================
-// Keys
-//==============================================================================
-
-// A key pressed or released, by its key code (see keyboard.h).
-struct KeyChange {
-  bool operator==(const KeyChange&) const = default;
-
-  int key = 0;
-  bool held = false;
-};
-
-// The keys a frontend took since they were last taken, each oldest first.
-struct FrontendKeys {
-  std::vector<uint16_t> typed;     // Typed key events (see keyboard.h).
-  std::vector<KeyChange> changes;  // Keys pressed and released.
-};
 
 //==============================================================================
 // Frontend
@@ -70,8 +51,8 @@ class Frontend {
   // and outlives it. Called while the frontend shows no Ozzy.
   virtual void PowerOn(Ozzy* ozzy) = 0;
 
-  // Shows what changed in the Ozzy since the last call. Called between runs of
-  // the Ozzy, and does nothing while it shows none.
+  // Shows what changed in the Ozzy since the last call. Called only while an
+  // Ozzy is shown, between its runs.
   virtual void Update() = 0;
 
   // The Ozzy is about to power off, so the frontend lets go of it. With

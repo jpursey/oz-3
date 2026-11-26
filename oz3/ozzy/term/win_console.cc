@@ -21,7 +21,7 @@
 #include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
 // MUST be last, as windows pollutes the global namespace with many macros.
@@ -217,6 +217,9 @@ class WinConsole final : public Console {
   //----------------------------------------------------------------------------
   // Console implementation
   //----------------------------------------------------------------------------
+
+  // Only Create returns a console, once it has taken over.
+  ConsoleMode GetMode() const override { return *mode_; }
 
   void Write(std::string_view text) override;
   ConsoleSize GetSize() override;

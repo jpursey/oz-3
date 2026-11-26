@@ -67,6 +67,14 @@ gb::Context WithPowerCallback(gb::Context context,
   return context;
 }
 
+std::unique_ptr<Ozzy> CreateTestOzzy(const OzzySettings& settings,
+                                     gb::Context context) {
+  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
+      Ozzy::Create(settings, WithPowerCallback(std::move(context)));
+  EXPECT_TRUE(ozzy.ok()) << ozzy.status();
+  return ozzy.ok() ? *std::move(ozzy) : nullptr;
+}
+
 OzzySettings GetTeletypeSettings(int baud) {
   OzzySettings settings;
   settings.screen.reset();

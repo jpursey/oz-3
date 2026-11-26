@@ -12,7 +12,7 @@
 
 #include "absl/strings/str_cat.h"
 #include "oz3/devices/screen.h"
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
 namespace oz3 {
@@ -21,12 +21,12 @@ namespace oz3 {
 inline const ConsoleSize kDefaultScreenSize = {
     .columns = ScreenSettings().columns, .rows = ScreenSettings().rows};
 
-// A console for tests, which keeps what is written to it, and gives the keys
-// and quit a test sets. It is the size of the default Ozzy's screen unless it
-// is set.
+// A console for tests, in `mode`, which keeps what is written to it, and gives
+// the keys and quit a test sets. It is the size of the default Ozzy's screen
+// unless it is set.
 class FakeConsole final : public Console {
  public:
-  FakeConsole() = default;
+  explicit FakeConsole(ConsoleMode mode = ConsoleMode::kScreen) : mode_(mode) {}
 
   // Returns what was written since the last call.
   std::string TakeText() { return std::exchange(text_, {}); }
@@ -38,12 +38,14 @@ class FakeConsole final : public Console {
 
   void SetQuitRequested() { quit_requested_ = true; }
 
+  ConsoleMode GetMode() const override { return mode_; }
   void Write(std::string_view text) override { absl::StrAppend(&text_, text); }
   ConsoleSize GetSize() override { return size_; }
   FrontendKeys TakeKeys() override { return std::exchange(keys_, {}); }
   bool IsQuitRequested() const override { return quit_requested_; }
 
  private:
+  const ConsoleMode mode_;
   std::string text_;
   ConsoleSize size_ = kDefaultScreenSize;
   FrontendKeys keys_;

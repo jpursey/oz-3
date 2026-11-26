@@ -31,12 +31,10 @@ class ConsoleFrontend final : public Frontend {
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Presents an app in `console`, which is in `mode`, the mode
-  // GetOzzyConsoleMode returns for the Ozzys it shows. Destroying the frontend
-  // gives the console back.
-  ConsoleFrontend(std::unique_ptr<Console> console, ConsoleMode mode);
-
-  ~ConsoleFrontend() override = default;
+  // Presents an app in `console`, whose mode is the one GetOzzyConsoleMode
+  // returns for the Ozzys it shows. Destroying the frontend gives the console
+  // back.
+  explicit ConsoleFrontend(std::unique_ptr<Console> console);
 
   //----------------------------------------------------------------------------
   // Frontend interface
@@ -57,7 +55,6 @@ class ConsoleFrontend final : public Frontend {
   //----------------------------------------------------------------------------
 
   const std::unique_ptr<Console> console_;
-  const ConsoleMode mode_;
 
   // The display of the Ozzy shown, or null while there is none.
   std::unique_ptr<ConsoleDisplay> display_;
@@ -71,9 +68,6 @@ class ConsoleFrontend final : public Frontend {
 // Console::Create).
 class ConsoleFrontendFactory final : public FrontendFactory {
  public:
-  ConsoleFrontendFactory() = default;
-  ~ConsoleFrontendFactory() override = default;
-
   //----------------------------------------------------------------------------
   // FrontendFactory interface
   //----------------------------------------------------------------------------

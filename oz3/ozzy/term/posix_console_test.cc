@@ -24,7 +24,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
 namespace oz3 {
@@ -136,6 +136,14 @@ TEST_F(PosixTerminalTest, RawModeIsGivenBack) {
   EXPECT_EQ(given_back.c_iflag, mode_.c_iflag);
   EXPECT_EQ(given_back.c_oflag, mode_.c_oflag);
   EXPECT_EQ(given_back.c_cc[VMIN], mode_.c_cc[VMIN]);
+}
+
+TEST_F(PosixTerminalTest, ModeIsAsCreated) {
+  for (ConsoleMode mode : {ConsoleMode::kScreen, ConsoleMode::kLines}) {
+    std::unique_ptr<Console> console = CreateConsole(mode);
+    ASSERT_NE(console, nullptr);
+    EXPECT_EQ(console->GetMode(), mode);
+  }
 }
 
 TEST_F(PosixTerminalTest, ScreenIsTheAlternateScreen) {

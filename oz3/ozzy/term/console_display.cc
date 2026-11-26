@@ -19,12 +19,12 @@ ConsoleMode GetOzzyConsoleMode(const OzzySettings& settings) {
                                      : ConsoleMode::kLines;
 }
 
-void ShowOzzyShutDown(Console& console, ConsoleMode mode, int exit_code) {
+void ShowOzzyShutDown(Console& console, int exit_code) {
   const std::string lines[] = {
       absl::StrCat("Ozzy shut down, exit code ", exit_code, "."),
       "Ctrl+Alt+Q quits.",
   };
-  if (mode == ConsoleMode::kScreen) {
+  if (console.GetMode() == ConsoleMode::kScreen) {
     console.Write(DrawConsoleLines(lines));
     return;
   }

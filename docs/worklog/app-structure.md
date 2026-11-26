@@ -372,13 +372,15 @@ struct OzzyAppStats {
 - `ConsoleFrontend` is a `Frontend` over a `Console`: `TakeKeys` and
   `IsQuitRequested` are the console's, `PowerOn` makes a `ConsoleDisplay` of
   the Ozzy, `Update` updates it, and `PowerOff` destroys it, and with an exit
-  code, calls `ShowOzzyShutDown`.
+  code, calls `ShowOzzyShutDown`. `Update` is only called while an Ozzy is
+  shown.
+- A `Console` knows the mode it was created in (`GetMode`), so the frontend
+  and `ShowOzzyShutDown` take it from the console rather than being told it.
 - `ConsoleFrontendFactory` creates the console in the mode the settings give
   (`GetOzzyConsoleMode`), and gives `ozzyterm`'s command line, which is
   `ozzy`'s now, without `--max-speed`.
 - `ConsoleFrontend` takes the `Console` it is given, so its tests use the fake
-  console now in `console_display_test.cc`, which moves to a header of the
-  term library's tests.
+  console that was in `console_display_test.cc`, moved to `fake_console.h`.
 - The *Teletype view* and *Headless ozzyterm* change only this library and
   the factory's command line: the view replaces the lines mode, and
   `--headless` makes a frontend with no console.
@@ -429,24 +431,27 @@ Depends on: CL1.
 
 Depends on: CL2.
 
-- `oz3_ozzy_app`: `frontend.h`, with `Frontend`, `FrontendKeys`, and
-  `KeyChange` (moved from `console.h`), and `FrontendFactory`, with only
-  `Create`, as nothing needs `GetProgram` until `OzzyApp`. It gains `gb_cli`,
-  for the command line `Create` reads.
+- `oz3_ozzy_app`: `frontend_keys.h`, with `FrontendKeys` and `KeyChange`
+  (moved from `console.h`), and `frontend.h`, with `Frontend` and
+  `FrontendFactory`, with only `Create`, as nothing needs `GetProgram` until
+  `OzzyApp`. It gains `gb_cli`, for the command line `Create` reads.
 - `oz3_ozzy_term`: `ConsoleFrontend` and `ConsoleFrontendFactory`. `Console`
-  returns `FrontendKeys` in place of `ConsoleKeys`. The fake console moves to
-  `fake_console.h`, for the term library's tests.
+  returns `FrontendKeys` in place of `ConsoleKeys`, and gains `GetMode`, which
+  `ShowOzzyShutDown` reads in place of being given the mode. The fake console
+  moves to `fake_console.h`, for the term library's tests.
+- `oz3_ozzy_testing`: `CreateTestOzzy`, `kBootVersion`, and `kBootTime`, which
+  the machine and term tests had copies of.
 - `ozzy_main.cc` shows the Ozzy through a `ConsoleFrontend`, which it creates
   with a `ConsoleFrontendFactory`, in place of its own `Console`,
   `ConsoleDisplay`, and `ShowOzzyShutDown`.
 
 **Verify**
 - Standard checks.
-- `console_frontend_test.cc`, with the fake console: nothing shown before
-  `PowerOn`; the screen drawn after a run and `Update`; `PowerOff` with an
-  exit code shows the shutdown message, and without one shows nothing; a
-  second `PowerOn` draws the new Ozzy's screen whole; keys and quit are the
-  console's.
+- `console_frontend_test.cc`, with the fake console: the screen drawn after a
+  run and `Update`; `PowerOff` with an exit code shows the shutdown message,
+  in the console's mode, and without one shows nothing; a second `PowerOn`
+  draws the new Ozzy's screen whole; keys and quit are the console's.
+- `posix_console_test.cc`: a console's mode is the one it was created in.
 
 ### CL4 [ ] ozzy/app, ozzy/term, apps, manual: OzzyApp on gb::Game
 

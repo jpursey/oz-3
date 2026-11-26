@@ -5,6 +5,7 @@
 
 set(oz3_ozzy_app_SOURCE
   frontend.h
+  frontend_keys.h
   ozzy_host.cc ozzy_host.h
 )
 set(oz3_ozzy_app_DEPS

@@ -15,7 +15,7 @@
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
 #include "oz3/devices/keyboard.h"
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
 namespace oz3 {

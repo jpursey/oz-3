@@ -20,9 +20,8 @@ namespace oz3 {
 // ConsoleFrontend
 //==============================================================================
 
-ConsoleFrontend::ConsoleFrontend(std::unique_ptr<Console> console,
-                                 ConsoleMode mode)
-    : console_(std::move(console)), mode_(mode) {
+ConsoleFrontend::ConsoleFrontend(std::unique_ptr<Console> console)
+    : console_(std::move(console)) {
   CHECK(console_ != nullptr);
 }
 
@@ -38,15 +37,14 @@ void ConsoleFrontend::PowerOn(Ozzy* ozzy) {
 }
 
 void ConsoleFrontend::Update() {
-  if (display_ != nullptr) {
-    display_->Update();
-  }
+  CHECK(display_ != nullptr) << "No Ozzy is shown";
+  display_->Update();
 }
 
 void ConsoleFrontend::PowerOff(std::optional<int> exit_code) {
   display_.reset();
   if (exit_code.has_value()) {
-    ShowOzzyShutDown(*console_, mode_, *exit_code);
+    ShowOzzyShutDown(*console_, *exit_code);
   }
 }
 
@@ -56,14 +54,14 @@ void ConsoleFrontend::PowerOff(std::optional<int> exit_code) {
 
 absl::StatusOr<std::unique_ptr<Frontend>> ConsoleFrontendFactory::Create(
     const OzzySettings& settings, const gb::CliCommandLine& command_line) {
-  const ConsoleMode mode = GetOzzyConsoleMode(settings);
-  absl::StatusOr<std::unique_ptr<Console>> console = Console::Create(mode);
+  absl::StatusOr<std::unique_ptr<Console>> console =
+      Console::Create(GetOzzyConsoleMode(settings));
   if (!console.ok()) {
     return absl::Status(console.status().code(),
                         absl::StrCat("Failed to take over the console: ",
                                      console.status().message()));
   }
-  return std::make_unique<ConsoleFrontend>(*std::move(console), mode);
+  return std::make_unique<ConsoleFrontend>(*std::move(console));
 }
 
 }  // namespace oz3

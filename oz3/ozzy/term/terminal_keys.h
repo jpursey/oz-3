@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include "oz3/ozzy/app/frontend.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
 namespace oz3 {
