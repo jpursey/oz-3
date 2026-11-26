@@ -5,17 +5,34 @@
 
 #include "oz3/ozzy/machine/ozzy_testing.h"
 
+#include <optional>
+#include <string_view>
+#include <utility>
+#include <vector>
+
 #include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
+#include "absl/time/time.h"
+#include "absl/types/span.h"
+#include "gb/file/file_system.h"
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/core/date_time.h"
 #include "oz3/core/instruction_compiler.h"
+#include "oz3/core/lockable.h"
 #include "oz3/core/processor.h"
+#include "oz3/disk/disk_dir_entry.h"
+#include "oz3/disk/disk_file_system.h"
+#include "oz3/disk/disk_filename.h"
+#include "oz3/disk/disk_image.h"
+#include "oz3/disk/disk_label.h"
+#include "oz3/disk/disk_status.h"
 #include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 
@@ -34,6 +51,9 @@ const InstructionSetSyntax* GetDefaultSyntax() {
   }();
   return s_syntax;
 }
+
+// The sectors of the images MakeTestImage makes: a 360K floppy's.
+constexpr int kTestImageSectors = 720;
 
 }  // namespace
 
@@ -100,6 +120,65 @@ void ExpectSourceConstants(const ProgramMap& map,
   EXPECT_THAT(expected, ::testing::IsEmpty());
 }
 
+bool LoadOnCore0(Ozzy& ozzy, std::string_view source) {
+  std::unique_ptr<AsmProgram> program = AssembleTestProgram(source);
+  if (program == nullptr) {
+    return false;
+  }
+  ProgramLoader loader(ozzy.GetProcessor());
+  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
+  if (handle == ProgramLoader::kInvalidHandle) {
+    ADD_FAILURE() << "The program doesn't load";
+    return false;
+  }
+  CpuCore* core = ozzy.GetProcessor()->GetCore(0);
+  std::unique_ptr<Lock> lock = core->RequestLock();
+  EXPECT_TRUE(lock->IsLocked());
+  core->Reset(*lock, loader.GetResetParams(handle));
+  return true;
+}
+
+void MakeTestImage(gb::FileSystem* host, std::string_view path) {
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Create(host, path, kTestImageSectors);
+  ASSERT_TRUE(image.ok()) << image.status();
+  DiskFileSystem file_system({}, 1);
+  file_system.AttachImage(*std::move(image));
+  EXPECT_EQ(file_system.Format(*DiskLabel::Parse("WORK"), 0, DateTime()),
+            DiskStatus::kOk);
+}
+
+std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> ReadTestFile(
+    gb::FileSystem* host, std::string_view path, std::string_view name) {
+  absl::StatusOr<std::unique_ptr<DiskImage>> image =
+      DiskImage::Open(host, path);
+  EXPECT_TRUE(image.ok()) << image.status();
+  if (!image.ok()) {
+    return std::nullopt;
+  }
+  DiskFileSystem file_system({}, 1);
+  file_system.AttachImage(*std::move(image));
+  const DiskFilename filename = *DiskFilename::Parse(name);
+  DiskFile root = 0;
+  EXPECT_EQ(file_system.OpenRoot(&root), DiskStatus::kOk);
+  DiskDirEntry entry;
+  const bool found =
+      file_system.Find(root, filename, &entry) == DiskStatus::kOk;
+  EXPECT_EQ(file_system.Close(root, DateTime()), DiskStatus::kOk);
+  if (!found) {
+    return std::nullopt;
+  }
+  DiskFile file = 0;
+  EXPECT_EQ(file_system.Open(filename, &file), DiskStatus::kOk);
+  std::vector<uint16_t> words(entry.GetSize().value_or(0));
+  int read = 0;
+  EXPECT_EQ(file_system.Read(file, absl::MakeSpan(words), &read),
+            DiskStatus::kOk);
+  words.resize(read);
+  EXPECT_EQ(file_system.Close(file, DateTime()), DiskStatus::kOk);
+  return std::make_pair(entry, std::move(words));
+}
+
 std::string GetLoaderErrorStatus(int code) {
   return absl::StrFormat("ERROR: Loader error %02Xh", code);
 }
@@ -116,6 +195,14 @@ CpuCore::Registers GetRegisters(Ozzy& ozzy) {
 
 bool IsHalted(Ozzy& ozzy) {
   return ozzy.GetProcessor()->GetCore(0)->GetState() == CpuCore::State::kIdle;
+}
+
+bool RunUntilCore0Halts(Ozzy& ozzy) {
+  for (int run = 0; run < 10'000 && !IsHalted(ozzy); ++run) {
+    ozzy.Run(absl::Milliseconds(1));
+  }
+  EXPECT_TRUE(IsHalted(ozzy)) << "Core 0 didn't halt";
+  return IsHalted(ozzy);
 }
 
 std::string GetRowText(const ScreenPicture& picture, int row) {

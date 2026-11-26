@@ -9,14 +9,18 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "gb/base/context.h"
+#include "gb/file/file_system.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/devices/power_control.h"
 #include "oz3/devices/screen.h"
+#include "oz3/disk/disk_dir_entry.h"
 #include "oz3/disk/disk_superblock.h"
 #include "oz3/ozzy/machine/boot_rom.h"
 #include "oz3/ozzy/machine/ozzy.h"
@@ -48,6 +52,11 @@ OzzySettings GetTeletypeSettings(int baud);
 // failure for each error, or null if it doesn't assemble.
 std::unique_ptr<AsmProgram> AssembleTestProgram(std::string_view source);
 
+// Assembles `source` in the default instruction set, adding a test failure for
+// each error, loads it into `ozzy`, and resets core 0 to run it, in place of
+// the boot ROM. Returns whether it did.
+bool LoadOnCore0(Ozzy& ozzy, std::string_view source);
+
 // Returns `program`'s bare program in a boot area, as `oz3dsk boot` writes it,
 // adding a test failure if it isn't a bare program that fills the boot area.
 DiskSuperblock::BootArea GetBootArea(const AsmProgram& program);
@@ -55,6 +64,151 @@ DiskSuperblock::BootArea GetBootArea(const AsmProgram& program);
 // Expects `map` to have each of `expected`'s constants, with its value.
 void ExpectSourceConstants(const ProgramMap& map,
                            std::map<std::string_view, uint32_t> expected);
+
+//==============================================================================
+// Disk images
+//==============================================================================
+
+// Makes a formatted image at `path` in `host`, with a 360K floppy's sectors,
+// adding a test failure if it can't.
+void MakeTestImage(gb::FileSystem* host, std::string_view path);
+
+// Returns the root's entry for `name` on the image at `path` in `host`, and
+// its words, or nullopt if there is no such file. Nothing else may have the
+// image open.
+std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> ReadTestFile(
+    gb::FileSystem* host, std::string_view path, std::string_view name);
+
+// A program for core 0 (see LoadOnCore0) that creates the file LOG on drive A:,
+// on its ports and interrupt, and writes the words 1 to 4 to it, without
+// closing it, so they reach the image only once the drive commits them. It
+// halts with R5 0, or the step that failed.
+inline constexpr std::string_view kWriteLogProgram = R"---(
+    .STACK 16
+
+    .SEGMENT main CODE
+        SETI 2, handler         ; Reads a completion into R2, R3 fields
+        MVQ R6, 0               ; Completions handled
+        EI
+
+    idle_create:
+        IN 18, R0
+        AND R0, 15              ; Phase 0
+        JC NZ, idle_create
+        MOV R2, create_completion
+        MVQ R3, 2
+        MOV R1, create          ; The command word, then the name's 4 dwords
+        MVQ R7, 1
+    send_create:
+        OUTR.IW 16, (R1)
+        JC NS, send_create
+        MVQ R7, 4
+    send_name:
+        OUTR.ID 16, [R1]
+        JC NS, send_name
+    wait_create:
+        IN 18, R0
+        AND R0, 14              ; Phase 2 or higher
+        JC Z, wait_create
+        MOV R1, accept
+        MVQ R7, 1
+    read_create_accept:
+        INR.IW 16, (R1)
+        JC NS, read_create_accept
+        MVQ R5, 1
+        MOV R1, accept
+        MOV R0, (R1)
+        CMP R0, 0               ; OK
+        JC NZ, fail
+    wait_create_completion:
+        CMP R6, 1
+        JC NZ, wait_create_completion
+        MVQ R5, 2
+        MOV R1, create_completion
+        MOV R0, (R1)
+        CMP R0, 0               ; OK, in slot 0
+        JC NZ, fail
+        ADQ R1, 1
+        MOV R0, (R1)
+        CMP R0, 0
+        JC NZ, fail
+
+    idle_write:
+        IN 18, R0
+        AND R0, 15
+        JC NZ, idle_write
+        MOV R2, write_completion
+        MVQ R3, 2
+        MOV R1, write           ; WRITE 0 and its count
+        MVQ R7, 2
+    send_write:
+        OUTR.IW 16, (R1)
+        JC NS, send_write
+    wait_write:
+        IN 18, R0
+        AND R0, 14
+        JC Z, wait_write
+        MOV R1, accept
+        MVQ R7, 2
+    read_write_accept:
+        INR.IW 16, (R1)
+        JC NS, read_write_accept
+        MVQ R5, 3
+        MOV R1, accept
+        MOV R0, (R1)
+        CMP R0, 0               ; OK, for 4 words
+        JC NZ, fail
+        ADQ R1, 1
+        MOV R0, (R1)
+        CMP R0, 4
+        JC NZ, fail
+        MOV R1, words
+        MVQ R7, 4
+    send_words:
+        OUTR.IW 17, (R1)
+        JC NS, send_words
+    wait_write_completion:
+        CMP R6, 2
+        JC NZ, wait_write_completion
+        MVQ R5, 4
+        MOV R1, write_completion
+        MOV R0, (R1)
+        CMP R0, 0               ; OK, 4 written
+        JC NZ, fail
+        ADQ R1, 1
+        MOV R0, (R1)
+        CMP R0, 4
+        JC NZ, fail
+        MVQ R5, 0
+    fail:
+        HALT
+
+    handler:
+        MOV R7, R3
+    read_completion:
+        INR.IW 16, (R2)
+        JC NS, read_completion
+        ADQ R6, 1
+        IRT
+
+    .SEGMENT vars DATA
+    create:
+        .DW 1200h
+        .DW SIZE(6) "LOG"
+        .DW 0, 0
+    write:
+        .DW 2100h, 4
+    words:
+        .DW 1, 2, 3, 4
+    accept:
+        .DW 0FFFFh, 0FFFFh
+    create_completion:
+        .DW 0FFFFh, 0FFFFh
+    write_completion:
+        .DW 0FFFFh, 0FFFFh
+
+    .SEGMENT stack STACK
+)---";
 
 //==============================================================================
 // The boot ROM
@@ -87,6 +241,10 @@ CpuCore::Registers GetRegisters(Ozzy& ozzy);
 
 // Returns whether core 0 has halted.
 bool IsHalted(Ozzy& ozzy);
+
+// Runs `ozzy` a millisecond at a time until core 0 halts, for at most 10
+// seconds, adding a test failure if it doesn't. Returns whether it halted.
+bool RunUntilCore0Halts(Ozzy& ozzy);
 
 // Returns the text of row `row` of `picture`, without its cells' attributes,
 // and without the spaces at its end.

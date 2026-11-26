@@ -66,10 +66,13 @@ set(oz3_ozzy_testing_SOURCE
 )
 set(oz3_ozzy_testing_DEPS
   absl::algorithm_container
+  absl::span
   absl::status
   absl::statusor
   absl::strings
+  absl::time
   gb_base
+  gb_file
   gb_parse
   gmock
   oz3_core

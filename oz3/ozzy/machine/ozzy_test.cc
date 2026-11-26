@@ -38,16 +38,10 @@
 #include "oz3/devices/power_control.h"
 #include "oz3/devices/timer.h"
 #include "oz3/disk/disk_dir_entry.h"
-#include "oz3/disk/disk_file_system.h"
-#include "oz3/disk/disk_filename.h"
-#include "oz3/disk/disk_image.h"
-#include "oz3/disk/disk_label.h"
-#include "oz3/disk/disk_status.h"
 #include "oz3/ozzy/machine/machine_table.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/tools/program_assembler.h"
-#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 namespace {
@@ -68,27 +62,6 @@ std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
     return nullptr;
   }
   return std::move(*ozzy);
-}
-
-// Assembles `text` in the default instruction set, adding a test failure for
-// each error, loads it into `ozzy`, and resets core 0 to run it. Returns
-// whether it did.
-bool LoadOnCore0(Ozzy& ozzy, std::string_view text) {
-  std::unique_ptr<AsmProgram> program = AssembleTestProgram(text);
-  if (program == nullptr) {
-    return false;
-  }
-  ProgramLoader loader(ozzy.GetProcessor());
-  const ProgramLoader::Handle handle = loader.Load(program->GetProgram());
-  if (handle == ProgramLoader::kInvalidHandle) {
-    ADD_FAILURE() << "The program doesn't load";
-    return false;
-  }
-  CpuCore* core = ozzy.GetProcessor()->GetCore(0);
-  std::unique_ptr<Lock> lock = core->RequestLock();
-  EXPECT_TRUE(lock->IsLocked());
-  core->Reset(*lock, loader.GetResetParams(handle));
-  return true;
 }
 
 // Returns `count` words of the machine table from `offset`.
@@ -387,9 +360,6 @@ TEST(OzzyTest, NoDevicesMachineTable) {
 // Drives
 //==============================================================================
 
-// The sectors of the images the tests make: a 360K floppy's.
-constexpr int kSectors = 720;
-
 // Returns the words of `ozzy`'s machine table device entry `device`.
 std::vector<uint16_t> GetDeviceEntry(Ozzy& ozzy, int device) {
   return GetTableWords(ozzy, kMachineTableDevices + device * kMachineDeviceSize,
@@ -408,48 +378,6 @@ class OzzyDriveTest : public ::testing::Test {
   gb::Context HostContext() {
     return WithPowerCallback(
         gb::ContextBuilder().SetPtr<gb::FileSystem>(&host_).Build());
-  }
-
-  // Makes a formatted image at `path`.
-  void MakeImage(std::string_view path) {
-    absl::StatusOr<std::unique_ptr<DiskImage>> image =
-        DiskImage::Create(&host_, path, kSectors);
-    ASSERT_TRUE(image.ok()) << image.status();
-    DiskFileSystem file_system({}, 1);
-    file_system.AttachImage(*std::move(image));
-    EXPECT_EQ(file_system.Format(*DiskLabel::Parse("WORK"), 0, DateTime()),
-              DiskStatus::kOk);
-  }
-
-  // Returns the root's entry for `name` on the image at `path`, and its
-  // words, or nullopt if there is no such file. Nothing else may have the
-  // image open.
-  std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> ReadFile(
-      std::string_view path, std::string_view name) {
-    absl::StatusOr<std::unique_ptr<DiskImage>> image =
-        DiskImage::Open(&host_, path);
-    EXPECT_TRUE(image.ok()) << image.status();
-    if (!image.ok()) {
-      return std::nullopt;
-    }
-    DiskFileSystem file_system({}, 1);
-    file_system.AttachImage(*std::move(image));
-    const DiskFilename filename = *DiskFilename::Parse(name);
-    DiskFile root = 0;
-    EXPECT_EQ(file_system.OpenRoot(&root), DiskStatus::kOk);
-    DiskDirEntry entry;
-    if (file_system.Find(root, filename, &entry) != DiskStatus::kOk) {
-      return std::nullopt;
-    }
-    EXPECT_EQ(file_system.Close(root, DateTime()), DiskStatus::kOk);
-    DiskFile file = 0;
-    EXPECT_EQ(file_system.Open(filename, &file), DiskStatus::kOk);
-    std::vector<uint16_t> words(entry.GetSize().value_or(0));
-    int read = 0;
-    EXPECT_EQ(file_system.Read(file, absl::MakeSpan(words), &read),
-              DiskStatus::kOk);
-    words.resize(read);
-    return std::make_pair(entry, std::move(words));
   }
 
   gb::FileSystem host_;
@@ -513,8 +441,8 @@ TEST_F(OzzyDriveTest, MachineTableWithEveryDevice) {
 }
 
 TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
-  MakeImage("mem:/a.ozd");
-  MakeImage("mem:/d.ozd");
+  MakeTestImage(&host_, "mem:/a.ozd");
+  MakeTestImage(&host_, "mem:/d.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/d.ozd"}};
   std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, HostContext());
@@ -535,7 +463,7 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
 TEST_F(OzzyDriveTest, AConfigsImagesAreFromItsFolder) {
   ASSERT_TRUE(
       host_.CreateFolder("mem:/configs/disks", gb::FolderMode::kRecursive));
-  MakeImage("mem:/configs/disks/a.ozd");
+  MakeTestImage(&host_, "mem:/configs/disks/a.ozd");
   absl::StatusOr<OzzySettings> settings = ReadOzzySettings(
       "drives: [{ preset: 'floppy-1440k', image: 'disks/a.ozd' }]",
       "mem:/configs/work.ozzy");
@@ -546,7 +474,7 @@ TEST_F(OzzyDriveTest, AConfigsImagesAreFromItsFolder) {
 }
 
 TEST_F(OzzyDriveTest, MissingImage) {
-  MakeImage("mem:/a.ozd");
+  MakeTestImage(&host_, "mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {.image = "mem:/b.ozd"}};
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
@@ -578,7 +506,7 @@ TEST_F(OzzyDriveTest, DriveErrorsNameTheDrive) {
 }
 
 TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
-  MakeImage("mem:/a.ozd");
+  MakeTestImage(&host_, "mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/a.ozd"}};
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
@@ -588,138 +516,8 @@ TEST_F(OzzyDriveTest, OneImageInTwoDrives) {
             "drive D: image mem:/a.ozd is also drive A's");
 }
 
-// Creates the file LOG on drive A:, on its ports and interrupt, and writes the
-// words 1 to 4 to it, without closing it. It halts with R5 0, or the step that
-// failed.
-constexpr std::string_view kWriteLogProgram = R"---(
-    .STACK 16
-
-    .SEGMENT main CODE
-        SETI 2, handler         ; Reads a completion into R2, R3 fields
-        MVQ R6, 0               ; Completions handled
-        EI
-
-    idle_create:
-        IN 18, R0
-        AND R0, 15              ; Phase 0
-        JC NZ, idle_create
-        MOV R2, create_completion
-        MVQ R3, 2
-        MOV R1, create          ; The command word, then the name's 4 dwords
-        MVQ R7, 1
-    send_create:
-        OUTR.IW 16, (R1)
-        JC NS, send_create
-        MVQ R7, 4
-    send_name:
-        OUTR.ID 16, [R1]
-        JC NS, send_name
-    wait_create:
-        IN 18, R0
-        AND R0, 14              ; Phase 2 or higher
-        JC Z, wait_create
-        MOV R1, accept
-        MVQ R7, 1
-    read_create_accept:
-        INR.IW 16, (R1)
-        JC NS, read_create_accept
-        MVQ R5, 1
-        MOV R1, accept
-        MOV R0, (R1)
-        CMP R0, 0               ; OK
-        JC NZ, fail
-    wait_create_completion:
-        CMP R6, 1
-        JC NZ, wait_create_completion
-        MVQ R5, 2
-        MOV R1, create_completion
-        MOV R0, (R1)
-        CMP R0, 0               ; OK, in slot 0
-        JC NZ, fail
-        ADQ R1, 1
-        MOV R0, (R1)
-        CMP R0, 0
-        JC NZ, fail
-
-    idle_write:
-        IN 18, R0
-        AND R0, 15
-        JC NZ, idle_write
-        MOV R2, write_completion
-        MVQ R3, 2
-        MOV R1, write           ; WRITE 0 and its count
-        MVQ R7, 2
-    send_write:
-        OUTR.IW 16, (R1)
-        JC NS, send_write
-    wait_write:
-        IN 18, R0
-        AND R0, 14
-        JC Z, wait_write
-        MOV R1, accept
-        MVQ R7, 2
-    read_write_accept:
-        INR.IW 16, (R1)
-        JC NS, read_write_accept
-        MVQ R5, 3
-        MOV R1, accept
-        MOV R0, (R1)
-        CMP R0, 0               ; OK, for 4 words
-        JC NZ, fail
-        ADQ R1, 1
-        MOV R0, (R1)
-        CMP R0, 4
-        JC NZ, fail
-        MOV R1, words
-        MVQ R7, 4
-    send_words:
-        OUTR.IW 17, (R1)
-        JC NS, send_words
-    wait_write_completion:
-        CMP R6, 2
-        JC NZ, wait_write_completion
-        MVQ R5, 4
-        MOV R1, write_completion
-        MOV R0, (R1)
-        CMP R0, 0               ; OK, 4 written
-        JC NZ, fail
-        ADQ R1, 1
-        MOV R0, (R1)
-        CMP R0, 4
-        JC NZ, fail
-        MVQ R5, 0
-    fail:
-        HALT
-
-    handler:
-        MOV R7, R3
-    read_completion:
-        INR.IW 16, (R2)
-        JC NS, read_completion
-        ADQ R6, 1
-        IRT
-
-    .SEGMENT vars DATA
-    create:
-        .DW 1200h
-        .DW SIZE(6) "LOG"
-        .DW 0, 0
-    write:
-        .DW 2100h, 4
-    words:
-        .DW 1, 2, 3, 4
-    accept:
-        .DW 0FFFFh, 0FFFFh
-    create_completion:
-        .DW 0FFFFh, 0FFFFh
-    write_completion:
-        .DW 0FFFFh, 0FFFFh
-
-    .SEGMENT stack STACK
-)---";
-
 TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
-  MakeImage("mem:/a.ozd");
+  MakeTestImage(&host_, "mem:/a.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}};
   const absl::CivilSecond now(2026, 11, 18, 9, 30, 15);
@@ -732,20 +530,13 @@ TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
 
   // The program runs on core 0 in place of the boot ROM.
   ASSERT_TRUE(LoadOnCore0(*ozzy, kWriteLogProgram));
-  CpuCore* core = ozzy->GetProcessor()->GetCore(0);
-  for (int step = 0; step < 10'000 && core->GetState() != CpuCore::State::kIdle;
-       ++step) {
-    ozzy->Run(absl::Milliseconds(1));
-  }
-  ASSERT_EQ(core->GetState(), CpuCore::State::kIdle);
-  CpuCore::Registers registers;
-  core->GetRegisters(registers);
-  EXPECT_EQ(registers[CpuCore::R5], 0);
+  ASSERT_TRUE(RunUntilCore0Halts(*ozzy));
+  EXPECT_EQ(GetRegisters(*ozzy)[CpuCore::R5], 0);
 
   // The file isn't closed, so its words are still in the drive.
   ozzy.reset();
   std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> file =
-      ReadFile("mem:/a.ozd", "LOG");
+      ReadTestFile(&host_, "mem:/a.ozd", "LOG");
   ASSERT_TRUE(file.has_value());
   EXPECT_EQ(file->first.GetModified(), DateTime::FromCivil(now));
   EXPECT_THAT(file->second, ElementsAre(1, 2, 3, 4));
