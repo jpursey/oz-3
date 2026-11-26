@@ -9,14 +9,16 @@
 ; Core 0 runs this at power on, from page 0 of bank 0. It reads the machine
 ; table, clears the screen, and shows the banner on the screen (or, without
 ; one, on the teletype). With a keyboard, it then prompts, and waits for Enter
-; to boot from A:, reading the disk's boot area into its stack's page and
-; starting the loader there. Without one, it halts.
+; to boot from A:, reading the disk's boot area into page 1 and starting the
+; loader there. Without one, it halts. A loader that fails runs exit, which
+; starts the boot ROM again from its start, with the loader's error code in R0,
+; to show it and prompt again.
 ;
 ; The code and its strings are one ROM segment, which is also the DATA segment,
 ; so the machine table is read with D(n). The screen's page is the EXTRA bank.
-; The stack is in a page of RAM the host places, and the variables are the
-; first words pushed onto it, from S(-1) down. The loader goes at the start of
-; the same page.
+; The stack is in page 1 of bank 0, ending at STACK_END, where the host starts
+; it, and the variables are the first words pushed onto it, from S(-1) down.
+; The loader goes at the start of the same page.
 ;===============================================================================
 
 ;-------------------------------------------------------------------------------
@@ -116,9 +118,17 @@
 ; The boot area's size, in the dwords READ BOOT moves.
 .CONST BOOT_AREA_DWORDS = 112
 
-; The loader is the first words of the stack's page, which ends at BS.
-.CONST PAGE_SIZE = 1000h
-.CONST LOADER = -PAGE_SIZE
+; Everything is in bank 0. The loader is read to the start of page 1, and the
+; stack ends 200h words into it, so the loader and the stack together use
+; 1000h to 11FFh, leaving the rest of the page to what the loader loads.
+.CONST LOADER_START = 1000h
+.CONST STACK_END = 1200h
+
+; Where exit is, which never moves, so every loader can jump to it.
+.CONST EXIT_ADDRESS = 0002h
+
+; The loader's words, at S(n).
+.CONST LOADER = LOADER_START - STACK_END
 
 ; The boot signature, "BOOT" packed, in the boot area's last two words.
 .CONST SIGNATURE = LOADER + 2 * BOOT_AREA_DWORDS - 2
@@ -140,6 +150,7 @@
 .CONST V_KEYBOARD = -6   ; 1 with a keyboard, or 0 without one
 .CONST V_DRIVE = -7      ; The boot drive's command port, or NONE without it
 .CONST V_BOX_RIGHT = -8  ; The box's last column
+.CONST V_ERROR = -9      ; The loader's error code, or 0 at power on
 
 ; The words of each unit's text, for the clock rate.
 .CONST UNIT_SIZE = 5
@@ -161,11 +172,30 @@
 ; Segments
 ;-------------------------------------------------------------------------------
 
-.BANK rom, 1
-.BANK ram
+.BANK zero, 1
 .STACK 128
 
-.SEGMENT rom CODE DATA ROM PAGE(0) BANK(rom)
+.SEGMENT rom CODE DATA ROM PAGE(0) BANK(zero)
+
+    JP start
+
+;-------------------------------------------------------------------------------
+; exit: Where a loader that fails jumps to, with its error code, from 1 to FFh,
+; in R0. It starts the boot ROM again from its start, on a new stack, which
+; keeps R0, as RST does. As the loader's CODE bank is bank 0, it can run
+; with any BC: it reads no memory, and jumps nowhere.
+;-------------------------------------------------------------------------------
+
+.IF $ != EXIT_ADDRESS
+    .ERROR 'exit is at ', HEX($), ', not ', HEX(EXIT_ADDRESS)
+.ENDIF
+
+exit:
+    MVQ R3, 0
+    MVQ R4, 0
+    MOV R5, STACK_END
+    MVQ R6, 0
+    RST SELF, CODE | STACK | DATA
 
 start:
     PUSH.W 0        ; V_COLUMNS
@@ -176,6 +206,7 @@ start:
     PUSH.W 0        ; V_KEYBOARD
     PUSH.W NONE     ; V_DRIVE
     PUSH.W 0        ; V_BOX_RIGHT
+    PUSH R0         ; V_ERROR
     CALL find_devices
     CALL clear_screen
     CALL print_banner
@@ -191,6 +222,11 @@ start:
     MOV R1, prompt_text
     CALL print_string
     CALL place_cursor
+    CALL show_loader_error
+    JC Z, @wait
+@again:
+    CALL discard_keys
+    CALL prompt_again
 @wait:
     MOV R0, CURSOR_STYLE
     CALL set_cursor
@@ -198,9 +234,7 @@ start:
     MVQ R0, CURSOR_OFF
     CALL set_cursor
     CALL boot
-    CALL discard_keys
-    CALL prompt_again
-    JP @wait
+    JP @again
 
 version_text:
     .DW 'Ozzy 1.0', 0
@@ -613,6 +647,31 @@ disk_error_text:
     .DW 'ERROR: Disk error ', 0
 
 ;-------------------------------------------------------------------------------
+; show_loader_error: After a loader failed, shows its error code, and clears Z.
+; At power on, sets Z.
+;-------------------------------------------------------------------------------
+
+show_loader_error:
+    PUSH R0
+    PUSH R1
+    MOV R1, loader_error_text
+    MOV R0, S(V_ERROR)
+    TST R0
+    JC Z, @done
+    CALL show_status
+    CALL print_hex_byte
+    MOV R0, 'h'
+    CALL put_char
+    TST R1          ; Not 0, as it is the text's address
+@done:
+    POP R1
+    POP R0
+    RET
+
+loader_error_text:
+    .DW 'ERROR: Loader error ', 0
+
+;-------------------------------------------------------------------------------
 ; read_boot_area: Reads the boot area of the disk in the drive whose command
 ; port is R0 into the loader's words, with READ BOOT, and sets R2 to its status:
 ; the accept's if that fails, or else the completion's. It resets the drive
@@ -667,10 +726,10 @@ read_status:
     RET
 
 ;-------------------------------------------------------------------------------
-; start_loader: Starts the loader with RST, which never returns: CODE and DATA
-; are the stack's page, from its start, STACK is the same bank, ending at the
-; end of the page, and EXTRA is bank 0. R0 is the boot drive's command port,
-; and R1 its drive number.
+; start_loader: Starts the loader with RST, which never returns: every bank is
+; bank 0, BC and BD are the loader's start, BS is the stack's end, as the boot
+; ROM's own, and BE is 0, for the machine table. R0 is the boot drive's command
+; port, and R1 its drive number.
 ;
 ; First it throws away the keys typed while booting. RST keeps pending
 ; interrupts, so it then drops those the boot ROM's work left, such as the
@@ -684,26 +743,13 @@ start_loader:
     CALL discard_keys
     EI
     DI
-    ; Get the stack bank from MB
-    MOV R3, MB
-    AND R3, 00F0h
-    ; Copy to the code bank
-    MOV R2, R3
-    SHR R2, 4
-    OR R3, R2
-    ; Copy to the data bank (extra stays on bank 0 for ROM)
-    SHL R2, 8
-    OR R3, R2
-    ; BC, BD, and BS are all set to the stack's page. BE is set to page 0
-    MOV R5, BS
-    MOV R4, R5
-    SUB R4, PAGE_SIZE
+    MVQ R3, 0
+    MOV R4, LOADER_START
+    MOV R5, STACK_END
     MOV R6, R4
     MVQ R7, 0
-    ; Pass the boot drive's command port and drive number to the loader
     MOV R0, S(V_DRIVE)
     MVQ R1, BOOT_DRIVE
-    ; Start the loader with the specified banks and stack
     RST SELF, CODE | STACK | DATA | EXTRA
 
 ;-------------------------------------------------------------------------------
@@ -973,4 +1019,4 @@ count_ram:
 ; The stack, with the variables at its top
 ;-------------------------------------------------------------------------------
 
-.SEGMENT stack STACK BANK(ram)
+.SEGMENT stack STACK PAGE(1) BANK(zero)

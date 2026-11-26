@@ -330,11 +330,12 @@ At power on, the host builds the machine, writes the boot ROM and the machine
 table, and starts core 0 at `IP` 0 of bank 0. The boot ROM clears the screen,
 shows its banner in a box and a prompt, and waits for Enter. Then it boots in
 two stages, as the Osborne Executive's CP/M Plus did: it reads a small
-**loader** from the boot area of the disk in `A:` into its stack's page,
-checks the loader's boot signature, and starts it with `RST SELF`. The loader
-is the disk's own code, written with `oz3dsk boot`, and loads the OS (such as
-`OZZY.SYS`) with the drive's ordinary commands. If the boot fails, the boot ROM
-says why and waits for Enter again. The manual's Ozzy Computer page says what
+**loader** from the boot area of the disk in `A:` to 1000h, just below its
+stack in page 1 of bank 0, checks the loader's boot signature, and starts it
+with `RST SELF`. The loader is the disk's own code, written with `oz3dsk boot`,
+and loads the OS (such as `OZOS.SYS`) with the drive's ordinary commands. If
+the boot fails, the boot ROM says why and waits for Enter again, and a loader
+that fails hands an error code back to the boot ROM's exit, which shows it. The manual's Ozzy Computer page says what
 the loader starts with, and
 [booting-from-disk.md](worklog/booting-from-disk.md) how it came to be.
 

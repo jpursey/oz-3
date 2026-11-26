@@ -10,10 +10,11 @@
 ; with the OZOS operating system. It also can be used to manually format a disk
 ; on a host machine with the oz3dsk tool.
 ;
-; It loads OZOS.SYS, a bare program, from the boot drive into the RAM pages
-; just after its own page, and starts it (see "Starting the OS" below for what
-; the OS is given). If it can't, it shows an error, waits for a key, and
-; restarts the Ozzy.
+; It loads OZOS.SYS, a bare program, from the boot drive into RAM just after
+; the loader and its stack, through as many of the pages after it as it needs,
+; and starts it (see "Starting the OS" below for what the OS is given). If it
+; can't, it hands back to the boot ROM with an error code, and the boot ROM
+; shows it.
 ;
 ; The loader must fit in the 222 words before the boot signature, so it reads
 ; the whole file with one READ PACKED, sending each data block straight to
@@ -21,50 +22,35 @@
 ;===============================================================================
 
 ;-------------------------------------------------------------------------------
-; The stack
+; Where everything is
 ;
-; The actual stack size specified here doesn't matter as the loader is not
-; loaded like a program and is given an entire page of memory for its stack.
+; The boot ROM starts the loader at LOADER_START in bank 0, with every bank
+; bank 0, BC and BD at LOADER_START, and its stack ending at OS_START, so
+; addresses here are from LOADER_START. The stack size specified here doesn't
+; matter, as the loader is not loaded like a program.
 ;-------------------------------------------------------------------------------
 
 .STACK 0
 
-;-------------------------------------------------------------------------------
-; The machine table (see oz3/ozzy/machine_table.h), in EXTRA
-;-------------------------------------------------------------------------------
+.CONST LOADER_START = 1000h
+.CONST OS_START = 200h      ; 1200h, where the boot ROM's stack ends
 
-.CONST TABLE = 0F00h
-.CONST TABLE_DEVICES = TABLE + 6
-.CONST TABLE_BANK_ENTRIES = TABLE + 8
-.CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
+; Where the boot ROM's exit is, at 0002h of bank 0
+.CONST BOOT_ROM_EXIT = 0002h - LOADER_START
 
-; A bank entry's RAM pages, and its size
-.CONST BANK_FIELD_RAM = 1
-.CONST BANK_ENTRY_SIZE = 2
-
-; A device entry's size, and its type
-.CONST DEVICE_ENTRY_SIZE = 8
-.CONST DEVICE_TYPE_TELETYPE = 3
+; Bank 0's RAM pages, in the machine table (see oz3/ozzy/machine_table.h)
+.CONST TABLE = 0F00h - LOADER_START
+.CONST TABLE_BANK0_RAM = TABLE + 9
 
 ;-------------------------------------------------------------------------------
-; Devices, which are wired the same in every Ozzy
+; Error codes, which the boot ROM shows. A drive error is the drive's status
+; (01h to 7Fh), and the loader's own are from ERROR_BASE.
 ;-------------------------------------------------------------------------------
 
-.CONST POWER_PORT = 0
-.CONST POWER_CMD_RESTART = 2
-.CONST KEYBOARD_PORT = 1
-.CONST TELETYPE_PORT = 2
-
-; The screen's page, and its columns, in EXTRA. Without a screen the page is
-; empty, so its columns read 0 and writes are ignored, or it is RAM.
-.CONST SCREEN_START = 0F000h
-.CONST SCREEN_COLUMNS = SCREEN_START + 0FF0h
-
-; The boot ROM's status row, where the error replaces "Loading..."
-.CONST STATUS_ROW = 7
-
-; The error's size in words, two characters in each
-.CONST ERROR_WORDS = 13
+.CONST ERROR_BASE = 0F0h
+.CONST ERROR_NOT_BARE = 1   ; OZOS.SYS isn't a bare program
+.CONST ERROR_SIZE = 2       ; It isn't as long as its header and blocks say
+.CONST ERROR_FIT = 3        ; It doesn't fit in RAM
 
 ;-------------------------------------------------------------------------------
 ; The disk drive (see the manual's Disk Drive page)
@@ -90,8 +76,6 @@
 
 ; The identifier and version, as one dword
 .CONST BARE_ID = 0001424Fh
-
-.CONST PAGE_SIZE = 1000h
 
 ;-------------------------------------------------------------------------------
 ; Open the OS file
@@ -131,7 +115,7 @@
 
     ; The header, into header
     SBQ R3, 3
-    JC C, failed
+    JC C, wrong_size
     MOV R0, header
     MVQ R7, 3
 @header:
@@ -139,46 +123,35 @@
     JC NS, @header
     MOV D0, D[header]
     CMP D0, BARE_ID
-    JC NZ, failed
+    JC NZ, not_bare
 
 ;-------------------------------------------------------------------------------
-; Allocate the pages after the loader's own, which the OS needs for its
-; contents and stack, failing if they aren't all RAM. Pages past the end of
-; the bank shift in as 0, so they aren't RAM either.
+; Allocate the pages from the loader's own (page 1) to the one the OS ends in,
+; which it needs for its contents and stack from OS_START, failing if they
+; aren't all RAM, or the OS would pass the end of the bank.
 ;-------------------------------------------------------------------------------
 
-    ; R1 has a bit for each page needed, from bit 0
     MOV R0, D(header + 2)   ; Contents
-    ADD R0, D(header + 3)   ; Stack (a full bank wraps to 0)
-    JC C, failed            ; The OS can't have all 16 pages anyway
+    ADD R0, D(header + 3)   ; Stack
+    JC C, too_big
     PUSH R0                 ; The OS's size, for BS
-    SBQ R0, 1
-    SHR R0, 12              ; Pages needed - 1
+    ADD R0, LOADER_START + OS_START - 1
+    JC C, too_big
+    SHR R0, 12              ; The OS's last page, from 1 to 15
+
+    ; R1 has a bit for each page from 1 to the last
     MVQ R1, 2
-    SHL R1, R0              ; 16 pages shifts out to 0...
-    SBQ R1, 1               ; ...which is FFFFh here
-
-    ; R2 is the OS's first page, after the loader's
-    MOV R2, BD
-    SHR R2, 12
-    ADQ R2, 1
-
-    ; R4 is the RAM pages of the loader's bank (the STACK bank), from R2
-    MOV R4, MB
-    SHR R4, 4 - 1           ; The STACK bank, times BANK_ENTRY_SIZE
-    AND R4, 0Fh * BANK_ENTRY_SIZE
-    MOV R4, (R4 + TABLE_BANK_ENTRIES + BANK_FIELD_RAM)
-    SHR R4, R2
-
+    SHL R1, R0              ; Page 15 shifts out to 0...
+    SBQ R1, 2               ; ...which is FFFEh here
+    MOV R4, D(TABLE_BANK0_RAM)
     AND R4, R1
     CMP R4, R1
-    JC NZ, failed
-    SHL R1, R2
+    JC NZ, too_big
     PUSH R1                 ; The OS's pages, for the OS
 
 ;-------------------------------------------------------------------------------
-; Load each data block, at the OS's first page (PAGE_SIZE in DATA) plus its
-; offset. A block is its offset and size in dwords, then its words.
+; Load each data block, at OS_START plus its offset. A block is its offset and
+; size in dwords, then its words.
 ;-------------------------------------------------------------------------------
 
     MOV R2, D(header + 4)   ; Blocks
@@ -186,14 +159,14 @@
     SBQ R2, 1
     JC C, @loaded
     SBQ R3, 1
-    JC C, failed
+    JC C, wrong_size
 @offset:
     INS R6, D0              ; R0 is the offset, R1 the size
     JC NS, @offset
     SUB R3, R1
-    JC C, failed
+    JC C, wrong_size
     SHL R0, 1
-    ADD R0, PAGE_SIZE
+    ADD R0, OS_START
     MOV R7, R1
 @block:
     INR R6, [R0]
@@ -201,7 +174,7 @@
     JPR @next
 @loaded:
     TST R3                  ; More than the header says
-    JC NZ, failed
+    JC NZ, wrong_size
     ADQ R6, DRIVE_CONTROL - DRIVE_DATA
     CALL read_status        ; The completion's
     CALL read_word          ; The dwords read
@@ -218,26 +191,25 @@
 ;-------------------------------------------------------------------------------
 ; Starting the OS
 ;
-; The OS is started as a bare program at the OS's first page, b: BC and BD
-; are b, and BS is b plus its contents and stack, all in the loader's bank,
-; with IP and SP 0. BE is left as bank 0 at base 0, for the machine table.
+; The OS is started as a bare program at b, LOADER_START + OS_START (1200h):
+; BC and BD are b, and BS is b plus its contents and stack, all in bank 0, with
+; IP and SP 0. BE is left as bank 0 at base 0, for the machine table.
 ;
 ;   R0 - The boot drive's command port, as the loader was given it
 ;   R1 - The boot drive's number, as the loader was given it
-;   R2 - The pages of its bank the OS is in, a bit for each
+;   R2 - The pages of bank 0 the OS is in, a bit for each, from page 1
 ;
-; The rest of RAM is free, including the loader's own page.
+; The rest of RAM is free, and so are the words of page 1 before b.
 ;-------------------------------------------------------------------------------
 
     MOV R0, R5
     POP R2
     POP R5
     POP R1
-    MOV R4, BD
-    ADD R4, PAGE_SIZE
+    MOV R4, LOADER_START + OS_START
     MOV R6, R4
     ADD R5, R4
-    MOV R3, MB
+    MVQ R3, 0
     RST SELF, CODE | STACK | DATA
 
 ;-------------------------------------------------------------------------------
@@ -275,65 +247,33 @@ command:
 
 ;-------------------------------------------------------------------------------
 ; read_status: Reads the next word, a status, into R1, as read_word does, and
-; returns if it is OK, or else fails. (Failing leaves the return address on
-; the stack, which doesn't matter as the Ozzy restarts.)
+; returns if it is OK, or else fails with the status as the error code.
 ;-------------------------------------------------------------------------------
 
 read_status:
     CALL read_word
     RETC Z
-    ; Fall through to failed
+    JPR failed
 
 ;-------------------------------------------------------------------------------
-; failed: Shows the error on the teletype and the screen, waits for a key, and
-; restarts the Ozzy.
+; Failing: each sets R1 to its error code, and failed hands it back to the boot
+; ROM in R0, which shows it. The boot ROM starts over, with a new stack, so
+; what is left on this one doesn't matter.
 ;-------------------------------------------------------------------------------
 
+too_big:
+    MVQ R1, ERROR_FIT
+    JPR with_base
+wrong_size:
+    MVQ R1, ERROR_SIZE
+    JPR with_base
+not_bare:
+    MVQ R1, ERROR_NOT_BARE
+with_base:
+    OR R1, ERROR_BASE
 failed:
-    ; Write it to the teletype, if the machine table has one: the table says
-    ; whether there is one, and the teletype is always on TELETYPE_PORT
-    MOV R4, TABLE_DEVICE_ENTRIES
-    MOV R7, E(TABLE_DEVICES)  ; At least 1, as the power control is there
-@device:
-    MOV R0, (R4)
-    CMP R0, DEVICE_TYPE_TELETYPE
-    JC Z, @teletype
-    ADQ R4, DEVICE_ENTRY_SIZE
-    JD R7, @device
-    JPR @screen
-@teletype:
-    MOV R0, error
-    MVQ R7, ERROR_WORDS + 1   ; With the new line
-@print:
-    OUTR TELETYPE_PORT, (R0)
-    JC NS, @print
-
-    ; Write it to the screen's status row, which is in the screen's page
-    ; whatever is there
-@screen:
-    MOV R4, E(SCREEN_COLUMNS)
-    MUL R4, STATUS_ROW
-    AND R4, PAGE_SIZE - 1
-    ADD R4, SCREEN_START
-    MOV R0, error
-    MVQ R7, ERROR_WORDS
-@cell:
-    MOV R1, (R0)
-    MOV R2, R1
-    AND R2, 0FFh
-    MOV (R4), R2
-    ADQ R4, 1
-    SHR R1, 8
-    MOV (R4), R1
-    ADQ R4, 1
-    ADQ R0, 1
-    JD R7, @cell
-
-@key:
-    INS KEYBOARD_PORT, R0
-    JC NS, @key
-    OUT.IW POWER_PORT, POWER_CMD_RESTART
-    HALT
+    MOV R0, R1
+    JP BOOT_ROM_EXIT
 
 ;-------------------------------------------------------------------------------
 ; Constant data
@@ -344,11 +284,6 @@ os_name:
     .DW SIZE(6) "OZOS", SIZE(2) "SYS"
 read_count:
     .DW 0FFFFh, 0
-
-; An even number of characters, so every word has two for the screen
-error:
-    .DW SIZE(ERROR_WORDS) "ERROR: Can't load OZOS.SYS"
-    .DW 0A0Dh               ; The teletype's new line
 
 ;-------------------------------------------------------------------------------
 ; Program End, including size validation and the boot signature
@@ -364,7 +299,7 @@ error:
 .DW "BOOT"
 
 ;-------------------------------------------------------------------------------
-; Variables, after the boot signature in the loader's page
+; Variables, after the boot signature, below the stack
 ;-------------------------------------------------------------------------------
 
 ; The OS file's header: identifier, version, contents, stack, blocks, reserved

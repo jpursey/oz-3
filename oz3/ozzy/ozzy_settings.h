@@ -34,6 +34,10 @@ constexpr uint16_t GetBootRomPages(int bank) {
   return bank == 0 ? 0x0001 : 0x0000;
 }
 
+// The page of bank 0 that must be RAM, which holds the boot ROM's stack and
+// the loader.
+inline constexpr int kOzzyBootRamPage = 1;
+
 //==============================================================================
 // Device wiring
 //==============================================================================

@@ -17,6 +17,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/time/time.h"
+#include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -29,7 +30,6 @@
 #include "oz3/devices/disk_drive_command.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/power_control.h"
-#include "oz3/devices/screen.h"
 #include "oz3/devices/teletype.h"
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_filename.h"
@@ -54,11 +54,24 @@ namespace {
 // Constants
 //==============================================================================
 
-// What the loader shows when it can't load the OS.
-constexpr std::string_view kError = "ERROR: Can't load OZOS.SYS";
+// Where the OS goes, after the loader and the boot ROM's stack in page 1.
+constexpr int kOsStart = kBootRomStackEnd;
 
-// The boot ROM's status row on the screen, where the error replaces
-// "Loading..." (SourceKnowsTheBootRom checks the loader agrees).
+// The loader's own error codes (see the manual's Ozzy Computer page). A drive
+// error is the drive's status.
+constexpr uint16_t kNotBare = 0xF1;
+constexpr uint16_t kWrongSize = 0xF2;
+constexpr uint16_t kTooBig = 0xF3;
+
+// Where the boot ROM keeps the loader's error code: its ninth variable, from
+// the end of its stack (the boot ROM's V_ERROR).
+constexpr int kErrorAddress = kBootRomStackEnd - 9;
+
+// What the boot ROM shows.
+constexpr std::string_view kPrompt = "Press Enter to Boot...";
+
+// The boot ROM's status and prompt rows on the screen.
+constexpr int kPromptRow = 5;
 constexpr int kStatusRow = 7;
 
 // The sectors of the images the tests make.
@@ -84,6 +97,11 @@ constexpr std::string_view kOsSource = R"(
 
 // The test OS's contents, besides its gap.
 constexpr int kOsWords = 4;
+
+// The words from kOsStart to the end of page `page`.
+constexpr int GetWordsTo(int page) {
+  return (page + 1) * kMemoryBankPageSize - kOsStart;
+}
 
 //==============================================================================
 // Helpers
@@ -114,6 +132,12 @@ void ExpectSourceConstants(std::map<std::string_view, uint32_t> expected) {
   oz3::ExpectSourceConstants(GetLoader()->GetMap(), std::move(expected));
 }
 
+// Returns the value of a constant that is an address from the loader's start,
+// in bank 0, as the source has it.
+uint32_t FromLoader(int address) {
+  return static_cast<uint32_t>(address - kLoaderStart);
+}
+
 // Returns the words of the test OS's file, with `gap` and `stack` words.
 std::vector<uint16_t> GetOsFile(int gap, int stack) {
   std::unique_ptr<AsmProgram> program =
@@ -128,41 +152,69 @@ std::vector<uint16_t> GetOsFile(int gap, int stack) {
   return words.ok() ? *std::move(words) : std::vector<uint16_t>();
 }
 
-// Returns the text of the screen's status row.
-std::string GetStatusText(Ozzy& ozzy) {
-  return GetRowText(ozzy.GetScreen()->GetPicture(), kStatusRow);
+// Returns the words of the test OS's file, with a header that says its
+// contents and stack are `contents` and `stack` words.
+std::vector<uint16_t> GetOsFileSaying(uint16_t contents, uint16_t stack) {
+  std::vector<uint16_t> os_file = GetOsFile(0, 0);
+  if (os_file.size() < 4) {
+    ADD_FAILURE() << "The test OS has no header";
+    return {};
+  }
+  os_file[2] = contents;
+  os_file[3] = stack;
+  return os_file;
+}
+
+// Returns the text of the screen's row `row`.
+std::string GetScreenRow(Ozzy& ozzy, int row) {
+  return GetRowText(ozzy.GetScreen()->GetPicture(), row);
+}
+
+// Returns the status the boot ROM shows for the loader's error `code`.
+std::string GetErrorStatus(uint16_t code) {
+  return absl::StrFormat("ERROR: Loader error %02Xh", code);
+}
+
+// Returns the word at `address` of bank 0.
+uint16_t GetWord(Ozzy& ozzy, int address) {
+  return ozzy.GetProcessor()->GetMemory(0)->GetMem(address, 1)[0];
+}
+
+// Returns whether the boot ROM is waiting for Enter after the loader failed.
+bool IsWaitingAfterError(Ozzy& ozzy) {
+  return ozzy.GetProcessor()->GetCore(0)->GetState() ==
+             CpuCore::State::kWaiting &&
+         GetWord(ozzy, kErrorAddress) != 0;
 }
 
 // Expects the test OS, with `gap` and `stack` words, to have been started by
-// the loader at page `page` of bank `bank`, and halted.
-void ExpectOsRan(Ozzy& ozzy, int bank, int page, int gap, int stack) {
+// the loader at kOsStart in bank 0, in pages 1 to `last_page`, and halted.
+void ExpectOsRan(Ozzy& ozzy, int gap, int stack, int last_page) {
   ASSERT_TRUE(IsHalted(ozzy));
-  const int base = page * kMemoryBankPageSize;
   const int size = kOsWords + gap + stack;
-  const int pages = (size + kMemoryBankPageSize - 1) / kMemoryBankPageSize;
 
   const CpuCore::Registers registers = GetRegisters(ozzy);
   const CpuCore::Banks banks = CpuCore::Banks::FromWord(registers[CpuCore::MB]);
-  EXPECT_EQ(banks.code, bank);
-  EXPECT_EQ(banks.stack, bank);
-  EXPECT_EQ(banks.data, bank);
+  EXPECT_EQ(banks.code, 0);
+  EXPECT_EQ(banks.stack, 0);
+  EXPECT_EQ(banks.data, 0);
   EXPECT_EQ(banks.extra, 0);
-  EXPECT_EQ(registers[CpuCore::BC], base);
-  EXPECT_EQ(registers[CpuCore::BD], base);
-  EXPECT_EQ(registers[CpuCore::BS], static_cast<uint16_t>(base + size));
+  EXPECT_EQ(registers[CpuCore::BC], kOsStart);
+  EXPECT_EQ(registers[CpuCore::BD], kOsStart);
+  EXPECT_EQ(registers[CpuCore::BS], static_cast<uint16_t>(kOsStart + size));
   EXPECT_EQ(registers[CpuCore::BE], 0);
   EXPECT_EQ(registers[CpuCore::SP], 0);
   EXPECT_EQ(registers[CpuCore::IP], 0);  // At its HALT.
   EXPECT_EQ(registers[CpuCore::R0], kOzzyDrivePort);
   EXPECT_EQ(registers[CpuCore::R1], 0);
-  EXPECT_EQ(registers[CpuCore::R2], ((1 << pages) - 1) << page);
+  EXPECT_EQ(registers[CpuCore::R2],
+            static_cast<uint16_t>((2 << last_page) - 2));
   EXPECT_EQ(registers[CpuCore::ST] & CpuCore::I, 0);
 
   // Each block is where it goes.
-  const MemoryBank* memory = ozzy.GetProcessor()->GetMemory(bank);
-  EXPECT_EQ(memory->GetMem(base + 1, 1)[0], 0x1234);
-  EXPECT_EQ(memory->GetMem(base + 2 + gap, 1)[0], 0x5678);
-  EXPECT_EQ(memory->GetMem(base + 3 + gap, 1)[0], 0x9ABC);
+  EXPECT_EQ(GetWord(ozzy, kOsStart + 1), 0x1234);
+  EXPECT_EQ(GetWord(ozzy, kOsStart + 2 + gap), 0x5678);
+  EXPECT_EQ(GetWord(ozzy, kOsStart + 3 + gap), 0x9ABC);
 }
 
 //==============================================================================
@@ -245,30 +297,35 @@ class LoaderTest : public ::testing::Test {
   // Runs `ozzy` until the OS halts.
   void RunUntilHalted(Ozzy& ozzy) { RunUntil(ozzy, IsHalted); }
 
-  // Runs `ozzy` until the loader shows its error on the screen, or the
-  // teletype without one, and expects it to restart the Ozzy once a key is
-  // pressed, and not before.
-  void ExpectError(Ozzy& ozzy) {
-    if (ozzy.GetScreen() != nullptr) {
-      RunUntil(ozzy, [](Ozzy& ozzy) { return GetStatusText(ozzy) == kError; });
-    } else if (ozzy.GetTeletype() != nullptr) {
-      std::string output;
-      RunUntil(ozzy, [&output](Ozzy& ozzy) {
+  // Runs `ozzy` until the loader has failed, and the boot ROM waits for Enter
+  // again, and expects the boot ROM to show the loader's error `code`: on the
+  // screen, the banner and prompt as at power on, with the error on the status
+  // row, or on the teletype without one, the error and then the prompt again.
+  // The Ozzy never asks to restart.
+  void ExpectError(Ozzy& ozzy, uint16_t code) {
+    std::string output;
+    RunUntil(ozzy, [&output](Ozzy& ozzy) {
+      if (ozzy.GetTeletype() != nullptr) {
         output += ozzy.GetTeletype()->TakeOutput();
-        return output.ends_with(absl::StrCat(kError, "\r\n"));
-      });
+      }
+      return IsWaitingAfterError(ozzy) &&
+             (ozzy.GetTeletype() == nullptr || output.ends_with(kPrompt));
+    });
+    EXPECT_EQ(GetWord(ozzy, kErrorAddress), code);
+    if (ozzy.GetScreen() != nullptr) {
+      EXPECT_EQ(GetScreenRow(ozzy, 0), " Ozzy 1.0");
+      EXPECT_EQ(GetScreenRow(ozzy, kPromptRow), kPrompt);
+      EXPECT_EQ(GetScreenRow(ozzy, kStatusRow), GetErrorStatus(code));
+      EXPECT_EQ(ozzy.GetScreen()->GetPicture().cursor_mode,
+                ScreenCursorMode::kSlowBlink);
+    } else if (ozzy.GetTeletype() != nullptr) {
+      EXPECT_THAT(output, ::testing::HasSubstr(absl::StrCat(
+                              kPrompt, "\r\nLoading...\r\nOzzy 1.0\r\n")));
       EXPECT_THAT(output, ::testing::EndsWith(absl::StrCat(
-                              "Press Enter to Boot...\r\nLoading...\r\n",
-                              kError, "\r\n")));
+                              "\r\n\r\n", kPrompt, "\r\n", GetErrorStatus(code),
+                              "\r\n\r\n", kPrompt)));
     }
-    ozzy.Run(4 * kScreenRefreshTime);
-    EXPECT_FALSE(IsHalted(ozzy));
     EXPECT_THAT(requests_, ::testing::IsEmpty());
-
-    EXPECT_TRUE(ozzy.GetKeyboard()->TypeKey('x'));
-    RunUntilHalted(ozzy);
-    EXPECT_THAT(requests_, ::testing::ElementsAre(PowerRequest{
-                               .command = PowerCommand::kRestart}));
   }
 
   gb::FileSystem host_;
@@ -292,38 +349,20 @@ TEST_F(LoaderTest, FillsTheBootArea) {
   EXPECT_EQ(boot_area[DiskSuperblock::kBootAreaWords - 1], kBootSignature[1]);
 }
 
+TEST_F(LoaderTest, SourceKnowsTheBootRom) {
+  ExpectSourceConstants({
+      {"LOADER_START", kLoaderStart},
+      {"OS_START", kBootRomStackEnd - kLoaderStart},
+      {"BOOT_ROM_EXIT", FromLoader(kBootRomExit)},
+  });
+}
+
 TEST_F(LoaderTest, SourceKnowsTheMachineTable) {
   ExpectSourceConstants({
-      {"TABLE", kMachineTableAddress},
-      {"TABLE_DEVICES", kMachineTableAddress + kMachineHeaderDevices},
-      {"TABLE_BANK_ENTRIES", kMachineTableAddress + kMachineTableBanks},
-      {"TABLE_DEVICE_ENTRIES", kMachineTableAddress + kMachineTableDevices},
-      {"BANK_FIELD_RAM", kMachineBankRam},
-      {"BANK_ENTRY_SIZE", kMachineBankSize},
-      {"DEVICE_ENTRY_SIZE", kMachineDeviceSize},
-      {"DEVICE_TYPE_TELETYPE",
-       static_cast<uint32_t>(MachineDeviceType::kTeletype)},
+      {"TABLE", FromLoader(kMachineTableAddress)},
+      {"TABLE_BANK0_RAM",
+       FromLoader(kMachineTableAddress + kMachineTableBanks + kMachineBankRam)},
   });
-  EXPECT_EQ(kMachineDeviceType, 0);
-}
-
-TEST_F(LoaderTest, SourceKnowsTheDevices) {
-  ExpectSourceConstants({
-      {"POWER_PORT", kOzzyPowerPort},
-      {"POWER_CMD_RESTART", static_cast<uint32_t>(PowerCommand::kRestart)},
-      {"KEYBOARD_PORT", kOzzyKeyboardPort},
-      {"TELETYPE_PORT", kOzzyTeletypePort},
-      {"SCREEN_START", kOzzyScreenPage * kMemoryBankPageSize},
-      {"SCREEN_COLUMNS",
-       kOzzyScreenPage * kMemoryBankPageSize + ScreenMemory::kColumnsAddress},
-  });
-}
-
-TEST_F(LoaderTest, SourceKnowsTheBootRom) {
-  // It shows its error where the boot ROM shows its status.
-  oz3::ExpectSourceConstants(GetBootRom().GetMap(),
-                             {{"STATUS_ROW", kStatusRow}});
-  ExpectSourceConstants({{"STATUS_ROW", kStatusRow}});
 }
 
 TEST_F(LoaderTest, SourceKnowsTheDiskDrive) {
@@ -349,8 +388,14 @@ TEST_F(LoaderTest, SourceKnowsBarePrograms) {
   ExpectSourceConstants({
       {"BARE_ID", (static_cast<uint32_t>(kBareProgramFileVersion) << 16) |
                       kBareProgramFileId},
-      {"PAGE_SIZE", kMemoryBankPageSize},
   });
+}
+
+TEST_F(LoaderTest, ErrorCodesAreNotDriveStatuses) {
+  // The loader's own codes are past every status the drive has.
+  for (uint16_t code : {kNotBare, kWrongSize, kTooBig}) {
+    EXPECT_GT(code, static_cast<uint16_t>(DiskStatus::kIoError));
+  }
 }
 
 //==============================================================================
@@ -358,13 +403,13 @@ TEST_F(LoaderTest, SourceKnowsBarePrograms) {
 //==============================================================================
 
 TEST_F(LoaderTest, StartsTheOs) {
-  // The OS goes in the pages after the loader's page (page 1 of bank 0), and
-  // its gap spans pages.
+  // The OS goes at 1200h, after the loader and its stack in page 1 of bank 0,
+  // and its gap spans pages.
   std::unique_ptr<Ozzy> ozzy =
       Boot(OzzySettings(), MakeImage(GetOsFile(0x3000, 0x20)));
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
-  ExpectOsRan(*ozzy, 0, 2, 0x3000, 0x20);
+  ExpectOsRan(*ozzy, 0x3000, 0x20, 4);
   EXPECT_THAT(requests_, ::testing::IsEmpty());
 }
 
@@ -372,30 +417,45 @@ TEST_F(LoaderTest, SmallestOs) {
   std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(GetOsFile(0, 0)));
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
-  ExpectOsRan(*ozzy, 0, 2, 0, 0);
+  ExpectOsRan(*ozzy, 0, 0, 1);
+}
+
+TEST_F(LoaderTest, FitsInTheLoadersPage) {
+  // With only page 1 of RAM, an OS can have the rest of it.
+  constexpr int kStack = 0x100;
+  constexpr int kGap = GetWordsTo(1) - kOsWords - kStack;
+  OzzySettings settings;
+  settings.banks = {0x0002};
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(settings, MakeImage(GetOsFile(kGap, kStack)));
+  ASSERT_NE(ozzy, nullptr);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, kGap, kStack, 1);
 }
 
 TEST_F(LoaderTest, FillsTheLastRamPages) {
-  // The default Ozzy's RAM is pages 1 to 14, so the OS has pages 2 to 14.
+  // The default Ozzy's RAM is pages 1 to 14, so the OS has them all.
   constexpr int kStack = 0x100;
-  constexpr int kGap = 13 * kMemoryBankPageSize - kOsWords - kStack;
+  constexpr int kGap = GetWordsTo(14) - kOsWords - kStack;
   std::unique_ptr<Ozzy> ozzy =
       Boot(OzzySettings(), MakeImage(GetOsFile(kGap, kStack)));
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
-  ExpectOsRan(*ozzy, 0, 2, kGap, kStack);
+  ExpectOsRan(*ozzy, kGap, kStack, 14);
 }
 
-TEST_F(LoaderTest, InAnotherBank) {
-  // The loader is in the first RAM page of the lowest bank with RAM, page 8
-  // of bank 1, so the OS starts at page 9.
-  OzzySettings settings;
-  settings.banks = {0x0000, 0x0F00};
+TEST_F(LoaderTest, FillsTheBank) {
+  // Without a screen, RAM can be pages 1 to 15, so the OS can end with the
+  // bank, where its stack wraps BS to 0.
+  constexpr int kStack = 0x100;
+  constexpr int kGap = GetWordsTo(15) - kOsWords - kStack;
+  OzzySettings settings = GetTeletypeSettings(0);
+  settings.banks = {0xFFFE};
   std::unique_ptr<Ozzy> ozzy =
-      Boot(settings, MakeImage(GetOsFile(0x1000, 0x10)));
+      Boot(settings, MakeImage(GetOsFile(kGap, kStack)));
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
-  ExpectOsRan(*ozzy, 1, 9, 0x1000, 0x10);
+  ExpectOsRan(*ozzy, kGap, kStack, 15);
 }
 
 TEST_F(LoaderTest, Teletype) {
@@ -405,7 +465,7 @@ TEST_F(LoaderTest, Teletype) {
       Boot(GetTeletypeSettings(9600), MakeImage(GetOsFile(0, 0)));
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
-  ExpectOsRan(*ozzy, 0, 2, 0, 0);
+  ExpectOsRan(*ozzy, 0, 0, 1);
   EXPECT_THAT(ozzy->GetTeletype()->TakeOutput(),
               ::testing::EndsWith("\r\nLoading...\r\n"));
 }
@@ -417,7 +477,34 @@ TEST_F(LoaderTest, Teletype) {
 TEST_F(LoaderTest, NoOsFile) {
   std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(std::nullopt));
   ASSERT_NE(ozzy, nullptr);
-  ExpectError(*ozzy);
+  ExpectError(*ozzy, static_cast<uint16_t>(DiskStatus::kNotFound));
+}
+
+TEST_F(LoaderTest, EnterTriesAgain) {
+  // After an error, the boot ROM boots again on Enter, and the drive is
+  // reset, so a disk with the OS put in A: then loads it.
+  std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(std::nullopt));
+  ASSERT_NE(ozzy, nullptr);
+  ExpectError(*ozzy, static_cast<uint16_t>(DiskStatus::kNotFound));
+  EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
+  ozzy->GetDrive('A')->AttachImage(MakeImage(GetOsFile(0, 0)));
+  EXPECT_TRUE(ozzy->GetKeyboard()->TypeKey(kKeyEnter));
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, 0, 0, 1);
+}
+
+TEST_F(LoaderTest, KeysWhileLoadingAreThrownAway) {
+  // Keys typed while the loader runs don't count toward the next prompt, so
+  // the boot ROM still waits after the error.
+  std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(std::nullopt));
+  ASSERT_NE(ozzy, nullptr);
+  ozzy->Run(absl::Milliseconds(1));
+  EXPECT_TRUE(ozzy->GetKeyboard()->TypeKey(kKeyEnter));
+  ExpectError(*ozzy, static_cast<uint16_t>(DiskStatus::kNotFound));
+  ozzy->Run(4 * kScreenRefreshTime);
+  EXPECT_TRUE(IsWaitingAfterError(*ozzy));
+  EXPECT_EQ(GetScreenRow(*ozzy, kStatusRow),
+            GetErrorStatus(static_cast<uint16_t>(DiskStatus::kNotFound)));
 }
 
 TEST_F(LoaderTest, NotABareProgram) {
@@ -429,34 +516,13 @@ TEST_F(LoaderTest, NotABareProgram) {
         std::pair{kBareProgramFileId,
                   static_cast<uint16_t>(kBareProgramFileVersion + 1)}}) {
     SCOPED_TRACE(absl::StrFormat("%04X version %d", id, version));
-    requests_.clear();
     std::vector<uint16_t> os_file = bare_file;
     os_file[0] = id;
     os_file[1] = version;
     std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(os_file));
     ASSERT_NE(ozzy, nullptr);
-    ExpectError(*ozzy);
+    ExpectError(*ozzy, kNotBare);
   }
-}
-
-TEST_F(LoaderTest, TooBig) {
-  // One word more than pages 2 to 14 hold.
-  constexpr int kGap = 13 * kMemoryBankPageSize - kOsWords;
-  std::unique_ptr<Ozzy> ozzy =
-      Boot(OzzySettings(), MakeImage(GetOsFile(kGap, 1)));
-  ASSERT_NE(ozzy, nullptr);
-  ExpectError(*ozzy);
-}
-
-TEST_F(LoaderTest, TooBigForTheBank) {
-  // Its contents and stack are more than a bank, which wraps to a page.
-  std::vector<uint16_t> os_file = GetOsFile(0, 0);
-  ASSERT_GE(os_file.size(), 4);
-  os_file[2] = 0xF000;
-  os_file[3] = 0x2000;
-  std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(os_file));
-  ASSERT_NE(ozzy, nullptr);
-  ExpectError(*ozzy);
 }
 
 TEST_F(LoaderTest, NotWhatItsHeaderSays) {
@@ -476,56 +542,78 @@ TEST_F(LoaderTest, NotWhatItsHeaderSays) {
   files[4].insert(files[4].end(), {0, 0});
   for (int i = 0; i < static_cast<int>(files.size()); ++i) {
     SCOPED_TRACE(i);
-    requests_.clear();
     std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(files[i]));
     ASSERT_NE(ozzy, nullptr);
-    ExpectError(*ozzy);
+    ExpectError(*ozzy, kWrongSize);
+  }
+}
+
+TEST_F(LoaderTest, TooBig) {
+  // One word more than pages 1 to 14 hold from 1200h.
+  constexpr int kGap = GetWordsTo(14) - kOsWords;
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(OzzySettings(), MakeImage(GetOsFile(kGap, 1)));
+  ASSERT_NE(ozzy, nullptr);
+  ExpectError(*ozzy, kTooBig);
+}
+
+TEST_F(LoaderTest, TooBigForTheBank) {
+  // Every page is RAM, but the OS's contents and stack are more than a bank,
+  // which wraps to a page, or would pass its end from 1200h. It fails before
+  // reading any block, so its blocks needn't match.
+  OzzySettings settings = GetTeletypeSettings(0);
+  settings.banks = {0xFFFE};
+  for (auto [contents, stack] : {std::pair<uint16_t, uint16_t>{0xF000, 0x2000},
+                                 std::pair<uint16_t, uint16_t>{0xEE00, 1},
+                                 std::pair<uint16_t, uint16_t>{0, 0xFFFF}}) {
+    SCOPED_TRACE(absl::StrFormat("%04X and %04X", contents, stack));
+    std::unique_ptr<Ozzy> ozzy =
+        Boot(settings, MakeImage(GetOsFileSaying(contents, stack)));
+    ASSERT_NE(ozzy, nullptr);
+    ExpectError(*ozzy, kTooBig);
   }
 }
 
 TEST_F(LoaderTest, NotRam) {
-  // Page 4 isn't RAM, so the OS can't have pages 2 to 4.
+  // Page 4 isn't RAM, so the OS can't have pages 1 to 4.
   OzzySettings settings;
   settings.banks = {0x7FEE};
   std::unique_ptr<Ozzy> ozzy =
-      Boot(settings, MakeImage(GetOsFile(2 * kMemoryBankPageSize, 0)));
+      Boot(settings, MakeImage(GetOsFile(GetWordsTo(3), 0)));
   ASSERT_NE(ozzy, nullptr);
-  ExpectError(*ozzy);
-}
+  ExpectError(*ozzy, kTooBig);
 
-TEST_F(LoaderTest, NotRamAtTheEndOfTheBank) {
-  // With the loader on page 15, there is no page after it.
-  OzzySettings settings = GetTeletypeSettings(0);
-  settings.banks = {0x8000};
-  std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeImage(GetOsFile(0, 0)));
+  // Up to page 3 is fine.
+  ozzy = Boot(settings, MakeImage(GetOsFile(GetWordsTo(3) - kOsWords, 0)));
   ASSERT_NE(ozzy, nullptr);
-  ExpectError(*ozzy);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, GetWordsTo(3) - kOsWords, 0, 3);
 }
 
 TEST_F(LoaderTest, TeletypeError) {
   for (int baud : {0, 9600}) {
     SCOPED_TRACE(baud);
-    requests_.clear();
     std::unique_ptr<Ozzy> ozzy =
         Boot(GetTeletypeSettings(baud), MakeImage(std::nullopt));
     ASSERT_NE(ozzy, nullptr);
-    ExpectError(*ozzy);
+    ExpectError(*ozzy, static_cast<uint16_t>(DiskStatus::kNotFound));
   }
 }
 
 TEST_F(LoaderTest, NoScreenOrTeletype) {
-  // It still waits for a key, and restarts.
+  // The boot ROM still has the error, and waits for Enter.
   OzzySettings settings;
   settings.screen.reset();
   std::unique_ptr<Ozzy> ozzy = Boot(settings, MakeImage(std::nullopt));
   ASSERT_NE(ozzy, nullptr);
-  ExpectError(*ozzy);
+  ExpectError(*ozzy, static_cast<uint16_t>(DiskStatus::kNotFound));
 }
 
 TEST_F(LoaderTest, DiskErrors) {
-  // A read that fails at any point fails the load with the error, never
-  // hanging: from the directory to the OS file's last sector. Enough reads
-  // loads it. (NoOsFile checks the restart that follows the error.)
+  // A read that fails at any point fails the load, never hanging: from the
+  // directory to the OS file's last sector. The error is the drive's status,
+  // or for a read that fails part way through the file, what the loader makes
+  // of the words it was given. Enough reads loads it.
   const std::vector<uint16_t> os_file = GetOsFile(0x2000, 0);
   int reads = 0;
   for (;; ++reads) {
@@ -536,12 +624,17 @@ TEST_F(LoaderTest, DiskErrors) {
     ASSERT_NE(ozzy, nullptr);
     protocol_->SetLimits({.reads = reads});
     RunUntil(*ozzy, [](Ozzy& ozzy) {
-      return IsHalted(ozzy) || GetStatusText(ozzy) == kError;
+      return IsHalted(ozzy) || IsWaitingAfterError(ozzy);
     });
     if (IsHalted(*ozzy)) {
-      ExpectOsRan(*ozzy, 0, 2, 0x2000, 0);
+      ExpectOsRan(*ozzy, 0x2000, 0, 3);
       break;
     }
+    const uint16_t code = GetWord(*ozzy, kErrorAddress);
+    EXPECT_THAT(code,
+                ::testing::AnyOf(static_cast<uint16_t>(DiskStatus::kIoError),
+                                 kNotBare, kWrongSize));
+    ExpectError(*ozzy, code);
   }
 
   // The directory, and the OS file's sectors, each failed in turn.

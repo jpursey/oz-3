@@ -653,9 +653,14 @@ TEST(OzzySettingsTest, ValidateBanks) {
   OzzySettings settings;
   settings.banks.assign(16, 0);
   EXPECT_EQ(ValidateError(settings),
-            "banks: the Ozzy has no RAM, which the boot ROM needs for its "
-            "stack");
-  settings.banks[15] = 0x8000;
+            "banks[0]: page 1 must be RAM, for the boot ROM's stack");
+  settings.banks[15] = 0xFFFF;
+  EXPECT_EQ(ValidateError(settings),
+            "banks[0]: page 1 must be RAM, for the boot ROM's stack");
+  settings.banks[0] = 0x0004;
+  EXPECT_EQ(ValidateError(settings),
+            "banks[0]: page 1 must be RAM, for the boot ROM's stack");
+  settings.banks[0] = 0x0002;
   EXPECT_EQ(ValidateError(settings), "ok");
   settings.banks.assign(17, 0);
   EXPECT_EQ(ValidateError(settings), "banks: must have 1 to 16 banks");

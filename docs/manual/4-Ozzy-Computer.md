@@ -45,7 +45,7 @@ The cores' [mailboxes](2-Specifications.md#mailboxes) are as well as the `ports`
 
 `banks` is a list of the Ozzy's banks, from bank 0. Each is a map with one key, `ram`: its RAM pages, as a mask with bit `n` for page `n`, as the read and write masks state pages (see [Specifications](2-Specifications.md#overview)). In hexadecimal, each digit is four pages. A bank with no `ram` has none. The default is one bank, `{ ram: 0x7FFE }`.
 
-Page 0 of bank 0 is always the boot ROM, so bank 0's mask can't have bit 0. An Ozzy must have some RAM, in any bank, as the boot ROM needs a page of it for its stack.
+Page 0 of bank 0 is always the boot ROM, so bank 0's mask can't have bit 0. Page 1 of bank 0 must be RAM, so bank 0's mask must have bit 1, as the boot ROM's stack and the loader are there (see [The boot ROM's stack](#the-boot-roms-stack)).
 
 #### Devices
 
@@ -113,6 +113,7 @@ The Ozzy's own rules are checked once the whole file is read, so their errors na
 
 ```
 hello.ozzy: banks[0]: RAM can't be on the boot ROM's page
+hello.ozzy: banks[0]: page 1 must be RAM, for the boot ROM's stack
 hello.ozzy: screen: page 15 of bank 0 is RAM
 hello.ozzy: timer: tick_hz must be at most 65535
 hello.ozzy: drive B: image disks/a.ozd is also drive A's
@@ -127,12 +128,12 @@ Each page of a bank is RAM, the boot ROM, a device's, or empty. An empty page ha
 | Bank 0 pages | What                                                                     |
 | ------------ | ------------------------------------------------------------------------ |
 | 0            | The boot ROM, with the machine table at F00h                             |
-| 1            | RAM, by default, with the boot ROM's stack at its top (see [The boot ROM's stack](#the-boot-roms-stack)) |
+| 1            | RAM, always, with the loader at 1000h and the boot ROM's stack below 1200h (see [The boot ROM's stack](#the-boot-roms-stack)) |
 | 2 to 14      | RAM, by default                                                          |
 | 15           | The screen, if the Ozzy has one                                          |
 
 * **The boot ROM** is page 0 of bank 0, in every Ozzy. Cores can read it, but not write it.
-* **RAM** is the pages the config's `ram` masks give, and no others. It is all 0 at power on. The boot ROM's stack is in its first page (see [The boot ROM's stack](#the-boot-roms-stack)).
+* **RAM** is the pages the config's `ram` masks give, and no others. It is all 0 at power on. Page 1 of bank 0 is always RAM, for the boot ROM's stack and the loader (see [The boot ROM's stack](#the-boot-roms-stack)).
 * **A device's pages** are its own, as the screen's page is (see [Screen](3.3-Screen.md)). They are never RAM or the boot ROM, so the machine table says plainly what each page is. Without a screen, page 15 of bank 0 may be RAM.
 
 ### The machine table
@@ -245,7 +246,7 @@ Interrupts are enabled only while it waits. The boot ROM sets no handler for any
 
 #### Booting
 
-On Enter, the boot ROM hides the cursor and shows `Loading...`. Then it reads the boot area of the disk in `A:` (see [Superblock](3.5-Disk-Drive.md#superblock)) with `READ BOOT` into the first 224 words of its stack's page (1000h to 10DFh by default), and checks that its last two words are the **boot signature**, `"BOOT"` packed: 4F42h, 544Fh. If they are, it shows `Ready` and starts the code in the boot area, the **loader** (see [The loader](#the-loader)). If anything fails, it shows why and waits for Enter again:
+On Enter, the boot ROM hides the cursor and shows `Loading...`. Then it reads the boot area of the disk in `A:` (see [Superblock](3.5-Disk-Drive.md#superblock)) with `READ BOOT` to 1000h to 10DFh of bank 0, just below its stack, and checks that its last two words are the **boot signature**, `"BOOT"` packed: 4F42h, 544Fh. If they are, it shows `Ready` and starts the code in the boot area, the **loader** (see [The loader](#the-loader)). If anything fails, it shows why and waits for Enter again:
 
 | Why                                     | Status                       |
 | --------------------------------------- | ---------------------------- |
@@ -264,7 +265,7 @@ A disk whose boot area holds a loader is a **system disk**. The loader is the di
 ```
 ; boot.oza: assembled with oz3asm --bare, then written with
 ;   oz3dsk system.ozd boot boot.oz3
-    .STACK 0                ; It runs on the boot ROM's stack's page
+    .STACK 0                ; It runs on the boot ROM's stack
     ...                     ; The loader
     .DS 222 - $             ; Padding up to word 222
     .DW "BOOT"              ; The boot signature, in the last two words
@@ -272,39 +273,51 @@ A disk whose boot area holds a loader is a **system disk**. The loader is the di
 
 The boot ROM starts it with `RST SELF, CODE | STACK | DATA | EXTRA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
 
-* `CODE` and `DATA` are the bank of the boot ROM's stack's page, both based at the loader's first word: it starts at `IP` 0, and reads its own words as `D(n)`.
-* `STACK` is the same bank, based at the end of the page (2000h by default), with `SP` 0, so its stack starts empty at the top of the page.
-* `EXTRA` is bank 0 at base 0, so the machine table is at `E(F00h)`.
+* Every bank is bank 0.
+* `BC` and `BD` are 1000h, the loader's first word: it starts at `IP` 0, and reads its own words as `D(n)`.
+* `BS` is 1200h, the end of the boot ROM's stack, with `SP` 0, so the loader's stack starts empty at the top of the boot ROM's.
+* `BE` is 0, so the machine table is at `E(F00h)`.
 * `R0` is the boot drive's command port (16 for `A:`), and `R1` its number (0 for `A:`).
 * No interrupt handlers are set and interrupts are disabled, as `RST` of `CODE` leaves them, and its notify flag (`N`) is set, so its first `WAIT` ends at once.
 * The keyboard is empty, as the boot ROM throws away the keys pressed while it boots, and no interrupt its own work raised is pending, such as the drive's for `READ BOOT`, so the loader's first drive interrupt is for its own command.
-* RAM is as at power on, but for the loader itself and the boot ROM's stack's page, which the loader now owns.
+* RAM is as at power on, but for the loader itself and the boot ROM's stack, which the loader now owns, so it may use all of 1000h to 11FFh.
 
 The other cores are still idle, as at power on, until the loader or what it loads starts them.
 
+A loader that fails hands back to the boot ROM: it puts an error code from 1 to FFh in `R0`, and jumps to the boot ROM's **exit**, at 0002h of bank 0, which is `JP 0F002h` from the loader's `BC` of 1000h. The exit restarts the boot ROM with `RST SELF, CODE | STACK | DATA`, keeping `R0`, so the boot ROM starts again as at power on, but for showing `ERROR: Loader error XXh`, the code as a hex byte (only `R0`'s low byte), as the status, below the prompt. Enter boots again, from whatever disk is in `A:` by then. Keys pressed while the loader ran are thrown away. RAM isn't cleared, and the loader may leave the drive busy, as the boot ROM resets it before it reads. The loader needs to know nothing about the screen, teletype, or keyboard to report its error, as the boot ROM shows it. An error code of 0 is the boot ROM starting at power on, so it shows no error.
+
 #### The boot ROM's stack
 
-The boot ROM's stack is the first page of RAM in the lowest bank that has any: page 1 of bank 0 by default, or else the lowest RAM page of bank 0, or of the first bank after it with RAM. So every Ozzy must have some RAM.
+The boot ROM's stack is in page 1 of bank 0, which is always RAM, and ends at 1200h, just after the loader's 224 words at 1000h.
 
-* Core 0's `STACK` bank is that bank, and `BS` is the end of the page (2000h for page 1), so the stack grows down from the page's last word (1FFFh by default).
-* The boot ROM's variables are the first 8 words it pushes, at the top of the page (1FF8h to 1FFFh by default), and its stack is below them. It uses far less than the page, and the loader is read into its first words.
-* The rest of RAM, and the rest of that page, the boot ROM leaves alone.
+* Core 0's `STACK` bank is bank 0, and `BS` is 1200h, so the stack grows down from 11FFh. The host sets `BS` at power on, and the boot ROM's exit sets it again.
+* The boot ROM's variables are the first 9 words it pushes, at the top of the stack (11F7h to 11FFh), and its stack is below them, above the loader.
+* The rest of RAM the boot ROM leaves alone, so all of it from 1200h is free for what the loader loads.
 
 The boot ROM's source is `oz3/ozzy/boot_rom.oza`, written for the [default instruction set](2.2-Default-Instruction-Set.md), which `oz3asm` assembles for a listing (see [Program Source](2.5-Program-Source.md#oz3asm)).
 
 #### The default loader
 
-The default loader, `oz3/ozzy/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts in the pages just after its own, in the same bank: from 2000h by default. It needs as many whole pages as its contents and stack fill, and every one of them must be RAM in the [machine table](#the-machine-table), up to the end of the bank.
+The default loader, `oz3/ozzy/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts just after itself and the boot ROM's stack, in bank 0: from 1200h, through as many of the pages after page 1 as its contents and stack fill. Each of those pages must be RAM in the [machine table](#the-machine-table), and it must end within the bank.
 
-The loader opens the file, reads all of it with one `READ PACKED`, sending each data block's words straight to where they go as they arrive, and closes it (see [Disk Drive](3.5-Disk-Drive.md)). Then it starts the operating system as a bare program at its first page, `b`, with `RST SELF, CODE | STACK | DATA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
+The loader opens the file, reads all of it with one `READ PACKED`, sending each data block's words straight to where they go as they arrive, and closes it (see [Disk Drive](3.5-Disk-Drive.md)). Then it starts the operating system as a bare program at 1200h, with `RST SELF, CODE | STACK | DATA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
 
-* `CODE`, `STACK`, and `DATA` are the loader's bank. `BC` and `BD` are `b`, and `BS` is `b` plus its contents and stack words, with `IP` and `SP` 0.
-* `EXTRA` is still bank 0 at base 0, so the machine table is at `E(F00h)`.
+* Every bank is bank 0. `BC` and `BD` are 1200h, and `BS` is 1200h plus its contents and stack words, with `IP` and `SP` 0.
+* `BE` is still 0, so the machine table is at `E(F00h)`.
 * `R0` and `R1` are the boot drive's command port and number, as the loader was given them.
-* `R2` is the pages of its bank the operating system is in, a bit for each (bit 0 for page 0), so that it doesn't put programs over itself. Every other RAM page is free, including the loader's own, which `R2` leaves out.
+* `R2` is the pages of bank 0 the operating system is in, from page 1 to its last, a bit for each (bit 0 for page 0), so that it doesn't put programs over itself. The loader and the boot ROM's stack, at 1000h to 11FFh, are free once it starts, and so is every RAM page `R2` leaves out.
 * Interrupts are disabled with no handlers set, and the notify flag is set, as `RST` of `CODE` leaves them.
 
-If the file isn't there, isn't a bare program, isn't exactly as long as its header and blocks say, doesn't fit, or can't be read, the loader shows `ERROR: Can't load OZOS.SYS` on the teletype if the machine table has one, and on the screen's status row, replacing `Loading...`. (It writes the status row into page 15 of bank 0 whether or not there is a screen: an empty page ignores it, and RAM there just holds it.) Then it waits for a key, and restarts the Ozzy with the power control (see [Power Control](3.6-Power-Control.md)). It doesn't check that each block is within the contents, so a block past them is written where its offset puts it.
+If it can't load the file, it fails with an error code, which the boot ROM shows as `ERROR: Loader error XXh` (see [The loader](#the-loader)):
+
+| Error code | Why                                                                                       |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| 01h to 25h | The drive's status for a command that failed, such as **not found** (10h) for no `OZOS.SYS`, or **I/O error** (25h) (see [Disk Drive](3.5-Disk-Drive.md)) |
+| F1h        | The file isn't a bare program                                                             |
+| F2h        | The file isn't exactly as long as its header and blocks say                               |
+| F3h        | The file doesn't fit: it would run past the end of bank 0, or onto a page that isn't RAM |
+
+It doesn't check that each block is within the contents, so a block past them is written where its offset puts it.
 
 ### Running Ozzy
 
