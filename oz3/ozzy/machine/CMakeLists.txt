@@ -70,6 +70,7 @@ set(oz3_ozzy_testing_DEPS
   absl::status
   absl::statusor
   absl::strings
+  absl::time
   gb_base
   gb_file
   gb_parse

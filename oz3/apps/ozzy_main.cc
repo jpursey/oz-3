@@ -249,11 +249,12 @@ bool Run(gb::ValidatedContext& context,
     max_speed_run_time = absl::Seconds(kMaxSpeedRunCycles) / settings->clock_hz;
   }
 
-  // Each Ozzy is created in the command's context, which has the file system
-  // for the drives' images.
+  // Each Ozzy is created in a child of the command's context, which has the
+  // file system for the drives' images.
   //
   // Programs see the date and time where the user is, and files are stamped
-  // with it, as the context has no clock of its own (see kConstraintHostClock).
+  // with it, as the command's context has no clock of its own (see
+  // kConstraintHostClock).
   // It is the host's time, so when the Ozzy can't keep up with its clock rate
   // (or runs at max speed), it drifts from the timer's ticks and milliseconds.
   // The command's context is valid, so the host is always created.

@@ -201,6 +201,19 @@ TEST_F(OzzyHostTest, RunReturnsARestart) {
               Optional(PowerRequest{.command = PowerCommand::kRestart}));
 }
 
+TEST_F(OzzyHostTest, RunDropsRequestsFromOutsideIt) {
+  std::unique_ptr<OzzyHost> host = CreateHost();
+  ASSERT_NE(host, nullptr);
+  ASSERT_TRUE(host->PowerOn().ok());
+  ASSERT_TRUE(LoadOnCore0(*host->GetOzzy(), R"---(
+      .STACK 0
+      OUT.ID 0, 2
+      HALT
+  )---"));
+  host->GetOzzy()->Run(absl::Milliseconds(1));
+  EXPECT_EQ(host->Run(absl::Milliseconds(1)).power_request, std::nullopt);
+}
+
 TEST_F(OzzyHostTest, OnlyTheFirstRequestInARun) {
   std::unique_ptr<OzzyHost> host = CreateHost();
   ASSERT_NE(host, nullptr);
@@ -241,9 +254,9 @@ TEST_F(OzzyHostTest, PowerOnAfterPowerOffStartsAgain) {
   host->PowerOff();
   ASSERT_TRUE(host->PowerOn().ok());
 
-  // Core 0 is back at the boot ROM, so it hasn't halted.
-  host->Run(absl::Milliseconds(1));
+  // Core 0 is about to run the boot ROM, with none of the program's registers.
   EXPECT_FALSE(IsHalted(*host->GetOzzy()));
+  EXPECT_EQ(GetRegisters(*host->GetOzzy())[CpuCore::R6], 0);
 }
 
 }  // namespace

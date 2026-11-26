@@ -94,7 +94,9 @@ class OzzyHost final {
 
   // Runs the Ozzy for `time` (see Ozzy::Run), which must be on. The Ozzy is
   // still on after a program's power request: what a request does is up to
-  // the caller.
+  // the caller. Only the requests made during this run are returned, so a
+  // caller that runs the Ozzy itself, rather than through Run, never sees
+  // them.
   RunResult Run(absl::Duration time);
 
  private:

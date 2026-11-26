@@ -162,10 +162,12 @@ std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> ReadTestFile(
   DiskFile root = 0;
   EXPECT_EQ(file_system.OpenRoot(&root), DiskStatus::kOk);
   DiskDirEntry entry;
-  if (file_system.Find(root, filename, &entry) != DiskStatus::kOk) {
+  const bool found =
+      file_system.Find(root, filename, &entry) == DiskStatus::kOk;
+  EXPECT_EQ(file_system.Close(root, DateTime()), DiskStatus::kOk);
+  if (!found) {
     return std::nullopt;
   }
-  EXPECT_EQ(file_system.Close(root, DateTime()), DiskStatus::kOk);
   DiskFile file = 0;
   EXPECT_EQ(file_system.Open(filename, &file), DiskStatus::kOk);
   std::vector<uint16_t> words(entry.GetSize().value_or(0));
@@ -173,6 +175,7 @@ std::optional<std::pair<DiskDirEntry, std::vector<uint16_t>>> ReadTestFile(
   EXPECT_EQ(file_system.Read(file, absl::MakeSpan(words), &read),
             DiskStatus::kOk);
   words.resize(read);
+  EXPECT_EQ(file_system.Close(file, DateTime()), DiskStatus::kOk);
   return std::make_pair(entry, std::move(words));
 }
 
