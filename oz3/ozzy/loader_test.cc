@@ -447,6 +447,41 @@ TEST_F(LoaderTest, TooBig) {
   ExpectError(*ozzy);
 }
 
+TEST_F(LoaderTest, TooBigForTheBank) {
+  // Its contents and stack are more than a bank, which wraps to a page.
+  std::vector<uint16_t> os_file = GetOsFile(0, 0);
+  ASSERT_GE(os_file.size(), 4);
+  os_file[2] = 0xF000;
+  os_file[3] = 0x2000;
+  std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(os_file));
+  ASSERT_NE(ozzy, nullptr);
+  ExpectError(*ozzy);
+}
+
+TEST_F(LoaderTest, NotWhatItsHeaderSays) {
+  // A file that is empty, shorter than its header, missing a block's words,
+  // missing a block, or with words past its last block fails rather than
+  // waiting for the drive forever.
+  const std::vector<uint16_t> os_file = GetOsFile(0, 0);
+  ASSERT_GE(os_file.size(), 8);
+  std::vector<std::vector<uint16_t>> files = {
+      {},
+      std::vector<uint16_t>(os_file.begin(), os_file.begin() + 4),
+      std::vector<uint16_t>(os_file.begin(), os_file.end() - 2),
+      os_file,
+      os_file,
+  };
+  files[3][4] += 1;
+  files[4].insert(files[4].end(), {0, 0});
+  for (int i = 0; i < static_cast<int>(files.size()); ++i) {
+    SCOPED_TRACE(i);
+    requests_.clear();
+    std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(files[i]));
+    ASSERT_NE(ozzy, nullptr);
+    ExpectError(*ozzy);
+  }
+}
+
 TEST_F(LoaderTest, NotRam) {
   // Page 4 isn't RAM, so the OS can't have pages 2 to 4.
   OzzySettings settings;

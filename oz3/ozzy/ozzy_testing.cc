@@ -79,9 +79,11 @@ DiskSuperblock::BootArea GetBootArea(const AsmProgram& program) {
   }
   EXPECT_EQ(bare->contents_words, DiskSuperblock::kBootAreaWords);
   for (const Program::Segment::Data& data : bare->data) {
-    if (data.offset + data.data.size() <= boot_area.size()) {
-      absl::c_copy(data.data, boot_area.begin() + data.offset);
+    if (data.offset + data.data.size() > boot_area.size()) {
+      ADD_FAILURE() << "A block at " << data.offset << " is past the boot area";
+      continue;
     }
+    absl::c_copy(data.data, boot_area.begin() + data.offset);
   }
   return boot_area;
 }

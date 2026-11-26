@@ -97,7 +97,7 @@
 ; Open the OS file
 ;
 ; Registers kept throughout:
-;   R3 - The OS file's handle
+;   R3 - The dwords of the OS file still to read
 ;   R5 - The drive's command port
 ;   R6 - The drive's control port, then its data port
 ;-------------------------------------------------------------------------------
@@ -113,20 +113,25 @@
     CALL command
     CALL read_status        ; The completion's
     CALL read_word          ; The handle
-    MOV R3, R1
+    MOV D(handle), R1
 
 ;-------------------------------------------------------------------------------
 ; Read the whole file, whose words are all on the data port from here on.
-; command left R0 at read_count, just after the name.
+; command left R0 at read_count, just after the name. The file must be exactly
+; what its header says, as reading past its end, or stopping short of it, would
+; wait for the drive forever.
 ;-------------------------------------------------------------------------------
 
     OR R1, DRIVE_CMD_READ_PACKED
     MVQ R7, 1
     CALL command
     CALL read_word          ; n, which is the whole file
+    MOV R3, R1
     SBQ R6, DRIVE_CONTROL - DRIVE_DATA
 
     ; The header, into header
+    SBQ R3, 3
+    JC C, failed
     MOV R0, header
     MVQ R7, 3
 @header:
@@ -145,6 +150,7 @@
     ; R1 has a bit for each page needed, from bit 0
     MOV R0, D(header + 2)   ; Contents
     ADD R0, D(header + 3)   ; Stack (a full bank wraps to 0)
+    JC C, failed            ; The OS can't have all 16 pages anyway
     PUSH R0                 ; The OS's size, for BS
     SBQ R0, 1
     SHR R0, 12              ; Pages needed - 1
@@ -179,9 +185,13 @@
 @next:
     SBQ R2, 1
     JC C, @loaded
+    SBQ R3, 1
+    JC C, failed
 @offset:
     INS.RD R6, D0           ; R0 is the offset, R1 the size
     JC NS, @offset
+    SUB R3, R1
+    JC C, failed
     SHL R0, 1
     ADD R0, PAGE_SIZE
     MOV R7, R1
@@ -190,6 +200,8 @@
     JC NS, @block
     JPR @next
 @loaded:
+    TST R3                  ; More than the header says
+    JC NZ, failed
     ADQ R6, DRIVE_CONTROL - DRIVE_DATA
     CALL read_status        ; The completion's
     CALL read_word          ; The dwords read
@@ -198,7 +210,7 @@
 ; Close the file. It has no arguments, and R7 is already 0, as INR leaves it.
 ;-------------------------------------------------------------------------------
 
-    MOV R1, R3
+    MOV R1, D(handle)
     OR R1, DRIVE_CMD_CLOSE
     CALL command
     CALL read_status        ; The completion's
@@ -357,3 +369,6 @@ error:
 
 ; The OS file's header: identifier, version, contents, stack, blocks, reserved
 .CONST header = $
+
+; The OS file's handle
+.CONST handle = header + 6

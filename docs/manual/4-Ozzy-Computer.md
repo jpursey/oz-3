@@ -304,7 +304,7 @@ The loader opens the file, reads all of it with one `READ PACKED`, sending each 
 * `R2` is the pages of its bank the operating system is in, a bit for each (bit 0 for page 0), so that it doesn't put programs over itself. Every other RAM page is free, including the loader's own, which `R2` leaves out.
 * Interrupts are disabled with no handlers set, and the notify flag is set, as `RST` of `CODE` leaves them.
 
-If the file isn't there, isn't a bare program, doesn't fit, or can't be read, the loader shows `ERROR: Can't load OZOS.SYS` on the teletype if the machine table has one, and on the screen's status row, replacing `Loading...`. (It writes the status row into page 15 of bank 0 whether or not there is a screen: an empty page ignores it, and RAM there just holds it.) Then it waits for a key, and restarts the Ozzy with the power control (see [Power Control](3.6-Power-Control.md)).
+If the file isn't there, isn't a bare program, isn't exactly as long as its header and blocks say, doesn't fit, or can't be read, the loader shows `ERROR: Can't load OZOS.SYS` on the teletype if the machine table has one, and on the screen's status row, replacing `Loading...`. (It writes the status row into page 15 of bank 0 whether or not there is a screen: an empty page ignores it, and RAM there just holds it.) Then it waits for a key, and restarts the Ozzy with the power control (see [Power Control](3.6-Power-Control.md)). It doesn't check that each block is within the contents, so a block past them is written where its offset puts it.
 
 ### Running Ozzy
 
