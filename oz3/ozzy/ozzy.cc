@@ -298,13 +298,16 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
   DCHECK_EQ(memory.size(), table.size());
   absl::c_copy(table, memory.begin());
 
-  // The boot ROM finds its stack, where it reads the loader, in the lowest bank
-  // with RAM.
-  const CpuCore::ResetParams reset_params = loader.GetResetParams(boot_rom);
-  const int first_ram_bank = static_cast<int>(
-      absl::c_find_if(settings.banks, [](uint16_t ram) { return ram != 0; }) -
-      settings.banks.begin());
-  CHECK_EQ(CpuCore::Banks::FromWord(reset_params.mb).stack, first_ram_bank);
+  // The boot ROM's stack is in page 1 of bank 0, which the settings always
+  // have as RAM, where it reads the loader. The stack ends part way into the
+  // page, so the loader and the stack leave the rest of it free.
+  static_assert(kLoaderStart / kMemoryBankPageSize == kOzzyBootRamPage);
+  static_assert((kBootRomStackEnd - 1) / kMemoryBankPageSize ==
+                kOzzyBootRamPage);
+  CpuCore::ResetParams reset_params = loader.GetResetParams(boot_rom);
+  CHECK_EQ(CpuCore::Banks::FromWord(reset_params.mb).stack, 0);
+  CHECK_EQ(reset_params.bs, (kOzzyBootRamPage + 1) * kMemoryBankPageSize);
+  reset_params.bs = kBootRomStackEnd;
 
   // Power on: core 0 starts the boot ROM.
   CpuCore* core = processor->GetCore(0);

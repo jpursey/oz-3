@@ -23,13 +23,11 @@
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
 #include "gb/file/memory_file_protocol.h"
-#include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/date_time.h"
-#include "oz3/core/instruction_compiler.h"
 #include "oz3/core/lockable.h"
 #include "oz3/core/memory_bank.h"
 #include "oz3/core/memory_bank_config.h"
@@ -45,11 +43,9 @@
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
 #include "oz3/ozzy/machine_table.h"
 #include "oz3/ozzy/ozzy_settings.h"
 #include "oz3/ozzy/ozzy_testing.h"
-#include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
 #include "oz3/tools/program_loader.h"
 
@@ -78,19 +74,7 @@ std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
 // each error, loads it into `ozzy`, and resets core 0 to run it. Returns
 // whether it did.
 bool LoadOnCore0(Ozzy& ozzy, std::string_view text) {
-  InstructionError error;
-  std::unique_ptr<InstructionSetSyntax> syntax = InstructionSetSyntax::Create(
-      GetDefaultInstructionSetDef(), GetDefaultInstructionSet().get(), &error);
-  if (syntax == nullptr) {
-    ADD_FAILURE() << error.message;
-    return false;
-  }
-  std::vector<gb::ParseError> errors;
-  std::unique_ptr<AsmProgram> program =
-      AssembleProgram(*syntax, std::string(text), &errors);
-  for (const gb::ParseError& parse_error : errors) {
-    ADD_FAILURE() << parse_error.FormatMessage();
-  }
+  std::unique_ptr<AsmProgram> program = AssembleTestProgram(text);
   if (program == nullptr) {
     return false;
   }
@@ -140,11 +124,8 @@ TEST(OzzyTest, DefaultOzzy) {
 
 TEST(OzzyTest, PowerRequestsReachTheCallback) {
   std::vector<PowerRequest> requests;
-  gb::Context context;
-  context.SetNew<PowerRequestCallback>(
-      [&requests](PowerRequest request) { requests.push_back(request); });
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(OzzySettings(), std::move(context));
+      Ozzy::Create(OzzySettings(), WithPowerCallback({}, &requests));
   ASSERT_TRUE(ozzy.ok()) << ozzy.status();
 
   // The power port is port 0, with the command in word 0 and the exit code in

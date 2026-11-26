@@ -4,299 +4,364 @@
 ; in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 ;===============================================================================
-; The Ozzy dwfault boot loader
+; The Ozzy default boot loader
 ;
 ; This is the default loader which is put on a newly formatted disk by default
 ; with the OZOS operating system. It also can be used to manually format a disk
 ; on a host machine with the oz3dsk tool.
 ;
-; All this does is look for the first .SYS file on the disk (usually OZOS.SYS)
-; and loads it if it is a bare executable file, otherwise it displays an error
-; and restarts the boot ROM. 
+; It loads OZOS.SYS, a bare program, from the boot drive into RAM just after
+; the loader and its stack, through as many of the pages after it as it needs,
+; or if they aren't all RAM, from the start of another bank, and starts it (see
+; "Starting the OS" below for what the OS is given). If it can't, it hands back
+; to the boot ROM with an error code, and the boot ROM shows it.
+;
+; The loader must fit in the 222 words before the boot signature, so it reads
+; the whole file with one READ PACKED, sending each data block straight to
+; where it goes as the words arrive.
 ;===============================================================================
 
 ;-------------------------------------------------------------------------------
-; The stack, with the variables at its top
+; Where everything is
 ;
-; The actual stack size specified here doesn't matter as the loader is not
-; loaded like a program and is given an entire bank of memory for its stack.
+; The boot ROM starts the loader at LOADER_START in bank 0, with every bank
+; bank 0, BC and BD at LOADER_START, and its stack ending at STACK_END, so
+; addresses here are from LOADER_START. The stack size specified here doesn't
+; matter, as the loader is not loaded like a program.
 ;-------------------------------------------------------------------------------
 
 .STACK 0
 
-;-------------------------------------------------------------------------------
-; The machine table (see oz3/ozzy/machine_table.h)
-;-------------------------------------------------------------------------------
+.CONST LOADER_START = 1000h
+.CONST STACK_END = 1200h   ; Where the boot ROM's stack ends, and the OS goes
 
-.CONST TABLE = 0F00h
-.CONST TABLE_DEVICES = TABLE + 6
-.CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
-.const TABLE_DEVICE_ENTRY_SIZE = 8
-.const TABLE_CORE_HZ = TABLE + 1
+; Where the boot ROM's exit is, at 0002h of bank 0
+.CONST BOOT_ROM_EXIT = 0002h - LOADER_START
 
-; A device entry fields
-.CONST DEVICE_FIELD_TYPE   = 0
-.CONST DEVICE_FIELD_PORT   = 1
+; Each bank's RAM pages, in the machine table (see oz3/ozzy/machine_table.h).
+; A bank the Ozzy doesn't have has none.
+.CONST TABLE = 0F00h - LOADER_START
+.CONST TABLE_BANK_ENTRIES = TABLE + 8
+.CONST BANK_FIELD_RAM = 1
+.CONST BANK_ENTRY_SIZE = 2
+.CONST TABLE_BANK0_RAM = TABLE_BANK_ENTRIES + BANK_FIELD_RAM
+.CONST TABLE_BANK1_RAM = TABLE_BANK0_RAM + BANK_ENTRY_SIZE
 
-; Device types.
-.CONST SCREEN = 1
-.CONST TELETYPE = 3
-.CONST POWER = 6
-
-; The power control's restart command
-.CONST POWER_RESTART = 2
+; Bank n in each of MB's fields, for RST
+.CONST EVERY_BANK = 1111h
+.CONST NOT_EXTRA = 0FFFh
 
 ;-------------------------------------------------------------------------------
-; The screen's control words and cell attributes (see the manual's Screen page)
+; Error codes, which the boot ROM shows. A drive error is the drive's status
+; (01h to 25h), and the loader's own are from ERROR_BASE.
 ;-------------------------------------------------------------------------------
 
-.CONST SCREEN_START = 0F000h
-.CONST SCREEN_STRIDE = SCREEN_START + 0FF0h
-.CONST SCREEN_CURSOR_COL = SCREEN_START + 0FF5h
-.CONST SCREEN_CURSOR_ROW = SCREEN_START + 0FF6h
+.CONST ERROR_BASE = 0F0h
+.CONST ERROR_NOT_BARE = 1   ; OZOS.SYS isn't a bare program
+.CONST ERROR_SIZE = 2       ; It isn't as long as its header and blocks say, or
+                            ; a block passes its contents
+.CONST ERROR_FIT = 3        ; It doesn't fit in RAM
 
 ;-------------------------------------------------------------------------------
 ; The disk drive (see the manual's Disk Drive page)
 ;-------------------------------------------------------------------------------
 
-; The drive's ports, from its command port.
-.CONST DRIVE_PORT_DATA = 1
-.CONST DRIVE_PORT_CONTROL = 2
+; The drive's ports, from its command port
+.CONST DRIVE_DATA = 1
+.CONST DRIVE_CONTROL = 2
 
-; Drive commands
+; Commands, with the handle in the low byte
 .CONST DRIVE_CMD_OPEN        = 01000h
-.CONST DRIVE_CMD_READ_PACKED = 02200h
 .CONST DRIVE_CMD_CLOSE       = 01300h
+.CONST DRIVE_CMD_READ_PACKED = 02200h
 
-; Drive control
-.CONST DRIVE_CTRL_RESET = 1
-.CONST DRIVE_CTRL_PHASE_MASK = 0Fh
-.CONST DRIVE_CTRL_PHASE_WORKING = 2
-
-;-------------------------------------------------------------------------------
-; Macros
-;-------------------------------------------------------------------------------
-
-; Repeats a port instruction until the port takes or gives its word, which sets
-; S: op is the instruction, such as OUTS.RW or INS, and port and value its
-; arguments.
-.MACRO DoPort op, port, value
-@retry:
-    op port, value
-    JC NS, @retry
-.ENDM
+; The control port's phase is idle (0) or arguments (1) until the drive has
+; taken a command's last word
+.CONST DRIVE_PHASE = 0Fh
+.CONST DRIVE_PHASE_TAKEN = 0Eh
 
 ;-------------------------------------------------------------------------------
-; Initialize arguments and variables
+; Bare programs (see the manual's Program Files page)
+;-------------------------------------------------------------------------------
+
+; The identifier and version, as one dword
+.CONST BARE_ID = 0001424Fh
+
+;-------------------------------------------------------------------------------
+; Open the OS file
 ;
-; The loader is not loaded into cleared memory, so we must explicitly clear its variables.
-; variables to clear.
+; Registers kept throughout:
+;   R3 - The dwords of the OS file still to read
+;   R5 - The drive's command port
+;   R6 - The drive's control port, then its data port
 ;-------------------------------------------------------------------------------
 
-    ; First store arguments
-    MOV D(a_drive), R0
-clear_variables:
-    MOV R0, 0
-    MOV R1, v_start
-    MOV R7, NUM_VARIABLES
-@clear_loop:
-    MOV (R1), R0
-    ADQ R1, 1
-    JDR R7, @clear_loop
-  
+    PUSH R1                 ; The drive number, for the OS
+    MOV R5, R0
+    MOV R6, R0
+    ADQ R6, DRIVE_CONTROL
+
+    MOV R1, DRIVE_CMD_OPEN
+    MOV R0, os_name
+    MVQ R7, 4               ; The name is 8 words, sent as 4 dwords
+    CALL command
+    CALL read_status        ; The completion's
+    CALL read_word          ; The handle
+    MOV D(handle), R1
+
 ;-------------------------------------------------------------------------------
-; Scan the hardware table for devices
+; Read the whole file, whose words are all on the data port from here on.
+; command left R0 at read_count, just after the name. The file must be exactly
+; what its header says, as reading past its end, or stopping short of it, would
+; wait for the drive forever.
 ;-------------------------------------------------------------------------------
 
-find_devices:
-    MOV D(v_power), -1
-    MOV D(v_teletype), -1
-    ; R2 is the number of device entries
-    MOV R2, E(TABLE_DEVICES)
-    TST R2
-    JC Z, @done
-    MOV R4, TABLE_DEVICE_ENTRIES
-@check_screen:
-    MOV R0, (R4 + DEVICE_FIELD_TYPE)
-    CMP R0, SCREEN
-    JC NZ, @check_teletype
-    MOV R1, E(SCREEN_CURSOR_ROW)
-    MUL R1, E(SCREEN_STRIDE)
-    ADD R1, SCREEN_START
-    ADD R1, E(SCREEN_CURSOR_COL)
-    MOV D(v_screen), R1
-    JPR @next
-@check_teletype:
-    CMP R0, TELETYPE
-    JC NZ, @check_power
-    MOV R1, (R4 + DEVICE_FIELD_PORT)
-    MOV D(v_teletype), R1
-    JPR @next
-@check_power:
-    CMP R0, POWER
-    JC NZ, @next
-    MOV R1, (R4 + DEVICE_FIELD_PORT)
-    MOV D(v_power), R1
-    JPR @next
+    OR R1, DRIVE_CMD_READ_PACKED
+    MVQ R7, 1
+    CALL command
+    CALL read_word          ; n, which is the whole file
+    MOV R3, R1
+    SBQ R6, DRIVE_CONTROL - DRIVE_DATA
+
+    ; The header, into header
+    SBQ R3, 3
+    JC C, wrong_size
+    MOV R0, header
+    MVQ R7, 3
+@header:
+    INR R6, [R0]
+    JC NS, @header
+    MOV D0, D[header]
+    CMP D0, BARE_ID
+    JC NZ, not_bare
+
+;-------------------------------------------------------------------------------
+; Find where the OS goes, which needs RAM for its contents and stack: in bank 0
+; from STACK_END (1200h), just after the loader and the boot ROM's stack, if the
+; pages from there are all RAM up to the end of the OS, or else from page 0 of
+; the first of banks 1 to 15 that has RAM up to the end of the OS. It fails if
+; none does.
+;
+; Then BE is set to where the OS goes, and EXTRA to its bank, so the loader
+; writes the OS with E() addresses, from 0.
+;-------------------------------------------------------------------------------
+
+    MOV R0, D(header + 2)   ; Contents
+    ADD R0, D(header + 3)   ; Stack
+    JC C, too_big
+    PUSH R0                 ; The OS's size, for BS
+    PUSH R3                 ; The dwords still to read
+
+    ; In bank 0, R1 has a bit for each page from 1 to the OS's last
+    MVQ R3, 0
+    MOV R4, STACK_END
+    MOV R2, R0
+    ADD R2, STACK_END - 1
+    JC C, @other            ; It would pass the end of bank 0
+    SHR R2, 12              ; The OS's last page, from 1 to 15
+    MVQ R1, 2
+    SHL R1, R2              ; Page 15 shifts out to 0...
+    SBQ R1, 2               ; ...which is FFFEh here
+    MOV R7, D(TABLE_BANK0_RAM)
+    AND R7, R1
+    CMP R7, R1
+    JC Z, @found
+
+@other:
+    ; In the other banks, R1 has a bit for each page from 0 to the OS's last.
+    ; The OS isn't empty here, as an empty one always fits in page 1.
+    SBQ R0, 1               ; The OS's last word
+    SHR R0, 12              ; The OS's last page, from 0 to 15
+    MVQ R1, 2
+    SHL R1, R0              ; Page 15 shifts out to 0...
+    SBQ R1, 1               ; ...which is FFFFh here
+    MVQ R4, 0
+    MOV R0, TABLE_BANK1_RAM
+@bank:
+    ADD R3, EVERY_BANK      ; Past bank 15, it carries
+    JC C, too_big
+    MOV R7, (R0)
+    ADQ R0, BANK_ENTRY_SIZE
+    AND R7, R1
+    CMP R7, R1
+    JC NZ, @bank
+
+@found:
+    ; R1 is the OS's pages, R3 its bank in every field, and R4 its first word
+    MOV R7, R4
+    RST SELF, EXTRA
+    POP R0                  ; The dwords still to read
+    PUSH R1                 ; For the OS
+    PUSH R3
+    PUSH R4
+    MOV R3, R0
+
+;-------------------------------------------------------------------------------
+; Load each data block, at E(0) plus its offset. A block is its offset and
+; size in dwords, then its words, and must end within the contents, which are
+; always whole dwords.
+;-------------------------------------------------------------------------------
+
+    MOV R2, D(header + 4)   ; Blocks
 @next:
-    ADQ R4, TABLE_DEVICE_ENTRY_SIZE
-    JD R2, @check_screen
-@done:
+    SBQ R2, 1
+    JC C, @loaded
+    SBQ R3, 1
+    JC C, wrong_size
+@offset:
+    INS R6, D0              ; R0 is the offset, R1 the size
+    JC NS, @offset
+    SUB R3, R1
+    JC C, wrong_size
+    MOV R4, R0              ; Where it ends, in dwords...
+    ADD R4, R1
+    JC C, wrong_size
+    MOV R7, D(header + 2)   ; ...which must be within the contents
+    SHR R7, 1
+    CMP R7, R4
+    JC C, wrong_size
+    SHL R0, 1
+    MOV R4, R0              ; In EXTRA, as R4 is
+    MOV R7, R1
+@block:
+    INR R6, [R4]
+    JC NS, @block
+    JPR @next
+@loaded:
+    TST R3                  ; More than the header says
+    JC NZ, wrong_size
+    ADQ R6, DRIVE_CONTROL - DRIVE_DATA
+    CALL read_status        ; The completion's
+    CALL read_word          ; The dwords read
 
 ;-------------------------------------------------------------------------------
-; Open the OS file and load its header
+; Close the file. It has no arguments, and R7 is already 0, as INR leaves it.
 ;-------------------------------------------------------------------------------
 
-open_os_file:
-    ; Open the OS file
-    MOV R6, D(a_drive)
-    DoPort OUTS.RW, R6, DRIVE_CMD_OPEN
-    ; The name is 8 words, sent as 4 dwords
-    MOV R0, system_filename
-    MOV R7, 4
-@next_arg:
-    DoPort OUTS, R6, [R0]
-    ADQ R0, 2
-    JD R7, @next_arg
-
-    ; Wait for the drive to take the last word (phase working or later),
-    ; before reading the accept status
-    ADQ R6, DRIVE_PORT_CONTROL
-@wait_for_accept:
-    IN R6, R0
-    AND R0, DRIVE_CTRL_PHASE_MASK
-    CMP R0, DRIVE_CTRL_PHASE_WORKING
-    JC C, @wait_for_accept
-
-@read_accept_status:
-    SBQ R6, DRIVE_PORT_CONTROL
-    DoPort INS.RW, R6, R0
-    TST R0
-    JC Z, read_os_header
-    MOV R0, load_failed
-    JP on_failure
-
- read_os_header:
-    MOV R0, load_failed
-    JP on_failure
-    ; TODO: Read the OS header from the file into memory
-    HALT
+    MOV R1, D(handle)
+    OR R1, DRIVE_CMD_CLOSE
+    CALL command
+    CALL read_status        ; The completion's
 
 ;-------------------------------------------------------------------------------
-; Prints an error, waits for a delay, and then reboots the system.
+; Starting the OS
 ;
-; Args:
-;   R0 - Address of the error message to print
+; The OS is started as a bare program at its first word, b: 1200h in bank 0,
+; or 0 in another bank. CODE, STACK, and DATA are its bank, BC and BD are b, and
+; BS is b plus its contents and stack, with IP and SP 0. EXTRA is bank 0 at
+; base 0 again, for the machine table.
+;
+;   R0 - The boot drive's command port, as the loader was given it
+;   R1 - The boot drive's number, as the loader was given it
+;   R2 - The pages of its bank the OS is in, a bit for each
+;
+; The rest of RAM is free, and so are the loader's words before 1200h.
 ;-------------------------------------------------------------------------------
 
-on_failure:
-    MOV R1, D(v_teletype)
-    CMP R1, -1
-    JC NZ, print_teletype
-    TST D(v_screen)
-    JC NZ, print_screen
-    JP delayed_reboot
+    MOV R0, R5
+    POP R4                  ; b
+    POP R3                  ; Its bank, in every field
+    POP R2                  ; Its pages
+    POP R5                  ; Its size
+    POP R1
+    MOV R6, R4
+    ADD R5, R4
+    AND R3, NOT_EXTRA
+    MVQ R7, 0
+    RST SELF, CODE | STACK | DATA | EXTRA
 
-print_teletype:
-    MOV R1, D(v_teletype)
-@print_loop:
-    DoPort OUTS, R1, (R0)
-    ADQ R0, 1
-    TST (R0)
-    JC NZ, @print_loop
-    DoPort OUTS.RW, R1, 0A0Dh  ; /r/n as a packed string
-    JP delayed_reboot
+;-------------------------------------------------------------------------------
+; read_word: Reads the next word from the drive's command port into R1, and
+; sets Z if it is 0, as an OK status is.
+;-------------------------------------------------------------------------------
 
-print_screen:
-    MOV R4, D(v_screen)
-@print_loop:
-    ; Low byte character
-    MOV R1, (R0)
-    AND R1, 0FFh  ; Mask to 8 bits
-    JC Z, delayed_reboot
-    MOV (R4), R1
-    ADQ R4, 1
-    ; High byte character
-    MOV R1, (R0)
-    SHR R1, 8
-    JC Z, delayed_reboot
-    MOV (R4), R1
-    ADQ R4, 1
-    ; Move to the next character in the source string
-    ADQ R0, 1
-    JP @print_loop
+read_word:
+    INS R5, R1
+    JC NS, read_word
+    TST R1
+    RET
 
-delayed_reboot:
-    MOV R1, D(v_power)
-    CMP R1, -1
-    JC NZ, @wait
-    ; Literally nothing we can do at this point, so just stop
-    HALT
-@wait:
-    MOV D0, E[TABLE_CORE_HZ]
-    MUL D0, 3           ; D0 = cycles in 3 seconds (R1:R0)
-@loop:
-    TST R1              ; a word or less left?
-    JCR Z, @last
-    MOV R2, 0FFFFh
-    WAIT R2             ; R2 = cycles it ran over
-    SUB D0, 0FFFFh      ; take off the chunk...
-    SUB R0, R2          ; ...and the overrun
-    SBC R1, 0
-    JCR C, @done        ; overran past the end
-    JPR @loop
-@last:
-    WAIT R0             ; the rest (0-3 still takes 3)
-@done:
-    MOV R0, D(v_power)
-    DoPort OUTS.RW, R0, POWER_RESTART  ; Restart, then halt until it does
-    HALT
+;-------------------------------------------------------------------------------
+; command: Sends the command word R1, then R7 dwords of arguments from R0, and
+; reads the accept status, as read_status does. R0 is left past the arguments.
+;-------------------------------------------------------------------------------
+
+command:
+@idle:
+    IN R6, R4
+    AND R4, DRIVE_PHASE
+    JC NZ, @idle
+@command:
+    OUTS R5, R1
+    JC NS, @command
+@argument:
+    OUTR R5, [R0]
+    JC NS, @argument
+@taken:
+    IN R6, R4
+    AND R4, DRIVE_PHASE_TAKEN
+    JC Z, @taken
+    ; Fall through to read_status
+
+;-------------------------------------------------------------------------------
+; read_status: Reads the next word, a status, into R1, as read_word does, and
+; returns if it is OK, or else fails with the status as the error code.
+;-------------------------------------------------------------------------------
+
+read_status:
+    CALL read_word
+    RETC Z
+    JPR failed
+
+;-------------------------------------------------------------------------------
+; Failing: each sets R1 to its error code, and failed hands it back to the boot
+; ROM in R0, which shows it. The boot ROM starts over, with a new stack, so
+; what is left on this one doesn't matter.
+;-------------------------------------------------------------------------------
+
+too_big:
+    MVQ R1, ERROR_FIT
+    JPR with_base
+wrong_size:
+    MVQ R1, ERROR_SIZE
+    JPR with_base
+not_bare:
+    MVQ R1, ERROR_NOT_BARE
+with_base:
+    OR R1, ERROR_BASE
+failed:
+    MOV R0, R1
+    JP BOOT_ROM_EXIT
 
 ;-------------------------------------------------------------------------------
 ; Constant data
 ;-------------------------------------------------------------------------------
 
-system_filename:
+; OPEN's name, then READ PACKED's count, the most there can be
+os_name:
     .DW SIZE(6) "OZOS", SIZE(2) "SYS"
-load_failed:
-    .DW "Load failed", 0
+read_count:
+    .DW 0FFFFh, 0
 
 ;-------------------------------------------------------------------------------
-; Program End, including reservation for stack and total size validation
+; Program End, including size validation and the boot signature
 ;-------------------------------------------------------------------------------
 
-; The end of the loader code, used for size validation
 .CONST LOADER_END = $
-;.CONST LOADER_MAX_SIZE = 100
 .CONST LOADER_MAX_SIZE = 222
 .IF LOADER_END > LOADER_MAX_SIZE
     .ERROR "Loader is ", LOADER_END, " words, exceeding ", LOADER_MAX_SIZE, " max words."
 .ENDIF
 
 .DS LOADER_MAX_SIZE - $
-.DW "BOOT" 
+.DW "BOOT"
 
 ;-------------------------------------------------------------------------------
-; Loader arguments
+; Variables, after the boot signature, below the stack
 ;-------------------------------------------------------------------------------
 
-; Port for the drive the loader was loaded from
-.const a_drive = $ 
+; The OS file's header: identifier, version, contents, stack, blocks, reserved
+.CONST header = $
 
-;-------------------------------------------------------------------------------
-; Variables
-;-------------------------------------------------------------------------------
-
-; Start of the variable area
-.const v_start = $ + 1
-
-; File handle for the OS file
-.const v_file = $ + 1
-; Port for the power device, or -1 if not present
-.const v_power = $ + 2
-; Port for the teletype device, or -1 if not present
-.const v_teletype = $ + 3
-; Address of the next screen character to update, or zero if there is no screen
-.const v_screen = $ + 4
-
-.CONST NUM_VARIABLES = v_screen - v_start + 1
+; The OS file's handle
+.CONST handle = header + 6

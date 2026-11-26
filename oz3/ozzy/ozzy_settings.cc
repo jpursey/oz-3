@@ -13,7 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
@@ -437,9 +436,10 @@ absl::Status ValidateOzzySettings(const OzzySettings& settings) {
                        "RAM can't be on the boot ROM's page");
     }
   }
-  if (absl::c_count(settings.banks, 0) == bank_count) {
-    return PathError(
-        "banks", "the Ozzy has no RAM, which the boot ROM needs for its stack");
+  if ((settings.banks[0] & (1 << kOzzyBootRamPage)) == 0) {
+    return PathError(GetIndexPath("banks", 0),
+                     absl::StrCat("page ", kOzzyBootRamPage,
+                                  " must be RAM, for the boot ROM's stack"));
   }
   if (settings.screen.has_value() &&
       (settings.banks[kOzzyScreenBank] & (1 << kOzzyScreenPage)) != 0) {

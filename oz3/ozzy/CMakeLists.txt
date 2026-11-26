@@ -59,6 +59,7 @@ set(oz3_ozzy_TEST_SOURCE
   boot_rom_test.cc
   console_display_test.cc
   console_text_test.cc
+  loader_test.cc
   ozzy_settings_test.cc
   ozzy_test.cc
   ozzy_testing.cc ozzy_testing.h
@@ -81,3 +82,7 @@ gb_embed_data(oz3_ozzy_test ${PROJECT_SOURCE_DIR}/configs/console.ozzy
               oz3/configs/console_config.h oz3::kConsoleConfig)
 gb_embed_data(oz3_ozzy_test ${PROJECT_SOURCE_DIR}/configs/teletype.ozzy
               oz3/configs/teletype_config.h oz3::kTeletypeConfig)
+
+# The default loader's source, which the tests assemble and boot.
+gb_embed_data(oz3_ozzy_test loader.oza oz3/ozzy/loader_source.h
+              oz3::kLoaderSource)
