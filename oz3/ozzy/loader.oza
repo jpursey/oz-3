@@ -25,7 +25,7 @@
 ; Where everything is
 ;
 ; The boot ROM starts the loader at LOADER_START in bank 0, with every bank
-; bank 0, BC and BD at LOADER_START, and its stack ending at OS_START, so
+; bank 0, BC and BD at LOADER_START, and its stack ending at STACK_END, so
 ; addresses here are from LOADER_START. The stack size specified here doesn't
 ; matter, as the loader is not loaded like a program.
 ;-------------------------------------------------------------------------------
@@ -33,7 +33,7 @@
 .STACK 0
 
 .CONST LOADER_START = 1000h
-.CONST OS_START = 200h      ; 1200h, where the boot ROM's stack ends
+.CONST STACK_END = 1200h   ; Where the boot ROM's stack ends, and the OS goes
 
 ; Where the boot ROM's exit is, at 0002h of bank 0
 .CONST BOOT_ROM_EXIT = 0002h - LOADER_START
@@ -53,7 +53,7 @@
 
 ;-------------------------------------------------------------------------------
 ; Error codes, which the boot ROM shows. A drive error is the drive's status
-; (01h to 7Fh), and the loader's own are from ERROR_BASE.
+; (01h to 25h), and the loader's own are from ERROR_BASE.
 ;-------------------------------------------------------------------------------
 
 .CONST ERROR_BASE = 0F0h
@@ -136,7 +136,7 @@
 
 ;-------------------------------------------------------------------------------
 ; Find where the OS goes, which needs RAM for its contents and stack: in bank 0
-; from OS_START (1200h), just after the loader and the boot ROM's stack, if the
+; from STACK_END (1200h), just after the loader and the boot ROM's stack, if the
 ; pages from there are all RAM up to the end of the OS, or else from page 0 of
 ; the first of banks 1 to 15 that has RAM up to the end of the OS. It fails if
 ; none does.
@@ -153,9 +153,9 @@
 
     ; In bank 0, R1 has a bit for each page from 1 to the OS's last
     MVQ R3, 0
-    MOV R4, LOADER_START + OS_START
+    MOV R4, STACK_END
     MOV R2, R0
-    ADD R2, LOADER_START + OS_START - 1
+    ADD R2, STACK_END - 1
     JC C, @other            ; It would pass the end of bank 0
     SHR R2, 12              ; The OS's last page, from 1 to 15
     MVQ R1, 2

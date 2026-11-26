@@ -7,6 +7,7 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/status/statusor.h"
+#include "absl/strings/str_format.h"
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -97,6 +98,14 @@ void ExpectSourceConstants(const ProgramMap& map,
     }
   }
   EXPECT_THAT(expected, ::testing::IsEmpty());
+}
+
+std::string GetLoaderErrorStatus(int code) {
+  return absl::StrFormat("ERROR: Loader error %02Xh", code);
+}
+
+CpuCore::State GetState(Ozzy& ozzy) {
+  return ozzy.GetProcessor()->GetCore(0)->GetState();
 }
 
 CpuCore::Registers GetRegisters(Ozzy& ozzy) {

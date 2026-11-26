@@ -301,9 +301,12 @@ absl::StatusOr<std::unique_ptr<Ozzy>> Ozzy::Create(const OzzySettings& settings,
   // The boot ROM's stack is in page 1 of bank 0, which the settings always
   // have as RAM, where it reads the loader. The stack ends part way into the
   // page, so the loader and the stack leave the rest of it free.
+  static_assert(kLoaderStart / kMemoryBankPageSize == kOzzyBootRamPage);
+  static_assert((kBootRomStackEnd - 1) / kMemoryBankPageSize ==
+                kOzzyBootRamPage);
   CpuCore::ResetParams reset_params = loader.GetResetParams(boot_rom);
   CHECK_EQ(CpuCore::Banks::FromWord(reset_params.mb).stack, 0);
-  CHECK_EQ(reset_params.bs, 0x2000);
+  CHECK_EQ(reset_params.bs, (kOzzyBootRamPage + 1) * kMemoryBankPageSize);
   reset_params.bs = kBootRomStackEnd;
 
   // Power on: core 0 starts the boot ROM.

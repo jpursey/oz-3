@@ -222,8 +222,11 @@ start:
     MOV R1, prompt_text
     CALL print_string
     CALL place_cursor
-    CALL show_loader_error
+    MOV R0, S(V_ERROR)
+    TST R0
     JC Z, @wait
+    MOV R1, loader_error_text
+    CALL show_error_code
 @again:
     CALL discard_keys
     CALL prompt_again
@@ -619,11 +622,8 @@ boot:
 
 @disk_error:
     MOV R1, disk_error_text
-    CALL show_status
     MOV R0, R2
-    CALL print_hex_byte
-    MOV R0, 'h'
-    CALL put_char
+    CALL show_error_code
     JP @done
 @failed:
     CALL show_status
@@ -645,29 +645,6 @@ not_system_text:
     .DW 'ERROR: Not a system disk', 0
 disk_error_text:
     .DW 'ERROR: Disk error ', 0
-
-;-------------------------------------------------------------------------------
-; show_loader_error: After a loader failed, shows its error code, and clears Z.
-; At power on, sets Z.
-;-------------------------------------------------------------------------------
-
-show_loader_error:
-    PUSH R0
-    PUSH R1
-    MOV R1, loader_error_text
-    MOV R0, S(V_ERROR)
-    TST R0
-    JC Z, @done
-    CALL show_status
-    CALL print_hex_byte
-    MOV R0, 'h'
-    CALL put_char
-    TST R1          ; Not 0, as it is the text's address
-@done:
-    POP R1
-    POP R0
-    RET
-
 loader_error_text:
     .DW 'ERROR: Loader error ', 0
 
@@ -787,6 +764,17 @@ show_status:
 @print:
     POP R0
     JP print_string
+
+;-------------------------------------------------------------------------------
+; show_error_code: Shows the status at R1 in DATA, followed by the low byte of
+; R0 in hex and an "h".
+;-------------------------------------------------------------------------------
+
+show_error_code:
+    CALL show_status
+    CALL print_hex_byte
+    MOV R0, 'h'
+    JP put_char
 
 ;-------------------------------------------------------------------------------
 ; prompt_again: On the teletype, prints a blank line and the prompt after a

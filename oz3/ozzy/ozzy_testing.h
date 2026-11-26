@@ -18,6 +18,7 @@
 #include "oz3/devices/power_control.h"
 #include "oz3/devices/screen.h"
 #include "oz3/disk/disk_superblock.h"
+#include "oz3/ozzy/boot_rom.h"
 #include "oz3/ozzy/ozzy.h"
 #include "oz3/ozzy/ozzy_settings.h"
 #include "oz3/tools/program_assembler.h"
@@ -56,8 +57,30 @@ void ExpectSourceConstants(const ProgramMap& map,
                            std::map<std::string_view, uint32_t> expected);
 
 //==============================================================================
+// The boot ROM
+//==============================================================================
+
+// The prompt the boot ROM shows.
+inline constexpr std::string_view kBootPrompt = "Press Enter to Boot...";
+
+// Where it shows the prompt and the status on the screen, after the banner's
+// four rows, in a box, and a blank row.
+inline constexpr int kBootPromptRow = 5;
+inline constexpr int kBootStatusRow = 7;
+
+// Where the boot ROM keeps the loader's error code: its ninth variable from the
+// end of its stack (the boot ROM's V_ERROR).
+inline constexpr int kLoaderErrorAddress = kBootRomStackEnd - 9;
+
+// Returns the status the boot ROM shows after a loader fails with `code`.
+std::string GetLoaderErrorStatus(int code);
+
+//==============================================================================
 // Core 0 and the screen
 //==============================================================================
+
+// Returns core 0's state.
+CpuCore::State GetState(Ozzy& ozzy);
 
 // Returns core 0's registers.
 CpuCore::Registers GetRegisters(Ozzy& ozzy);
