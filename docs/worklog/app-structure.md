@@ -49,22 +49,31 @@ wrote help), 1 when it failed, and 2 for a mistake on the command line.
 
 ### Directories and libraries
 
-Each depends only on the ones before it:
+`oz3/ozzy` holds only a directory for each part, each its own library, and
+each depends only on the ones before it:
 
-| Directory        | Library         | What                                         |
-| ---------------- | --------------- | -------------------------------------------- |
-| `oz3/ozzy`       | `oz3_ozzy`      | The machine: `Ozzy`, its settings, the machine table, the boot ROM, and the loader |
-| `oz3/ozzy/app`   | `oz3_ozzy_app`  | What both apps share: `OzzyHost`, `OzzyApp`, `Frontend`, and later the *Panel*'s commands |
-| `oz3/ozzy/term`  | `oz3_ozzy_term` | `ozzyterm`'s frontend: `Console` (per platform), the terminal's keys, the console's text, `ConsoleDisplay`, and `ConsoleFrontend` |
+| Directory          | Library            | What                                      |
+| ------------------ | ------------------ | ----------------------------------------- |
+| `oz3/ozzy/machine` | `oz3_ozzy_machine` | The machine: `Ozzy`, its settings, the machine table, the boot ROM, and the loader |
+| `oz3/ozzy/app`     | `oz3_ozzy_app`     | What both apps share: `OzzyHost`, `OzzyApp`, `Frontend`, and later the *Panel*'s commands |
+| `oz3/ozzy/term`    | `oz3_ozzy_term`    | `ozzyterm`'s frontend: `Console` (per platform), the terminal's keys, the console's text, `ConsoleDisplay`, and `ConsoleFrontend` |
+
+The machine is the part a host other than the two apps would embed, such as
+a game with an Ozzy in it, which links `oz3_ozzy_machine` alone. Other
+candidates for its directory: `vm`, which is the emulator as a whole rather
+than the computer it emulates, and `hardware`, which leaves out the boot ROM
+and the loader, as they are software. Recommended: `machine`, as
+ozzy_design.md calls it "the machine".
 
 The *Window app* adds `oz3/ozzy/window` (`oz3_ozzy_window`), the only one that
-links SDL and Vulkan. `oz3_ozzy_testing` holds `ozzy_testing.h` (an Ozzy with
-a power callback, programs assembled for it), which the tests of all three
-share, as `oz3_core_testing` and `oz3_disk_testing` do for theirs. CLAUDE.md's
+links SDL and Vulkan. `oz3_ozzy_testing`, in `oz3/ozzy/machine`, holds
+`ozzy_testing.h` (an Ozzy with a power callback, programs assembled for it),
+which the tests of all three share, as `oz3_core_testing` and `oz3_disk_testing` do for theirs. CLAUDE.md's
 list of libraries and their order changes to match.
 
-Headers are included by their path (`"oz3/ozzy/term/console.h"`), and their
-include guards name it (`OZ3_OZZY_TERM_CONSOLE_H_`).
+Headers are included by their path (`"oz3/ozzy/machine/ozzy.h"`,
+`"oz3/ozzy/term/console.h"`), and their include guards name it
+(`OZ3_OZZY_TERM_CONSOLE_H_`).
 
 ### Names
 
@@ -375,10 +384,13 @@ struct OzzyAppStats {
 
 Depends on: nothing.
 
+- The machine's files (`ozzy`, `ozzy_settings`, `machine_table`,
+  `boot_rom`, `boot_rom.oza`, `loader.oza`, and their tests) move to
+  `oz3/ozzy/machine`, as `oz3_ozzy_machine`, in place of `oz3_ozzy`.
+  `ozzy_testing` becomes `oz3_ozzy_testing` there.
 - The console's files (`console`, `console_display`, `console_text`,
   `terminal_keys`, `posix_console`, `win_console`, and their tests) move to
-  `oz3/ozzy/term`, as `oz3_ozzy_term`. `ozzy_testing` becomes
-  `oz3_ozzy_testing`.
+  `oz3/ozzy/term`, as `oz3_ozzy_term`.
 - Their includes and include guards follow, and `ozzy_main.cc` links
   `oz3_ozzy_term`. The code is otherwise unchanged.
 - CLAUDE.md's library list and order, and the manual or worklogs that name
