@@ -175,9 +175,9 @@ std::string GetErrorStatus(uint16_t code) {
   return absl::StrFormat("ERROR: Loader error %02Xh", code);
 }
 
-// Returns the word at `address` of bank 0.
-uint16_t GetWord(Ozzy& ozzy, int address) {
-  return ozzy.GetProcessor()->GetMemory(0)->GetMem(address, 1)[0];
+// Returns the word at `address` of `bank`.
+uint16_t GetWord(Ozzy& ozzy, int address, int bank = 0) {
+  return ozzy.GetProcessor()->GetMemory(bank)->GetMem(address, 1)[0];
 }
 
 // Returns whether the boot ROM is waiting for Enter after the loader failed.
@@ -188,33 +188,36 @@ bool IsWaitingAfterError(Ozzy& ozzy) {
 }
 
 // Expects the test OS, with `gap` and `stack` words, to have been started by
-// the loader at kOsStart in bank 0, in pages 1 to `last_page`, and halted.
-void ExpectOsRan(Ozzy& ozzy, int gap, int stack, int last_page) {
+// the loader and halted: at kOsStart in bank 0, in pages 1 to `last_page`, or
+// at 0 in another `bank`, in pages 0 to `last_page`.
+void ExpectOsRan(Ozzy& ozzy, int gap, int stack, int last_page, int bank = 0) {
   ASSERT_TRUE(IsHalted(ozzy));
   const int size = kOsWords + gap + stack;
+  const int start = bank == 0 ? kOsStart : 0;
+  const int first_page = bank == 0 ? 1 : 0;
 
   const CpuCore::Registers registers = GetRegisters(ozzy);
   const CpuCore::Banks banks = CpuCore::Banks::FromWord(registers[CpuCore::MB]);
-  EXPECT_EQ(banks.code, 0);
-  EXPECT_EQ(banks.stack, 0);
-  EXPECT_EQ(banks.data, 0);
+  EXPECT_EQ(banks.code, bank);
+  EXPECT_EQ(banks.stack, bank);
+  EXPECT_EQ(banks.data, bank);
   EXPECT_EQ(banks.extra, 0);
-  EXPECT_EQ(registers[CpuCore::BC], kOsStart);
-  EXPECT_EQ(registers[CpuCore::BD], kOsStart);
-  EXPECT_EQ(registers[CpuCore::BS], static_cast<uint16_t>(kOsStart + size));
+  EXPECT_EQ(registers[CpuCore::BC], start);
+  EXPECT_EQ(registers[CpuCore::BD], start);
+  EXPECT_EQ(registers[CpuCore::BS], static_cast<uint16_t>(start + size));
   EXPECT_EQ(registers[CpuCore::BE], 0);
   EXPECT_EQ(registers[CpuCore::SP], 0);
   EXPECT_EQ(registers[CpuCore::IP], 0);  // At its HALT.
   EXPECT_EQ(registers[CpuCore::R0], kOzzyDrivePort);
   EXPECT_EQ(registers[CpuCore::R1], 0);
   EXPECT_EQ(registers[CpuCore::R2],
-            static_cast<uint16_t>((2 << last_page) - 2));
+            static_cast<uint16_t>((2 << last_page) - (1 << first_page)));
   EXPECT_EQ(registers[CpuCore::ST] & CpuCore::I, 0);
 
   // Each block is where it goes.
-  EXPECT_EQ(GetWord(ozzy, kOsStart + 1), 0x1234);
-  EXPECT_EQ(GetWord(ozzy, kOsStart + 2 + gap), 0x5678);
-  EXPECT_EQ(GetWord(ozzy, kOsStart + 3 + gap), 0x9ABC);
+  EXPECT_EQ(GetWord(ozzy, start + 1, bank), 0x1234);
+  EXPECT_EQ(GetWord(ozzy, start + 2 + gap, bank), 0x5678);
+  EXPECT_EQ(GetWord(ozzy, start + 3 + gap, bank), 0x9ABC);
 }
 
 //==============================================================================
@@ -360,8 +363,14 @@ TEST_F(LoaderTest, SourceKnowsTheBootRom) {
 TEST_F(LoaderTest, SourceKnowsTheMachineTable) {
   ExpectSourceConstants({
       {"TABLE", FromLoader(kMachineTableAddress)},
+      {"TABLE_BANK_ENTRIES",
+       FromLoader(kMachineTableAddress + kMachineTableBanks)},
+      {"BANK_FIELD_RAM", kMachineBankRam},
+      {"BANK_ENTRY_SIZE", kMachineBankSize},
       {"TABLE_BANK0_RAM",
        FromLoader(kMachineTableAddress + kMachineTableBanks + kMachineBankRam)},
+      {"TABLE_BANK1_RAM", FromLoader(kMachineTableAddress + kMachineTableBanks +
+                                     kMachineBankSize + kMachineBankRam)},
   });
 }
 
@@ -549,7 +558,8 @@ TEST_F(LoaderTest, NotWhatItsHeaderSays) {
 }
 
 TEST_F(LoaderTest, TooBig) {
-  // One word more than pages 1 to 14 hold from 1200h.
+  // One word more than pages 1 to 14 hold from 1200h, and there is no other
+  // bank.
   constexpr int kGap = GetWordsTo(14) - kOsWords;
   std::unique_ptr<Ozzy> ozzy =
       Boot(OzzySettings(), MakeImage(GetOsFile(kGap, 1)));
@@ -559,8 +569,8 @@ TEST_F(LoaderTest, TooBig) {
 
 TEST_F(LoaderTest, TooBigForTheBank) {
   // Every page is RAM, but the OS's contents and stack are more than a bank,
-  // which wraps to a page, or would pass its end from 1200h. It fails before
-  // reading any block, so its blocks needn't match.
+  // which wraps to a page, or would pass its end from 1200h, and there is no
+  // other bank. It fails before reading any block, so its blocks needn't match.
   OzzySettings settings = GetTeletypeSettings(0);
   settings.banks = {0xFFFE};
   for (auto [contents, stack] : {std::pair<uint16_t, uint16_t>{0xF000, 0x2000},
@@ -588,6 +598,80 @@ TEST_F(LoaderTest, NotRam) {
   ASSERT_NE(ozzy, nullptr);
   RunUntilHalted(*ozzy);
   ExpectOsRan(*ozzy, GetWordsTo(3) - kOsWords, 0, 3);
+}
+
+TEST_F(LoaderTest, LoadsInAnotherBank) {
+  // Too big for bank 0 from 1200h, so it goes at 0 in the first bank with RAM
+  // from page 0 to its end, which needn't be the next bank.
+  constexpr int kStack = 0x101;
+  constexpr int kGap = GetWordsTo(14) - kOsWords - kStack + 1;
+  constexpr int kLastPage =
+      (kOsWords + kGap + kStack - 1) / kMemoryBankPageSize;
+  static_assert(kLastPage == 13);
+  OzzySettings settings;
+  settings.banks = {0x7FFE, 0x0000, 0x1FFF, 0xFFFE, 0x3FFF, 0xFFFF};
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(settings, MakeImage(GetOsFile(kGap, kStack)));
+  ASSERT_NE(ozzy, nullptr);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, kGap, kStack, kLastPage, 4);
+  EXPECT_THAT(requests_, ::testing::IsEmpty());
+}
+
+TEST_F(LoaderTest, PrefersBankZero) {
+  // An OS that fits in bank 0 goes there, whatever other banks there are.
+  OzzySettings settings;
+  settings.banks = {0x7FFE, 0xFFFF};
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(settings, MakeImage(GetOsFile(GetWordsTo(14) - kOsWords, 0)));
+  ASSERT_NE(ozzy, nullptr);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, GetWordsTo(14) - kOsWords, 0, 14);
+}
+
+TEST_F(LoaderTest, FillsAnotherBank) {
+  // In another bank, it can have all but the bank's last word, as its contents
+  // and stack are at most FFFFh words.
+  constexpr int kStack = 0xFF;
+  constexpr int kGap = kMemoryBankPageSize * 16 - kOsWords - kStack - 1;
+  OzzySettings settings;
+  settings.banks = {0x7FFE, 0xFFFF};
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(settings, MakeImage(GetOsFile(kGap, kStack)));
+  ASSERT_NE(ozzy, nullptr);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, kGap, kStack, 15, 1);
+}
+
+TEST_F(LoaderTest, LoadsInTheLastBank) {
+  OzzySettings settings;
+  settings.banks.assign(kMaxMemoryBanks, 0);
+  settings.banks[0] = 0x0002;
+  settings.banks[kMaxMemoryBanks - 1] = 0x0001;
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(settings, MakeImage(GetOsFile(GetWordsTo(1), 0)));
+  ASSERT_NE(ozzy, nullptr);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, GetWordsTo(1), 0, 0, kMaxMemoryBanks - 1);
+}
+
+TEST_F(LoaderTest, NoBankHasRoom) {
+  // Every bank has RAM in pages 0 to 14 (1 to 14 in bank 0), so an OS one word
+  // too big for bank 0 goes in bank 1, but one word more than 15 pages fits in
+  // none.
+  OzzySettings settings;
+  settings.banks.assign(kMaxMemoryBanks, 0x7FFF);
+  settings.banks[0] = 0x7FFE;
+  std::unique_ptr<Ozzy> ozzy =
+      Boot(settings, MakeImage(GetOsFile(GetWordsTo(14) - kOsWords, 1)));
+  ASSERT_NE(ozzy, nullptr);
+  RunUntilHalted(*ozzy);
+  ExpectOsRan(*ozzy, GetWordsTo(14) - kOsWords, 1, 13, 1);
+
+  ozzy = Boot(settings,
+              MakeImage(GetOsFile(kMemoryBankPageSize * 15 - kOsWords, 1)));
+  ASSERT_NE(ozzy, nullptr);
+  ExpectError(*ozzy, kTooBig);
 }
 
 TEST_F(LoaderTest, TeletypeError) {

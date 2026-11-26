@@ -297,14 +297,14 @@ The boot ROM's source is `oz3/ozzy/boot_rom.oza`, written for the [default instr
 
 #### The default loader
 
-The default loader, `oz3/ozzy/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts just after itself and the boot ROM's stack, in bank 0: from 1200h, through as many of the pages after page 1 as its contents and stack fill. Each of those pages must be RAM in the [machine table](#the-machine-table), and it must end within the bank.
+The default loader, `oz3/ozzy/loader.oza`, is the loader a system disk is given by default. It loads `OZOS.SYS`, the operating system, from the boot drive and starts it. The file is a [bare program](2.4-Program-Files.md#bare-programs), which the loader puts just after itself and the boot ROM's stack, in bank 0: from 1200h, through as many of the pages after page 1 as its contents and stack fill. If those pages aren't all RAM in the [machine table](#the-machine-table), or it would pass the end of bank 0, the loader puts it at 0 in the first of banks 1 to 15 whose pages are RAM from page 0 to where it ends. Either way, its contents and stack are at most FFFFh words, as the header says them in a word.
 
-The loader opens the file, reads all of it with one `READ PACKED`, sending each data block's words straight to where they go as they arrive, and closes it (see [Disk Drive](3.5-Disk-Drive.md)). Then it starts the operating system as a bare program at 1200h, with `RST SELF, CODE | STACK | DATA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
+The loader opens the file, reads all of it with one `READ PACKED`, sending each data block's words straight to where they go as they arrive, and closes it (see [Disk Drive](3.5-Disk-Drive.md)). It writes the blocks with `EXTRA` set to where the operating system goes. Then it starts it as a bare program at its first word, `b` (1200h in bank 0, or 0 in another bank), with `RST SELF, CODE | STACK | DATA | EXTRA` (see [RST](2.2-Default-Instruction-Set.md#rst)), so:
 
-* Every bank is bank 0. `BC` and `BD` are 1200h, and `BS` is 1200h plus its contents and stack words, with `IP` and `SP` 0.
-* `BE` is still 0, so the machine table is at `E(F00h)`.
+* `CODE`, `STACK`, and `DATA` are its bank, which it can read from `MB`. `BC` and `BD` are `b`, and `BS` is `b` plus its contents and stack words, with `IP` and `SP` 0.
+* `EXTRA` is bank 0 at base 0, so the machine table is at `E(F00h)`.
 * `R0` and `R1` are the boot drive's command port and number, as the loader was given them.
-* `R2` is the pages of bank 0 the operating system is in, from page 1 to its last, a bit for each (bit 0 for page 0), so that it doesn't put programs over itself. The loader and the boot ROM's stack, at 1000h to 11FFh, are free once it starts, and so is every RAM page `R2` leaves out.
+* `R2` is the pages of its bank the operating system is in, from its first (page 1 in bank 0) to its last, a bit for each (bit 0 for page 0), so that it doesn't put programs over itself. The loader and the boot ROM's stack, at 1000h to 11FFh of bank 0, are free once it starts, and so is every RAM page `R2` leaves out.
 * Interrupts are disabled with no handlers set, and the notify flag is set, as `RST` of `CODE` leaves them.
 
 If it can't load the file, it fails with an error code, which the boot ROM shows as `ERROR: Loader error XXh` (see [The loader](#the-loader)):
@@ -314,7 +314,7 @@ If it can't load the file, it fails with an error code, which the boot ROM shows
 | 01h to 25h | The drive's status for a command that failed, such as **not found** (10h) for no `OZOS.SYS`, or **I/O error** (25h) (see [Disk Drive](3.5-Disk-Drive.md)) |
 | F1h        | The file isn't a bare program                                                             |
 | F2h        | The file isn't exactly as long as its header and blocks say                               |
-| F3h        | The file doesn't fit: it would run past the end of bank 0, or onto a page that isn't RAM |
+| F3h        | The file doesn't fit: not in bank 0 from 1200h, nor in any other bank from 0             |
 
 It doesn't check that each block is within the contents, so a block past them is written where its offset puts it.
 

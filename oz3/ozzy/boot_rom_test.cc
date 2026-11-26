@@ -56,7 +56,6 @@ constexpr std::string_view kVersion = "Ozzy 1.0";
 constexpr std::string_view kDefaultHardware = "1 core  56K RAM  1 MHz";
 constexpr std::string_view kNoDrives = "Drives: none";
 constexpr std::string_view kPrompt = "Press Enter to Boot...";
-constexpr std::string_view kReady = "Ready";
 constexpr std::string_view kNoDrive = "ERROR: No drive A:";
 constexpr std::string_view kNoDisk = "ERROR: No disk in drive A:";
 constexpr std::string_view kUnformatted = "ERROR: Disk not formatted";

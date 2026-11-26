@@ -12,9 +12,9 @@
 ;
 ; It loads OZOS.SYS, a bare program, from the boot drive into RAM just after
 ; the loader and its stack, through as many of the pages after it as it needs,
-; and starts it (see "Starting the OS" below for what the OS is given). If it
-; can't, it hands back to the boot ROM with an error code, and the boot ROM
-; shows it.
+; or if they aren't all RAM, from the start of another bank, and starts it (see
+; "Starting the OS" below for what the OS is given). If it can't, it hands back
+; to the boot ROM with an error code, and the boot ROM shows it.
 ;
 ; The loader must fit in the 222 words before the boot signature, so it reads
 ; the whole file with one READ PACKED, sending each data block straight to
@@ -38,9 +38,18 @@
 ; Where the boot ROM's exit is, at 0002h of bank 0
 .CONST BOOT_ROM_EXIT = 0002h - LOADER_START
 
-; Bank 0's RAM pages, in the machine table (see oz3/ozzy/machine_table.h)
+; Each bank's RAM pages, in the machine table (see oz3/ozzy/machine_table.h).
+; A bank the Ozzy doesn't have has none.
 .CONST TABLE = 0F00h - LOADER_START
-.CONST TABLE_BANK0_RAM = TABLE + 9
+.CONST TABLE_BANK_ENTRIES = TABLE + 8
+.CONST BANK_FIELD_RAM = 1
+.CONST BANK_ENTRY_SIZE = 2
+.CONST TABLE_BANK0_RAM = TABLE_BANK_ENTRIES + BANK_FIELD_RAM
+.CONST TABLE_BANK1_RAM = TABLE_BANK0_RAM + BANK_ENTRY_SIZE
+
+; Bank n in each of MB's fields, for RST
+.CONST EVERY_BANK = 1111h
+.CONST NOT_EXTRA = 0FFFh
 
 ;-------------------------------------------------------------------------------
 ; Error codes, which the boot ROM shows. A drive error is the drive's status
@@ -126,31 +135,68 @@
     JC NZ, not_bare
 
 ;-------------------------------------------------------------------------------
-; Allocate the pages from the loader's own (page 1) to the one the OS ends in,
-; which it needs for its contents and stack from OS_START, failing if they
-; aren't all RAM, or the OS would pass the end of the bank.
+; Find where the OS goes, which needs RAM for its contents and stack: in bank 0
+; from OS_START (1200h), just after the loader and the boot ROM's stack, if the
+; pages from there are all RAM up to the end of the OS, or else from page 0 of
+; the first of banks 1 to 15 that has RAM up to the end of the OS. It fails if
+; none does.
+;
+; Then BE is set to where the OS goes, and EXTRA to its bank, so the loader
+; writes the OS with E() addresses, from 0.
 ;-------------------------------------------------------------------------------
 
     MOV R0, D(header + 2)   ; Contents
     ADD R0, D(header + 3)   ; Stack
     JC C, too_big
     PUSH R0                 ; The OS's size, for BS
-    ADD R0, LOADER_START + OS_START - 1
-    JC C, too_big
-    SHR R0, 12              ; The OS's last page, from 1 to 15
+    PUSH R3                 ; The dwords still to read
 
-    ; R1 has a bit for each page from 1 to the last
+    ; In bank 0, R1 has a bit for each page from 1 to the OS's last
+    MVQ R3, 0
+    MOV R4, LOADER_START + OS_START
+    MOV R2, R0
+    ADD R2, LOADER_START + OS_START - 1
+    JC C, @other            ; It would pass the end of bank 0
+    SHR R2, 12              ; The OS's last page, from 1 to 15
+    MVQ R1, 2
+    SHL R1, R2              ; Page 15 shifts out to 0...
+    SBQ R1, 2               ; ...which is FFFEh here
+    MOV R7, D(TABLE_BANK0_RAM)
+    AND R7, R1
+    CMP R7, R1
+    JC Z, @found
+
+@other:
+    ; In the other banks, R1 has a bit for each page from 0 to the OS's last.
+    ; The OS isn't empty here, as an empty one always fits in page 1.
+    SBQ R0, 1               ; The OS's last word
+    SHR R0, 12              ; The OS's last page, from 0 to 15
     MVQ R1, 2
     SHL R1, R0              ; Page 15 shifts out to 0...
-    SBQ R1, 2               ; ...which is FFFEh here
-    MOV R4, D(TABLE_BANK0_RAM)
-    AND R4, R1
-    CMP R4, R1
-    JC NZ, too_big
-    PUSH R1                 ; The OS's pages, for the OS
+    SBQ R1, 1               ; ...which is FFFFh here
+    MVQ R4, 0
+    MOV R0, TABLE_BANK1_RAM
+@bank:
+    ADD R3, EVERY_BANK      ; Past bank 15, it carries
+    JC C, too_big
+    MOV R7, (R0)
+    ADQ R0, BANK_ENTRY_SIZE
+    AND R7, R1
+    CMP R7, R1
+    JC NZ, @bank
+
+@found:
+    ; R1 is the OS's pages, R3 its bank in every field, and R4 its first word
+    MOV R7, R4
+    RST SELF, EXTRA
+    POP R0                  ; The dwords still to read
+    PUSH R1                 ; For the OS
+    PUSH R3
+    PUSH R4
+    MOV R3, R0
 
 ;-------------------------------------------------------------------------------
-; Load each data block, at OS_START plus its offset. A block is its offset and
+; Load each data block, at E(0) plus its offset. A block is its offset and
 ; size in dwords, then its words.
 ;-------------------------------------------------------------------------------
 
@@ -166,10 +212,10 @@
     SUB R3, R1
     JC C, wrong_size
     SHL R0, 1
-    ADD R0, OS_START
+    MOV R4, R0              ; In EXTRA, as R4 is
     MOV R7, R1
 @block:
-    INR R6, [R0]
+    INR R6, [R4]
     JC NS, @block
     JPR @next
 @loaded:
@@ -191,26 +237,29 @@
 ;-------------------------------------------------------------------------------
 ; Starting the OS
 ;
-; The OS is started as a bare program at b, LOADER_START + OS_START (1200h):
-; BC and BD are b, and BS is b plus its contents and stack, all in bank 0, with
-; IP and SP 0. BE is left as bank 0 at base 0, for the machine table.
+; The OS is started as a bare program at its first word, b: 1200h in bank 0,
+; or 0 in another bank. CODE, STACK, and DATA are its bank, BC and BD are b, and
+; BS is b plus its contents and stack, with IP and SP 0. EXTRA is bank 0 at
+; base 0 again, for the machine table.
 ;
 ;   R0 - The boot drive's command port, as the loader was given it
 ;   R1 - The boot drive's number, as the loader was given it
-;   R2 - The pages of bank 0 the OS is in, a bit for each, from page 1
+;   R2 - The pages of its bank the OS is in, a bit for each
 ;
-; The rest of RAM is free, and so are the words of page 1 before b.
+; The rest of RAM is free, and so are the loader's words before 1200h.
 ;-------------------------------------------------------------------------------
 
     MOV R0, R5
-    POP R2
-    POP R5
+    POP R4                  ; b
+    POP R3                  ; Its bank, in every field
+    POP R2                  ; Its pages
+    POP R5                  ; Its size
     POP R1
-    MOV R4, LOADER_START + OS_START
     MOV R6, R4
     ADD R5, R4
-    MVQ R3, 0
-    RST SELF, CODE | STACK | DATA
+    AND R3, NOT_EXTRA
+    MVQ R7, 0
+    RST SELF, CODE | STACK | DATA | EXTRA
 
 ;-------------------------------------------------------------------------------
 ; read_word: Reads the next word from the drive's command port into R1, and
