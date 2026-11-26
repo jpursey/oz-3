@@ -12,7 +12,6 @@
 #include "absl/log/check.h"
 #include "absl/memory/memory.h"
 #include "absl/status/statusor.h"
-#include "gb/base/context_builder.h"
 
 namespace oz3 {
 
@@ -27,14 +26,10 @@ std::unique_ptr<OzzyHost> OzzyHost::Create(OzzySettings settings,
 }
 
 OzzyHost::OzzyHost(OzzySettings settings, gb::ValidatedContext context)
-    : settings_(std::move(settings)),
-      context_(std::move(context)),
-      ozzy_context_(std::make_shared<gb::Context>(
-          gb::ContextBuilder()
-              .SetParent(context_)
-              .SetNew<PowerRequestCallback>(
-                  [this](PowerRequest request) { OnPowerRequest(request); })
-              .Build())) {}
+    : settings_(std::move(settings)), context_(std::move(context)) {
+  context_.SetNew<PowerRequestCallback>(
+      [this](PowerRequest request) { OnPowerRequest(request); });
+}
 
 OzzyHost::~OzzyHost() { PowerOff(); }
 
@@ -43,7 +38,7 @@ absl::Status OzzyHost::PowerOn() {
     return absl::OkStatus();
   }
   absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings_, ozzy_context_);
+      Ozzy::Create(settings_, context_);
   if (!ozzy.ok()) {
     return ozzy.status();
   }

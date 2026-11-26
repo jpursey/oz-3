@@ -103,11 +103,15 @@ Headers are included by their path (`"oz3/ozzy/machine/ozzy.h"`,
 // and whether it is on. The Ozzy exists only while it is on.
 class OzzyHost final {
  public:
-  // The host reads nothing from its context itself. Each Ozzy is created in a
-  // child of it, which adds the power callback, so the context holds the rest
-  // of what the Ozzy needs from the host (see Ozzy::Contract), such as the
-  // file system.
-  using Contract = gb::ContextContract<>;
+  // The host puts its power request callback in its context while it lives,
+  // for each Ozzy it creates.
+  static GB_CONTEXT_CONSTRAINT(kConstraintPowerRequestCallback, kScoped,
+                               PowerRequestCallback);
+
+  // Each Ozzy is created in the host's context, so it holds the rest of what
+  // the Ozzy needs from the host (see Ozzy::Contract), such as the file
+  // system.
+  using Contract = gb::ContextContract<kConstraintPowerRequestCallback>;
 
   // Creates a host for an Ozzy with `settings`, which is off, or returns null
   // if the contract is invalid.
@@ -144,11 +148,12 @@ class OzzyHost final {
 };
 ```
 
-- It keeps its `ValidatedContext`, and the child context each Ozzy is created
-  in (`ContextBuilder().SetParent(context_)`), which add the power callback.
-  The callback notes the run's first request. Both outlive each Ozzy, as the
-  drives write to their images as it is destroyed. The host's clock is left
-  out of it, so programs see the host's local time, as now. `OzzyHost` passes
+- It keeps its `ValidatedContext`, which each Ozzy is created in, and puts the
+  power callback in it as a `kScoped` value, so it is cleared when the host is
+  destroyed. The callback notes the run's first request. The context outlives
+  each Ozzy, as the drives write to their images as it is destroyed. The
+  host's clock is left out of it, so programs see the host's local time, as
+  now. `OzzyHost` passes
   the context on without declaring `Ozzy`'s constraints, as the Ozzy checks
   them itself.
 - A restart is `PowerOff()` then `PowerOn()`, so RAM is cleared and every

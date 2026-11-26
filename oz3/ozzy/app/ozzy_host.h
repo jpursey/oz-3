@@ -11,7 +11,6 @@
 
 #include "absl/status/status.h"
 #include "absl/time/time.h"
-#include "gb/base/context.h"
 #include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
 #include "oz3/devices/power_control.h"
@@ -32,11 +31,16 @@ class OzzyHost final {
   // Contract
   //----------------------------------------------------------------------------
 
-  // The host reads nothing from its context itself. Each Ozzy is created in a
-  // child of it, which adds the power request callback, so the context holds
-  // the rest of what the Ozzy needs from the host (see Ozzy::Contract), such as
-  // the file system. It must outlive the host unless the contract owns it.
-  using Contract = gb::ContextContract<>;
+  // The host puts its power request callback in its context while it lives,
+  // replacing any already there, for each Ozzy it creates (see
+  // PowerControl::kConstraintPowerRequestCallback).
+  static GB_CONTEXT_CONSTRAINT(kConstraintPowerRequestCallback, kScoped,
+                               PowerRequestCallback);
+
+  // Each Ozzy is created in the host's context, so it holds the rest of what
+  // the Ozzy needs from the host (see Ozzy::Contract), such as the file system.
+  // It must outlive the host unless the contract owns it.
+  using Contract = gb::ContextContract<kConstraintPowerRequestCallback>;
 
   //----------------------------------------------------------------------------
   // Types
@@ -110,12 +114,10 @@ class OzzyHost final {
   void OnPowerRequest(PowerRequest request);
 
   const OzzySettings settings_;
-  gb::ValidatedContext context_;
 
-  // The child of `context_` each Ozzy is created in, with the power request
-  // callback. It and `context_` outlive each Ozzy, as the drives write to
-  // their images as it is destroyed.
-  const std::shared_ptr<gb::Context> ozzy_context_;
+  // Each Ozzy is created in this, so it outlives each Ozzy, as the drives write
+  // to their images as it is destroyed.
+  gb::ValidatedContext context_;
 
   // The first power request of the current Run.
   std::optional<PowerRequest> power_request_;

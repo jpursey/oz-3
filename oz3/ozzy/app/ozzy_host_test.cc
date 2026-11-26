@@ -31,6 +31,7 @@ namespace {
 
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
+using ::testing::IsEmpty;
 using ::testing::Optional;
 
 // The path of the image the drive tests give drive A:.
@@ -93,6 +94,33 @@ TEST_F(OzzyHostTest, InvalidContract) {
   EXPECT_EQ(
       OzzyHost::Create(OzzySettings(), static_cast<gb::Context*>(nullptr)),
       nullptr);
+}
+
+TEST_F(OzzyHostTest, PowerCallbackIsInTheContextWhileTheHostLives) {
+  gb::Context context;
+  std::unique_ptr<OzzyHost> host = OzzyHost::Create(OzzySettings(), &context);
+  ASSERT_NE(host, nullptr);
+  EXPECT_NE(context.GetPtr<PowerRequestCallback>(), nullptr);
+  host.reset();
+  EXPECT_EQ(context.GetPtr<PowerRequestCallback>(), nullptr);
+}
+
+TEST_F(OzzyHostTest, ReplacesAPowerCallbackInTheContext) {
+  std::vector<PowerRequest> requests;
+  gb::Context context = WithPowerCallback(gb::Context(), &requests);
+  context.SetPtr<gb::FileSystem>(&file_system_);
+  std::unique_ptr<OzzyHost> host = OzzyHost::Create(OzzySettings(), &context);
+  ASSERT_NE(host, nullptr);
+  ASSERT_TRUE(host->PowerOn().ok());
+  ASSERT_TRUE(LoadOnCore0(*host->GetOzzy(), R"---(
+      .STACK 0
+      OUT.ID 0, 0FFFD0001h
+      HALT
+  )---"));
+  EXPECT_THAT(host->Run(absl::Milliseconds(1)).power_request,
+              Optional(PowerRequest{.command = PowerCommand::kShutDown,
+                                    .exit_code = -3}));
+  EXPECT_THAT(requests, IsEmpty());
 }
 
 TEST_F(OzzyHostTest, KeepsTheSettings) {
