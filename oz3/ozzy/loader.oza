@@ -39,19 +39,19 @@
 .CONST TABLE_DEVICE_ENTRIES = TABLE + 28h
 
 ; A bank entry's RAM pages, and its size
-.CONST BANK_RAM = 1
-.CONST BANK_SIZE = 2
+.CONST BANK_FIELD_RAM = 1
+.CONST BANK_ENTRY_SIZE = 2
 
 ; A device entry's size, and its type
-.CONST DEVICE_SIZE = 8
-.CONST TELETYPE = 3
+.CONST DEVICE_ENTRY_SIZE = 8
+.CONST DEVICE_TYPE_TELETYPE = 3
 
 ;-------------------------------------------------------------------------------
 ; Devices, which are wired the same in every Ozzy
 ;-------------------------------------------------------------------------------
 
 .CONST POWER_PORT = 0
-.CONST POWER_RESTART = 2
+.CONST POWER_CMD_RESTART = 2
 .CONST KEYBOARD_PORT = 1
 .CONST TELETYPE_PORT = 2
 
@@ -135,7 +135,7 @@
     MOV R0, header
     MVQ R7, 3
 @header:
-    INR.RD R6, [R0]
+    INR R6, [R0]
     JC NS, @header
     MOV D0, D[header]
     CMP D0, BARE_ID
@@ -165,9 +165,9 @@
 
     ; R4 is the RAM pages of the loader's bank (the STACK bank), from R2
     MOV R4, MB
-    SHR R4, 4 - 1           ; The STACK bank, times BANK_SIZE
-    AND R4, 0Fh * BANK_SIZE
-    MOV R4, (R4 + TABLE_BANK_ENTRIES + BANK_RAM)
+    SHR R4, 4 - 1           ; The STACK bank, times BANK_ENTRY_SIZE
+    AND R4, 0Fh * BANK_ENTRY_SIZE
+    MOV R4, (R4 + TABLE_BANK_ENTRIES + BANK_FIELD_RAM)
     SHR R4, R2
 
     AND R4, R1
@@ -188,7 +188,7 @@
     SBQ R3, 1
     JC C, failed
 @offset:
-    INS.RD R6, D0           ; R0 is the offset, R1 the size
+    INS R6, D0              ; R0 is the offset, R1 the size
     JC NS, @offset
     SUB R3, R1
     JC C, failed
@@ -196,7 +196,7 @@
     ADD R0, PAGE_SIZE
     MOV R7, R1
 @block:
-    INR.RD R6, [R0]
+    INR R6, [R0]
     JC NS, @block
     JPR @next
 @loaded:
@@ -265,7 +265,7 @@ command:
     OUTS R5, R1
     JC NS, @command
 @argument:
-    OUTR.RD R5, [R0]
+    OUTR R5, [R0]
     JC NS, @argument
 @taken:
     IN R6, R4
@@ -296,16 +296,16 @@ failed:
     MOV R7, E(TABLE_DEVICES)  ; At least 1, as the power control is there
 @device:
     MOV R0, (R4)
-    CMP R0, TELETYPE
+    CMP R0, DEVICE_TYPE_TELETYPE
     JC Z, @teletype
-    ADQ R4, DEVICE_SIZE
+    ADQ R4, DEVICE_ENTRY_SIZE
     JD R7, @device
     JPR @screen
 @teletype:
     MOV R0, error
     MVQ R7, ERROR_WORDS + 1   ; With the new line
 @print:
-    OUTR.IW TELETYPE_PORT, (R0)
+    OUTR TELETYPE_PORT, (R0)
     JC NS, @print
 
     ; Write it to the screen's status row, which is in the screen's page
@@ -332,7 +332,7 @@ failed:
 @key:
     INS KEYBOARD_PORT, R0
     JC NS, @key
-    OUT.IW POWER_PORT, POWER_RESTART
+    OUT.IW POWER_PORT, POWER_CMD_RESTART
     HALT
 
 ;-------------------------------------------------------------------------------

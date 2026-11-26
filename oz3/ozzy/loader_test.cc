@@ -298,10 +298,11 @@ TEST_F(LoaderTest, SourceKnowsTheMachineTable) {
       {"TABLE_DEVICES", kMachineTableAddress + kMachineHeaderDevices},
       {"TABLE_BANK_ENTRIES", kMachineTableAddress + kMachineTableBanks},
       {"TABLE_DEVICE_ENTRIES", kMachineTableAddress + kMachineTableDevices},
-      {"BANK_RAM", kMachineBankRam},
-      {"BANK_SIZE", kMachineBankSize},
-      {"DEVICE_SIZE", kMachineDeviceSize},
-      {"TELETYPE", static_cast<uint32_t>(MachineDeviceType::kTeletype)},
+      {"BANK_FIELD_RAM", kMachineBankRam},
+      {"BANK_ENTRY_SIZE", kMachineBankSize},
+      {"DEVICE_ENTRY_SIZE", kMachineDeviceSize},
+      {"DEVICE_TYPE_TELETYPE",
+       static_cast<uint32_t>(MachineDeviceType::kTeletype)},
   });
   EXPECT_EQ(kMachineDeviceType, 0);
 }
@@ -309,7 +310,7 @@ TEST_F(LoaderTest, SourceKnowsTheMachineTable) {
 TEST_F(LoaderTest, SourceKnowsTheDevices) {
   ExpectSourceConstants({
       {"POWER_PORT", kOzzyPowerPort},
-      {"POWER_RESTART", static_cast<uint32_t>(PowerCommand::kRestart)},
+      {"POWER_CMD_RESTART", static_cast<uint32_t>(PowerCommand::kRestart)},
       {"KEYBOARD_PORT", kOzzyKeyboardPort},
       {"TELETYPE_PORT", kOzzyTeletypePort},
       {"SCREEN_START", kOzzyScreenPage * kMemoryBankPageSize},
