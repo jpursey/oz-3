@@ -38,7 +38,8 @@
 ; Where the boot ROM's exit is, at 0002h of bank 0
 .CONST BOOT_ROM_EXIT = 0002h - LOADER_START
 
-; Each bank's RAM pages, in the machine table (see oz3/ozzy/machine_table.h).
+; Each bank's RAM pages, in the machine table (see
+; oz3/ozzy/machine/machine_table.h).
 ; A bank the Ozzy doesn't have has none.
 .CONST TABLE = 0F00h - LOADER_START
 .CONST TABLE_BANK_ENTRIES = TABLE + 8
