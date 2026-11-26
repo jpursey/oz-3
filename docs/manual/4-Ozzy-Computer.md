@@ -313,10 +313,10 @@ If it can't load the file, it fails with an error code, which the boot ROM shows
 | ---------- | ----------------------------------------------------------------------------------------- |
 | 01h to 25h | The drive's status for a command that failed, such as **not found** (10h) for no `OZOS.SYS`, or **I/O error** (25h) (see [Disk Drive](3.5-Disk-Drive.md)) |
 | F1h        | The file isn't a bare program                                                             |
-| F2h        | The file isn't exactly as long as its header and blocks say                               |
+| F2h        | The file isn't exactly as long as its header and blocks say, or a block ends past its contents |
 | F3h        | The file doesn't fit: not in bank 0 from 1200h, nor in any other bank from 0             |
 
-It doesn't check that each block is within the contents, so a block past them is written where its offset puts it.
+A block that ends past the contents fails before any of its words are written, so the loader never writes outside the RAM it found for the operating system. It doesn't check the rest of what makes a bare program valid, such as blocks being in order and not overlapping, which can't write outside it.
 
 ### Running Ozzy
 

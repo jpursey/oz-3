@@ -58,7 +58,8 @@
 
 .CONST ERROR_BASE = 0F0h
 .CONST ERROR_NOT_BARE = 1   ; OZOS.SYS isn't a bare program
-.CONST ERROR_SIZE = 2       ; It isn't as long as its header and blocks say
+.CONST ERROR_SIZE = 2       ; It isn't as long as its header and blocks say, or
+                            ; a block passes its contents
 .CONST ERROR_FIT = 3        ; It doesn't fit in RAM
 
 ;-------------------------------------------------------------------------------
@@ -197,7 +198,8 @@
 
 ;-------------------------------------------------------------------------------
 ; Load each data block, at E(0) plus its offset. A block is its offset and
-; size in dwords, then its words.
+; size in dwords, then its words, and must end within the contents, which are
+; always whole dwords.
 ;-------------------------------------------------------------------------------
 
     MOV R2, D(header + 4)   ; Blocks
@@ -210,6 +212,13 @@
     INS R6, D0              ; R0 is the offset, R1 the size
     JC NS, @offset
     SUB R3, R1
+    JC C, wrong_size
+    MOV R4, R0              ; Where it ends, in dwords...
+    ADD R4, R1
+    JC C, wrong_size
+    MOV R7, D(header + 2)   ; ...which must be within the contents
+    SHR R7, 1
+    CMP R7, R4
     JC C, wrong_size
     SHL R0, 1
     MOV R4, R0              ; In EXTRA, as R4 is

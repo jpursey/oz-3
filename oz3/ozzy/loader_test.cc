@@ -545,6 +545,29 @@ TEST_F(LoaderTest, NotWhatItsHeaderSays) {
   }
 }
 
+TEST_F(LoaderTest, BlockPastTheContents) {
+  // A block that ends past the contents fails before any of its words are
+  // written, rather than writing outside the RAM found for the OS: one ending
+  // a dword past them, one at an offset that wraps around bank 0 onto the
+  // loader, and one whose end carries past FFFFh dwords.
+  constexpr int kGap = 2;
+  const std::vector<uint16_t> os_file = GetOsFile(kGap, 0);
+  ASSERT_EQ(os_file.size(), 14);
+  ASSERT_EQ(os_file[2], kOsWords + kGap);  // The contents
+  ASSERT_EQ(os_file[10], 2);               // The last block's offset, in dwords
+  ASSERT_EQ(os_file[11], 1);               // Its size, in dwords
+  std::vector<std::vector<uint16_t>> files(3, os_file);
+  files[0][2] -= 2;
+  files[1][10] = (kLoaderStart - kOsStart + 0x10000) / 2;
+  files[2][10] = 0xFFFF;
+  for (int i = 0; i < static_cast<int>(files.size()); ++i) {
+    SCOPED_TRACE(i);
+    std::unique_ptr<Ozzy> ozzy = Boot(OzzySettings(), MakeImage(files[i]));
+    ASSERT_NE(ozzy, nullptr);
+    ExpectError(*ozzy, kWrongSize);
+  }
+}
+
 TEST_F(LoaderTest, TooBig) {
   // One word more than pages 1 to 14 hold from 1200h, and there is no other
   // bank.
