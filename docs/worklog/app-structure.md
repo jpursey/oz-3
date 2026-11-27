@@ -1,11 +1,11 @@
 # App Structure
 
-The terminal app has grown inside `ozzy_main.cc`, each piece added where it
+The terminal app had grown inside `ozzy_main.cc`, each piece added where it
 fit: the command line, reading the config, powering on and off, the frame loop
-and its pacing, waiting while the machine is off, and the stats. This gives it
+and its pacing, waiting while the machine is off, and the stats. This gave it
 the structure [ozzy_design.md](../ozzy_design.md) describes (The machine, its
 state, and the panel), shared by both apps and tested:
-- **The machine** is the `Ozzy`, as now.
+- **The machine** is the `Ozzy`, as it was.
 - **The machine's state** is an `OzzyHost`, which outlives the machine: the
   settings, the context the Ozzy is created in, and whether it is on.
 - **The app** is an `OzzyApp`, a `gb::Game`, which is the whole of an app's
@@ -15,23 +15,29 @@ state, and the panel), shared by both apps and tested:
 - **How it is presented** is a `Frontend`, which the app creates through the
   `FrontendType` in its context: what the user sees of the machine, and the
   keys and quit the user gives it. `ozzyterm`'s is a `TerminalFrontend`, built
-  from the `Console` and `ConsoleDisplay` there are now, and the *Window app*
+  from the `Console` and `ConsoleDisplay` there were, and the *Window app*
   adds a window's.
 
-So `ozzy_main.cc` only puts the file system and the console's frontend type in
+So `ozzyterm_main.cc` only puts the file system and the console's frontend type in
 a context, runs an `OzzyApp`, and returns the exit code the app leaves in the
 context. Everything else is tested: the command line too, against a fake
 frontend, a memory file system, and a `gb::FakeClock`.
 
 `oz3/ozzy` is split into a directory and a library for each part, as it will
-grow with the *Panel*, the *Window app*, and the debugger.
+grow with the *Panel*, the *Window app*, and the debugger. The terminal app,
+which was `ozzy`, is `ozzyterm`, so `ozzy` is the *Window app*'s from the
+start.
+
+The manual's [Ozzy Computer](../manual/4-Ozzy-Computer.md) page (Running
+Ozzy) is the specification of what the app does. This summary covers how it
+is built, and the decisions behind it.
 
 ## Behavior
 
 Each frame runs the Ozzy for exactly the time that passed since the last, as
-`gb::Game` gives it, at most 100 ms as now, so a host that falls behind slows
-the Ozzy rather than racing to catch up. What the `ozzy` app does is otherwise
-unchanged, apart from:
+`gb::Game` gives it, at most 100 ms as before, so a host that falls behind
+slows the Ozzy rather than racing to catch up. What the terminal app does is
+otherwise unchanged, apart from its name, and:
 - **`--max-speed` is gone.** It ran the Ozzy faster than real time, as many
   cycles as fit in each frame, which is the one thing that doesn't fit
   `gb::Game`'s model of running the time that passed, and nothing needs it.
@@ -40,7 +46,11 @@ unchanged, apart from:
   page, and ozzy_design.md (Pacing), change to match.
 - A frame that ends less than a millisecond late is absorbed into the next
   frame, rather than starting it at once, as `gb::Game`'s loop does. One more
-  than a millisecond late starts the next at once, as now.
+  than a millisecond late starts the next at once, as before.
+- **Nothing that fails takes over the console.** A config with errors, a
+  frontend's flags that are wrong, or an Ozzy that can't power on (such as a
+  disk image that doesn't exist) is written to the console as it was, as the
+  frontend is created only once the Ozzy is on.
 
 The exit codes stay as `gb::RunCommandLine` gives them: 0 when it ran (or
 wrote help), 1 when it failed, and 2 for a mistake on the command line.
@@ -93,9 +103,11 @@ Headers are included by their path (`"oz3/ozzy/machine/ozzy.h"`,
   uses for the console code ("the console frontend the `ozzy` app is built
   from"). `TerminalFrontend` is `ozzyterm`'s, and `WindowFrontend` the window
   app's.
-- **`FrontendKeys`**: what `ConsoleKeys` is now, as both frontends give keys
+- **`FrontendKeys`**: what `ConsoleKeys` was, as both frontends give keys
   the same way. `KeyChange` keeps its name.
-- **`OzzyAppStats`**: what `--stats` writes, as `RunStats` is now.
+- **`OzzyAppStats`**: what `--stats` writes, as `RunStats` was.
+- **`ozzyterm`**: the terminal app, as ozzy_design.md names it, so `ozzy` is
+  the window app's alone.
 
 ### OzzyHost (ozzy/app)
 
@@ -284,6 +296,10 @@ class OzzyApp final : public gb::Game {
   static GB_CONTEXT_CONSTRAINT(kConstraintFrontendType, kInRequired,
                                FrontendType);
 
+  // REQUIRED: The clock gb::Game runs the frames by (its optional
+  // kConstraintClock), which the app times them by too.
+  static GB_CONTEXT_CONSTRAINT(kConstraintGameClock, kInRequired, gb::Clock);
+
   // OUTPUT: The app's exit code, which Run leaves in the context for main to
   // return: as gb::RunCommandLine returns, or 1 if the app failed once
   // started.
@@ -299,8 +315,8 @@ class OzzyApp final : public gb::Game {
   // images are opened in, and writer (gb::kConstraintCliWriter), which the
   // app's errors and stats go to as gb_cli's do.
   using Contract = gb::DerivedContextContract<
-      GameContract, kConstraintFrontendType, kConstraintExitCode,
-      kConstraintOzzyApp, gb::kConstraintCliFileSystem,
+      GameContract, kConstraintGameClock, kConstraintFrontendType,
+      kConstraintExitCode, kConstraintOzzyApp, gb::kConstraintCliFileSystem,
       gb::kConstraintCliWriter>;
 
   gb::ValidatedContext& Context() override { return context_; }
@@ -367,13 +383,14 @@ struct OzzyAppStats {
   frontend, as the frontend needs every frame. It returns false once the
   frontend's quit is requested, and keeps the stats as it goes. The frame rate is `gb::Game`'s default, 60
   frames a second.
-- **`CleanUp`** powers off and destroys the frontend, which gives the console
-  back, and then writes the error that stopped the app, if one did, and with
-  `--stats`, the stats, to the context's `gb::CliWriter`. Every failure once
-  the command runs (the config, the host, the frontend, or a power on) goes
-  through a private `Fail`, which keeps the error and sets exit code 1. So both
-  go to the console's own buffer, as now, and tests read them from a
-  `gb::FakeCliWriter`.
+- **`CleanUp`** detaches the Ozzy if a frontend shows it, destroys the
+  frontend, which gives the console back, and then the host, which powers the
+  Ozzy off. Then it writes the error that stopped the app, if one did, and
+  with `--stats`, the stats, to the context's `gb::CliWriter`. Every failure
+  once the command runs (the config, the frontend, the host, or a power on)
+  goes through a private `Fail`, which keeps the error and sets exit code 1.
+  So both go to the console's own buffer, as before, and tests read them from
+  a writer of their own.
 - The app's states are only on and off, so it has no `gb::GameStateMachine`.
   The *Panel* may need one, and adds it then.
 - `oz3_ozzy_app` links `gb_game` and `gb_cli`. `gb_game` uses `gb_base` and
@@ -423,171 +440,49 @@ struct OzzyAppStats {
   the type's flags: the view replaces the lines mode, and
   `--headless` makes a frontend with no console.
 
-## CLs
+## Testing
 
-### CL1 [x] ozzy, apps: Split oz3/ozzy into libraries
-
-Depends on: nothing.
-
-- The machine's files (`ozzy`, `ozzy_settings`, `machine_table`,
-  `boot_rom`, `boot_rom.oza`, `loader.oza`, and their tests) move to
-  `oz3/ozzy/machine`, as `oz3_ozzy_machine`, in place of `oz3_ozzy`.
-  `ozzy_testing` becomes `oz3_ozzy_testing` there.
-- The console's files (`console`, `console_display`, `console_text`,
-  `terminal_keys`, `posix_console`, `win_console`, and their tests) move to
-  `oz3/ozzy/term`, as `oz3_ozzy_term`.
-- Their includes and include guards follow, and `ozzy_main.cc` links
-  `oz3_ozzy_term`. The code is otherwise unchanged.
-- CLAUDE.md's library list and order, and the manual or worklogs that name
-  the files by path, change to match.
-
-**Verify**
-- Standard checks (see CLAUDE.md).
-- `git diff -M` shows the moves as renames, with only includes, guards, and
-  CMake changed.
-- CI, as the Windows console's files move too.
-
-### CL2 [x] ozzy/app, apps: OzzyHost, the machine's state
-
-Depends on: CL1.
-
-- `oz3/ozzy/app`, as `oz3_ozzy_app`, with `ozzy_host.h`/`.cc`.
-- `ozzy_main.cc` runs its Ozzy through an `OzzyHost`, created from the
-  command's context, in place of its own context, power callback, and
-  `Ozzy::Create`.
-
-**Verify**
-- Standard checks.
-- `ozzy_host_test.cc`: `Create` with an invalid contract returns null; off
-  until `PowerOn`, and off again after `PowerOff`;
-  a `PowerOn` that fails (an image that doesn't exist) returns the error and
-  stays off; `Run` returns the cycles, and a program's shutdown with its exit
-  code, and its restart; only the first request in a run is returned; a
-  power off commits a drive's image, and so does destroying the host while on.
-
-### CL3 [x] ozzy/app, ozzy/term, apps: Frontend, and the console's
-
-Depends on: CL2.
-
-- `oz3_ozzy_app`: `frontend_keys.h`, with `FrontendKeys` and `KeyChange`
-  (moved from `console.h`), and `frontend.h`, with `Frontend` and
-  `FrontendFactory`, with only `Create`, and taking only the settings, as
-  there is a command line for a frontend only once `OzzyApp` makes it.
-- `oz3_ozzy_term`: `TerminalFrontend` and `TerminalFrontendFactory`. `Console`
-  returns `FrontendKeys` in place of `ConsoleKeys`, and gains `GetMode`, which
-  `ShowOzzyShutDown` reads in place of being given the mode. The fake console
-  moves to `fake_console.h`, for the term library's tests.
-- `oz3_ozzy_testing`: `CreateTestOzzy`, `kBootVersion`, and `kBootTime`, which
-  the machine and term tests had copies of.
-- `ozzy_main.cc` shows the Ozzy through a `TerminalFrontend`, which it creates
-  with a `TerminalFrontendFactory`, in place of its own `Console`,
-  `ConsoleDisplay`, and `ShowOzzyShutDown`.
-
-**Verify**
-- Standard checks.
-- `terminal_frontend_test.cc`, with the fake console: the screen drawn after a
-  run and `Update`, and nothing with no Ozzy attached; `Detach` shows what
-  changed since the last `Update`, and with an exit code, then the shutdown
-  message, in the console's mode; a second `Attach` draws the new Ozzy's
-  screen whole; keys and quit are the console's.
-- `posix_console_test.cc`: a console's mode is the one it was created in.
-
-### CL4 [x] ozzy/app, ozzy/term, apps, manual: OzzyApp on gb::Game
-
-Depends on: CL3, and Game Bits *Command line flags added at run time*.
-
-- `oz3_ozzy_app`: `ozzy_app.h`/`.cc`, with `OzzyApp` and `OzzyAppStats`, and
-  the fake frontend for its tests. It gains `gb_game` and `gb_cli`.
-- `oz3_ozzy_app`: `FrontendFactory` gains `GetProgramName`, `GetProgramHelp`,
-  and `GetFlags`, and `Create` gains the command line, which the frontend
-  reads its flags from.
-- `oz3_ozzy_term`: the factory's name and help, moved from `ozzy_main.cc`,
-  and no flags. It gains `gb_cli`. `--stats` and the config file move to `OzzyApp`, without
-  `--max-speed`.
-- `ozzy_main.cc` is only `main`, as above.
-- The manual's Ozzy Computer page and ozzy_design.md (Pacing) drop
-  `--max-speed`.
-- The backlog's *Teletype view*, *Panel*, *Headless ozzyterm*, and *Window
-  app* name `OzzyApp`, `Frontend`, and the libraries where they describe the
-  code.
-
-**Verify**
-- Standard checks.
-- `ozzy_app_test.cc`, with the fake frontend, a memory file system, a
-  writer of its own, and a `gb::FakeClock`, all through `Run` with
-  arguments:
+Everything but `ozzyterm_main.cc` is tested, each library against fakes of
+what it is given:
+- `ozzy_host_test.cc`: `Create` with an invalid contract returns null; the
+  Ozzy is off until `PowerOn`, and off again after `PowerOff`; a `PowerOn`
+  that fails (an image that doesn't exist) returns the error and stays off;
+  `Run` returns the cycles, a program's shutdown with its exit code, and its
+  restart, and only the first request in a run; powering off commits a
+  drive's image, and so does destroying the host while on.
+- `ozzy_app_test.cc`, with the fake frontend type, a memory file system, a
+  writer that notes whether a frontend is alive at each write, and a
+  `gb::FakeClock`, all through `Run` with arguments:
   - A context without a clock doesn't run, leaving no exit code.
-  - The command line: `--help` writes help with exit code 0, creating no
-    frontend; an unknown flag, or a config that doesn't exist, is exit code
-    2; a config with errors writes the error with exit code 1; neither
-    creates a frontend; no config runs the default Ozzy.
-  - Running: the frontend is powered on with the Ozzy, and updated each
-    frame; typed keys reach the keyboard; a frame runs the Ozzy for its time,
-    at most 100 ms; quitting ends the run with exit code 0.
+  - The command line has the frontend type's name, help, and flags, and the
+    app's own, and the frontend reads its flag in `Configure`. `--help`
+    writes help with exit code 0; an unknown flag, or a config that doesn't
+    exist, is exit code 2; a config with errors writes the error with exit
+    code 1; none of them creates a frontend. No config runs the default
+    Ozzy.
+  - A frontend that can't be configured, or created, writes its error with
+    exit code 1; a power on that fails creates no frontend, and its error is
+    written once nothing holds the console.
+  - The screen draws pixels when the frontend turns them on, and none when it
+    doesn't.
+  - Running: the frontend is attached with the Ozzy, and updated each frame;
+    typed keys reach the keyboard; a frame runs the Ozzy for its time, at
+    most 100 ms; quitting ends the run with exit code 0.
   - Power: a program's restart powers off and on, with a new Ozzy; a
     shutdown passes its exit code to the frontend and keeps the app running,
-    off, until quit; a power on that fails ends the run, writing the error
-    once the frontend is gone, with exit code 1.
+    off, until quit; a power on that fails at a restart ends the run with
+    exit code 1.
   - `--stats` writes the frames, time, and cycles across a restart, once the
     frontend is gone, and that it quit before its first frame when it did.
-- `ozzy_app_test.cc`: the command line has the fake factory's name, help,
-  and flags, and the app's own; the frontend reads its flag's value in
-  `Create`.
-- By hand (left for the user): `ozzy` with `configs/console.ozzy` and
-  `configs/teletype.ozzy`, with and without `--stats`, `--help`, a config with
-  an error, and a program's restart and shutdown, look as they did.
+- `terminal_frontend_test.cc`, with the fake console in `fake_console.h`:
+  the screen is drawn after a run and `Update`, and nothing with no Ozzy
+  attached; `Detach` shows what changed since the last `Update`, and with an
+  exit code, then the shutdown message, in the console's mode; a second
+  `Attach` draws the new Ozzy's screen whole; keys and quit are the
+  console's; the frontend type's command line is `ozzyterm`'s, and its
+  `Configure` turns off the screen's pixels, with or without a screen.
+- `posix_console_test.cc`: a console's mode is the one it was created in.
 
-### CL5 [x] ozzy/app, ozzy/term, apps: The frontend sets up the settings it decides
-
-Depends on: CL4.
-
-`OzzyApp::Start` turned off the screen's pixels for every frontend, as none
-draws them yet. Whether one does is the frontend's to say, and may depend on
-its flags, not only on which frontend it is (`ozzyterm` might show them to
-save screen captures, say, only when asked). So the frontend sets it up,
-before the Ozzy is created, and is created itself only once the Ozzy has
-powered on, so nothing that fails takes over the console first.
-- `oz3_ozzy_app`: what was `FrontendFactory` is `FrontendType`, the app's
-  `kConstraintFrontendType`, with the name, help, and flags, and `Configure`
-  in place of `Create`. `Configure` takes the settings to change and the
-  command line, and returns a `FrontendFactory`, whose `Create` takes over
-  the console and creates the frontend. `Start` configures the frontend,
-  creates the host from the settings it changed, powers on, and then creates
-  the frontend. Nothing then reads `OzzyHost::GetSettings`, which is removed.
-- `oz3_ozzy_term`: `TerminalFrontendType` turns off the screen's pixels in
-  `Configure`, and `TerminalFrontendFactory` creates the console.
-- `ozzy_main.cc` puts a `TerminalFrontendType` in the context.
-
-**Verify**
-- Standard checks.
-- `ozzy_app_test.cc`: an Ozzy's screen draws pixels when the fake frontend
-  turns them on, and none when it doesn't; a frontend that can't be
-  configured, or created, writes its error with exit code 1; a power on that
-  fails creates no frontend.
-- `terminal_frontend_test.cc`: the terminal frontend type turns off the
-  screen's pixels, and configures an Ozzy with no screen.
-- By hand (left for the user): `ozzy` with `configs/console.ozzy` and
-  `configs/teletype.ozzy` looks as it did.
-
-### CL6 [x] apps, ozzy/term, manual: The terminal app is ozzyterm
-
-Depends on: CL5.
-
-The terminal app was `ozzy` until the *Window app* took the name. It takes its
-real name now, so the window app is `ozzy` from the start.
-- `apps`: the `ozzy` executable is `ozzyterm`, from `ozzyterm_main.cc`.
-- `oz3_ozzy_term`: `TerminalFrontendType`'s program name is `ozzyterm`.
-- The devcontainer's launch configurations, the README, CLAUDE.md, the
-  manual, `configs/console.ozzy`, ozzy_design.md, and the backlog name
-  `ozzyterm`, and the *Window app* and *Headless ozzyterm* items no longer
-  rename it.
-- `ozzy_app_test.cc`: `StatsAcrossARestart` allows for Game Bits' game loop
-  waiting for each frame with `Clock::SleepUntil`, which makes each frame a
-  little over 1/60 s with the tests' fake clock, so main's CI passes again.
-
-**Verify**
-- Standard checks.
-- `terminal_frontend_test.cc`: the command line is `ozzyterm`'s.
-- By hand (left for the user): `ozzyterm --help`, and `ozzyterm` with
-  `configs/console.ozzy`, from `bin/` and from the devcontainer's launch
-  configurations.
+By hand: the app with `configs/console.ozzy` and `configs/teletype.ozzy`,
+with and without `--stats`, `--help`, a config with an error, and a program's
+restart and shutdown, looked as it did before.
