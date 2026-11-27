@@ -144,7 +144,7 @@ class OzzyApp final : public gb::Game {
   bool DoPowerRequest(const PowerRequest& request);
 
   // Gives the frontend's keys to the keyboard, or drops them without one.
-  void TypeKeys();
+  void HandleKeys();
 
   // Writes the error that stopped the app, if one did, and the stats if they
   // were asked for.

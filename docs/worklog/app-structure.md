@@ -311,21 +311,20 @@ struct OzzyAppStats {
 - **`main`** is all that isn't tested:
   ```
   int main(int argc, char* argv[]) {
-    gb::Context context =
+    auto context = std::make_shared<gb::Context>(
         gb::ContextBuilder()
             .SetPtr<gb::Clock>(gb::RealtimeClock::GetClock())
             .SetOwned<gb::FileSystem>(gb::CreateCliFileSystem())
             .SetOwned<oz3::FrontendFactory>(
                 std::make_unique<oz3::TerminalFrontendFactory>())
-            .Build();
+            .Build());
     oz3::OzzyApp app;
-    app.Run(&context, gb::GetMainArgs(argc, argv));
-    return context.GetValueOrDefault<int>(oz3::OzzyApp::kKeyExitCode, 1);
+    app.Run(context, gb::GetMainArgs(argc, argv));
+    return context->GetValueOrDefault<int>(oz3::OzzyApp::kKeyExitCode, 1);
   }
   ```
-  It keeps the context itself, and lends it to `Run`, to read the exit code
-  once `Run` has completed it. An exit code that isn't
-  there (a context that didn't meet the contract, which is logged) is 1.
+  It shares the context with `Run`, to read the exit code once `Run` has
+  completed it. An exit code that isn't there (a context that didn't meet the contract, which is logged) is 1.
 - **`Init`** converts `Game::Context()` to its own `Contract` (`context_`),
   as block-world does, and returns false if it isn't valid. The contract
   requires the clock (`kConstraintGameClock`), which is the same context value
@@ -357,8 +356,8 @@ struct OzzyAppStats {
 - **`CleanUp`** powers off and destroys the frontend, which gives the console
   back, and then writes the error that stopped the app, if one did, and with
   `--stats`, the stats, to the context's `gb::CliWriter`. Every failure once
-  the command runs (the config, the frontend, or a power on) goes through a
-  private `Fail`, which keeps the error and sets exit code 1. So both
+  the command runs (the config, the host, the frontend, or a power on) goes
+  through a private `Fail`, which keeps the error and sets exit code 1. So both
   go to the console's own buffer, as now, and tests read them from a
   `gb::FakeCliWriter`.
 - The app's states are only on and off, so it has no `gb::GameStateMachine`.

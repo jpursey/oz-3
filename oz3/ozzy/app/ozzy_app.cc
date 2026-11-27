@@ -127,7 +127,7 @@ bool OzzyApp::Update(absl::Duration delta_time) {
   if (frontend_->IsQuitRequested()) {
     return false;
   }
-  TypeKeys();
+  HandleKeys();
   if (!host_->IsOn()) {
     frontend_->Update();
     return true;
@@ -189,10 +189,11 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
   // Programs see the date and time where the user is, and files are stamped
   // with it, as the context has no clock for them (see kConstraintHostClock).
   // It is the host's time, so when the Ozzy can't keep up with its clock
-  // rate, it drifts from the timer's ticks and milliseconds. The app's context
-  // is valid, so the host is always created.
+  // rate, it drifts from the timer's ticks and milliseconds.
   host_ = OzzyHost::Create(*std::move(settings), context_);
-  CHECK(host_ != nullptr);
+  if (host_ == nullptr) {
+    return Fail("Failed to create the Ozzy's host");
+  }
 
   // The frontend shows every power on, as the settings are the same for each.
   absl::StatusOr<std::unique_ptr<Frontend>> frontend =
@@ -238,7 +239,7 @@ bool OzzyApp::DoPowerRequest(const PowerRequest& request) {
   return true;
 }
 
-void OzzyApp::TypeKeys() {
+void OzzyApp::HandleKeys() {
   // Keys are taken while the Ozzy is off or has no keyboard too, so they
   // don't pile up.
   const FrontendKeys keys = frontend_->TakeKeys();

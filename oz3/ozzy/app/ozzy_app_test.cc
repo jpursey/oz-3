@@ -102,7 +102,7 @@ class OzzyAppTest : public ::testing::Test {
   // Runs an app with `args`, and returns the exit code it left in its
   // context.
   int RunApp(const std::vector<std::string_view>& args) {
-    gb::Context context =
+    auto context = std::make_shared<gb::Context>(
         gb::ContextBuilder()
             .SetPtr<gb::Clock>(&clock_)
             .SetPtr<gb::FileSystem>(&file_system_)
@@ -111,10 +111,10 @@ class OzzyAppTest : public ::testing::Test {
                 [this](gb::CliText type, std::string_view text) {
                   Write(type, text);
                 })
-            .Build();
+            .Build());
     OzzyApp app;
-    app.Run(&context, args);
-    return context.GetValueOrDefault<int>(OzzyApp::kKeyExitCode, kNoExitCode);
+    app.Run(context, args);
+    return context->GetValueOrDefault<int>(OzzyApp::kKeyExitCode, kNoExitCode);
   }
 
   // Writes `config` as the config file.
@@ -167,15 +167,15 @@ TEST_F(OzzyAppTest, HelpIsTheFrontendsAndTheApps) {
 }
 
 TEST_F(OzzyAppTest, NoClockDoesntRun) {
-  gb::Context context =
+  auto context = std::make_shared<gb::Context>(
       gb::ContextBuilder()
           .SetPtr<gb::FileSystem>(&file_system_)
           .SetPtr<FrontendFactory>(&factory_)
           .SetValue<gb::CliWriter>([](gb::CliText, std::string_view) {})
-          .Build();
+          .Build());
   OzzyApp app;
-  app.Run(&context, {});
-  EXPECT_FALSE(context.Exists<int>(OzzyApp::kKeyExitCode));
+  app.Run(context, {});
+  EXPECT_FALSE(context->Exists<int>(OzzyApp::kKeyExitCode));
   EXPECT_FALSE(state().settings.has_value());
 }
 
