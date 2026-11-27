@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/program_assembler.h"
+#include "oz3/asm/program_assembler.h"
 
 #include <algorithm>
 #include <array>
@@ -33,6 +33,9 @@
 #include "gb/parse/parse_result.h"
 #include "gb/parse/parser.h"
 #include "gb/parse/token.h"
+#include "oz3/asm/expression.h"
+#include "oz3/asm/program_grammar.h"
+#include "oz3/asm/program_macro.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/program/bare_program.h"
@@ -41,9 +44,6 @@
 #include "oz3/syntax/instruction_set_syntax.h"
 #include "oz3/syntax/program_lexer.h"
 #include "oz3/syntax/source_pattern.h"
-#include "oz3/tools/expression.h"
-#include "oz3/tools/program_grammar.h"
-#include "oz3/tools/program_macro.h"
 
 namespace oz3 {
 

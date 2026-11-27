@@ -486,10 +486,11 @@ files by the map's paths. `oz3asm` writes it beside the program file (`.oz3lst`)
 
 ## Library and tool
 
-The assembler is a library in `tools`, which a host application can use on its
-own, and `oz3asm` is the command line tool built on it. `InstructionSetSyntax`
-is in `syntax` (`oz3/syntax/instruction_set_syntax.h`), which the instruction
-set assembler shares.
+The assembler is a library in `asm` (`oz3/asm/program_assembler.h`), which a
+host application can use on its own, and `oz3asm` is the command line tool
+built on it. `InstructionSetSyntax` is in `syntax`
+(`oz3/syntax/instruction_set_syntax.h`), which the instruction set assembler
+shares.
 
 ```
 // Every form of every instruction in an instruction set, for matching
@@ -554,13 +555,13 @@ absl::StatusOr<ProgramMap> ReadProgramMapFile(gb::FileSystem& file_system,
   two that differ only in case, such as instructions `ADD` and `add`, which
   `InstructionSetSyntax` reports as an error, as a program couldn't tell them
   apart.
-- `tools` tests assemble programs for small instruction sets written in their
+- `asm` tests assemble programs for small instruction sets written in their
   tests. `instructions` tests assemble every form of the default
   instruction set and check its code words against the reference, and run small
   programs on a core.
 - `oz3asm` takes a source file and an instruction set, and writes the program
   file, and optionally the map and the listing. With no instruction set given,
-  it uses the default one, so it links `oz3_instructions`, which `tools`
+  it uses the default one, so it links `oz3_instructions`, which `asm`
   can't. So it lives in an `apps` directory, which holds every executable,
   after the libraries in the dependency order, where `oz3dbg` goes too.
   `oz3ism` moved there with it, and still builds when the default instruction

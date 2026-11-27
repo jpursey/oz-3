@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_PROGRAM_GRAMMAR_H_
-#define OZ3_TOOLS_PROGRAM_GRAMMAR_H_
+#ifndef OZ3_ASM_PROGRAM_GRAMMAR_H_
+#define OZ3_ASM_PROGRAM_GRAMMAR_H_
 
 #include <cstdint>
 #include <memory>
@@ -21,9 +21,9 @@
 #include "gb/parse/parser.h"
 #include "gb/parse/parser_program.h"
 #include "gb/parse/token.h"
+#include "oz3/asm/expression.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/syntax/instruction_set_syntax.h"
-#include "oz3/tools/expression.h"
 
 namespace oz3 {
 
@@ -199,4 +199,4 @@ class ProgramGrammar final {
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_PROGRAM_GRAMMAR_H_
+#endif  // OZ3_ASM_PROGRAM_GRAMMAR_H_

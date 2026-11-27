@@ -20,6 +20,7 @@
 #include "gb/file/file_system.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/asm/program_assembler.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/date_time.h"
@@ -44,7 +45,6 @@
 #include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/program/program_file.h"
-#include "oz3/tools/program_assembler.h"
 
 namespace oz3 {
 namespace {

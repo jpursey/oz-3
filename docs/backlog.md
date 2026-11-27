@@ -217,7 +217,7 @@ panel.
 
 ## Constants' text in STR
 
-- **Layers:** tools, manual
+- **Layers:** asm, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -233,7 +233,7 @@ argument (`MacroExpansion` knows where each run of its text came from).
 
 ## Case-sensitive programs
 
-- **Layers:** syntax, tools, manual
+- **Layers:** syntax, asm, tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -245,7 +245,7 @@ turned to upper case as it is read.
 
 ## Data only programs
 
-- **Layers:** tools, manual
+- **Layers:** asm, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
@@ -259,7 +259,7 @@ an operating system loads for programs to share.
 
 ## Instruction set identity in program files
 
-- **Layers:** program, tools, manual
+- **Layers:** program, asm, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing

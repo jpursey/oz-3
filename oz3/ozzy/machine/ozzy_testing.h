@@ -18,6 +18,7 @@
 #include "absl/time/time.h"
 #include "gb/base/context.h"
 #include "gb/file/file_system.h"
+#include "oz3/asm/program_assembler.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/devices/power_control/power_control.h"
 #include "oz3/devices/screen/screen.h"
@@ -27,7 +28,6 @@
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/program/program_map.h"
-#include "oz3/tools/program_assembler.h"
 
 namespace oz3 {
 

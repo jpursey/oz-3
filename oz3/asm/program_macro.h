@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_PROGRAM_MACRO_H_
-#define OZ3_TOOLS_PROGRAM_MACRO_H_
+#ifndef OZ3_ASM_PROGRAM_MACRO_H_
+#define OZ3_ASM_PROGRAM_MACRO_H_
 
 #include <optional>
 #include <string>
@@ -207,4 +207,4 @@ class MacroExpansion final {
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_PROGRAM_MACRO_H_
+#endif  // OZ3_ASM_PROGRAM_MACRO_H_

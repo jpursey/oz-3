@@ -39,6 +39,7 @@ set(oz3asm_DEPS
   gb_cli
   gb_file
   gb_parse
+  oz3_asm
   oz3_core
   oz3_instructions
   oz3_program

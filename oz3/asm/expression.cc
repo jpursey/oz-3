@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/expression.h"
+#include "oz3/asm/expression.h"
 
 #include <cstdint>
 #include <optional>

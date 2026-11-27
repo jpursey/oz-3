@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_PROGRAM_ASSEMBLER_H_
-#define OZ3_TOOLS_PROGRAM_ASSEMBLER_H_
+#ifndef OZ3_ASM_PROGRAM_ASSEMBLER_H_
+#define OZ3_ASM_PROGRAM_ASSEMBLER_H_
 
 #include <cstdint>
 #include <memory>
@@ -105,4 +105,4 @@ std::unique_ptr<AsmProgram> AssembleProgram(
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_PROGRAM_ASSEMBLER_H_
+#endif  // OZ3_ASM_PROGRAM_ASSEMBLER_H_
