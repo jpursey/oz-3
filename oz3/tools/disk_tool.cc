@@ -28,6 +28,7 @@
 #include "gb/file/path.h"
 #include "oz3/disk/disk_check.h"
 #include "oz3/disk/disk_dir_entry.h"
+#include "oz3/disk/disk_file_protocol.h"
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_image.h"
@@ -36,9 +37,8 @@
 #include "oz3/disk/disk_media.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
+#include "oz3/disk/disk_transfer.h"
 #include "oz3/tools/bare_program.h"
-#include "oz3/tools/disk_file_protocol.h"
-#include "oz3/tools/disk_transfer.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_file.h"
 

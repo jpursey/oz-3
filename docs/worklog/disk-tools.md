@@ -4,7 +4,8 @@ The host side of disks, from [disk_design.md](../disk_design.md) (Tools), built
 on the disk library ([disk-library.md](disk-library.md)). The library is a
 complete file system, but a host can only reach it through `DiskFileSystem`'s
 own calls, and nothing made or filled an image short of writing C++. The tools
-are three things in `tools`, and one app:
+are three things, the first two since moved to `disk` and the third in `tools`,
+and one app:
 
 - **`DiskFileProtocol`:** a `gb::FileProtocol` over a mounted image, so host
   code reaches the files on a disk as it reaches local or in-memory files:
@@ -161,7 +162,7 @@ std::string_view GetDiskStatusText(DiskStatus status);
 - The only change the disk library needs: the protocol finds names through
   its own root handle, with the file system's `Seek` and `Find`.
 
-### tools: DiskFileProtocol
+### disk: DiskFileProtocol
 
 ```
 class DiskFileProtocol final : public gb::FileProtocol {
@@ -226,9 +227,9 @@ class DiskFileProtocol final : public gb::FileProtocol {
 };
 ```
 
-- **In `tools`,** as disk_design.md places it: it uses only the disk library
-  and `gb_file`, and `tools` is the first library a host links for working
-  with the OZ-3. `tools` has `oz3_disk` in its deps.
+- **In `disk`,** where the Library Tiers feature
+  ([library-tiers.md](library-tiers.md)) moved it from `tools`: it uses only
+  the disk library's own classes, `gb_file`, and a clock from `gb_base`.
 - **Flags:** info, list, file create, file read, file write, and move. No
   folders and no current path. **Attributes:** read-only and hidden.
 - **Paths** are `/` (the root folder, which has no attributes) and
@@ -274,7 +275,7 @@ can open the root or format under it. A `RawFile` kept past `Unmount` is safe (s
 protocol's destruction is a use after free, as for any protocol, since
 `gb::File` documents that its protocol must outlive it.
 
-### tools: host text transfer
+### disk: host text transfer
 
 ```
 // Each CRLF and lone CR becomes LF. Writing an odd number of bytes pads the
@@ -285,7 +286,8 @@ std::string DiskTextFromHost(std::string_view host_text);
 std::string HostTextFromDisk(std::string_view disk_text);
 ```
 
-- In `tools`, beside the protocol, as they know nothing of the disk format.
+- In `disk`, beside the protocol, as any host turns its text into a disk's
+  bytes this way, not only `oz3dsk`.
   A file's bytes through the protocol are its words, low byte first, as
   strings are packed, so text never needs reordering. `put --text` converts
   the host file's text and writes it through the protocol, which pads an odd

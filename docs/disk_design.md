@@ -179,9 +179,9 @@ Every name and pattern character is below 80h, and the matching is a fixed loop 
 
 ## Disk library
 
-One library, `oz3/disk` (`oz3_disk`), is the only implementation of the format. The drive device, `DiskFileProtocol`, and `oz3dsk` all use it, so they can never disagree about what's on a disk. Its names carry a `Disk` prefix, so they aren't confused with general file concepts.
+One library, `oz3/disk` (`oz3_disk`), is the only implementation of the format. The drive device and `oz3dsk` both use it, and `DiskFileProtocol` is part of it, so they can never disagree about what's on a disk. Its names carry a `Disk` prefix, so they aren't confused with general file concepts.
 
-It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is its own library rather than part of `devices/disk_drive` only so that `tools` can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside the devices and below `tools`.
+It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`, and `gb_base` for the protocol's clock). It is its own library rather than part of `devices/disk_drive` only so that `tools` can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside the devices and below `tools`.
 
 | Class | What |
 | --- | --- |
@@ -569,7 +569,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 - **Timestamps:** the protocol stamps written files using a clock given when it's created, or the host's local time without one. `PathInfo` reports each file's stamp as its modified time, reading the disk's dates in the protocol's time zone (the host's, by Game Bits' `gb::GetLocalTimeZone()`, unless it is given another), and none for a file with no date or for the root. It never sets them, as `gb::FileSystem` has no call to.
 - **Odd bytes** are exact within a file: reading from an odd offset starts with the high byte of its word, and writing there changes only that byte. Only the end rounds up to a whole word, so a file written a byte at a time holds the same words as one written at once.
 - **Sizes** in `PathInfo` are as the file's entry was last committed, as `FIND` gives them.
-- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host text transfer functions beside the protocol in `tools`. A file's bytes through the protocol are its words, two bytes per word, low byte first, which is also how strings are packed, so text needs no reordering. Text conversion only changes line endings (host endings to LF going in) and drops the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, so they aren't in the disk library.
+- **Text conversion** stays outside, since a `RawFile` has no notion of text, in host text transfer functions beside the protocol in `disk`. A file's bytes through the protocol are its words, two bytes per word, low byte first, which is also how strings are packed, so text needs no reordering. Text conversion only changes line endings (host endings to LF going in) and drops the zero bytes that pad an odd length, for `oz3dsk` and any frontend. They know nothing of the format, but are how any host turns its text into a disk's bytes, so they are in the disk library.
 
 #### Ownership
 

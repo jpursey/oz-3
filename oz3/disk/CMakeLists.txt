@@ -7,6 +7,7 @@ set(oz3_disk_SOURCE
   disk_check.cc disk_check.h
   disk_dir_entry.cc disk_dir_entry.h
   disk_fat.cc disk_fat.h
+  disk_file_protocol.cc disk_file_protocol.h
   disk_file_system.cc disk_file_system.h
   disk_filename.cc disk_filename.h
   disk_hardware.cc disk_hardware.h
@@ -18,6 +19,7 @@ set(oz3_disk_SOURCE
   disk_sector_buffer.h
   disk_status.cc disk_status.h
   disk_superblock.cc disk_superblock.h
+  disk_transfer.cc disk_transfer.h
 )
 set(oz3_disk_DEPS
   absl::btree
@@ -28,6 +30,7 @@ set(oz3_disk_DEPS
   absl::statusor
   absl::strings
   absl::time
+  gb_base
   gb_file
   oz3_core
 )
@@ -39,6 +42,7 @@ set(oz3_disk_TEST_SOURCE
   disk_check_test.cc
   disk_dir_entry_test.cc
   disk_fat_test.cc
+  disk_file_protocol_test.cc
   disk_file_system_test.cc
   disk_filename_test.cc
   disk_hardware_test.cc
@@ -47,10 +51,12 @@ set(oz3_disk_TEST_SOURCE
   disk_layout_test.cc
   disk_status_test.cc
   disk_superblock_test.cc
+  disk_transfer_test.cc
 )
 set(oz3_disk_TEST_DEPS
   absl::flat_hash_set
   oz3_disk_testing
+  oz3_tools
 )
 
 gb_add_library(oz3_disk)
