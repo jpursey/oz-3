@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_SOURCE_PATTERN_H_
-#define OZ3_TOOLS_SOURCE_PATTERN_H_
+#ifndef OZ3_SYNTAX_SOURCE_PATTERN_H_
+#define OZ3_SYNTAX_SOURCE_PATTERN_H_
 
 #include <string>
 #include <string_view>
@@ -162,4 +162,4 @@ class SourcePattern final {
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_SOURCE_PATTERN_H_
+#endif  // OZ3_SYNTAX_SOURCE_PATTERN_H_

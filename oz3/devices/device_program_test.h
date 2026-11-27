@@ -16,7 +16,7 @@
 #include "gb/base/context.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/instructions/default_instruction_set.h"
-#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
 
 namespace oz3 {

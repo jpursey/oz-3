@@ -168,7 +168,7 @@ Game Bits' CI does with its `vulkan-sdk` action.
 
 ## Debugger (oz3dbg)
 
-- **Layers:** core, program, tools
+- **Layers:** core, program, syntax, tools
 - **Size:** large
 - **Feature workflow:** yes
 - **Depends on:** nothing
@@ -233,7 +233,7 @@ argument (`MacroExpansion` knows where each run of its text came from).
 
 ## Case-sensitive programs
 
-- **Layers:** tools, manual
+- **Layers:** syntax, tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing

@@ -42,6 +42,7 @@ set(oz3asm_DEPS
   oz3_core
   oz3_instructions
   oz3_program
+  oz3_syntax
   oz3_tools
 )
 

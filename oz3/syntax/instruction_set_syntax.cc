@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 
 #include <bit>
 #include <cstdint>
@@ -30,8 +30,8 @@
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/core/instruction_set.h"
-#include "oz3/tools/program_lexer.h"
-#include "oz3/tools/source_pattern.h"
+#include "oz3/syntax/program_lexer.h"
+#include "oz3/syntax/source_pattern.h"
 
 namespace oz3 {
 

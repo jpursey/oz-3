@@ -8,12 +8,9 @@ set(oz3_tools_SOURCE
   expression.cc expression.h
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
-  instruction_set_syntax.cc instruction_set_syntax.h
   program_assembler.h program_assembler.cc
   program_grammar.h program_grammar.cc
-  program_lexer.h program_lexer.cc
   program_macro.h program_macro.cc
-  source_pattern.h source_pattern.cc
 )
 set(oz3_tools_DEPS
   absl::algorithm_container
@@ -31,6 +28,7 @@ set(oz3_tools_DEPS
   oz3_core
   oz3_disk
   oz3_program
+  oz3_syntax
 )
 
 set(oz3_tools_LIBS
@@ -43,12 +41,9 @@ set(oz3_tools_TEST_SOURCE
   expression_test.cc
   instruction_assembler_test.cc
   instruction_def_exporter_test.cc
-  instruction_set_syntax_test.cc
   program_assembler_test.cc
   program_grammar_test.cc
-  program_lexer_test.cc
   program_macro_test.cc
-  source_pattern_test.cc
 )
 set(oz3_tools_TEST_DEPS
   absl::flat_hash_map
