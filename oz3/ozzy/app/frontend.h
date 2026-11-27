@@ -25,8 +25,9 @@ namespace oz3 {
 // quit the user gives it. It decides nothing about the Ozzy, which is the
 // app's.
 //
-// Each Ozzy's life is bracketed by PowerOn and PowerOff, so a frontend that
-// holds the Ozzy's devices lets go of them before the Ozzy is destroyed.
+// The app brackets each Ozzy's life with OnPowerOn and OnPowerOff, so a
+// frontend that holds the Ozzy's devices lets go of them before the Ozzy is
+// destroyed.
 class Frontend {
  public:
   Frontend(const Frontend&) = delete;
@@ -44,23 +45,30 @@ class Frontend {
   virtual bool IsQuitRequested() const = 0;
 
   //----------------------------------------------------------------------------
-  // The Ozzy
+  // Operations
   //----------------------------------------------------------------------------
 
-  // The Ozzy powered on, as `ozzy`, which is shown from now until PowerOff,
-  // and outlives it. Called while the frontend shows no Ozzy.
-  virtual void PowerOn(Ozzy* ozzy) = 0;
-
-  // Shows what changed in the Ozzy since the last call. Called only while an
-  // Ozzy is shown, between its runs.
+  // Shows what changed since the last call, such as in the Ozzy shown. The app
+  // must call it every frame, whether or not an Ozzy is on, and while one is,
+  // between its runs.
   virtual void Update() = 0;
 
-  // The Ozzy shown is about to power off, so the frontend shows what changed
-  // since the last Update, such as what a program wrote before it shut down,
-  // then lets go of it. With `exit_code`, the program shut it down, which is
-  // shown until the next PowerOn. Without one, it is about to power on again,
-  // or the app is quitting.
-  virtual void PowerOff(std::optional<int> exit_code) = 0;
+  //----------------------------------------------------------------------------
+  // Ozzy events
+  //----------------------------------------------------------------------------
+
+  // The app calls this when an Ozzy powers on, as `ozzy`, which the frontend
+  // shows until OnPowerOff. It must only be called while no Ozzy is shown, and
+  // `ozzy` must outlive the OnPowerOff that follows.
+  virtual void OnPowerOn(Ozzy* ozzy) = 0;
+
+  // The app calls this when the Ozzy shown is about to power off. The frontend
+  // shows what changed since the last Update, such as what a program wrote
+  // before it shut down, then lets go of the Ozzy. With `exit_code`, the
+  // program shut it down, which is shown until the next OnPowerOn. Without
+  // one, it is about to power on again, or the app is quitting. It must only
+  // be called while an Ozzy is shown, before that Ozzy is destroyed.
+  virtual void OnPowerOff(std::optional<int> exit_code) = 0;
 
  protected:
   Frontend() = default;

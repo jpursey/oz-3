@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/ozzy/term/console_frontend.h"
+#include "oz3/ozzy/term/terminal_frontend.h"
 
 #include <memory>
 #include <optional>
@@ -17,32 +17,33 @@
 namespace oz3 {
 
 //==============================================================================
-// ConsoleFrontend
+// TerminalFrontend
 //==============================================================================
 
-ConsoleFrontend::ConsoleFrontend(std::unique_ptr<Console> console)
+TerminalFrontend::TerminalFrontend(std::unique_ptr<Console> console)
     : console_(std::move(console)) {
   CHECK(console_ != nullptr);
 }
 
-FrontendKeys ConsoleFrontend::TakeKeys() { return console_->TakeKeys(); }
+FrontendKeys TerminalFrontend::TakeKeys() { return console_->TakeKeys(); }
 
-bool ConsoleFrontend::IsQuitRequested() const {
+bool TerminalFrontend::IsQuitRequested() const {
   return console_->IsQuitRequested();
 }
 
-void ConsoleFrontend::PowerOn(Ozzy* ozzy) {
+void TerminalFrontend::Update() {
+  if (display_ != nullptr) {
+    display_->Update();
+  }
+}
+
+void TerminalFrontend::OnPowerOn(Ozzy* ozzy) {
   CHECK(ozzy != nullptr);
   CHECK(display_ == nullptr) << "An Ozzy is already shown";
   display_ = std::make_unique<ConsoleDisplay>(ozzy, console_.get());
 }
 
-void ConsoleFrontend::Update() {
-  CHECK(display_ != nullptr) << "No Ozzy is shown";
-  display_->Update();
-}
-
-void ConsoleFrontend::PowerOff(std::optional<int> exit_code) {
+void TerminalFrontend::OnPowerOff(std::optional<int> exit_code) {
   CHECK(display_ != nullptr) << "No Ozzy is shown";
   display_->Update();
   display_.reset();
@@ -52,10 +53,10 @@ void ConsoleFrontend::PowerOff(std::optional<int> exit_code) {
 }
 
 //==============================================================================
-// ConsoleFrontendFactory
+// TerminalFrontendFactory
 //==============================================================================
 
-absl::StatusOr<std::unique_ptr<Frontend>> ConsoleFrontendFactory::Create(
+absl::StatusOr<std::unique_ptr<Frontend>> TerminalFrontendFactory::Create(
     const OzzySettings& settings, const gb::CliCommandLine& command_line) {
   absl::StatusOr<std::unique_ptr<Console>> console =
       Console::Create(GetOzzyConsoleMode(settings));
@@ -64,7 +65,7 @@ absl::StatusOr<std::unique_ptr<Frontend>> ConsoleFrontendFactory::Create(
                         absl::StrCat("Failed to take over the console: ",
                                      console.status().message()));
   }
-  return std::make_unique<ConsoleFrontend>(*std::move(console));
+  return std::make_unique<TerminalFrontend>(*std::move(console));
 }
 
 }  // namespace oz3

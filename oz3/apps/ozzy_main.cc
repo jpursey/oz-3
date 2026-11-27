@@ -35,7 +35,7 @@
 #include "oz3/ozzy/app/ozzy_host.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
-#include "oz3/ozzy/term/console_frontend.h"
+#include "oz3/ozzy/term/terminal_frontend.h"
 
 namespace oz3 {
 namespace {
@@ -210,6 +210,7 @@ std::optional<PowerRequest> RunOzzy(
 void WaitForQuit(Frontend& frontend) {
   while (!frontend.IsQuitRequested()) {
     frontend.TakeKeys();
+    frontend.Update();
     gb::PreciseSleepFor(kFrameTime);
   }
 }
@@ -263,7 +264,7 @@ bool Run(gb::ValidatedContext& context,
   CHECK(host != nullptr);
 
   // The frontend shows every power on, as the settings are the same for each.
-  ConsoleFrontendFactory frontend_factory;
+  TerminalFrontendFactory frontend_factory;
   absl::StatusOr<std::unique_ptr<Frontend>> frontend =
       frontend_factory.Create(host->GetSettings(), command_line);
   if (!frontend.ok()) {
@@ -281,7 +282,7 @@ bool Run(gb::ValidatedContext& context,
              absl::StrCat("Failed to create the Ozzy: ", status.message()));
       return false;
     }
-    (*frontend)->PowerOn(host->GetOzzy());
+    (*frontend)->OnPowerOn(host->GetOzzy());
     const std::optional<PowerRequest> power_request =
         RunOzzy(*host, **frontend, max_speed_run_time, &stats);
     std::optional<int> exit_code;
@@ -289,7 +290,7 @@ bool Run(gb::ValidatedContext& context,
         power_request->command == PowerCommand::kShutDown) {
       exit_code = power_request->exit_code;
     }
-    (*frontend)->PowerOff(exit_code);
+    (*frontend)->OnPowerOff(exit_code);
     host->PowerOff();
     if (!power_request.has_value()) {
       break;

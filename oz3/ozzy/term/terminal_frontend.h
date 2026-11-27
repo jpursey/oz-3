@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_OZZY_TERM_CONSOLE_FRONTEND_H_
-#define OZ3_OZZY_TERM_CONSOLE_FRONTEND_H_
+#ifndef OZ3_OZZY_TERM_TERMINAL_FRONTEND_H_
+#define OZ3_OZZY_TERM_TERMINAL_FRONTEND_H_
 
 #include <memory>
 #include <optional>
@@ -20,21 +20,21 @@
 namespace oz3 {
 
 //==============================================================================
-// ConsoleFrontend
+// TerminalFrontend
 //==============================================================================
 
-// Presents an app in a Console: each Ozzy is shown with a ConsoleDisplay, and
-// the keys and quit are the console's.
-class ConsoleFrontend final : public Frontend {
+// Presents an app in a Console, as ozzyterm does: each Ozzy is shown with a
+// ConsoleDisplay, and the keys and quit are the console's.
+class TerminalFrontend final : public Frontend {
  public:
   //----------------------------------------------------------------------------
   // Construction / Destruction
   //----------------------------------------------------------------------------
 
-  // Presents an app in `console`, whose mode is the one GetOzzyConsoleMode
-  // returns for the Ozzys it shows. Destroying the frontend gives the console
-  // back.
-  explicit ConsoleFrontend(std::unique_ptr<Console> console);
+  // Presents an app in `console`, whose mode must be the one
+  // GetOzzyConsoleMode returns for the Ozzys it shows. Destroying the frontend
+  // gives the console back.
+  explicit TerminalFrontend(std::unique_ptr<Console> console);
 
   //----------------------------------------------------------------------------
   // Frontend interface
@@ -42,12 +42,9 @@ class ConsoleFrontend final : public Frontend {
 
   FrontendKeys TakeKeys() override;
   bool IsQuitRequested() const override;
-
-  void PowerOn(Ozzy* ozzy) override;
   void Update() override;
-
-  // With `exit_code`, shows that the Ozzy shut down (see ShowOzzyShutDown).
-  void PowerOff(std::optional<int> exit_code) override;
+  void OnPowerOn(Ozzy* ozzy) override;
+  void OnPowerOff(std::optional<int> exit_code) override;
 
  private:
   //----------------------------------------------------------------------------
@@ -61,12 +58,12 @@ class ConsoleFrontend final : public Frontend {
 };
 
 //==============================================================================
-// ConsoleFrontendFactory
+// TerminalFrontendFactory
 //==============================================================================
 
-// Creates a ConsoleFrontend, taking over the host's console (see
+// Creates a TerminalFrontend, taking over the host's console (see
 // Console::Create).
-class ConsoleFrontendFactory final : public FrontendFactory {
+class TerminalFrontendFactory final : public FrontendFactory {
  public:
   //----------------------------------------------------------------------------
   // FrontendFactory interface
@@ -81,4 +78,4 @@ class ConsoleFrontendFactory final : public FrontendFactory {
 
 }  // namespace oz3
 
-#endif  // OZ3_OZZY_TERM_CONSOLE_FRONTEND_H_
+#endif  // OZ3_OZZY_TERM_TERMINAL_FRONTEND_H_

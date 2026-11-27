@@ -24,7 +24,7 @@ endif()
 set(oz3_ozzy_term_SOURCE
   console.h
   console_display.cc console_display.h
-  console_frontend.cc console_frontend.h
+  terminal_frontend.cc terminal_frontend.h
   console_text.cc console_text.h
   terminal_keys.cc terminal_keys.h
   ${oz3_ozzy_term_internal_SOURCE}
@@ -48,7 +48,7 @@ set(oz3_ozzy_term_LIBS
 )
 set(oz3_ozzy_term_TEST_SOURCE
   console_display_test.cc
-  console_frontend_test.cc
+  terminal_frontend_test.cc
   console_text_test.cc
   fake_console.h
   terminal_keys_test.cc
