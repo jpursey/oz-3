@@ -14,7 +14,6 @@ set(oz3_ozzy_app_DEPS
   absl::statusor
   absl::time
   gb_base
-  gb_cli
   oz3_core
   oz3_devices
   oz3_ozzy_machine

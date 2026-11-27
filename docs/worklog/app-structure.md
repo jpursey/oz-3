@@ -189,14 +189,14 @@ class Frontend {
   // shown. The app must call it every frame, whether or not an Ozzy is on.
   virtual void Update() = 0;
 
-  // Ozzy events. The app calls OnPowerOn when an Ozzy powers on, which the
-  // frontend shows, and may hold the devices of, until OnPowerOff. Each must
-  // only be called while no Ozzy is shown, and while one is, respectively.
-  // `exit_code` is the program's, when it shut down: shown until the next
-  // OnPowerOn. Without one, it is about to power on again, or the app is
-  // quitting.
-  virtual void OnPowerOn(Ozzy* ozzy) = 0;
-  virtual void OnPowerOff(std::optional<int> exit_code) = 0;
+  // Attached Ozzy. Attach shows `ozzy`, and may hold its devices, until
+  // Detach, which first shows what changed since the last Update. Each must
+  // only be called while no Ozzy is attached, and while one is,
+  // respectively, and `ozzy` must stay alive until Detach returns. With
+  // `exit_code`, Detach shows that the Ozzy shut down with it, until the next
+  // Attach.
+  virtual void Attach(Ozzy* ozzy) = 0;
+  virtual void Detach(std::optional<int> exit_code) = 0;
 };
 
 // Creates an app's frontend, and gives the app what its command line has of
@@ -223,10 +223,12 @@ class FrontendFactory {
 };
 ```
 
-- `OnPowerOn` and `OnPowerOff` bracket each Ozzy's life, so a frontend that
-  holds its devices (as `ConsoleDisplay` does) always lets them go before the
-  Ozzy is destroyed, and starts afresh for a new one. The app calls them, in
-  one place each, beside `OzzyHost::PowerOn` and `PowerOff`.
+- `Attach` and `Detach` say only which Ozzy is shown, not why: the frontend
+  doesn't care whether the Ozzy just booted or is about to restart. The app
+  attaches each Ozzy as it powers on and detaches it before it powers off, in
+  one place each, beside `OzzyHost::PowerOn` and `PowerOff`, so a frontend
+  that holds its devices (as `ConsoleDisplay` does) always lets them go before
+  the Ozzy is destroyed, and starts afresh for a new one.
 - `Update` isn't tied to an Ozzy: while it is off, a frontend still has things
   to show, such as the *Panel*.
 - **The command line** is the app's, made at run time from the frontend's
@@ -380,8 +382,8 @@ struct OzzyAppStats {
 ### TerminalFrontend (ozzy/term)
 
 - `TerminalFrontend` is a `Frontend` over a `Console`: `TakeKeys` and
-  `IsQuitRequested` are the console's, `OnPowerOn` makes a `ConsoleDisplay` of
-  the Ozzy, `Update` updates it while there is one, and `OnPowerOff` updates
+  `IsQuitRequested` are the console's, `Attach` makes a `ConsoleDisplay` of
+  the Ozzy, `Update` updates it while there is one, and `Detach` updates
   it once more, so what a program wrote just before shutting down is shown,
   then destroys it, and with an exit code, calls `ShowOzzyShutDown`.
 - A `Console` knows the mode it was created in (`GetMode`), so the frontend
@@ -444,9 +446,8 @@ Depends on: CL2.
 
 - `oz3_ozzy_app`: `frontend_keys.h`, with `FrontendKeys` and `KeyChange`
   (moved from `console.h`), and `frontend.h`, with `Frontend` and
-  `FrontendFactory`, with only `Create`, as the command line is made from the
-  factory only once `OzzyApp` makes it. It gains `gb_cli`, for the command
-  line `Create` reads.
+  `FrontendFactory`, with only `Create`, and taking only the settings, as
+  there is a command line for a frontend only once `OzzyApp` makes it.
 - `oz3_ozzy_term`: `TerminalFrontend` and `TerminalFrontendFactory`. `Console`
   returns `FrontendKeys` in place of `ConsoleKeys`, and gains `GetMode`, which
   `ShowOzzyShutDown` reads in place of being given the mode. The fake console
@@ -460,9 +461,9 @@ Depends on: CL2.
 **Verify**
 - Standard checks.
 - `terminal_frontend_test.cc`, with the fake console: the screen drawn after a
-  run and `Update`, and nothing with no Ozzy shown; `OnPowerOff` shows what
+  run and `Update`, and nothing with no Ozzy attached; `Detach` shows what
   changed since the last `Update`, and with an exit code, then the shutdown
-  message, in the console's mode; a second `OnPowerOn` draws the new Ozzy's
+  message, in the console's mode; a second `Attach` draws the new Ozzy's
   screen whole; keys and quit are the console's.
 - `posix_console_test.cc`: a console's mode is the one it was created in.
 
@@ -473,9 +474,10 @@ Depends on: CL3, and Game Bits *Command line flags added at run time*.
 - `oz3_ozzy_app`: `ozzy_app.h`/`.cc`, with `OzzyApp` and `OzzyAppStats`, and
   the fake frontend for its tests. It gains `gb_game` and `gb_cli`.
 - `oz3_ozzy_app`: `FrontendFactory` gains `GetProgramName`, `GetProgramHelp`,
-  and `GetFlags`.
+  and `GetFlags`, and `Create` gains the command line, which the frontend
+  reads its flags from.
 - `oz3_ozzy_term`: the factory's name and help, moved from `ozzy_main.cc`,
-  and no flags. `--stats` and the config file move to `OzzyApp`, without
+  and no flags. It gains `gb_cli`. `--stats` and the config file move to `OzzyApp`, without
   `--max-speed`.
 - `ozzy_main.cc` is only `main`, as above.
 - The manual's Ozzy Computer page and ozzy_design.md (Pacing) drop

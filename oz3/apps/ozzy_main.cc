@@ -266,7 +266,7 @@ bool Run(gb::ValidatedContext& context,
   // The frontend shows every power on, as the settings are the same for each.
   TerminalFrontendFactory frontend_factory;
   absl::StatusOr<std::unique_ptr<Frontend>> frontend =
-      frontend_factory.Create(host->GetSettings(), command_line);
+      frontend_factory.Create(host->GetSettings());
   if (!frontend.ok()) {
     writer(gb::CliText::kError, frontend.status().message());
     return false;
@@ -282,7 +282,7 @@ bool Run(gb::ValidatedContext& context,
              absl::StrCat("Failed to create the Ozzy: ", status.message()));
       return false;
     }
-    (*frontend)->OnPowerOn(host->GetOzzy());
+    (*frontend)->Attach(host->GetOzzy());
     const std::optional<PowerRequest> power_request =
         RunOzzy(*host, **frontend, max_speed_run_time, &stats);
     std::optional<int> exit_code;
@@ -290,7 +290,7 @@ bool Run(gb::ValidatedContext& context,
         power_request->command == PowerCommand::kShutDown) {
       exit_code = power_request->exit_code;
     }
-    (*frontend)->OnPowerOff(exit_code);
+    (*frontend)->Detach(exit_code);
     host->PowerOff();
     if (!power_request.has_value()) {
       break;

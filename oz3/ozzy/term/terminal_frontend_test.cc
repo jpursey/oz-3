@@ -49,12 +49,12 @@ TEST_F(TerminalFrontendTest, UpdateWithNoOzzyShowsNothing) {
   frontend_->Update();
   EXPECT_EQ(console_->TakeText(), "");
 
-  // Nor after one powers off.
+  // Nor after one is detached.
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
-  frontend_->OnPowerOn(ozzy.get());
+  frontend_->Attach(ozzy.get());
   ozzy->Run(kBootTime);
-  frontend_->OnPowerOff(std::nullopt);
+  frontend_->Detach(std::nullopt);
   ozzy.reset();
   console_->TakeText();
   frontend_->Update();
@@ -65,7 +65,7 @@ TEST_F(TerminalFrontendTest, ScreenDrawnAfterARun) {
   CreateFrontend();
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
-  frontend_->OnPowerOn(ozzy.get());
+  frontend_->Attach(ozzy.get());
   ozzy->Run(kBootTime);
   frontend_->Update();
   const std::string text = console_->TakeText();
@@ -73,24 +73,24 @@ TEST_F(TerminalFrontendTest, ScreenDrawnAfterARun) {
   EXPECT_THAT(text, HasSubstr(kBootVersion));
 }
 
-TEST_F(TerminalFrontendTest, PowerOffShowsTheLastChanges) {
+TEST_F(TerminalFrontendTest, DetachShowsTheLastChanges) {
   CreateFrontend();
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
-  frontend_->OnPowerOn(ozzy.get());
+  frontend_->Attach(ozzy.get());
   ozzy->Run(kBootTime);
-  frontend_->OnPowerOff(std::nullopt);
+  frontend_->Detach(std::nullopt);
   EXPECT_EQ(console_->TakeText(),
             DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
 }
 
-TEST_F(TerminalFrontendTest, PowerOffWithAnExitCodeShowsTheShutDown) {
+TEST_F(TerminalFrontendTest, DetachWithAnExitCodeShowsTheShutDown) {
   CreateFrontend(ConsoleMode::kLines);
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(GetTeletypeSettings(9600));
   ASSERT_NE(ozzy, nullptr);
-  frontend_->OnPowerOn(ozzy.get());
+  frontend_->Attach(ozzy.get());
   ozzy->Run(kBootTime);
-  frontend_->OnPowerOff(7);
+  frontend_->Detach(7);
 
   // The teletype's last output is shown before the shutdown.
   FakeConsole expected(ConsoleMode::kLines);
@@ -100,22 +100,22 @@ TEST_F(TerminalFrontendTest, PowerOffWithAnExitCodeShowsTheShutDown) {
   EXPECT_THAT(text, EndsWith(expected.TakeText()));
 }
 
-TEST_F(TerminalFrontendTest, NextPowerOnDrawsTheNewOzzyWhole) {
+TEST_F(TerminalFrontendTest, NextAttachDrawsTheNewOzzyWhole) {
   CreateFrontend();
   std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
-  frontend_->OnPowerOn(ozzy.get());
+  frontend_->Attach(ozzy.get());
   ozzy->Run(kBootTime);
   frontend_->Update();
   console_->TakeText();
-  frontend_->OnPowerOff(std::nullopt);
+  frontend_->Detach(std::nullopt);
   ozzy.reset();
 
   // The new Ozzy's screen is the same as the last's, so only drawing it whole
   // writes anything.
   ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
-  frontend_->OnPowerOn(ozzy.get());
+  frontend_->Attach(ozzy.get());
   ozzy->Run(kBootTime);
   frontend_->Update();
   EXPECT_EQ(console_->TakeText(),

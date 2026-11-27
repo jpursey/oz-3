@@ -10,7 +10,6 @@
 #include <optional>
 
 #include "absl/status/statusor.h"
-#include "gb/cli/cli_command_line.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
@@ -25,9 +24,9 @@ namespace oz3 {
 // quit the user gives it. It decides nothing about the Ozzy, which is the
 // app's.
 //
-// The app brackets each Ozzy's life with OnPowerOn and OnPowerOff, so a
-// frontend that holds the Ozzy's devices lets go of them before the Ozzy is
-// destroyed.
+// The app attaches the Ozzy to show, and detaches it before the Ozzy is
+// destroyed, so a frontend that holds the Ozzy's devices lets go of them in
+// time.
 class Frontend {
  public:
   Frontend(const Frontend&) = delete;
@@ -48,27 +47,23 @@ class Frontend {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Shows what changed since the last call, such as in the Ozzy shown. The app
-  // must call it every frame, whether or not an Ozzy is on, and while one is,
-  // between its runs.
+  // Shows what changed since the last call, such as in the Ozzy attached. The
+  // app must call it every frame, whether or not an Ozzy is attached, and
+  // while one is, between its runs.
   virtual void Update() = 0;
 
   //----------------------------------------------------------------------------
-  // Ozzy events
+  // Attached Ozzy
   //----------------------------------------------------------------------------
 
-  // The app calls this when an Ozzy powers on, as `ozzy`, which the frontend
-  // shows until OnPowerOff. It must only be called while no Ozzy is shown, and
-  // `ozzy` must outlive the OnPowerOff that follows.
-  virtual void OnPowerOn(Ozzy* ozzy) = 0;
+  // Shows `ozzy` until Detach. It must only be called while no Ozzy is
+  // attached, and `ozzy` must stay alive until Detach returns.
+  virtual void Attach(Ozzy* ozzy) = 0;
 
-  // The app calls this when the Ozzy shown is about to power off. The frontend
-  // shows what changed since the last Update, such as what a program wrote
-  // before it shut down, then lets go of the Ozzy. With `exit_code`, the
-  // program shut it down, which is shown until the next OnPowerOn. Without
-  // one, it is about to power on again, or the app is quitting. It must only
-  // be called while an Ozzy is shown, before that Ozzy is destroyed.
-  virtual void OnPowerOff(std::optional<int> exit_code) = 0;
+  // Shows what changed since the last Update, then stops showing the attached
+  // Ozzy. With `exit_code`, it shows that the Ozzy shut down with it, until the
+  // next Attach. It must only be called while an Ozzy is attached.
+  virtual void Detach(std::optional<int> exit_code) = 0;
 
  protected:
   Frontend() = default;
@@ -85,11 +80,11 @@ class FrontendFactory {
   FrontendFactory& operator=(const FrontendFactory&) = delete;
   virtual ~FrontendFactory() = default;
 
-  // Creates the frontend for an Ozzy with `settings`, reading the frontend's
-  // flags from `command_line`. Returns an error if it can't (such as no
-  // console to take over), whose message says so for the user.
+  // Creates the frontend for the Ozzys with `settings`. Returns an error if it
+  // can't (such as no console to take over), whose message says so for the
+  // user.
   virtual absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings, const gb::CliCommandLine& command_line) = 0;
+      const OzzySettings& settings) = 0;
 
  protected:
   FrontendFactory() = default;

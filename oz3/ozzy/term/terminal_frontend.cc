@@ -37,14 +37,14 @@ void TerminalFrontend::Update() {
   }
 }
 
-void TerminalFrontend::OnPowerOn(Ozzy* ozzy) {
+void TerminalFrontend::Attach(Ozzy* ozzy) {
   CHECK(ozzy != nullptr);
-  CHECK(display_ == nullptr) << "An Ozzy is already shown";
+  CHECK(display_ == nullptr) << "An Ozzy is already attached";
   display_ = std::make_unique<ConsoleDisplay>(ozzy, console_.get());
 }
 
-void TerminalFrontend::OnPowerOff(std::optional<int> exit_code) {
-  CHECK(display_ != nullptr) << "No Ozzy is shown";
+void TerminalFrontend::Detach(std::optional<int> exit_code) {
+  CHECK(display_ != nullptr) << "No Ozzy is attached";
   display_->Update();
   display_.reset();
   if (exit_code.has_value()) {
@@ -57,7 +57,7 @@ void TerminalFrontend::OnPowerOff(std::optional<int> exit_code) {
 //==============================================================================
 
 absl::StatusOr<std::unique_ptr<Frontend>> TerminalFrontendFactory::Create(
-    const OzzySettings& settings, const gb::CliCommandLine& command_line) {
+    const OzzySettings& settings) {
   absl::StatusOr<std::unique_ptr<Console>> console =
       Console::Create(GetOzzyConsoleMode(settings));
   if (!console.ok()) {

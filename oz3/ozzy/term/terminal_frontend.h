@@ -10,7 +10,6 @@
 #include <optional>
 
 #include "absl/status/statusor.h"
-#include "gb/cli/cli_command_line.h"
 #include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
@@ -23,8 +22,8 @@ namespace oz3 {
 // TerminalFrontend
 //==============================================================================
 
-// Presents an app in a Console, as ozzyterm does: each Ozzy is shown with a
-// ConsoleDisplay, and the keys and quit are the console's.
+// Presents an app in a Console, as ozzyterm does: the Ozzy attached is shown
+// with a ConsoleDisplay, and the keys and quit are the console's.
 class TerminalFrontend final : public Frontend {
  public:
   //----------------------------------------------------------------------------
@@ -43,8 +42,8 @@ class TerminalFrontend final : public Frontend {
   FrontendKeys TakeKeys() override;
   bool IsQuitRequested() const override;
   void Update() override;
-  void OnPowerOn(Ozzy* ozzy) override;
-  void OnPowerOff(std::optional<int> exit_code) override;
+  void Attach(Ozzy* ozzy) override;
+  void Detach(std::optional<int> exit_code) override;
 
  private:
   //----------------------------------------------------------------------------
@@ -70,10 +69,9 @@ class TerminalFrontendFactory final : public FrontendFactory {
   //----------------------------------------------------------------------------
 
   // Takes over the console in the mode GetOzzyConsoleMode returns for
-  // `settings`, or returns why it can't. The console has no flags of its own.
+  // `settings`, or returns why it can't.
   absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings,
-      const gb::CliCommandLine& command_line) override;
+      const OzzySettings& settings) override;
 };
 
 }  // namespace oz3
