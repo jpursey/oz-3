@@ -13,7 +13,7 @@
 #include "absl/time/time.h"
 #include "gb/base/validated_context.h"
 #include "oz3/core/core_types.h"
-#include "oz3/devices/power_control.h"
+#include "oz3/devices/power_control/power_control.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 

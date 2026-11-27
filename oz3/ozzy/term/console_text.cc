@@ -17,7 +17,7 @@
 #include "absl/strings/str_join.h"
 #include "absl/types/span.h"
 #include "gb/base/unicode.h"
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 
 namespace oz3 {
 

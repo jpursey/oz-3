@@ -26,7 +26,7 @@
 #include "gb/cli/run_command_line.h"
 #include "gb/file/file_system.h"
 #include "gb/file/path.h"
-#include "oz3/devices/keyboard.h"
+#include "oz3/devices/keyboard/keyboard.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 

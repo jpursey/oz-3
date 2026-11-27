@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/devices/screen_characters.h"
+#include "oz3/devices/screen/screen_characters.h"
 
 #include <cstdint>
 #include <string>
@@ -12,7 +12,7 @@
 #include "absl/types/span.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 
 namespace oz3 {
 namespace {

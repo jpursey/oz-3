@@ -20,7 +20,7 @@
 #include "gb/cli/cli_path.h"
 #include "gb/game/game.h"
 #include "oz3/core/core_types.h"
-#include "oz3/devices/power_control.h"
+#include "oz3/devices/power_control/power_control.h"
 #include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/app/ozzy_host.h"
 

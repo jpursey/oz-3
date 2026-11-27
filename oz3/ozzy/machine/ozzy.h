@@ -17,12 +17,12 @@
 #include "gb/file/file_system.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor.h"
-#include "oz3/devices/disk_drive.h"
-#include "oz3/devices/keyboard.h"
-#include "oz3/devices/power_control.h"
-#include "oz3/devices/screen.h"
-#include "oz3/devices/teletype.h"
-#include "oz3/devices/timer.h"
+#include "oz3/devices/disk_drive/disk_drive.h"
+#include "oz3/devices/keyboard/keyboard.h"
+#include "oz3/devices/power_control/power_control.h"
+#include "oz3/devices/screen/screen.h"
+#include "oz3/devices/teletype/teletype.h"
+#include "oz3/devices/timer/timer.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 
 namespace oz3 {

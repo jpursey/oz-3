@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_DEVICES_DISK_DRIVE_H_
-#define OZ3_DEVICES_DISK_DRIVE_H_
+#ifndef OZ3_DEVICES_DISK_DRIVE_DISK_DRIVE_H_
+#define OZ3_DEVICES_DISK_DRIVE_DISK_DRIVE_H_
 
 #include <array>
 #include <cstdint>
@@ -25,7 +25,7 @@
 #include "oz3/core/device_factory.h"
 #include "oz3/core/lockable.h"
 #include "oz3/core/port.h"
-#include "oz3/devices/disk_drive_command.h"
+#include "oz3/devices/disk_drive/disk_drive_command.h"
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_hardware.h"
@@ -694,4 +694,4 @@ class DiskDrive final : public Device {
 
 }  // namespace oz3
 
-#endif  // OZ3_DEVICES_DISK_DRIVE_H_
+#endif  // OZ3_DEVICES_DISK_DRIVE_DISK_DRIVE_H_

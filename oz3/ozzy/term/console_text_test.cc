@@ -16,7 +16,7 @@
 #include "gb/base/unicode.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 
 namespace oz3 {
 namespace {
