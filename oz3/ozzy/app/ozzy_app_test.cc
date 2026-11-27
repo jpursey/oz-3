@@ -127,6 +127,7 @@ class OzzyAppTest : public ::testing::Test {
       pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
     };
     EXPECT_EQ(RunApp({}), 0);
+    state().on_attach = nullptr;
     return pixel_width;
   }
 
@@ -254,6 +255,7 @@ TEST_F(OzzyAppTest, FrontendThatFailsIsWritten) {
   EXPECT_EQ(RunApp({}), 1);
   EXPECT_EQ(error_, "No frontend");
   EXPECT_FALSE(state().created);
+  EXPECT_FALSE(wrote_with_frontend_);
 }
 
 //------------------------------------------------------------------------------
@@ -329,6 +331,7 @@ TEST_F(OzzyAppTest, FailedPowerOnCreatesNoFrontend) {
   EXPECT_THAT(error_, AllOf(HasSubstr("Failed to create the Ozzy: "),
                             HasSubstr("missing.ozd")));
   EXPECT_FALSE(state().created);
+  EXPECT_FALSE(wrote_with_frontend_);
 }
 
 TEST_F(OzzyAppTest, FailedPowerOnAtRestartEndsTheApp) {

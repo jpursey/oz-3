@@ -203,7 +203,6 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
 
   // The Ozzy is powered on before the frontend is created, so an Ozzy that
   // fails never touches what the frontend takes over, such as the console.
-  // The frontend shows every power on, as the settings are the same for each.
   if (!PowerOnHost()) {
     return false;
   }
