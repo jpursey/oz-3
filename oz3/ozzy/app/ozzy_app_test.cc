@@ -166,6 +166,19 @@ TEST_F(OzzyAppTest, HelpIsTheFrontendsAndTheApps) {
   EXPECT_FALSE(state().settings.has_value());
 }
 
+TEST_F(OzzyAppTest, NoClockDoesntRun) {
+  gb::Context context =
+      gb::ContextBuilder()
+          .SetPtr<gb::FileSystem>(&file_system_)
+          .SetPtr<FrontendFactory>(&factory_)
+          .SetValue<gb::CliWriter>([](gb::CliText, std::string_view) {})
+          .Build();
+  OzzyApp app;
+  app.Run(&context, {});
+  EXPECT_FALSE(context.Exists<int>(OzzyApp::kKeyExitCode));
+  EXPECT_FALSE(state().settings.has_value());
+}
+
 TEST_F(OzzyAppTest, UnknownFlag) {
   EXPECT_EQ(RunApp({"--bogus"}), 2);
   EXPECT_THAT(error_, HasSubstr("bogus"));

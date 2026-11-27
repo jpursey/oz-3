@@ -73,6 +73,11 @@ class OzzyApp final : public gb::Game {
   // Contract constraints
   //----------------------------------------------------------------------------
 
+  // REQUIRED: The clock gb::Game runs the frames by (its optional
+  // kConstraintClock), which the app times them by too. main gives it the
+  // real time clock.
+  static GB_CONTEXT_CONSTRAINT(kConstraintGameClock, kInRequired, gb::Clock);
+
   // REQUIRED: The app's frontend factory.
   static GB_CONTEXT_CONSTRAINT(kConstraintFrontendFactory, kInRequired,
                                FrontendFactory);
@@ -92,11 +97,10 @@ class OzzyApp final : public gb::Game {
   // (gb::kConstraintCliFileSystem), which the config file and the disk images
   // are opened in, and writer (gb::kConstraintCliWriter), which the app's
   // errors and stats go to, as gb_cli's help and errors do.
-  using Contract =
-      gb::DerivedContextContract<GameContract, kConstraintFrontendFactory,
-                                 kConstraintExitCode, kConstraintOzzyApp,
-                                 gb::kConstraintCliFileSystem,
-                                 gb::kConstraintCliWriter>;
+  using Contract = gb::DerivedContextContract<
+      GameContract, kConstraintGameClock, kConstraintFrontendFactory,
+      kConstraintExitCode, kConstraintOzzyApp, gb::kConstraintCliFileSystem,
+      gb::kConstraintCliWriter>;
 
   //----------------------------------------------------------------------------
   // gb::Game interface

@@ -100,11 +100,7 @@ bool OzzyApp::Init(const std::vector<std::string_view>& args) {
   if (!context_.IsValid() || !context_.SetPtr<OzzyApp>(this)) {
     return false;
   }
-  // The clock gb::Game runs the frames by, as it chooses it.
   clock_ = context_.GetPtr<gb::Clock>();
-  if (clock_ == nullptr) {
-    clock_ = gb::RealtimeClock::GetClock();
-  }
 
   // The command line is the frontend's name, help, and flags, and the app's
   // own flags and arguments. It is a local, which keeps the arrays of its

@@ -313,6 +313,7 @@ struct OzzyAppStats {
   int main(int argc, char* argv[]) {
     gb::Context context =
         gb::ContextBuilder()
+            .SetPtr<gb::Clock>(gb::RealtimeClock::GetClock())
             .SetOwned<gb::FileSystem>(gb::CreateCliFileSystem())
             .SetOwned<oz3::FrontendFactory>(
                 std::make_unique<oz3::TerminalFrontendFactory>())
@@ -326,7 +327,10 @@ struct OzzyAppStats {
   once `Run` has completed it. An exit code that isn't
   there (a context that didn't meet the contract, which is logged) is 1.
 - **`Init`** converts `Game::Context()` to its own `Contract` (`context_`),
-  as block-world does, and returns false if it isn't valid. It sets itself as
+  as block-world does, and returns false if it isn't valid. The contract
+  requires the clock (`kConstraintGameClock`), which is the same context value
+  as `gb::Game`'s optional `kConstraintClock`, so the frames are run and timed
+  by one clock, the one `main` gives it. It sets itself as
   `kConstraintOzzyApp`, and makes the command line: the factory's name, help,
   and flags (as its added flags), with the app's own (`--stats` and the config
   file), run by a private static `RunCommand`, which finds the app by
@@ -363,7 +367,7 @@ struct OzzyAppStats {
   `gb_pilot`, which uses `gb_image` (and `stb` through it), and no SDL or
   Vulkan. `gb_game` is a new dependency, as the backlog item planned.
 - Tests build its context with `ContextBuilder`, as `main` does, with a
-  `gb::FakeClock` (`Game::kConstraintClock`), a memory file system (the disk
+  `gb::FakeClock` (`kConstraintGameClock`), a memory file system (the disk
   library's `FaultyFileProtocol`, to fail an image at a restart), a writer
   that notes whether the frontend is alive at each write, and the fake
   frontend's factory, and read the exit code from it after `Run`.
@@ -497,6 +501,7 @@ Depends on: CL3, and Game Bits *Command line flags added at run time*.
 - `ozzy_app_test.cc`, with the fake frontend, a memory file system, a
   writer of its own, and a `gb::FakeClock`, all through `Run` with
   arguments:
+  - A context without a clock doesn't run, leaving no exit code.
   - The command line: `--help` writes help with exit code 0, creating no
     frontend; an unknown flag, or a config that doesn't exist, is exit code
     2; a config with errors writes the error with exit code 1; neither
@@ -516,3 +521,24 @@ Depends on: CL3, and Game Bits *Command line flags added at run time*.
 - By hand (left for the user): `ozzy` with `configs/console.ozzy` and
   `configs/teletype.ozzy`, with and without `--stats`, `--help`, a config with
   an error, and a program's restart and shutdown, look as they did.
+
+### CL5 [ ] ozzy/app, ozzy/term: The frontend decides whether pixels are drawn
+
+Depends on: CL4.
+
+`OzzyApp::Start` turns off the screen's pixels for every frontend, as none
+draws them yet. Whether one does is the frontend's to say, and may depend on
+its settings and flags, not only on which frontend it is (`ozzyterm` might
+draw them to save screen captures, say, only when asked). So it is likely a
+`Frontend` method the app asks once `Create` has read the command line,
+rather than one on the factory, though which of the two is still open.
+- `oz3_ozzy_app`: `Frontend` (or `FrontendFactory`) says whether it draws the
+  screen's pixels, and `Start` sets the settings' `draw_pixels` from it.
+  Creating the frontend before the host means `Create` takes the settings as
+  read, and the host is then created with `draw_pixels` set.
+- `oz3_ozzy_term`: `TerminalFrontend` draws none.
+
+**Verify**
+- Standard checks.
+- `ozzy_app_test.cc`: the fake frontend's answer reaches the host's settings,
+  either way.

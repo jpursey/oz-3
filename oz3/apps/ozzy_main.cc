@@ -5,6 +5,7 @@
 
 #include <memory>
 
+#include "gb/base/clock.h"
 #include "gb/base/context.h"
 #include "gb/base/context_builder.h"
 #include "gb/cli/cli_path.h"
@@ -17,6 +18,7 @@
 int main(int argc, char* argv[]) {
   gb::Context context =
       gb::ContextBuilder()
+          .SetPtr<gb::Clock>(gb::RealtimeClock::GetClock())
           .SetOwned<gb::FileSystem>(gb::CreateCliFileSystem())
           .SetOwned<oz3::FrontendFactory>(
               std::make_unique<oz3::TerminalFrontendFactory>())
