@@ -75,8 +75,6 @@ class OzzyHost final {
   // Accessors
   //----------------------------------------------------------------------------
 
-  const OzzySettings& GetSettings() const { return settings_; }
-
   // Returns the Ozzy, or null while it is off. It is destroyed at PowerOff.
   Ozzy* GetOzzy() { return ozzy_.get(); }
 

@@ -121,8 +121,6 @@ class OzzyHost final {
   // Destroying the host powers the Ozzy off.
   ~OzzyHost();
 
-  const OzzySettings& GetSettings() const;
-
   // Returns the Ozzy, or null while it is off.
   Ozzy* GetOzzy();
   bool IsOn() const;
@@ -539,7 +537,8 @@ rather than one on the factory, which would have to read the flags again.
 - `oz3_ozzy_app`: `Frontend::ShowsPixels` says whether it shows the screen's
   pixels, and `Start` sets the settings' `draw_pixels` from it. `Start`
   creates the frontend before the host, so `Create` takes the settings as
-  read, and the host is then created with `draw_pixels` set.
+  read, and the host is then created with `draw_pixels` set. Nothing then
+  reads `OzzyHost::GetSettings`, which is removed.
 - `oz3_ozzy_term`: `TerminalFrontend` shows none.
 
 **Verify**
