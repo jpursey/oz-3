@@ -8,8 +8,6 @@ set(oz3_devices_disk_drive_SOURCE
   disk_drive_command.cc disk_drive_command.h
 )
 set(oz3_devices_disk_drive_DEPS
-  absl::civil_time
-  absl::function_ref
   absl::int128
   absl::memory
   absl::span
@@ -18,7 +16,6 @@ set(oz3_devices_disk_drive_DEPS
   absl::strings
   absl::time
   gb_base
-  gb_file
   oz3_core
   oz3_disk
 )
@@ -30,6 +27,8 @@ set(oz3_devices_disk_drive_TEST_SOURCE
   disk_drive_test.cc
 )
 set(oz3_devices_disk_drive_TEST_DEPS
+  absl::civil_time
+  absl::function_ref
   gb_file
   oz3_devices_testing
   oz3_disk_testing
