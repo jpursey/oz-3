@@ -185,7 +185,7 @@ Depends on: CL2.
 - Each device's tests run in its own binary, and the total test count matches
   `oz3_devices_test`'s before the change.
 
-### CL4 [~] disk: DiskFileProtocol and host text transfer
+### CL4 [x] disk: DiskFileProtocol and host text transfer
 
 Depends on: CL1.
 

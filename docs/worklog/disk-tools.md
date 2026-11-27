@@ -229,7 +229,8 @@ class DiskFileProtocol final : public gb::FileProtocol {
 
 - **In `disk`,** where the Library Tiers feature
   ([library-tiers.md](library-tiers.md)) moved it from `tools`: it uses only
-  the disk library's own classes, `gb_file`, and a clock from `gb_base`.
+  the disk library's own classes, `core`'s `DateTime`, `gb_file`, and
+  `gb_base` for its context and the host's time zone.
 - **Flags:** info, list, file create, file read, file write, and move. No
   folders and no current path. **Attributes:** read-only and hidden.
 - **Paths** are `/` (the root folder, which has no attributes) and

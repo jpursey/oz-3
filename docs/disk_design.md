@@ -181,7 +181,7 @@ Every name and pattern character is below 80h, and the matching is a fixed loop 
 
 One library, `oz3/disk` (`oz3_disk`), is the only implementation of the format. The drive device and `oz3dsk` both use it, and `DiskFileProtocol` is part of it, so they can never disagree about what's on a disk. Its names carry a `Disk` prefix, so they aren't confused with general file concepts.
 
-It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`, and `gb_base` for the protocol's clock). It is its own library rather than part of `devices/disk_drive` only so that `tools` can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside the devices and below `tools`.
+It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`, and `gb_base` for the protocol's context and the host's time zone). It is its own library rather than part of `devices/disk_drive` only so that `tools` can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside the devices and below `tools`.
 
 | Class | What |
 | --- | --- |
@@ -195,8 +195,9 @@ It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`, and `gb_b
 | `DiskDirEntry` | A value: a 16-word directory entry, with getters and setters, returning its name as a `DiskFilename` |
 | `DiskFile` | A value: a handle to an open file, the number of its slot in the open-file table |
 | `DiskStatus` | An enum of the drive's status codes, `kOk` included |
+| `DiskFileProtocol` | A `gb::FileProtocol` over a mounted `DiskImage`, for hosts (see [DiskFileProtocol](#diskfileprotocol)) |
 
-The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`, and the value types. The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
+The public surface is `DiskMedia`, `DiskImage`, `DiskHardware`, `DiskFileSystem`, the value types, and for hosts `DiskFileProtocol` and the host text transfer (`DiskTextFromHost` and `HostTextFromDisk`). The layers split cleanly. `DiskHardware` is a dumb drive, always consistent because every write goes straight through, and it has no notion of pinning or committing. `DiskFileSystem` decides what it holds in memory, when it writes, and in what order.
 
 - **One owner per image.** `DiskFileSystem` owns the `DiskHardware`, which owns the `DiskImage`, so nothing else can write the image behind the file system's back.
 - **Patterns are filenames.** `DiskFilename::ParsePattern("*.TXT")` expands each `*` into `?` bytes at construction, and `Matches(const DiskFilename& name)` is a byte compare where `?` matches anything. A plain parse rejects `?` and `*`, so a pattern can't be mistaken for a name.
@@ -556,6 +557,8 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 | 25h | I/O error | The host failed to read or write the image, which fails the disk until it is ejected and inserted again |
 
 ## Tools
+
+`DiskFileProtocol` and the host text transfer are in the disk library, and `DiskTool` and `oz3dsk` in `tools` and `apps`.
 
 ### DiskFileProtocol
 
