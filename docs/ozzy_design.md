@@ -460,9 +460,9 @@ They are two programs, as one can't be both on Windows: a console program
 started from the desktop flashes a console window open, and a windowed one
 started from a shell has no console to write to, and the shell doesn't wait
 for it. It also keeps `ozzyterm` to what a terminal needs: only `ozzy` links
-SDL and Vulkan, and so only `ozzy` needs the Vulkan SDK to build. Until `ozzy`
-exists, the terminal app is `ozzy`, and it becomes `ozzyterm` when the window
-app takes the name.
+SDL and Vulkan, and so only `ozzy` needs the Vulkan SDK to build. The terminal
+app is `ozzyterm` before the window app exists, so `ozzy` is only ever the
+window app.
 
 ### The machine, its state, and the panel
 
@@ -641,8 +641,7 @@ alongside, independent of the OS, in its own items:
 2. *Panel* (ozzy, apps, manual): the panel's commands, in both of the
    terminal app's forms.
 3. *Headless ozzyterm* (ozzy, apps, manual): `--headless`.
-4. *Window app* (ozzy, apps, manual): `ozzy` in a window, and the terminal app
-   renamed `ozzyterm`.
+4. *Window app* (ozzy, apps, manual): `ozzy` in a window.
 
 Then *Debugger (oz3dbg)*, which Ozzy integrates once there is a machine worth
 debugging. Later, and waiting in the backlog: the DMA coprocessor for fast

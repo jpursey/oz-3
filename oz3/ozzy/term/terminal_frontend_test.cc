@@ -145,9 +145,9 @@ TEST_F(TerminalFrontendTest, QuitIsTheConsoles) {
   EXPECT_TRUE(frontend_->IsQuitRequested());
 }
 
-TEST(TerminalFrontendTypeTest, CommandLineIsOzzys) {
+TEST(TerminalFrontendTypeTest, CommandLineIsOzzytermsOwn) {
   TerminalFrontendType type;
-  EXPECT_EQ(type.GetProgramName(), "ozzy");
+  EXPECT_EQ(type.GetProgramName(), "ozzyterm");
   EXPECT_THAT(type.GetProgramHelp(), StartsWith("Runs an Ozzy computer"));
   EXPECT_THAT(type.GetFlags(), IsEmpty());
 }
@@ -155,7 +155,7 @@ TEST(TerminalFrontendTypeTest, CommandLineIsOzzys) {
 // Configures a terminal frontend for `settings`, with no flags, and returns
 // whether it succeeded with a factory.
 bool ConfigureTerminal(OzzySettings* settings) {
-  static const gb::CliCommand kProgram = {.name = "ozzy"};
+  static const gb::CliCommand kProgram = {.name = "ozzyterm"};
   absl::StatusOr<gb::CliCommandLine> command_line =
       gb::ParseCommandLine(&kProgram, {});
   if (!command_line.ok()) {

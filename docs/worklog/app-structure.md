@@ -397,10 +397,11 @@ struct OzzyAppStats {
   command lists `OzzyApp::kConstraintOzzyApp` among its constraints, so the
   run function may read it. The app makes the command itself, so a frontend
   type gives only its parts and can't leave the run function out.
-- `gb::Game`'s loop waits for each frame by sleeping to within a millisecond
-  of it, then reading the clock until it is due, so a `FakeClock` must advance
-  on its own (`SetAutoAdvance`), or the loop never gets there. The tests set
-  it once in their fixture.
+- `gb::Game`'s loop waits for each frame with `Clock::SleepUntil`, which a
+  `FakeClock` moves straight to. The tests also have it advance a little at
+  each read (`SetAutoAdvance`), set once in their fixture, so a frame's run
+  takes time, and the stats count it. So each frame is a little over 1/60 s,
+  and tests of the frame rate allow for it.
 
 ### TerminalFrontend (ozzy/term)
 
@@ -412,8 +413,7 @@ struct OzzyAppStats {
 - A `Console` knows the mode it was created in (`GetMode`), so the frontend
   and `ShowOzzyShutDown` take it from the console rather than being told it,
   and `ConsoleDisplay` checks it is the Ozzy's.
-- `TerminalFrontendType` gives `ozzyterm`'s name and help, which are
-  `ozzy`'s now, and its flags, of which there are none yet. Its `Configure`
+- `TerminalFrontendType` gives `ozzyterm`'s name and help, and its flags, of which there are none yet. Its `Configure`
   turns off the screen's pixels, and returns a `TerminalFrontendFactory`,
   which creates the console in the mode the settings give
   (`GetOzzyConsoleMode`).
@@ -568,3 +568,26 @@ powered on, so nothing that fails takes over the console first.
   screen's pixels, and configures an Ozzy with no screen.
 - By hand (left for the user): `ozzy` with `configs/console.ozzy` and
   `configs/teletype.ozzy` looks as it did.
+
+### CL6 [x] apps, ozzy/term, manual: The terminal app is ozzyterm
+
+Depends on: CL5.
+
+The terminal app was `ozzy` until the *Window app* took the name. It takes its
+real name now, so the window app is `ozzy` from the start.
+- `apps`: the `ozzy` executable is `ozzyterm`, from `ozzyterm_main.cc`.
+- `oz3_ozzy_term`: `TerminalFrontendType`'s program name is `ozzyterm`.
+- The devcontainer's launch configurations, the README, CLAUDE.md, the
+  manual, `configs/console.ozzy`, ozzy_design.md, and the backlog name
+  `ozzyterm`, and the *Window app* and *Headless ozzyterm* items no longer
+  rename it.
+- `ozzy_app_test.cc`: `StatsAcrossARestart` allows for Game Bits' game loop
+  waiting for each frame with `Clock::SleepUntil`, which makes each frame a
+  little over 1/60 s with the tests' fake clock, so main's CI passes again.
+
+**Verify**
+- Standard checks.
+- `terminal_frontend_test.cc`: the command line is `ozzyterm`'s.
+- By hand (left for the user): `ozzyterm --help`, and `ozzyterm` with
+  `configs/console.ozzy`, from `bin/` and from the devcontainer's launch
+  configurations.

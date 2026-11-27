@@ -85,30 +85,30 @@
           "version": "0.2.0",
           "configurations": [
             {
-              "name": "ozzy",
+              "name": "ozzyterm",
               "type": "cppdbg",
               "request": "launch",
-              "program": "${input:ozzyPath}",
+              "program": "${input:ozzytermPath}",
               "args": [],
               "cwd": "${workspaceFolder}",
               "externalConsole": true,
               "MIMode": "gdb"
             },
             {
-              "name": "ozzy: console.ozzy",
+              "name": "ozzyterm: console.ozzy",
               "type": "cppdbg",
               "request": "launch",
-              "program": "${input:ozzyPath}",
+              "program": "${input:ozzytermPath}",
               "args": ["configs/console.ozzy"],
               "cwd": "${workspaceFolder}",
               "externalConsole": true,
               "MIMode": "gdb"
             },
             {
-              "name": "ozzy: teletype.ozzy",
+              "name": "ozzyterm: teletype.ozzy",
               "type": "cppdbg",
               "request": "launch",
-              "program": "${input:ozzyPath}",
+              "program": "${input:ozzytermPath}",
               "args": ["configs/teletype.ozzy"],
               "cwd": "${workspaceFolder}",
               "externalConsole": true,
@@ -117,10 +117,10 @@
           ],
           "inputs": [
             {
-              "id": "ozzyPath",
+              "id": "ozzytermPath",
               "type": "command",
               "command": "cmake.launchTargetPath",
-              "args": { "targetName": "ozzy" }
+              "args": { "targetName": "ozzyterm" }
             }
           ]
         },
