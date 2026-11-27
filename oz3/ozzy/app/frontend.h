@@ -8,8 +8,12 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
@@ -73,18 +77,39 @@ class Frontend {
 // FrontendFactory
 //==============================================================================
 
-// Creates an app's frontend.
+// Creates an app's frontend, and gives the app the frontend's part of its
+// command line. An app's main puts one in the OzzyApp's context (see
+// OzzyApp::kConstraintFrontendFactory).
 class FrontendFactory {
  public:
   FrontendFactory(const FrontendFactory&) = delete;
   FrontendFactory& operator=(const FrontendFactory&) = delete;
   virtual ~FrontendFactory() = default;
 
-  // Creates the frontend for the Ozzys with `settings`. Returns an error if it
-  // can't (such as no console to take over), whose message says so for the
-  // user.
+  //----------------------------------------------------------------------------
+  // Command line
+  //----------------------------------------------------------------------------
+
+  // Returns the app's name and help on its command line, which say how it is
+  // presented ("Runs an Ozzy computer in the console, ...").
+  virtual std::string_view GetProgramName() const = 0;
+  virtual std::string_view GetProgramHelp() const = 0;
+
+  // Returns the frontend's own flags, which the app adds to its command line
+  // after its own. The array must stay as it is for the factory's life, and
+  // each flag is a definition with static storage, as gb_cli's are. Their
+  // names must not be those of the app's flags.
+  virtual absl::Span<const gb::CliAnyFlag> GetFlags() const = 0;
+
+  //----------------------------------------------------------------------------
+  // Creation
+  //----------------------------------------------------------------------------
+
+  // Creates the frontend for the Ozzys with `settings`, reading its flags from
+  // `command_line`. Returns an error if it can't (such as no console to take
+  // over), whose message says so for the user.
   virtual absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings) = 0;
+      const OzzySettings& settings, const gb::CliCommandLine& command_line) = 0;
 
  protected:
   FrontendFactory() = default;

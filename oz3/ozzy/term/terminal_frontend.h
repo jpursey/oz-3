@@ -8,8 +8,12 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 
 #include "absl/status/statusor.h"
+#include "absl/types/span.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
 #include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
@@ -68,10 +72,16 @@ class TerminalFrontendFactory final : public FrontendFactory {
   // FrontendFactory interface
   //----------------------------------------------------------------------------
 
+  // The app is `ozzy`, and the console has no flags of its own.
+  std::string_view GetProgramName() const override;
+  std::string_view GetProgramHelp() const override;
+  absl::Span<const gb::CliAnyFlag> GetFlags() const override;
+
   // Takes over the console in the mode GetOzzyConsoleMode returns for
   // `settings`, or returns why it can't.
   absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings) override;
+      const OzzySettings& settings,
+      const gb::CliCommandLine& command_line) override;
 };
 
 }  // namespace oz3

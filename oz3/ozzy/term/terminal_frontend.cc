@@ -7,12 +7,16 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <utility>
 
 #include "absl/log/check.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
+#include "absl/types/span.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
 
 namespace oz3 {
 
@@ -56,8 +60,26 @@ void TerminalFrontend::Detach(std::optional<int> exit_code) {
 // TerminalFrontendFactory
 //==============================================================================
 
+std::string_view TerminalFrontendFactory::GetProgramName() const {
+  return "ozzy";
+}
+
+std::string_view TerminalFrontendFactory::GetProgramHelp() const {
+  return "Runs an Ozzy computer in the console, until Ctrl+Alt+Q or "
+         "Ctrl+Break, or the console's window is closed. A program on it can "
+         "restart it, or shut it down, which leaves it off until it quits. Its "
+         "drives have the disks the config gives them, and write back what "
+         "they hold when it quits or the Ozzy powers off. Paths are written "
+         "the operating system's way, absolute or relative to the current "
+         "directory, and a config's disk images relative to its folder.";
+}
+
+absl::Span<const gb::CliAnyFlag> TerminalFrontendFactory::GetFlags() const {
+  return {};
+}
+
 absl::StatusOr<std::unique_ptr<Frontend>> TerminalFrontendFactory::Create(
-    const OzzySettings& settings) {
+    const OzzySettings& settings, const gb::CliCommandLine& command_line) {
   absl::StatusOr<std::unique_ptr<Console>> console =
       Console::Create(GetOzzyConsoleMode(settings));
   if (!console.ok()) {

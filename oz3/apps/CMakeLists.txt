@@ -68,24 +68,11 @@ set(ozzy_SOURCE
 )
 
 set(ozzy_DEPS
-  absl::civil_time
-  absl::status
-  absl::statusor
-  absl::str_format
-  absl::strings
-  absl::time
   gb_base
   gb_cli
   gb_file
-  oz3_core
-  oz3_devices
   oz3_ozzy_app
-  oz3_ozzy_machine
   oz3_ozzy_term
-)
-
-set(ozzy_LIBS
-  absl::check
 )
 
 gb_add_executable(ozzy)

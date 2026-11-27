@@ -579,8 +579,9 @@ Ozzy's picture.
 ### Pacing
 
 Each frame, the app runs the cycles the clock rate gives for the time passed
-(16,667 cycles per 60 Hz frame at 1 MHz), and draws the screen if it changed.
-A flag runs it as fast as the host can.
+(16,667 cycles per 60 Hz frame at 1 MHz), up to 100 ms of them, and draws the
+screen if it changed. So a host that falls behind slows the Ozzy, rather than
+racing to catch up.
 
 Measured in Release, with a tight loop of `ADD`, `MOV`, and `JP` on every core
 and no devices, the emulator runs about 46 M cycles a second on one core, and

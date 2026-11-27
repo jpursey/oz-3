@@ -45,19 +45,21 @@ the shell.
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *App structure*
-- **Background:** [ozzy_design.md](ozzy_design.md) (`ozzyterm`);
-  `oz3/ozzy/term/console_display.h`
+- **Background:** [ozzy_design.md](ozzy_design.md) (`ozzyterm`),
+  [app-structure.md](worklog/app-structure.md);
+  `oz3/ozzy/term/terminal_frontend.h`, `oz3/ozzy/term/console_display.h`
 
-The terminal app's console is chosen by its command line, rather than
-inferred from the Ozzy's devices: without `--headless`, it always takes the
+The terminal app's console (`TerminalFrontend`, in `ozzy/term`) is chosen by
+its command line, its factory's flags, rather than inferred from the Ozzy's
+devices: without `--headless`, it always takes the
 whole console, and only `--headless` writes lines as they come (see
 *Headless ozzyterm*). An Ozzy without a screen shows its teletype in a view
 the size of the console, which the Ozzy doesn't know of: the teletype's output
 wraps at the console's width, scrolls up from the bottom, and is drawn whole
 again on a resize, as the screen's picture is. An Ozzy with neither shows the
-message it does now. As the console no longer depends on the config, the app
-creates the Ozzy before taking the console over, so an Ozzy that fails to
-create never touches it. The shutdown message takes the view's place as it
+message it does now. As the console no longer depends on the config, `OzzyApp`
+powers the Ozzy on before creating the frontend, so an Ozzy that fails to
+create never touches the console. The shutdown message takes the view's place as it
 does the screen's, so `ShowOzzyShutDown` has one form. The teletype's lines no
 longer stay in the terminal once the app quits, as the console is given back
 as it was found; `--headless`'s standard output is the transcript instead. The
@@ -79,8 +81,10 @@ terminal app: `on`, `off`, `restart`, `insert` and `eject` a disk, `drives`,
 picture or the teletype view, with the machine's status, its messages, and a
 command line. While it is open, keys go to it and the machine keeps running,
 and while the machine is off, it stays open. The commands, and what they do to
-the machine's state, are in the ozzy library, tested against a fake `Console`,
-so the window app can present them too. Paths are as typed at
+the machine's state, are `OzzyApp`'s (`ozzy/app`), tested against the fake
+frontend, and the `Frontend` gains a call to show the panel, which
+`TerminalFrontend` draws as text, so the window app can present them too.
+`OzzyApp` may need a `gb::GameStateMachine` for it. Paths are as typed at
 a shell, and a `config:` protocol in the file system is the config file's
 folder, which becomes the default for the config's own image paths. A disk
 inserted while the machine is on goes into the running drive and stays in the
@@ -96,13 +100,16 @@ as in the config.
 - **Feature workflow:** no
 - **Depends on:** *App structure*
 - **Background:** [ozzy_design.md](ozzy_design.md) (Host application,
-  `ozzyterm`)
+  `ozzyterm`), [app-structure.md](worklog/app-structure.md);
+  `oz3/ozzy/term/terminal_frontend.h`
 
-`--headless` runs an Ozzy in the terminal app with no terminal, for scripts and
+`--headless`, a flag of `TerminalFrontendFactory`, runs an Ozzy in the
+terminal app with no terminal, through a `Frontend` with no console, for scripts and
 tests: `ozzyterm --headless test.ozzy < keys.txt > out.txt`. The standard input
 is typed keys (its key state made up from them, as a terminal's is), the
 teletype's output goes to the standard output, and a screen isn't shown. There
-is no panel, so a shutdown from the power port exits with its exit code, and a
+is no panel, so a shutdown from the power port exits with its exit code (the
+frontend tells `OzzyApp` it wants that), and a
 signal (such as SIGTERM) quits, committing the drives as quitting does. The end
 of the standard input ends nothing, as a program may run long after its input.
 Errors and `--stats` go to the standard error, so the output is only the
@@ -138,12 +145,15 @@ terminals by hand.
 - **Feature workflow:** yes
 - **Depends on:** *Panel*
 - **Background:** [ozzy_design.md](ozzy_design.md) (Host application, `ozzy`);
-  [ozzy-machine.md](worklog/ozzy-machine.md) (The `ozzy` app);
+  [app-structure.md](worklog/app-structure.md);
   [console-devices.md](worklog/console-devices.md) (Pixels)
 
 `ozzy`, an Ozzy in a window of its own, whatever devices it has, as a windowed
 program (`gb_add_win_executable`), so starting it from the desktop opens no
-console window. The terminal app is renamed `ozzyterm`. The window draws the
+console window. The terminal app is renamed `ozzyterm`. The window is a
+`Frontend` and its factory in a library of its own after `ozzy/term`, and the
+app's `main` runs `OzzyApp` with that factory, as `ozzyterm`'s does with
+`TerminalFrontendFactory`. The window draws the
 screen's picture as its pixels are, through Game Bits' SDL and renderer: the
 pixels as an 8-bit texture with a three-color palette, each pixel twice as
 tall as it is wide. So it shows what the terminal can't: the left and right
@@ -152,7 +162,8 @@ exact blink timing. Without a screen, the teletype's lines have a space of
 their own in the window. Keys come from the window. The *Panel* opens over the
 picture with the same key, and menus run its commands; while the machine is
 off, the picture is dark, and a config file with errors opens the window with
-the machine off and the errors in the panel. Only `ozzy` links SDL and Vulkan,
+the machine off and the errors in the panel, so `OzzyApp` creates such a
+frontend before reading the config. Only `ozzy` links SDL and Vulkan,
 so it is built only where the Vulkan SDK is, and CI installs the SDK for it, as
 Game Bits' CI does with its `vulkan-sdk` action.
 
