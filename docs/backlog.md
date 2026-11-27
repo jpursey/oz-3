@@ -168,7 +168,7 @@ Game Bits' CI does with its `vulkan-sdk` action.
 
 ## Debugger (oz3dbg)
 
-- **Layers:** core, tools
+- **Layers:** core, program, tools
 - **Size:** large
 - **Feature workflow:** yes
 - **Depends on:** nothing
@@ -259,12 +259,12 @@ an operating system loads for programs to share.
 
 ## Instruction set identity in program files
 
-- **Layers:** tools, manual
+- **Layers:** program, tools, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
 - **Background:** [assembler_design.md](assembler_design.md) (Program file);
-  the manual's Program Files page; `oz3/tools/program_file.h`
+  the manual's Program Files page; `oz3/program/program_file.h`
 
 A program file records which instruction set it was assembled for, such as a
 fingerprint of its code word layout, so loading it for a core with a different

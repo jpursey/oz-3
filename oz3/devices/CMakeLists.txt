@@ -17,6 +17,7 @@ set(oz3_devices_testing_DEPS
   oz3_core
   oz3_core_testing
   oz3_instructions
+  oz3_program
   oz3_tools
 )
 set(oz3_devices_testing_LIBS

@@ -30,9 +30,9 @@
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_status.h"
 #include "oz3/instructions/default_instruction_set.h"
-#include "oz3/tools/bare_program.h"
+#include "oz3/program/bare_program.h"
+#include "oz3/program/program_loader.h"
 #include "oz3/tools/instruction_set_syntax.h"
-#include "oz3/tools/program_loader.h"
 
 namespace oz3 {
 

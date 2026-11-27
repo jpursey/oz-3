@@ -3,13 +3,13 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_BARE_PROGRAM_H_
-#define OZ3_TOOLS_BARE_PROGRAM_H_
+#ifndef OZ3_PROGRAM_BARE_PROGRAM_H_
+#define OZ3_PROGRAM_BARE_PROGRAM_H_
 
 #include <vector>
 
 #include "absl/status/status.h"
-#include "oz3/tools/program.h"
+#include "oz3/program/program.h"
 
 namespace oz3 {
 
@@ -43,4 +43,4 @@ absl::Status ValidateBareProgram(const BareProgram& program);
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_BARE_PROGRAM_H_
+#endif  // OZ3_PROGRAM_BARE_PROGRAM_H_

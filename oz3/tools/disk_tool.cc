@@ -38,9 +38,9 @@
 #include "oz3/disk/disk_status.h"
 #include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/disk_transfer.h"
-#include "oz3/tools/bare_program.h"
-#include "oz3/tools/program.h"
-#include "oz3/tools/program_file.h"
+#include "oz3/program/bare_program.h"
+#include "oz3/program/program.h"
+#include "oz3/program/program_file.h"
 
 namespace oz3 {
 

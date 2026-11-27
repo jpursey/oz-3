@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/program_map_file.h"
+#include "oz3/program/program_map_file.h"
 
 #include <cstdint>
 #include <memory>
@@ -23,8 +23,8 @@
 #include "gb/file/file.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
-#include "oz3/tools/program_map.h"
-#include "oz3/tools/program_map_chunks.h"
+#include "oz3/program/program_map.h"
+#include "oz3/program/program_map_chunks.h"
 
 namespace oz3 {
 

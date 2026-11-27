@@ -36,6 +36,7 @@ set(oz3_instructions_TEST_DEPS
   absl::strings
   gb_parse
   oz3_core_testing
+  oz3_program
   oz3_tools
 )
 
