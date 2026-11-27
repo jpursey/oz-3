@@ -220,6 +220,7 @@ TEST_F(OzzyAppTest, ScreenDrawsPixelsWhenTheFrontendShowsThem) {
   state().shows_pixels = true;
   int pixel_width = 0;
   state().on_attach = [&pixel_width](Ozzy& ozzy) {
+    ASSERT_NE(ozzy.GetScreen(), nullptr);
     pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
   };
   EXPECT_EQ(RunApp({}), 0);
@@ -229,6 +230,7 @@ TEST_F(OzzyAppTest, ScreenDrawsPixelsWhenTheFrontendShowsThem) {
 TEST_F(OzzyAppTest, ScreenDrawsNoPixelsWhenTheFrontendDoesnt) {
   int pixel_width = -1;
   state().on_attach = [&pixel_width](Ozzy& ozzy) {
+    ASSERT_NE(ozzy.GetScreen(), nullptr);
     pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
   };
   EXPECT_EQ(RunApp({}), 0);
