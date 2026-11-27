@@ -468,6 +468,24 @@ and the ROM reads it as it reads the rest of its hardware. It changes the
 machine table, which programs read, so it is best done before the Ozzy OS
 reads it.
 
+## Ozzy screens draw no pixels by default
+
+- **Layers:** ozzy
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** [app-structure.md](worklog/app-structure.md) (Frontend);
+  `oz3/ozzy/machine/ozzy_settings.h`, `oz3/ozzy/term/terminal_frontend.cc`
+
+`OzzyScreenSettings::draw_pixels` defaults to true, as `ScreenSettings`' does,
+so every `FrontendType::Configure` that doesn't show the pixels must turn them
+off, as `TerminalFrontendType` does. One that forgets draws a picture each
+frame that nothing shows, and no test notices. Defaulting it to false in
+`OzzySettings` (it is the host's choice, not the machine's) makes drawing
+pixels the frontend's to ask for, so only the *Window app*'s frontend sets
+it, and the terminal's `Configure` has nothing to change. Hosts that embed an
+Ozzy and show its picture then set it too.
+
 ## Disk tool failure reasons
 
 - **Layers:** tools
