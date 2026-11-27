@@ -181,7 +181,7 @@ Every name and pattern character is below 80h, and the matching is a fixed loop 
 
 One library, `oz3/disk` (`oz3_disk`), is the only implementation of the format. The drive device, `DiskFileProtocol`, and `oz3dsk` all use it, so they can never disagree about what's on a disk. Its names carry a `Disk` prefix, so they aren't confused with general file concepts.
 
-It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is its own library rather than part of `devices` only so that `tools` can use it. So it comes right after `core` in the libraries' order: `core` → `disk` → `tools` → `instruction_sets` → `devices` → `ozzy`, then `apps`.
+It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`). It is its own library rather than part of `devices` only so that `tools` can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside `devices` and below `tools`.
 
 | Class | What |
 | --- | --- |

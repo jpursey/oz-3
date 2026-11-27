@@ -137,7 +137,7 @@ every reference to what it moves: includes, include guards, the CMake files,
 CLAUDE.md, the manual's paths, the backlog's **Layers**, and the design and
 worklog docs. Until the last CL, `tools` stays in tier 2 for what hasn't moved.
 
-### CL1 [ ] CLAUDE.md: library tiers
+### CL1 [x] CLAUDE.md: library tiers
 
 Depends on: nothing.
 
