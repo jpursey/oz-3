@@ -178,9 +178,16 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
     return Fail(settings.status().message());
   }
 
-  // No frontend draws the screen's pixels yet, so they are left off.
+  // The frontend is created first, as it says whether the screens draw their
+  // pixels. It shows every power on, as the settings are the same for each.
+  absl::StatusOr<std::unique_ptr<Frontend>> frontend =
+      context_.GetPtr<FrontendFactory>()->Create(*settings, command_line);
+  if (!frontend.ok()) {
+    return Fail(frontend.status().message());
+  }
+  frontend_ = *std::move(frontend);
   if (settings->screen.has_value()) {
-    settings->screen->draw_pixels = false;
+    settings->screen->draw_pixels = frontend_->ShowsPixels();
   }
 
   // Each Ozzy is created in the app's context, which has the file system for
@@ -194,15 +201,6 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
   if (host_ == nullptr) {
     return Fail("Failed to create the Ozzy's host");
   }
-
-  // The frontend shows every power on, as the settings are the same for each.
-  absl::StatusOr<std::unique_ptr<Frontend>> frontend =
-      context_.GetPtr<FrontendFactory>()->Create(host_->GetSettings(),
-                                                 command_line);
-  if (!frontend.ok()) {
-    return Fail(frontend.status().message());
-  }
-  frontend_ = *std::move(frontend);
   write_stats_ = command_line.Get(kStats);
   return PowerOn();
 }

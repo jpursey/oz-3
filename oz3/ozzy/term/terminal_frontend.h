@@ -43,6 +43,7 @@ class TerminalFrontend final : public Frontend {
   // Frontend interface
   //----------------------------------------------------------------------------
 
+  bool ShowsPixels() const override;
   FrontendKeys TakeKeys() override;
   bool IsQuitRequested() const override;
   void Update() override;

@@ -40,6 +40,9 @@ struct FakeFrontendState {
   // Set by the test
   //----------------------------------------------------------------------------
 
+  // What ShowsPixels returns.
+  bool shows_pixels = false;
+
   // The quit is requested once Update has been called this many times.
   int quit_after_updates = 1;
 
@@ -78,6 +81,8 @@ class FakeFrontend final : public Frontend {
     state_->alive = true;
   }
   ~FakeFrontend() override { state_->alive = false; }
+
+  bool ShowsPixels() const override { return state_->shows_pixels; }
 
   FrontendKeys TakeKeys() override { return std::exchange(state_->keys, {}); }
 

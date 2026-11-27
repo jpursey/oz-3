@@ -23,6 +23,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/processor_config.h"
+#include "oz3/devices/screen.h"
 #include "oz3/disk/faulty_file_protocol.h"
 #include "oz3/ozzy/app/fake_frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"
@@ -215,11 +216,23 @@ TEST_F(OzzyAppTest, RunsTheConfigFilesOzzy) {
   EXPECT_THAT(state().calls, ElementsAre("Attach", "Update", "Detach"));
 }
 
-TEST_F(OzzyAppTest, ScreenDrawsNoPixels) {
+TEST_F(OzzyAppTest, ScreenDrawsPixelsWhenTheFrontendShowsThem) {
+  state().shows_pixels = true;
+  int pixel_width = 0;
+  state().on_attach = [&pixel_width](Ozzy& ozzy) {
+    pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
+  };
   EXPECT_EQ(RunApp({}), 0);
-  ASSERT_TRUE(state().settings.has_value());
-  ASSERT_TRUE(state().settings->screen.has_value());
-  EXPECT_FALSE(state().settings->screen->draw_pixels);
+  EXPECT_GT(pixel_width, 0);
+}
+
+TEST_F(OzzyAppTest, ScreenDrawsNoPixelsWhenTheFrontendDoesnt) {
+  int pixel_width = -1;
+  state().on_attach = [&pixel_width](Ozzy& ozzy) {
+    pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
+  };
+  EXPECT_EQ(RunApp({}), 0);
+  EXPECT_EQ(pixel_width, 0);
 }
 
 TEST_F(OzzyAppTest, FrontendReadsItsFlag) {

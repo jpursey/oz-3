@@ -181,6 +181,11 @@ class Frontend {
  public:
   virtual ~Frontend() = default;
 
+  // Properties. Whether the frontend shows the screen's pixels, so the app has
+  // each Ozzy's screen draw them. It may depend on the frontend's settings and
+  // flags, and is the same for its life.
+  virtual bool ShowsPixels() const = 0;
+
   // Input.
   virtual FrontendKeys TakeKeys() = 0;
   virtual bool IsQuitRequested() const = 0;
@@ -339,9 +344,9 @@ struct OzzyAppStats {
   `gb_cli`'s own, and tested through `Run` with arguments. `Init` returns
   whether the command started the app, which help doesn't.
 - **`RunCommand`** reads the config file, with the error for it (exit code
-  1), and turns off the screen's pixels, as no frontend draws them yet. Then it
-  creates the `OzzyHost`, creates the frontend, and powers on, so a config or
-  an Ozzy that fails never touches the console. The *Window app* changes this
+  1). Then it creates the frontend, sets the screen's `draw_pixels` from the
+  frontend's `ShowsPixels`, creates the `OzzyHost`, and powers on, so a config
+  that fails never touches the console. The *Window app* changes this
   where its frontend shows errors in the panel.
 - **`Update`**, while the Ozzy is on: takes the frontend's keys to the
   keyboard (and drops them without one), runs the host for `delta_time`, at
@@ -521,23 +526,26 @@ Depends on: CL3, and Game Bits *Command line flags added at run time*.
   `configs/teletype.ozzy`, with and without `--stats`, `--help`, a config with
   an error, and a program's restart and shutdown, look as they did.
 
-### CL5 [ ] ozzy/app, ozzy/term: The frontend decides whether pixels are drawn
+### CL5 [x] ozzy/app, ozzy/term: The frontend decides whether pixels are drawn
 
 Depends on: CL4.
 
-`OzzyApp::Start` turns off the screen's pixels for every frontend, as none
+`OzzyApp::Start` turned off the screen's pixels for every frontend, as none
 draws them yet. Whether one does is the frontend's to say, and may depend on
 its settings and flags, not only on which frontend it is (`ozzyterm` might
-draw them to save screen captures, say, only when asked). So it is likely a
-`Frontend` method the app asks once `Create` has read the command line,
-rather than one on the factory, though which of the two is still open.
-- `oz3_ozzy_app`: `Frontend` (or `FrontendFactory`) says whether it draws the
-  screen's pixels, and `Start` sets the settings' `draw_pixels` from it.
-  Creating the frontend before the host means `Create` takes the settings as
+show them to save screen captures, say, only when asked). So it is a
+`Frontend` method, which the app asks once `Create` has read the command line,
+rather than one on the factory, which would have to read the flags again.
+- `oz3_ozzy_app`: `Frontend::ShowsPixels` says whether it shows the screen's
+  pixels, and `Start` sets the settings' `draw_pixels` from it. `Start`
+  creates the frontend before the host, so `Create` takes the settings as
   read, and the host is then created with `draw_pixels` set.
-- `oz3_ozzy_term`: `TerminalFrontend` draws none.
+- `oz3_ozzy_term`: `TerminalFrontend` shows none.
 
 **Verify**
 - Standard checks.
-- `ozzy_app_test.cc`: the fake frontend's answer reaches the host's settings,
-  either way.
+- `ozzy_app_test.cc`: an Ozzy's screen draws pixels when the fake frontend
+  shows them, and none when it doesn't.
+- `terminal_frontend_test.cc`: the terminal frontend shows no pixels.
+- By hand (left for the user): `ozzy` with `configs/console.ozzy` looks as it
+  did.

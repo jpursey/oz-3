@@ -38,6 +38,16 @@ class Frontend {
   virtual ~Frontend() = default;
 
   //----------------------------------------------------------------------------
+  // Properties
+  //----------------------------------------------------------------------------
+
+  // Returns whether the frontend shows the screen's pixels, rather than only
+  // its cells, so the app has each Ozzy's screen draw them
+  // (OzzyScreenSettings::draw_pixels). It may depend on the settings and flags
+  // the frontend was created with, and is the same for its life.
+  virtual bool ShowsPixels() const = 0;
+
+  //----------------------------------------------------------------------------
   // Input
   //----------------------------------------------------------------------------
 
@@ -106,8 +116,9 @@ class FrontendFactory {
   //----------------------------------------------------------------------------
 
   // Creates the frontend for the Ozzys with `settings`, reading its flags from
-  // `command_line`. Returns an error if it can't (such as no console to take
-  // over), whose message says so for the user.
+  // `command_line`. The screen's draw_pixels in `settings` is left for the
+  // app to set from the frontend's ShowsPixels. Returns an error if it can't
+  // (such as no console to take over), whose message says so for the user.
   virtual absl::StatusOr<std::unique_ptr<Frontend>> Create(
       const OzzySettings& settings, const gb::CliCommandLine& command_line) = 0;
 

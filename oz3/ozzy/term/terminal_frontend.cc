@@ -29,6 +29,9 @@ TerminalFrontend::TerminalFrontend(std::unique_ptr<Console> console)
   CHECK(console_ != nullptr);
 }
 
+// The console shows the screen's cells as text.
+bool TerminalFrontend::ShowsPixels() const { return false; }
+
 FrontendKeys TerminalFrontend::TakeKeys() { return console_->TakeKeys(); }
 
 bool TerminalFrontend::IsQuitRequested() const {

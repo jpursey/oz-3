@@ -44,6 +44,11 @@ class TerminalFrontendTest : public ::testing::Test {
   std::unique_ptr<TerminalFrontend> frontend_;
 };
 
+TEST_F(TerminalFrontendTest, ShowsNoPixels) {
+  CreateFrontend();
+  EXPECT_FALSE(frontend_->ShowsPixels());
+}
+
 TEST_F(TerminalFrontendTest, UpdateWithNoOzzyShowsNothing) {
   CreateFrontend();
   frontend_->Update();
