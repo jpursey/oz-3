@@ -123,14 +123,6 @@ TEST_F(OzzyHostTest, ReplacesAPowerCallbackInTheContext) {
   EXPECT_THAT(requests, IsEmpty());
 }
 
-TEST_F(OzzyHostTest, KeepsTheSettings) {
-  OzzySettings settings;
-  settings.clock_hz = 123'000;
-  std::unique_ptr<OzzyHost> host = CreateHost(settings);
-  ASSERT_NE(host, nullptr);
-  EXPECT_EQ(host->GetSettings().clock_hz, 123'000);
-}
-
 TEST_F(OzzyHostTest, OffUntilPoweredOn) {
   std::unique_ptr<OzzyHost> host = CreateHost();
   ASSERT_NE(host, nullptr);

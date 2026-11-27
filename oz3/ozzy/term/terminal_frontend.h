@@ -68,8 +68,29 @@ class TerminalFrontend final : public Frontend {
 // Console::Create).
 class TerminalFrontendFactory final : public FrontendFactory {
  public:
+  // Creates frontends over the console in `mode`.
+  explicit TerminalFrontendFactory(ConsoleMode mode) : mode_(mode) {}
+
   //----------------------------------------------------------------------------
   // FrontendFactory interface
+  //----------------------------------------------------------------------------
+
+  // Takes over the console, or returns why it can't.
+  absl::StatusOr<std::unique_ptr<Frontend>> Create() override;
+
+ private:
+  const ConsoleMode mode_;
+};
+
+//==============================================================================
+// TerminalFrontendType
+//==============================================================================
+
+// Presents an app in the host's console.
+class TerminalFrontendType final : public FrontendType {
+ public:
+  //----------------------------------------------------------------------------
+  // FrontendType interface
   //----------------------------------------------------------------------------
 
   // The app is `ozzy`, and the console has no flags of its own.
@@ -77,11 +98,11 @@ class TerminalFrontendFactory final : public FrontendFactory {
   std::string_view GetProgramHelp() const override;
   absl::Span<const gb::CliAnyFlag> GetFlags() const override;
 
-  // Takes over the console in the mode GetOzzyConsoleMode returns for
-  // `settings`, or returns why it can't.
-  absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings,
-      const gb::CliCommandLine& command_line) override;
+  // The console shows the screen's cells as text, so the screen draws no
+  // pixels, and the console's mode is the one GetOzzyConsoleMode returns for
+  // `settings`.
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> Configure(
+      OzzySettings* settings, const gb::CliCommandLine& command_line) override;
 };
 
 }  // namespace oz3

@@ -103,7 +103,7 @@ as in the config.
   `ozzyterm`), [app-structure.md](worklog/app-structure.md);
   `oz3/ozzy/term/terminal_frontend.h`
 
-`--headless`, a flag of `TerminalFrontendFactory`, runs an Ozzy in the
+`--headless`, a flag of `TerminalFrontendType`, runs an Ozzy in the
 terminal app with no terminal, through a `Frontend` with no console, for scripts and
 tests: `ozzyterm --headless test.ozzy < keys.txt > out.txt`. The standard input
 is typed keys (its key state made up from them, as a terminal's is), the
@@ -151,9 +151,9 @@ terminals by hand.
 `ozzy`, an Ozzy in a window of its own, whatever devices it has, as a windowed
 program (`gb_add_win_executable`), so starting it from the desktop opens no
 console window. The terminal app is renamed `ozzyterm`. The window is a
-`Frontend` and its factory in a library of its own after `ozzy/term`, and the
-app's `main` runs `OzzyApp` with that factory, as `ozzyterm`'s does with
-`TerminalFrontendFactory`. The window draws the
+`Frontend` and its type in a library of its own after `ozzy/term`, and the
+app's `main` runs `OzzyApp` with that type, as `ozzyterm`'s does with
+`TerminalFrontendType`. The window draws the
 screen's picture as its pixels are, through Game Bits' SDL and renderer: the
 pixels as an 8-bit texture with a three-color palette, each pixel twice as
 tall as it is wide. So it shows what the terminal can't: the left and right

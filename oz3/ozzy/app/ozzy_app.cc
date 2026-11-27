@@ -105,12 +105,12 @@ bool OzzyApp::Init(const std::vector<std::string_view>& args) {
   // The command line is the frontend's name, help, and flags, and the app's
   // own flags and arguments. It is a local, which keeps the arrays of its
   // braced lists while it runs.
-  const FrontendFactory* factory = context_.GetPtr<FrontendFactory>();
+  const FrontendType* type = context_.GetPtr<FrontendType>();
   const gb::CliCommand command = {
-      .name = factory->GetProgramName(),
-      .help = factory->GetProgramHelp(),
+      .name = type->GetProgramName(),
+      .help = type->GetProgramHelp(),
       .flags = {&kStats},
-      .added_flags = factory->GetFlags(),
+      .added_flags = type->GetFlags(),
       .args = {&kConfigFile},
       .constraints = {&gb::kConstraintCliFileSystem, &kConstraintOzzyApp},
       .run = RunCommand,
@@ -152,7 +152,10 @@ void OzzyApp::CleanUp() {
   if (!context_.IsValid()) {
     return;
   }
-  if (host_ != nullptr && host_->IsOn()) {
+  // The Ozzy is detached from the frontend if it was attached, and the host
+  // powers it off when destroyed, which it is with no frontend if creating the
+  // frontend failed.
+  if (frontend_ != nullptr && host_->IsOn()) {
     PowerOff(std::nullopt);
   }
 
@@ -178,9 +181,12 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
     return Fail(settings.status().message());
   }
 
-  // No frontend draws the screen's pixels yet, so they are left off.
-  if (settings->screen.has_value()) {
-    settings->screen->draw_pixels = false;
+  // The frontend is set up first, as it decides some of the settings, such as
+  // whether the screen draws its pixels.
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
+      context_.GetPtr<FrontendType>()->Configure(&*settings, command_line);
+  if (!factory.ok()) {
+    return Fail(factory.status().message());
   }
 
   // Each Ozzy is created in the app's context, which has the file system for
@@ -195,16 +201,19 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
     return Fail("Failed to create the Ozzy's host");
   }
 
-  // The frontend shows every power on, as the settings are the same for each.
-  absl::StatusOr<std::unique_ptr<Frontend>> frontend =
-      context_.GetPtr<FrontendFactory>()->Create(host_->GetSettings(),
-                                                 command_line);
+  // The Ozzy is powered on before the frontend is created, so an Ozzy that
+  // fails never touches what the frontend takes over, such as the console.
+  if (!PowerOnHost()) {
+    return false;
+  }
+  absl::StatusOr<std::unique_ptr<Frontend>> frontend = (*factory)->Create();
   if (!frontend.ok()) {
     return Fail(frontend.status().message());
   }
   frontend_ = *std::move(frontend);
+  frontend_->Attach(host_->GetOzzy());
   write_stats_ = command_line.Get(kStats);
-  return PowerOn();
+  return true;
 }
 
 bool OzzyApp::Fail(std::string_view message) {
@@ -213,9 +222,16 @@ bool OzzyApp::Fail(std::string_view message) {
   return false;
 }
 
-bool OzzyApp::PowerOn() {
+bool OzzyApp::PowerOnHost() {
   if (const absl::Status status = host_->PowerOn(); !status.ok()) {
     return Fail(absl::StrCat("Failed to create the Ozzy: ", status.message()));
+  }
+  return true;
+}
+
+bool OzzyApp::PowerOn() {
+  if (!PowerOnHost()) {
+    return false;
   }
   frontend_->Attach(host_->GetOzzy());
   return true;

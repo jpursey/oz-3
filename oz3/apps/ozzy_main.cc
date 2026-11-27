@@ -22,8 +22,8 @@ int main(int argc, char* argv[]) {
       gb::ContextBuilder()
           .SetPtr<gb::Clock>(gb::RealtimeClock::GetClock())
           .SetOwned<gb::FileSystem>(gb::CreateCliFileSystem())
-          .SetOwned<oz3::FrontendFactory>(
-              std::make_unique<oz3::TerminalFrontendFactory>())
+          .SetOwned<oz3::FrontendType>(
+              std::make_unique<oz3::TerminalFrontendType>())
           .Build());
   oz3::OzzyApp app;
   app.Run(context, gb::GetMainArgs(argc, argv));

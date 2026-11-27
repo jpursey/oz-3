@@ -10,11 +10,15 @@
 #include <string>
 #include <utility>
 
+#include "absl/status/statusor.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/console_display.h"
@@ -141,11 +145,46 @@ TEST_F(TerminalFrontendTest, QuitIsTheConsoles) {
   EXPECT_TRUE(frontend_->IsQuitRequested());
 }
 
-TEST(TerminalFrontendFactoryTest, CommandLineIsOzzys) {
-  TerminalFrontendFactory factory;
-  EXPECT_EQ(factory.GetProgramName(), "ozzy");
-  EXPECT_THAT(factory.GetProgramHelp(), StartsWith("Runs an Ozzy computer"));
-  EXPECT_THAT(factory.GetFlags(), IsEmpty());
+TEST(TerminalFrontendTypeTest, CommandLineIsOzzys) {
+  TerminalFrontendType type;
+  EXPECT_EQ(type.GetProgramName(), "ozzy");
+  EXPECT_THAT(type.GetProgramHelp(), StartsWith("Runs an Ozzy computer"));
+  EXPECT_THAT(type.GetFlags(), IsEmpty());
+}
+
+// Configures a terminal frontend for `settings`, with no flags, and returns
+// whether it succeeded with a factory.
+bool ConfigureTerminal(OzzySettings* settings) {
+  static const gb::CliCommand kProgram = {.name = "ozzy"};
+  absl::StatusOr<gb::CliCommandLine> command_line =
+      gb::ParseCommandLine(&kProgram, {});
+  if (!command_line.ok()) {
+    ADD_FAILURE() << command_line.status();
+    return false;
+  }
+  TerminalFrontendType type;
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
+      type.Configure(settings, *command_line);
+  if (!factory.ok()) {
+    ADD_FAILURE() << factory.status();
+    return false;
+  }
+  return *factory != nullptr;
+}
+
+TEST(TerminalFrontendTypeTest, ScreenDrawsNoPixels) {
+  OzzySettings settings;
+  ASSERT_TRUE(settings.screen.has_value());
+  settings.screen->draw_pixels = true;
+  EXPECT_TRUE(ConfigureTerminal(&settings));
+  EXPECT_FALSE(settings.screen->draw_pixels);
+}
+
+TEST(TerminalFrontendTypeTest, ConfiguresAnOzzyWithNoScreen) {
+  OzzySettings settings = GetTeletypeSettings(9600);
+  ASSERT_FALSE(settings.screen.has_value());
+  EXPECT_TRUE(ConfigureTerminal(&settings));
+  EXPECT_FALSE(settings.screen.has_value());
 }
 
 }  // namespace
