@@ -57,12 +57,12 @@ to make the model concrete, and each is settled in the item that builds it.
 | Teletype         | A port that writes text to the host, for an Ozzy without a screen              | `devices`               |
 | Timer            | A periodic interrupt and a clock                                               | `devices`               |
 | Disk drive       | A smart drive: named files in a flat directory, read and written to memory     | `devices`               |
-| New instructions | Byte swap, and signals to other cores (interrupt, wake)                        | `instruction_sets`      |
+| New instructions | Byte swap, and signals to other cores (interrupt, wake)                        | `instructions`          |
 | Machine          | The hardware built from a config file, with its machine table and boot ROM     | `ozzy` (new library)    |
 | Boot ROM, OS     | The system code, in OZ-3 assembly                                              | `ozzy`                  |
 | `ozzy`           | The host applications: in a window, and in a terminal or headless (`ozzyterm`) | `apps`                  |
 
-`devices` and `ozzy` come after `instruction_sets` in the dependency order, and
+`devices` and `ozzy` come after `instructions` in the dependency order, and
 before `apps`, as CLAUDE.md already says.
 
 ## Hardware
@@ -614,9 +614,9 @@ a file on its boot disk. So no assembled system code is checked in.
 ## Getting there
 
 The backlog items build this in order, each updating the manual as it goes:
-1. *Byte swap instruction* (instruction_sets, manual): `SWPB`. Small, and
+1. *Byte swap instruction* (instructions, manual): `SWPB`. Small, and
    independent.
-2. *Core signal instructions* (instruction_sets, manual): `INTC` and `WAKE`.
+2. *Core signal instructions* (instructions, manual): `INTC` and `WAKE`.
    Independent of the devices.
 3. *Devices in core* (core, manual): devices run by the `Processor`, their
    ports, and interrupt lines connected to cores, which report duplicates.

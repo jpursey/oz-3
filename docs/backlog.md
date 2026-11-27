@@ -10,7 +10,7 @@ bottom are the rest of the roadmap in README.md and the manual.
 
 Each item carries:
 
-- **Layers**: the OZ-3 libraries it touches (`core`, `instruction_sets`,
+- **Layers**: the OZ-3 libraries it touches (`core`, `instructions`,
   `tools`, and `apps` for executables), in tier order (see CLAUDE.md), and the
   manual if it changes the specification. More than one usually means more than
   one CL.
@@ -393,7 +393,7 @@ they exist. Beyond what devices do:
 
 ## Shared interrupts from programs
 
-- **Layers:** core, instruction_sets, manual
+- **Layers:** core, instructions, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing

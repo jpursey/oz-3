@@ -3,7 +3,7 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-# oz3ism doesn't link oz3_instruction_sets, so it builds even when the default
+# oz3ism doesn't link oz3_instructions, so it builds even when the default
 # instruction set's generated source doesn't compile.
 set(oz3ism_SOURCE
   oz3ism.cc
@@ -40,7 +40,7 @@ set(oz3asm_DEPS
   gb_file
   gb_parse
   oz3_core
-  oz3_instruction_sets
+  oz3_instructions
   oz3_tools
 )
 

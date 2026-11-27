@@ -553,16 +553,16 @@ absl::StatusOr<ProgramMap> ReadProgramMapFile(gb::FileSystem& file_system,
   `InstructionSetSyntax` reports as an error, as a program couldn't tell them
   apart.
 - `tools` tests assemble programs for small instruction sets written in their
-  tests. `instruction_sets` tests assemble every form of the default
+  tests. `instructions` tests assemble every form of the default
   instruction set and check its code words against the reference, and run small
   programs on a core.
 - `oz3asm` takes a source file and an instruction set, and writes the program
   file, and optionally the map and the listing. With no instruction set given,
-  it uses the default one, so it links `oz3_instruction_sets`, which `tools`
+  it uses the default one, so it links `oz3_instructions`, which `tools`
   can't. So it lives in an `apps` directory, which holds every executable,
   after the libraries in the dependency order, where `oz3dbg` goes too.
   `oz3ism` moved there with it, and still builds when the default instruction
-  set doesn't, as it doesn't link `oz3_instruction_sets`.
+  set doesn't, as it doesn't link `oz3_instructions`.
 
 ## Example
 
@@ -620,7 +620,7 @@ in lower case (`mov r1, message`), it assembles the same.
 
 The backlog items build this in order, each updating the manual as it goes, the
 first of them creating the assembler's page:
-1. *Instruction set syntax for programs* (core, tools, instruction_sets,
+1. *Instruction set syntax for programs* (core, tools, instructions,
    manual): named values, relative instructions, and the pattern rules, with
    the default instruction set using them and its code words unchanged.
 2. *Check instruction sizes against microcode* (tools): the instruction
@@ -637,7 +637,7 @@ first of them creating the assembler's page:
 6. *Program maps* (tools): the map, written by the assembler, and read back.
 7. *oz3asm* (apps, manual): the command line tool, with the listing, and the new
    `apps` directory.
-8. *Assemble the default instruction set* (instruction_sets): every form of
+8. *Assemble the default instruction set* (instructions): every form of
    the default instruction set, checked against its reference code words, and
    small programs run on a core.
 

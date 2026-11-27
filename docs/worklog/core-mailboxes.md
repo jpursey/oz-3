@@ -66,7 +66,7 @@ A mailbox depends on which core resolves its port number, so only `PLK`
 resolves port numbers, always for the running core. The controlled core
 (`CLK`) can't affect it, as a core holds one lock at a time.
 
-### instruction_sets
+### instructions
 
 - **`TSTP.I`** is `"$v"`: `LD(C0); UL; PLK(C0); PLD(_,C1); MSR(S,S); PUL;`.
   The `.izm`'s comments for every port instruction say `<port>`, as the manual

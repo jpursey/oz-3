@@ -26,7 +26,7 @@
 #include "gb/parse/parse_error.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_set.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/instructions/default_instruction_set.h"
 #include "oz3/tools/bare_program.h"
 #include "oz3/tools/instruction_assembler.h"
 #include "oz3/tools/instruction_set_syntax.h"

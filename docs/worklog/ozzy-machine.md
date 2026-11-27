@@ -262,7 +262,7 @@ host's; the console devices are always named by their own names.
 - `oz3/ozzy/machine/`, the `oz3_ozzy_machine` library, holds the machine,
   and `oz3/ozzy/term/`, the `oz3_ozzy_term` library, the console frontend
   (see [app-structure.md](app-structure.md)). The machine links `oz3_core`,
-  `oz3_tools` (to assemble the boot ROM), `oz3_instruction_sets`,
+  `oz3_tools` (to assemble the boot ROM), `oz3_instructions`,
   `oz3_devices`, and Game Bits' `gb_config`. Both come after `devices` in the
   dependency order, and before `apps`, as CLAUDE.md says.
 - **Target names:** every library's target has the `oz3_` prefix and every
