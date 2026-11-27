@@ -351,8 +351,10 @@ struct OzzyAppStats {
   frontend's quit is requested, and keeps the stats as it goes. The frame rate is `gb::Game`'s default, 60
   frames a second.
 - **`CleanUp`** powers off and destroys the frontend, which gives the console
-  back, and then writes a power on's error, if one stopped the app (exit code
-  1), and with `--stats`, the stats, to the context's `gb::CliWriter`. So both
+  back, and then writes the error that stopped the app, if one did, and with
+  `--stats`, the stats, to the context's `gb::CliWriter`. Every failure once
+  the command runs (the config, the frontend, or a power on) goes through a
+  private `Fail`, which keeps the error and sets exit code 1. So both
   go to the console's own buffer, as now, and tests read them from a
   `gb::FakeCliWriter`.
 - The app's states are only on and off, so it has no `gb::GameStateMachine`.

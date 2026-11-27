@@ -98,15 +98,6 @@ class OzzyApp final : public gb::Game {
                                  gb::kConstraintCliWriter>;
 
   //----------------------------------------------------------------------------
-  // Construction / Destruction
-  //----------------------------------------------------------------------------
-
-  OzzyApp() = default;
-  OzzyApp(const OzzyApp&) = delete;
-  OzzyApp& operator=(const OzzyApp&) = delete;
-  ~OzzyApp() override = default;
-
-  //----------------------------------------------------------------------------
   // gb::Game interface
   //----------------------------------------------------------------------------
 
@@ -129,11 +120,14 @@ class OzzyApp final : public gb::Game {
 
   // Starts the app as `command_line` asks: reads the config, creates the host
   // and the frontend, and powers the Ozzy on. Returns whether it started,
-  // after writing why if it didn't.
+  // failing (see Fail) if it didn't.
   bool Start(const gb::CliCommandLine& command_line);
 
-  // Powers the Ozzy on and attaches it to the frontend, or returns false after
-  // keeping the error for CleanUp to write.
+  // Stops the app with exit code 1, keeping `message` for CleanUp to write
+  // once the frontend is gone. Returns false.
+  bool Fail(std::string_view message);
+
+  // Powers the Ozzy on and attaches it to the frontend, or fails.
   bool PowerOn();
 
   // Detaches the Ozzy from the frontend, with `exit_code` if a program shut
@@ -159,7 +153,7 @@ class OzzyApp final : public gb::Game {
   std::unique_ptr<Frontend> frontend_;
   bool write_stats_ = false;
 
-  // Why the app stopped once it started, written once the frontend is gone.
+  // Why the app failed, if it did (see Fail).
   std::string error_;
 
   OzzyAppStats stats_;

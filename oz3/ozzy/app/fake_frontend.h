@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -62,9 +63,6 @@ struct FakeFrontendState {
   // The calls the app made, in order: "Attach", "Update", "Detach", and
   // "Detach(<exit code>)".
   std::vector<std::string> calls;
-
-  // The calls to Update.
-  int updates = 0;
 };
 
 //==============================================================================
@@ -84,13 +82,10 @@ class FakeFrontend final : public Frontend {
   FrontendKeys TakeKeys() override { return std::exchange(state_->keys, {}); }
 
   bool IsQuitRequested() const override {
-    return state_->updates >= state_->quit_after_updates;
+    return absl::c_count(state_->calls, "Update") >= state_->quit_after_updates;
   }
 
-  void Update() override {
-    ++state_->updates;
-    state_->calls.push_back("Update");
-  }
+  void Update() override { state_->calls.push_back("Update"); }
 
   void Attach(Ozzy* ozzy) override {
     state_->calls.push_back("Attach");
@@ -124,8 +119,7 @@ class FakeFrontendFactory final : public FrontendFactory {
       .name = "fake-flag",
       .help = "A flag of the fake frontend.",
   };
-
-  FakeFrontendFactory() = default;
+  static inline const gb::CliAnyFlag kFlags[] = {&kFakeFlag};
 
   FakeFrontendState& GetState() { return state_; }
 
@@ -134,7 +128,7 @@ class FakeFrontendFactory final : public FrontendFactory {
 
   std::string_view GetProgramName() const override { return kProgramName; }
   std::string_view GetProgramHelp() const override { return kProgramHelp; }
-  absl::Span<const gb::CliAnyFlag> GetFlags() const override { return flags_; }
+  absl::Span<const gb::CliAnyFlag> GetFlags() const override { return kFlags; }
 
   absl::StatusOr<std::unique_ptr<Frontend>> Create(
       const OzzySettings& settings,
@@ -152,7 +146,6 @@ class FakeFrontendFactory final : public FrontendFactory {
   }
 
  private:
-  const std::vector<gb::CliAnyFlag> flags_ = {&kFakeFlag};
   absl::Status create_error_;
   FakeFrontendState state_;
 };

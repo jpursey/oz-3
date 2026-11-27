@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
@@ -125,7 +126,7 @@ class OzzyAppTest : public ::testing::Test {
   // ones to boot as they would.
   void LoadAtFirstAttach(std::string_view program) {
     state().on_attach = [this, program](Ozzy& ozzy) {
-      if (++attaches_ == 1) {
+      if (absl::c_count(state().calls, "Attach") == 1) {
         EXPECT_TRUE(LoadOnCore0(ozzy, program));
       }
     };
@@ -137,7 +138,6 @@ class OzzyAppTest : public ::testing::Test {
   gb::FileSystem file_system_;
   FaultyFileProtocol* protocol_ = nullptr;  // Owned by file_system_.
   FakeFrontendFactory factory_;
-  int attaches_ = 0;
 
   // What the app wrote, and whether any of it was written while the frontend
   // was alive.
@@ -275,7 +275,6 @@ TEST_F(OzzyAppTest, RunTimeIsCapped) {
 TEST_F(OzzyAppTest, RestartPowersOnANewOzzy) {
   LoadAtFirstAttach(kRestart);
   EXPECT_EQ(RunApp({}), 0);
-  EXPECT_EQ(attaches_, 2);
   EXPECT_THAT(state().calls,
               ElementsAre("Attach", "Detach", "Attach", "Update", "Detach"));
 }

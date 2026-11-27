@@ -55,11 +55,10 @@ const gb::CliArg<std::string_view> kConfigFile = {
     .validators = {&gb::kCliFileExists},
 };
 
-// Returns the settings of the Ozzy `command_line` asks for, or nothing after
-// writing the error with `writer`.
-std::optional<OzzySettings> ReadSettings(
-    const gb::CliWriter& writer, gb::FileSystem& file_system,
-    const gb::CliCommandLine& command_line) {
+// Returns the settings of the Ozzy `command_line` asks for, or the error for
+// the user.
+absl::StatusOr<OzzySettings> ReadSettings(
+    gb::FileSystem& file_system, const gb::CliCommandLine& command_line) {
   const std::optional<std::string_view> config_file =
       command_line.Get(kConfigFile);
   if (!config_file.has_value()) {
@@ -70,16 +69,9 @@ std::optional<OzzySettings> ReadSettings(
   const std::string path = gb::NormalizePath(*config_file);
   std::string text;
   if (!file_system.ReadFile(path, &text)) {
-    writer(gb::CliText::kError, absl::StrCat("Failed to read ", path));
-    return std::nullopt;
+    return absl::NotFoundError(absl::StrCat("Failed to read ", path));
   }
-  absl::StatusOr<OzzySettings> settings =
-      ReadOzzySettings(std::move(text), path);
-  if (!settings.ok()) {
-    writer(gb::CliText::kError, settings.status().message());
-    return std::nullopt;
-  }
-  return *std::move(settings);
+  return ReadOzzySettings(std::move(text), path);
 }
 
 // Returns `stats` as --stats writes them, ending with a newline.
@@ -108,6 +100,7 @@ bool OzzyApp::Init(const std::vector<std::string_view>& args) {
   if (!context_.IsValid() || !context_.SetPtr<OzzyApp>(this)) {
     return false;
   }
+  // The clock gb::Game runs the frames by, as it chooses it.
   clock_ = context_.GetPtr<gb::Clock>();
   if (clock_ == nullptr) {
     clock_ = gb::RealtimeClock::GetClock();
@@ -129,33 +122,33 @@ bool OzzyApp::Init(const std::vector<std::string_view>& args) {
   context_.SetValue<int>(kKeyExitCode,
                          gb::RunCommandLine(context_, &command, args));
 
-  // The command started the app if it created the frontend and powered on,
+  // The command started the app if it created the frontend without failing,
   // which help or a mistake doesn't.
-  return host_ != nullptr && host_->IsOn();
+  return frontend_ != nullptr && error_.empty();
 }
 
 bool OzzyApp::Update(absl::Duration delta_time) {
   if (frontend_->IsQuitRequested()) {
     return false;
   }
-  const absl::Time frame_start = clock_->Now();
   TypeKeys();
-  if (host_->IsOn()) {
-    const OzzyHost::RunResult result =
-        host_->Run(std::min(delta_time, kMaxRunTime));
-    ++stats_.frames;
-    stats_.time += delta_time;
-    stats_.cycles += result.cycles;
-    if (result.power_request.has_value() &&
-        !DoPowerRequest(*result.power_request)) {
-      context_.SetValue<int>(kKeyExitCode, 1);
-      return false;
-    }
+  if (!host_->IsOn()) {
     frontend_->Update();
-    stats_.frame_time += clock_->Now() - frame_start;
-  } else {
-    frontend_->Update();
+    return true;
   }
+
+  const absl::Time frame_start = clock_->Now();
+  const OzzyHost::RunResult result =
+      host_->Run(std::min(delta_time, kMaxRunTime));
+  ++stats_.frames;
+  stats_.time += delta_time;
+  stats_.cycles += result.cycles;
+  if (result.power_request.has_value() &&
+      !DoPowerRequest(*result.power_request)) {
+    return false;
+  }
+  frontend_->Update();
+  stats_.frame_time += clock_->Now() - frame_start;
   return true;
 }
 
@@ -183,11 +176,10 @@ bool OzzyApp::RunCommand(gb::ValidatedContext& context,
 }
 
 bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
-  const gb::CliWriter& writer = *context_.GetPtr<gb::CliWriter>();
-  std::optional<OzzySettings> settings =
-      ReadSettings(writer, *context_.GetPtr<gb::FileSystem>(), command_line);
-  if (!settings.has_value()) {
-    return false;
+  absl::StatusOr<OzzySettings> settings =
+      ReadSettings(*context_.GetPtr<gb::FileSystem>(), command_line);
+  if (!settings.ok()) {
+    return Fail(settings.status().message());
   }
 
   // No frontend draws the screen's pixels yet, so they are left off.
@@ -211,20 +203,22 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
       context_.GetPtr<FrontendFactory>()->Create(host_->GetSettings(),
                                                  command_line);
   if (!frontend.ok()) {
-    writer(gb::CliText::kError, frontend.status().message());
-    return false;
+    return Fail(frontend.status().message());
   }
   frontend_ = *std::move(frontend);
   write_stats_ = command_line.Get(kStats);
-
-  // A power on that fails is written by CleanUp, once the frontend is gone.
   return PowerOn();
+}
+
+bool OzzyApp::Fail(std::string_view message) {
+  error_ = message;
+  context_.SetValue<int>(kKeyExitCode, 1);
+  return false;
 }
 
 bool OzzyApp::PowerOn() {
   if (const absl::Status status = host_->PowerOn(); !status.ok()) {
-    error_ = absl::StrCat("Failed to create the Ozzy: ", status.message());
-    return false;
+    return Fail(absl::StrCat("Failed to create the Ozzy: ", status.message()));
   }
   frontend_->Attach(host_->GetOzzy());
   return true;
