@@ -7,7 +7,6 @@ set(oz3_devices_timer_SOURCE
   timer.cc timer.h
 )
 set(oz3_devices_timer_DEPS
-  absl::civil_time
   absl::memory
   absl::status
   absl::statusor
@@ -19,6 +18,7 @@ set(oz3_devices_timer_TEST_SOURCE
   timer_test.cc
 )
 set(oz3_devices_timer_TEST_DEPS
+  absl::civil_time
   oz3_devices_testing
 )
 
