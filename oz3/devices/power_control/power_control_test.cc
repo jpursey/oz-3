@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/devices/power_control.h"
+#include "oz3/devices/power_control/power_control.h"
 
 #include <cstdint>
 #include <memory>

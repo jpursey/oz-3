@@ -11,7 +11,7 @@
 #include <string_view>
 
 #include "absl/types/span.h"
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 
 namespace oz3 {
 

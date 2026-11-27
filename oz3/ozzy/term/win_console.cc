@@ -20,7 +20,7 @@
 #include "absl/types/span.h"
 #include "gb/base/unicode.h"
 #include "gb/base/win_platform.h"
-#include "oz3/devices/keyboard.h"
+#include "oz3/devices/keyboard/keyboard.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 

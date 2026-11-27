@@ -15,11 +15,11 @@
 #include "absl/status/statusor.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/processor_config.h"
-#include "oz3/devices/disk_drive.h"
-#include "oz3/devices/keyboard.h"
-#include "oz3/devices/screen.h"
-#include "oz3/devices/teletype.h"
-#include "oz3/devices/timer.h"
+#include "oz3/devices/disk_drive/disk_drive.h"
+#include "oz3/devices/keyboard/keyboard.h"
+#include "oz3/devices/screen/screen.h"
+#include "oz3/devices/teletype/teletype.h"
+#include "oz3/devices/timer/timer.h"
 #include "oz3/disk/disk_hardware.h"
 
 namespace oz3 {

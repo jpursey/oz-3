@@ -23,7 +23,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/core/processor_config.h"
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 #include "oz3/disk/faulty_file_protocol.h"
 #include "oz3/ozzy/app/fake_frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"

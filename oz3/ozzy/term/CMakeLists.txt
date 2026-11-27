@@ -39,7 +39,9 @@ set(oz3_ozzy_term_DEPS
   gb_base
   gb_cli
   oz3_core
-  oz3_devices
+  oz3_devices_keyboard
+  oz3_devices_screen
+  oz3_devices_teletype
   oz3_ozzy_app
   oz3_ozzy_machine
 )

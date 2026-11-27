@@ -49,20 +49,20 @@ to make the model concrete, and each is settled in the item that builds it.
 
 ## The machine at a glance
 
-| Part             | What it is                                                                     | Where                   |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------------- |
-| Device support   | Devices run by the `Processor` in step with the cores, on ports and interrupts | `core` (new)            |
-| Screen           | A memory mapped page of character cells, each a character and an attribute     | `devices` (new library) |
-| Keyboard         | A queue of key events read through a port, with an interrupt                   | `devices`               |
-| Teletype         | A port that writes text to the host, for an Ozzy without a screen              | `devices`               |
-| Timer            | A periodic interrupt and a clock                                               | `devices`               |
-| Disk drive       | A smart drive: named files in a flat directory, read and written to memory     | `devices`               |
-| New instructions | Byte swap, and signals to other cores (interrupt, wake)                        | `instructions`          |
-| Machine          | The hardware built from a config file, with its machine table and boot ROM     | `ozzy` (new library)    |
-| Boot ROM, OS     | The system code, in OZ-3 assembly                                              | `ozzy`                  |
-| `ozzy`           | The host applications: in a window, and in a terminal or headless (`ozzyterm`) | `apps`                  |
+| Part             | What it is                                                                     | Where                          |
+| ---------------- | ------------------------------------------------------------------------------ | ------------------------------ |
+| Device support   | Devices run by the `Processor` in step with the cores, on ports and interrupts | `core` (new)                   |
+| Screen           | A memory mapped page of character cells, each a character and an attribute     | `devices/screen` (new library) |
+| Keyboard         | A queue of key events read through a port, with an interrupt                   | `devices/keyboard`             |
+| Teletype         | A port that writes text to the host, for an Ozzy without a screen              | `devices/teletype`             |
+| Timer            | A periodic interrupt and a clock                                               | `devices/timer`                |
+| Disk drive       | A smart drive: named files in a flat directory, read and written to memory     | `devices/disk_drive`           |
+| New instructions | Byte swap, and signals to other cores (interrupt, wake)                        | `instructions`                 |
+| Machine          | The hardware built from a config file, with its machine table and boot ROM     | `ozzy` (new library)           |
+| Boot ROM, OS     | The system code, in OZ-3 assembly                                              | `ozzy`                         |
+| `ozzy`           | The host applications: in a window, and in a terminal or headless (`ozzyterm`) | `apps`                         |
 
-`devices` and `ozzy` come after `instructions` in the dependency order, and
+The devices and `ozzy` come after `instructions` in the dependency order, and
 before `apps`, as CLAUDE.md already says.
 
 ## Hardware

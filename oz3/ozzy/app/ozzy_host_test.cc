@@ -20,7 +20,7 @@
 #include "gb/file/memory_file_protocol.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/devices/power_control.h"
+#include "oz3/devices/power_control/power_control.h"
 #include "oz3/disk/disk_dir_entry.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"

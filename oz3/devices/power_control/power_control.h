@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_DEVICES_POWER_CONTROL_H_
-#define OZ3_DEVICES_POWER_CONTROL_H_
+#ifndef OZ3_DEVICES_POWER_CONTROL_POWER_CONTROL_H_
+#define OZ3_DEVICES_POWER_CONTROL_POWER_CONTROL_H_
 
 #include <cstdint>
 #include <memory>
@@ -155,4 +155,4 @@ class PowerControl final : public Device {
 
 }  // namespace oz3
 
-#endif  // OZ3_DEVICES_POWER_CONTROL_H_
+#endif  // OZ3_DEVICES_POWER_CONTROL_POWER_CONTROL_H_

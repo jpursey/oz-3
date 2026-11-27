@@ -8,24 +8,16 @@
 
 #include <cstdint>
 #include <memory>
-#include <string>
 #include <string_view>
 #include <vector>
 
-#include "absl/log/check.h"
 #include "absl/time/civil_time.h"
 #include "absl/types/span.h"
 #include "gb/base/context.h"
-#include "gb/parse/parse_error.h"
-#include "gtest/gtest.h"
 #include "oz3/core/base_core_test.h"
-#include "oz3/core/date_time.h"
-#include "oz3/core/instruction_def.h"
 #include "oz3/instructions/default_instruction_set.h"
 #include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
-#include "oz3/tools/program_loader.h"
-#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 
@@ -49,79 +41,28 @@ class DeviceProgramTest : public BaseCoreTest {
   // Assembles `text`, adding a test failure for each error, loads it, and
   // resets core 0 to run it. Init() must have been called. Returns whether it
   // did.
-  bool Load(std::string_view text) {
-    std::vector<gb::ParseError> errors;
-    program_ = AssembleProgram(*syntax_, std::string(text), &errors);
-    for (const gb::ParseError& error : errors) {
-      ADD_FAILURE() << error.FormatMessage();
-    }
-    if (program_ == nullptr) {
-      return false;
-    }
-    ProgramLoader loader(&GetProcessor());
-    const ProgramLoader::Handle handle = loader.Load(program_->GetProgram());
-    if (handle == ProgramLoader::kInvalidHandle) {
-      ADD_FAILURE() << "The program doesn't load";
-      return false;
-    }
-    GetState().ResetCore(loader.GetResetParams(handle));
-    return true;
-  }
+  bool Load(std::string_view text);
 
   // Returns the offset of the label `name` (in upper case, as the assembler
   // writes it) in its segment, which for the code segment is its IP. Adds a
   // test failure and returns 0 if the loaded program has no such label.
-  uint16_t GetLabel(std::string_view name) const {
-    CHECK(program_ != nullptr);
-    for (const ProgramMap::Label& label : program_->GetMap().GetLabels()) {
-      if (label.name == name) {
-        return static_cast<uint16_t>(label.offset);
-      }
-    }
-    ADD_FAILURE() << "No label " << name;
-    return 0;
-  }
+  uint16_t GetLabel(std::string_view name) const;
 
   // Returns `count` words from the label `label` on, in the loaded program's
   // data segment.
-  std::vector<uint16_t> GetData(std::string_view label, int count) {
-    MemAccessor data = GetState().data;
-    data.SetAddress(GetState().bd + GetLabel(label));
-    std::vector<uint16_t> words;
-    for (int i = 0; i < count; ++i) {
-      words.push_back(data.GetValue());
-    }
-    return words;
-  }
+  std::vector<uint16_t> GetData(std::string_view label, int count);
 
   // Returns a context for the processor (see InitConfig::context) with a
   // clock that returns now_ and counts its calls in clock_calls_, or an empty
   // clock, for no date, if with_clock_ is false.
-  gb::Context GetHostContext() {
-    gb::Context context;
-    if (with_clock_) {
-      context.SetValue<HostClock>([this] {
-        ++clock_calls_;
-        return now_;
-      });
-    } else {
-      context.SetValue<HostClock>(HostClock());
-    }
-    return context;
-  }
+  gb::Context GetHostContext();
 
   // Sets what the clock returns from now on.
   void SetNow(absl::CivilSecond now) { now_ = now; }
 
   // Sets the words from the label `label` on, in the loaded program's data
   // segment.
-  void SetData(std::string_view label, absl::Span<const uint16_t> words) {
-    MemAccessor data = GetState().data;
-    data.SetAddress(GetState().bd + GetLabel(label));
-    for (const uint16_t word : words) {
-      data.AddValue(word);
-    }
-  }
+  void SetData(std::string_view label, absl::Span<const uint16_t> words);
 
   // The host's clock that GetHostContext gives.
   bool with_clock_ = true;
@@ -129,14 +70,7 @@ class DeviceProgramTest : public BaseCoreTest {
   int clock_calls_ = 0;
 
  private:
-  static std::unique_ptr<InstructionSetSyntax> CreateSyntax() {
-    InstructionError error;
-    std::unique_ptr<InstructionSetSyntax> syntax =
-        InstructionSetSyntax::Create(GetDefaultInstructionSetDef(),
-                                     GetDefaultInstructionSet().get(), &error);
-    CHECK(syntax != nullptr) << error.message;
-    return syntax;
-  }
+  static std::unique_ptr<InstructionSetSyntax> CreateSyntax();
 
   const std::unique_ptr<InstructionSetSyntax> syntax_ = CreateSyntax();
   std::unique_ptr<AsmProgram> program_;

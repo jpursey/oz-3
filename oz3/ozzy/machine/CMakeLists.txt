@@ -23,7 +23,12 @@ set(oz3_ozzy_machine_DEPS
   gb_file
   gb_parse
   oz3_core
-  oz3_devices
+  oz3_devices_disk_drive
+  oz3_devices_keyboard
+  oz3_devices_power_control
+  oz3_devices_screen
+  oz3_devices_teletype
+  oz3_devices_timer
   oz3_disk
   oz3_instructions
   oz3_tools
@@ -76,7 +81,8 @@ set(oz3_ozzy_testing_DEPS
   gb_parse
   gmock
   oz3_core
-  oz3_devices
+  oz3_devices_power_control
+  oz3_devices_screen
   oz3_disk
   oz3_instructions
   oz3_ozzy_machine
