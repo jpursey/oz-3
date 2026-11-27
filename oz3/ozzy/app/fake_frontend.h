@@ -44,6 +44,11 @@ struct FakeFrontendState {
   // the settings.
   bool shows_pixels = false;
 
+  // The errors Configure and its factory's Create return, or OK for them to
+  // succeed.
+  absl::Status configure_error;
+  absl::Status create_error;
+
   // The quit is requested once Update has been called this many times.
   int quit_after_updates = 1;
 
@@ -80,6 +85,7 @@ class FakeFrontend final : public Frontend {
  public:
   // `state` must outlive this.
   explicit FakeFrontend(FakeFrontendState* state) : state_(state) {
+    state_->created = true;
     state_->alive = true;
   }
   ~FakeFrontend() override { state_->alive = false; }
@@ -113,25 +119,22 @@ class FakeFrontend final : public Frontend {
 // FakeFrontendFactory
 //==============================================================================
 
-// Creates a FakeFrontend over a FakeFrontendState, or fails with the error it
-// was given.
+// Creates a FakeFrontend over a FakeFrontendState, or fails with the state's
+// create_error.
 class FakeFrontendFactory final : public FrontendFactory {
  public:
   // `state` must outlive this.
-  FakeFrontendFactory(FakeFrontendState* state, absl::Status create_error)
-      : state_(state), create_error_(std::move(create_error)) {}
+  explicit FakeFrontendFactory(FakeFrontendState* state) : state_(state) {}
 
   absl::StatusOr<std::unique_ptr<Frontend>> Create() override {
-    if (!create_error_.ok()) {
-      return create_error_;
+    if (!state_->create_error.ok()) {
+      return state_->create_error;
     }
-    state_->created = true;
     return std::make_unique<FakeFrontend>(state_);
   }
 
  private:
   FakeFrontendState* const state_;
-  const absl::Status create_error_;
 };
 
 //==============================================================================
@@ -153,13 +156,6 @@ class FakeFrontendType final : public FrontendType {
 
   FakeFrontendState& GetState() { return state_; }
 
-  // Sets the errors Configure and its factory's Create return, or OK for them
-  // to succeed.
-  void SetConfigureError(absl::Status error) {
-    configure_error_ = std::move(error);
-  }
-  void SetCreateError(absl::Status error) { create_error_ = std::move(error); }
-
   std::string_view GetProgramName() const override { return kProgramName; }
   std::string_view GetProgramHelp() const override { return kProgramHelp; }
   absl::Span<const gb::CliAnyFlag> GetFlags() const override { return kFlags; }
@@ -172,18 +168,16 @@ class FakeFrontendType final : public FrontendType {
         flag.has_value()) {
       state_.flag = std::string(*flag);
     }
-    if (!configure_error_.ok()) {
-      return configure_error_;
+    if (!state_.configure_error.ok()) {
+      return state_.configure_error;
     }
     if (settings->screen.has_value()) {
       settings->screen->draw_pixels = state_.shows_pixels;
     }
-    return std::make_unique<FakeFrontendFactory>(&state_, create_error_);
+    return std::make_unique<FakeFrontendFactory>(&state_);
   }
 
  private:
-  absl::Status configure_error_;
-  absl::Status create_error_;
   FakeFrontendState state_;
 };
 

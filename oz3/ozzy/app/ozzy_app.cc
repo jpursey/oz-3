@@ -152,7 +152,10 @@ void OzzyApp::CleanUp() {
   if (!context_.IsValid()) {
     return;
   }
-  if (host_ != nullptr && host_->IsOn()) {
+  // The Ozzy is detached from the frontend if it was attached, and the host
+  // powers it off when destroyed, which it is with no frontend if creating the
+  // frontend failed.
+  if (frontend_ != nullptr && host_->IsOn()) {
     PowerOff(std::nullopt);
   }
 
@@ -206,7 +209,6 @@ bool OzzyApp::Start(const gb::CliCommandLine& command_line) {
   }
   absl::StatusOr<std::unique_ptr<Frontend>> frontend = (*factory)->Create();
   if (!frontend.ok()) {
-    host_->PowerOff();
     return Fail(frontend.status().message());
   }
   frontend_ = *std::move(frontend);

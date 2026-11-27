@@ -118,6 +118,18 @@ class OzzyAppTest : public ::testing::Test {
     return context->GetValueOrDefault<int>(OzzyApp::kKeyExitCode, kNoExitCode);
   }
 
+  // Runs the app with no arguments, which must exit with 0, and returns the
+  // pixel width of the Ozzy's screen, as it was when attached.
+  int RunAndGetPixelWidth() {
+    int pixel_width = -1;
+    state().on_attach = [&pixel_width](Ozzy& ozzy) {
+      ASSERT_NE(ozzy.GetScreen(), nullptr);
+      pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
+    };
+    EXPECT_EQ(RunApp({}), 0);
+    return pixel_width;
+  }
+
   // Writes `config` as the config file.
   void WriteConfig(std::string_view config) {
     ASSERT_TRUE(file_system_.WriteFile(kConfigPath, config));
@@ -218,23 +230,11 @@ TEST_F(OzzyAppTest, RunsTheConfigFilesOzzy) {
 
 TEST_F(OzzyAppTest, ScreenDrawsPixelsWhenTheFrontendShowsThem) {
   state().shows_pixels = true;
-  int pixel_width = 0;
-  state().on_attach = [&pixel_width](Ozzy& ozzy) {
-    ASSERT_NE(ozzy.GetScreen(), nullptr);
-    pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
-  };
-  EXPECT_EQ(RunApp({}), 0);
-  EXPECT_GT(pixel_width, 0);
+  EXPECT_GT(RunAndGetPixelWidth(), 0);
 }
 
 TEST_F(OzzyAppTest, ScreenDrawsNoPixelsWhenTheFrontendDoesnt) {
-  int pixel_width = -1;
-  state().on_attach = [&pixel_width](Ozzy& ozzy) {
-    ASSERT_NE(ozzy.GetScreen(), nullptr);
-    pixel_width = ozzy.GetScreen()->GetPicture().pixel_width;
-  };
-  EXPECT_EQ(RunApp({}), 0);
-  EXPECT_EQ(pixel_width, 0);
+  EXPECT_EQ(RunAndGetPixelWidth(), 0);
 }
 
 TEST_F(OzzyAppTest, FrontendReadsItsFlag) {
@@ -243,14 +243,14 @@ TEST_F(OzzyAppTest, FrontendReadsItsFlag) {
 }
 
 TEST_F(OzzyAppTest, FrontendThatCantBeConfiguredIsWritten) {
-  type_.SetConfigureError(absl::InvalidArgumentError("Bad frontend"));
+  state().configure_error = absl::InvalidArgumentError("Bad frontend");
   EXPECT_EQ(RunApp({}), 1);
   EXPECT_EQ(error_, "Bad frontend");
   EXPECT_FALSE(state().created);
 }
 
 TEST_F(OzzyAppTest, FrontendThatFailsIsWritten) {
-  type_.SetCreateError(absl::UnavailableError("No frontend"));
+  state().create_error = absl::UnavailableError("No frontend");
   EXPECT_EQ(RunApp({}), 1);
   EXPECT_EQ(error_, "No frontend");
   EXPECT_FALSE(state().created);

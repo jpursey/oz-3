@@ -152,35 +152,38 @@ TEST(TerminalFrontendTypeTest, CommandLineIsOzzys) {
   EXPECT_THAT(type.GetFlags(), IsEmpty());
 }
 
-// The program the frontend's command line is parsed with, which has no flags.
-const gb::CliCommand kProgram = {.name = "ozzy"};
-
-TEST(TerminalFrontendTypeTest, ScreenDrawsNoPixels) {
+// Configures a terminal frontend for `settings`, with no flags, and returns
+// whether it succeeded with a factory.
+bool ConfigureTerminal(OzzySettings* settings) {
+  static const gb::CliCommand kProgram = {.name = "ozzy"};
   absl::StatusOr<gb::CliCommandLine> command_line =
       gb::ParseCommandLine(&kProgram, {});
-  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  if (!command_line.ok()) {
+    ADD_FAILURE() << command_line.status();
+    return false;
+  }
   TerminalFrontendType type;
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
+      type.Configure(settings, *command_line);
+  if (!factory.ok()) {
+    ADD_FAILURE() << factory.status();
+    return false;
+  }
+  return *factory != nullptr;
+}
+
+TEST(TerminalFrontendTypeTest, ScreenDrawsNoPixels) {
   OzzySettings settings;
   ASSERT_TRUE(settings.screen.has_value());
   settings.screen->draw_pixels = true;
-  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
-      type.Configure(&settings, *command_line);
-  ASSERT_TRUE(factory.ok()) << factory.status();
-  EXPECT_NE(*factory, nullptr);
+  EXPECT_TRUE(ConfigureTerminal(&settings));
   EXPECT_FALSE(settings.screen->draw_pixels);
 }
 
 TEST(TerminalFrontendTypeTest, ConfiguresAnOzzyWithNoScreen) {
-  absl::StatusOr<gb::CliCommandLine> command_line =
-      gb::ParseCommandLine(&kProgram, {});
-  ASSERT_TRUE(command_line.ok()) << command_line.status();
-  TerminalFrontendType type;
   OzzySettings settings = GetTeletypeSettings(9600);
   ASSERT_FALSE(settings.screen.has_value());
-  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
-      type.Configure(&settings, *command_line);
-  ASSERT_TRUE(factory.ok()) << factory.status();
-  EXPECT_NE(*factory, nullptr);
+  EXPECT_TRUE(ConfigureTerminal(&settings));
   EXPECT_FALSE(settings.screen.has_value());
 }
 

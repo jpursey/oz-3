@@ -132,7 +132,8 @@ class OzzyApp final : public gb::Game {
   // once the frontend is gone. Returns false.
   bool Fail(std::string_view message);
 
-  // Powers the host's Ozzy on, or fails.
+  // Powers the host's Ozzy on, or fails, without attaching it to the frontend.
+  // Only Start calls it directly, as it creates the frontend in between.
   bool PowerOnHost();
 
   // Powers the Ozzy on and attaches it to the frontend, or fails.
