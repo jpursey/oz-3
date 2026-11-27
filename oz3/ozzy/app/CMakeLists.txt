@@ -6,26 +6,37 @@
 set(oz3_ozzy_app_SOURCE
   frontend.h
   frontend_keys.h
+  ozzy_app.cc ozzy_app.h
   ozzy_host.cc ozzy_host.h
 )
 set(oz3_ozzy_app_DEPS
   absl::memory
+  absl::span
   absl::status
   absl::statusor
+  absl::str_format
+  absl::strings
   absl::time
   gb_base
+  gb_cli
+  gb_file
+  gb_game
   oz3_core
   oz3_devices
   oz3_ozzy_machine
 )
 set(oz3_ozzy_app_LIBS
   absl::check
+  absl::log
 )
 set(oz3_ozzy_app_TEST_SOURCE
+  fake_frontend.h
+  ozzy_app_test.cc
   ozzy_host_test.cc
 )
 set(oz3_ozzy_app_TEST_DEPS
   gb_file
+  oz3_disk_testing
   oz3_ozzy_testing
 )
 

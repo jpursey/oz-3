@@ -37,6 +37,7 @@ set(oz3_ozzy_term_DEPS
   absl::strings
   absl::time
   gb_base
+  gb_cli
   oz3_core
   oz3_devices
   oz3_ozzy_app

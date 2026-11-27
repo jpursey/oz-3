@@ -141,5 +141,12 @@ TEST_F(TerminalFrontendTest, QuitIsTheConsoles) {
   EXPECT_TRUE(frontend_->IsQuitRequested());
 }
 
+TEST(TerminalFrontendFactoryTest, CommandLineIsOzzys) {
+  TerminalFrontendFactory factory;
+  EXPECT_EQ(factory.GetProgramName(), "ozzy");
+  EXPECT_THAT(factory.GetProgramHelp(), StartsWith("Runs an Ozzy computer"));
+  EXPECT_THAT(factory.GetFlags(), IsEmpty());
+}
+
 }  // namespace
 }  // namespace oz3

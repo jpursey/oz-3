@@ -212,8 +212,9 @@ class FrontendFactory {
   virtual std::string_view GetProgramName() const = 0;
   virtual std::string_view GetProgramHelp() const = 0;
 
-  // The frontend's own flags, which the app adds to its command line, and
-  // which must outlive the factory.
+  // The frontend's own flags, which the app adds to its command line after
+  // its own. The array stays as it is for the factory's life, and each flag
+  // has static storage, as gb_cli's definitions do.
   virtual absl::Span<const gb::CliAnyFlag> GetFlags() const = 0;
 
   // Creates the frontend for an Ozzy with `settings`, reading the frontend's
@@ -300,8 +301,8 @@ class OzzyApp final : public gb::Game {
 // How an Ozzy ran, from its first power on, through each restart, to its last
 // power off (what --stats writes).
 struct OzzyAppStats {
-  int64_t frames = 0;
-  absl::Duration time;        // From each first frame's start to its last's end.
+  int64_t frames = 0;         // The frames that ran the Ozzy.
+  absl::Duration time;        // Each frame's time since the frame before it.
   absl::Duration frame_time;  // The time frames took, without waiting.
   Cycles cycles = 0;
 };
@@ -310,19 +311,19 @@ struct OzzyAppStats {
 - **`main`** is all that isn't tested:
   ```
   int main(int argc, char* argv[]) {
-    auto context = std::make_shared<gb::Context>(
+    gb::Context context =
         gb::ContextBuilder()
             .SetOwned<gb::FileSystem>(gb::CreateCliFileSystem())
             .SetOwned<oz3::FrontendFactory>(
                 std::make_unique<oz3::TerminalFrontendFactory>())
-            .Build());
+            .Build();
     oz3::OzzyApp app;
-    app.Run(context, gb::GetMainArgs(argc, argv));
-    return context->GetValueOrDefault<int>(oz3::OzzyApp::kKeyExitCode, 1);
+    app.Run(&context, gb::GetMainArgs(argc, argv));
+    return context.GetValueOrDefault<int>(oz3::OzzyApp::kKeyExitCode, 1);
   }
   ```
-  It keeps the context by `shared_ptr` to read the exit code once `Run` has
-  completed it. An exit code that isn't
+  It keeps the context itself, and lends it to `Run`, to read the exit code
+  once `Run` has completed it. An exit code that isn't
   there (a context that didn't meet the contract, which is logged) is 1.
 - **`Init`** converts `Game::Context()` to its own `Contract` (`context_`),
   as block-world does, and returns false if it isn't valid. It sets itself as
@@ -341,11 +342,13 @@ struct OzzyAppStats {
   where its frontend shows errors in the panel.
 - **`Update`**, while the Ozzy is on: takes the frontend's keys to the
   keyboard (and drops them without one), runs the host for `delta_time`, at
-  most 100 ms, and updates the frontend. A power request stops the frame
-  without drawing it: a restart powers off and on, and a shutdown powers off
-  and passes the exit code to the frontend. While the Ozzy is off, it only
-  drops keys. It returns false once the frontend's quit is requested, and
-  keeps the stats as it goes. The frame rate is `gb::Game`'s default, 60
+  most 100 ms (`kMaxRunTime`), and updates the frontend. A power request is
+  acted on before the update: a restart powers off and on, so the frame shows
+  the new Ozzy, and a shutdown powers off and passes the exit code to the
+  frontend, which `Detach` shows. A power on that fails there ends the app,
+  with exit code 1. While the Ozzy is off, it drops keys and updates the
+  frontend, as the frontend needs every frame. It returns false once the
+  frontend's quit is requested, and keeps the stats as it goes. The frame rate is `gb::Game`'s default, 60
   frames a second.
 - **`CleanUp`** powers off and destroys the frontend, which gives the console
   back, and then writes a power on's error, if one stopped the app (exit code
@@ -358,9 +361,10 @@ struct OzzyAppStats {
   `gb_pilot`, which uses `gb_image` (and `stb` through it), and no SDL or
   Vulkan. `gb_game` is a new dependency, as the backlog item planned.
 - Tests build its context with `ContextBuilder`, as `main` does, with a
-  `gb::FakeClock` (`Game::kConstraintClock`), a memory file system, a
-  `gb::FakeCliWriter`, and the fake frontend's factory, and read the exit
-  code from it after `Run`.
+  `gb::FakeClock` (`Game::kConstraintClock`), a memory file system (the disk
+  library's `FaultyFileProtocol`, to fail an image at a restart), a writer
+  that notes whether the frontend is alive at each write, and the fake
+  frontend's factory, and read the exit code from it after `Run`.
 - `OzzyApp` creates its `OzzyHost` from its own `context_`, passing it on
   without declaring what the host or the Ozzy need, as each checks its own.
 
@@ -370,11 +374,10 @@ struct OzzyAppStats {
   an app that forgot to set it fail its contract, in tests too.
 - `RunCommand` is a plain function, as `gb_cli`'s run functions are, so it
   finds the app through the context (`kConstraintOzzyApp`), which `Init`
-  sets and completing the context clears, so it can't outlive the app. A
-  factory whose command doesn't run `RunCommand` never starts the app, which
-  the factories' own tests check, and its command lists
-  `OzzyApp::kConstraintOzzyApp` among its constraints so the run function
-  may read it.
+  sets and completing the context clears, so it can't outlive the app. The
+  command lists `OzzyApp::kConstraintOzzyApp` among its constraints, so the
+  run function may read it. The app makes the command itself, so a factory
+  gives only its parts and can't leave the run function out.
 - `gb::Game`'s loop waits for each frame by sleeping to within a millisecond
   of it, then reading the clock until it is due, so a `FakeClock` must advance
   on its own (`SetAutoAdvance`), or the loop never gets there. The tests set
@@ -468,7 +471,7 @@ Depends on: CL2.
   screen whole; keys and quit are the console's.
 - `posix_console_test.cc`: a console's mode is the one it was created in.
 
-### CL4 [ ] ozzy/app, ozzy/term, apps, manual: OzzyApp on gb::Game
+### CL4 [x] ozzy/app, ozzy/term, apps, manual: OzzyApp on gb::Game
 
 Depends on: CL3, and Game Bits *Command line flags added at run time*.
 
@@ -490,12 +493,12 @@ Depends on: CL3, and Game Bits *Command line flags added at run time*.
 **Verify**
 - Standard checks.
 - `ozzy_app_test.cc`, with the fake frontend, a memory file system, a
-  `gb::FakeCliWriter`, and a `gb::FakeClock`, all through `Run` with
+  writer of its own, and a `gb::FakeClock`, all through `Run` with
   arguments:
   - The command line: `--help` writes help with exit code 0, creating no
-    frontend; an unknown flag is exit code 2; a config that doesn't exist, or
-    has errors, writes the error with exit code 1, creating no frontend; no
-    config runs the default Ozzy.
+    frontend; an unknown flag, or a config that doesn't exist, is exit code
+    2; a config with errors writes the error with exit code 1; neither
+    creates a frontend; no config runs the default Ozzy.
   - Running: the frontend is powered on with the Ozzy, and updated each
     frame; typed keys reach the keyboard; a frame runs the Ozzy for its time,
     at most 100 ms; quitting ends the run with exit code 0.
