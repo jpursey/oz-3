@@ -30,7 +30,7 @@
 #include "oz3/core/memory_bank_config.h"
 #include "oz3/core/processor_config.h"
 #include "oz3/disk/disk_image.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/instructions/default_instruction_set.h"
 #include "oz3/ozzy/machine/boot_rom.h"
 #include "oz3/ozzy/machine/machine_table.h"
 #include "oz3/tools/program_loader.h"

@@ -26,7 +26,7 @@ class CpuCoreConfig {
 
   // Constructs a core configuration that runs the specified instruction set,
   // which must not be null. The default OZ-3 instruction set is in the
-  // instruction_sets library (GetDefaultInstructionSet()).
+  // instructions library (GetDefaultInstructionSet()).
   explicit CpuCoreConfig(std::shared_ptr<const InstructionSet> instructions);
 
   //----------------------------------------------------------------------------

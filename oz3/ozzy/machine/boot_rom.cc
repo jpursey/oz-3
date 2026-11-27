@@ -13,7 +13,7 @@
 #include "absl/strings/str_cat.h"
 #include "gb/parse/parse_error.h"
 #include "oz3/core/instruction_compiler.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/instructions/default_instruction_set.h"
 #include "oz3/ozzy/machine/boot_rom_source.h"
 #include "oz3/tools/instruction_set_syntax.h"
 
