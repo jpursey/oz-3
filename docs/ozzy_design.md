@@ -620,8 +620,8 @@ The backlog items build this in order, each updating the manual as it goes:
    Independent of the devices.
 3. *Devices in core* (core, manual): devices run by the `Processor`, their
    ports, and interrupt lines connected to cores, which report duplicates.
-4. *Console devices* (devices): the screen, keyboard, and teletype, and the new
-   `devices` library.
+4. *Console devices* (devices): the screen, keyboard, and teletype, each in a
+   new library (`devices/screen`, `devices/keyboard`, `devices/teletype`).
 5. *Ozzy machine* (ozzy, apps, manual): the config, the machine table, the
    console frontend and pacing, and a boot ROM that prints a banner and echoes
    keys. This is the first Ozzy anyone can run, and creates Ozzy's manual page.

@@ -12,7 +12,7 @@
 #include "gb/parse/parse_error.h"
 #include "gtest/gtest.h"
 #include "oz3/core/date_time.h"
-#include "oz3/core/instruction_def.h"
+#include "oz3/core/instruction_compiler.h"
 #include "oz3/tools/program_loader.h"
 #include "oz3/tools/program_map.h"
 
