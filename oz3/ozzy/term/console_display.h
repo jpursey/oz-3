@@ -20,12 +20,12 @@ namespace oz3 {
 // if it has one, or else lines.
 ConsoleMode GetOzzyConsoleMode(const OzzySettings& settings);
 
-// Shows in `console`, which is in `mode`, that the Ozzy shut down with
-// `exit_code`, and how to quit: in place of the screen, or on a line of its
-// own after the teletype's.
-void ShowOzzyShutDown(Console& console, ConsoleMode mode, int exit_code);
+// Shows in `console` that the Ozzy shut down with `exit_code`, and how to quit:
+// in place of the screen, or in lines, on a line of its own after the
+// teletype's.
+void ShowOzzyShutDown(Console& console, int exit_code);
 
-// Shows an Ozzy in a Console, which is in the mode GetOzzyConsoleMode
+// Shows an Ozzy in a Console, which must be in the mode GetOzzyConsoleMode
 // returns: its screen's picture, or without a screen, its teletype's output.
 // With a screen, the teletype's output is dropped, as the console shows only
 // one of them.
@@ -38,7 +38,7 @@ class ConsoleDisplay final {
   // Creates a display of `ozzy` in `console`, which both outlive it. An Ozzy
   // with neither a screen nor a teletype shows nothing, so the console says
   // so.
-  ConsoleDisplay(Ozzy& ozzy, Console& console);
+  ConsoleDisplay(Ozzy* ozzy, Console* console);
   ConsoleDisplay(const ConsoleDisplay&) = delete;
   ConsoleDisplay& operator=(const ConsoleDisplay&) = delete;
   ~ConsoleDisplay() = default;
@@ -63,7 +63,7 @@ class ConsoleDisplay final {
   // Shows the message for a console of `size` too small for `picture`.
   void ShowTooSmall(ConsoleSize size, const ScreenPicture& picture);
 
-  Console& console_;
+  Console* const console_;
   Screen* const screen_;
   Teletype* const teletype_;
 

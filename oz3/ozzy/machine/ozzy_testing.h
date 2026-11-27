@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/time/time.h"
 #include "gb/base/context.h"
 #include "gb/file/file_system.h"
 #include "oz3/core/cpu_core.h"
@@ -39,6 +40,12 @@ namespace oz3 {
 // outlive the Ozzy, and otherwise ignores them.
 gb::Context WithPowerCallback(gb::Context context = {},
                               std::vector<PowerRequest>* requests = nullptr);
+
+// Returns an Ozzy with `settings`, created in `context` with a power request
+// callback that ignores requests (see WithPowerCallback), or null after failing
+// the test.
+std::unique_ptr<Ozzy> CreateTestOzzy(const OzzySettings& settings = {},
+                                     gb::Context context = {});
 
 // Returns the settings of the default Ozzy with a teletype at `baud` in place
 // of the screen.
@@ -213,6 +220,12 @@ inline constexpr std::string_view kWriteLogProgram = R"---(
 //==============================================================================
 // The boot ROM
 //==============================================================================
+
+// The first line of the boot ROM's banner.
+inline constexpr std::string_view kBootVersion = "Ozzy 1.0";
+
+// Long enough for the boot ROM to show its banner and prompt.
+inline constexpr absl::Duration kBootTime = absl::Seconds(1);
 
 // The prompt the boot ROM shows.
 inline constexpr std::string_view kBootPrompt = "Press Enter to Boot...";

@@ -9,10 +9,10 @@
 #include <cstdint>
 #include <memory>
 #include <string_view>
-#include <vector>
 
 #include "absl/status/statusor.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 
 namespace oz3 {
 
@@ -38,14 +38,6 @@ struct ConsoleSize {
   int rows = 0;
 };
 
-// A key pressed or released, by its key code (see keyboard.h).
-struct KeyChange {
-  bool operator==(const KeyChange&) const = default;
-
-  int key = 0;
-  bool held = false;
-};
-
 // Returns whether the typed key event `key` is Ctrl+Alt+Q, which quits rather
 // than going to the Ozzy. Shift may be held too. AltGr is Ctrl+Alt, so where
 // AltGr with Q types a character (such as @), that character is typed rather
@@ -54,12 +46,6 @@ inline bool IsQuitKey(uint16_t key) {
   constexpr uint16_t kCtrlQ = 'Q' - 'A' + 1;
   return (key & ~kKeyShift) == (kCtrlQ | kKeyCtrl | kKeyAlt);
 }
-
-// The keys a Console took since they were last taken, each oldest first.
-struct ConsoleKeys {
-  std::vector<uint16_t> typed;     // Typed key events (see keyboard.h).
-  std::vector<KeyChange> changes;  // Keys pressed and released.
-};
 
 // The host's text console, which the ozzy app runs an Ozzy in: it draws the
 // screen's picture as text, and its key presses are the keyboard's.
@@ -87,6 +73,9 @@ class Console {
   // Console interface
   //----------------------------------------------------------------------------
 
+  // Returns the mode the console shows text in, as it was created with.
+  virtual ConsoleMode GetMode() const = 0;
+
   // Writes `text`, which is UTF-8 and may hold virtual terminal sequences.
   virtual void Write(std::string_view text) = 0;
 
@@ -99,7 +88,7 @@ class Console {
   // focus is released then, as its release goes elsewhere. A terminal sends
   // only what is typed, so there each typed key with a key code is pressed and
   // released at once, as a tap. It doesn't wait for keys.
-  virtual ConsoleKeys TakeKeys() = 0;
+  virtual FrontendKeys TakeKeys() = 0;
 
   // Returns whether the user asked to quit, with Ctrl+Alt+Q (see IsQuitKey),
   // Ctrl+Break in a Windows console, or by closing the console's window, or

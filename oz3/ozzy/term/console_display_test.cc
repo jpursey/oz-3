@@ -9,10 +9,8 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
-#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "gb/base/context.h"
@@ -25,6 +23,7 @@
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/console_text.h"
+#include "oz3/ozzy/term/fake_console.h"
 
 namespace oz3 {
 namespace {
@@ -32,50 +31,11 @@ namespace {
 using ::testing::HasSubstr;
 using ::testing::Not;
 
-// The size of the default Ozzy's screen.
-const ConsoleSize kScreenSize = {.columns = ScreenSettings().columns,
-                                 .rows = ScreenSettings().rows};
-
-// A console that keeps what is written to it, which is the size of the default
-// Ozzy's screen unless it is set.
-class FakeConsole final : public Console {
- public:
-  // Returns what was written since the last call.
-  std::string TakeText() { return std::exchange(text_, {}); }
-
-  void SetSize(ConsoleSize size) { size_ = size; }
-
-  void Write(std::string_view text) override { absl::StrAppend(&text_, text); }
-  ConsoleSize GetSize() override { return size_; }
-  ConsoleKeys TakeKeys() override { return {}; }
-  bool IsQuitRequested() const override { return false; }
-
- private:
-  std::string text_;
-  ConsoleSize size_ = kScreenSize;
-};
-
-// Long enough for the boot ROM to show its banner.
-constexpr absl::Duration kBootTime = absl::Seconds(1);
-
-// The boot ROM's banner's first line.
-constexpr std::string_view kVersion = "Ozzy 1.0";
-
 // What the boot ROM shows when Enter is pressed in an Ozzy with no drives.
 constexpr std::string_view kNoDrive = "ERROR: No drive A:";
 
 // Long enough for the boot ROM to answer Enter, and the screen to refresh.
 constexpr absl::Duration kKeyTime = absl::Milliseconds(100);
-
-std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings) {
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings, WithPowerCallback());
-  EXPECT_TRUE(ozzy.ok()) << ozzy.status();
-  if (!ozzy.ok()) {
-    return nullptr;
-  }
-  return std::move(*ozzy);
-}
 
 OzzySettings TeletypeOnlySettings() {
   OzzySettings settings;
@@ -90,31 +50,31 @@ TEST(ConsoleDisplayTest, ModeFollowsTheScreen) {
 }
 
 TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefresh) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   display.Update();
   EXPECT_EQ(console.TakeText(), "");
 }
 
 TEST(ConsoleDisplayTest, ScreenDrawnWholeFirst) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   const std::string text = console.TakeText();
   EXPECT_EQ(text, DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
-  EXPECT_THAT(text, HasSubstr(kVersion));
+  EXPECT_THAT(text, HasSubstr(kBootVersion));
 }
 
 TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -130,24 +90,25 @@ TEST(ConsoleDisplayTest, ScreenRedrawnOnlyWhereChanged) {
   const std::string text = console.TakeText();
   EXPECT_EQ(text, DrawConsoleText(ozzy->GetScreen()->GetPicture(), &before));
   EXPECT_THAT(text, HasSubstr(kNoDrive));
-  EXPECT_THAT(text, Not(HasSubstr(kVersion)));
+  EXPECT_THAT(text, Not(HasSubstr(kBootVersion)));
 }
 
 TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  console.SetSize({.columns = kScreenSize.columns - 1, .rows = 30});
-  ConsoleDisplay display(*ozzy, console);
+  console.SetSize({.columns = kDefaultScreenSize.columns - 1, .rows = 30});
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   const std::string text = console.TakeText();
-  EXPECT_THAT(text, HasSubstr(absl::StrCat("The console is ",
-                                           kScreenSize.columns - 1, " by 30")));
-  EXPECT_THAT(text,
-              HasSubstr(absl::StrCat("the screen is ", kScreenSize.columns,
-                                     " by ", kScreenSize.rows)));
-  EXPECT_THAT(text, Not(HasSubstr(kVersion)));
+  EXPECT_THAT(
+      text, HasSubstr(absl::StrCat("The console is ",
+                                   kDefaultScreenSize.columns - 1, " by 30")));
+  EXPECT_THAT(
+      text, HasSubstr(absl::StrCat("the screen is ", kDefaultScreenSize.columns,
+                                   " by ", kDefaultScreenSize.rows)));
+  EXPECT_THAT(text, Not(HasSubstr(kBootVersion)));
 
   // The message isn't drawn again, and the picture isn't drawn, as it changes.
   display.Update();
@@ -159,24 +120,24 @@ TEST(ConsoleDisplayTest, MessageWhileTooNarrow) {
 }
 
 TEST(ConsoleDisplayTest, MessageWhileTooShort) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  console.SetSize({.columns = 100, .rows = kScreenSize.rows - 1});
-  ConsoleDisplay display(*ozzy, console);
+  console.SetSize({.columns = 100, .rows = kDefaultScreenSize.rows - 1});
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
-  EXPECT_THAT(
-      console.TakeText(),
-      HasSubstr(absl::StrCat("The console is 100 by ", kScreenSize.rows - 1)));
+  EXPECT_THAT(console.TakeText(),
+              HasSubstr(absl::StrCat("The console is 100 by ",
+                                     kDefaultScreenSize.rows - 1)));
 }
 
 TEST(ConsoleDisplayTest, MessageRedrawnWhenTheConsoleResizes) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
   console.SetSize({.columns = 40, .rows = 20});
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -187,10 +148,10 @@ TEST(ConsoleDisplayTest, MessageRedrawnWhenTheConsoleResizes) {
 }
 
 TEST(ConsoleDisplayTest, ScreenDrawnWholeOnceTheConsoleFits) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
@@ -200,7 +161,7 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeOnceTheConsoleFits) {
   console.SetSize({.columns = 40, .rows = 20});
   display.Update();
   console.TakeText();
-  console.SetSize(kScreenSize);
+  console.SetSize(kDefaultScreenSize);
   display.Update();
   EXPECT_EQ(console.TakeText(),
             DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
@@ -212,16 +173,16 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeOnceTheConsoleFits) {
 }
 
 TEST(ConsoleDisplayTest, ScreenDrawnWholeWhenTheConsoleResizes) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
   console.TakeText();
 
-  console.SetSize(
-      {.columns = kScreenSize.columns + 1, .rows = kScreenSize.rows});
+  console.SetSize({.columns = kDefaultScreenSize.columns + 1,
+                   .rows = kDefaultScreenSize.rows});
   display.Update();
   EXPECT_EQ(console.TakeText(),
             DrawConsoleText(ozzy->GetScreen()->GetPicture(), nullptr));
@@ -230,23 +191,23 @@ TEST(ConsoleDisplayTest, ScreenDrawnWholeWhenTheConsoleResizes) {
 }
 
 TEST(ConsoleDisplayTest, NothingBeforeTheFirstRefreshInASmallConsole) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy();
   ASSERT_NE(ozzy, nullptr);
   FakeConsole console;
   console.SetSize({.columns = 40, .rows = 20});
-  ConsoleDisplay display(*ozzy, console);
+  ConsoleDisplay display(ozzy.get(), &console);
   display.Update();
   EXPECT_EQ(console.TakeText(), "");
 }
 
 TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(TeletypeOnlySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(TeletypeOnlySettings());
   ASSERT_NE(ozzy, nullptr);
-  FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  FakeConsole console(ConsoleMode::kLines);
+  ConsoleDisplay display(ozzy.get(), &console);
   ozzy->Run(kBootTime);
   display.Update();
-  EXPECT_THAT(console.TakeText(), HasSubstr(kVersion));
+  EXPECT_THAT(console.TakeText(), HasSubstr(kBootVersion));
 
   ozzy->GetKeyboard()->TypeKey(kKeyEnter);
   ozzy->Run(kKeyTime);
@@ -257,15 +218,15 @@ TEST(ConsoleDisplayTest, TeletypeOutputWritten) {
 
 TEST(ConsoleDisplayTest, ShutDownInPlaceOfTheScreen) {
   FakeConsole console;
-  ShowOzzyShutDown(console, ConsoleMode::kScreen, -3);
+  ShowOzzyShutDown(console, -3);
   const std::string lines[] = {"Ozzy shut down, exit code -3.",
                                "Ctrl+Alt+Q quits."};
   EXPECT_EQ(console.TakeText(), DrawConsoleLines(lines));
 }
 
 TEST(ConsoleDisplayTest, ShutDownOnALineAfterTheTeletype) {
-  FakeConsole console;
-  ShowOzzyShutDown(console, ConsoleMode::kLines, 7);
+  FakeConsole console(ConsoleMode::kLines);
+  ShowOzzyShutDown(console, 7);
   EXPECT_EQ(console.TakeText(),
             "\r\nOzzy shut down, exit code 7. Ctrl+Alt+Q quits.\r\n");
 }
@@ -273,10 +234,10 @@ TEST(ConsoleDisplayTest, ShutDownOnALineAfterTheTeletype) {
 TEST(ConsoleDisplayTest, NeitherScreenNorTeletype) {
   OzzySettings settings;
   settings.screen.reset();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
-  FakeConsole console;
-  ConsoleDisplay display(*ozzy, console);
+  FakeConsole console(ConsoleMode::kLines);
+  ConsoleDisplay display(ozzy.get(), &console);
   EXPECT_EQ(console.TakeText(),
             "This Ozzy has neither a screen nor a teletype.\r\n");
   ozzy->Run(kBootTime);

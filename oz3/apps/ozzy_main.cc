@@ -31,11 +31,11 @@
 #include "oz3/core/core_types.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/devices/power_control.h"
+#include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/app/ozzy_host.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
-#include "oz3/ozzy/term/console.h"
-#include "oz3/ozzy/term/console_display.h"
+#include "oz3/ozzy/term/terminal_frontend.h"
 
 namespace oz3 {
 namespace {
@@ -145,25 +145,24 @@ std::optional<PowerRequest> RunOnce(OzzyHost& host, absl::Duration time,
   return result.power_request;
 }
 
-// Runs `host`'s Ozzy, which is on, in `console` until the user quits or a
-// program asks to power off, each frame for the time since the last, or with
-// `max_speed_run_time`, in runs of that time until the next frame. Returns the
-// program's request, if one ended the run, and adds how it ran to `stats`.
+// Runs `host`'s Ozzy, which is on and shown by `frontend`, until the user
+// quits or a program asks to power off, each frame for the time since the
+// last, or with `max_speed_run_time`, in runs of that time until the next
+// frame. Returns the program's request, if one ended the run, and adds how it
+// ran to `stats`.
 std::optional<PowerRequest> RunOzzy(
-    OzzyHost& host, Console& console,
+    OzzyHost& host, Frontend& frontend,
     std::optional<absl::Duration> max_speed_run_time, RunStats* stats) {
-  Ozzy* const ozzy = host.GetOzzy();
-  Keyboard* const keyboard = ozzy->GetKeyboard();
-  ConsoleDisplay display(*ozzy, console);
+  Keyboard* const keyboard = host.GetOzzy()->GetKeyboard();
   std::optional<PowerRequest> power_request;
   const absl::Time start_time = absl::Now();
   absl::Time last_time = start_time;
   absl::Time next_frame = last_time;
-  while (!console.IsQuitRequested()) {
+  while (!frontend.IsQuitRequested()) {
     const absl::Time frame_start = absl::Now();
 
     // Keys are taken without a keyboard too, so they don't pile up.
-    const ConsoleKeys keys = console.TakeKeys();
+    const FrontendKeys keys = frontend.TakeKeys();
     if (keyboard != nullptr) {
       for (const uint16_t key : keys.typed) {
         keyboard->TypeKey(key);
@@ -189,7 +188,7 @@ std::optional<PowerRequest> RunOzzy(
       break;
     }
     last_time = now;
-    display.Update();
+    frontend.Update();
 
     // A frame that ends late starts the next at once, rather than catching
     // up with frames run back to back.
@@ -208,9 +207,10 @@ std::optional<PowerRequest> RunOzzy(
 
 // Waits until the user quits, with the Ozzy off, dropping the keys typed
 // meanwhile.
-void WaitForQuit(Console& console) {
-  while (!console.IsQuitRequested()) {
-    console.TakeKeys();
+void WaitForQuit(Frontend& frontend) {
+  while (!frontend.IsQuitRequested()) {
+    frontend.TakeKeys();
+    frontend.Update();
     gb::PreciseSleepFor(kFrameTime);
   }
 }
@@ -263,13 +263,12 @@ bool Run(gb::ValidatedContext& context,
       OzzyHost::Create(*std::move(settings), context);
   CHECK(host != nullptr);
 
-  // The console shows every power on, as its mode comes from the settings.
-  const ConsoleMode mode = GetOzzyConsoleMode(host->GetSettings());
-  absl::StatusOr<std::unique_ptr<Console>> console = Console::Create(mode);
-  if (!console.ok()) {
-    writer(gb::CliText::kError,
-           absl::StrCat("Failed to take over the console: ",
-                        console.status().message()));
+  // The frontend shows every power on, as the settings are the same for each.
+  TerminalFrontendFactory frontend_factory;
+  absl::StatusOr<std::unique_ptr<Frontend>> frontend =
+      frontend_factory.Create(host->GetSettings());
+  if (!frontend.ok()) {
+    writer(gb::CliText::kError, frontend.status().message());
     return false;
   }
 
@@ -278,26 +277,32 @@ bool Run(gb::ValidatedContext& context,
   RunStats stats;
   while (true) {
     if (const absl::Status status = host->PowerOn(); !status.ok()) {
-      console->reset();
+      frontend->reset();
       writer(gb::CliText::kError,
              absl::StrCat("Failed to create the Ozzy: ", status.message()));
       return false;
     }
+    (*frontend)->Attach(host->GetOzzy());
     const std::optional<PowerRequest> power_request =
-        RunOzzy(*host, **console, max_speed_run_time, &stats);
+        RunOzzy(*host, **frontend, max_speed_run_time, &stats);
+    std::optional<int> exit_code;
+    if (power_request.has_value() &&
+        power_request->command == PowerCommand::kShutDown) {
+      exit_code = power_request->exit_code;
+    }
+    (*frontend)->Detach(exit_code);
     host->PowerOff();
     if (!power_request.has_value()) {
       break;
     }
-    if (power_request->command == PowerCommand::kShutDown) {
-      ShowOzzyShutDown(**console, mode, power_request->exit_code);
-      WaitForQuit(**console);
+    if (exit_code.has_value()) {
+      WaitForQuit(**frontend);
       break;
     }
   }
 
   // The console is given back first, so the stats are in its own buffer.
-  console->reset();
+  frontend->reset();
   if (command_line.Get(kStats)) {
     WriteStats(stats);
   }

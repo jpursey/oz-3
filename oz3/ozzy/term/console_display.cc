@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 
+#include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/console_text.h"
@@ -19,12 +20,12 @@ ConsoleMode GetOzzyConsoleMode(const OzzySettings& settings) {
                                      : ConsoleMode::kLines;
 }
 
-void ShowOzzyShutDown(Console& console, ConsoleMode mode, int exit_code) {
+void ShowOzzyShutDown(Console& console, int exit_code) {
   const std::string lines[] = {
       absl::StrCat("Ozzy shut down, exit code ", exit_code, "."),
       "Ctrl+Alt+Q quits.",
   };
-  if (mode == ConsoleMode::kScreen) {
+  if (console.GetMode() == ConsoleMode::kScreen) {
     console.Write(DrawConsoleLines(lines));
     return;
   }
@@ -33,12 +34,14 @@ void ShowOzzyShutDown(Console& console, ConsoleMode mode, int exit_code) {
   console.Write(absl::StrCat("\r\n", lines[0], " ", lines[1], "\r\n"));
 }
 
-ConsoleDisplay::ConsoleDisplay(Ozzy& ozzy, Console& console)
+ConsoleDisplay::ConsoleDisplay(Ozzy* ozzy, Console* console)
     : console_(console),
-      screen_(ozzy.GetScreen()),
-      teletype_(ozzy.GetTeletype()) {
+      screen_(ozzy->GetScreen()),
+      teletype_(ozzy->GetTeletype()) {
+  CHECK((console_->GetMode() == ConsoleMode::kScreen) == (screen_ != nullptr))
+      << "The console's mode isn't the Ozzy's";
   if (screen_ == nullptr && teletype_ == nullptr) {
-    console_.Write("This Ozzy has neither a screen nor a teletype.\r\n");
+    console_->Write("This Ozzy has neither a screen nor a teletype.\r\n");
   }
 }
 
@@ -48,7 +51,7 @@ void ConsoleDisplay::Update() {
   if (teletype_ != nullptr) {
     const std::string output = teletype_->TakeOutput();
     if (screen_ == nullptr) {
-      console_.Write(GetTeletypeText(output));
+      console_->Write(GetTeletypeText(output));
     }
   }
 
@@ -64,7 +67,7 @@ void ConsoleDisplay::Update() {
 
   // Whatever is shown is drawn whole again when the console resizes, as the
   // console may lose or move what was drawn.
-  const ConsoleSize size = console_.GetSize();
+  const ConsoleSize size = console_->GetSize();
   const bool resized = size != size_;
   size_ = size;
   if (size.columns < picture.columns || size.rows < picture.rows) {
@@ -82,7 +85,7 @@ void ConsoleDisplay::Update() {
     return;
   }
   frame_count_ = frame_count;
-  console_.Write(DrawConsoleText(picture, whole ? nullptr : &last_));
+  console_->Write(DrawConsoleText(picture, whole ? nullptr : &last_));
   last_ = picture;
   message_shown_ = false;
 }
@@ -97,7 +100,7 @@ void ConsoleDisplay::ShowTooSmall(ConsoleSize size,
       "Make the console bigger to",
       "see the screen.",
   };
-  console_.Write(DrawConsoleLines(lines));
+  console_->Write(DrawConsoleLines(lines));
 }
 
 }  // namespace oz3

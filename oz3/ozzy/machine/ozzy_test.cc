@@ -50,20 +50,6 @@ using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 
-// Returns an Ozzy for `settings`, with `context` and a power request callback
-// that ignores requests as its host's, failing the test if it can't be
-// created.
-std::unique_ptr<Ozzy> CreateOzzy(const OzzySettings& settings,
-                                 gb::Context context = {}) {
-  absl::StatusOr<std::unique_ptr<Ozzy>> ozzy =
-      Ozzy::Create(settings, WithPowerCallback(std::move(context)));
-  EXPECT_TRUE(ozzy.ok()) << ozzy.status();
-  if (!ozzy.ok()) {
-    return nullptr;
-  }
-  return std::move(*ozzy);
-}
-
 // Returns `count` words of the machine table from `offset`.
 std::vector<uint16_t> GetTableWords(Ozzy& ozzy, int offset, int count) {
   absl::Span<const uint16_t> words = ozzy.GetProcessor()->GetMemory(0)->GetMem(
@@ -76,7 +62,7 @@ std::vector<uint16_t> GetTableWords(Ozzy& ozzy, int offset, int count) {
 //==============================================================================
 
 TEST(OzzyTest, DefaultOzzy) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
   EXPECT_EQ(processor->GetClockHz(), 1'000'000);
@@ -117,7 +103,7 @@ TEST(OzzyTest, PowerRequestsReachTheCallback) {
 TEST(OzzyTest, TimerTicks) {
   OzzySettings settings;
   settings.timer->tick_hz = 100;
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
 
   // The tick count is on port 3, at the timer's rate.
@@ -140,7 +126,7 @@ std::vector<uint16_t> AskTime(Ozzy& ozzy) {
 }
 
 TEST(OzzyTest, TheTimerHasTheClock) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(
       OzzySettings(), gb::ContextBuilder()
                           .SetValue<HostClock>([] {
                             return absl::CivilSecond(2026, 11, 18, 9, 30, 15);
@@ -160,7 +146,7 @@ TEST(OzzyTest, TheTimerReadsZerosWithAnEmptyClock) {
 }
 
 TEST(OzzyTest, KeyboardKeyState) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
 
   // Key state is on ports 6 to 15: key code 08h (Backspace) is bit 8 of port
@@ -181,7 +167,7 @@ TEST(OzzyTest, Processor) {
   settings.screen.reset();
   settings.keyboard = false;
   settings.teletype = OzzyTeletypeSettings();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
   EXPECT_EQ(processor->GetClockHz(), 4'000'000);
@@ -196,7 +182,7 @@ TEST(OzzyTest, Processor) {
 TEST(OzzyTest, NoTimer) {
   OzzySettings settings;
   settings.timer.reset();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(ozzy->GetTimer(), nullptr);
   EXPECT_EQ(ozzy->GetProcessor()->GetDevice(Ozzy::kTimerName), nullptr);
@@ -205,7 +191,7 @@ TEST(OzzyTest, NoTimer) {
 TEST(OzzyTest, BankPages) {
   OzzySettings settings;
   settings.banks = {0x00FE, 0xFFFF, 0x0000};
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
 
@@ -250,7 +236,7 @@ TEST(OzzyTest, MachineTableLayout) {
 }
 
 TEST(OzzyTest, DefaultMachineTable) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
@@ -289,7 +275,7 @@ TEST(OzzyTest, FullMachineTable) {
   settings.screen->rows = 12;
   settings.teletype = OzzyTeletypeSettings();
   settings.timer->tick_hz = 1000;
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_THAT(
       GetTableWords(*ozzy, 0, kMachineHeaderSize),
@@ -326,7 +312,7 @@ TEST(OzzyTest, AllBanksMachineTable) {
   OzzySettings settings;
   settings.banks.assign(kMaxMemoryBanks, 0xFFFF);
   settings.banks[0] = 0x7FFE;
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderBanks, 1)[0], kMaxMemoryBanks);
   const int last_bank =
@@ -346,7 +332,7 @@ TEST(OzzyTest, NoDevicesMachineTable) {
   settings.screen.reset();
   settings.keyboard = false;
   settings.timer.reset();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 1);
   EXPECT_THAT(GetTableWords(*ozzy, kMachineTableDevices, kMachineDeviceSize),
@@ -386,7 +372,7 @@ class OzzyDriveTest : public ::testing::Test {
 TEST_F(OzzyDriveTest, GetDrive) {
   OzzySettings settings;
   settings.drives.resize(2);
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   Processor* processor = ozzy->GetProcessor();
   ASSERT_NE(ozzy->GetDrive('A'), nullptr);
@@ -406,7 +392,7 @@ TEST_F(OzzyDriveTest, MachineTableWithSomeDrives) {
   OzzySettings settings;
   settings.cores = 4;
   settings.drives = {{.slots = 3}, {.slots = 255}};
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 6);
   EXPECT_EQ(GetDeviceEntry(*ozzy, 3)[kMachineDeviceType],
@@ -424,7 +410,7 @@ TEST_F(OzzyDriveTest, MachineTableWithEveryDevice) {
   OzzySettings settings;
   settings.teletype = OzzyTeletypeSettings();
   settings.drives.resize(kOzzyDriveCount);
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(GetTableWords(*ozzy, kMachineHeaderDevices, 1)[0], 9);
   EXPECT_THAT(GetDeviceEntry(*ozzy, 5),
@@ -445,7 +431,7 @@ TEST_F(OzzyDriveTest, ImagesAreInTheirDrivesAtPowerOn) {
   MakeTestImage(&host_, "mem:/d.ozd");
   OzzySettings settings;
   settings.drives = {{.image = "mem:/a.ozd"}, {}, {}, {.image = "mem:/d.ozd"}};
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings, HostContext());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings, HostContext());
   ASSERT_NE(ozzy, nullptr);
 
   // Each control port shows whether its drive has a disk once it has read the
@@ -468,7 +454,7 @@ TEST_F(OzzyDriveTest, AConfigsImagesAreFromItsFolder) {
       "drives: [{ preset: 'floppy-1440k', image: 'disks/a.ozd' }]",
       "mem:/configs/work.ozzy");
   ASSERT_TRUE(settings.ok()) << settings.status();
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(*settings, HostContext());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(*settings, HostContext());
   ASSERT_NE(ozzy, nullptr);
   EXPECT_NE(ozzy->GetDrive('A')->DetachImage(), nullptr);
 }
@@ -522,10 +508,10 @@ TEST_F(OzzyDriveTest, AProgramWritesDriveAAndShuttingDownCommits) {
   settings.drives = {{.image = "mem:/a.ozd"}};
   const absl::CivilSecond now(2026, 11, 18, 9, 30, 15);
   std::unique_ptr<Ozzy> ozzy =
-      CreateOzzy(settings, gb::ContextBuilder()
-                               .SetPtr<gb::FileSystem>(&host_)
-                               .SetValue<HostClock>([now] { return now; })
-                               .Build());
+      CreateTestOzzy(settings, gb::ContextBuilder()
+                                   .SetPtr<gb::FileSystem>(&host_)
+                                   .SetValue<HostClock>([now] { return now; })
+                                   .Build());
   ASSERT_NE(ozzy, nullptr);
 
   // The program runs on core 0 in place of the boot ROM.
@@ -598,7 +584,7 @@ TEST(OzzyTest, DeviceErrors) {
 TEST(OzzyTest, RunAtClockRate) {
   OzzySettings settings;
   settings.clock_hz = 1000;
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(ozzy->Run(absl::Milliseconds(1)), 1);
   EXPECT_EQ(ozzy->Run(absl::Seconds(2)), 2000);
@@ -610,7 +596,7 @@ TEST(OzzyTest, ShortRunsAddUp) {
   OzzySettings settings;
   settings.timer.reset();
   settings.clock_hz = 3;
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(settings);
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
 
   // 20 ms is 0.06 of a cycle, so only some of the runs run one.
@@ -623,14 +609,14 @@ TEST(OzzyTest, ShortRunsAddUp) {
 
   // A long run keeps the fraction too.
   settings.clock_hz = 7;
-  ozzy = CreateOzzy(settings);
+  ozzy = CreateTestOzzy(settings);
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(ozzy->Run(absl::Milliseconds(10500)), 73);
   EXPECT_EQ(ozzy->Run(absl::Milliseconds(500)), 4);
 }
 
 TEST(OzzyTest, RunNothing) {
-  std::unique_ptr<Ozzy> ozzy = CreateOzzy(OzzySettings());
+  std::unique_ptr<Ozzy> ozzy = CreateTestOzzy(OzzySettings());
   ASSERT_NE(ozzy, nullptr);
   EXPECT_EQ(ozzy->Run(absl::ZeroDuration()), 0);
   EXPECT_EQ(ozzy->Run(absl::Milliseconds(-5)), 0);

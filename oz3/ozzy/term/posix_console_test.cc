@@ -24,6 +24,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
+#include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
 namespace oz3 {
@@ -137,6 +138,14 @@ TEST_F(PosixTerminalTest, RawModeIsGivenBack) {
   EXPECT_EQ(given_back.c_cc[VMIN], mode_.c_cc[VMIN]);
 }
 
+TEST_F(PosixTerminalTest, ModeIsAsCreated) {
+  for (ConsoleMode mode : {ConsoleMode::kScreen, ConsoleMode::kLines}) {
+    std::unique_ptr<Console> console = CreateConsole(mode);
+    ASSERT_NE(console, nullptr);
+    EXPECT_EQ(console->GetMode(), mode);
+  }
+}
+
 TEST_F(PosixTerminalTest, ScreenIsTheAlternateScreen) {
   std::unique_ptr<Console> console = CreateConsole(ConsoleMode::kScreen);
   ASSERT_NE(console, nullptr);
@@ -187,7 +196,7 @@ TEST_F(PosixTerminalTest, KeysAreTypedAndTapped) {
 
   // Ctrl+C and Ctrl+Z are keys, as is Enter, which isn't a line feed.
   Type("a\x03\x1A\r\x1B[A");
-  const ConsoleKeys keys = console->TakeKeys();
+  const FrontendKeys keys = console->TakeKeys();
   EXPECT_THAT(keys.typed, ElementsAre('a', 0x03 | kKeyCtrl, 0x1A | kKeyCtrl,
                                       kKeyEnter, kKeyUp));
   EXPECT_EQ(keys.changes.size(), 14);
@@ -211,7 +220,7 @@ TEST_F(PosixTerminalTest, CtrlAltQQuits) {
   std::unique_ptr<Console> console = CreateConsole(ConsoleMode::kLines);
   ASSERT_NE(console, nullptr);
   Type("a\x1B\x11");
-  const ConsoleKeys keys = console->TakeKeys();
+  const FrontendKeys keys = console->TakeKeys();
   EXPECT_THAT(keys.typed, ElementsAre('a'));
   EXPECT_THAT(keys.changes,
               ElementsAre(KeyChange{.key = 'a', .held = true},

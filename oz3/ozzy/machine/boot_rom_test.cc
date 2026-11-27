@@ -52,7 +52,6 @@ namespace {
 //==============================================================================
 
 // What the boot ROM shows.
-constexpr std::string_view kVersion = "Ozzy 1.0";
 constexpr std::string_view kDefaultHardware = "1 core  56K RAM  1 MHz";
 constexpr std::string_view kNoDrives = "Drives: none";
 constexpr std::string_view kNoDrive = "ERROR: No drive A:";
@@ -156,7 +155,7 @@ std::vector<std::string> GetScreenRows(std::string_view hardware,
                                        std::string_view drives,
                                        std::string_view status = "") {
   std::vector<std::string> rows(kRows);
-  rows[0] = absl::StrCat(" ", kVersion);
+  rows[0] = absl::StrCat(" ", kBootVersion);
   rows[2] = absl::StrCat(" ", hardware);
   rows[3] = absl::StrCat(" ", drives);
   rows[kBootPromptRow] = kBootPrompt;
@@ -168,7 +167,7 @@ std::vector<std::string> GetScreenRows(std::string_view hardware,
 // blank column after the banner's widest line.
 int GetBoxRight(std::string_view hardware, std::string_view drives) {
   const int widest = static_cast<int>(
-      std::max({kVersion.size(), hardware.size(), drives.size()}));
+      std::max({kBootVersion.size(), hardware.size(), drives.size()}));
   return widest + 1;
 }
 
@@ -229,7 +228,8 @@ void ExpectWaiting(Ozzy& ozzy, std::string_view hardware,
 // `drives`.
 std::string GetTeletypeBanner(std::string_view hardware,
                               std::string_view drives) {
-  return absl::StrCat(kVersion, "\r\n\r\n", hardware, "\r\n", drives, "\r\n");
+  return absl::StrCat(kBootVersion, "\r\n\r\n", hardware, "\r\n", drives,
+                      "\r\n");
 }
 
 // Returns a boot area of all 0.
@@ -293,7 +293,7 @@ void ExpectLoaderRan(Ozzy& ozzy) {
   const ScreenPicture& picture = ozzy.GetScreen()->GetPicture();
   EXPECT_EQ(picture.cells[0], 'L');
   EXPECT_EQ(picture.cells[1], 0);
-  EXPECT_EQ(GetRowText(picture, 0).substr(2), kVersion.substr(1));
+  EXPECT_EQ(GetRowText(picture, 0).substr(2), kBootVersion.substr(1));
   EXPECT_EQ(GetRowText(picture, kBootPromptRow), kBootPrompt);
   EXPECT_EQ(picture.cursor_mode, ScreenCursorMode::kOff);
 }
