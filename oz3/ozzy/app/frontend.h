@@ -47,9 +47,9 @@ class Frontend {
   // Operations
   //----------------------------------------------------------------------------
 
-  // Shows what changed since the last call, such as in the Ozzy attached. The
-  // app must call it every frame, whether or not an Ozzy is attached, and
-  // while one is, between its runs.
+  // Shows what changed since the last call, such as the attached Ozzy. The app
+  // must call it every frame, whether or not an Ozzy is attached, and while
+  // one is, between its runs.
   virtual void Update() = 0;
 
   //----------------------------------------------------------------------------

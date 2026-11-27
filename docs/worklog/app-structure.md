@@ -185,8 +185,9 @@ class Frontend {
   virtual FrontendKeys TakeKeys() = 0;
   virtual bool IsQuitRequested() const = 0;
 
-  // Operations. Shows what changed since the last call, such as in the Ozzy
-  // shown. The app must call it every frame, whether or not an Ozzy is on.
+  // Operations. Shows what changed since the last call, such as the attached
+  // Ozzy. The app must call it every frame, whether or not an Ozzy is
+  // attached.
   virtual void Update() = 0;
 
   // Attached Ozzy. Attach shows `ozzy`, and may hold its devices, until
