@@ -107,7 +107,7 @@ class OzzyAppTest : public ::testing::Test {
         gb::ContextBuilder()
             .SetPtr<gb::Clock>(&clock_)
             .SetPtr<gb::FileSystem>(&file_system_)
-            .SetPtr<FrontendFactory>(&factory_)
+            .SetPtr<FrontendType>(&type_)
             .SetValue<gb::CliWriter>(
                 [this](gb::CliText type, std::string_view text) {
                   Write(type, text);
@@ -133,12 +133,12 @@ class OzzyAppTest : public ::testing::Test {
     };
   }
 
-  FakeFrontendState& state() { return factory_.GetState(); }
+  FakeFrontendState& state() { return type_.GetState(); }
 
   gb::FakeClock clock_;
   gb::FileSystem file_system_;
   FaultyFileProtocol* protocol_ = nullptr;  // Owned by file_system_.
-  FakeFrontendFactory factory_;
+  FakeFrontendType type_;
 
   // What the app wrote, and whether any of it was written while the frontend
   // was alive.
@@ -160,7 +160,7 @@ class OzzyAppTest : public ::testing::Test {
 TEST_F(OzzyAppTest, HelpIsTheFrontendsAndTheApps) {
   EXPECT_EQ(RunApp({"--help"}), 0);
   EXPECT_THAT(help_, AllOf(HasSubstr("fake-ozzy"),
-                           HasSubstr(FakeFrontendFactory::kProgramHelp),
+                           HasSubstr(FakeFrontendType::kProgramHelp),
                            HasSubstr("--stats"), HasSubstr("--fake-flag"),
                            HasSubstr("<config file>")));
   EXPECT_EQ(error_, "");
@@ -171,7 +171,7 @@ TEST_F(OzzyAppTest, NoClockDoesntRun) {
   auto context = std::make_shared<gb::Context>(
       gb::ContextBuilder()
           .SetPtr<gb::FileSystem>(&file_system_)
-          .SetPtr<FrontendFactory>(&factory_)
+          .SetPtr<FrontendType>(&type_)
           .SetValue<gb::CliWriter>([](gb::CliText, std::string_view) {})
           .Build());
   OzzyApp app;
@@ -242,11 +242,18 @@ TEST_F(OzzyAppTest, FrontendReadsItsFlag) {
   EXPECT_THAT(state().flag, Optional(std::string("value")));
 }
 
+TEST_F(OzzyAppTest, FrontendThatCantBeConfiguredIsWritten) {
+  type_.SetConfigureError(absl::InvalidArgumentError("Bad frontend"));
+  EXPECT_EQ(RunApp({}), 1);
+  EXPECT_EQ(error_, "Bad frontend");
+  EXPECT_FALSE(state().created);
+}
+
 TEST_F(OzzyAppTest, FrontendThatFailsIsWritten) {
-  factory_.SetCreateError(absl::UnavailableError("No frontend"));
+  type_.SetCreateError(absl::UnavailableError("No frontend"));
   EXPECT_EQ(RunApp({}), 1);
   EXPECT_EQ(error_, "No frontend");
-  EXPECT_THAT(state().calls, IsEmpty());
+  EXPECT_FALSE(state().created);
 }
 
 //------------------------------------------------------------------------------
@@ -315,14 +322,13 @@ TEST_F(OzzyAppTest, ShutDownShowsTheExitCodeUntilQuit) {
                                          "Update", "Update"));
 }
 
-TEST_F(OzzyAppTest, FailedPowerOnIsWrittenOnceTheFrontendIsGone) {
+TEST_F(OzzyAppTest, FailedPowerOnCreatesNoFrontend) {
   WriteConfig(
       R"---(drives: [{ preset: "floppy-360k", image: "missing.ozd" }])---");
   EXPECT_EQ(RunApp({kConfigPath}), 1);
   EXPECT_THAT(error_, AllOf(HasSubstr("Failed to create the Ozzy: "),
                             HasSubstr("missing.ozd")));
-  EXPECT_FALSE(wrote_with_frontend_);
-  EXPECT_THAT(state().calls, IsEmpty());
+  EXPECT_FALSE(state().created);
 }
 
 TEST_F(OzzyAppTest, FailedPowerOnAtRestartEndsTheApp) {

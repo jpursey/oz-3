@@ -10,11 +10,15 @@
 #include <string>
 #include <utility>
 
+#include "absl/status/statusor.h"
+#include "gb/cli/cli.h"
+#include "gb/cli/cli_command_line.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "oz3/devices/keyboard.h"
 #include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"
+#include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/ozzy/machine/ozzy_testing.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/console_display.h"
@@ -43,11 +47,6 @@ class TerminalFrontendTest : public ::testing::Test {
   FakeConsole* console_ = nullptr;  // Owned by `frontend_`.
   std::unique_ptr<TerminalFrontend> frontend_;
 };
-
-TEST_F(TerminalFrontendTest, ShowsNoPixels) {
-  CreateFrontend();
-  EXPECT_FALSE(frontend_->ShowsPixels());
-}
 
 TEST_F(TerminalFrontendTest, UpdateWithNoOzzyShowsNothing) {
   CreateFrontend();
@@ -146,11 +145,43 @@ TEST_F(TerminalFrontendTest, QuitIsTheConsoles) {
   EXPECT_TRUE(frontend_->IsQuitRequested());
 }
 
-TEST(TerminalFrontendFactoryTest, CommandLineIsOzzys) {
-  TerminalFrontendFactory factory;
-  EXPECT_EQ(factory.GetProgramName(), "ozzy");
-  EXPECT_THAT(factory.GetProgramHelp(), StartsWith("Runs an Ozzy computer"));
-  EXPECT_THAT(factory.GetFlags(), IsEmpty());
+TEST(TerminalFrontendTypeTest, CommandLineIsOzzys) {
+  TerminalFrontendType type;
+  EXPECT_EQ(type.GetProgramName(), "ozzy");
+  EXPECT_THAT(type.GetProgramHelp(), StartsWith("Runs an Ozzy computer"));
+  EXPECT_THAT(type.GetFlags(), IsEmpty());
+}
+
+// The program the frontend's command line is parsed with, which has no flags.
+const gb::CliCommand kProgram = {.name = "ozzy"};
+
+TEST(TerminalFrontendTypeTest, ScreenDrawsNoPixels) {
+  absl::StatusOr<gb::CliCommandLine> command_line =
+      gb::ParseCommandLine(&kProgram, {});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  TerminalFrontendType type;
+  OzzySettings settings;
+  ASSERT_TRUE(settings.screen.has_value());
+  settings.screen->draw_pixels = true;
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
+      type.Configure(&settings, *command_line);
+  ASSERT_TRUE(factory.ok()) << factory.status();
+  EXPECT_NE(*factory, nullptr);
+  EXPECT_FALSE(settings.screen->draw_pixels);
+}
+
+TEST(TerminalFrontendTypeTest, ConfiguresAnOzzyWithNoScreen) {
+  absl::StatusOr<gb::CliCommandLine> command_line =
+      gb::ParseCommandLine(&kProgram, {});
+  ASSERT_TRUE(command_line.ok()) << command_line.status();
+  TerminalFrontendType type;
+  OzzySettings settings = GetTeletypeSettings(9600);
+  ASSERT_FALSE(settings.screen.has_value());
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> factory =
+      type.Configure(&settings, *command_line);
+  ASSERT_TRUE(factory.ok()) << factory.status();
+  EXPECT_NE(*factory, nullptr);
+  EXPECT_FALSE(settings.screen.has_value());
 }
 
 }  // namespace

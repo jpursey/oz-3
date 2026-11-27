@@ -40,7 +40,8 @@ struct FakeFrontendState {
   // Set by the test
   //----------------------------------------------------------------------------
 
-  // What ShowsPixels returns.
+  // Whether the frontend shows the screen's pixels, which Configure sets in
+  // the settings.
   bool shows_pixels = false;
 
   // The quit is requested once Update has been called this many times.
@@ -56,11 +57,12 @@ struct FakeFrontendState {
   // Set by the frontend and its factory
   //----------------------------------------------------------------------------
 
-  // The settings and flag the frontend was created with, if it was.
+  // The settings and flag the frontend was configured with, if it was.
   std::optional<OzzySettings> settings;
   std::optional<std::string> flag;
 
-  // Whether the frontend is alive.
+  // Whether a frontend was created, and whether it is alive.
+  bool created = false;
   bool alive = false;
 
   // The calls the app made, in order: "Attach", "Update", "Detach", and
@@ -81,8 +83,6 @@ class FakeFrontend final : public Frontend {
     state_->alive = true;
   }
   ~FakeFrontend() override { state_->alive = false; }
-
-  bool ShowsPixels() const override { return state_->shows_pixels; }
 
   FrontendKeys TakeKeys() override { return std::exchange(state_->keys, {}); }
 
@@ -113,9 +113,34 @@ class FakeFrontend final : public Frontend {
 // FakeFrontendFactory
 //==============================================================================
 
-// Creates FakeFrontends, which share the factory's state. It has one flag of
-// its own, --fake-flag, which Create records.
+// Creates a FakeFrontend over a FakeFrontendState, or fails with the error it
+// was given.
 class FakeFrontendFactory final : public FrontendFactory {
+ public:
+  // `state` must outlive this.
+  FakeFrontendFactory(FakeFrontendState* state, absl::Status create_error)
+      : state_(state), create_error_(std::move(create_error)) {}
+
+  absl::StatusOr<std::unique_ptr<Frontend>> Create() override {
+    if (!create_error_.ok()) {
+      return create_error_;
+    }
+    state_->created = true;
+    return std::make_unique<FakeFrontend>(state_);
+  }
+
+ private:
+  FakeFrontendState* const state_;
+  const absl::Status create_error_;
+};
+
+//==============================================================================
+// FakeFrontendType
+//==============================================================================
+
+// Sets up FakeFrontendFactories, whose frontends share the type's state. It
+// has one flag of its own, --fake-flag, which Configure records.
+class FakeFrontendType final : public FrontendType {
  public:
   static constexpr std::string_view kProgramName = "fake-ozzy";
   static constexpr std::string_view kProgramHelp = "Runs a fake Ozzy.";
@@ -128,29 +153,36 @@ class FakeFrontendFactory final : public FrontendFactory {
 
   FakeFrontendState& GetState() { return state_; }
 
-  // Sets the error Create returns, or OK for it to create the frontend.
+  // Sets the errors Configure and its factory's Create return, or OK for them
+  // to succeed.
+  void SetConfigureError(absl::Status error) {
+    configure_error_ = std::move(error);
+  }
   void SetCreateError(absl::Status error) { create_error_ = std::move(error); }
 
   std::string_view GetProgramName() const override { return kProgramName; }
   std::string_view GetProgramHelp() const override { return kProgramHelp; }
   absl::Span<const gb::CliAnyFlag> GetFlags() const override { return kFlags; }
 
-  absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings,
-      const gb::CliCommandLine& command_line) override {
-    if (!create_error_.ok()) {
-      return create_error_;
-    }
-    state_.settings = settings;
+  absl::StatusOr<std::unique_ptr<FrontendFactory>> Configure(
+      OzzySettings* settings, const gb::CliCommandLine& command_line) override {
+    state_.settings = *settings;
     if (const std::optional<std::string_view> flag =
             command_line.Get(kFakeFlag);
         flag.has_value()) {
       state_.flag = std::string(*flag);
     }
-    return std::make_unique<FakeFrontend>(&state_);
+    if (!configure_error_.ok()) {
+      return configure_error_;
+    }
+    if (settings->screen.has_value()) {
+      settings->screen->draw_pixels = state_.shows_pixels;
+    }
+    return std::make_unique<FakeFrontendFactory>(&state_, create_error_);
   }
 
  private:
+  absl::Status configure_error_;
   absl::Status create_error_;
   FakeFrontendState state_;
 };

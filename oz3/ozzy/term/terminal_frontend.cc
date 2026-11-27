@@ -29,9 +29,6 @@ TerminalFrontend::TerminalFrontend(std::unique_ptr<Console> console)
   CHECK(console_ != nullptr);
 }
 
-// The console shows the screen's cells as text.
-bool TerminalFrontend::ShowsPixels() const { return false; }
-
 FrontendKeys TerminalFrontend::TakeKeys() { return console_->TakeKeys(); }
 
 bool TerminalFrontend::IsQuitRequested() const {
@@ -63,11 +60,23 @@ void TerminalFrontend::Detach(std::optional<int> exit_code) {
 // TerminalFrontendFactory
 //==============================================================================
 
-std::string_view TerminalFrontendFactory::GetProgramName() const {
-  return "ozzy";
+absl::StatusOr<std::unique_ptr<Frontend>> TerminalFrontendFactory::Create() {
+  absl::StatusOr<std::unique_ptr<Console>> console = Console::Create(mode_);
+  if (!console.ok()) {
+    return absl::Status(console.status().code(),
+                        absl::StrCat("Failed to take over the console: ",
+                                     console.status().message()));
+  }
+  return std::make_unique<TerminalFrontend>(*std::move(console));
 }
 
-std::string_view TerminalFrontendFactory::GetProgramHelp() const {
+//==============================================================================
+// TerminalFrontendType
+//==============================================================================
+
+std::string_view TerminalFrontendType::GetProgramName() const { return "ozzy"; }
+
+std::string_view TerminalFrontendType::GetProgramHelp() const {
   return "Runs an Ozzy computer in the console, until Ctrl+Alt+Q or "
          "Ctrl+Break, or the console's window is closed. A program on it can "
          "restart it, or shut it down, which leaves it off until it quits. Its "
@@ -77,20 +86,18 @@ std::string_view TerminalFrontendFactory::GetProgramHelp() const {
          "directory, and a config's disk images relative to its folder.";
 }
 
-absl::Span<const gb::CliAnyFlag> TerminalFrontendFactory::GetFlags() const {
+absl::Span<const gb::CliAnyFlag> TerminalFrontendType::GetFlags() const {
   return {};
 }
 
-absl::StatusOr<std::unique_ptr<Frontend>> TerminalFrontendFactory::Create(
-    const OzzySettings& settings, const gb::CliCommandLine& command_line) {
-  absl::StatusOr<std::unique_ptr<Console>> console =
-      Console::Create(GetOzzyConsoleMode(settings));
-  if (!console.ok()) {
-    return absl::Status(console.status().code(),
-                        absl::StrCat("Failed to take over the console: ",
-                                     console.status().message()));
+absl::StatusOr<std::unique_ptr<FrontendFactory>>
+TerminalFrontendType::Configure(OzzySettings* settings,
+                                const gb::CliCommandLine& command_line) {
+  if (settings->screen.has_value()) {
+    settings->screen->draw_pixels = false;
   }
-  return std::make_unique<TerminalFrontend>(*std::move(console));
+  return std::make_unique<TerminalFrontendFactory>(
+      GetOzzyConsoleMode(*settings));
 }
 
 }  // namespace oz3

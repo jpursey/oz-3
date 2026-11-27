@@ -38,16 +38,6 @@ class Frontend {
   virtual ~Frontend() = default;
 
   //----------------------------------------------------------------------------
-  // Properties
-  //----------------------------------------------------------------------------
-
-  // Returns whether the frontend shows the screen's pixels, rather than only
-  // its cells, so the app has each Ozzy's screen draw them
-  // (OzzyScreenSettings::draw_pixels). It may depend on the settings and flags
-  // the frontend was created with, and is the same for its life.
-  virtual bool ShowsPixels() const = 0;
-
-  //----------------------------------------------------------------------------
   // Input
   //----------------------------------------------------------------------------
 
@@ -87,14 +77,35 @@ class Frontend {
 // FrontendFactory
 //==============================================================================
 
-// Creates an app's frontend, and gives the app the frontend's part of its
-// command line. An app's main puts one in the OzzyApp's context (see
-// OzzyApp::kConstraintFrontendFactory).
+// Creates an app's frontend, as FrontendType::Configure set it up to.
 class FrontendFactory {
  public:
   FrontendFactory(const FrontendFactory&) = delete;
   FrontendFactory& operator=(const FrontendFactory&) = delete;
   virtual ~FrontendFactory() = default;
+
+  // Creates the frontend, taking over what it shows the Ozzy in (such as the
+  // console). Returns an error if it can't (such as no console to take over),
+  // whose message says so for the user.
+  virtual absl::StatusOr<std::unique_ptr<Frontend>> Create() = 0;
+
+ protected:
+  FrontendFactory() = default;
+};
+
+//==============================================================================
+// FrontendType
+//==============================================================================
+
+// How an app is presented: it gives the app the frontend's part of its command
+// line, and sets up the frontend for the command line the user gave. An app's
+// main puts one in the OzzyApp's context (see
+// OzzyApp::kConstraintFrontendType).
+class FrontendType {
+ public:
+  FrontendType(const FrontendType&) = delete;
+  FrontendType& operator=(const FrontendType&) = delete;
+  virtual ~FrontendType() = default;
 
   //----------------------------------------------------------------------------
   // Command line
@@ -106,24 +117,27 @@ class FrontendFactory {
   virtual std::string_view GetProgramHelp() const = 0;
 
   // Returns the frontend's own flags, which the app adds to its command line
-  // after its own. The array must stay as it is for the factory's life, and
-  // each flag is a definition with static storage, as gb_cli's are. Their
-  // names must not be those of the app's flags.
+  // after its own. The array must stay as it is for the type's life, and each
+  // flag is a definition with static storage, as gb_cli's are. Their names
+  // must not be those of the app's flags.
   virtual absl::Span<const gb::CliAnyFlag> GetFlags() const = 0;
 
   //----------------------------------------------------------------------------
-  // Creation
+  // Configuration
   //----------------------------------------------------------------------------
 
-  // Creates the frontend for the Ozzys with `settings`, reading its flags from
-  // `command_line`. The screen's draw_pixels in `settings` is left for the
-  // app to set from the frontend's ShowsPixels. Returns an error if it can't
-  // (such as no console to take over), whose message says so for the user.
-  virtual absl::StatusOr<std::unique_ptr<Frontend>> Create(
-      const OzzySettings& settings, const gb::CliCommandLine& command_line) = 0;
+  // Sets up the frontend for the Ozzys with `settings`, reading its flags from
+  // `command_line`, and returns the factory that creates it. It changes the
+  // settings the frontend decides, such as whether the screen draws its pixels
+  // (OzzyScreenSettings::draw_pixels), which the Ozzys are then created with.
+  // It takes nothing over, so the app can create the Ozzy before the frontend.
+  // Returns an error if the frontend can't show these Ozzys, or its flags are
+  // wrong, whose message says so for the user.
+  virtual absl::StatusOr<std::unique_ptr<FrontendFactory>> Configure(
+      OzzySettings* settings, const gb::CliCommandLine& command_line) = 0;
 
  protected:
-  FrontendFactory() = default;
+  FrontendType() = default;
 };
 
 }  // namespace oz3

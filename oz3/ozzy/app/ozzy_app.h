@@ -52,10 +52,10 @@ struct OzzyAppStats {
 // OzzyApp
 //==============================================================================
 
-// Runs an Ozzy until the user quits, presented by the frontend its context's
-// factory creates. It is the whole of an Ozzy app's logic, whichever frontend
-// presents it: its command line, reading the config, the OzzyHost, what a
-// program's power requests do, the frame loop, and the stats.
+// Runs an Ozzy until the user quits, presented by the frontend of its
+// context's frontend type. It is the whole of an Ozzy app's logic, whichever
+// frontend presents it: its command line, reading the config, the OzzyHost,
+// what a program's power requests do, the frame loop, and the stats.
 //
 // Each frame runs the Ozzy for the time since the last, at most kMaxRunTime,
 // so a host that falls behind slows the Ozzy rather than racing to catch up.
@@ -78,9 +78,9 @@ class OzzyApp final : public gb::Game {
   // real time clock.
   static GB_CONTEXT_CONSTRAINT(kConstraintGameClock, kInRequired, gb::Clock);
 
-  // REQUIRED: The app's frontend factory.
-  static GB_CONTEXT_CONSTRAINT(kConstraintFrontendFactory, kInRequired,
-                               FrontendFactory);
+  // REQUIRED: How the app is presented.
+  static GB_CONTEXT_CONSTRAINT(kConstraintFrontendType, kInRequired,
+                               FrontendType);
 
   // OUTPUT: The app's exit code, which Run leaves in the context for main to
   // return: as gb::RunCommandLine returns it, or 1 if the app failed once it
@@ -98,7 +98,7 @@ class OzzyApp final : public gb::Game {
   // are opened in, and writer (gb::kConstraintCliWriter), which the app's
   // errors and stats go to, as gb_cli's help and errors do.
   using Contract = gb::DerivedContextContract<
-      GameContract, kConstraintGameClock, kConstraintFrontendFactory,
+      GameContract, kConstraintGameClock, kConstraintFrontendType,
       kConstraintExitCode, kConstraintOzzyApp, gb::kConstraintCliFileSystem,
       gb::kConstraintCliWriter>;
 
@@ -123,14 +123,17 @@ class OzzyApp final : public gb::Game {
   static bool RunCommand(gb::ValidatedContext& context,
                          const gb::CliCommandLine& command_line);
 
-  // Starts the app as `command_line` asks: reads the config, creates the host
-  // and the frontend, and powers the Ozzy on. Returns whether it started,
-  // failing (see Fail) if it didn't.
+  // Starts the app as `command_line` asks: reads the config, sets up the
+  // frontend, creates the host, powers the Ozzy on, and creates the frontend
+  // to show it. Returns whether it started, failing (see Fail) if it didn't.
   bool Start(const gb::CliCommandLine& command_line);
 
   // Stops the app with exit code 1, keeping `message` for CleanUp to write
   // once the frontend is gone. Returns false.
   bool Fail(std::string_view message);
+
+  // Powers the host's Ozzy on, or fails.
+  bool PowerOnHost();
 
   // Powers the Ozzy on and attaches it to the frontend, or fails.
   bool PowerOn();
