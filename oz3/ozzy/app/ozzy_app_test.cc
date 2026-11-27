@@ -370,10 +370,14 @@ TEST_F(OzzyAppTest, StatsAcrossARestart) {
   EXPECT_THAT(state().calls, ElementsAre("Attach", "Detach", "Attach", "Update",
                                          "Update", "Detach"));
   EXPECT_FALSE(wrote_with_frontend_);
-  EXPECT_THAT(help_,
-              AllOf(HasSubstr("2 frames in 0.03 s: 60.00 frames a second\n"),
-                    HasSubstr("Each frame took "),
-                    ContainsRegex("\n(198|199|200) cycles: ")));
+  // Each frame's time is its 1/60 s, and the fake clock's own advance at each
+  // read, so the rate is a little under 60.
+  EXPECT_THAT(
+      help_,
+      AllOf(ContainsRegex(
+                "2 frames in 0\\.03 s: (59\\.9.|60\\.00) frames a second\n"),
+            HasSubstr("Each frame took "),
+            ContainsRegex("\n(198|199|200) cycles: ")));
 }
 
 TEST_F(OzzyAppTest, StatsWhenQuitBeforeTheFirstFrame) {

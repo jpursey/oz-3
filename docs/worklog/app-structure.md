@@ -397,10 +397,11 @@ struct OzzyAppStats {
   command lists `OzzyApp::kConstraintOzzyApp` among its constraints, so the
   run function may read it. The app makes the command itself, so a frontend
   type gives only its parts and can't leave the run function out.
-- `gb::Game`'s loop waits for each frame by sleeping to within a millisecond
-  of it, then reading the clock until it is due, so a `FakeClock` must advance
-  on its own (`SetAutoAdvance`), or the loop never gets there. The tests set
-  it once in their fixture.
+- `gb::Game`'s loop waits for each frame with `Clock::SleepUntil`, which a
+  `FakeClock` moves straight to. The tests also have it advance a little at
+  each read (`SetAutoAdvance`), set once in their fixture, so a frame's run
+  takes time, and the stats count it. So each frame is a little over 1/60 s,
+  and tests of the frame rate allow for it.
 
 ### TerminalFrontend (ozzy/term)
 
