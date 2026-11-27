@@ -6,7 +6,6 @@
 #ifndef OZ3_OZZY_APP_FAKE_FRONTEND_H_
 #define OZ3_OZZY_APP_FAKE_FRONTEND_H_
 
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,6 +14,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
@@ -47,7 +47,7 @@ struct FakeFrontendState {
   FrontendKeys keys;
 
   // Called at each Attach with the Ozzy, such as to load a program on it.
-  std::function<void(Ozzy& ozzy)> on_attach;
+  absl::AnyInvocable<void(Ozzy& ozzy)> on_attach;
 
   //----------------------------------------------------------------------------
   // Set by the frontend and its factory

@@ -36,8 +36,9 @@ struct OzzyAppStats {
   // The frames that ran the Ozzy.
   int64_t frames = 0;
 
-  // The time from the frame before each of those frames to it, which is what
-  // each ran the Ozzy for, up to OzzyApp::kMaxRunTime.
+  // The time from the frame before each of those frames to it, even where it
+  // ran the Ozzy for less (at most OzzyApp::kMaxRunTime). So the rates show how
+  // fast the Ozzy ran in real time.
   absl::Duration time;
 
   // The time those frames took, without waiting for the next.

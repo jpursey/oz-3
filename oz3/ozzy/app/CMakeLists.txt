@@ -36,6 +36,7 @@ set(oz3_ozzy_app_TEST_SOURCE
 )
 set(oz3_ozzy_app_TEST_DEPS
   absl::algorithm_container
+  absl::any_invocable
   gb_file
   oz3_disk_testing
   oz3_ozzy_testing
