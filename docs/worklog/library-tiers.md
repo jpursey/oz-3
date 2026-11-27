@@ -123,7 +123,8 @@ file, as they are now.
 
 - `gb_add_library` takes a library of headers only (CL3). It calls
   `add_library` without `INTERFACE`, so `oz3_devices_testing` likely needs a
-  `.cc`: `DeviceProgramTest`'s longer bodies move into one.
+  `.cc`: `DeviceProgramTest`'s longer bodies move into one, or it is an empty
+  one if none are worth moving.
 - `oz3_disk` already has what `DiskFileProtocol` uses (`gb_file`, and a clock
   from `gb_base`), or adds it (CL4).
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
