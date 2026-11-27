@@ -25,7 +25,7 @@ changes, as does its include guard.
 | Tier | Libraries | Rules |
 | ---- | --------- | ----- |
 | 0, foundation | `core` | Uses nothing in OZ-3. |
-| 1, common | `disk`, `program`, `instructions`, `devices/*` | The parts of a machine, and the formats it uses. Dependencies within the tier are few, and each is named in CLAUDE.md (today, only `devices/disk_drive` → `disk`). |
+| 1, common | `disk`, `program`, `instructions`, `devices/*` | The parts of a machine, and the formats it uses. Dependencies within the tier are few, and each is named in CLAUDE.md (such as `devices/disk_drive` → `disk`, and `disk`'s tests → `program`). |
 | 2, tools | `syntax`, `asm`, `microasm`, and later `debugger` | Used by the tools and the machine's hosts. They use each other as they need to, without cycles. |
 | 3, hosts | `cli/*`, `ozzy/*` | `cli/*` is each executable's command line. `ozzy/*` keeps its chain (`machine` → `app` → `term`). The two never use each other. |
 | 4, apps | `apps` | Each executable is a `main` over its library, linking only what it uses. |
