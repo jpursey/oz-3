@@ -113,8 +113,7 @@ frontend tells `OzzyApp` it wants that), and a
 signal (such as SIGTERM) quits, committing the drives as quitting does. The end
 of the standard input ends nothing, as a program may run long after its input.
 Errors and `--stats` go to the standard error, so the output is only the
-teletype's. Until the *Window app* takes the name `ozzy`, it is
-`ozzy --headless`.
+teletype's.
 
 ## Kitty keyboard protocol
 
@@ -125,7 +124,7 @@ teletype's. Until the *Window app* takes the name `ozzy`, it is
 - **Background:** `oz3/ozzy/term/posix_console.cc`;
   https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 
-In a terminal, `ozzy` only sees what is typed, so the keyboard's key state is
+In a terminal, `ozzyterm` only sees what is typed, so the keyboard's key state is
 made up of taps: each typed key is pressed and released at once, a held key is
 pressed again at the terminal's auto-repeat rate, and Shift is never seen for
 a character. Terminals with the kitty keyboard protocol (kitty, foot, WezTerm,
@@ -150,7 +149,7 @@ terminals by hand.
 
 `ozzy`, an Ozzy in a window of its own, whatever devices it has, as a windowed
 program (`gb_add_win_executable`), so starting it from the desktop opens no
-console window. The terminal app is renamed `ozzyterm`. The window is a
+console window. The window is a
 `Frontend` and its type in a library of its own after `ozzy/term`, and the
 app's `main` runs `OzzyApp` with that type, as `ozzyterm`'s does with
 `TerminalFrontendType`. The window draws the

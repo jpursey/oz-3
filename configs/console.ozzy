@@ -1,4 +1,4 @@
-// An Ozzy for a text console, as the ozzy app runs it: a screen of 80 by 24
+// An Ozzy for a text console, as ozzyterm runs it: a screen of 80 by 24
 // characters, which fits a standard console window, a keyboard, and a timer.
 // This is the default Ozzy, written out to start from.
 

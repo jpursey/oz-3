@@ -93,7 +93,7 @@ class TerminalFrontendType final : public FrontendType {
   // FrontendType interface
   //----------------------------------------------------------------------------
 
-  // The app is `ozzy`, and the console has no flags of its own.
+  // The app is `ozzyterm`, and the console has no flags of its own.
   std::string_view GetProgramName() const override;
   std::string_view GetProgramHelp() const override;
   absl::Span<const gb::CliAnyFlag> GetFlags() const override;

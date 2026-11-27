@@ -74,7 +74,9 @@ absl::StatusOr<std::unique_ptr<Frontend>> TerminalFrontendFactory::Create() {
 // TerminalFrontendType
 //==============================================================================
 
-std::string_view TerminalFrontendType::GetProgramName() const { return "ozzy"; }
+std::string_view TerminalFrontendType::GetProgramName() const {
+  return "ozzyterm";
+}
 
 std::string_view TerminalFrontendType::GetProgramHelp() const {
   return "Runs an Ozzy computer in the console, until Ctrl+Alt+Q or "

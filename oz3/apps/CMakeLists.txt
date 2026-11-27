@@ -63,11 +63,11 @@ set(oz3dsk_DEPS
 
 gb_add_executable(oz3dsk)
 
-set(ozzy_SOURCE
-  ozzy_main.cc
+set(ozzyterm_SOURCE
+  ozzyterm_main.cc
 )
 
-set(ozzy_DEPS
+set(ozzyterm_DEPS
   gb_base
   gb_cli
   gb_file
@@ -75,4 +75,4 @@ set(ozzy_DEPS
   oz3_ozzy_term
 )
 
-gb_add_executable(ozzy)
+gb_add_executable(ozzyterm)
