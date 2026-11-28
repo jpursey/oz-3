@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_DISK_TOOL_H_
-#define OZ3_TOOLS_DISK_TOOL_H_
+#ifndef OZ3_CLI_DISK_DISK_TOOL_H_
+#define OZ3_CLI_DISK_DISK_TOOL_H_
 
 #include <memory>
 #include <string>
@@ -250,4 +250,4 @@ class DiskTool final {
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_DISK_TOOL_H_
+#endif  // OZ3_CLI_DISK_DISK_TOOL_H_

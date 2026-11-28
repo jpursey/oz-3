@@ -11,9 +11,9 @@ This repository has everything to write, build, and run OZ-3 programs. The sourc
    - **syntax:** This folder contains the library for how instructions are written in source, which the program and instruction set assemblers share: every form of an instruction set's instructions, their source patterns, and the lexer for program source.
    - **asm:** This folder contains the program assembler library, which turns program source into programs and their maps, and which a host application can use on its own.
    - **microasm:** This folder contains the instruction set assembler library, which turns instruction set source into an instruction set, or into C++ for one, and which a host application can use on its own.
-   - **tools:** This folder contains general purpose tools and libraries for use with the OZ-3, currently the library behind the disk image tool. These can be used independently or as libraries which can be integrated into another application or game.
    - **instructions:** This folder contains ready-made instruction sets for OZ-3 cores, including the default OZ-3 instruction set. Each is written in microcode assembly and assembled into C++ by the instruction set assembler.
    - **devices:** This folder contains independent virtual device libraries that can be attached to the OZ-3 via ports. In practice devices are very specific to application. These devices in particular are used by the Ozzy virtual computer.
+   - **cli:** This folder contains the command line of each command line program, in a library of its own so it is tested: `cli/disk` is the disk image tool's, with `DiskTool`, which runs each of its commands and which a host application can use on its own.
    - **ozzy:** Ozzy is a virtual computer built out of the OZ-3 core and provided devices. A config file says what hardware it has, and its boot ROM starts it up.
    - **apps:** The command line programs: `oz3ism` (the instruction set assembler), `oz3asm` (the program assembler), `oz3dsk` (the disk image tool), and `ozzyterm`, which runs an Ozzy in the console.
 

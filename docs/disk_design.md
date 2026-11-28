@@ -181,7 +181,7 @@ Every name and pattern character is below 80h, and the matching is a fixed loop 
 
 One library, `oz3/disk` (`oz3_disk`), is the only implementation of the format. The drive device and `oz3dsk` both use it, and `DiskFileProtocol` is part of it, so they can never disagree about what's on a disk. Its names carry a `Disk` prefix, so they aren't confused with general file concepts.
 
-It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`, and `gb_base` for the protocol's context and the host's time zone). It is its own library rather than part of `devices/disk_drive` only so that `tools` can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside the devices and below `tools`.
+It uses only `core` in OZ-3, for `DateTime`, and Game Bits (`gb_file`, and `gb_base` for the protocol's context and the host's time zone). It is its own library rather than part of `devices/disk_drive` only so that `cli/disk`, `oz3dsk`'s command line, can use it. So it is in tier 1 of the libraries' tiers (see CLAUDE.md), beside the devices and below `cli/disk`.
 
 | Class | What |
 | --- | --- |
@@ -558,7 +558,7 @@ Statuses are grouped: 01h–0Fh are problems with the request itself, 10h–1Fh 
 
 ## Tools
 
-`DiskFileProtocol` and the host text transfer are in the disk library, and `DiskTool` and `oz3dsk` in `tools` and `apps`.
+`DiskFileProtocol` and the host text transfer are in the disk library, and `DiskTool` and `oz3dsk`'s command line in `cli/disk`, which `apps` runs.
 
 ### DiskFileProtocol
 
@@ -621,7 +621,7 @@ oz3dsk work.ozd dir *.OZ3
 
 `put` and `get` copy between `local:` and a `DiskFileProtocol` mounted on the image, converting text on the way when asked. `ren` uses `gb::FileSystem::MoveFile`, `attrib` uses `gb::FileSystem::SetAttributes` and `PathInfo`, and `dir` and `del` find entries with `gb::FileSystem::ListFiles`, all through the protocol. The rest use the protocol's own calls (`format`, `info`, and `label`), or the image alone (`new`, `protect`, and `check`).
 
-Each command is a call on `DiskTool` in `tools`, so they are unit tested over images in memory, and the app is only command line wiring.
+Each command is a call on `DiskTool` in `cli/disk`, so they are unit tested over images in memory, and so is the command line, `GetOz3dskCommand()` beside it, run as `gb::RunCommandLine` runs it. The app's `main` only gives it the host's file system.
 
 ### Game Bits dependencies
 

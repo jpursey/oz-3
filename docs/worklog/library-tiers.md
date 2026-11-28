@@ -154,6 +154,17 @@ file, as they are now.
   `tools` keeps only `disk_tool`, on `disk` and `program`, and drops `core`,
   `syntax`, `gb_parse`, and the absl targets (and `absl::check` and
   `absl::log`) that only the instruction assembler used.
+- Confirmed in CL9: `oz3dsk` wrote its reports (`info`, `dir`, `attrib`,
+  `check`) straight to stdout, which a test can't read, and `gb::CliText` has
+  only `kHelp` and `kError`. So its command line writes them to the context's
+  `gb::CliWriter` as `kHelp`, as asked-for output, as `OzzyApp` writes its
+  stats, which writes the same bytes to stdout. `DiskTool` registers its
+  protocol in the file system for good, as a process makes one tool, so the
+  tests give each run its own protocol name (`DiskTool::kKeyProtocolName`).
+  `cli/disk` uses `disk` and `program` (and `gb_cli`), its tests
+  `oz3_disk_testing`, and `oz3dsk` only `cli/disk`. `oz3asm` and `oz3ism`
+  already write only through the `gb::CliWriter`, so CL10 and CL11 need no
+  such change.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -265,7 +276,7 @@ Depends on: CL6.
 - Standard checks.
 - Regenerating the default instruction set's `.inc` gives the same bytes.
 
-### CL9 [ ] cli/disk: oz3dsk's command line
+### CL9 [x] cli/disk: oz3dsk's command line
 
 Depends on: CL4, CL5.
 
