@@ -5,15 +5,19 @@
 
 #include "oz3/cli/disk/oz3dsk.h"
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/civil_time.h"
+#include "absl/types/span.h"
 #include "gb/base/context_builder.h"
-#include "gb/cli/cli_command_line.h"
+#include "gb/cli/cli_writer.h"
 #include "gb/cli/fake_cli_writer.h"
 #include "gb/cli/run_command_line.h"
 #include "gb/file/file_system.h"
@@ -22,6 +26,9 @@
 #include "gtest/gtest.h"
 #include "oz3/cli/disk/disk_tool.h"
 #include "oz3/disk/disk_file_protocol.h"
+#include "oz3/disk/disk_image.h"
+#include "oz3/disk/disk_layout.h"
+#include "oz3/disk/disk_status.h"
 #include "oz3/program/bare_program.h"
 #include "oz3/program/program_file.h"
 
@@ -92,6 +99,19 @@ class Oz3dskTest : public ::testing::Test {
   void NewFormatted() {
     RunOk({"new", "180K"});
     RunOk({"format", "--label", "WORK"});
+  }
+
+  // Empties the image's free list, so every free cluster is on no chain.
+  void BreakFreeList() {
+    absl::StatusOr<std::unique_ptr<DiskImage>> image =
+        DiskImage::Open(&file_system_, kImage);
+    ASSERT_TRUE(image.ok()) << image.status();
+    std::array<uint16_t, kDiskSectorWords> words;
+    const int sector = DiskLayout::GetFatSector(0);
+    ASSERT_EQ((*image)->ReadSector(sector, absl::MakeSpan(words)),
+              DiskStatus::kOk);
+    words[0] = DiskLayout::kFatEnd;
+    ASSERT_EQ((*image)->WriteSector(sector, words), DiskStatus::kOk);
   }
 
   // Returns the bytes of the host file at `path`.
@@ -225,7 +245,8 @@ TEST_F(Oz3dskTest, PutAndGetCopyAFile) {
   NewFormatted();
   WriteHost("mem:/hello.txt", "hello!");
   EXPECT_THAT(RunOk({"put", "mem:/hello.txt"}), IsEmpty());
-  EXPECT_THAT(RunOk({"dir"}), StartsWith("HELLO.TXT"));
+  EXPECT_EQ(RunOk({"dir"}),
+            "HELLO.TXT                3  --  2026-11-17 10:30\n");
   EXPECT_THAT(RunOk({"get", "HELLO.TXT", "mem:/copy.txt"}), IsEmpty());
   EXPECT_EQ(ReadHost("mem:/copy.txt"), "hello!");
 }
@@ -401,6 +422,14 @@ TEST_F(Oz3dskTest, CheckFindsNoProblems) {
   NewFormatted();
   EXPECT_EQ(RunOk({"check"}), "no problems\n");
   EXPECT_EQ(RunOk({"check", "--fix"}), "no problems\n");
+}
+
+TEST_F(Oz3dskTest, CheckNamesProblemsAndRepairsThem) {
+  NewFormatted();
+  BreakFreeList();
+  EXPECT_EQ(RunOk({"check"}), "715 clusters on no chain\n");
+  EXPECT_EQ(RunOk({"check", "--fix"}), "715 clusters on no chain\nrepaired\n");
+  EXPECT_EQ(RunOk({"check"}), "no problems\n");
 }
 
 TEST_F(Oz3dskTest, CheckNeedsAnImage) {
