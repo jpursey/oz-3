@@ -565,7 +565,9 @@ absl::StatusOr<ProgramMap> ReadProgramMapFile(gb::FileSystem& file_system,
   can't. So it lives in an `apps` directory, which holds every executable,
   after the libraries in the dependency order, where `oz3dbg` goes too.
   `oz3ism` moved there with it, and still builds when the default instruction
-  set doesn't, as it doesn't link `oz3_instructions`.
+  set doesn't, as it doesn't link `oz3_instructions`. Each one's command line
+  is in a library of its own in `cli` (`oz3/cli/asm/oz3asm.h`,
+  `oz3/cli/microasm/oz3ism.h`), so it is tested.
 
 ## Example
 

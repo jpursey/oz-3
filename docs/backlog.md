@@ -273,12 +273,12 @@ which readers of version 1 reject.
 
 ## Same-file check through the file system
 
-- **Layers:** cli/asm, ozzy, apps
+- **Layers:** cli/asm, cli/microasm, ozzy
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** Game Bits *Canonical local paths*
 - **Background:** `ValidateOutputPaths()` in `oz3/cli/asm/oz3asm.cc`, `Run()` in
-  `oz3/apps/oz3ism.cc`, and `ValidateOzzySettings()` in
+  `oz3/cli/microasm/oz3ism.cc`, and `ValidateOzzySettings()` in
   `oz3/ozzy/machine/ozzy_settings.cc`
 
 `oz3asm` won't write a file that is the source or another file it writes, nor

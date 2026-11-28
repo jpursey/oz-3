@@ -6,22 +6,14 @@
 # oz3ism doesn't link oz3_instructions, so it builds even when the default
 # instruction set's generated source doesn't compile.
 set(oz3ism_SOURCE
-  oz3ism.cc
+  oz3ism_main.cc
 )
 
 set(oz3ism_DEPS
-  absl::strings
   gb_base
   gb_cli
   gb_file
-  gb_parse
-  oz3_core
-  oz3_microasm
-)
-
-set(oz3ism_LIBS
-  absl::check
-  absl::log
+  oz3_cli_microasm
 )
 
 gb_add_executable(oz3ism)
