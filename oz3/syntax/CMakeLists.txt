@@ -27,14 +27,14 @@ set(oz3_syntax_LIBS
 )
 
 # The instruction set syntax's tests assemble the instruction sets they read,
-# so they use tools.
+# so they use microasm.
 set(oz3_syntax_TEST_SOURCE
   instruction_set_syntax_test.cc
   program_lexer_test.cc
   source_pattern_test.cc
 )
 set(oz3_syntax_TEST_DEPS
-  oz3_tools
+  oz3_microasm
 )
 
 gb_add_library(oz3_syntax)

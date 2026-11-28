@@ -22,8 +22,8 @@
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
+#include "oz3/microasm/instruction_assembler.h"
 #include "oz3/syntax/source_pattern.h"
-#include "oz3/tools/instruction_assembler.h"
 
 namespace oz3 {
 namespace {

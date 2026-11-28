@@ -30,7 +30,7 @@ set(oz3_program_LIBS
 )
 
 # The listing's tests assemble the programs they list, so they use syntax,
-# asm, and tools.
+# asm, and microasm.
 set(oz3_program_TEST_SOURCE
   bare_program_test.cc
   program_file_test.cc
@@ -44,8 +44,8 @@ set(oz3_program_TEST_DEPS
   gb_parse
   oz3_asm
   oz3_core_testing
+  oz3_microasm
   oz3_syntax
-  oz3_tools
 )
 
 gb_add_library(oz3_program)

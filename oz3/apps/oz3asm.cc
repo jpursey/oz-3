@@ -28,12 +28,12 @@
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_set.h"
 #include "oz3/instructions/default_instruction_set.h"
+#include "oz3/microasm/instruction_assembler.h"
 #include "oz3/program/bare_program.h"
 #include "oz3/program/program_file.h"
 #include "oz3/program/program_listing.h"
 #include "oz3/program/program_map_file.h"
 #include "oz3/syntax/instruction_set_syntax.h"
-#include "oz3/tools/instruction_assembler.h"
 
 namespace oz3 {
 namespace {
