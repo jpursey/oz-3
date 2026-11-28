@@ -54,13 +54,18 @@ class Oz3dskTest : public ::testing::Test {
     // Each run makes a DiskTool, which registers its protocol in the file
     // system for good, as a process runs once, so each takes a name of its own.
     ++run_count_;
+    return Run(args, absl::StrCat("ozdisk", run_count_));
+  }
+
+  // As above, with the DiskTool's protocol registered as `protocol_name`.
+  int Run(std::vector<std::string_view> args, std::string_view protocol_name) {
     return gb::RunCommandLine(
         gb::ContextBuilder()
             .SetPtr<gb::FileSystem>(&file_system_)
             .SetValue<gb::CliWriter>(writer_.GetWriter())
             .SetValue<HostClock>([] { return kNow; })
             .SetValue<std::string>(DiskTool::kKeyProtocolName,
-                                   absl::StrCat("ozdisk", run_count_))
+                                   std::string(protocol_name))
             .Build(),
         &GetOz3dskCommand(), args);
   }
@@ -410,14 +415,7 @@ TEST_F(Oz3dskTest, FailsWhenItsProtocolCantBeRegistered) {
   RunOk({"new", "180K"});
 
   // A second tool on the same name can't register its protocol.
-  EXPECT_EQ(gb::RunCommandLine(gb::ContextBuilder()
-                                   .SetPtr<gb::FileSystem>(&file_system_)
-                                   .SetValue<gb::CliWriter>(writer_.GetWriter())
-                                   .SetValue<std::string>(
-                                       DiskTool::kKeyProtocolName, "ozdisk1")
-                                   .Build(),
-                               &GetOz3dskCommand(), {kImage, "info"}),
-            kExitFailure);
+  EXPECT_EQ(Run({kImage, "info"}, "ozdisk1"), kExitFailure);
   EXPECT_THAT(writer_.TakeError(), HasSubstr("ozdisk1"));
 }
 
