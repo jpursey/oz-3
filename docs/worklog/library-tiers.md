@@ -173,6 +173,11 @@ file, as they are now.
   used") can't be reached from an `.izm`, as `InstructionAssembler` already
   checks it with `InstructionSetSyntax`, so the tests give an `.izm` that fails
   that check, which writes the assembler's error.
+- Confirmed in CL11: `cli/microasm` uses only `microasm`, as its source
+  includes nothing else in OZ-3 (`core` comes through `microasm`), and
+  `oz3ism` only `cli/microasm`, so neither links `oz3_instructions`. Its error
+  in writing can't be reached through a folder or a missing one, which the
+  output file's validator rejects, so the tests write to a read-only file.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -316,7 +321,7 @@ Depends on: CL7, CL8.
   codes.
 - `bin/oz3asm --help` gives what it did before.
 
-### CL11 [ ] cli/microasm: oz3ism's command line
+### CL11 [x] cli/microasm: oz3ism's command line
 
 Depends on: CL8.
 

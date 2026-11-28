@@ -6,3 +6,4 @@
 # Each executable's command line, in a library of its own so it is tested.
 add_subdirectory(asm)
 add_subdirectory(disk)
+add_subdirectory(microasm)
