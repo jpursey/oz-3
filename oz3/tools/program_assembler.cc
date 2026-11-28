@@ -35,14 +35,14 @@
 #include "gb/parse/token.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
-#include "oz3/tools/bare_program.h"
+#include "oz3/program/bare_program.h"
+#include "oz3/program/program.h"
+#include "oz3/program/program_map.h"
 #include "oz3/tools/expression.h"
 #include "oz3/tools/instruction_set_syntax.h"
-#include "oz3/tools/program.h"
 #include "oz3/tools/program_grammar.h"
 #include "oz3/tools/program_lexer.h"
 #include "oz3/tools/program_macro.h"
-#include "oz3/tools/program_map.h"
 #include "oz3/tools/source_pattern.h"
 
 namespace oz3 {

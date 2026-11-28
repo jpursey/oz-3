@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/program_map.h"
+#include "oz3/program/program_map.h"
 
 #include <algorithm>
 #include <compare>

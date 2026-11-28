@@ -445,15 +445,15 @@ as for `ProgramLoader`:
   bytes, low byte first.
 
 `ProgramLoader` still loads a `Program`, and reading and writing the file is
-separate (`oz3/tools/program_file.h`).
+separate (`oz3/program/program_file.h`).
 
 ### Program map
 
 The map is a separate file, so a program loads without it. Only the debugger
 reads it, which is always a host tool written in C++, so it is a Game Bits
 chunk file (`gb/file`'s chunk reader and writer). The assembler builds the map
-along with the program, as a `ProgramMap` (`oz3/tools/program_map.h`), and
-writing and reading the file is separate (`oz3/tools/program_map_file.h`). It
+along with the program, as a `ProgramMap` (`oz3/program/program_map.h`), and
+writing and reading the file is separate (`oz3/program/program_map_file.h`). It
 holds:
 - The source files, by the path each was read from, in the order first read.
 - Every segment's name, in the program's order.
@@ -480,7 +480,7 @@ doesn't record yet (see *Debugger (oz3dbg)* in the backlog).
 A listing is text for people: each source line, with its segment offset and the
 words it assembled to. It is optional, and is what a programmer reads to check
 what an instruction became. `FormatProgramListing`
-(`oz3/tools/program_listing.h`) formats it from a program, its map, and its
+(`oz3/program/program_listing.h`) formats it from a program, its map, and its
 source files' text, and `WriteProgramListingFile` writes it, reading the source
 files by the map's paths. `oz3asm` writes it beside the program file (`.oz3lst`).
 

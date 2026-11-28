@@ -56,7 +56,7 @@ set(oz3_disk_TEST_SOURCE
 set(oz3_disk_TEST_DEPS
   absl::flat_hash_set
   oz3_disk_testing
-  oz3_tools
+  oz3_program
 )
 
 gb_add_library(oz3_disk)

@@ -13,6 +13,7 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(disk)
+add_subdirectory(program)
 add_subdirectory(tools)
 add_subdirectory(instructions)
 add_subdirectory(devices)

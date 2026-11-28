@@ -7,6 +7,7 @@ The OZ-3 is an 16-bit virtual CPU made up just for fun. It's intended purpose is
 This repository has everything to write, build, and run OZ-3 programs. The source folder is "oz3" and it contains the following:
 
    - **core:** This folder contains the core runtime library for the OZ-3. It contains the execution engine, memory, interrupts, and port interfaces for integrating the OZ-3 into another program. 
+   - **program:** This folder contains the library for assembled programs: their program and map files, their listings, and loading them into an OZ-3's memory.
    - **tools:** This folder contains general purpose tools and libraries for use with the OZ-3. Tools include an assembler and debugger library and tools. These are can be used independently or as libraries which can be integrated into another application or game.
    - **instructions:** This folder contains ready-made instruction sets for OZ-3 cores, including the default OZ-3 instruction set. Each is written in microcode assembly and assembled into C++ by the instruction set assembler.
    - **devices:** This folder contains independent virtual device libraries that can be attached to the OZ-3 via ports. In practice devices are very specific to application. These devices in particular are used by the Ozzy virtual computer.

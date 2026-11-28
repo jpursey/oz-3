@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/program_listing.h"
+#include "oz3/program/program_listing.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -23,8 +23,8 @@
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
-#include "oz3/tools/program.h"
-#include "oz3/tools/program_map.h"
+#include "oz3/program/program.h"
+#include "oz3/program/program_map.h"
 
 namespace oz3 {
 

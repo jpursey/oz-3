@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/program_listing.h"
+#include "oz3/program/program_listing.h"
 
 #include <memory>
 #include <string>
@@ -18,11 +18,11 @@
 #include "gb/parse/parse_error.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "oz3/program/program.h"
+#include "oz3/program/program_map.h"
 #include "oz3/tools/instruction_assembler.h"
 #include "oz3/tools/instruction_set_syntax.h"
-#include "oz3/tools/program.h"
 #include "oz3/tools/program_assembler.h"
-#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 namespace {

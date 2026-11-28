@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/bare_program.h"
+#include "oz3/program/bare_program.h"
 
 #include "absl/strings/str_cat.h"
 #include "oz3/core/core_types.h"
