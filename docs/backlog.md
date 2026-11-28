@@ -273,11 +273,11 @@ which readers of version 1 reject.
 
 ## Same-file check through the file system
 
-- **Layers:** ozzy, apps
+- **Layers:** cli/asm, ozzy, apps
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** Game Bits *Canonical local paths*
-- **Background:** `ValidateOutputPaths()` in `oz3/apps/oz3asm.cc`, `Run()` in
+- **Background:** `ValidateOutputPaths()` in `oz3/cli/asm/oz3asm.cc`, `Run()` in
   `oz3/apps/oz3ism.cc`, and `ValidateOzzySettings()` in
   `oz3/ozzy/machine/ozzy_settings.cc`
 
