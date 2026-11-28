@@ -22,6 +22,7 @@ set(oz3_ozzy_machine_DEPS
   gb_config
   gb_file
   gb_parse
+  oz3_asm
   oz3_core
   oz3_devices_disk_drive
   oz3_devices_keyboard
@@ -33,7 +34,6 @@ set(oz3_ozzy_machine_DEPS
   oz3_instructions
   oz3_program
   oz3_syntax
-  oz3_tools
 )
 set(oz3_ozzy_machine_LIBS
   absl::check
@@ -82,6 +82,7 @@ set(oz3_ozzy_testing_DEPS
   gb_file
   gb_parse
   gmock
+  oz3_asm
   oz3_core
   oz3_devices_power_control
   oz3_devices_screen
@@ -90,7 +91,6 @@ set(oz3_ozzy_testing_DEPS
   oz3_ozzy_machine
   oz3_program
   oz3_syntax
-  oz3_tools
 )
 set(oz3_ozzy_testing_LIBS
   absl::check

@@ -35,10 +35,10 @@ set(oz3_instructions_TEST_DEPS
   absl::span
   absl::strings
   gb_parse
+  oz3_asm
   oz3_core_testing
   oz3_program
   oz3_syntax
-  oz3_tools
 )
 
 gb_add_library(oz3_instructions)

@@ -9,7 +9,7 @@
 #include <array>
 #include <cstdint>
 
-#include "oz3/tools/program_assembler.h"
+#include "oz3/asm/program_assembler.h"
 
 namespace oz3 {
 

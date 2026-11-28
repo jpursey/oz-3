@@ -5,12 +5,8 @@
 
 set(oz3_tools_SOURCE
   disk_tool.cc disk_tool.h
-  expression.cc expression.h
   instruction_assembler.cc instruction_assembler.h
   instruction_def_exporter.cc instruction_def_exporter.h
-  program_assembler.h program_assembler.cc
-  program_grammar.h program_grammar.cc
-  program_macro.h program_macro.cc
 )
 set(oz3_tools_DEPS
   absl::algorithm_container
@@ -38,16 +34,10 @@ set(oz3_tools_LIBS
 
 set(oz3_tools_TEST_SOURCE
   disk_tool_test.cc
-  expression_test.cc
   instruction_assembler_test.cc
   instruction_def_exporter_test.cc
-  program_assembler_test.cc
-  program_grammar_test.cc
-  program_macro_test.cc
 )
 set(oz3_tools_TEST_DEPS
-  absl::flat_hash_map
-  oz3_core_testing
   oz3_disk_testing
 )
 

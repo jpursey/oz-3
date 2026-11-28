@@ -142,6 +142,12 @@ file, as they are now.
   library's tests reaching to another in its tier (`tools` itself uses
   `syntax`, so not a cycle of libraries). When the instruction assembler moves
   in CL8, they use `microasm` in its place.
+- Confirmed in CL7: `program_assembler_test.cc` and `program_grammar_test.cc`
+  build their instruction sets with `InstructionAssembler`, so `oz3_asm`'s
+  tests use `tools`, as `syntax`'s do, until CL8, when they use `microasm`.
+  `oz3asm` and `program`'s tests use `asm` and keep `tools` for the
+  instruction assembler. `tools`' tests drop `oz3_core_testing`,
+  which nothing in them had used since `ProgramLoader` moved in CL5.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -230,7 +236,7 @@ Depends on: CL5.
 **Verify**
 - Standard checks.
 
-### CL7 [ ] asm: the program assembler
+### CL7 [x] asm: the program assembler
 
 Depends on: CL6.
 

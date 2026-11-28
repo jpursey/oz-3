@@ -14,12 +14,12 @@ set(oz3_devices_testing_DEPS
   gb_base
   gb_parse
   gtest
+  oz3_asm
   oz3_core
   oz3_core_testing
   oz3_instructions
   oz3_program
   oz3_syntax
-  oz3_tools
 )
 set(oz3_devices_testing_LIBS
   absl::check

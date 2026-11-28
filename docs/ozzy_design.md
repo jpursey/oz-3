@@ -591,7 +591,7 @@ with all 8 cores busy is real time on one host thread, with plenty left for
 devices. Debug builds are slower, and weren't measured.
 
 The boot ROM's and the OS's sources live in `oz3/ozzy/machine`. The
-`oz3_ozzy_machine` library links `tools`, so it assembles the boot ROM in
+`oz3_ozzy_machine` library links `asm`, so it assembles the boot ROM in
 process at start up, and writes it into the ROM page. The OS is `OZZY.SYS` on
 the system disk, a program file built with `oz3asm`, as a real machine's OS was
 a file on its boot disk. So no assembled system code is checked in.
