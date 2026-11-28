@@ -3,9 +3,10 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
+#include "oz3/cli/disk/oz3dsk.h"
+
 #include <bit>
 #include <cstdint>
-#include <cstdio>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,18 +15,15 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-#include "gb/base/context.h"
 #include "gb/base/validated_context.h"
 #include "gb/cli/cli.h"
 #include "gb/cli/cli_command_line.h"
 #include "gb/cli/cli_path.h"
 #include "gb/cli/cli_validators.h"
 #include "gb/cli/cli_writer.h"
-#include "gb/cli/run_command_line.h"
-#include "gb/file/file_system.h"
+#include "oz3/cli/disk/disk_tool.h"
 #include "oz3/disk/disk_label.h"
 #include "oz3/disk/disk_layout.h"
-#include "oz3/tools/disk_tool.h"
 
 namespace oz3 {
 namespace {
@@ -213,14 +211,14 @@ bool Report(gb::ValidatedContext& context, const absl::Status& status) {
   return true;
 }
 
-// Returns whether `text` is OK, writing it to stdout if so, and otherwise its
-// message as the error.
+// Returns whether `text` is OK, writing it if so, and otherwise its message as
+// the error. The text was asked for, so it is written as help is.
 bool Report(gb::ValidatedContext& context,
             const absl::StatusOr<std::string>& text) {
   if (!Report(context, text.status())) {
     return false;
   }
-  std::fwrite(text->data(), 1, text->size(), stdout);
+  (*context.GetPtr<gb::CliWriter>())(gb::CliText::kHelp, *text);
   return true;
 }
 
@@ -474,11 +472,7 @@ const gb::CliCommand kProgram = {
 };
 
 }  // namespace
-}  // namespace oz3
 
-int main(int argc, char* argv[]) {
-  gb::Context context;
-  context.SetOwned(gb::CreateCliFileSystem());
-  return gb::RunCommandLine(&context, &oz3::kProgram,
-                            gb::GetMainArgs(argc, argv));
-}
+const gb::CliCommand& GetOz3dskCommand() { return kProgram; }
+
+}  // namespace oz3

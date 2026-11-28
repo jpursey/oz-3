@@ -11,8 +11,8 @@ bottom are the rest of the roadmap in README.md and the manual.
 Each item carries:
 
 - **Layers**: the OZ-3 libraries it touches (`core`, `instructions`,
-  `tools`, and `apps` for executables), in tier order (see CLAUDE.md), and the
-  manual if it changes the specification. More than one usually means more than
+  `cli/disk`, and `apps` for executables), in tier order (see CLAUDE.md), and
+  the manual if it changes the specification. More than one usually means more than
   one CL.
 - **Size**: a guess. *Small* is a single CL. *Medium* is a few. *Large* is
   many, usually after a design.
@@ -168,7 +168,7 @@ Game Bits' CI does with its `vulkan-sdk` action.
 
 ## Debugger (oz3dbg)
 
-- **Layers:** core, program, syntax, tools
+- **Layers:** core, program, syntax, debugger (new), cli/debugger (new), apps
 - **Size:** large
 - **Feature workflow:** yes
 - **Depends on:** nothing
@@ -470,7 +470,7 @@ reads it.
 
 ## Disk tool failure reasons
 
-- **Layers:** disk, tools
+- **Layers:** disk, cli/disk
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *Disk tools*, and Game Bits *File system errors as

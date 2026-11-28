@@ -4,8 +4,8 @@ The host side of disks, from [disk_design.md](../disk_design.md) (Tools), built
 on the disk library ([disk-library.md](disk-library.md)). The library is a
 complete file system, but a host can only reach it through `DiskFileSystem`'s
 own calls, and nothing made or filled an image short of writing C++. The tools
-are three things, the first two since moved to `disk` and the third in `tools`,
-and one app:
+are three things, the first two since moved to `disk` and the third to
+`cli/disk`, and one app:
 
 - **`DiskFileProtocol`:** a `gb::FileProtocol` over a mounted image, so host
   code reaches the files on a disk as it reaches local or in-memory files:
@@ -347,9 +347,11 @@ class DiskTool final {
 };
 ```
 
-- **In `tools`, not `apps`,** so every command is unit tested over images in
-  a `gb::MemoryFileProtocol`, and apps stay untested wiring. The app parses
-  its labels, sizes, and attributes into these types, so a bad one is a usage
+- **In `cli/disk`, not `apps`,** so every command is unit tested over images
+  in a `gb::MemoryFileProtocol`. It was in `tools` until the Library Tiers
+  feature ([library-tiers.md](library-tiers.md)) moved it, with `oz3dsk`'s
+  command line, which is tested there too. The command line parses its
+  labels, sizes, and attributes into these types, so a bad one is a usage
   error before any image is touched. Disk names and patterns stay text, as
   any path in the file system is, and a bad one is the command's failure.
 - **Text output is returned,** for the app to write, so tests check it
@@ -379,13 +381,14 @@ left empty between them.
 
 ### apps: oz3dsk
 
-- `oz3dsk.cc`: the program command with the required `image` argument, then
-  a subcommand per row of disk_design.md's table, each with its arguments and
-  flags, as `gb_cli`'s required positional arguments before subcommands allow.
-  Paths are the operating system's, as `oz3asm`'s are, in
-  `gb::CreateCliFileSystem`'s file system, and are passed to `DiskTool` as
-  given, so messages name them as they were typed. The clock is the host's
-  local time, `DiskTool`'s default, as `ozzy`'s is.
+- `oz3dsk.cc` (since moved to `cli/disk`, behind `GetOz3dskCommand()`, with
+  `apps/oz3dsk_main.cc` running it): the program command with the required
+  `image` argument, then a subcommand per row of disk_design.md's table, each
+  with its arguments and flags, as `gb_cli`'s required positional arguments
+  before subcommands allow. Paths are the operating system's, as `oz3asm`'s
+  are, in `gb::CreateCliFileSystem`'s file system, and are passed to
+  `DiskTool` as given, so messages name them as they were typed. The clock is
+  the host's local time, `DiskTool`'s default, as `ozzy`'s is.
 - Sizes, labels, and `--set` and `--clear`'s letters (from `rh`) are
   validated as the command line is parsed, with `DiskTool`'s own parsing, so
   a bad one is a usage error. `--cluster` is a power of two from 1 to 64, `protect` takes
