@@ -21,7 +21,7 @@
 #include "gb/parse/parser_program.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/tools/program_lexer.h"
+#include "oz3/syntax/program_lexer.h"
 
 namespace oz3 {
 namespace {

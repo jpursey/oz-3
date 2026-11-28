@@ -22,8 +22,8 @@
 #include "gb/parse/parser_program.h"
 #include "gb/parse/token.h"
 #include "oz3/core/instruction_def.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 #include "oz3/tools/expression.h"
-#include "oz3/tools/instruction_set_syntax.h"
 
 namespace oz3 {
 

@@ -20,8 +20,8 @@
 #include "gtest/gtest.h"
 #include "oz3/program/program.h"
 #include "oz3/program/program_map.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 #include "oz3/tools/instruction_assembler.h"
-#include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
 
 namespace oz3 {

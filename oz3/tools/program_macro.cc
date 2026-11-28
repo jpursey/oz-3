@@ -11,7 +11,7 @@
 #include "absl/algorithm/container.h"
 #include "absl/log/check.h"
 #include "absl/strings/str_cat.h"
-#include "oz3/tools/program_lexer.h"
+#include "oz3/syntax/program_lexer.h"
 
 namespace oz3 {
 

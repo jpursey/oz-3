@@ -31,8 +31,8 @@
 #include "oz3/program/program_file.h"
 #include "oz3/program/program_listing.h"
 #include "oz3/program/program_map_file.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 #include "oz3/tools/instruction_assembler.h"
-#include "oz3/tools/instruction_set_syntax.h"
 #include "oz3/tools/program_assembler.h"
 
 namespace oz3 {

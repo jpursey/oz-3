@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_INSTRUCTION_SET_SYNTAX_H_
-#define OZ3_TOOLS_INSTRUCTION_SET_SYNTAX_H_
+#ifndef OZ3_SYNTAX_INSTRUCTION_SET_SYNTAX_H_
+#define OZ3_SYNTAX_INSTRUCTION_SET_SYNTAX_H_
 
 #include <array>
 #include <cstdint>
@@ -18,7 +18,7 @@
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/core/instruction_def.h"
 #include "oz3/core/instruction_set.h"
-#include "oz3/tools/source_pattern.h"
+#include "oz3/syntax/source_pattern.h"
 
 namespace oz3 {
 
@@ -214,4 +214,4 @@ class InstructionSetSyntax final {
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_INSTRUCTION_SET_SYNTAX_H_
+#endif  // OZ3_SYNTAX_INSTRUCTION_SET_SYNTAX_H_

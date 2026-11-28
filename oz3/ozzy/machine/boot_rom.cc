@@ -15,7 +15,7 @@
 #include "oz3/core/instruction_compiler.h"
 #include "oz3/instructions/default_instruction_set.h"
 #include "oz3/ozzy/machine/boot_rom_source.h"
-#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 
 namespace oz3 {
 

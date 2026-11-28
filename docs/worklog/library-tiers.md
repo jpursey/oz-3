@@ -137,6 +137,11 @@ file, as they are now.
   assembler, so `oz3_program`'s tests use `tools`, a tier 1 library's tests
   reaching up to tier 2. As those move, its tests use `syntax`, `asm`, and
   `microasm` in their place.
+- Confirmed in CL6: `instruction_set_syntax_test.cc` builds its instruction
+  sets with `InstructionAssembler`, so `oz3_syntax`'s tests use `tools`, a
+  library's tests reaching to another in its tier (`tools` itself uses
+  `syntax`, so not a cycle of libraries). When the instruction assembler moves
+  in CL8, they use `microasm` in its place.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -213,7 +218,7 @@ Depends on: CL1.
 **Verify**
 - Standard checks.
 
-### CL6 [ ] syntax: how instructions are written in source
+### CL6 [x] syntax: how instructions are written in source
 
 Depends on: CL5.
 

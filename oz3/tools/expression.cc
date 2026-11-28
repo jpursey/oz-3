@@ -21,7 +21,7 @@
 #include "gb/parse/parse_result.h"
 #include "gb/parse/symbol.h"
 #include "gb/parse/token.h"
-#include "oz3/tools/program_lexer.h"
+#include "oz3/syntax/program_lexer.h"
 
 namespace oz3 {
 

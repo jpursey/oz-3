@@ -32,7 +32,7 @@
 #include "oz3/instructions/default_instruction_set.h"
 #include "oz3/program/bare_program.h"
 #include "oz3/program/program_loader.h"
-#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 
 namespace oz3 {
 

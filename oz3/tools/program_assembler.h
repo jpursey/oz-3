@@ -19,7 +19,7 @@
 #include "oz3/program/bare_program.h"
 #include "oz3/program/program.h"
 #include "oz3/program/program_map.h"
-#include "oz3/tools/instruction_set_syntax.h"
+#include "oz3/syntax/instruction_set_syntax.h"
 
 namespace oz3 {
 

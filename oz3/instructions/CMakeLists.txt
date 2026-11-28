@@ -37,6 +37,7 @@ set(oz3_instructions_TEST_DEPS
   gb_parse
   oz3_core_testing
   oz3_program
+  oz3_syntax
   oz3_tools
 )
 
