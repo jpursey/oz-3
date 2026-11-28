@@ -27,24 +27,14 @@ set(oz3ism_LIBS
 gb_add_executable(oz3ism)
 
 set(oz3asm_SOURCE
-  oz3asm.cc
+  oz3asm_main.cc
 )
 
 set(oz3asm_DEPS
-  absl::algorithm_container
-  absl::status
-  absl::statusor
-  absl::strings
   gb_base
   gb_cli
   gb_file
-  gb_parse
-  oz3_asm
-  oz3_core
-  oz3_instructions
-  oz3_microasm
-  oz3_program
-  oz3_syntax
+  oz3_cli_asm
 )
 
 gb_add_executable(oz3asm)

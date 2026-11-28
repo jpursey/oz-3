@@ -488,9 +488,9 @@ files by the map's paths. `oz3asm` writes it beside the program file (`.oz3lst`)
 
 The assembler is a library in `asm` (`oz3/asm/program_assembler.h`), which a
 host application can use on its own, and `oz3asm` is the command line tool
-built on it. `InstructionSetSyntax` is in `syntax`
-(`oz3/syntax/instruction_set_syntax.h`), which the instruction set assembler
-shares.
+built on it, whose command line is in `cli/asm` (`oz3/cli/asm/oz3asm.h`).
+`InstructionSetSyntax` is in `syntax` (`oz3/syntax/instruction_set_syntax.h`),
+which the instruction set assembler shares.
 
 ```
 // Every form of every instruction in an instruction set, for matching

@@ -165,6 +165,14 @@ file, as they are now.
   `oz3_disk_testing`, and `oz3dsk` only `cli/disk`. `oz3asm` and `oz3ism`
   already write only through the `gb::CliWriter`, so CL10 and CL11 need no
   such change.
+- Confirmed in CL10: `cli/asm` uses `core` as well as the libraries the
+  table names, for the instruction set it compiles, and `oz3asm` only
+  `cli/asm`. `oz3asm`'s `main` keeps building its own file system (the OS root
+  as `file`), rather than `gb::CreateCliFileSystem()` as `oz3dsk`'s does. Its
+  error for an instruction set the tools can't use ("Instruction set can't be
+  used") can't be reached from an `.izm`, as `InstructionAssembler` already
+  checks it with `InstructionSetSyntax`, so the tests give an `.izm` that fails
+  that check, which writes the assembler's error.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -293,7 +301,7 @@ Depends on: CL4, CL5.
   validators (size, cluster, label, attributes) and the reports give them.
 - `bin/oz3dsk --help` and a command run by hand give what they did before.
 
-### CL10 [ ] cli/asm: oz3asm's command line
+### CL10 [x] cli/asm: oz3asm's command line
 
 Depends on: CL7, CL8.
 
