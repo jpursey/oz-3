@@ -33,7 +33,7 @@
 #include "oz3/instructions/default_instruction_set.h"
 #include "oz3/ozzy/machine/boot_rom.h"
 #include "oz3/ozzy/machine/machine_table.h"
-#include "oz3/tools/program_loader.h"
+#include "oz3/program/program_loader.h"
 
 namespace oz3 {
 

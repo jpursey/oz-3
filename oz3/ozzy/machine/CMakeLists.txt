@@ -31,6 +31,7 @@ set(oz3_ozzy_machine_DEPS
   oz3_devices_timer
   oz3_disk
   oz3_instructions
+  oz3_program
   oz3_tools
 )
 set(oz3_ozzy_machine_LIBS
@@ -86,6 +87,7 @@ set(oz3_ozzy_testing_DEPS
   oz3_disk
   oz3_instructions
   oz3_ozzy_machine
+  oz3_program
   oz3_tools
 )
 set(oz3_ozzy_testing_LIBS

@@ -20,7 +20,7 @@ part of the specification: there were no wiki changes.
 
 ### API
 
-All of it is in `tools`, beside the program assembler and program files.
+All of it is in `program`, beside program files, and the assembler writes it.
 
 ```
 // program_map.h

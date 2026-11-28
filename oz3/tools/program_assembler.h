@@ -16,10 +16,10 @@
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
 #include "gb/parse/parse_error.h"
-#include "oz3/tools/bare_program.h"
+#include "oz3/program/bare_program.h"
+#include "oz3/program/program.h"
+#include "oz3/program/program_map.h"
 #include "oz3/tools/instruction_set_syntax.h"
-#include "oz3/tools/program.h"
-#include "oz3/tools/program_map.h"
 
 namespace oz3 {
 

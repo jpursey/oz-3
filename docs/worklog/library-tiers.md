@@ -25,7 +25,7 @@ changes, as does its include guard.
 | Tier | Libraries | Rules |
 | ---- | --------- | ----- |
 | 0, foundation | `core` | Uses nothing in OZ-3. |
-| 1, common | `disk`, `program`, `instructions`, `devices/*` | The parts of a machine, and the formats it uses. Dependencies within the tier are few, and each is named in CLAUDE.md (today, only `devices/disk_drive` → `disk`). |
+| 1, common | `disk`, `program`, `instructions`, `devices/*` | The parts of a machine, and the formats it uses. Dependencies within the tier are few, and each is named in CLAUDE.md (such as `devices/disk_drive` → `disk`, and `disk`'s tests → `program`). |
 | 2, tools | `syntax`, `asm`, `microasm`, and later `debugger` | Used by the tools and the machine's hosts. They use each other as they need to, without cycles. |
 | 3, hosts | `cli/*`, `ozzy/*` | `cli/*` is each executable's command line. `ozzy/*` keeps its chain (`machine` → `app` → `term`). The two never use each other. |
 | 4, apps | `apps` | Each executable is a `main` over its library, linking only what it uses. |
@@ -132,6 +132,11 @@ file, as they are now.
   it. `DiskFileProtocol`'s tests write and read a program file through the
   protocol, so `oz3_disk`'s tests use `tools` (a tier 1 library's tests reaching
   up to tier 2) until CL5, when they use `program` instead.
+- Confirmed in CL5: `program_listing_test.cc` assembles the programs it lists,
+  with `InstructionAssembler`, `InstructionSetSyntax`, and the program
+  assembler, so `oz3_program`'s tests use `tools`, a tier 1 library's tests
+  reaching up to tier 2. As those move, its tests use `syntax`, `asm`, and
+  `microasm` in their place.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -196,7 +201,7 @@ Depends on: CL1.
 **Verify**
 - Standard checks.
 
-### CL5 [ ] program: programs, their files, and loading them
+### CL5 [x] program: programs, their files, and loading them
 
 Depends on: CL1.
 

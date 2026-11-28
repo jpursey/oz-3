@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_PROGRAM_LOADER_H_
-#define OZ3_TOOLS_PROGRAM_LOADER_H_
+#ifndef OZ3_PROGRAM_PROGRAM_LOADER_H_
+#define OZ3_PROGRAM_PROGRAM_LOADER_H_
 
 #include <map>
 #include <optional>
@@ -16,7 +16,7 @@
 #include "absl/types/span.h"
 #include "oz3/core/cpu_core.h"
 #include "oz3/core/processor.h"
-#include "oz3/tools/program.h"
+#include "oz3/program/program.h"
 
 namespace oz3 {
 
@@ -234,4 +234,4 @@ class ProgramLoader final {
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_PROGRAM_LOADER_H_
+#endif  // OZ3_PROGRAM_PROGRAM_LOADER_H_

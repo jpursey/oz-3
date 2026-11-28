@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_PROGRAM_LISTING_H_
-#define OZ3_TOOLS_PROGRAM_LISTING_H_
+#ifndef OZ3_PROGRAM_PROGRAM_LISTING_H_
+#define OZ3_PROGRAM_PROGRAM_LISTING_H_
 
 #include <string>
 #include <string_view>
@@ -13,8 +13,8 @@
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 #include "gb/file/file_system.h"
-#include "oz3/tools/program.h"
-#include "oz3/tools/program_map.h"
+#include "oz3/program/program.h"
+#include "oz3/program/program_map.h"
 
 namespace oz3 {
 
@@ -58,4 +58,4 @@ absl::Status WriteProgramListingFile(gb::FileSystem& file_system,
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_PROGRAM_LISTING_H_
+#endif  // OZ3_PROGRAM_PROGRAM_LISTING_H_

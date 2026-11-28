@@ -43,8 +43,8 @@
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"
 #include "oz3/ozzy/machine/ozzy_testing.h"
+#include "oz3/program/program_file.h"
 #include "oz3/tools/program_assembler.h"
-#include "oz3/tools/program_file.h"
 
 namespace oz3 {
 namespace {
