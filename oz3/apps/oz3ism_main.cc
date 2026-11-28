@@ -4,16 +4,12 @@
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
 #include "gb/base/context_builder.h"
+#include "gb/cli/cli_path.h"
 #include "gb/cli/run_command_line.h"
-#include "gb/file/file_system.h"
-#include "gb/file/local_file_protocol.h"
 #include "oz3/cli/microasm/oz3ism.h"
 
 int main(int argc, char* argv[]) {
-  gb::FileSystem file_system;
-  file_system.Register(gb::LocalFileProtocol::CreateOsRoot());
-  file_system.SetDefaultProtocol("file");
   return gb::RunCommandLine(
-      gb::ContextBuilder().SetPtr<gb::FileSystem>(&file_system).Build(),
+      gb::ContextBuilder().SetOwned(gb::CreateCliFileSystem()).Build(),
       &oz3::GetOz3ismCommand(), gb::GetMainArgs(argc, argv));
 }
