@@ -136,7 +136,7 @@ file, as they are now.
   with `InstructionAssembler`, `InstructionSetSyntax`, and the program
   assembler, so `oz3_program`'s tests use `tools`, a tier 1 library's tests
   reaching up to tier 2. As those move, its tests use `syntax`, `asm`, and
-  `microasm` in their place.
+  `microasm` in their place, which they do from CL8.
 - Confirmed in CL6: `instruction_set_syntax_test.cc` builds its instruction
   sets with `InstructionAssembler`, so `oz3_syntax`'s tests use `tools`, a
   library's tests reaching to another in its tier (`tools` itself uses
@@ -148,6 +148,12 @@ file, as they are now.
   `oz3asm` and `program`'s tests use `asm` and keep `tools` for the
   instruction assembler. `tools`' tests drop `oz3_core_testing`,
   which nothing in them had used since `ProgramLoader` moved in CL5.
+- Confirmed in CL8: `oz3_syntax`'s, `oz3_asm`'s, and `oz3_program`'s tests,
+  and `oz3asm`, use `microasm` where they used `tools`, and `oz3ism` uses
+  `core` and `microasm`. `microasm`'s tests use nothing but `microasm` itself.
+  `tools` keeps only `disk_tool`, on `disk` and `program`, and drops `core`,
+  `syntax`, `gb_parse`, and the absl targets (and `absl::check` and
+  `absl::log`) that only the instruction assembler used.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -248,7 +254,7 @@ Depends on: CL6.
 **Verify**
 - Standard checks.
 
-### CL8 [ ] microasm: the instruction set assembler
+### CL8 [x] microasm: the instruction set assembler
 
 Depends on: CL6.
 

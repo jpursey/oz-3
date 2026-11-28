@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_TOOLS_INSTRUCTION_DEF_EXPORTER_H_
-#define OZ3_TOOLS_INSTRUCTION_DEF_EXPORTER_H_
+#ifndef OZ3_MICROASM_INSTRUCTION_DEF_EXPORTER_H_
+#define OZ3_MICROASM_INSTRUCTION_DEF_EXPORTER_H_
 
 #include <string_view>
 
@@ -29,4 +29,4 @@ bool ExportInstructionSetDef(gb::FileSystem& file_system,
 
 }  // namespace oz3
 
-#endif  // OZ3_TOOLS_INSTRUCTION_DEF_EXPORTER_H_
+#endif  // OZ3_MICROASM_INSTRUCTION_DEF_EXPORTER_H_

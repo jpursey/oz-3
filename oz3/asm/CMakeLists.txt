@@ -29,7 +29,7 @@ set(oz3_asm_LIBS
 )
 
 # The assembler's and grammar's tests build their instruction sets with
-# InstructionAssembler, so they use tools.
+# InstructionAssembler, so they use microasm.
 set(oz3_asm_TEST_SOURCE
   expression_test.cc
   program_assembler_test.cc
@@ -37,7 +37,7 @@ set(oz3_asm_TEST_SOURCE
   program_macro_test.cc
 )
 set(oz3_asm_TEST_DEPS
-  oz3_tools
+  oz3_microasm
 )
 
 gb_add_library(oz3_asm)

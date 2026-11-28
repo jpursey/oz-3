@@ -19,8 +19,8 @@
 #include "gb/file/local_file_protocol.h"
 #include "gb/file/path.h"
 #include "gb/parse/parse_error.h"
-#include "oz3/tools/instruction_assembler.h"
-#include "oz3/tools/instruction_def_exporter.h"
+#include "oz3/microasm/instruction_assembler.h"
+#include "oz3/microasm/instruction_def_exporter.h"
 
 namespace oz3 {
 namespace {

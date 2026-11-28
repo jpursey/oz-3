@@ -16,7 +16,7 @@ set(oz3ism_DEPS
   gb_file
   gb_parse
   oz3_core
-  oz3_tools
+  oz3_microasm
 )
 
 set(oz3ism_LIBS
@@ -42,9 +42,9 @@ set(oz3asm_DEPS
   oz3_asm
   oz3_core
   oz3_instructions
+  oz3_microasm
   oz3_program
   oz3_syntax
-  oz3_tools
 )
 
 gb_add_executable(oz3asm)

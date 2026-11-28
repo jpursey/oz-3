@@ -233,7 +233,7 @@ argument (`MacroExpansion` knows where each run of its text came from).
 
 ## Case-sensitive programs
 
-- **Layers:** syntax, asm, tools, manual
+- **Layers:** syntax, asm, microasm, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing
