@@ -30,6 +30,7 @@ namespace oz3 {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
 using ::testing::IsEmpty;
 using ::testing::StartsWith;
@@ -45,12 +46,14 @@ constexpr std::string_view kInstructionSet =
     "instruction(opcode:0) NOP { UL; }\n"
     "instruction(opcode:2) PUSH.W \"$v\" { LD(C0); UL; }\n";
 
-// A program for kInstructionSet, whose code words are 0000h 0200h 0005h.
+// A program for kInstructionSet, and the words of its one data block: its
+// code, padded to Program::Segment::Data::kAlignment.
 constexpr std::string_view kSource =
     ".STACK 4\n"
     "start:\n"
     "  NOP\n"
     "  PUSH.W 5\n";
+constexpr uint16_t kSourceWords[] = {0x0000, 0x0200, 0x0005, 0};
 
 class Oz3asmTest : public ::testing::Test {
  protected:
@@ -170,14 +173,12 @@ TEST_F(Oz3asmTest, DefaultInstructionSet) {
 
 TEST_F(Oz3asmTest, ProgramFileBesideSource) {
   RunOk({"-i", "mem:/set.izm", "mem:/prog.oza"});
-  EXPECT_THAT(ReadCode("mem:/prog.oz3"),
-              ElementsAre(0x0000, 0x0200, 0x0005, 0));
+  EXPECT_THAT(ReadCode("mem:/prog.oz3"), ElementsAreArray(kSourceWords));
 }
 
 TEST_F(Oz3asmTest, ProgramFileNamed) {
   RunOk({"-i", "mem:/set.izm", "mem:/prog.oza", "mem:/named.bin"});
-  EXPECT_THAT(ReadCode("mem:/named.bin"),
-              ElementsAre(0x0000, 0x0200, 0x0005, 0));
+  EXPECT_THAT(ReadCode("mem:/named.bin"), ElementsAreArray(kSourceWords));
   EXPECT_FALSE(HostExists("mem:/prog.oz3"));
 }
 
@@ -195,7 +196,7 @@ TEST_F(Oz3asmTest, BareProgram) {
   ASSERT_TRUE(program.ok()) << program.status();
   EXPECT_EQ(program->stack_words, 4);
   ASSERT_EQ(program->data.size(), 1);
-  EXPECT_THAT(program->data[0].data, ElementsAre(0x0000, 0x0200, 0x0005, 0));
+  EXPECT_THAT(program->data[0].data, ElementsAreArray(kSourceWords));
 }
 
 TEST_F(Oz3asmTest, BareProgramWithSegments) {
@@ -208,7 +209,7 @@ TEST_F(Oz3asmTest, BareProgramWithSegments) {
 
 TEST_F(Oz3asmTest, MapAndListing) {
   RunOk({"-i", "mem:/set.izm", "-m", "-l", "mem:/prog.oza", "mem:/p.oz3"});
-  EXPECT_THAT(ReadCode("mem:/p.oz3"), ElementsAre(0x0000, 0x0200, 0x0005, 0));
+  EXPECT_THAT(ReadCode("mem:/p.oz3"), ElementsAreArray(kSourceWords));
   absl::StatusOr<ProgramMap> map =
       ReadProgramMapFile(file_system_, "mem:/p.oz3map");
   ASSERT_TRUE(map.ok()) << map.status();
@@ -271,6 +272,21 @@ TEST_F(Oz3asmTest, ListingIsSourceFile) {
                {"-i", "mem:/set.izm", "-l", "mem:/p.oz3lst", "mem:/p.oz3"}),
       HasSubstr("\"mem:/p.oz3lst\" is both the source file and the listing"));
   EXPECT_FALSE(HostExists("mem:/p.oz3"));
+}
+
+//==============================================================================
+// Errors in writing
+//==============================================================================
+
+TEST_F(Oz3asmTest, ListingWriteFails) {
+  // The listing's path is a folder, so only writing it fails, after the
+  // program file and map are written.
+  ASSERT_TRUE(file_system_.CreateFolder("mem:/p.oz3lst"));
+  EXPECT_THAT(RunError(kExitFailure, {"-i", "mem:/set.izm", "-m", "-l",
+                                      "mem:/prog.oza", "mem:/p.oz3"}),
+              StartsWith("Failed to write listing: "));
+  EXPECT_THAT(ReadCode("mem:/p.oz3"), ElementsAreArray(kSourceWords));
+  EXPECT_TRUE(HostExists("mem:/p.oz3map"));
 }
 
 //==============================================================================

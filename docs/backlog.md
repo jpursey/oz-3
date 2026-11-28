@@ -293,6 +293,24 @@ Ask the file system whether two paths are the same file instead, once Game
 Bits' canonical paths resolve case and links, and `gb::FileSystem` lets a
 caller ask for one.
 
+## oz3asm's command line checks the instruction set and constant names
+
+- **Layers:** cli/asm, manual
+- **Size:** small
+- **Feature workflow:** no
+- **Depends on:** nothing
+- **Background:** `ValidateOutputPaths()` and `ValidateConstant()` in
+  `oz3/cli/asm/oz3asm.cc`
+
+`oz3asm`'s check that it writes no file twice, or over its source, leaves out
+the instruction set's source, so `oz3asm -i set.izm prog.oza set.izm` writes
+the program over `set.izm`, though the manual's Program Source page says a
+command line that names one file for two things is an error. Add the
+`--instruction-set` path to the files it checks. And `--define`'s validator
+checks a constant's value but not its name, so `-D 1A` is a failed assembly
+(exit code 1) rather than a usage error (2), as `-D A=zz` is. Check the name
+there as well, as the assembler does.
+
 ## Sleeping cores
 
 - **Layers:** core
