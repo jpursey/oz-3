@@ -183,7 +183,8 @@ file, as they are now.
   the default, which on Windows also names each drive letter), so no one sees
   a difference: paths, messages, and output are the same on Windows and Linux.
   It also `CHECK`s that registering the protocol succeeds, which it always
-  does. Neither app's link list changes, as both already had `gb_cli`.
+  does. Neither app's link list changes, as both already had `gb_base` and
+  `gb_cli`.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -345,9 +346,10 @@ Depends on: CL8.
 
 Depends on: CL10, CL11.
 
-- `apps/oz3asm_main.cc` and `apps/oz3ism_main.cc` put
-  `gb::CreateCliFileSystem()` in the context, as `oz3dsk_main.cc` and
-  `ozzyterm_main.cc` do, rather than building the same file system by hand.
+- `apps/oz3asm_main.cc` and `apps/oz3ism_main.cc` use
+  `gb::CreateCliFileSystem()` rather than building the same file system by
+  hand, and build their context with `gb::ContextBuilder`, passing it straight
+  to `gb::RunCommandLine`, as `oz3dsk_main.cc` does (CL9).
 
 **Verify**
 - Standard checks.
