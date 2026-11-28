@@ -11,7 +11,6 @@ set(oz3_microasm_DEPS
   absl::flat_hash_map
   absl::flat_hash_set
   absl::memory
-  absl::status
   absl::statusor
   absl::strings
   gb_file
