@@ -178,6 +178,12 @@ file, as they are now.
   `oz3ism` only `cli/microasm`, so neither links `oz3_instructions`. Its error
   in writing can't be reached through a folder or a missing one, which the
   output file's validator rejects, so the tests write to a read-only file.
+- Confirmed in CL12: `gb::CreateCliFileSystem()` is the file system
+  `oz3asm`'s and `oz3ism`'s `main` built by hand (`CreateOsRoot()` as `file`,
+  the default, which on Windows also names each drive letter), so no one sees
+  a difference: paths, messages, and output are the same on Windows and Linux.
+  It also `CHECK`s that registering the protocol succeeds, which it always
+  does. Neither app's link list changes, as both already had `gb_cli`.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -334,3 +340,18 @@ Depends on: CL8.
 - Unit tests: an `.izm` assembled to an `.inc`, and errors in reading,
   assembling, and writing, as written and as exit codes.
 - Regenerating the default instruction set's `.inc` gives the same bytes.
+
+### CL12 [x] apps: oz3asm and oz3ism use gb::CreateCliFileSystem
+
+Depends on: CL10, CL11.
+
+- `apps/oz3asm_main.cc` and `apps/oz3ism_main.cc` put
+  `gb::CreateCliFileSystem()` in the context, as `oz3dsk_main.cc` and
+  `ozzyterm_main.cc` do, rather than building the same file system by hand.
+
+**Verify**
+- Standard checks.
+- `bin/oz3asm` assembles a program given by a relative path and by an absolute
+  path, as before.
+- Regenerating the default instruction set's `.inc` gives the same bytes.
+- `bin/oz3asm --help` and `bin/oz3ism --help` give what they did before.
