@@ -187,7 +187,7 @@ it gains each segment's physical bank and start page.
 
 ## Mouse
 
-- **Layers:** devices, ozzy, apps, manual
+- **Layers:** devices/mouse (new), ozzy, apps, manual
 - **Size:** medium
 - **Feature workflow:** yes
 - **Depends on:** nothing
@@ -433,7 +433,7 @@ waits until a device needs it.
 
 ## Typed keys from key state
 
-- **Layers:** devices, manual
+- **Layers:** devices/keyboard, manual
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** nothing

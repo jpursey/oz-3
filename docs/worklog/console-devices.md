@@ -410,8 +410,9 @@ int64_t GetClockHz() const;
 
 ### devices: the library
 
-- `oz3/devices/`, the `oz3_devices` library, which links `oz3_core` only. Its
-  tests, `oz3_devices_test`, also link `oz3_core_testing`, `oz3_tools`, and
+- `oz3/devices/<device>/`, a library for each device (`oz3_devices_screen`,
+  ...), each of the console devices linking `oz3_core` only. Their tests
+  (`oz3_devices_screen_test`, ...) also link `oz3_devices_testing`, on `oz3_core_testing`, `oz3_tools`, and
   `oz3_instructions`, to run small OZ-3 programs in the default
   instruction set against the devices (see Testing).
 - Each device is a `.h`/`.cc` with its settings, its factory, and the device.

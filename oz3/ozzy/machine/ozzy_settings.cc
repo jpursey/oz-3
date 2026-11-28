@@ -24,7 +24,7 @@
 #include "gb/file/path.h"
 #include "oz3/core/core_types.h"
 #include "oz3/core/cpu_core.h"
-#include "oz3/devices/disk_drive.h"
+#include "oz3/devices/disk_drive/disk_drive.h"
 #include "oz3/disk/disk_hardware.h"
 
 namespace oz3 {

@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 
 #include <algorithm>
 #include <array>
@@ -15,7 +15,7 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "oz3/core/memory_bank_config.h"
-#include "oz3/devices/screen_characters.h"
+#include "oz3/devices/screen/screen_characters.h"
 
 namespace oz3 {
 

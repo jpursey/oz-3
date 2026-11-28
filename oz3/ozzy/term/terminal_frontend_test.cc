@@ -15,7 +15,7 @@
 #include "gb/cli/cli_command_line.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/devices/keyboard.h"
+#include "oz3/devices/keyboard/keyboard.h"
 #include "oz3/ozzy/app/frontend.h"
 #include "oz3/ozzy/machine/ozzy.h"
 #include "oz3/ozzy/machine/ozzy_settings.h"

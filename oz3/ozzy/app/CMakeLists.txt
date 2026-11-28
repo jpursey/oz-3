@@ -22,7 +22,8 @@ set(oz3_ozzy_app_DEPS
   gb_file
   gb_game
   oz3_core
-  oz3_devices
+  oz3_devices_keyboard
+  oz3_devices_power_control
   oz3_ozzy_machine
 )
 set(oz3_ozzy_app_LIBS
@@ -38,6 +39,7 @@ set(oz3_ozzy_app_TEST_DEPS
   absl::algorithm_container
   absl::any_invocable
   gb_file
+  oz3_devices_screen
   oz3_disk_testing
   oz3_ozzy_testing
 )

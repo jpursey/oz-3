@@ -1,6 +1,6 @@
 # Disk drive device
 
-`DiskDrive` (`oz3/devices/disk_drive.h`) is the smart drive from
+`DiskDrive` (`oz3/devices/disk_drive/disk_drive.h`) is the smart drive from
 [disk_design.md](../disk_design.md) (Drive device). It is built on the disk
 library ([disk-library.md](disk-library.md)), so a program can use the file
 system that only host code could call before. A drive has three ports and an

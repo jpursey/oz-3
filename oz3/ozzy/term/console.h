@@ -11,7 +11,7 @@
 #include <string_view>
 
 #include "absl/status/statusor.h"
-#include "oz3/devices/keyboard.h"
+#include "oz3/devices/keyboard/keyboard.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 
 namespace oz3 {

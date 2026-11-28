@@ -3,55 +3,31 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-set(oz3_devices_SOURCE
-  disk_drive.cc disk_drive.h
-  disk_drive_command.cc disk_drive_command.h
-  keyboard.cc keyboard.h
-  power_control.cc power_control.h
-  screen.cc screen.h
-  screen_characters.cc screen_characters.h
-  teletype.cc teletype.h
-  timer.cc timer.h
+# Test support: DeviceProgramTest, which runs programs against devices, for
+# every device's tests.
+set(oz3_devices_testing_SOURCE
+  device_program_test.cc device_program_test.h
 )
-set(oz3_devices_DEPS
-  absl::any_invocable
+set(oz3_devices_testing_DEPS
   absl::civil_time
-  absl::int128
-  absl::memory
   absl::span
-  absl::status
-  absl::statusor
-  absl::strings
-  absl::time
   gb_base
-  gb_container
-  oz3_core
-  oz3_disk
-)
-set(oz3_devices_LIBS
-  absl::check
-  absl::log
-)
-set(oz3_devices_TEST_SOURCE
-  device_program_test.h
-  disk_drive_test.cc
-  keyboard_test.cc
-  power_control_test.cc
-  screen_characters_test.cc
-  screen_test.cc
-  teletype_test.cc
-  timer_test.cc
-)
-set(oz3_devices_TEST_DEPS
-  gb_file
   gb_parse
-  oz3_disk_testing
+  gtest
+  oz3_core
   oz3_core_testing
   oz3_instructions
   oz3_tools
 )
-set(oz3_devices_TEST_LIBS
+set(oz3_devices_testing_LIBS
   absl::check
 )
 
-gb_add_library(oz3_devices)
+gb_add_library(oz3_devices_testing)
+
+add_subdirectory(disk_drive)
+add_subdirectory(keyboard)
+add_subdirectory(power_control)
+add_subdirectory(screen)
+add_subdirectory(teletype)
+add_subdirectory(timer)

@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/devices/disk_drive.h"
+#include "oz3/devices/disk_drive/disk_drive.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -33,7 +33,7 @@
 #include "oz3/core/lockable.h"
 #include "oz3/core/port.h"
 #include "oz3/devices/device_program_test.h"
-#include "oz3/devices/disk_drive_command.h"
+#include "oz3/devices/disk_drive/disk_drive_command.h"
 #include "oz3/disk/disk_dir_entry.h"
 #include "oz3/disk/disk_file_system.h"
 #include "oz3/disk/disk_filename.h"

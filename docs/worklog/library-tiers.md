@@ -121,10 +121,12 @@ file, as they are now.
 
 ### To confirm
 
-- `gb_add_library` takes a library of headers only (CL3). It calls
-  `add_library` without `INTERFACE`, so `oz3_devices_testing` likely needs a
-  `.cc`: `DeviceProgramTest`'s longer bodies move into one, or it is an empty
-  one if none are worth moving.
+- Confirmed in CL3: `gb_add_library` doesn't take a library of headers only.
+  It calls `add_library` without `INTERFACE`, and CMake can't determine the
+  linker language of a library with no `.cc`. So `oz3_devices_testing` has
+  `device_program_test.cc`, which `DeviceProgramTest`'s longer bodies (`Load`,
+  `GetLabel`, `GetData`, `SetData`, `GetHostContext`, and `CreateSyntax`) moved
+  into.
 - `oz3_disk` already has what `DiskFileProtocol` uses (`gb_file`, and a clock
   from `gb_base`), or adds it (CL4).
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
@@ -165,7 +167,7 @@ Depends on: CL1.
 - Standard checks (see CLAUDE.md).
 - Regenerating the `.inc` with the new path gives the same bytes.
 
-### CL3 [ ] devices: a library for each device
+### CL3 [x] devices: a library for each device
 
 Depends on: CL2.
 

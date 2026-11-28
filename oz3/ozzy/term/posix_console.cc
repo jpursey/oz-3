@@ -24,7 +24,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-#include "oz3/devices/keyboard.h"
+#include "oz3/devices/keyboard/keyboard.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 #include "oz3/ozzy/term/terminal_keys.h"

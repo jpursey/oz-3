@@ -11,7 +11,7 @@
 #include <utility>
 
 #include "absl/strings/str_cat.h"
-#include "oz3/devices/screen.h"
+#include "oz3/devices/screen/screen.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 

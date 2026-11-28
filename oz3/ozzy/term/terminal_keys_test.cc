@@ -11,7 +11,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "oz3/devices/keyboard.h"
+#include "oz3/devices/keyboard/keyboard.h"
 #include "oz3/ozzy/app/frontend_keys.h"
 #include "oz3/ozzy/term/console.h"
 
