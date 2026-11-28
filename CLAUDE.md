@@ -60,7 +60,7 @@ Only tests reach up a tier: a tier 1 library's tests, and its `*_testing` librar
 
 ### Default instruction set
 
-The default instruction set's source is `oz3/instructions/default_instruction_set.izm`, written in the microcode assembly the manual describes. `oz3ism`, on the instruction set assembler in `microasm`, assembles it into C++, `default_instruction_set.inc`, which is checked in and compiled into `oz3_instructions`. After changing the `.izm`, build, then regenerate the `.inc` from the repository root and check it in with the change:
+The default instruction set's source is `oz3/instructions/default_instruction_set.izm`, written in the microcode assembly the manual describes. `oz3ism` assembles it into C++, `default_instruction_set.inc`, which is checked in and compiled into `oz3_instructions`. After changing the `.izm`, build, then regenerate the `.inc` from the repository root and check it in with the change:
 
 ```
 bin/oz3ism.exe oz3/instructions/default_instruction_set.izm oz3/instructions/default_instruction_set.inc

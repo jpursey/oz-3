@@ -136,7 +136,7 @@ file, as they are now.
   with `InstructionAssembler`, `InstructionSetSyntax`, and the program
   assembler, so `oz3_program`'s tests use `tools`, a tier 1 library's tests
   reaching up to tier 2. As those move, its tests use `syntax`, `asm`, and
-  `microasm` in their place, which they do from CL8.
+  `microasm` in their place.
 - Confirmed in CL6: `instruction_set_syntax_test.cc` builds its instruction
   sets with `InstructionAssembler`, so `oz3_syntax`'s tests use `tools`, a
   library's tests reaching to another in its tier (`tools` itself uses
