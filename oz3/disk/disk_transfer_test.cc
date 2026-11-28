@@ -3,7 +3,7 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#include "oz3/tools/disk_transfer.h"
+#include "oz3/disk/disk_transfer.h"
 
 #include <string>
 #include <string_view>

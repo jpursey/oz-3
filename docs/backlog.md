@@ -470,7 +470,7 @@ reads it.
 
 ## Disk tool failure reasons
 
-- **Layers:** tools
+- **Layers:** disk, tools
 - **Size:** small
 - **Feature workflow:** no
 - **Depends on:** *Disk tools*, and Game Bits *File system errors as

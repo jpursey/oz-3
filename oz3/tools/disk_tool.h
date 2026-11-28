@@ -16,8 +16,8 @@
 #include "gb/base/validated_context.h"
 #include "gb/file/file_system.h"
 #include "gb/file/file_types.h"
+#include "oz3/disk/disk_file_protocol.h"
 #include "oz3/disk/disk_label.h"
-#include "oz3/tools/disk_file_protocol.h"
 
 namespace oz3 {
 

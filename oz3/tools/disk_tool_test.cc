@@ -28,6 +28,7 @@
 #include "gtest/gtest.h"
 #include "oz3/disk/disk_check.h"
 #include "oz3/disk/disk_dir_entry.h"
+#include "oz3/disk/disk_file_protocol.h"
 #include "oz3/disk/disk_filename.h"
 #include "oz3/disk/disk_image.h"
 #include "oz3/disk/disk_label.h"
@@ -37,7 +38,6 @@
 #include "oz3/disk/disk_superblock.h"
 #include "oz3/disk/faulty_file_protocol.h"
 #include "oz3/tools/bare_program.h"
-#include "oz3/tools/disk_file_protocol.h"
 #include "oz3/tools/program.h"
 #include "oz3/tools/program_file.h"
 

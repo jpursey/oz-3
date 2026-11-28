@@ -127,8 +127,11 @@ file, as they are now.
   `device_program_test.cc`, which `DeviceProgramTest`'s longer bodies (`Load`,
   `GetLabel`, `GetData`, `SetData`, `GetHostContext`, and `CreateSyntax`) moved
   into.
-- `oz3_disk` already has what `DiskFileProtocol` uses (`gb_file`, and a clock
-  from `gb_base`), or adds it (CL4).
+- Confirmed in CL4: `oz3_disk` had `gb_file` but not `gb_base`, which
+  `DiskFileProtocol` uses for its context and the host's time zone, so it adds
+  it. `DiskFileProtocol`'s tests write and read a program file through the
+  protocol, so `oz3_disk`'s tests use `tools` (a tier 1 library's tests reaching
+  up to tier 2) until CL5, when they use `program` instead.
 - Nothing outside CMake names a test binary or a library (CI runs `ctest`, and
   `.claude/settings.json` and `CMakeSettings.json` name no library).
 
@@ -182,7 +185,7 @@ Depends on: CL2.
 - Each device's tests run in its own binary, and the total test count matches
   `oz3_devices_test`'s before the change.
 
-### CL4 [ ] disk: DiskFileProtocol and host text transfer
+### CL4 [x] disk: DiskFileProtocol and host text transfer
 
 Depends on: CL1.
 
