@@ -50,7 +50,7 @@ operations' variants now say their positions are a register or an immediate.
 
 ## Design
 
-Everything is in `oz3/instruction_sets`: the headers in
+Everything is in `oz3/instructions`: the headers in
 `default_instruction_set.izm`, and the tests in `instruction_test_<group>.cc`
 and `instruction_test.h`.
 

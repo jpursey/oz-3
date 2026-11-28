@@ -3,8 +3,8 @@
 // Use of this source code is governed by an MIT-style License that can be found
 // in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-#ifndef OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
-#define OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
+#ifndef OZ3_INSTRUCTIONS_INSTRUCTION_TEST_H_
+#define OZ3_INSTRUCTIONS_INSTRUCTION_TEST_H_
 
 #include <cstdint>
 #include <string>
@@ -17,7 +17,7 @@
 #include "absl/types/span.h"
 #include "oz3/core/base_core_test.h"
 #include "oz3/core/port.h"
-#include "oz3/instruction_sets/default_instruction_set.h"
+#include "oz3/instructions/default_instruction_set.h"
 
 namespace oz3 {
 
@@ -279,4 +279,4 @@ class InstructionTest : public BaseCoreTest {
 
 }  // namespace oz3
 
-#endif  // OZ3_INSTRUCTION_SETS_INSTRUCTION_TEST_H_
+#endif  // OZ3_INSTRUCTIONS_INSTRUCTION_TEST_H_

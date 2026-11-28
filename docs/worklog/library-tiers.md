@@ -151,7 +151,7 @@ Depends on: nothing.
 - Docs only, so no build or CI.
 - Every library's listed dependencies match its `CMakeLists.txt`.
 
-### CL2 [ ] instructions: renamed from instruction_sets
+### CL2 [x] instructions: renamed from instruction_sets
 
 Depends on: CL1.
 

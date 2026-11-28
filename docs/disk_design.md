@@ -672,7 +672,7 @@ This design depends on changes made ahead of it, each a backlog item of its own:
 The backlog items that build this, in order, each updating the manual as it goes. The first three are independent of each other.
 
 1. *Packed strings low byte first* (tools, devices, ozzy, manual).
-2. *Port status and byte-swapped compare instructions* (instruction_sets, manual).
+2. *Port status and byte-swapped compare instructions* (instructions, manual).
 3. *No date without a clock* (devices, manual).
 4. *Disk library* (disk): the image, the hardware's timing, the file system, names, and checks, with no device. Depends on 1, so names pack as the assembler does.
 5. *Disk drive device* (devices, manual): the ports, the command protocol, and every command, on the disk library. Depends on 2 and 4.

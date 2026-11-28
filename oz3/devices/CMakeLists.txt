@@ -47,7 +47,7 @@ set(oz3_devices_TEST_DEPS
   gb_parse
   oz3_disk_testing
   oz3_core_testing
-  oz3_instruction_sets
+  oz3_instructions
   oz3_tools
 )
 set(oz3_devices_TEST_LIBS

@@ -3,16 +3,16 @@
 ## Use of this source code is governed by an MIT-style License that can be found
 ## in the LICENSE file or at https://opensource.org/licenses/MIT.
 
-set(oz3_instruction_sets_SOURCE
+set(oz3_instructions_SOURCE
   default_instruction_set.cc default_instruction_set.h
   default_instruction_set.inc
   default_instruction_set.izm
 )
-set(oz3_instruction_sets_DEPS
+set(oz3_instructions_DEPS
   oz3_core
 )
 
-set(oz3_instruction_sets_TEST_SOURCE
+set(oz3_instructions_TEST_SOURCE
   default_instruction_set_assemble_test.cc
   default_instruction_set_test.cc
   instruction_test.h
@@ -30,7 +30,7 @@ set(oz3_instruction_sets_TEST_SOURCE
   instruction_test_rotate.cc
   instruction_test_shift.cc
 )
-set(oz3_instruction_sets_TEST_DEPS
+set(oz3_instructions_TEST_DEPS
   absl::flat_hash_set
   absl::span
   absl::strings
@@ -39,4 +39,4 @@ set(oz3_instruction_sets_TEST_DEPS
   oz3_tools
 )
 
-gb_add_library(oz3_instruction_sets)
+gb_add_library(oz3_instructions)
